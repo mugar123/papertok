@@ -160,7 +160,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
         {bgIcons.map((item) => (
           <span
             key={item.id}
-            className="pc-bg-icon"
+            className={`pc-bg-icon ${item.Icon === Atom ? 'pc-bg-icon--atom' : ''}`}
             style={{
               '--bg-x': `${item.x}%`,
               '--bg-y': `${item.y}%`,
@@ -168,9 +168,15 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
               '--bg-duration': `${item.duration}s`,
               '--bg-rotate': `${item.rotate}deg`,
               '--bg-opacity': item.opacity,
+              '--bg-size': `${item.size}px`,
             }}
           >
             <item.Icon size={item.size} strokeWidth={1} />
+            {item.Icon === Atom && (
+              <span className="pc-bg-electron-orbit">
+                <span className="pc-bg-electron" />
+              </span>
+            )}
           </span>
         ))}
       </div>
