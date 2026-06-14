@@ -2,6 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
 import { Share2, Clock, FileText, Check } from 'lucide-react';
+import Latex from 'react-latex-next';
 import './PaperCard.css';
 
 export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
@@ -127,7 +128,9 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
         </div>
 
         {/* Title */}
-        <h2 className="pc-title">{paper.title}</h2>
+        <h2 className="pc-title">
+          <Latex>{paper.title}</Latex>
+        </h2>
 
         {/* Authors */}
         <div className="pc-authors">
@@ -146,7 +149,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
           className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''}`}
           onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
         >
-          <p>{paper.summary}</p>
+          <p><Latex>{paper.summary}</Latex></p>
           {!expanded && paper.summary && paper.summary.length > 200 && (
             <div className="pc-abstract-fade" />
           )}

@@ -1,5 +1,7 @@
 import { createContext, useContext, useState, useEffect } from 'react';
 import { IS_DEMO, auth, googleProvider, db } from '../services/firebase';
+import { onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth';
+import { doc, getDoc, setDoc } from 'firebase/firestore';
 
 const AuthContext = createContext(null);
 
@@ -35,8 +37,6 @@ export function AuthProvider({ children }) {
     }
 
     // Real Firebase mode
-    const { onAuthStateChanged } = require('firebase/auth');
-    const { doc, getDoc, setDoc } = require('firebase/firestore');
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       if (firebaseUser) {
@@ -91,7 +91,6 @@ export function AuthProvider({ children }) {
         setUserPreferences(demoGet('selectedCategories', null));
         setLoading(false);
       } else {
-        const { signInWithPopup } = await import('firebase/auth');
         await signInWithPopup(auth, googleProvider);
       }
     } catch (err) {
@@ -108,7 +107,6 @@ export function AuthProvider({ children }) {
         setUserPreferences(null);
         localStorage.removeItem('papertok_user');
       } else {
-        const { signOut: firebaseSignOut } = await import('firebase/auth');
         await firebaseSignOut(auth);
       }
     } catch (err) {
@@ -123,7 +121,6 @@ export function AuthProvider({ children }) {
         demoSet('onboardingComplete', true);
         demoSet('selectedCategories', selectedCategories);
       } else {
-        const { doc, setDoc } = await import('firebase/firestore');
         const userDocRef = doc(db, 'users', user.uid);
         await setDoc(userDocRef, {
           onboardingComplete: true,
