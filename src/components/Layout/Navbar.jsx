@@ -1,24 +1,26 @@
 import { useState, useRef, useEffect } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { Settings2, LogOut } from 'lucide-react';
+import { LogOut, Settings2, Bookmark, Home } from 'lucide-react';
+import EditInterestsModal from '../Settings/EditInterestsModal';
 import './Navbar.css';
 
 export default function Navbar() {
   const { user, signOut } = useAuth();
-  const [showDropdown, setShowDropdown] = useState(false);
-  const dropdownRef = useRef(null);
   const navigate = useNavigate();
+  const location = useLocation();
+  const [showDropdown, setShowDropdown] = useState(false);
+  const [isEditInterestsOpen, setIsEditInterestsOpen] = useState(false);
+  const dropdownRef = useRef(null);
 
-  // Close dropdown on outside click
   useEffect(() => {
-    const handleClick = (e) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) {
+    const handleClickOutside = (event) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
         setShowDropdown(false);
       }
     };
-    document.addEventListener('click', handleClick);
-    return () => document.removeEventListener('click', handleClick);
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   const handleSignOut = async () => {
@@ -37,17 +39,12 @@ export default function Navbar() {
 
         <div className="navbar-right">
           <NavLink to="/" className={({ isActive }) => `navbar-link ${isActive ? 'navbar-link--active' : ''}`} end>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-              <polyline points="9 22 9 12 15 12 15 22" />
-            </svg>
+            <Home size={20} />
             <span>Feed</span>
           </NavLink>
 
           <NavLink to="/lists" className={({ isActive }) => `navbar-link ${isActive ? 'navbar-link--active' : ''}`}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-            </svg>
+            <Bookmark size={20} />
             <span>Listas</span>
           </NavLink>
 
@@ -78,7 +75,7 @@ export default function Navbar() {
                 <div className="navbar-dropdown-divider" />
                 <button
                   className="navbar-dropdown-item"
-                  onClick={() => { navigate('/onboarding'); setShowDropdown(false); }}
+                  onClick={() => { setIsEditInterestsOpen(true); setShowDropdown(false); }}
                 >
                   <Settings2 size={16} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'text-bottom', marginRight: '8px' }} />
                   Editar intereses
@@ -99,17 +96,12 @@ export default function Navbar() {
       {/* Mobile bottom navbar */}
       <nav className="navbar-mobile glass-strong">
         <NavLink to="/" className={({ isActive }) => `navbar-mobile-link ${isActive ? 'navbar-mobile-link--active' : ''}`} end>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            <polyline points="9 22 9 12 15 12 15 22" />
-          </svg>
+          <Home size={24} />
           <span>Feed</span>
         </NavLink>
 
         <NavLink to="/lists" className={({ isActive }) => `navbar-mobile-link ${isActive ? 'navbar-mobile-link--active' : ''}`}>
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
-          </svg>
+          <Bookmark size={24} />
           <span>Listas</span>
         </NavLink>
 
@@ -127,6 +119,11 @@ export default function Navbar() {
           <span>Perfil</span>
         </button>
       </nav>
+
+      <EditInterestsModal 
+        isOpen={isEditInterestsOpen} 
+        onClose={() => setIsEditInterestsOpen(false)} 
+      />
     </>
   );
 }
