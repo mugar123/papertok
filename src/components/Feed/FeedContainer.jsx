@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useFeed } from '../../context/FeedContext';
+import { Atom } from 'lucide-react';
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
 import './FeedContainer.css';
@@ -50,10 +51,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     return (
       <div className="feed-empty">
         <div className="atom-loader">
-          <div className="atom-nucleus"></div>
-          <div className="atom-orbit orbit-1"><div className="atom-electron"></div></div>
-          <div className="atom-orbit orbit-2"><div className="atom-electron"></div></div>
-          <div className="atom-orbit orbit-3"><div className="atom-electron"></div></div>
+          <Atom size={80} strokeWidth={1} className="atom-loader-icon" />
+          <div className="atom-orbit-track"><div className="atom-electron"></div></div>
         </div>
         <h2>{loading ? 'Sintetizando papers...' : 'Buscando descubrimientos...'}</h2>
         <p>{loading ? 'Conectando con arXiv para traer lo último en ciencia' : 'Aún no hay papers en tus categorías. Prueba a ampliar tus intereses.'}</p>

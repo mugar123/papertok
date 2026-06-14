@@ -53,61 +53,56 @@
 /* ── Atom Loader ── */
 .atom-loader {
   position: relative;
-  width: 100px;
-  height: 100px;
+  width: 120px;
+  height: 120px;
   margin: 0 auto var(--space-8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
   perspective: 800px;
   transform-style: preserve-3d;
 }
 
-.atom-nucleus {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 20px;
-  height: 20px;
-  background: var(--accent-primary);
-  border-radius: 50%;
-  transform: translate(-50%, -50%);
-  box-shadow: 0 0 15px var(--accent-primary), 0 0 30px var(--accent-secondary);
+.atom-loader-icon {
+  color: var(--accent-primary);
   animation: pulseNucleus 2s infinite alternate ease-in-out;
+  filter: drop-shadow(0 0 15px var(--accent-primary));
+  z-index: 2;
 }
 
-.atom-orbit {
+.atom-orbit-track {
   position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: 10px;
+  left: 10px;
+  width: 100px;
+  height: 100px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.1);
   transform-style: preserve-3d;
+  transform: rotateX(70deg) rotateY(25deg);
+  animation: spinOrbit 2.5s linear infinite;
+  z-index: 1;
 }
-
-.orbit-1 { transform: rotateX(65deg) rotateY(0deg); animation: spinOrbit1 3s linear infinite; }
-.orbit-2 { transform: rotateX(65deg) rotateY(60deg); animation: spinOrbit2 3s linear infinite; }
-.orbit-3 { transform: rotateX(65deg) rotateY(120deg); animation: spinOrbit3 3s linear infinite; }
 
 .atom-electron {
   position: absolute;
-  top: -5px;
+  top: -6px;
   left: 50%;
-  width: 8px;
-  height: 8px;
+  width: 12px;
+  height: 12px;
   background: #fff;
   border-radius: 50%;
   transform: translateX(-50%);
-  box-shadow: 0 0 10px #fff, 0 0 20px var(--accent-primary);
+  box-shadow: 0 0 15px #fff, 0 0 25px var(--accent-primary);
 }
 
 @keyframes pulseNucleus {
-  0% { transform: translate(-50%, -50%) scale(0.9); }
-  100% { transform: translate(-50%, -50%) scale(1.1); box-shadow: 0 0 25px var(--accent-primary), 0 0 45px var(--accent-secondary); }
+  0% { transform: scale(0.95); filter: drop-shadow(0 0 10px var(--accent-primary)); }
+  100% { transform: scale(1.05); filter: drop-shadow(0 0 25px var(--accent-primary)); }
 }
 
-@keyframes spinOrbit1 { 100% { transform: rotateX(65deg) rotateY(0deg) rotateZ(360deg); } }
-@keyframes spinOrbit2 { 100% { transform: rotateX(65deg) rotateY(60deg) rotateZ(360deg); } }
-@keyframes spinOrbit3 { 100% { transform: rotateX(65deg) rotateY(120deg) rotateZ(360deg); } }
+@keyframes spinOrbit {
+  100% { transform: rotateX(70deg) rotateY(25deg) rotateZ(360deg); }
+}
 
 .feed-empty h2 {
   font-family: var(--font-heading);
