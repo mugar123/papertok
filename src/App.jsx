@@ -46,8 +46,10 @@ function AppContent() {
           path="/lists"
           element={
             <ProtectedRoute>
-              <Navbar />
-              <ListsPage onOpenPdf={setPdfPaper} />
+              <FeedProvider>
+                <Navbar />
+                <ListsPage onOpenPdf={setPdfPaper} />
+              </FeedProvider>
             </ProtectedRoute>
           }
         />

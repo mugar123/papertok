@@ -6,7 +6,7 @@ import SkeletonCard from './SkeletonCard';
 import './FeedContainer.css';
 
 export default function FeedContainer({ onOpenPdf, onSaveToList }) {
-  const { papers, loading, error, hasMore, loadMore, refreshFeed, feedMode, setFeedMode } = useFeed();
+  const { papers, loading, error, hasMore, loadMore, refreshFeed } = useFeed();
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -77,25 +77,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
 
   return (
     <div className="feed-wrapper">
-      {/* Feed Mode Selector */}
-      <div className="feed-top-bar">
-        <div className="feed-mode-selector glass" data-mode={feedMode}>
-          <button
-            className={`feed-mode-btn ${feedMode === 'recent' ? 'active' : ''}`}
-            onClick={() => setFeedMode('recent')}
-          >
-            Recientes
-          </button>
-          <button
-            className={`feed-mode-btn ${feedMode === 'top' ? 'active' : ''}`}
-            onClick={() => setFeedMode('top')}
-          >
-            Destacados
-          </button>
-          <div className="feed-mode-slider" style={{ transform: feedMode === 'top' ? 'translateX(100%)' : 'translateX(0)' }} />
-        </div>
-      </div>
-
       <div className="feed-container" ref={feedRef}>
         {papers.map((paper) => (
           <div key={paper.id} className="feed-snap-item">
@@ -116,20 +97,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
         {/* Sentinel for infinite scroll */}
         {hasMore && <div ref={sentinelRef} className="feed-sentinel" />}
       </div>
-
-      {/* Floating refresh button */}
-      <button
-        className={`feed-refresh-btn glass ${isRefreshing ? 'feed-refresh-btn--spinning' : ''}`}
-        onClick={handleRefresh}
-        title="Recargar feed"
-      >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 2v6h-6" />
-          <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
-          <path d="M3 22v-6h6" />
-          <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
-        </svg>
-      </button>
     </div>
   );
 }
