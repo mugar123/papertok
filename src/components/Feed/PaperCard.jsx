@@ -21,6 +21,7 @@ const AREA_BG_ICONS = {
 export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
   const { toggleLike, markNotInterested, likedPaperIds, savedPaperIds } = useFeed();
   const [expanded, setExpanded] = useState(false);
+  const [showTooltip, setShowTooltip] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
   const lastTap = useRef(0);
@@ -220,15 +221,27 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
               </div>
             ))}
           </div>
-          <div className="pc-author-names" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <span>{formatAuthors(paper.authors)}</span>
+          <div className="pc-author-names" style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
+            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatAuthors(paper.authors)}</span>
             {(paper.doi || paper.journalRef) && (
-              <BadgeCheck 
-                size={14} 
-                className="pc-verified-badge" 
-                style={{ color: '#1da1f2', flexShrink: 0, cursor: 'help' }} 
-                title={`Publicado en: ${paper.journalRef || 'Revista científica peer-reviewed'}${paper.doi ? `\nDOI: ${paper.doi}` : ''}`}
-              />
+              <div 
+                className="pc-verified-wrapper"
+                onMouseEnter={() => setShowTooltip(true)}
+                onMouseLeave={() => setShowTooltip(false)}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <BadgeCheck 
+                  size={14} 
+                  className="pc-verified-badge" 
+                  style={{ color: '#1da1f2', flexShrink: 0, cursor: 'help' }} 
+                />
+                <div className={`pc-tooltip ${showTooltip ? 'pc-tooltip--visible' : ''}`}>
+                  <div className="pc-tooltip-content">
+                    <p><strong>Publicado en:</strong><br/>{paper.journalRef || 'Revista científica peer-reviewed'}</p>
+                    {paper.doi && <p><strong>DOI:</strong><br/>{paper.doi}</p>}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
         </div>

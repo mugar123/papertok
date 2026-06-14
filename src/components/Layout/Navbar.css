@@ -62,7 +62,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 100px;
+  width: 110px;
 }
 
 .navbar-tab:hover {
@@ -78,7 +78,7 @@
   top: 4px;
   left: 4px;
   height: calc(100% - 8px);
-  width: 100px; /* matches min-width of tab */
+  width: 110px;
   background: rgba(255, 255, 255, 0.1);
   border-radius: 20px;
   transition: transform 0.3s cubic-bezier(0.25, 1, 0.5, 1);
@@ -221,13 +221,13 @@
   }
   
   .navbar-tab {
-    min-width: 80px;
+    width: 85px;
     font-size: var(--fs-xs);
     padding: 6px 12px;
   }
   
   .navbar-slider {
-    width: 80px;
+    width: 85px;
   }
 }
 
