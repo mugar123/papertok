@@ -78,9 +78,9 @@
   font-size: 2rem;
   left: var(--x);
   top: var(--y);
-  opacity: 0.15;
-  animation: paperFloat 8s ease-in-out infinite;
-  animation-delay: var(--delay);
+  animation: paperFloat var(--duration, 8s) ease-in-out infinite;
+  animation-delay: var(--delay, 0s);
+  will-change: transform;
 }
 
 @keyframes paperFloat {

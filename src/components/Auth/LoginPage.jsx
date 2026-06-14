@@ -1,8 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
-import { FileText, Bookmark, Microscope, FlaskConical, Atom, Dna } from 'lucide-react';
+import { FileText, Bookmark, Microscope, FlaskConical, Atom, Dna, Brain, Cpu, Database, Orbit, Network, Activity } from 'lucide-react';
 import './LoginPage.css';
+
+const FLOATING_ICONS = [FileText, Bookmark, Microscope, FlaskConical, Atom, Dna, Brain, Cpu, Database, Orbit, Network, Activity];
 
 export default function LoginPage() {
   const { signInWithGoogle, error, user, onboardingComplete } = useAuth();
@@ -26,6 +28,19 @@ export default function LoginPage() {
     setIsLoading(false);
   };
 
+  const floatingElements = useMemo(() => {
+    return Array.from({ length: 25 }).map((_, i) => {
+      const Icon = FLOATING_ICONS[i % FLOATING_ICONS.length];
+      const x = Math.floor(Math.random() * 100);
+      const y = Math.floor(Math.random() * 100);
+      const delay = (Math.random() * 5).toFixed(2);
+      const size = Math.floor(Math.random() * 24) + 20; // 20 to 44
+      const opacity = (Math.random() * 0.15 + 0.05).toFixed(2); // 0.05 to 0.20
+      const duration = (Math.random() * 4 + 8).toFixed(2); // 8s to 12s
+      return { id: i, Icon, x, y, delay, size, opacity, duration };
+    });
+  }, []);
+
   return (
     <div className="login-page">
       {/* Animated background */}
@@ -37,12 +52,21 @@ export default function LoginPage() {
 
       {/* Floating paper icons */}
       <div className="floating-papers">
-        <span className="floating-paper" style={{ '--delay': '0s', '--x': '10%', '--y': '20%', color: 'rgba(255,255,255,0.4)' }}><FileText size={32} /></span>
-        <span className="floating-paper" style={{ '--delay': '1.5s', '--x': '80%', '--y': '15%', color: 'rgba(255,255,255,0.4)' }}><Bookmark size={32} /></span>
-        <span className="floating-paper" style={{ '--delay': '3s', '--x': '25%', '--y': '70%', color: 'rgba(255,255,255,0.4)' }}><Microscope size={32} /></span>
-        <span className="floating-paper" style={{ '--delay': '0.8s', '--x': '70%', '--y': '75%', color: 'rgba(255,255,255,0.4)' }}><FlaskConical size={32} /></span>
-        <span className="floating-paper" style={{ '--delay': '2.2s', '--x': '50%', '--y': '30%', color: 'rgba(255,255,255,0.4)' }}><Atom size={32} /></span>
-        <span className="floating-paper" style={{ '--delay': '4s', '--x': '90%', '--y': '50%', color: 'rgba(255,255,255,0.4)' }}><Dna size={32} /></span>
+        {floatingElements.map((el) => (
+          <span
+            key={el.id}
+            className="floating-paper"
+            style={{
+              '--delay': `${el.delay}s`,
+              '--duration': `${el.duration}s`,
+              '--x': `${el.x}%`,
+              '--y': `${el.y}%`,
+              color: `rgba(255,255,255,${el.opacity})`,
+            }}
+          >
+            <el.Icon size={el.size} />
+          </span>
+        ))}
       </div>
 
       {/* Main content */}

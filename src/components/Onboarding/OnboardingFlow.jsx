@@ -121,7 +121,7 @@ export default function OnboardingFlow() {
                   '--delay': `${index * 0.06}s`,
                 }}
               >
-                <span className="area-card-icon">{area.icon}</span>
+                <span className="area-card-icon"><area.icon size={36} strokeWidth={1.5} /></span>
                 <span className="area-card-label">{area.label}</span>
                 <span className="area-card-desc">{area.description}</span>
                 {selectedAreas.has(key) && (
@@ -148,7 +148,7 @@ export default function OnboardingFlow() {
               return (
                 <div key={areaKey} className="subcat-section">
                   <div className="subcat-section-header">
-                    <span className="subcat-section-icon">{area.icon}</span>
+                    <span className="subcat-section-icon"><area.icon size={28} strokeWidth={1.5} /></span>
                     <h2 className="subcat-section-title">{area.label}</h2>
                     <button
                       className={`subcat-select-all ${allSelected ? 'subcat-select-all--active' : ''}`}
@@ -204,7 +204,8 @@ export default function OnboardingFlow() {
               if (count === 0) return null;
               return (
                 <span key={areaKey} className="confirm-badge" style={{ '--area-gradient': area.gradient }}>
-                  {area.icon} {area.label} ({count})
+                  <area.icon size={16} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'text-bottom', marginRight: '4px' }} />
+                  {area.label} ({count})
                 </span>
               );
             })}

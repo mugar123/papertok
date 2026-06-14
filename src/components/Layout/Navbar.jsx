@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { Settings2, LogOut } from 'lucide-react';
 import './Navbar.css';
 
 export default function Navbar() {
@@ -79,13 +80,15 @@ export default function Navbar() {
                   className="navbar-dropdown-item"
                   onClick={() => { navigate('/onboarding'); setShowDropdown(false); }}
                 >
-                  🎯 Editar intereses
+                  <Settings2 size={16} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'text-bottom', marginRight: '8px' }} />
+                  Editar intereses
                 </button>
                 <button
                   className="navbar-dropdown-item navbar-dropdown-item--danger"
                   onClick={handleSignOut}
                 >
-                  🚪 Cerrar sesión
+                  <LogOut size={16} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'text-bottom', marginRight: '8px' }} />
+                  Cerrar sesión
                 </button>
               </div>
             )}
