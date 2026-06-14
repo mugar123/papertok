@@ -32,12 +32,14 @@ export default function Navbar() {
     <>
       {/* Desktop top navbar */}
       <nav className="navbar glass-strong">
-        <NavLink to="/" className="navbar-logo">
-          <span className="gradient-text">Paper</span>
-          <span className="logo-tok">Tok</span>
-        </NavLink>
+        <div className="navbar-left">
+          <NavLink to="/" className="navbar-logo">
+            <span className="gradient-text">Paper</span>
+            <span className="logo-tok">Tok</span>
+          </NavLink>
+        </div>
 
-        <div className="navbar-right">
+        <div className="navbar-center">
           <NavLink to="/" className={({ isActive }) => `navbar-link ${isActive ? 'navbar-link--active' : ''}`} end>
             <Home size={20} />
             <span>Feed</span>
@@ -47,7 +49,9 @@ export default function Navbar() {
             <Bookmark size={20} />
             <span>Listas</span>
           </NavLink>
+        </div>
 
+        <div className="navbar-right">
           {/* Profile */}
           <div className="navbar-profile" ref={dropdownRef}>
             <button
