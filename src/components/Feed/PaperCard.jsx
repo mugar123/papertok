@@ -252,7 +252,11 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
           <div className="pc-author-names" style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatAuthors(paper.authors)}</span>
             {(paper.doi || paper.journalRef) && (
-              <div title="Este artículo está verificado" style={{ display: 'flex' }}>
+              <div 
+                className="pc-tooltip" 
+                data-tooltip="Este artículo está verificado" 
+                style={{ display: 'flex' }}
+              >
                 <BadgeCheck 
                   size={14} 
                   className="pc-verified-badge" 
