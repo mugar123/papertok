@@ -2,12 +2,13 @@ import { useState, useRef, useCallback, useMemo } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
 import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity } from 'lucide-react';
+import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
 import './PaperCard.css';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
-  physics: [Atom, Orbit, Zap, Activity, FlaskConical, Microscope],
+  physics: [AnimatedAtom, Orbit, Zap, Activity, FlaskConical, Microscope],
   cs: [Monitor, Cpu, Database, Brain, Network, Binary],
   math: [Calculator, Sigma, Activity, Orbit, Brain, Network],
   'q-bio': [Dna, Microscope, FlaskConical, Activity, Brain, Database],
@@ -160,7 +161,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
         {bgIcons.map((item) => (
           <span
             key={item.id}
-            className={`pc-bg-icon ${item.Icon === Atom ? 'pc-bg-icon--atom' : ''}`}
+            className="pc-bg-icon"
             style={{
               '--bg-x': `${item.x}%`,
               '--bg-y': `${item.y}%`,
@@ -168,15 +169,9 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
               '--bg-duration': `${item.duration}s`,
               '--bg-rotate': `${item.rotate}deg`,
               '--bg-opacity': item.opacity,
-              '--bg-size': `${item.size}px`,
             }}
           >
             <item.Icon size={item.size} strokeWidth={1} />
-            {item.Icon === Atom && (
-              <span className="pc-bg-electron-orbit">
-                <span className="pc-bg-electron" />
-              </span>
-            )}
           </span>
         ))}
       </div>
