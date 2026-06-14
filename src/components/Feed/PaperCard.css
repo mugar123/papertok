@@ -59,15 +59,6 @@
   filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.15));
 }
 
-.pc-bg-icon--main {
-  left: 50%;
-  top: 20%;
-  opacity: 0.07;
-  transform: translateX(-50%);
-  animation: bgIconFloat 10s ease-in-out infinite;
-  filter: drop-shadow(0 0 30px rgba(255, 255, 255, 0.2));
-}
-
 @keyframes bgIconDrift {
   0%, 100% {
     transform: rotate(var(--bg-rotate, 0deg)) translateY(0) scale(1);
@@ -77,15 +68,6 @@
   }
   66% {
     transform: rotate(var(--bg-rotate, 0deg)) translateY(8px) scale(0.97);
-  }
-}
-
-@keyframes bgIconFloat {
-  0%, 100% {
-    transform: translateX(-50%) translateY(0) scale(1) rotate(-3deg);
-  }
-  50% {
-    transform: translateX(-50%) translateY(-18px) scale(1.08) rotate(3deg);
   }
 }
 
@@ -586,12 +568,6 @@
   .pc-read-btn--secondary {
     padding: 10px 14px;
   }
-
-  .pc-bg-icon--main svg {
-    width: 60px;
-    height: 60px;
-  }
-}
 
 @media (min-width: 768px) {
   .pc-body {

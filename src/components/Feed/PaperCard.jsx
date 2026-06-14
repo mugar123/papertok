@@ -173,10 +173,6 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
             <item.Icon size={item.size} strokeWidth={1} />
           </span>
         ))}
-        {/* Main central icon — larger and brighter */}
-        <span className="pc-bg-icon pc-bg-icon--main">
-          <areaInfo.icon size={90} strokeWidth={0.8} />
-        </span>
       </div>
 
       {/* Animated mesh grid lines */}
