@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
+import { Share2, Clock, FileText, Check } from 'lucide-react';
 import './PaperCard.css';
 
 export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
@@ -53,7 +54,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
         return area;
       }
     }
-    return { icon: '📄', gradient: 'linear-gradient(135deg, #667eea, #764ba2)' };
+    return { icon: FileText, gradient: 'linear-gradient(135deg, #667eea, #764ba2)' };
   };
 
   const areaInfo = getAreaInfo();
@@ -110,7 +111,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
       <div className="pc-bg-overlay" />
 
       {/* Floating category icon */}
-      <div className="pc-area-icon">{areaInfo.icon}</div>
+      <div className="pc-area-icon"><areaInfo.icon size={80} strokeWidth={1.5} /></div>
 
       {/* Content area - bottom aligned like TikTok */}
       <div className="pc-body">
@@ -120,7 +121,9 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
           <span className="pc-meta-dot">·</span>
           <span className="pc-date">{formatDate(paper.published)}</span>
           <span className="pc-meta-dot">·</span>
-          <span className="pc-readtime">📖 {readTime} min</span>
+          <span className="pc-readtime" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Clock size={12} /> {readTime} min
+          </span>
         </div>
 
         {/* Title */}
@@ -175,8 +178,9 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
           <button
             className="pc-read-btn pc-read-btn--secondary"
             onClick={(e) => { e.stopPropagation(); handleShare(e); }}
+            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
-            {copied ? '✓ Copiado' : '↗ Compartir'}
+            {copied ? <><Check size={16} /> Copiado</> : <><Share2 size={16} /> Compartir</>}
           </button>
         </div>
       </div>

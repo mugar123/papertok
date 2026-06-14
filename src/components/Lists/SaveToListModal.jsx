@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { IS_DEMO, db } from '../../services/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
+import { getIcon, AVAILABLE_ICONS } from '../../utils/icons';
 import './SaveToListModal.css';
 
 // Demo storage helpers
@@ -21,7 +22,7 @@ export default function SaveToListModal({ paper, onClose }) {
   const [lists, setLists] = useState([]);
   const [paperLists, setPaperLists] = useState(new Set());
   const [newListName, setNewListName] = useState('');
-  const [newListEmoji, setNewListEmoji] = useState('📂');
+  const [newListIcon, setNewListIcon] = useState('Folder');
   const [loading, setLoading] = useState(true);
   const dialogRef = useRef(null);
 
@@ -127,7 +128,7 @@ export default function SaveToListModal({ paper, onClose }) {
     if (!newListName.trim()) return;
     const listId = `list_${Date.now()}`;
     const newList = {
-      id: listId, name: newListName.trim(), emoji: newListEmoji,
+      id: listId, name: newListName.trim(), emoji: newListIcon,
       paperIds: [paper.id], createdAt: new Date().toISOString(),
     };
 
@@ -153,7 +154,6 @@ export default function SaveToListModal({ paper, onClose }) {
   };
 
   const handleClose = () => { dialogRef.current?.close(); onClose(); };
-  const emojis = ['📂', '⭐', '🔬', '🧪', '📚', '🎯', '💡', '🧬', '⚛️', '🔥'];
 
   return (
     <dialog ref={dialogRef} className="save-modal-dialog" onClose={handleClose}
@@ -174,7 +174,12 @@ export default function SaveToListModal({ paper, onClose }) {
                 <input type="checkbox" checked={paperLists.has(list.id)}
                   onChange={() => handleToggleList(list.id)} />
                 <span className="save-modal-checkbox" />
-                <span className="save-modal-list-emoji">{list.emoji}</span>
+                <span className="save-modal-list-emoji">
+                  {(() => {
+                    const Icon = getIcon(list.emoji);
+                    return <Icon size={20} strokeWidth={1.5} />;
+                  })()}
+                </span>
                 <span className="save-modal-list-name">{list.name}</span>
                 <span className="save-modal-list-count">{list.paperIds?.length || 0}</span>
               </label>
@@ -187,11 +192,16 @@ export default function SaveToListModal({ paper, onClose }) {
 
         <div className="save-modal-create">
           <div className="save-modal-emoji-picker">
-            {emojis.map((emoji) => (
-              <button key={emoji}
-                className={`save-modal-emoji-btn ${newListEmoji === emoji ? 'active' : ''}`}
-                onClick={() => setNewListEmoji(emoji)}>{emoji}</button>
-            ))}
+            {AVAILABLE_ICONS.map((iconName) => {
+              const Icon = getIcon(iconName);
+              return (
+                <button key={iconName}
+                  className={`save-modal-emoji-btn ${newListIcon === iconName ? 'active' : ''}`}
+                  onClick={() => setNewListIcon(iconName)}>
+                  <Icon size={20} strokeWidth={1.5} />
+                </button>
+              );
+            })}
           </div>
           <div className="save-modal-create-row">
             <input type="text" placeholder="Nueva lista..." value={newListName}

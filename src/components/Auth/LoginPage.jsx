@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
+import { FileText, Bookmark, Microscope, FlaskConical, Atom, Dna } from 'lucide-react';
 import './LoginPage.css';
 
 export default function LoginPage() {
@@ -36,12 +37,12 @@ export default function LoginPage() {
 
       {/* Floating paper icons */}
       <div className="floating-papers">
-        <span className="floating-paper" style={{ '--delay': '0s', '--x': '10%', '--y': '20%' }}>📄</span>
-        <span className="floating-paper" style={{ '--delay': '1.5s', '--x': '80%', '--y': '15%' }}>📑</span>
-        <span className="floating-paper" style={{ '--delay': '3s', '--x': '25%', '--y': '70%' }}>🔬</span>
-        <span className="floating-paper" style={{ '--delay': '0.8s', '--x': '70%', '--y': '75%' }}>🧪</span>
-        <span className="floating-paper" style={{ '--delay': '2.2s', '--x': '50%', '--y': '30%' }}>⚛️</span>
-        <span className="floating-paper" style={{ '--delay': '4s', '--x': '90%', '--y': '50%' }}>🧬</span>
+        <span className="floating-paper" style={{ '--delay': '0s', '--x': '10%', '--y': '20%', color: 'rgba(255,255,255,0.4)' }}><FileText size={32} /></span>
+        <span className="floating-paper" style={{ '--delay': '1.5s', '--x': '80%', '--y': '15%', color: 'rgba(255,255,255,0.4)' }}><Bookmark size={32} /></span>
+        <span className="floating-paper" style={{ '--delay': '3s', '--x': '25%', '--y': '70%', color: 'rgba(255,255,255,0.4)' }}><Microscope size={32} /></span>
+        <span className="floating-paper" style={{ '--delay': '0.8s', '--x': '70%', '--y': '75%', color: 'rgba(255,255,255,0.4)' }}><FlaskConical size={32} /></span>
+        <span className="floating-paper" style={{ '--delay': '2.2s', '--x': '50%', '--y': '30%', color: 'rgba(255,255,255,0.4)' }}><Atom size={32} /></span>
+        <span className="floating-paper" style={{ '--delay': '4s', '--x': '90%', '--y': '50%', color: 'rgba(255,255,255,0.4)' }}><Dna size={32} /></span>
       </div>
 
       {/* Main content */}

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { IS_DEMO, db } from '../../services/firebase';
 import { useAuth } from '../../context/AuthContext';
 import { getCategoryLabel } from '../../data/categories';
+import { getIcon } from '../../utils/icons';
 import './ListsPage.css';
 
 function demoGet(key, fallback) {
@@ -55,7 +56,7 @@ export default function ListsPage({ onOpenPdf }) {
         }
 
         const allLists = [
-          { id: '__favorites__', name: 'Favoritos', emoji: '❤️',
+          { id: '__favorites__', name: 'Favoritos', emoji: 'Heart',
             paperIds: likedPaperIds, createdAt: 'default' },
           ...userLists,
         ];
@@ -111,7 +112,13 @@ export default function ListsPage({ onOpenPdf }) {
             if (!list) return null;
             return (
               <>
-                <h2 className="lists-expanded-title">{list.emoji} {list.name}</h2>
+                <h2 className="lists-expanded-title">
+                  {(() => {
+                    const Icon = getIcon(list.emoji);
+                    return <Icon size={24} strokeWidth={2} style={{ display: 'inline-block', verticalAlign: 'middle', marginRight: '8px' }} />;
+                  })()}
+                  {list.name}
+                </h2>
                 <div className="lists-expanded-papers">
                   {(list.paperIds || []).map((paperId) => {
                     const paper = savedPapers[paperId];
@@ -149,7 +156,12 @@ export default function ListsPage({ onOpenPdf }) {
           {lists.map((list) => (
             <div key={list.id} className="list-card glass" onClick={() => setExpandedList(list.id)}>
               <div className="list-card-top">
-                <span className="list-card-emoji">{list.emoji}</span>
+                <span className="list-card-emoji">
+                  {(() => {
+                    const Icon = getIcon(list.emoji);
+                    return <Icon size={32} strokeWidth={1.5} />;
+                  })()}
+                </span>
                 {list.id !== '__favorites__' && (
                   <button className="list-card-delete" onClick={(e) => { e.stopPropagation(); handleDeleteList(list.id); }}
                     title="Eliminar lista">✕</button>

@@ -3,11 +3,22 @@
  * Complete mapping of scientific areas to arXiv categories.
  */
 
+import { 
+  Atom, 
+  Monitor, 
+  Calculator, 
+  Dna, 
+  BarChart2, 
+  TrendingUp, 
+  Zap, 
+  CircleDollarSign 
+} from 'lucide-react';
+
 export const CATEGORIES = {
   physics: {
     label: 'Física',
     labelEn: 'Physics',
-    icon: '⚛️',
+    icon: Atom,
     gradient: 'var(--gradient-physics)',
     description: 'De partículas subatómicas a galaxias lejanas',
     subcategories: {
@@ -42,7 +53,7 @@ export const CATEGORIES = {
   cs: {
     label: 'Ciencias de la Computación',
     labelEn: 'Computer Science',
-    icon: '💻',
+    icon: Monitor,
     gradient: 'var(--gradient-cs)',
     description: 'IA, algoritmos, redes y más',
     subcategories: {
@@ -72,7 +83,7 @@ export const CATEGORIES = {
   math: {
     label: 'Matemáticas',
     labelEn: 'Mathematics',
-    icon: '📐',
+    icon: Calculator,
     gradient: 'var(--gradient-math)',
     description: 'El lenguaje del universo',
     subcategories: {
@@ -98,7 +109,7 @@ export const CATEGORIES = {
   'q-bio': {
     label: 'Biología Cuantitativa',
     labelEn: 'Quantitative Biology',
-    icon: '🧬',
+    icon: Dna,
     gradient: 'var(--gradient-bio)',
     description: 'Genómica, neurociencia y biología computacional',
     subcategories: {
@@ -116,7 +127,7 @@ export const CATEGORIES = {
   stat: {
     label: 'Estadística',
     labelEn: 'Statistics',
-    icon: '📊',
+    icon: BarChart2,
     gradient: 'var(--gradient-stat)',
     description: 'Machine learning, metodología y aplicaciones',
     subcategories: {
@@ -130,7 +141,7 @@ export const CATEGORIES = {
   econ: {
     label: 'Economía',
     labelEn: 'Economics',
-    icon: '📈',
+    icon: TrendingUp,
     gradient: 'var(--gradient-econ)',
     description: 'Econometría y teoría económica',
     subcategories: {
@@ -142,7 +153,7 @@ export const CATEGORIES = {
   eess: {
     label: 'Ingeniería Eléctrica',
     labelEn: 'Electrical Engineering',
-    icon: '⚡',
+    icon: Zap,
     gradient: 'var(--gradient-eess)',
     description: 'Señales, imagen, audio y sistemas',
     subcategories: {
@@ -155,7 +166,7 @@ export const CATEGORIES = {
   'q-fin': {
     label: 'Finanzas Cuantitativas',
     labelEn: 'Quantitative Finance',
-    icon: '💹',
+    icon: CircleDollarSign,
     gradient: 'var(--gradient-qfin)',
     description: 'Trading algorítmico, riesgo y portfolios',
     subcategories: {
