@@ -25,6 +25,18 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
   const [copied, setCopied] = useState(false);
   const [isMarkingRead, setIsMarkingRead] = useState(false);
   const lastTap = useRef(0);
+  const abstractRef = useRef(null);
+
+  const toggleExpanded = (e, newState) => {
+    e.stopPropagation();
+    setExpanded(newState);
+    if (!newState && abstractRef.current) {
+      // Small delay to allow the DOM to start updating before resetting scroll
+      setTimeout(() => {
+        if (abstractRef.current) abstractRef.current.scrollTop = 0;
+      }, 50);
+    }
+  };
 
   const isLiked = likedPaperIds.has(paper.id);
   const isSaved = savedPaperIds.has(paper.id);
@@ -269,8 +281,9 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
 
         {/* Abstract */}
         <div
+          ref={abstractRef}
           className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''}`}
-          onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+          onClick={(e) => toggleExpanded(e, !expanded)}
         >
           <p><Latex>{paper.summary}</Latex></p>
           {!expanded && paper.summary && paper.summary.length > 200 && (
@@ -279,12 +292,12 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
         </div>
 
         {!expanded && paper.summary && paper.summary.length > 200 && (
-          <button className="pc-expand-btn" onClick={(e) => { e.stopPropagation(); setExpanded(true); }}>
+          <button className="pc-expand-btn" onClick={(e) => toggleExpanded(e, true)}>
             Leer más ↓
           </button>
         )}
         {expanded && (
-          <button className="pc-expand-btn" onClick={(e) => { e.stopPropagation(); setExpanded(false); }}>
+          <button className="pc-expand-btn" onClick={(e) => toggleExpanded(e, false)}>
             Mostrar menos ↑
           </button>
         )}

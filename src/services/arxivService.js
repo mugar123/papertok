@@ -65,16 +65,22 @@ function parseArxivXml(xmlText) {
 }
 
 /**
- * Fetch papers from arXiv by categories.
+ * Fetch papers from arXiv by categories or raw query.
  */
-export async function fetchPapers(categories, start = 0, maxResults = 20, mode = 'recent') {
-  if (!categories || categories.length === 0) return [];
+export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20, mode = 'recent') {
+  if (!categoriesOrQuery || categoriesOrQuery.length === 0) return [];
 
-  const categoryQuery = `(${categories.map((cat) => `cat:${cat}`).join(' OR ')})`;
+  let searchQuery = '';
+  if (Array.isArray(categoriesOrQuery)) {
+    searchQuery = `(${categoriesOrQuery.map((cat) => `cat:${cat}`).join(' OR ')})`;
+  } else {
+    searchQuery = categoriesOrQuery;
+  }
+
   const sortBy = mode === 'top' ? 'relevance' : 'submittedDate';
 
   const params = new URLSearchParams({
-    search_query: categoryQuery,
+    search_query: searchQuery,
     start: start.toString(),
     max_results: maxResults.toString(),
     sortBy,
