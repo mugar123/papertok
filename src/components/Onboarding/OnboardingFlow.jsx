@@ -8,6 +8,7 @@ export default function OnboardingFlow() {
   const [step, setStep] = useState(1);
   const [selectedAreas, setSelectedAreas] = useState(new Set());
   const [selectedSubcategories, setSelectedSubcategories] = useState(new Set());
+  const [animatingChip, setAnimatingChip] = useState(null);
   const [saving, setSaving] = useState(false);
   const { completeOnboarding } = useAuth();
   const navigate = useNavigate();
@@ -32,6 +33,11 @@ export default function OnboardingFlow() {
   };
 
   const toggleSubcategory = (catId) => {
+    setAnimatingChip(catId);
+    setTimeout(() => {
+      setAnimatingChip((prev) => (prev === catId ? null : prev));
+    }, 400);
+
     setSelectedSubcategories((prev) => {
       const next = new Set(prev);
       if (next.has(catId)) next.delete(catId);
@@ -155,7 +161,7 @@ export default function OnboardingFlow() {
                     {Object.entries(area.subcategories).map(([catId, cat]) => (
                       <button
                         key={catId}
-                        className={`subcat-chip ${selectedSubcategories.has(catId) ? 'subcat-chip--selected' : ''}`}
+                        className={`subcat-chip ${selectedSubcategories.has(catId) ? 'subcat-chip--selected' : ''} ${animatingChip === catId ? 'subcat-chip--animating' : ''}`}
                         onClick={() => toggleSubcategory(catId)}
                         style={{ '--area-gradient': area.gradient }}
                       >

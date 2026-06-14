@@ -24,6 +24,7 @@ export function FeedProvider({ children }) {
   const [error, setError] = useState(null);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
+  const [feedMode, setFeedMode] = useState('recent'); // 'recent' or 'top'
 
   const [likedPaperIds, setLikedPaperIds] = useState(new Set());
   const [notInterestedIds, setNotInterestedIds] = useState(new Set());
@@ -75,7 +76,7 @@ export function FeedProvider({ children }) {
     const currentPage = reset ? 0 : page;
 
     try {
-      const newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE);
+      const newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, feedMode);
       const filtered = newPapers.filter((p) => !notInterestedIds.has(p.id));
 
       if (reset) {
@@ -95,7 +96,7 @@ export function FeedProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, [userPreferences, page, loading, notInterestedIds]);
+  }, [userPreferences, page, loading, notInterestedIds, feedMode]);
 
   // Initial load
   useEffect(() => {
@@ -103,6 +104,17 @@ export function FeedProvider({ children }) {
       loadPapers(true);
     }
   }, [userPreferences]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Reload when feed mode changes
+  useEffect(() => {
+    if (userPreferences && userPreferences.length > 0) {
+      clearCache();
+      setPapers([]);
+      setPage(0);
+      setHasMore(true);
+      setTimeout(() => loadPapers(true), 0);
+    }
+  }, [feedMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadMore = useCallback(() => {
     if (hasMore && !loading) loadPapers(false);
@@ -189,6 +201,7 @@ export function FeedProvider({ children }) {
   const value = {
     papers, loading, error, hasMore,
     likedPaperIds, notInterestedIds, savedPaperIds,
+    feedMode, setFeedMode,
     loadPapers, loadMore, refreshFeed,
     toggleLike, markNotInterested, markSaved,
   };

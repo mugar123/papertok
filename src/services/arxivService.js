@@ -67,16 +67,17 @@ function parseArxivXml(xmlText) {
 /**
  * Fetch papers from arXiv by categories.
  */
-export async function fetchPapers(categories, start = 0, maxResults = 20) {
+export async function fetchPapers(categories, start = 0, maxResults = 20, mode = 'recent') {
   if (!categories || categories.length === 0) return [];
 
   const categoryQuery = `(${categories.map((cat) => `cat:${cat}`).join(' OR ')})`;
+  const sortBy = mode === 'top' ? 'relevance' : 'submittedDate';
 
   const params = new URLSearchParams({
     search_query: categoryQuery,
     start: start.toString(),
     max_results: maxResults.toString(),
-    sortBy: 'submittedDate',
+    sortBy,
     sortOrder: 'descending',
   });
 

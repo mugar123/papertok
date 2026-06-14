@@ -5,7 +5,7 @@ import SkeletonCard from './SkeletonCard';
 import './FeedContainer.css';
 
 export default function FeedContainer({ onOpenPdf, onSaveToList }) {
-  const { papers, loading, error, hasMore, loadMore, refreshFeed } = useFeed();
+  const { papers, loading, error, hasMore, loadMore, refreshFeed, feedMode, setFeedMode } = useFeed();
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -61,6 +61,24 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
 
   return (
     <div className="feed-wrapper">
+      {/* Feed Mode Selector */}
+      <div className="feed-top-bar">
+        <div className="feed-mode-selector glass">
+          <button
+            className={`feed-mode-btn ${feedMode === 'recent' ? 'active' : ''}`}
+            onClick={() => setFeedMode('recent')}
+          >
+            Recientes
+          </button>
+          <button
+            className={`feed-mode-btn ${feedMode === 'top' ? 'active' : ''}`}
+            onClick={() => setFeedMode('top')}
+          >
+            Destacados
+          </button>
+        </div>
+      </div>
+
       <div className="feed-container" ref={feedRef}>
         {papers.map((paper) => (
           <div key={paper.id} className="feed-snap-item">
