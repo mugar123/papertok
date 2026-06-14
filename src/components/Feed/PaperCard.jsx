@@ -168,7 +168,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
               '--bg-delay': `${item.delay}s`,
               '--bg-duration': `${item.duration}s`,
               '--bg-rotate': `${item.rotate}deg`,
-              '--bg-opacity': item.opacity,
+              '--bg-opacity': item.Icon === AnimatedAtom ? Math.max(item.opacity, 0.10) : item.opacity,
             }}
           >
             <item.Icon size={item.size} strokeWidth={1} />
