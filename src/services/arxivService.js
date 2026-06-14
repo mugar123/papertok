@@ -70,7 +70,7 @@ function parseArxivXml(xmlText) {
 export async function fetchPapers(categories, start = 0, maxResults = 20) {
   if (!categories || categories.length === 0) return [];
 
-  const categoryQuery = categories.map((cat) => `cat:${cat}`).join('+OR+');
+  const categoryQuery = `(${categories.map((cat) => `cat:${cat}`).join(' OR ')})`;
 
   const params = new URLSearchParams({
     search_query: categoryQuery,
