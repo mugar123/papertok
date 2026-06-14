@@ -46,15 +46,22 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     );
   }
 
-  if (!loading && papers.length === 0) {
+  if (papers.length === 0 && !error) {
     return (
       <div className="feed-empty">
-        <div className="feed-empty-icon">📭</div>
-        <h2>No hay papers aún</h2>
-        <p>Prueba a ampliar tus categorías de interés</p>
-        <button className="feed-retry-btn" onClick={handleRefresh}>
-          Recargar feed
-        </button>
+        <div className="atom-loader">
+          <div className="atom-nucleus"></div>
+          <div className="atom-orbit orbit-1"><div className="atom-electron"></div></div>
+          <div className="atom-orbit orbit-2"><div className="atom-electron"></div></div>
+          <div className="atom-orbit orbit-3"><div className="atom-electron"></div></div>
+        </div>
+        <h2>{loading ? 'Sintetizando papers...' : 'Buscando descubrimientos...'}</h2>
+        <p>{loading ? 'Conectando con arXiv para traer lo último en ciencia' : 'Aún no hay papers en tus categorías. Prueba a ampliar tus intereses.'}</p>
+        {!loading && (
+          <button className="feed-retry-btn" onClick={handleRefresh}>
+            Explorar de nuevo
+          </button>
+        )}
       </div>
     );
   }
