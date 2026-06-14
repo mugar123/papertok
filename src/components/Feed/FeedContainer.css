@@ -1,11 +1,12 @@
 /* ============================================
-   Feed Container Styles
+   Feed Container — Immersive
    ============================================ */
 
 .feed-wrapper {
   position: relative;
   height: 100vh;
   height: 100dvh;
+  background: var(--bg-primary);
 }
 
 .feed-container {
@@ -15,6 +16,11 @@
   scroll-snap-type: y mandatory;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.feed-container::-webkit-scrollbar {
+  display: none;
 }
 
 .feed-snap-item {
@@ -23,7 +29,7 @@
   scroll-snap-align: start;
   scroll-snap-stop: always;
   content-visibility: auto;
-  contain-intrinsic-size: 0 100vh;
+  contain-intrinsic-size: 0 100dvh;
 }
 
 .feed-sentinel {
@@ -47,52 +53,66 @@
 .feed-empty-icon {
   font-size: 4rem;
   margin-bottom: var(--space-6);
+  animation: areaIconFloat 4s ease-in-out infinite;
 }
 
 .feed-empty h2 {
   font-family: var(--font-heading);
   font-size: var(--fs-2xl);
   margin-bottom: var(--space-2);
+  background: var(--gradient-brand);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .feed-empty p {
   color: var(--text-secondary);
   margin-bottom: var(--space-6);
+  max-width: 300px;
 }
 
 .feed-retry-btn {
-  padding: var(--space-3) var(--space-6);
-  background: var(--gradient-brand);
-  color: white;
-  border-radius: var(--radius-lg);
-  font-weight: var(--fw-medium);
-  transition: all var(--transition-base);
+  padding: 12px 28px;
+  background: #fff;
+  color: #0a0a0f;
+  border-radius: var(--radius-xl);
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-sm);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  border: none;
+  cursor: pointer;
 }
 
 .feed-retry-btn:hover {
   transform: translateY(-2px);
-  box-shadow: var(--shadow-glow-primary);
+  box-shadow: 0 8px 25px rgba(255, 255, 255, 0.15);
 }
 
 /* ── Floating Refresh Button ── */
 .feed-refresh-btn {
   position: fixed;
-  bottom: calc(var(--nav-height-mobile) + var(--space-4));
+  top: calc(var(--nav-height) + var(--space-3));
   right: var(--space-4);
-  width: 48px;
-  height: 48px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-primary);
+  color: rgba(255, 255, 255, 0.6);
   z-index: var(--z-nav);
   cursor: pointer;
-  transition: all var(--transition-base);
+  transition: all 0.25s ease;
+  background: rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .feed-refresh-btn:hover {
-  background: var(--bg-glass-hover);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
   transform: scale(1.1);
 }
 
@@ -100,9 +120,16 @@
   animation: spin 0.8s linear infinite;
 }
 
-@media (min-width: 769px) {
+@media (max-width: 768px) {
   .feed-refresh-btn {
-    bottom: var(--space-6);
-    right: var(--space-6);
+    top: var(--space-3);
+    right: var(--space-3);
+    width: 36px;
+    height: 36px;
+  }
+
+  .feed-refresh-btn svg {
+    width: 16px;
+    height: 16px;
   }
 }

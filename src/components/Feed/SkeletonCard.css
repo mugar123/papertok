@@ -1,78 +1,106 @@
-/* Skeleton Card */
-.skeleton-card {
+/* Skeleton Card — matches new PaperCard layout */
+.sk {
+  position: relative;
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: var(--space-6);
-  padding-top: calc(var(--nav-height) + var(--space-4));
+  justify-content: flex-end;
+  overflow: hidden;
   background: var(--bg-primary);
 }
 
-.skeleton-top {
-  display: flex;
-  justify-content: space-between;
-  margin-bottom: var(--space-8);
+.sk-bg {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(6, 182, 212, 0.08));
 }
 
-.skeleton-content {
-  flex: 1;
+.sk-body {
+  padding: var(--space-6);
+  padding-right: 68px;
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
-.skeleton-line {
-  height: 16px;
+/* Shimmer base */
+.sk-pill, .sk-small, .sk-title, .sk-name, .sk-text, .sk-btn, .sk-avatar {
   border-radius: var(--radius-md);
   background: linear-gradient(
     90deg,
-    var(--bg-elevated) 25%,
-    var(--bg-glass-strong) 50%,
-    var(--bg-elevated) 75%
+    rgba(255,255,255,0.04) 25%,
+    rgba(255,255,255,0.08) 50%,
+    rgba(255,255,255,0.04) 75%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s ease-in-out infinite;
 }
 
-.skeleton-block {
-  border-radius: var(--radius-lg);
-  background: linear-gradient(
-    90deg,
-    var(--bg-elevated) 25%,
-    var(--bg-glass-strong) 50%,
-    var(--bg-elevated) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
+.sk-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.skeleton-badge {
-  width: 120px;
-  height: 24px;
+.sk-pill {
+  width: 90px;
+  height: 22px;
   border-radius: var(--radius-full);
 }
 
-.skeleton-date {
-  width: 80px;
+.sk-small {
+  width: 60px;
   height: 14px;
 }
 
-.skeleton-title {
-  height: 28px;
+.sk-title {
+  height: 24px;
   width: 85%;
 }
 
-.skeleton-title--short {
-  width: 60%;
+.sk-title--short {
+  width: 55%;
 }
 
-.skeleton-authors {
-  width: 50%;
+.sk-authors {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sk-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sk-name {
+  width: 120px;
   height: 14px;
 }
 
-.skeleton-abstract {
-  height: 120px;
+.sk-text {
+  height: 14px;
   width: 100%;
+}
+
+.sk-text--short {
+  width: 70%;
+}
+
+.sk-bar {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.sk-btn {
+  width: 130px;
+  height: 40px;
+  border-radius: var(--radius-xl);
+}
+
+.sk-btn--small {
+  width: 100px;
 }

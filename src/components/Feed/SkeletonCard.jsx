@@ -2,16 +2,27 @@ import './SkeletonCard.css';
 
 export default function SkeletonCard() {
   return (
-    <div className="skeleton-card">
-      <div className="skeleton-top">
-        <div className="skeleton-line skeleton-badge" />
-        <div className="skeleton-line skeleton-date" />
-      </div>
-      <div className="skeleton-content">
-        <div className="skeleton-line skeleton-title" />
-        <div className="skeleton-line skeleton-title skeleton-title--short" />
-        <div className="skeleton-line skeleton-authors" />
-        <div className="skeleton-block skeleton-abstract" />
+    <div className="sk">
+      <div className="sk-bg" />
+      <div className="sk-body">
+        <div className="sk-meta">
+          <div className="sk-pill" />
+          <div className="sk-small" />
+          <div className="sk-small" />
+        </div>
+        <div className="sk-title" />
+        <div className="sk-title sk-title--short" />
+        <div className="sk-authors">
+          <div className="sk-avatar" />
+          <div className="sk-avatar" />
+          <div className="sk-name" />
+        </div>
+        <div className="sk-text" />
+        <div className="sk-text sk-text--short" />
+        <div className="sk-bar">
+          <div className="sk-btn" />
+          <div className="sk-btn sk-btn--small" />
+        </div>
       </div>
     </div>
   );
