@@ -568,6 +568,7 @@
   .pc-read-btn--secondary {
     padding: 10px 14px;
   }
+}
 
 @media (min-width: 768px) {
   .pc-body {
