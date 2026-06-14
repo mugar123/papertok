@@ -1,39 +1,30 @@
 /**
- * Firebase Service — with Demo Mode fallback
- * When VITE_FIREBASE_API_KEY is not set, runs in demo mode using localStorage.
+ * Firebase Configuration
+ * Live project configuration for PaperTok
  */
 
-export const IS_DEMO = !import.meta.env.VITE_FIREBASE_API_KEY ||
-  import.meta.env.VITE_FIREBASE_API_KEY === 'your-api-key-here';
+export const IS_DEMO = false;
 
-let auth = null;
-let googleProvider = null;
-let db = null;
-let app = null;
+import { initializeApp } from 'firebase/app';
+import { getAuth, GoogleAuthProvider } from 'firebase/auth';
+import { getFirestore } from 'firebase/firestore';
+import { getAnalytics } from "firebase/analytics";
 
-if (!IS_DEMO) {
-  try {
-    const firebaseApp = await import('firebase/app');
-    const firebaseAuth = await import('firebase/auth');
-    const firebaseFirestore = await import('firebase/firestore');
+const firebaseConfig = {
+  apiKey: "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0",
+  authDomain: "papertok-168df.firebaseapp.com",
+  projectId: "papertok-168df",
+  storageBucket: "papertok-168df.firebasestorage.app",
+  messagingSenderId: "310243065214",
+  appId: "1:310243065214:web:623735321262c6e154c72f",
+  measurementId: "G-LHG0SGJ6G8"
+};
 
-    const firebaseConfig = {
-      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-      appId: import.meta.env.VITE_FIREBASE_APP_ID,
-    };
+const app = initializeApp(firebaseConfig);
+const analytics = typeof window !== 'undefined' ? getAnalytics(app) : null;
+const auth = getAuth(app);
+const googleProvider = new GoogleAuthProvider();
+const db = getFirestore(app);
 
-    app = firebaseApp.initializeApp(firebaseConfig);
-    auth = firebaseAuth.getAuth(app);
-    googleProvider = new firebaseAuth.GoogleAuthProvider();
-    db = firebaseFirestore.getFirestore(app);
-  } catch (e) {
-    console.warn('Firebase init failed, running in demo mode:', e);
-  }
-}
-
-export { auth, googleProvider, db };
+export { auth, googleProvider, db, analytics };
 export default app;
