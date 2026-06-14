@@ -1,9 +1,21 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useMemo } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
-import { Share2, Clock, FileText, Check } from 'lucide-react';
+import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity } from 'lucide-react';
 import Latex from 'react-latex-next';
 import './PaperCard.css';
+
+// Pool of icons for the background constellation per area
+const AREA_BG_ICONS = {
+  physics: [Atom, Orbit, Zap, Activity, FlaskConical, Microscope],
+  cs: [Monitor, Cpu, Database, Brain, Network, Binary],
+  math: [Calculator, Sigma, Activity, Orbit, Brain, Network],
+  'q-bio': [Dna, Microscope, FlaskConical, Activity, Brain, Database],
+  stat: [BarChart2, TrendingUp, Sigma, Activity, Database, Brain],
+  econ: [TrendingUp, BarChart2, CircleDollarSign, Activity, Network, Sigma],
+  eess: [Zap, Monitor, Activity, Cpu, Network, Orbit],
+  'q-fin': [CircleDollarSign, TrendingUp, BarChart2, Network, Sigma, Activity],
+};
 
 export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
   const { toggleLike, markNotInterested, likedPaperIds, savedPaperIds } = useFeed();
@@ -60,6 +72,38 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
 
   const areaInfo = getAreaInfo();
 
+  // Generate scattered background icons (stable per paper id)
+  const bgIcons = useMemo(() => {
+    // Find the area key for this paper
+    const cat = paper.primaryCategory || '';
+    let areaKey = 'physics';
+    for (const [key, area] of Object.entries(CATEGORIES)) {
+      if (area.subcategories && area.subcategories[cat]) {
+        areaKey = key;
+        break;
+      }
+    }
+    const iconPool = AREA_BG_ICONS[areaKey] || AREA_BG_ICONS.physics;
+    // Seed RNG based on paper id for consistency
+    let seed = 0;
+    for (let i = 0; i < (paper.id || '').length; i++) seed += paper.id.charCodeAt(i);
+    const seededRandom = (i) => {
+      const x = Math.sin(seed + i * 127.1) * 43758.5453;
+      return x - Math.floor(x);
+    };
+    return Array.from({ length: 12 }).map((_, i) => ({
+      id: i,
+      Icon: iconPool[i % iconPool.length],
+      x: 5 + seededRandom(i * 2) * 90,          // 5%-95%
+      y: 5 + seededRandom(i * 2 + 1) * 60,       // top 5-65% (above content)
+      size: 18 + seededRandom(i * 3) * 40,        // 18-58px
+      opacity: 0.03 + seededRandom(i * 4) * 0.06, // 0.03-0.09
+      delay: seededRandom(i * 5) * 6,             // 0-6s
+      duration: 10 + seededRandom(i * 6) * 8,     // 10-18s
+      rotate: seededRandom(i * 7) * 360,          // 0-360deg
+    }));
+  }, [paper.id, paper.primaryCategory]);
+
   const handleDoubleTap = useCallback(() => {
     const now = Date.now();
     if (now - lastTap.current < 300) {
@@ -111,8 +155,45 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
       <div className="pc-bg" style={{ background: areaInfo.gradient }} />
       <div className="pc-bg-overlay" />
 
-      {/* Floating category icon */}
-      <div className="pc-area-icon"><areaInfo.icon size={80} strokeWidth={1.5} /></div>
+      {/* Floating category icon constellation */}
+      <div className="pc-bg-constellation">
+        {bgIcons.map((item) => (
+          <span
+            key={item.id}
+            className="pc-bg-icon"
+            style={{
+              '--bg-x': `${item.x}%`,
+              '--bg-y': `${item.y}%`,
+              '--bg-delay': `${item.delay}s`,
+              '--bg-duration': `${item.duration}s`,
+              '--bg-rotate': `${item.rotate}deg`,
+              '--bg-opacity': item.opacity,
+            }}
+          >
+            <item.Icon size={item.size} strokeWidth={1} />
+          </span>
+        ))}
+        {/* Main central icon — larger and brighter */}
+        <span className="pc-bg-icon pc-bg-icon--main">
+          <areaInfo.icon size={90} strokeWidth={0.8} />
+        </span>
+      </div>
+
+      {/* Animated mesh grid lines */}
+      <svg className="pc-mesh" viewBox="0 0 400 400" preserveAspectRatio="none">
+        <line x1="0" y1="80" x2="400" y2="120" className="pc-mesh-line" style={{ '--mesh-delay': '0s' }} />
+        <line x1="50" y1="0" x2="350" y2="200" className="pc-mesh-line" style={{ '--mesh-delay': '1s' }} />
+        <line x1="400" y1="0" x2="0" y2="300" className="pc-mesh-line" style={{ '--mesh-delay': '2s' }} />
+        <line x1="200" y1="0" x2="100" y2="400" className="pc-mesh-line" style={{ '--mesh-delay': '3s' }} />
+        <line x1="0" y1="200" x2="400" y2="350" className="pc-mesh-line" style={{ '--mesh-delay': '0.5s' }} />
+        <line x1="300" y1="0" x2="380" y2="400" className="pc-mesh-line" style={{ '--mesh-delay': '1.5s' }} />
+        <circle cx="80" cy="90" r="2" className="pc-mesh-dot" style={{ '--mesh-delay': '0s' }} />
+        <circle cx="320" cy="140" r="2.5" className="pc-mesh-dot" style={{ '--mesh-delay': '1s' }} />
+        <circle cx="200" cy="60" r="1.5" className="pc-mesh-dot" style={{ '--mesh-delay': '2s' }} />
+        <circle cx="150" cy="220" r="2" className="pc-mesh-dot" style={{ '--mesh-delay': '3s' }} />
+        <circle cx="350" cy="280" r="2" className="pc-mesh-dot" style={{ '--mesh-delay': '0.5s' }} />
+        <circle cx="50" cy="300" r="1.5" className="pc-mesh-dot" style={{ '--mesh-delay': '1.5s' }} />
+      </svg>
 
       {/* Content area - bottom aligned like TikTok */}
       <div className="pc-body">
