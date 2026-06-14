@@ -223,7 +223,12 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
           <div className="pc-author-names" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span>{formatAuthors(paper.authors)}</span>
             {(paper.doi || paper.journalRef) && (
-              <BadgeCheck size={14} className="pc-verified-badge" style={{ color: '#1da1f2', flexShrink: 0 }} />
+              <BadgeCheck 
+                size={14} 
+                className="pc-verified-badge" 
+                style={{ color: '#1da1f2', flexShrink: 0, cursor: 'help' }} 
+                title={`Publicado en: ${paper.journalRef || 'Revista científica peer-reviewed'}${paper.doi ? `\nDOI: ${paper.doi}` : ''}`}
+              />
             )}
           </div>
         </div>

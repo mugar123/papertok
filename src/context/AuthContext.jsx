@@ -135,6 +135,25 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const updatePreferences = async (selectedCategories) => {
+    if (!user) return;
+    try {
+      if (IS_DEMO) {
+        demoSet('selectedCategories', selectedCategories);
+      } else {
+        const userDocRef = doc(db, 'users', user.uid);
+        await setDoc(userDocRef, {
+          selectedCategories,
+        }, { merge: true });
+      }
+      setUserPreferences(selectedCategories);
+    } catch (err) {
+      console.error('Error updating preferences:', err);
+      setError(err.message);
+      throw err;
+    }
+  };
+
   const value = {
     user,
     loading,
@@ -144,6 +163,7 @@ export function AuthProvider({ children }) {
     signInWithGoogle,
     signOut,
     completeOnboarding,
+    updatePreferences,
     setUserPreferences,
     isDemo: IS_DEMO,
   };

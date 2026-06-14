@@ -38,6 +38,21 @@ export default function EditInterestsModal({ isOpen, onClose }) {
     });
   };
 
+  const toggleArea = (areaKey) => {
+    const subKeys = Object.keys(CATEGORIES[areaKey].subcategories);
+    const allSelected = subKeys.every(k => selected.has(k));
+    
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allSelected) {
+        subKeys.forEach(k => next.delete(k));
+      } else {
+        subKeys.forEach(k => next.add(k));
+      }
+      return next;
+    });
+  };
+
   const handleSave = async () => {
     if (selected.size === 0) return;
     setIsSaving(true);
@@ -67,33 +82,46 @@ export default function EditInterestsModal({ isOpen, onClose }) {
         </div>
 
         <div className="eim-body">
-          {Object.entries(CATEGORIES).map(([areaKey, area]) => (
-            <div key={areaKey} className="eim-area">
-              <div className="eim-area-header">
-                <div className="eim-area-icon">
-                  <area.icon size={24} />
+          {Object.entries(CATEGORIES).map(([areaKey, area]) => {
+            const subKeys = Object.keys(area.subcategories);
+            const allSelected = subKeys.every(k => selected.has(k));
+            
+            return (
+              <div key={areaKey} className="eim-area">
+                <div className="eim-area-header">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
+                    <div className="eim-area-icon">
+                      <area.icon size={24} />
+                    </div>
+                    <h3 className="eim-area-title">{area.label}</h3>
+                  </div>
+                  <button 
+                    className="eim-area-toggle-btn" 
+                    onClick={() => toggleArea(areaKey)}
+                  >
+                    {allSelected ? 'Deseleccionar todo' : 'Seleccionar todo'}
+                  </button>
                 </div>
-                <h3 className="eim-area-title">{area.label}</h3>
+                <div className="eim-subcats">
+                  {Object.entries(area.subcategories).map(([subKey, sub]) => {
+                    const isSelected = selected.has(subKey);
+                    return (
+                      <button
+                        key={subKey}
+                        className={`eim-pill ${isSelected ? 'eim-pill--selected' : ''}`}
+                        onClick={() => toggleSubcategory(subKey)}
+                      >
+                        <div className="eim-pill-content">
+                          {isSelected && <Check size={14} strokeWidth={3} className="eim-pill-check" />}
+                          <span>{sub.label}</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-              <div className="eim-subcats">
-                {Object.entries(area.subcategories).map(([subKey, sub]) => {
-                  const isSelected = selected.has(subKey);
-                  return (
-                    <button
-                      key={subKey}
-                      className={`eim-pill ${isSelected ? 'eim-pill--selected' : ''}`}
-                      onClick={() => toggleSubcategory(subKey)}
-                    >
-                      <div className="eim-pill-content">
-                        {isSelected && <Check size={14} strokeWidth={3} />}
-                        <span>{sub.label}</span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         <div className="eim-footer">
