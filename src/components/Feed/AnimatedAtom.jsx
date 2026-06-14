@@ -1,10 +1,8 @@
 /**
- * AnimatedAtom — Lucide Atom with a single electron
- * that travels sequentially along all 3 orbits.
- * Uses chained SVG <animateMotion> for each orbit path.
+ * AnimatedAtom — Lucide Atom with 3 electrons,
+ * one traveling along each orbit simultaneously.
  */
 export default function AnimatedAtom({ size = 24, strokeWidth = 1, className = '' }) {
-  // Orbit paths — ellipse rx=9 ry=4 centered at (12,12), at 0°, 60°, 120°
   const orbit1 = 'M 3,12 A 9,4 0 1 1 21,12 A 9,4 0 1 1 3,12';
   const orbit2 = 'M 7.5,4.206 A 9,4 60 1 1 16.5,19.794 A 9,4 60 1 1 7.5,4.206';
   const orbit3 = 'M 16.5,4.206 A 9,4 120 1 1 7.5,19.794 A 9,4 120 1 1 16.5,4.206';
@@ -30,11 +28,19 @@ export default function AnimatedAtom({ size = 24, strokeWidth = 1, className = '
       {/* Nucleus */}
       <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
 
-      {/* Single electron — chains through all 3 orbits */}
+      {/* Electron on orbit 1 */}
       <circle r="0.9" fill="#fff" stroke="none">
-        <animateMotion id="o1" dur="2.5s" begin="0s;o3.end" path={orbit1} />
-        <animateMotion id="o2" dur="2.5s" begin="o1.end" path={orbit2} />
-        <animateMotion id="o3" dur="2.5s" begin="o2.end" path={orbit3} />
+        <animateMotion dur="2.5s" repeatCount="indefinite" path={orbit1} />
+      </circle>
+
+      {/* Electron on orbit 2 */}
+      <circle r="0.9" fill="#fff" stroke="none">
+        <animateMotion dur="3s" repeatCount="indefinite" path={orbit2} begin="-1s" />
+      </circle>
+
+      {/* Electron on orbit 3 */}
+      <circle r="0.9" fill="#fff" stroke="none">
+        <animateMotion dur="3.5s" repeatCount="indefinite" path={orbit3} begin="-2s" />
       </circle>
     </svg>
   );
