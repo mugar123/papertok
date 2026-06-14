@@ -1,0 +1,228 @@
+/* ============================================
+   LoginPage Styles
+   ============================================ */
+
+.login-page {
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* ── Animated Background Orbs ── */
+.login-bg {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 0;
+}
+
+.login-bg-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.4;
+  animation: orbFloat 20s ease-in-out infinite;
+}
+
+.login-bg-orb--1 {
+  width: 500px;
+  height: 500px;
+  background: var(--accent-primary);
+  top: -15%;
+  left: -10%;
+  animation-delay: 0s;
+}
+
+.login-bg-orb--2 {
+  width: 400px;
+  height: 400px;
+  background: var(--accent-secondary);
+  bottom: -10%;
+  right: -5%;
+  animation-delay: -7s;
+}
+
+.login-bg-orb--3 {
+  width: 300px;
+  height: 300px;
+  background: #ec4899;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  animation-delay: -14s;
+  opacity: 0.2;
+}
+
+@keyframes orbFloat {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(30px, -40px) scale(1.05); }
+  50% { transform: translate(-20px, 20px) scale(0.95); }
+  75% { transform: translate(15px, 30px) scale(1.02); }
+}
+
+/* ── Floating Papers ── */
+.floating-papers {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.floating-paper {
+  position: absolute;
+  font-size: 2rem;
+  left: var(--x);
+  top: var(--y);
+  opacity: 0.15;
+  animation: paperFloat 8s ease-in-out infinite;
+  animation-delay: var(--delay);
+}
+
+@keyframes paperFloat {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-20px) rotate(10deg); }
+}
+
+/* ── Main Content ── */
+.login-content {
+  position: relative;
+  z-index: 2;
+  text-align: center;
+  padding: var(--space-8);
+  max-width: 440px;
+  width: 100%;
+  animation: fadeIn 0.8s ease-out, slideUp 0.8s ease-out;
+}
+
+.login-logo {
+  margin-bottom: var(--space-8);
+}
+
+.login-wordmark {
+  font-family: var(--font-heading);
+  font-size: clamp(3rem, 10vw, 4.5rem);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
+.login-tok {
+  color: var(--text-primary);
+}
+
+.login-tagline {
+  font-family: var(--font-heading);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
+  margin-bottom: var(--space-4);
+  line-height: var(--lh-normal);
+}
+
+.login-description {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  line-height: var(--lh-relaxed);
+  margin-bottom: var(--space-10);
+  max-width: 360px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Google Button ── */
+.login-google-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-8);
+  background: #fff;
+  color: #1f1f1f;
+  border-radius: var(--radius-xl);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  font-family: var(--font-body);
+  min-height: 52px;
+  min-width: 260px;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+  border: none;
+}
+
+.login-google-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg), 0 0 30px rgba(255, 255, 255, 0.1);
+}
+
+.login-google-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.login-google-btn--loading {
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.login-google-icon {
+  flex-shrink: 0;
+}
+
+/* ── Spinner ── */
+.login-spinner {
+  width: 24px;
+  height: 24px;
+  border: 3px solid #e0e0e0;
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+/* ── Error ── */
+.login-error {
+  margin-top: var(--space-4);
+  color: var(--accent-danger);
+  font-size: var(--fs-sm);
+}
+
+/* ── Footer ── */
+.login-powered {
+  margin-top: var(--space-10);
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+.login-powered strong {
+  color: var(--text-secondary);
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .login-content {
+    padding: var(--space-6);
+  }
+
+  .login-bg-orb--1 {
+    width: 300px;
+    height: 300px;
+  }
+
+  .login-bg-orb--2 {
+    width: 250px;
+    height: 250px;
+  }
+
+  .login-bg-orb--3 {
+    width: 200px;
+    height: 200px;
+  }
+
+  .floating-paper {
+    font-size: 1.5rem;
+  }
+}

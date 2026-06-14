@@ -1,0 +1,263 @@
+/* ============================================
+   Paper Card Styles
+   ============================================ */
+
+.paper-card {
+  position: relative;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  padding: var(--space-6);
+  padding-top: calc(var(--nav-height) + var(--space-4));
+  padding-right: 72px; /* Space for action buttons */
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Gradient accent at top ── */
+.paper-card-gradient {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 200px;
+  opacity: 0.08;
+  pointer-events: none;
+}
+
+/* ── Top Bar ── */
+.paper-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: var(--space-6);
+  position: relative;
+  z-index: 1;
+}
+
+.paper-card-badge {
+  display: inline-flex;
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-full);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  color: white;
+  white-space: nowrap;
+}
+
+.paper-card-date {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+/* ── Content ── */
+.paper-card-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  position: relative;
+  z-index: 1;
+  animation: slideUp 0.5s ease-out;
+}
+
+.paper-card-title {
+  font-family: var(--font-heading);
+  font-size: clamp(var(--fs-xl), 3.5vw, var(--fs-3xl));
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  line-height: var(--lh-tight);
+  margin-bottom: var(--space-4);
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.paper-card-authors {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  margin-bottom: var(--space-4);
+  font-style: italic;
+}
+
+.paper-card-abstract {
+  max-height: 150px;
+  overflow: hidden;
+  transition: max-height 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.paper-card-abstract p {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--text-secondary);
+}
+
+.paper-card-abstract--expanded {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.paper-card-abstract:not(.paper-card-abstract--expanded)::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  background: linear-gradient(transparent, var(--bg-primary));
+  pointer-events: none;
+}
+
+.paper-card-expand {
+  color: var(--accent-secondary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  background: none;
+  border: none;
+  padding: var(--space-2) 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.paper-card-expand:hover {
+  color: var(--accent-primary);
+}
+
+.paper-card-id {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+  margin-top: var(--space-3);
+  font-family: monospace;
+}
+
+/* ── Action Buttons (TikTok style, right side) ── */
+.paper-card-actions {
+  position: absolute;
+  right: var(--space-3);
+  bottom: 50%;
+  transform: translateY(50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-5);
+  z-index: 2;
+}
+
+.action-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: var(--space-2);
+  transition: all var(--transition-base);
+}
+
+.action-btn svg {
+  width: 28px;
+  height: 28px;
+  transition: all var(--transition-base);
+}
+
+.action-btn:hover {
+  color: var(--text-primary);
+  transform: scale(1.1);
+}
+
+.action-btn:active {
+  transform: scale(0.95);
+}
+
+.action-label {
+  font-size: 10px;
+  font-weight: var(--fw-medium);
+  white-space: nowrap;
+}
+
+/* Like */
+.action-btn--like.action-btn--active {
+  color: var(--accent-like);
+}
+
+.action-btn--like.action-btn--active svg {
+  animation: heartBeat 0.6s ease-out;
+}
+
+/* Save */
+.action-btn--save.action-btn--active {
+  color: var(--accent-save);
+}
+
+/* Read */
+.action-btn--read:hover {
+  color: var(--accent-secondary);
+}
+
+/* Not interested */
+.action-btn--notinterested:hover {
+  color: var(--accent-danger);
+}
+
+/* Share - copied */
+.action-btn--copied {
+  color: var(--accent-success) !important;
+}
+
+/* ── Double-tap heart overlay ── */
+.paper-card-heart-overlay {
+  position: absolute;
+  top: 50%;
+  left: 45%;
+  transform: translate(-50%, -50%);
+  z-index: 10;
+  pointer-events: none;
+  animation: heartBeat 0.8s ease-out forwards, fadeOut 0.3s 0.7s ease-out forwards;
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .paper-card {
+    padding: var(--space-4);
+    padding-top: calc(var(--nav-height) + var(--space-3));
+    padding-right: 60px;
+  }
+
+  .paper-card-actions {
+    right: var(--space-2);
+    gap: var(--space-4);
+  }
+
+  .action-btn svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .action-label {
+    font-size: 9px;
+  }
+
+  .paper-card-title {
+    -webkit-line-clamp: 3;
+  }
+}
+
+@media (min-width: 768px) {
+  .paper-card {
+    padding: var(--space-10) var(--space-12);
+    padding-right: 100px;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .paper-card-actions {
+    right: var(--space-6);
+    gap: var(--space-6);
+  }
+}

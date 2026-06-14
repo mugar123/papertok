@@ -1,0 +1,108 @@
+/* ============================================
+   Feed Container Styles
+   ============================================ */
+
+.feed-wrapper {
+  position: relative;
+  height: 100vh;
+  height: 100dvh;
+}
+
+.feed-container {
+  height: 100vh;
+  height: 100dvh;
+  overflow-y: scroll;
+  scroll-snap-type: y mandatory;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+}
+
+.feed-snap-item {
+  height: 100vh;
+  height: 100dvh;
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+  content-visibility: auto;
+  contain-intrinsic-size: 0 100vh;
+}
+
+.feed-sentinel {
+  height: 1px;
+}
+
+/* ── Empty State ── */
+.feed-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-8);
+  text-align: center;
+  background: var(--bg-primary);
+  animation: fadeIn 0.5s ease-out;
+}
+
+.feed-empty-icon {
+  font-size: 4rem;
+  margin-bottom: var(--space-6);
+}
+
+.feed-empty h2 {
+  font-family: var(--font-heading);
+  font-size: var(--fs-2xl);
+  margin-bottom: var(--space-2);
+}
+
+.feed-empty p {
+  color: var(--text-secondary);
+  margin-bottom: var(--space-6);
+}
+
+.feed-retry-btn {
+  padding: var(--space-3) var(--space-6);
+  background: var(--gradient-brand);
+  color: white;
+  border-radius: var(--radius-lg);
+  font-weight: var(--fw-medium);
+  transition: all var(--transition-base);
+}
+
+.feed-retry-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-glow-primary);
+}
+
+/* ── Floating Refresh Button ── */
+.feed-refresh-btn {
+  position: fixed;
+  bottom: calc(var(--nav-height-mobile) + var(--space-4));
+  right: var(--space-4);
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  z-index: var(--z-nav);
+  cursor: pointer;
+  transition: all var(--transition-base);
+}
+
+.feed-refresh-btn:hover {
+  background: var(--bg-glass-hover);
+  transform: scale(1.1);
+}
+
+.feed-refresh-btn--spinning svg {
+  animation: spin 0.8s linear infinite;
+}
+
+@media (min-width: 769px) {
+  .feed-refresh-btn {
+    bottom: var(--space-6);
+    right: var(--space-6);
+  }
+}

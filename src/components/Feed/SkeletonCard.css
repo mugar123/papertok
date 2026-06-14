@@ -1,0 +1,78 @@
+/* Skeleton Card */
+.skeleton-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-6);
+  padding-top: calc(var(--nav-height) + var(--space-4));
+  background: var(--bg-primary);
+}
+
+.skeleton-top {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: var(--space-8);
+}
+
+.skeleton-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: var(--space-4);
+}
+
+.skeleton-line {
+  height: 16px;
+  border-radius: var(--radius-md);
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    var(--bg-glass-strong) 50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-block {
+  border-radius: var(--radius-lg);
+  background: linear-gradient(
+    90deg,
+    var(--bg-elevated) 25%,
+    var(--bg-glass-strong) 50%,
+    var(--bg-elevated) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.skeleton-badge {
+  width: 120px;
+  height: 24px;
+  border-radius: var(--radius-full);
+}
+
+.skeleton-date {
+  width: 80px;
+  height: 14px;
+}
+
+.skeleton-title {
+  height: 28px;
+  width: 85%;
+}
+
+.skeleton-title--short {
+  width: 60%;
+}
+
+.skeleton-authors {
+  width: 50%;
+  height: 14px;
+}
+
+.skeleton-abstract {
+  height: 120px;
+  width: 100%;
+}
