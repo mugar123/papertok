@@ -250,7 +250,6 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
                 if (paper.doi) window.open(`https://doi.org/${paper.doi}`, '_blank');
               }}
             >
-              <BadgeCheck size={14} className="pc-journal-ticker-icon" />
               <div className="pc-journal-ticker-text-wrapper">
                 <div className="pc-journal-ticker-text">
                   <span>{paper.journalRef ? `Publicado en ${paper.journalRef}` : 'Peer-reviewed'} {paper.doi && `• DOI: ${paper.doi}`}</span>
