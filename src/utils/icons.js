@@ -1,7 +1,7 @@
-import { Folder, Star, Microscope, FlaskConical, BookOpen, Target, Lightbulb, Dna, Atom, Flame, Heart } from 'lucide-react';
+import { Folder, Star, Microscope, FlaskConical, BookOpen, Target, Lightbulb, Dna, Atom, Flame, Heart, Eye } from 'lucide-react';
 
 export const ICONS = {
-  Folder, Star, Microscope, FlaskConical, BookOpen, Target, Lightbulb, Dna, Atom, Flame, Heart
+  Folder, Star, Microscope, FlaskConical, BookOpen, Target, Lightbulb, Dna, Atom, Flame, Heart, Eye
 };
 
 export const getIcon = (nameOrEmoji) => {

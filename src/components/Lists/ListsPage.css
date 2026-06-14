@@ -151,11 +151,36 @@
   border: 1px solid var(--border-subtle);
   cursor: pointer;
   transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .lists-paper-item:hover {
   background: var(--bg-glass-hover);
   border-color: var(--border-default);
+}
+
+.lists-paper-item-content {
+  flex: 1;
+}
+
+.lists-paper-unmark-btn {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  padding: var(--space-2);
+  cursor: pointer;
+  border-radius: var(--radius-full);
+  transition: all var(--transition-fast);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.lists-paper-unmark-btn:hover {
+  color: var(--accent-danger);
+  background: rgba(255, 69, 58, 0.1);
 }
 
 .lists-paper-cat {

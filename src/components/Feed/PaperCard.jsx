@@ -35,7 +35,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
     setIsMarkingRead(true);
     setTimeout(() => {
       markAsRead(paper);
-    }, 400); // give time for animation before unmounting
+    }, 800); // give time for animation before unmounting
   };
 
   const formatDate = (dateStr) => {
@@ -162,7 +162,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
   const readTime = getReadTime(paper.summary);
 
   return (
-    <div className="pc" onClick={handleDoubleTap}>
+    <div className={`pc ${isMarkingRead ? 'pc--fade-out' : ''}`} onClick={handleDoubleTap}>
       {/* Immersive gradient background */}
       <div className="pc-bg" style={{ background: areaInfo.gradient }} />
       <div className="pc-bg-overlay" />

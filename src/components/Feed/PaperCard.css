@@ -12,6 +12,13 @@
   overflow: hidden;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.pc--fade-out {
+  opacity: 0;
+  transform: scale(0.95);
+  pointer-events: none;
 }
 
 /* ── Immersive gradient background ── */

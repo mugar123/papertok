@@ -263,12 +263,33 @@ export function FeedProvider({ children }) {
     });
   }, []);
 
+  const unmarkAsRead = useCallback(async (paperId) => {
+    if (!user) return;
+    const newRead = new Set(readPaperIds);
+    newRead.delete(paperId);
+    setReadPaperIds(newRead);
+
+    if (IS_DEMO) {
+      demoSet('readPaperIds', Array.from(newRead));
+    } else {
+      try {
+        const { doc, updateDoc, deleteField } = await import('firebase/firestore');
+        const ref = doc(db, 'users', user.uid, 'interactions', paperId);
+        await updateDoc(ref, {
+          read: deleteField()
+        });
+      } catch (err) {
+        console.error('Error unmarking read status:', err);
+      }
+    }
+  }, [user, readPaperIds]);
+
   const value = {
     papers, loading, error, hasMore,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
-    toggleLike, markNotInterested, markSaved, markAsRead,
+    toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
   };
 
   return <FeedContext.Provider value={value}>{children}</FeedContext.Provider>;

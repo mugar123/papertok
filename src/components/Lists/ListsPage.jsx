@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { IS_DEMO, db } from '../../services/firebase';
 import { useAuth } from '../../context/AuthContext';
+import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel } from '../../data/categories';
 import { getIcon } from '../../utils/icons';
+import { EyeOff } from 'lucide-react';
 import './ListsPage.css';
 
 function demoGet(key, fallback) {
@@ -12,6 +14,7 @@ function demoGet(key, fallback) {
 
 export default function ListsPage({ onOpenPdf }) {
   const { user } = useAuth();
+  const { unmarkAsRead } = useFeed();
   const [lists, setLists] = useState([]);
   const [savedPapers, setSavedPapers] = useState({});
   const [expandedList, setExpandedList] = useState(null);
@@ -84,7 +87,7 @@ export default function ListsPage({ onOpenPdf }) {
   }, [user]);
 
   const handleDeleteList = async (listId) => {
-    if (listId === '__favorites__') return;
+    if (listId === '__favorites__' || listId === '__read__') return;
     if (IS_DEMO) {
       const allLists = demoGet('lists', []).filter((l) => l.id !== listId);
       localStorage.setItem('papertok_lists', JSON.stringify(allLists));
@@ -94,6 +97,17 @@ export default function ListsPage({ onOpenPdf }) {
     }
     setLists((prev) => prev.filter((l) => l.id !== listId));
     if (expandedList === listId) setExpandedList(null);
+  };
+
+  const handleUnmarkAsRead = (e, paperId) => {
+    e.stopPropagation();
+    unmarkAsRead(paperId);
+    setLists((prev) => prev.map((list) => {
+      if (list.id === '__read__') {
+        return { ...list, paperIds: list.paperIds.filter((id) => id !== paperId) };
+      }
+      return list;
+    }));
   };
 
   const formatDate = (dateStr) => {
@@ -142,16 +156,27 @@ export default function ListsPage({ onOpenPdf }) {
                     return (
                       <div key={paperId} className="lists-paper-item"
                         onClick={() => onOpenPdf({ ...paper, arxivId: paper.arxivId || paper.id })}>
-                        {paper.primaryCategory && (
-                          <span className="lists-paper-cat">{getCategoryLabel(paper.primaryCategory)}</span>
+                        <div className="lists-paper-item-content">
+                          {paper.primaryCategory && (
+                            <span className="lists-paper-cat">{getCategoryLabel(paper.primaryCategory)}</span>
+                          )}
+                          <p className="lists-paper-title">{paper.title}</p>
+                          {paper.authors && (
+                            <p className="lists-paper-authors">
+                              {paper.authors.slice(0, 3).join(', ')}{paper.authors.length > 3 && ' et al.'}
+                            </p>
+                          )}
+                          {paper.published && <span className="lists-paper-date">{formatDate(paper.published)}</span>}
+                        </div>
+                        {list.id === '__read__' && (
+                          <button 
+                            className="lists-paper-unmark-btn"
+                            onClick={(e) => handleUnmarkAsRead(e, paperId)}
+                            title="Devolver al feed"
+                          >
+                            <EyeOff size={18} />
+                          </button>
                         )}
-                        <p className="lists-paper-title">{paper.title}</p>
-                        {paper.authors && (
-                          <p className="lists-paper-authors">
-                            {paper.authors.slice(0, 3).join(', ')}{paper.authors.length > 3 && ' et al.'}
-                          </p>
-                        )}
-                        {paper.published && <span className="lists-paper-date">{formatDate(paper.published)}</span>}
                       </div>
                     );
                   })}
