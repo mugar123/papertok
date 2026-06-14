@@ -121,3 +121,14 @@ export async function fetchPapers(categories, start = 0, maxResults = 20, mode =
 export function getPdfUrl(arxivId) { return `https://arxiv.org/pdf/${arxivId}`; }
 export function getAbsUrl(arxivId) { return `https://arxiv.org/abs/${arxivId}`; }
 export function clearCache() { cache.clear(); }
+
+/**
+ * Fetch papers by a specific author
+ */
+export async function getAuthorPapers(authorName, maxResults = 10) {
+  // Format the author name for the query: au:"John Doe"
+  const formattedName = authorName.trim().replace(/\s+/g, '+');
+  const query = `au:"${formattedName}"`;
+  return fetchPapers(query, 0, maxResults, 'submittedDate');
+}
+

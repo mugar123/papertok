@@ -3,6 +3,7 @@ import { useFeed } from '../../context/FeedContext';
 import AnimatedAtom from './AnimatedAtom';
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
+import AuthorPanel from './AuthorPanel';
 import './FeedContainer.css';
 
 export default function FeedContainer({ onOpenPdf, onSaveToList }) {
@@ -11,6 +12,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const sentinelRef = useRef(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
+  const [activeAuthors, setActiveAuthors] = useState(null);
 
   // Only show the atom loader if loading takes more than 1.5s
   useEffect(() => {
@@ -84,6 +86,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
               paper={paper}
               onOpenPdf={() => onOpenPdf(paper)}
               onSaveToList={() => onSaveToList(paper)}
+              onOpenAuthors={() => setActiveAuthors(paper.authors)}
             />
           </div>
         ))}
@@ -97,6 +100,17 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
         {/* Sentinel for infinite scroll */}
         {hasMore && <div ref={sentinelRef} className="feed-sentinel" />}
       </div>
+
+      {activeAuthors && (
+        <AuthorPanel 
+          authors={activeAuthors} 
+          onClose={() => setActiveAuthors(null)} 
+          onOpenPdf={(paper) => {
+            setActiveAuthors(null);
+            onOpenPdf(paper);
+          }} 
+        />
+      )}
     </div>
   );
 }

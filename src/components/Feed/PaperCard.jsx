@@ -18,7 +18,7 @@ const AREA_BG_ICONS = {
   'q-fin': [CircleDollarSign, TrendingUp, BarChart2, Network, Sigma, Activity],
 };
 
-export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
+export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthors }) {
   const { toggleLike, markNotInterested, markAsRead, likedPaperIds, savedPaperIds, readPaperIds } = useFeed();
   const [expanded, setExpanded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
@@ -222,7 +222,14 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
         </h2>
 
         {/* Authors */}
-        <div className="pc-authors">
+        <div 
+          className="pc-authors" 
+          onClick={(e) => {
+            e.stopPropagation();
+            if (onOpenAuthors) onOpenAuthors();
+          }}
+          style={{ cursor: onOpenAuthors ? 'pointer' : 'default' }}
+        >
           <div className="pc-author-avatars">
             {(paper.authors || []).slice(0, 3).map((author, i) => (
               <div key={i} className="pc-author-avatar" style={{ '--i': i }}>
@@ -233,12 +240,13 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
           <div className="pc-author-names" style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatAuthors(paper.authors)}</span>
             {(paper.doi || paper.journalRef) && (
-              <BadgeCheck 
-                size={14} 
-                className="pc-verified-badge" 
-                style={{ color: '#1da1f2', flexShrink: 0, cursor: 'default' }} 
-                title="Este artículo está verificado"
-              />
+              <div title="Este artículo está verificado" style={{ display: 'flex' }}>
+                <BadgeCheck 
+                  size={14} 
+                  className="pc-verified-badge" 
+                  style={{ color: '#1da1f2', flexShrink: 0, cursor: 'default' }} 
+                />
+              </div>
             )}
           </div>
           {/* Verification Ticker moved to the right of authors */}

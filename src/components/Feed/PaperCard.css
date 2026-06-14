@@ -287,6 +287,9 @@
   font-weight: var(--fw-semibold);
   color: rgba(255, 255, 255, 0.9);
   white-space: nowrap;
+}
+
+.pc-journal-ticker:hover .pc-journal-ticker-text {
   animation: tickerMarquee 8s linear infinite alternate;
 }
 
