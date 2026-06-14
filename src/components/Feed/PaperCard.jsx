@@ -226,7 +226,8 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
               <BadgeCheck 
                 size={14} 
                 className="pc-verified-badge" 
-                style={{ color: '#1da1f2', flexShrink: 0 }} 
+                style={{ color: '#1da1f2', flexShrink: 0, cursor: 'help' }} 
+                title="Este artículo está verificado"
               />
             )}
           </div>
@@ -245,7 +246,13 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
 
         {/* Verification Ticker (TikTok Music Style) */}
         {(paper.doi || paper.journalRef) && (
-          <div className="pc-journal-ticker">
+          <div 
+            className={`pc-journal-ticker ${paper.doi ? 'pc-journal-ticker--clickable' : ''}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (paper.doi) window.open(`https://doi.org/${paper.doi}`, '_blank');
+            }}
+          >
             <BadgeCheck size={14} className="pc-journal-ticker-icon" />
             <div className="pc-journal-ticker-text-wrapper">
               <div className="pc-journal-ticker-text">
