@@ -79,7 +79,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     <div className="feed-wrapper">
       {/* Feed Mode Selector */}
       <div className="feed-top-bar">
-        <div className="feed-mode-selector glass">
+        <div className="feed-mode-selector glass" data-mode={feedMode}>
           <button
             className={`feed-mode-btn ${feedMode === 'recent' ? 'active' : ''}`}
             onClick={() => setFeedMode('recent')}
@@ -92,6 +92,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
           >
             Destacados
           </button>
+          <div className="feed-mode-slider" style={{ transform: feedMode === 'top' ? 'translateX(100%)' : 'translateX(0)' }} />
         </div>
       </div>
 
