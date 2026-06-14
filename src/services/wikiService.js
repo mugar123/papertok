@@ -21,6 +21,22 @@ export const getAuthorWikiInfo = async (authorName) => {
       return null;
     }
 
+    // Validate that the person is actually a researcher/scientist
+    // to avoid showing actors/politicians who share the same name.
+    const textToCheck = `${data.description || ''} ${data.extract || ''}`.toLowerCase();
+    const academicKeywords = [
+      'scientist', 'researcher', 'professor', 'academic', 'physicist', 
+      'chemist', 'biologist', 'mathematician', 'engineer', 'scholar', 
+      'astronomer', 'computer', 'science', 'university', 'institute', 
+      'doctor', 'phd', 'inventor', 'author', 'research'
+    ];
+
+    const isAcademic = academicKeywords.some(keyword => textToCheck.includes(keyword));
+    
+    if (!isAcademic) {
+      return null; // False positive (e.g., football player with same name)
+    }
+
     return {
       title: data.title,
       description: data.description, // e.g., "American computer scientist"
