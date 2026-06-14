@@ -12,7 +12,7 @@
   overflow: hidden;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
-  transition: opacity 0.8s ease, transform 0.8s ease;
+  transition: opacity 1.5s ease, transform 1.5s ease;
 }
 
 .pc--fade-out {
@@ -516,7 +516,7 @@
   background: rgba(16, 185, 129, 0.15);
   border-color: rgba(16, 185, 129, 0.4);
   box-shadow: 0 0 25px rgba(16, 185, 129, 0.2);
-  animation: readPopIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: readPopIn 1.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .pc-side-btn--read svg {

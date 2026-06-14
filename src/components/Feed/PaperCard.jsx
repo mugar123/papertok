@@ -35,7 +35,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
     setIsMarkingRead(true);
     setTimeout(() => {
       markAsRead(paper);
-    }, 800); // give time for animation before unmounting
+    }, 1500); // give time for animation before unmounting
   };
 
   const formatDate = (dateStr) => {
@@ -236,7 +236,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
               <BadgeCheck 
                 size={14} 
                 className="pc-verified-badge" 
-                style={{ color: '#1da1f2', flexShrink: 0, cursor: 'help' }} 
+                style={{ color: '#1da1f2', flexShrink: 0, cursor: 'default' }} 
                 title="Este artículo está verificado"
               />
             )}
