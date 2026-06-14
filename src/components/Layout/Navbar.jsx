@@ -32,7 +32,7 @@ export default function Navbar() {
       <nav className="navbar glass-strong">
         <NavLink to="/" className="navbar-logo">
           <span className="gradient-text">Paper</span>
-          <span>Tok</span>
+          <span className="logo-tok">Tok</span>
         </NavLink>
 
         <div className="navbar-right">

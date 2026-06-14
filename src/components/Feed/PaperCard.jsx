@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
-import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity } from 'lucide-react';
+import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
 import './PaperCard.css';
@@ -220,7 +220,12 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
               </div>
             ))}
           </div>
-          <span className="pc-author-names">{formatAuthors(paper.authors)}</span>
+          <div className="pc-author-names" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <span>{formatAuthors(paper.authors)}</span>
+            {(paper.doi || paper.journalRef) && (
+              <BadgeCheck size={14} className="pc-verified-badge" style={{ color: '#1da1f2', flexShrink: 0 }} />
+            )}
+          </div>
         </div>
 
         {/* Abstract */}
