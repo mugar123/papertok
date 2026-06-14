@@ -10,6 +10,16 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [showLoader, setShowLoader] = useState(false);
+
+  // Only show the atom loader if loading takes more than 1.5s
+  useEffect(() => {
+    if (papers.length === 0 && loading && !error) {
+      const timer = setTimeout(() => setShowLoader(true), 1500);
+      return () => clearTimeout(timer);
+    }
+    setShowLoader(false);
+  }, [papers.length, loading, error]);
 
   // Infinite scroll: observe sentinel element
   useEffect(() => {
@@ -48,6 +58,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   }
 
   if (papers.length === 0 && !error) {
+    if (!showLoader) return <div className="feed-empty" style={{ background: 'var(--bg-primary)' }} />;
     return (
       <div className="feed-empty">
         <div className="atom-loader">

@@ -38,6 +38,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
       if (diffDays === 1) return 'Ayer';
       if (diffDays < 7) return `Hace ${diffDays} días`;
       if (diffDays < 30) return `Hace ${Math.floor(diffDays / 7)} sem`;
+      if (diffDays >= 365) return date.toLocaleDateString('es-ES', { month: 'short', day: 'numeric', year: 'numeric' });
       return date.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
     } catch { return ''; }
   };
