@@ -25,11 +25,13 @@ export default function ListsPage({ onOpenPdf }) {
         let userLists = [];
         let papers = {};
         let likedPaperIds = [];
+        let readPaperIds = [];
 
         if (IS_DEMO) {
           userLists = demoGet('lists', []);
           papers = demoGet('savedPapersData', {});
           likedPaperIds = demoGet('likedPaperIds', []);
+          readPaperIds = demoGet('readPaperIds', []);
         } else {
           const { collection, getDocs } = await import('firebase/firestore');
           const listsRef = collection(db, 'users', user.uid, 'lists');
@@ -52,12 +54,22 @@ export default function ListsPage({ onOpenPdf }) {
                   published: data.timestamp, arxivId: doc.id };
               }
             }
+            if (data.read) {
+              readPaperIds.push(doc.id);
+              if (!papers[doc.id]) {
+                papers[doc.id] = { id: doc.id, title: data.paperTitle || doc.id,
+                  authors: data.paperAuthors || [], primaryCategory: data.paperCategory || '',
+                  published: data.timestamp, arxivId: doc.id };
+              }
+            }
           });
         }
 
         const allLists = [
           { id: '__favorites__', name: 'Favoritos', emoji: 'Heart',
             paperIds: likedPaperIds, createdAt: 'default' },
+          { id: '__read__', name: 'Leídos', emoji: 'Eye',
+            paperIds: readPaperIds, createdAt: 'default' },
           ...userLists,
         ];
         setLists(allLists);

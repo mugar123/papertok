@@ -32,6 +32,7 @@ export function FeedProvider({ children }) {
   const [likedPaperIds, setLikedPaperIds] = useState(new Set());
   const [notInterestedIds, setNotInterestedIds] = useState(new Set());
   const [savedPaperIds, setSavedPaperIds] = useState(new Set());
+  const [readPaperIds, setReadPaperIds] = useState(new Set());
 
   // Load user interactions
   useEffect(() => {
@@ -41,6 +42,7 @@ export function FeedProvider({ children }) {
       setLikedPaperIds(new Set(demoGet('likedPaperIds', [])));
       setNotInterestedIds(new Set(demoGet('notInterestedIds', [])));
       setSavedPaperIds(new Set(demoGet('savedPaperIds', [])));
+      setReadPaperIds(new Set(demoGet('readPaperIds', [])));
       return;
     }
 
@@ -53,15 +55,18 @@ export function FeedProvider({ children }) {
         const liked = new Set();
         const notInterested = new Set();
         const saved = new Set();
+        const read = new Set();
         snapshot.forEach((doc) => {
           const data = doc.data();
           if (data.liked) liked.add(doc.id);
           if (data.notInterested) notInterested.add(doc.id);
           if (data.saved) saved.add(doc.id);
+          if (data.read) read.add(doc.id);
         });
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
+        setReadPaperIds(read);
       } catch (err) {
         console.error('Error loading interactions:', err);
       }
@@ -82,7 +87,7 @@ export function FeedProvider({ children }) {
 
     try {
       const newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
-      const filtered = newPapers.filter((p) => !notInterestedIds.has(p.id));
+      const filtered = newPapers.filter((p) => !notInterestedIds.has(p.id) && !readPaperIds.has(p.id));
 
       let nextPapers;
       let nextPage;
@@ -109,7 +114,7 @@ export function FeedProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, [userPreferences, page, papers, loading, notInterestedIds, feedMode]);
+  }, [userPreferences, page, papers, loading, notInterestedIds, readPaperIds, feedMode]);
 
   // Initial load
   useEffect(() => {
@@ -215,6 +220,40 @@ export function FeedProvider({ children }) {
     }
   }, [user, notInterestedIds]);
 
+  const markAsRead = useCallback(async (paper) => {
+    if (!user) return;
+    const newRead = new Set(readPaperIds);
+    newRead.add(paper.id);
+    setReadPaperIds(newRead);
+    
+    // Instantly remove it from the visual feed
+    setPapers((prev) => prev.filter((p) => p.id !== paper.id));
+
+    if (IS_DEMO) {
+      demoSet('readPaperIds', Array.from(newRead));
+      // Save metadata for the list
+      const allSaved = demoGet('savedPapersData', {});
+      allSaved[paper.id] = {
+        title: paper.title, authors: paper.authors?.slice(0, 3),
+        primaryCategory: paper.primaryCategory, published: paper.published,
+        arxivId: paper.arxivId, summary: paper.summary?.substring(0, 500),
+      };
+      demoSet('savedPapersData', allSaved);
+    } else {
+      try {
+        const { doc, setDoc } = await import('firebase/firestore');
+        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+        await setDoc(ref, {
+          read: true,
+          paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
+          paperCategory: paper.primaryCategory, timestamp: new Date().toISOString()
+        }, { merge: true });
+      } catch (err) {
+        console.error('Error saving read status:', err);
+      }
+    }
+  }, [user, readPaperIds]);
+
   const markSaved = useCallback((paperId) => {
     setSavedPaperIds((prev) => {
       const next = new Set(prev);
@@ -226,10 +265,10 @@ export function FeedProvider({ children }) {
 
   const value = {
     papers, loading, error, hasMore,
-    likedPaperIds, notInterestedIds, savedPaperIds,
+    likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
-    toggleLike, markNotInterested, markSaved,
+    toggleLike, markNotInterested, markSaved, markAsRead,
   };
 
   return <FeedContext.Provider value={value}>{children}</FeedContext.Provider>;

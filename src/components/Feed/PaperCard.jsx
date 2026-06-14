@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
-import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck } from 'lucide-react';
+import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2 } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
 import './PaperCard.css';
@@ -19,14 +19,24 @@ const AREA_BG_ICONS = {
 };
 
 export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
-  const { toggleLike, markNotInterested, likedPaperIds, savedPaperIds } = useFeed();
+  const { toggleLike, markNotInterested, markAsRead, likedPaperIds, savedPaperIds, readPaperIds } = useFeed();
   const [expanded, setExpanded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [isMarkingRead, setIsMarkingRead] = useState(false);
   const lastTap = useRef(0);
 
   const isLiked = likedPaperIds.has(paper.id);
   const isSaved = savedPaperIds.has(paper.id);
+  const isRead = readPaperIds?.has(paper.id) || isMarkingRead;
+
+  const handleMarkAsRead = (e) => {
+    e.stopPropagation();
+    setIsMarkingRead(true);
+    setTimeout(() => {
+      markAsRead(paper);
+    }, 400); // give time for animation before unmounting
+  };
 
   const formatDate = (dateStr) => {
     try {
@@ -231,6 +241,23 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
               />
             )}
           </div>
+          {/* Verification Ticker moved to the right of authors */}
+          {(paper.doi || paper.journalRef) && (
+            <div 
+              className={`pc-journal-ticker ${paper.doi ? 'pc-journal-ticker--clickable' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (paper.doi) window.open(`https://doi.org/${paper.doi}`, '_blank');
+              }}
+            >
+              <BadgeCheck size={14} className="pc-journal-ticker-icon" />
+              <div className="pc-journal-ticker-text-wrapper">
+                <div className="pc-journal-ticker-text">
+                  <span>{paper.journalRef ? `Publicado en ${paper.journalRef}` : 'Peer-reviewed'} {paper.doi && `• DOI: ${paper.doi}`}</span>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Abstract */}
@@ -243,24 +270,6 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
             <div className="pc-abstract-fade" />
           )}
         </div>
-
-        {/* Verification Ticker (TikTok Music Style) */}
-        {(paper.doi || paper.journalRef) && (
-          <div 
-            className={`pc-journal-ticker ${paper.doi ? 'pc-journal-ticker--clickable' : ''}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (paper.doi) window.open(`https://doi.org/${paper.doi}`, '_blank');
-            }}
-          >
-            <BadgeCheck size={14} className="pc-journal-ticker-icon" />
-            <div className="pc-journal-ticker-text-wrapper">
-              <div className="pc-journal-ticker-text">
-                <span>{paper.journalRef ? `Publicado en ${paper.journalRef}` : 'Artículo científico verificado (Peer-reviewed)'} {paper.doi && `• DOI: ${paper.doi}`}</span>
-              </div>
-            </div>
-          </div>
-        )}
 
         {!expanded && paper.summary && paper.summary.length > 200 && (
           <button className="pc-expand-btn" onClick={(e) => { e.stopPropagation(); setExpanded(true); }}>
@@ -313,6 +322,13 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList }) {
             </svg>
           </div>
           <span>Guardar</span>
+        </button>
+
+        <button className={`pc-side-btn ${isRead ? 'pc-side-btn--read' : ''}`} onClick={handleMarkAsRead}>
+          <div className="pc-side-icon">
+            {isRead ? <CheckCircle2 size={24} color="#10b981" /> : <Eye size={24} />}
+          </div>
+          <span>Leer</span>
         </button>
 
         <button className="pc-side-btn pc-side-btn--skip" onClick={handleNotInterested}>
