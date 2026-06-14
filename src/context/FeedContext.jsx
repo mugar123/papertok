@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { IS_DEMO, db } from '../services/firebase';
 import { useAuth } from './AuthContext';
 import { fetchPapers, clearCache } from '../services/arxivService';
@@ -25,6 +25,9 @@ export function FeedProvider({ children }) {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [feedMode, setFeedMode] = useState('recent'); // 'recent' or 'top'
+
+  // Per-mode cache: { recent: { papers, page, hasMore }, top: { ... } }
+  const feedCache = useRef({});
 
   const [likedPaperIds, setLikedPaperIds] = useState(new Set());
   const [notInterestedIds, setNotInterestedIds] = useState(new Set());
@@ -67,36 +70,46 @@ export function FeedProvider({ children }) {
   }, [user]);
 
   // Load papers when preferences are available
-  const loadPapers = useCallback(async (reset = false) => {
+  const loadPapers = useCallback(async (reset = false, mode) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (loading) return;
+
+    const activeMode = mode || feedMode;
 
     setLoading(true);
     setError(null);
     const currentPage = reset ? 0 : page;
 
     try {
-      const newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, feedMode);
+      const newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       const filtered = newPapers.filter((p) => !notInterestedIds.has(p.id));
 
+      let nextPapers;
+      let nextPage;
       if (reset) {
-        setPapers(filtered);
-        setPage(1);
+        nextPapers = filtered;
+        nextPage = 1;
       } else {
-        setPapers((prev) => {
-          const existingIds = new Set(prev.map((p) => p.id));
-          const unique = filtered.filter((p) => !existingIds.has(p.id));
-          return [...prev, ...unique];
-        });
-        setPage(currentPage + 1);
+        const prev = papers;
+        const existingIds = new Set(prev.map((p) => p.id));
+        const unique = filtered.filter((p) => !existingIds.has(p.id));
+        nextPapers = [...prev, ...unique];
+        nextPage = currentPage + 1;
       }
-      setHasMore(newPapers.length === PAGE_SIZE);
+      const nextHasMore = newPapers.length === PAGE_SIZE;
+
+      setPapers(nextPapers);
+      setPage(nextPage);
+      setHasMore(nextHasMore);
+
+      // Save to cache
+      feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [userPreferences, page, loading, notInterestedIds, feedMode]);
+  }, [userPreferences, page, papers, loading, notInterestedIds, feedMode]);
 
   // Initial load
   useEffect(() => {
@@ -105,16 +118,29 @@ export function FeedProvider({ children }) {
     }
   }, [userPreferences]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reload when feed mode changes
-  useEffect(() => {
-    if (userPreferences && userPreferences.length > 0) {
-      clearCache();
+  // Save current papers to cache before switching, then restore or fetch
+  const handleSetFeedMode = useCallback((newMode) => {
+    if (newMode === feedMode) return;
+
+    // Save current state to cache
+    feedCache.current[feedMode] = { papers, page, hasMore };
+
+    // Check if we have cached data for the new mode
+    const cached = feedCache.current[newMode];
+    if (cached && cached.papers.length > 0) {
+      setPapers(cached.papers);
+      setPage(cached.page);
+      setHasMore(cached.hasMore);
+      setFeedMode(newMode);
+    } else {
+      // No cache — fetch fresh
       setPapers([]);
       setPage(0);
       setHasMore(true);
-      setTimeout(() => loadPapers(true), 0);
+      setFeedMode(newMode);
+      setTimeout(() => loadPapers(true, newMode), 0);
     }
-  }, [feedMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [feedMode, papers, page, hasMore, loadPapers]);
 
   const loadMore = useCallback(() => {
     if (hasMore && !loading) loadPapers(false);
@@ -201,7 +227,7 @@ export function FeedProvider({ children }) {
   const value = {
     papers, loading, error, hasMore,
     likedPaperIds, notInterestedIds, savedPaperIds,
-    feedMode, setFeedMode,
+    feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
     toggleLike, markNotInterested, markSaved,
   };
