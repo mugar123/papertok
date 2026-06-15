@@ -40,13 +40,15 @@ export default function Navbar() {
     <>
       <nav className="navbar glass-strong">
         <div className="navbar-left">
-          <button 
-            className={`navbar-action-btn ${isRefreshing ? 'spinning' : ''}`}
-            onClick={handleRefresh}
-            title="Recargar"
-          >
-            <RotateCw size={20} />
-          </button>
+          {!isListsActive && (
+            <button 
+              className={`navbar-action-btn ${isRefreshing ? 'spinning' : ''}`}
+              onClick={handleRefresh}
+              title="Recargar"
+            >
+              <RotateCw size={20} />
+            </button>
+          )}
         </div>
 
         <div className="navbar-center-pill">

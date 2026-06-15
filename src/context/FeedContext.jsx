@@ -165,7 +165,11 @@ export function FeedProvider({ children }) {
     setPapers([]);
     setPage(0);
     setHasMore(true);
-    await loadPapersRef.current(true);
+    // Force a minimum visual delay of 800ms so the UI has time to show the spinner
+    await Promise.all([
+      loadPapersRef.current(true),
+      new Promise((resolve) => setTimeout(resolve, 800))
+    ]);
     setIsRefreshing(false);
   }, []);
 
