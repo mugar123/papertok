@@ -60,20 +60,20 @@ export default function Navbar() {
           </NavLink>
           
           <button 
-            className={`navbar-tab ${!isListsActive && feedMode === 'recent' ? 'active' : ''}`}
+            className={`navbar-tab ${!isListsActive && feedMode === 'top' ? 'active' : ''}`}
             onClick={() => {
               if (isListsActive) navigate('/');
-              setFeedMode('recent');
+              setFeedMode('top');
             }}
           >
             Destacados
           </button>
           
           <button 
-            className={`navbar-tab ${!isListsActive && feedMode === 'top' ? 'active' : ''}`}
+            className={`navbar-tab ${!isListsActive && feedMode === 'recent' ? 'active' : ''}`}
             onClick={() => {
               if (isListsActive) navigate('/');
-              setFeedMode('top');
+              setFeedMode('recent');
             }}
           >
             Recientes
@@ -85,7 +85,7 @@ export default function Navbar() {
             style={{ 
               transform: isListsActive 
                 ? 'translateX(0)' 
-                : (!isListsActive && feedMode === 'recent') 
+                : (!isListsActive && feedMode === 'top') 
                   ? 'translateX(100%)' 
                   : 'translateX(200%)' 
             }} 
