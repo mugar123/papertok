@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
 import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2 } from 'lucide-react';
@@ -19,13 +19,45 @@ const AREA_BG_ICONS = {
 };
 
 export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthors }) {
-  const { toggleLike, markNotInterested, markAsRead, likedPaperIds, savedPaperIds, readPaperIds } = useFeed();
+  const { toggleLike, markNotInterested, markAsRead, likedPaperIds, savedPaperIds, readPaperIds, trackViewTime } = useFeed();
   const [expanded, setExpanded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isMarkingRead, setIsMarkingRead] = useState(false);
   const lastTap = useRef(0);
   const abstractRef = useRef(null);
+  const cardRef = useRef(null);
+  const viewStartTime = useRef(null);
+  const totalViewTime = useRef(0);
+
+  useEffect(() => {
+    if (!cardRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
+          if (!viewStartTime.current) viewStartTime.current = Date.now();
+        } else {
+          if (viewStartTime.current) {
+            totalViewTime.current += (Date.now() - viewStartTime.current) / 1000;
+            viewStartTime.current = null;
+          }
+        }
+      },
+      { threshold: [0.5] }
+    );
+    observer.observe(cardRef.current);
+
+    return () => {
+      observer.disconnect();
+      if (viewStartTime.current) {
+        totalViewTime.current += (Date.now() - viewStartTime.current) / 1000;
+      }
+      if (totalViewTime.current > 2) {
+        trackViewTime(paper, Math.floor(totalViewTime.current));
+      }
+    };
+  }, [paper, trackViewTime]);
 
   const toggleExpanded = (e, newState) => {
     e.stopPropagation();
@@ -174,7 +206,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
   const readTime = getReadTime(paper.summary);
 
   return (
-    <div className={`pc ${isMarkingRead ? 'pc--fade-out' : ''}`} onClick={handleDoubleTap}>
+    <div ref={cardRef} className={`pc ${isMarkingRead ? 'pc--fade-out' : ''}`} onClick={handleDoubleTap}>
       {/* Immersive gradient background */}
       <div className="pc-bg" style={{ background: areaInfo.gradient }} />
       <div className="pc-bg-overlay" />

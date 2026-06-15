@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@xenova/transformers": "^2.17.2",
     "firebase": "^12.14.0",
     "katex": "^0.17.0",
     "lucide-react": "^1.18.0",

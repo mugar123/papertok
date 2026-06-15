@@ -7,7 +7,7 @@ import AuthorPanel from './AuthorPanel';
 import './FeedContainer.css';
 
 export default function FeedContainer({ onOpenPdf, onSaveToList }) {
-  const { papers, loading, error, hasMore, loadMore, refreshFeed, isRefreshing } = useFeed();
+  const { papers, loading, error, hasMore, loadMore, refreshFeed, isRefreshing, trackPdfOpened } = useFeed();
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
   const [showLoader, setShowLoader] = useState(false);
@@ -89,7 +89,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
           <div key={paper.id} className="feed-snap-item">
             <PaperCard
               paper={paper}
-              onOpenPdf={() => onOpenPdf(paper)}
+              onOpenPdf={() => {
+                trackPdfOpened(paper);
+                onOpenPdf(paper);
+              }}
               onSaveToList={() => onSaveToList(paper)}
               onOpenAuthors={() => setActiveAuthors(paper.authors)}
             />
@@ -111,6 +114,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
           authors={activeAuthors} 
           onClose={() => setActiveAuthors(null)} 
           onOpenPdf={(paper) => {
+            trackPdfOpened(paper);
             setActiveAuthors(null);
             onOpenPdf(paper);
           }} 

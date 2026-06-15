@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { IS_DEMO, db } from '../services/firebase';
-import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc, updateDoc, deleteField, increment } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { fetchPapers, clearCache } from '../services/arxivService';
 
@@ -34,6 +34,7 @@ export function FeedProvider({ children }) {
   const [notInterestedIds, setNotInterestedIds] = useState(new Set());
   const [savedPaperIds, setSavedPaperIds] = useState(new Set());
   const [readPaperIds, setReadPaperIds] = useState(new Set());
+  const [categoryAffinities, setCategoryAffinities] = useState({});
 
   // Load user interactions
   useEffect(() => {
@@ -57,17 +58,28 @@ export function FeedProvider({ children }) {
         const notInterested = new Set();
         const saved = new Set();
         const read = new Set();
+        const affinities = {};
         snapshot.forEach((doc) => {
           const data = doc.data();
           if (data.liked) liked.add(doc.id);
           if (data.notInterested) notInterested.add(doc.id);
           if (data.saved) saved.add(doc.id);
           if (data.read) read.add(doc.id);
+
+          const cat = data.paperCategory;
+          if (cat) {
+            if (!affinities[cat]) affinities[cat] = 0;
+            if (data.liked) affinities[cat] += 5;
+            if (data.saved) affinities[cat] += 8;
+            if (data.openedPdf) affinities[cat] += 4;
+            if (data.viewTime) affinities[cat] += data.viewTime * 0.5;
+          }
         });
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
         setReadPaperIds(read);
+        setCategoryAffinities(affinities);
       } catch (err) {
         console.error('Error loading interactions:', err);
       }
@@ -92,7 +104,51 @@ export function FeedProvider({ children }) {
     }
 
     try {
-      const newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
+      let newPapers = [];
+      if (activeMode === 'recent' || activeMode === null) {
+        // 70% Exploit (user preferences)
+        const exploitPapers = await fetchPapers(userPreferences, currentPage * 30, 30, 'recent');
+        
+        // 20% Trending/Popular
+        const trendingCategories = ['cs.AI', 'cs.LG', 'quant-ph', 'physics.pop-ph', 'q-bio.NC'];
+        const trendingPapers = await fetchPapers(trendingCategories, currentPage * 10, 10, 'recent');
+        
+        // 10% Random
+        const randomCats = ['math.HO', 'astro-ph.GA', 'econ.GN', 'stat.ML'];
+        const randomPapers = await fetchPapers(randomCats, currentPage * 5, 5, 'recent');
+        
+        const combined = [...exploitPapers, ...trendingPapers, ...randomPapers];
+        
+        // Deduplicate
+        const uniqueMap = new Map();
+        combined.forEach(p => {
+          if (!uniqueMap.has(p.id)) uniqueMap.set(p.id, p);
+        });
+        
+        newPapers = Array.from(uniqueMap.values());
+
+        // Score and Sort
+        newPapers.sort((a, b) => {
+          const getScore = (paper) => {
+            let score = 0;
+            // Affinity bonus
+            if (paper.primaryCategory && categoryAffinities[paper.primaryCategory]) {
+              score += categoryAffinities[paper.primaryCategory];
+            }
+            // Preference match
+            if (userPreferences.includes(paper.primaryCategory)) {
+              score += 10;
+            }
+            // Recency boost (exponential decay, half life ~14 days)
+            const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
+            score += Math.max(0, 50 * Math.exp(-daysOld / 14));
+            return score;
+          };
+          return getScore(b) - getScore(a);
+        });
+      } else {
+        newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
+      }
       const filtered = newPapers.filter((p) => !notInterestedIds.has(p.id) && !readPaperIds.has(p.id));
 
       let nextPapers;
@@ -107,7 +163,7 @@ export function FeedProvider({ children }) {
         nextPapers = [...prev, ...unique];
         nextPage = currentPage + 1;
       }
-      const nextHasMore = newPapers.length === PAGE_SIZE;
+      const nextHasMore = newPapers.length > 0;
 
       setPapers(nextPapers);
       setPage(nextPage);
@@ -120,7 +176,7 @@ export function FeedProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, [userPreferences, page, papers, loading, notInterestedIds, readPaperIds, feedMode]);
+  }, [userPreferences, page, papers, loading, notInterestedIds, readPaperIds, feedMode, categoryAffinities]);
 
   // Initial load
   useEffect(() => {
@@ -272,6 +328,34 @@ export function FeedProvider({ children }) {
       }
     }
   }, [user, readPaperIds]);
+
+  const trackViewTime = useCallback(async (paper, timeInSeconds) => {
+    if (!user || IS_DEMO || timeInSeconds < 1) return;
+    try {
+      const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+      await setDoc(ref, {
+        viewTime: increment(timeInSeconds),
+        paperCategory: paper.primaryCategory,
+        timestamp: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      console.error('Error tracking view time:', err);
+    }
+  }, [user]);
+
+  const trackPdfOpened = useCallback(async (paper) => {
+    if (!user || IS_DEMO) return;
+    try {
+      const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+      await setDoc(ref, {
+        openedPdf: true,
+        paperCategory: paper.primaryCategory,
+        timestamp: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      console.error('Error tracking PDF open:', err);
+    }
+  }, [user]);
 
   const markSaved = useCallback((paperId) => {
     setSavedPaperIds((prev) => {
