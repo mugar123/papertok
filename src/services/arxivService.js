@@ -69,10 +69,20 @@ function parseArxivXml(xmlText) {
  */
 function safeDateISO(dateStr) {
   if (!dateStr) return new Date().toISOString();
-  if (dateStr.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
-    return new Date(dateStr.replace(' ', 'T') + 'Z').toISOString();
+  let cleanStr = dateStr.trim();
+  
+  // Replace space with T to make it ISO 8601 compliant for Safari
+  // Converts "2024-03-12 20:00:00" to "2024-03-12T20:00:00"
+  // Converts "2024-03-12 20:00:00 +0000" to "2024-03-12T20:00:00 +0000"
+  cleanStr = cleanStr.replace(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/, '$1T$2');
+  
+  // If it has a timezone offset like +0000 or -0400 without a colon, Safari hates it.
+  // We can just append Z if it ends with time, or trust the parser if it's standard.
+  if (cleanStr.match(/T\d{2}:\d{2}:\d{2}$/)) {
+    cleanStr += 'Z';
   }
-  const parsed = new Date(dateStr);
+  
+  const parsed = new Date(cleanStr);
   return isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 }
 
@@ -145,12 +155,20 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
       const xmlText = await response.text();
       papers = parseArxivXml(xmlText);
     } else {
-      // Fallback: use rss2json proxy which is highly reliable and handles CORS
-      const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
-      response = await fetch(proxyUrl, { signal: controller.signal });
-      if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-      const data = await response.json();
-      papers = parseRss2Json(data);
+      try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        response = await fetch(proxyUrl, { signal: controller.signal });
+        if (!response.ok) throw new Error('allorigins failed');
+        const xmlText = await response.text();
+        papers = parseArxivXml(xmlText);
+      } catch (err) {
+        console.warn('Primary proxy failed, trying fallback', err);
+        const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
+        response = await fetch(proxyUrl, { signal: controller.signal });
+        if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+        const data = await response.json();
+        papers = parseRss2Json(data);
+      }
     }
     clearTimeout(timeoutId);
 
@@ -204,11 +222,20 @@ export async function fetchPapersByIds(arxivIds) {
       const xmlText = await response.text();
       papers = parseArxivXml(xmlText);
     } else {
-      const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
-      response = await fetch(proxyUrl, { signal: controller.signal });
-      if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-      const data = await response.json();
-      papers = parseRss2Json(data);
+      try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        response = await fetch(proxyUrl, { signal: controller.signal });
+        if (!response.ok) throw new Error('allorigins failed');
+        const xmlText = await response.text();
+        papers = parseArxivXml(xmlText);
+      } catch (err) {
+        console.warn('Primary proxy failed, trying fallback', err);
+        const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
+        response = await fetch(proxyUrl, { signal: controller.signal });
+        if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+        const data = await response.json();
+        papers = parseRss2Json(data);
+      }
     }
     clearTimeout(timeoutId);
 
