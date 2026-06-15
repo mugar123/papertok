@@ -46,10 +46,106 @@ export function FeedProvider({ children }) {
   const [notInterestedIds, setNotInterestedIds] = useState(new Set());
   const [savedPaperIds, setSavedPaperIds] = useState(new Set());
   const [readPaperIds, setReadPaperIds] = useState(new Set());
-  const [categoryAffinities, setCategoryAffinities] = useState({});
-  const [categoryCooldowns, setCategoryCooldowns] = useState({});
-  const [conceptAffinities, setConceptAffinities] = useState({});
-  const [relatedCandidates, setRelatedCandidates] = useState([]);
+  const categoryAffinities = useRef({});
+  const categoryCooldowns = useRef({});
+  const conceptAffinities = useRef({});
+  const relatedCandidates = useRef([]);
+
+  // --- TIKTOK-STYLE SCORING & RE-RANKING ---
+  const calculateAndAttachScore = useCallback((paper) => {
+    let affinityScore = 0;
+    if (paper.primaryCategory && categoryAffinities.current[paper.primaryCategory]) {
+      affinityScore = categoryAffinities.current[paper.primaryCategory];
+    }
+    
+    let prefScore = 0;
+    if (userPreferences && userPreferences.includes(paper.primaryCategory)) {
+      prefScore = 100;
+    }
+    
+    const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
+    const recencyBoost = Math.max(0, 20 * Math.exp(-daysOld / 3)); // 3-day half-life for highly dynamic feed
+    
+    let semanticScore = 0;
+    let citationBoost = 0;
+    
+    if (paper.openAlex) {
+      if (paper.openAlex.concepts) {
+        paper.openAlex.concepts.forEach(c => {
+           if (conceptAffinities.current[c.id]) {
+             semanticScore += c.score * conceptAffinities.current[c.id] * 20; // Massive semantic weight
+           }
+        });
+      }
+      if (paper.openAlex.cited_by_count > 0) {
+        citationBoost = Math.log10(paper.openAlex.cited_by_count + 1) * 5; // Reduced citation dominance
+      }
+    }
+    
+    let graphBoost = 0;
+    if (paper._isGraphCandidate) {
+       graphBoost = 15;
+    }
+    
+    let cooldownMultiplier = 1.0;
+    if (paper.primaryCategory && categoryCooldowns.current[paper.primaryCategory]) {
+      const daysSinceRejection = (Date.now() - categoryCooldowns.current[paper.primaryCategory]) / (1000 * 60 * 60 * 24);
+      if (daysSinceRejection < 14) {
+        cooldownMultiplier = 0.1 + (0.9 * (daysSinceRejection / 14)); // drops to 0.1 on recent skip
+        cooldownMultiplier = Math.max(0.1, Math.min(1.0, cooldownMultiplier));
+      }
+    }
+    
+    const baseScore = affinityScore + prefScore + recencyBoost + semanticScore + citationBoost + graphBoost;
+    const finalScore = baseScore * cooldownMultiplier;
+    
+    paper._dynamicScore = finalScore;
+    paper._debugScore = {
+      total: finalScore,
+      baseTotal: baseScore,
+      affinity: affinityScore,
+      preference: prefScore,
+      recency: recencyBoost,
+      semantic: semanticScore,
+      citations: citationBoost,
+      graphBoost: graphBoost,
+      cooldownMultiplier: cooldownMultiplier,
+      isExploration: paper._debugScore?.isExploration || false
+    };
+  }, [userPreferences]);
+
+  const reRankFeed = useCallback(() => {
+    setPapers(prevPapers => {
+       if (!prevPapers || prevPapers.length <= 1) return prevPapers;
+       // Index 0 is currently on screen, do not shift it under the user's feet
+       const currentPaper = prevPapers[0];
+       const queue = [...prevPapers.slice(1)];
+       
+       queue.forEach(paper => {
+          if (!paper._debugScore?.isExploration) {
+            calculateAndAttachScore(paper);
+          }
+       });
+       
+       // Only sort non-exploration papers, keeping exploration papers loosely in their bottom 50% slots
+       const exploitQueue = queue.filter(p => !p._debugScore?.isExploration);
+       const exploreQueue = queue.filter(p => p._debugScore?.isExploration);
+       
+       exploitQueue.sort((a, b) => b._dynamicScore - a._dynamicScore);
+       
+       // Reconstruct queue
+       const newQueue = [...exploitQueue];
+       exploreQueue.forEach(explorePaper => {
+          // Re-inject randomly in the bottom half
+          const maxInsertIndex = newQueue.length;
+          const minInsertIndex = Math.floor(newQueue.length * 0.5);
+          const insertIndex = minInsertIndex + Math.floor(Math.random() * (maxInsertIndex - minInsertIndex + 1));
+          newQueue.splice(insertIndex, 0, explorePaper);
+       });
+       
+       return [currentPaper, ...newQueue];
+    });
+  }, [calculateAndAttachScore]);
 
   // Load user interactions
   useEffect(() => {
@@ -63,10 +159,9 @@ export function FeedProvider({ children }) {
       return;
     }
 
-    // Firebase mode
+    // Real Firebase mode
     const loadInteractions = async () => {
       try {
-        
         const interactionsRef = collection(db, 'users', user.uid, 'interactions');
         const snapshot = await getDocs(interactionsRef);
         const liked = new Set();
@@ -87,12 +182,11 @@ export function FeedProvider({ children }) {
           if (cat) {
             if (!affinities[cat]) affinities[cat] = 0;
             
-            // Time decay for historical interactions
             let decayFactor = 1;
             if (data.timestamp) {
               const ts = new Date(data.timestamp).getTime();
               const daysOld = (Date.now() - ts) / (1000 * 60 * 60 * 24);
-              decayFactor = Math.max(0.2, Math.exp(-daysOld / 30)); // 30-day half life, min 0.2
+              decayFactor = Math.max(0.2, Math.exp(-daysOld / 30));
               
               if (data.notInterested) {
                 if (!cooldowns[cat] || ts > cooldowns[cat]) {
@@ -105,7 +199,11 @@ export function FeedProvider({ children }) {
             if (data.liked) impact += 5;
             if (data.saved) impact += 8;
             if (data.openedPdf) impact += 4;
-            if (data.viewTime) impact += data.viewTime * 0.5;
+            // Continuous view time: max 15 points
+            if (data.viewTime) {
+               const cappedTime = Math.min(data.viewTime, 60); // Cap at 60s
+               impact += cappedTime * 0.25; 
+            }
             if (data.skip) impact -= 1;
             if (data.pdfBounce) impact -= 2;
             if (data.notInterested) impact -= 10;
@@ -166,10 +264,10 @@ export function FeedProvider({ children }) {
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
         setReadPaperIds(read);
-        setCategoryAffinities(affinities);
-        setCategoryCooldowns(cooldowns);
-        setConceptAffinities(conceptWeights);
-        setRelatedCandidates(relatedArxivIds);
+        categoryAffinities.current = affinities;
+        categoryCooldowns.current = cooldowns;
+        conceptAffinities.current = conceptWeights;
+        relatedCandidates.current = relatedArxivIds;
       } catch (err) {
         console.error('Error loading interactions:', err);
       }
@@ -207,15 +305,15 @@ export function FeedProvider({ children }) {
 
         // Setup Capa 2: Graph/Related (25%) -> candidates pool
         let candidatesToFetch = [];
-        if (relatedCandidates && relatedCandidates.length > 0) {
-           candidatesToFetch = [...relatedCandidates].sort(() => 0.5 - Math.random()).slice(0, 10);
+        if (relatedCandidates.current && relatedCandidates.current.length > 0) {
+           candidatesToFetch = [...relatedCandidates.current].sort(() => 0.5 - Math.random()).slice(0, 10);
         }
 
         // Setup Capa 3: Trending Científico (15%) -> Pick trending categories
         const validTrending = allCategories
           .filter(c => userAreas.has(c.area))
           .filter(c => !userPreferences.includes(c.id))
-          .filter(c => (categoryAffinities[c.id] || 0) >= -2)
+          .filter(c => (categoryAffinities.current[c.id] || 0) >= -2)
           .map(c => c.id);
         const trendingCategories = validTrending.sort(() => 0.5 - Math.random()).slice(0, 2);
 
@@ -223,8 +321,8 @@ export function FeedProvider({ children }) {
         // Only explore within the user's parent areas, OR categories they've shown affinity for.
         const validRandom = allCategories
           .filter(c => !userPreferences.includes(c.id))
-          .filter(c => userAreas.has(c.area) || (categoryAffinities[c.id] || 0) > 0)
-          .filter(c => (categoryAffinities[c.id] || 0) >= -2)
+          .filter(c => userAreas.has(c.area) || (categoryAffinities.current[c.id] || 0) > 0)
+          .filter(c => (categoryAffinities.current[c.id] || 0) >= -2)
           .map(c => c.id);
         const randomCats = validRandom.sort(() => 0.5 - Math.random()).slice(0, 1);
 
@@ -241,6 +339,9 @@ export function FeedProvider({ children }) {
         const arxivIdsToEnrich = coreToEnrich.map(p => p.id);
         const openAlexData = await enrichPapersBatch(arxivIdsToEnrich);
         
+        // Tag graph papers before deduplication
+        graphPapers.forEach(p => p._isGraphCandidate = true);
+        
         // Deduplicate core and filter out already seen/interacted papers
         const uniqueMap = new Map();
         coreToEnrich.forEach(p => {
@@ -250,6 +351,11 @@ export function FeedProvider({ children }) {
               !readPaperIds.has(p.id) &&
               !notInterestedIds.has(p.id) &&
               !sessionSeenPapers.has(p.id)) {
+            
+            // Merge OpenAlex data immediately so re-ranking can use it
+            if (openAlexData[p.id]) {
+               p.openAlex = openAlexData[p.id];
+            }
             uniqueMap.set(p.id, p);
           }
         });
@@ -262,67 +368,7 @@ export function FeedProvider({ children }) {
 
         // Calculate and attach debug scores before sorting
         sortedCore.forEach(paper => {
-          let affinityScore = 0;
-          if (paper.primaryCategory && categoryAffinities[paper.primaryCategory]) {
-            affinityScore = categoryAffinities[paper.primaryCategory];
-          }
-          
-          let prefScore = 0;
-          if (userPreferences.includes(paper.primaryCategory)) {
-            prefScore = 100; // Massively increased base preference weight to focus feed
-          }
-          
-          // Reduced recency dominance, max 20 points, decays over 30 days
-          const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
-          const recencyBoost = Math.max(0, 20 * Math.exp(-daysOld / 30));
-          
-          // SEMANTIC SCORE (OpenAlex)
-          let semanticScore = 0;
-          let citationBoost = 0;
-          
-          const oaData = openAlexData[paper.id];
-          if (oaData) {
-            paper.openAlex = oaData; // Attach for UI display
-            oaData.concepts.forEach(c => {
-               if (conceptAffinities[c.id]) {
-                 semanticScore += c.score * conceptAffinities[c.id] * 10; // Increased semantic weight
-               }
-            });
-            if (oaData.cited_by_count > 0) {
-              citationBoost = Math.log10(oaData.cited_by_count + 1) * 10; // Increased citation weight
-            }
-          }
-          
-          // Graph Capa 2 Boost
-          let graphBoost = 0;
-          if (graphPapers.some(gp => gp.id === paper.id)) {
-             graphBoost = 15;
-          }
-          
-          let cooldownMultiplier = 1.0;
-          if (paper.primaryCategory && categoryCooldowns[paper.primaryCategory]) {
-            const daysSinceRejection = (Date.now() - categoryCooldowns[paper.primaryCategory]) / (1000 * 60 * 60 * 24);
-            if (daysSinceRejection < 14) {
-              cooldownMultiplier = 0.2 + (0.8 * (daysSinceRejection / 14));
-              cooldownMultiplier = Math.max(0.2, Math.min(1.0, cooldownMultiplier));
-            }
-          }
-          
-          const baseScore = affinityScore + prefScore + recencyBoost + semanticScore + citationBoost + graphBoost;
-          const finalScore = baseScore * cooldownMultiplier;
-          
-          paper._debugScore = {
-            total: finalScore,
-            baseTotal: baseScore,
-            affinity: affinityScore,
-            preference: prefScore,
-            recency: recencyBoost,
-            semantic: semanticScore,
-            citations: citationBoost,
-            graphBoost: graphBoost,
-            cooldownMultiplier: cooldownMultiplier,
-            isExploration: false
-          };
+           calculateAndAttachScore(paper, userPreferences);
         });
 
         // Sort ONLY exploit + trending
@@ -465,9 +511,20 @@ export function FeedProvider({ children }) {
     const isCurrentlyLiked = likedPaperIds.has(paper.id);
     const newLiked = new Set(likedPaperIds);
 
-    if (isCurrentlyLiked) newLiked.delete(paper.id);
-    else newLiked.add(paper.id);
+    if (isCurrentlyLiked) {
+      newLiked.delete(paper.id);
+      if (paper.primaryCategory) categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 5;
+    } else {
+      newLiked.add(paper.id);
+      if (paper.primaryCategory) categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) + 5;
+      if (paper.openAlex?.concepts) {
+        paper.openAlex.concepts.forEach(c => {
+           conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + 1;
+        });
+      }
+    }
     setLikedPaperIds(newLiked);
+    reRankFeed();
 
     if (IS_DEMO) {
       demoSet('likedPaperIds', Array.from(newLiked));
@@ -496,7 +553,7 @@ export function FeedProvider({ children }) {
         setLikedPaperIds(likedPaperIds);
       }
     }
-  }, [user, likedPaperIds]);
+  }, [user, likedPaperIds, reRankFeed]);
 
   const markNotInterested = useCallback(async (paper) => {
     if (!user) return;
@@ -504,6 +561,17 @@ export function FeedProvider({ children }) {
     newNotInterested.add(paper.id);
     setNotInterestedIds(newNotInterested);
     setPapers((prev) => prev.filter((p) => p.id !== paper.id));
+
+    if (paper.primaryCategory) {
+       categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 10;
+       categoryCooldowns.current[paper.primaryCategory] = Date.now();
+    }
+    if (paper.openAlex?.concepts) {
+      paper.openAlex.concepts.forEach(c => {
+         conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) - 2;
+      });
+    }
+    reRankFeed();
 
     if (IS_DEMO) {
       demoSet('notInterestedIds', Array.from(newNotInterested));
@@ -521,7 +589,7 @@ export function FeedProvider({ children }) {
         console.error('Error saving not interested:', err);
       }
     }
-  }, [user, notInterestedIds]);
+  }, [user, notInterestedIds, reRankFeed]);
 
   const markAsRead = useCallback(async (paper) => {
     if (!user) return;
@@ -561,6 +629,18 @@ export function FeedProvider({ children }) {
 
   const trackViewTime = useCallback(async (paper, timeInSeconds) => {
     if (!user || IS_DEMO || timeInSeconds < 1) return;
+    
+    // Instantly update local weights for real-time re-ranking
+    if (paper.primaryCategory) {
+      categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) + (Math.min(timeInSeconds, 60) * 0.25);
+    }
+    if (paper.openAlex?.concepts) {
+      paper.openAlex.concepts.forEach(c => {
+         conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + (Math.min(timeInSeconds, 60) * 0.05);
+      });
+    }
+    reRankFeed();
+
     try {
       const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
       await setDoc(ref, {
@@ -572,10 +652,22 @@ export function FeedProvider({ children }) {
     } catch (err) {
       console.error('Error tracking view time:', err);
     }
-  }, [user]);
+  }, [user, reRankFeed]);
 
   const trackPdfOpened = useCallback(async (paper) => {
     if (!user || IS_DEMO) return;
+    
+    // Instantly update local weights for real-time re-ranking
+    if (paper.primaryCategory) {
+      categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) + 4;
+    }
+    if (paper.openAlex?.concepts) {
+      paper.openAlex.concepts.forEach(c => {
+         conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + 1;
+      });
+    }
+    reRankFeed();
+
     try {
       const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
       await setDoc(ref, {
@@ -588,10 +680,17 @@ export function FeedProvider({ children }) {
     } catch (err) {
       console.error('Error tracking PDF open:', err);
     }
-  }, [user]);
+  }, [user, reRankFeed]);
 
   const trackSkip = useCallback(async (paper) => {
     if (!user || IS_DEMO) return;
+    
+    // Instantly update local weights for real-time re-ranking
+    if (paper.primaryCategory) {
+      categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 1;
+    }
+    reRankFeed();
+
     try {
       const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
       await setDoc(ref, {
@@ -604,7 +703,7 @@ export function FeedProvider({ children }) {
     } catch (err) {
       console.error('Error tracking skip:', err);
     }
-  }, [user]);
+  }, [user, reRankFeed]);
 
   const trackPdfBounce = useCallback(async (paper) => {
     if (!user || IS_DEMO) return;

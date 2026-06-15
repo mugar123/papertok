@@ -53,8 +53,8 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
       if (viewStartTime.current) {
         totalViewTime.current += (Date.now() - viewStartTime.current) / 1000;
       }
-      if (totalViewTime.current > 5) {
-        trackViewTime(paper, Math.floor(totalViewTime.current));
+      if (totalViewTime.current >= 1.0) {
+        trackViewTime(paper, totalViewTime.current);
       } else if (totalViewTime.current > 0.1 && totalViewTime.current < 1.0) {
         trackSkip(paper);
       }
