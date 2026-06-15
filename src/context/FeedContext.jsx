@@ -195,7 +195,7 @@ export function FeedProvider({ children }) {
 
     try {
       let newPapers = [];
-      if (activeMode === 'recent' || activeMode === null) {
+      if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
         
         // Determine user's parent areas
@@ -355,6 +355,14 @@ export function FeedProvider({ children }) {
         !savedPaperIds.has(p.id) &&
         !sessionSeenPapers.has(p.id)
       );
+
+      if (filtered.length === 0 && newPapers.length > 0) {
+        if (currentPage < 20) {
+          console.log("All fetched chronological papers were seen, fetching next page...");
+          setPage(currentPage + 1);
+          return;
+        }
+      }
 
       let nextPapers;
       let nextPage;

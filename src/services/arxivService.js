@@ -89,6 +89,7 @@ function parseRss2Json(data) {
     
     return {
       id,
+      arxivId: id,
       title: item.title ? item.title.replace(/\n/g, ' ').trim() : 'No Title',
       summary: item.description ? item.description.replace(/\n/g, ' ').trim() : 'No summary available.',
       authors,
@@ -145,7 +146,7 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
       papers = parseArxivXml(xmlText);
     } else {
       // Fallback: use rss2json proxy which is highly reliable and handles CORS
-      const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`;
+      const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
       response = await fetch(proxyUrl, { signal: controller.signal });
       if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
       const data = await response.json();
@@ -203,7 +204,7 @@ export async function fetchPapersByIds(arxivIds) {
       const xmlText = await response.text();
       papers = parseArxivXml(xmlText);
     } else {
-      const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`;
+      const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
       response = await fetch(proxyUrl, { signal: controller.signal });
       if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
       const data = await response.json();
