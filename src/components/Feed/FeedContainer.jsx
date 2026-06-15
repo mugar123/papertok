@@ -57,7 +57,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   }
 
   if (papers.length === 0 && !error) {
-    if (!showLoader && !isRefreshing) {
+    if (loading && !showLoader && !isRefreshing) {
       return (
         <div className="feed-wrapper">
           <div className="feed-container">

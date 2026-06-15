@@ -289,7 +289,7 @@ export function FeedProvider({ children }) {
   }, [user]);
 
   // Load papers when preferences are available
-  const loadPapers = useCallback(async (reset = false, mode, randomizeStart = false) => {
+  const loadPapers = useCallback(async (reset = false, mode, randomizeStart = false, pageOverride) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!reset && loading) return;
 
@@ -298,7 +298,7 @@ export function FeedProvider({ children }) {
     setLoading(true);
     setError(null);
     
-    let currentPage = reset ? 0 : page;
+    let currentPage = reset ? 0 : (pageOverride !== undefined ? pageOverride : page);
     if (randomizeStart) {
       // Pick a random page between 0 and 50 to give a fresh slice of papers
       currentPage = Math.floor(Math.random() * 50);
@@ -423,9 +423,16 @@ export function FeedProvider({ children }) {
       if (filtered.length === 0 && newPapers.length > 0) {
         if (currentPage < 20) {
           console.log("All fetched papers were seen, fetching next page automatically...");
-          setPage(currentPage + 1);
+          const nextPageToFetch = currentPage + 1;
+          setPage(nextPageToFetch);
           // Set timeout to avoid deep recursion stack
-          setTimeout(() => loadPapers(false, activeMode, false), 0);
+          setTimeout(() => {
+            if (loadPapersRef.current) {
+              loadPapersRef.current(false, activeMode, false, nextPageToFetch);
+            } else {
+              loadPapers(false, activeMode, false, nextPageToFetch);
+            }
+          }, 0);
           return;
         }
       }

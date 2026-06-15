@@ -113,6 +113,80 @@ function parseRss2Json(data) {
 }
 
 /**
+ * Helper to fetch and parse arXiv XML or JSON using cascading proxies in production
+ */
+async function fetchArxivData(url) {
+  const baseUrl = isDev ? ARXIV_DEV : ARXIV_PROD;
+  
+  if (isDev) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    try {
+      const response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+      const xmlText = await response.text();
+      return parseArxivXml(xmlText);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  // 1. Try corsproxy.io (Fast, reliable, rarely blocked by content filters)
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+      console.log('Fetching via corsproxy.io:', proxyUrl);
+      const response = await fetch(proxyUrl, { signal: controller.signal });
+      if (response.ok) {
+        const xmlText = await response.text();
+        const papers = parseArxivXml(xmlText);
+        if (papers && papers.length > 0) return papers;
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch (e) {
+    console.warn('corsproxy.io failed, trying allorigins', e);
+  }
+
+  // 2. Try allorigins.win (Secondary proxy)
+  try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 8000);
+    try {
+      const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+      console.log('Fetching via allorigins:', proxyUrl);
+      const response = await fetch(proxyUrl, { signal: controller.signal });
+      if (response.ok) {
+        const xmlText = await response.text();
+        const papers = parseArxivXml(xmlText);
+        if (papers && papers.length > 0) return papers;
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  } catch (e) {
+    console.warn('allorigins failed, trying rss2json', e);
+  }
+
+  // 3. Try rss2json.com (Tertiary proxy - converts XML to JSON)
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
+  try {
+    const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
+    console.log('Fetching via rss2json:', proxyUrl);
+    const response = await fetch(proxyUrl, { signal: controller.signal });
+    if (!response.ok) throw new Error(`arXiv API error via rss2json: ${response.status}`);
+    const data = await response.json();
+    return parseRss2Json(data);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/**
  * Fetch papers from arXiv by categories or raw query.
  */
 export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20, mode = 'recent') {
@@ -135,7 +209,6 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
     sortOrder: 'descending',
   });
 
-  // In dev, use Vite proxy. In production, try direct or CORS proxy.
   const baseUrl = isDev ? ARXIV_DEV : ARXIV_PROD;
   const url = `${baseUrl}?${params.toString()}`;
 
@@ -144,51 +217,7 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
 
   try {
-    let response;
-    let papers = [];
-    if (isDev) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      try {
-        response = await fetch(url, { signal: controller.signal });
-        if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-        const xmlText = await response.text();
-        papers = parseArxivXml(xmlText);
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    } else {
-      let primaryFailed = false;
-      const controller1 = new AbortController();
-      const timeoutId1 = setTimeout(() => controller1.abort(), 10000);
-      try {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        response = await fetch(proxyUrl, { signal: controller1.signal });
-        if (!response.ok) throw new Error('allorigins failed');
-        const xmlText = await response.text();
-        papers = parseArxivXml(xmlText);
-      } catch (err) {
-        console.warn('Primary proxy failed, trying fallback', err);
-        primaryFailed = true;
-      } finally {
-        clearTimeout(timeoutId1);
-      }
-
-      if (primaryFailed) {
-        const controller2 = new AbortController();
-        const timeoutId2 = setTimeout(() => controller2.abort(), 10000);
-        try {
-          const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
-          response = await fetch(proxyUrl, { signal: controller2.signal });
-          if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-          const data = await response.json();
-          papers = parseRss2Json(data);
-        } finally {
-          clearTimeout(timeoutId2);
-        }
-      }
-    }
-
+    const papers = await fetchArxivData(url);
     cache.set(cacheKey, { data: papers, timestamp: Date.now() });
     return papers;
   } catch (error) {
@@ -228,51 +257,7 @@ export async function fetchPapersByIds(arxivIds) {
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
 
   try {
-    let response;
-    let papers = [];
-    if (isDev) {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-      try {
-        response = await fetch(url, { signal: controller.signal });
-        if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-        const xmlText = await response.text();
-        papers = parseArxivXml(xmlText);
-      } finally {
-        clearTimeout(timeoutId);
-      }
-    } else {
-      let primaryFailed = false;
-      const controller1 = new AbortController();
-      const timeoutId1 = setTimeout(() => controller1.abort(), 10000);
-      try {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        response = await fetch(proxyUrl, { signal: controller1.signal });
-        if (!response.ok) throw new Error('allorigins failed');
-        const xmlText = await response.text();
-        papers = parseArxivXml(xmlText);
-      } catch (err) {
-        console.warn('Primary proxy failed, trying fallback', err);
-        primaryFailed = true;
-      } finally {
-        clearTimeout(timeoutId1);
-      }
-
-      if (primaryFailed) {
-        const controller2 = new AbortController();
-        const timeoutId2 = setTimeout(() => controller2.abort(), 10000);
-        try {
-          const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
-          response = await fetch(proxyUrl, { signal: controller2.signal });
-          if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-          const data = await response.json();
-          papers = parseRss2Json(data);
-        } finally {
-          clearTimeout(timeoutId2);
-        }
-      }
-    }
-
+    const papers = await fetchArxivData(url);
     cache.set(cacheKey, { data: papers, timestamp: Date.now() });
     return papers;
   } catch (error) {

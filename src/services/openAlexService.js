@@ -12,16 +12,12 @@ const GRAPH_CACHE = new Map(); // caches W... to arxivId mappings
  * @returns {Promise<Object>} Map of { arxivId: { concepts, cited_by_count, related_works } }
  */
 export async function enrichPapersBatch(arxivIds) {
-  if (!arxivIds || arxivIds.length === 0) return {};
-  
-  // Clean IDs (remove versions like v1)
-  const cleanIds = arxivIds.map(id => id.replace(/v\d+$/, ''));
-  
-  const toFetch = cleanIds.filter(id => !CACHE.has(id));
+  const validIds = arxivIds.filter(id => id && id.trim() !== '');
+  const toFetch = validIds.filter(id => !CACHE.has(id));
   const result = {};
   
-  // Populate from cache
-  cleanIds.forEach(id => {
+  // Populate from cache first
+  arxivIds.forEach(id => {
     if (CACHE.has(id)) result[id] = CACHE.get(id);
   });
   
@@ -32,7 +28,7 @@ export async function enrichPapersBatch(arxivIds) {
   for (let i = 0; i < toFetch.length; i += CHUNK_SIZE) {
     const chunk = toFetch.slice(i, i + CHUNK_SIZE);
     // Convert arXiv IDs to their official DOIs for OpenAlex lookup
-    const filterIds = chunk.map(id => `doi:10.48550/arxiv.${id}`).join('|');
+    const filterIds = chunk.map(id => `doi:10.48550/arxiv.${id.replace(/v\d+$/, '')}`).join('|');
     const url = `https://api.openalex.org/works?filter=${filterIds}&per-page=50&select=doi,concepts,cited_by_count,related_works`;
     
     let response = null;
@@ -48,16 +44,27 @@ export async function enrichPapersBatch(arxivIds) {
       clearTimeout(timeoutId1);
     }
       
-    // If direct fetch fails (e.g., Safari Private Relay block), try proxy with NEW controller
+    // If direct fetch fails (e.g., Safari Private Relay block), try proxy cascade
     if (primaryFailed) {
-      console.warn('OpenAlex direct fetch failed, trying proxy');
+      console.warn('OpenAlex direct fetch failed, trying proxy cascade');
       const controller2 = new AbortController();
-      const timeoutId2 = setTimeout(() => controller2.abort(), 10000);
+      const timeoutId2 = setTimeout(() => controller2.abort(), 8000);
       try {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
         response = await fetch(proxyUrl, { signal: controller2.signal }).catch(() => null);
       } finally {
         clearTimeout(timeoutId2);
+      }
+
+      if (!response || !response.ok) {
+        const controller3 = new AbortController();
+        const timeoutId3 = setTimeout(() => controller3.abort(), 8000);
+        try {
+          const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+          response = await fetch(proxyUrl, { signal: controller3.signal }).catch(() => null);
+        } finally {
+          clearTimeout(timeoutId3);
+        }
       }
     }
       
