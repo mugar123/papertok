@@ -67,6 +67,15 @@ function parseArxivXml(xmlText) {
 /**
  * Helper to parse the rss2json format in production
  */
+function safeDateISO(dateStr) {
+  if (!dateStr) return new Date().toISOString();
+  if (dateStr.match(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)) {
+    return new Date(dateStr.replace(' ', 'T') + 'Z').toISOString();
+  }
+  const parsed = new Date(dateStr);
+  return isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+}
+
 function parseRss2Json(data) {
   if (data.status !== 'ok' || !data.items) return [];
   
@@ -83,8 +92,8 @@ function parseRss2Json(data) {
       title: item.title ? item.title.replace(/\n/g, ' ').trim() : 'No Title',
       summary: item.description ? item.description.replace(/\n/g, ' ').trim() : 'No summary available.',
       authors,
-      published: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
-      updated: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+      published: safeDateISO(item.pubDate),
+      updated: safeDateISO(item.pubDate),
       pdfLink: idUrl ? idUrl.replace('abs', 'pdf') : '',
       primaryCategory,
       categories
