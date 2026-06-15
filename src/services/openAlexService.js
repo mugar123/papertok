@@ -108,11 +108,12 @@ export async function enrichPapersBatch(arxivIds) {
  */
 export async function getArxivIdsForOpenAlexWorks(openAlexUrls) {
   if (!openAlexUrls || openAlexUrls.length === 0) return [];
+  const validUrls = openAlexUrls.filter(url => url && typeof url === 'string' && url.includes('/'));
   
   const result = [];
   const toFetch = [];
   
-  openAlexUrls.forEach(url => {
+  validUrls.forEach(url => {
     const wId = url.split('/').pop();
     if (GRAPH_CACHE.has(wId)) {
       const cached = GRAPH_CACHE.get(wId);

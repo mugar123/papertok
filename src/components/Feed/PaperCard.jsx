@@ -1,5 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
-import { useFeed } from '../../context/FeedContext';
+import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
 import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
 import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2 } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
@@ -18,8 +17,20 @@ const AREA_BG_ICONS = {
   'q-fin': [CircleDollarSign, TrendingUp, BarChart2, Network, Sigma, Activity],
 };
 
-export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthors }) {
-  const { toggleLike, markNotInterested, markAsRead, likedPaperIds, savedPaperIds, readPaperIds, trackViewTime, trackSkip } = useFeed();
+const PaperCard = memo(function PaperCard({ 
+  paper, 
+  isLiked, 
+  isSaved, 
+  isRead, 
+  onLike,
+  onNotInterested,
+  onMarkAsRead,
+  trackViewTime,
+  trackSkip,
+  onOpenPdf,
+  onSaveToList,
+  onOpenAuthors 
+}) {
   const [expanded, setExpanded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -82,15 +93,13 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
     }
   };
 
-  const isLiked = likedPaperIds.has(paper.id);
-  const isSaved = savedPaperIds.has(paper.id);
-  const isRead = readPaperIds?.has(paper.id) || isMarkingRead;
+  const isReadActive = isRead || isMarkingRead;
 
   const handleMarkAsRead = (e) => {
     e.stopPropagation();
     setIsMarkingRead(true);
     setTimeout(() => {
-      markAsRead(paper);
+      onMarkAsRead(paper);
     }, 1500); // give time for animation before unmounting
   };
 
@@ -176,17 +185,17 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
     const now = Date.now();
     if (now - lastTap.current < 300) {
       if (!isLiked) {
-        toggleLike(paper);
+        onLike(paper);
         setShowHeart(true);
         setTimeout(() => setShowHeart(false), 1200);
       }
     }
     lastTap.current = now;
-  }, [isLiked, toggleLike, paper]);
+  }, [isLiked, onLike, paper]);
 
   const handleLike = (e) => {
     e.stopPropagation();
-    toggleLike(paper);
+    onLike(paper);
     if (!isLiked) {
       setShowHeart(true);
       setTimeout(() => setShowHeart(false), 1200);
@@ -211,7 +220,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
 
   const handleNotInterested = (e) => {
     e.stopPropagation();
-    markNotInterested(paper);
+    onNotInterested(paper);
   };
 
   const categoryLabel = getCategoryLabel(paper.primaryCategory);
@@ -444,9 +453,9 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
           <span>Guardar</span>
         </button>
 
-        <button className={`pc-side-btn ${isRead ? 'pc-side-btn--read' : ''}`} onClick={handleMarkAsRead}>
+        <button className={`pc-side-btn ${isReadActive ? 'pc-side-btn--read' : ''}`} onClick={handleMarkAsRead}>
           <div className="pc-side-icon">
-            {isRead ? <CheckCircle2 size={24} color="#10b981" /> : <Eye size={24} />}
+            {isReadActive ? <CheckCircle2 size={24} color="#10b981" /> : <Eye size={24} />}
           </div>
           <span>Leer</span>
         </button>
@@ -482,4 +491,6 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
       </div>
     </div>
   );
-}
+});
+
+export default PaperCard;

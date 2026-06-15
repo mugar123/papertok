@@ -17,7 +17,8 @@ function parseArxivXml(xmlText) {
 
   entries.forEach((entry) => {
     const id = entry.querySelector('id')?.textContent || '';
-    const arxivId = id.replace(/.*\/abs\//, '').replace(/v\d+$/, '');
+    const arxivId = id.replace(/.*\/abs\//, '').replace(/v\d+$/, '').trim();
+    if (!arxivId || arxivId.toLowerCase() === 'unknown') return;
 
     const title = (entry.querySelector('title')?.textContent || '').replace(/\s+/g, ' ').trim();
     const summary = (entry.querySelector('summary')?.textContent || '').replace(/\s+/g, ' ').trim();
@@ -89,27 +90,30 @@ function safeDateISO(dateStr) {
 function parseRss2Json(data) {
   if (data.status !== 'ok' || !data.items) return [];
   
-  return data.items.map(item => {
-    const idUrl = item.guid || item.link;
-    const id = idUrl ? idUrl.split('/').pop() : 'unknown';
-    
-    const authors = item.author ? item.author.split(',').map(a => a.trim()) : ['Unknown Author'];
-    const categories = item.categories || [];
-    const primaryCategory = categories.length > 0 ? categories[0] : 'unknown';
-    
-    return {
-      id,
-      arxivId: id,
-      title: item.title ? item.title.replace(/\n/g, ' ').trim() : 'No Title',
-      summary: item.description ? item.description.replace(/\n/g, ' ').trim() : 'No summary available.',
-      authors,
-      published: safeDateISO(item.pubDate),
-      updated: safeDateISO(item.pubDate),
-      pdfLink: idUrl ? idUrl.replace('abs', 'pdf') : '',
-      primaryCategory,
-      categories
-    };
-  });
+  return data.items
+    .map(item => {
+      const idUrl = item.guid || item.link;
+      const id = idUrl ? idUrl.split('/').pop() : '';
+      if (!id || id.toLowerCase() === 'unknown') return null;
+      
+      const authors = item.author ? item.author.split(',').map(a => a.trim()) : ['Unknown Author'];
+      const categories = item.categories || [];
+      const primaryCategory = categories.length > 0 ? categories[0] : 'unknown';
+      
+      return {
+        id,
+        arxivId: id,
+        title: item.title ? item.title.replace(/\n/g, ' ').trim() : 'No Title',
+        summary: item.description ? item.description.replace(/\n/g, ' ').trim() : 'No summary available.',
+        authors,
+        published: safeDateISO(item.pubDate),
+        updated: safeDateISO(item.pubDate),
+        pdfLink: idUrl ? idUrl.replace('abs', 'pdf') : '',
+        primaryCategory,
+        categories
+      };
+    })
+    .filter(Boolean);
 }
 
 /**

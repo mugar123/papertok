@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import './PDFViewer.css';
 
@@ -12,7 +12,7 @@ export default function PDFViewer({ paper, onClose }) {
   const { trackPdfBounce } = useFeed();
   const startTimeRef = useRef(Date.now());
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setIsClosing(true);
     const elapsed = (Date.now() - startTimeRef.current) / 1000;
     if (elapsed < 5) {
@@ -21,7 +21,7 @@ export default function PDFViewer({ paper, onClose }) {
     setTimeout(() => {
       onClose();
     }, 300); // Wait for the animation to finish
-  };
+  }, [onClose, paper, trackPdfBounce]);
 
   // Close on Escape key
   useEffect(() => {
@@ -29,18 +29,26 @@ export default function PDFViewer({ paper, onClose }) {
       if (e.key === 'Escape') handleClose();
     };
     window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleClose]);
 
-    // Lock body scroll
+  // Lock body scroll on mount, unlock on unmount
+  useEffect(() => {
     document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, []);
 
-    // Fallback timeout
+  // Fallback timeout
+  useEffect(() => {
     const fallbackTimer = setTimeout(() => {
       if (!iframeLoaded) setShowFallback(true);
     }, 8000);
 
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      document.body.style.overflow = '';
       clearTimeout(fallbackTimer);
     };
   }, [iframeLoaded]); // removed onClose from deps to prevent stale closures if not needed, or we can just use the outer onClose

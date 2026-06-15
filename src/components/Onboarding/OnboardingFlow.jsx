@@ -50,22 +50,22 @@ export default function OnboardingFlow() {
     const area = CATEGORIES[areaKey];
     const ids = Object.keys(area.subcategories);
     
-    // Check current state without mutating
-    let allSelected = false;
-    setSelectedSubcategories((prev) => {
-      allSelected = ids.every((id) => prev.has(id));
-      return prev;
-    });
+    // Pure check using current state directly
+    const allSelected = ids.every((id) => selectedSubcategories.has(id));
 
-    for (let i = 0; i < ids.length; i++) {
-      const id = ids[i];
-      setSelectedSubcategories(prev => {
-        const next = new Set(prev);
+    // Batch subcategory state update to run once
+    setSelectedSubcategories((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => {
         if (allSelected) next.delete(id);
         else next.add(id);
-        return next;
       });
-      
+      return next;
+    });
+
+    // Run sequential chip glow animation
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
       setAnimatingChip(id);
       await new Promise(resolve => setTimeout(resolve, 30));
     }

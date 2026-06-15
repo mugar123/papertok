@@ -7,7 +7,10 @@ import AuthorPanel from './AuthorPanel';
 import './FeedContainer.css';
 
 export default function FeedContainer({ onOpenPdf, onSaveToList }) {
-  const { papers, loading, error, hasMore, loadMore, refreshFeed, isRefreshing, trackPdfOpened } = useFeed();
+  const { 
+    papers, loading, error, hasMore, loadMore, refreshFeed, isRefreshing, trackPdfOpened,
+    likedPaperIds, savedPaperIds, readPaperIds, toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip
+  } = useFeed();
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
   const [showLoader, setShowLoader] = useState(false);
@@ -42,6 +45,19 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const handleRefresh = useCallback(() => {
     refreshFeed();
   }, [refreshFeed]);
+
+  const handleOpenPdf = useCallback((paper) => {
+    trackPdfOpened(paper);
+    onOpenPdf(paper);
+  }, [onOpenPdf, trackPdfOpened]);
+
+  const handleSaveToList = useCallback((paper) => {
+    onSaveToList(paper);
+  }, [onSaveToList]);
+
+  const handleOpenAuthors = useCallback((authors) => {
+    setActiveAuthors(authors);
+  }, []);
 
   if (error && papers.length === 0) {
     return (
@@ -89,12 +105,17 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
           <div key={paper.id} className="feed-snap-item">
             <PaperCard
               paper={paper}
-              onOpenPdf={() => {
-                trackPdfOpened(paper);
-                onOpenPdf(paper);
-              }}
-              onSaveToList={() => onSaveToList(paper)}
-              onOpenAuthors={() => setActiveAuthors(paper.authors)}
+              isLiked={likedPaperIds.has(paper.id)}
+              isSaved={savedPaperIds.has(paper.id)}
+              isRead={readPaperIds?.has(paper.id)}
+              onLike={toggleLike}
+              onNotInterested={markNotInterested}
+              onMarkAsRead={markAsRead}
+              trackViewTime={trackViewTime}
+              trackSkip={trackSkip}
+              onOpenPdf={handleOpenPdf}
+              onSaveToList={handleSaveToList}
+              onOpenAuthors={handleOpenAuthors}
             />
           </div>
         ))}
