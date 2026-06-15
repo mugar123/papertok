@@ -213,6 +213,17 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
       <div className="pc-bg" style={{ background: areaInfo.gradient }} />
       <div className="pc-bg-overlay" />
 
+      {/* DEBUG PANEL */}
+      {localStorage.getItem('DEBUG_RANKING') === 'true' && paper._debugScore && (
+        <div className="pc-debug-panel">
+          <div><strong>TOTAL SCORE: {paper._debugScore.total.toFixed(2)}</strong></div>
+          <div>Affinity: {paper._debugScore.affinity.toFixed(2)}</div>
+          <div>Preference Match: {paper._debugScore.preference.toFixed(2)}</div>
+          <div>Recency Boost: {paper._debugScore.recency.toFixed(2)}</div>
+          <div>Exploration: {paper._debugScore.isExploration ? 'YES (Randomly Injected)' : 'NO'}</div>
+        </div>
+      )}
+
       {/* Floating category icon constellation */}
       <div className="pc-bg-constellation">
         {bgIcons.map((item) => (

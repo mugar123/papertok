@@ -148,31 +148,45 @@ export function FeedProvider({ children }) {
         
         const sortedCore = Array.from(uniqueMap.values());
 
-        // Score and Sort ONLY exploit + trending
-        sortedCore.sort((a, b) => {
-          const getScore = (paper) => {
-            let score = 0;
-            // Affinity bonus
-            if (paper.primaryCategory && categoryAffinities[paper.primaryCategory]) {
-              score += categoryAffinities[paper.primaryCategory];
-            }
-            // Preference match
-            if (userPreferences.includes(paper.primaryCategory)) {
-              score += 10;
-            }
-            // Recency boost (exponential decay, half life ~14 days)
-            const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
-            score += Math.max(0, 50 * Math.exp(-daysOld / 14));
-            return score;
+        // Calculate and attach debug scores before sorting
+        sortedCore.forEach(paper => {
+          let affinityScore = 0;
+          if (paper.primaryCategory && categoryAffinities[paper.primaryCategory]) {
+            affinityScore = categoryAffinities[paper.primaryCategory];
+          }
+          
+          let prefScore = 0;
+          if (userPreferences.includes(paper.primaryCategory)) {
+            prefScore = 10;
+          }
+          
+          const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
+          const recencyBoost = Math.max(0, 50 * Math.exp(-daysOld / 14));
+          
+          paper._debugScore = {
+            total: affinityScore + prefScore + recencyBoost,
+            affinity: affinityScore,
+            preference: prefScore,
+            recency: recencyBoost,
+            isExploration: false
           };
-          return getScore(b) - getScore(a);
         });
+
+        // Sort ONLY exploit + trending
+        sortedCore.sort((a, b) => b._debugScore.total - a._debugScore.total);
 
         // Inject random papers dynamically (Anti-bubbles)
         newPapers = [...sortedCore];
         const uniqueRandoms = randomPapers.filter(p => !uniqueMap.has(p.id));
         
         uniqueRandoms.forEach(randomPaper => {
+          randomPaper._debugScore = {
+            total: 0,
+            affinity: 0,
+            preference: 0,
+            recency: 0,
+            isExploration: true
+          };
           // Insert randomly in the top 80% of the feed so they are actually seen
           const maxInsertIndex = Math.max(1, Math.floor(newPapers.length * 0.8));
           const insertIndex = Math.floor(Math.random() * maxInsertIndex);
