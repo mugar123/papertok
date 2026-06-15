@@ -39,6 +39,7 @@ export function AuthProvider({ children }) {
     // Real Firebase mode
 
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+      setLoading(true);
       if (firebaseUser) {
         setUser(firebaseUser);
         try {

@@ -38,19 +38,28 @@ export default function EditInterestsModal({ isOpen, onClose }) {
     });
   };
 
-  const toggleArea = (areaKey) => {
+  const toggleArea = async (areaKey) => {
     const subKeys = Object.keys(CATEGORIES[areaKey].subcategories);
-    const allSelected = subKeys.every(k => selected.has(k));
     
+    let allSelected = false;
     setSelected((prev) => {
-      const next = new Set(prev);
-      if (allSelected) {
-        subKeys.forEach(k => next.delete(k));
-      } else {
-        subKeys.forEach(k => next.add(k));
-      }
-      return next;
+      allSelected = subKeys.every(k => prev.has(k));
+      return prev;
     });
+    
+    for (let i = 0; i < subKeys.length; i++) {
+      const k = subKeys[i];
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (allSelected) {
+          next.delete(k);
+        } else {
+          next.add(k);
+        }
+        return next;
+      });
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
   };
 
   const handleSave = async () => {

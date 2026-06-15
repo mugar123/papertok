@@ -4,13 +4,21 @@ import './PDFViewer.css';
 export default function PDFViewer({ paper, onClose }) {
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
 
   const pdfUrl = `https://arxiv.org/pdf/${paper.arxivId}`;
+
+  const handleClose = () => {
+    setIsClosing(true);
+    setTimeout(() => {
+      onClose();
+    }, 300); // Wait for the animation to finish
+  };
 
   // Close on Escape key
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') handleClose();
     };
     window.addEventListener('keydown', handleKeyDown);
 
@@ -27,14 +35,14 @@ export default function PDFViewer({ paper, onClose }) {
       document.body.style.overflow = '';
       clearTimeout(fallbackTimer);
     };
-  }, [onClose, iframeLoaded]);
+  }, [iframeLoaded]); // removed onClose from deps to prevent stale closures if not needed, or we can just use the outer onClose
 
   return (
-    <div className="pdf-overlay" onClick={onClose}>
-      <div className="pdf-viewer" onClick={(e) => e.stopPropagation()}>
+    <div className={`pdf-overlay ${isClosing ? 'is-closing' : ''}`} onClick={handleClose}>
+      <div className={`pdf-viewer ${isClosing ? 'is-closing' : ''}`} onClick={(e) => e.stopPropagation()}>
         {/* Top bar */}
         <div className="pdf-topbar glass-strong">
-          <button className="pdf-close-btn" onClick={onClose} title="Cerrar">
+          <button className="pdf-close-btn" onClick={handleClose} title="Cerrar">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />

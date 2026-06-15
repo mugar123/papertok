@@ -46,19 +46,30 @@ export default function OnboardingFlow() {
     });
   };
 
-  const selectAllInArea = (areaKey) => {
+  const selectAllInArea = async (areaKey) => {
     const area = CATEGORIES[areaKey];
     const ids = Object.keys(area.subcategories);
+    
+    // Check current state without mutating
+    let allSelected = false;
     setSelectedSubcategories((prev) => {
-      const next = new Set(prev);
-      const allSelected = ids.every((id) => next.has(id));
-      if (allSelected) {
-        ids.forEach((id) => next.delete(id));
-      } else {
-        ids.forEach((id) => next.add(id));
-      }
-      return next;
+      allSelected = ids.every((id) => prev.has(id));
+      return prev;
     });
+
+    for (let i = 0; i < ids.length; i++) {
+      const id = ids[i];
+      setSelectedSubcategories(prev => {
+        const next = new Set(prev);
+        if (allSelected) next.delete(id);
+        else next.add(id);
+        return next;
+      });
+      
+      setAnimatingChip(id);
+      await new Promise(resolve => setTimeout(resolve, 30));
+    }
+    setTimeout(() => setAnimatingChip(null), 150);
   };
 
   const handleNext = () => {
