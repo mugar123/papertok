@@ -7,20 +7,20 @@ import './LoginPage.css';
 const FLOATING_ICONS = [FileText, Bookmark, Microscope, FlaskConical, Atom, Dna, Brain, Cpu, Database, Orbit, Network, Activity];
 
 export default function LoginPage() {
-  const { signInWithGoogle, error, user, onboardingComplete } = useAuth();
+  const { signInWithGoogle, error, user, onboardingComplete, loading } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
   // Redirect if already authenticated
   useEffect(() => {
-    if (user) {
+    if (!loading && user) {
       if (onboardingComplete) {
         navigate('/', { replace: true });
       } else {
         navigate('/onboarding', { replace: true });
       }
     }
-  }, [user, onboardingComplete, navigate]);
+  }, [user, loading, onboardingComplete, navigate]);
 
   const handleSignIn = async () => {
     setIsLoading(true);
