@@ -412,7 +412,7 @@ export function FeedProvider({ children }) {
       } else {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }
-      const filtered = newPapers.filter((p) => 
+      let filtered = newPapers.filter((p) => 
         !notInterestedIds.has(p.id) && 
         !readPaperIds.has(p.id) &&
         !likedPaperIds.has(p.id) &&
@@ -421,19 +421,30 @@ export function FeedProvider({ children }) {
       );
 
       if (filtered.length === 0 && newPapers.length > 0) {
-        if (currentPage < 20) {
-          console.log("All fetched papers were seen, fetching next page automatically...");
-          const nextPageToFetch = currentPage + 1;
-          setPage(nextPageToFetch);
-          // Set timeout to avoid deep recursion stack
-          setTimeout(() => {
-            if (loadPapersRef.current) {
-              loadPapersRef.current(false, activeMode, false, nextPageToFetch);
-            } else {
-              loadPapers(false, activeMode, false, nextPageToFetch);
-            }
-          }, 0);
-          return;
+        // Try bypassing sessionSeenPapers to avoid empty feed and rate-limiting cascades
+        const bypassSeen = newPapers.filter((p) => 
+          !notInterestedIds.has(p.id) && 
+          !readPaperIds.has(p.id) &&
+          !likedPaperIds.has(p.id) &&
+          !savedPaperIds.has(p.id)
+        );
+        if (bypassSeen.length > 0) {
+          console.log("Bypassing sessionSeenPapers filter to prevent rate limit cascade.");
+          filtered = bypassSeen;
+        } else {
+          if (currentPage < 20) {
+            console.log("All fetched papers were seen and interacted, fetching next page automatically...");
+            const nextPageToFetch = currentPage + 1;
+            setPage(nextPageToFetch);
+            setTimeout(() => {
+              if (loadPapersRef.current) {
+                loadPapersRef.current(false, activeMode, false, nextPageToFetch);
+              } else {
+                loadPapers(false, activeMode, false, nextPageToFetch);
+              }
+            }, 0);
+            return;
+          }
         }
       }
 
@@ -665,7 +676,9 @@ export function FeedProvider({ children }) {
          conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + (Math.min(timeInSeconds, 60) * 0.05);
       });
     }
-    reRankFeed(paper.id);
+    if (timeInSeconds >= 3.0) {
+      reRankFeed(paper.id);
+    }
 
     try {
       const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
@@ -715,7 +728,7 @@ export function FeedProvider({ children }) {
     if (paper.primaryCategory) {
       categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 1;
     }
-    reRankFeed(paper.id);
+    // DO NOT call reRankFeed here to prevent lag when scrolling past cards quickly
 
     try {
       const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
@@ -729,7 +742,7 @@ export function FeedProvider({ children }) {
     } catch (err) {
       console.error('Error tracking skip:', err);
     }
-  }, [user, reRankFeed]);
+  }, [user]);
 
   const trackPdfBounce = useCallback(async (paper) => {
     if (!user || IS_DEMO) return;
