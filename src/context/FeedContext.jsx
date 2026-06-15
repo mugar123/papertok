@@ -4,6 +4,7 @@ import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, set
 import { useAuth } from './AuthContext';
 import { fetchPapers, clearCache } from '../services/arxivService';
 import { getDeviceInfo } from '../utils/device';
+import { CATEGORIES, getCategorySimilarity } from '../data/categories';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
@@ -36,6 +37,7 @@ export function FeedProvider({ children }) {
   const [savedPaperIds, setSavedPaperIds] = useState(new Set());
   const [readPaperIds, setReadPaperIds] = useState(new Set());
   const [categoryAffinities, setCategoryAffinities] = useState({});
+  const [categoryCooldowns, setCategoryCooldowns] = useState({});
 
   // Load user interactions
   useEffect(() => {
@@ -60,6 +62,8 @@ export function FeedProvider({ children }) {
         const saved = new Set();
         const read = new Set();
         const affinities = {};
+        const cooldowns = {};
+
         snapshot.forEach((doc) => {
           const data = doc.data();
           if (data.liked) liked.add(doc.id);
@@ -74,8 +78,15 @@ export function FeedProvider({ children }) {
             // Time decay for historical interactions
             let decayFactor = 1;
             if (data.timestamp) {
-              const daysOld = (Date.now() - new Date(data.timestamp).getTime()) / (1000 * 60 * 60 * 24);
+              const ts = new Date(data.timestamp).getTime();
+              const daysOld = (Date.now() - ts) / (1000 * 60 * 60 * 24);
               decayFactor = Math.max(0.2, Math.exp(-daysOld / 30)); // 30-day half life, min 0.2
+              
+              if (data.notInterested) {
+                if (!cooldowns[cat] || ts > cooldowns[cat]) {
+                  cooldowns[cat] = ts;
+                }
+              }
             }
 
             let impact = 0;
@@ -88,6 +99,25 @@ export function FeedProvider({ children }) {
             if (data.notInterested) impact -= 10;
             
             affinities[cat] += impact * decayFactor;
+
+            // Conceptual penalties for related categories on Not Interested
+            if (data.notInterested) {
+              Object.keys(CATEGORIES).forEach(areaKey => {
+                Object.keys(CATEGORIES[areaKey].subcategories).forEach(otherCat => {
+                  if (otherCat !== cat) {
+                    const sim = getCategorySimilarity(cat, otherCat);
+                    if (sim > 0) {
+                      if (!affinities[otherCat]) affinities[otherCat] = 0;
+                      let penalty = 0;
+                      if (sim >= 0.8) penalty = -5;
+                      else if (sim >= 0.4) penalty = -3;
+                      else penalty = -1;
+                      affinities[otherCat] += penalty * decayFactor;
+                    }
+                  }
+                });
+              });
+            }
           }
         });
         
@@ -101,6 +131,7 @@ export function FeedProvider({ children }) {
         setSavedPaperIds(saved);
         setReadPaperIds(read);
         setCategoryAffinities(affinities);
+        setCategoryCooldowns(cooldowns);
       } catch (err) {
         console.error('Error loading interactions:', err);
       }
@@ -163,11 +194,26 @@ export function FeedProvider({ children }) {
           const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
           const recencyBoost = Math.max(0, 50 * Math.exp(-daysOld / 14));
           
+          let cooldownMultiplier = 1.0;
+          if (paper.primaryCategory && categoryCooldowns[paper.primaryCategory]) {
+            const daysSinceRejection = (Date.now() - categoryCooldowns[paper.primaryCategory]) / (1000 * 60 * 60 * 24);
+            if (daysSinceRejection < 14) {
+              // 0.2 at day 0, up to 1.0 at day 14
+              cooldownMultiplier = 0.2 + (0.8 * (daysSinceRejection / 14));
+              cooldownMultiplier = Math.max(0.2, Math.min(1.0, cooldownMultiplier));
+            }
+          }
+          
+          const baseScore = affinityScore + prefScore + recencyBoost;
+          const finalScore = baseScore * cooldownMultiplier;
+          
           paper._debugScore = {
-            total: affinityScore + prefScore + recencyBoost,
+            total: finalScore,
+            baseTotal: baseScore,
             affinity: affinityScore,
             preference: prefScore,
             recency: recencyBoost,
+            cooldownMultiplier: cooldownMultiplier,
             isExploration: false
           };
         });

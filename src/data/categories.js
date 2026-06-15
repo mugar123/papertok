@@ -271,4 +271,26 @@ export function getAllLeafCategories() {
   return leaves;
 }
 
+/**
+ * Calculates conceptual similarity between two categories [0, 1].
+ */
+export function getCategorySimilarity(catA, catB) {
+  if (!catA || !catB) return 0.0;
+  if (catA === catB) return 1.0;
+  
+  const areaA = getCategoryArea(catA);
+  const areaB = getCategoryArea(catB);
+  
+  if (!areaA || !areaB || areaA !== areaB) return 0.0;
+  
+  const prefixA = catA.split('.')[0];
+  const prefixB = catB.split('.')[0];
+  
+  if (prefixA === prefixB) {
+    return 0.8; // High similarity
+  }
+  
+  return 0.4; // Medium similarity
+}
+
 export default CATEGORIES;
