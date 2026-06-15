@@ -140,7 +140,11 @@ export function FeedProvider({ children }) {
        const exploitQueue = queue.filter(p => !p._debugScore?.isExploration);
        const exploreQueue = queue.filter(p => p._debugScore?.isExploration);
        
-       exploitQueue.sort((a, b) => b._dynamicScore - a._dynamicScore);
+       exploitQueue.sort((a, b) => {
+          const scoreA = isNaN(a._dynamicScore) ? 0 : a._dynamicScore;
+          const scoreB = isNaN(b._dynamicScore) ? 0 : b._dynamicScore;
+          return scoreB - scoreA;
+       });
        
        // Reconstruct queue
        const newQueue = [...exploitQueue];
@@ -381,7 +385,11 @@ export function FeedProvider({ children }) {
         });
 
         // Sort ONLY exploit + trending
-        sortedCore.sort((a, b) => b._debugScore.total - a._debugScore.total);
+        sortedCore.sort((a, b) => {
+          const scoreA = isNaN(a._debugScore?.total) ? 0 : a._debugScore.total;
+          const scoreB = isNaN(b._debugScore?.total) ? 0 : b._debugScore.total;
+          return scoreB - scoreA;
+        });
 
         // Inject random papers dynamically (Anti-bubbles)
         newPapers = [...sortedCore];

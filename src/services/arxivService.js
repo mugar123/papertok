@@ -21,8 +21,8 @@ function parseArxivXml(xmlText) {
 
     const title = (entry.querySelector('title')?.textContent || '').replace(/\s+/g, ' ').trim();
     const summary = (entry.querySelector('summary')?.textContent || '').replace(/\s+/g, ' ').trim();
-    const published = entry.querySelector('published')?.textContent || '';
-    const updated = entry.querySelector('updated')?.textContent || '';
+    const published = safeDateISO(entry.querySelector('published')?.textContent || '');
+    const updated = safeDateISO(entry.querySelector('updated')?.textContent || '');
 
     const authorElements = entry.querySelectorAll('author');
     const authors = [];
