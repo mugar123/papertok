@@ -19,7 +19,7 @@ const AREA_BG_ICONS = {
 };
 
 export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthors }) {
-  const { toggleLike, markNotInterested, markAsRead, likedPaperIds, savedPaperIds, readPaperIds, trackViewTime } = useFeed();
+  const { toggleLike, markNotInterested, markAsRead, likedPaperIds, savedPaperIds, readPaperIds, trackViewTime, trackSkip } = useFeed();
   const [expanded, setExpanded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -53,11 +53,13 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
       if (viewStartTime.current) {
         totalViewTime.current += (Date.now() - viewStartTime.current) / 1000;
       }
-      if (totalViewTime.current > 2) {
+      if (totalViewTime.current > 5) {
         trackViewTime(paper, Math.floor(totalViewTime.current));
+      } else if (totalViewTime.current > 0.1 && totalViewTime.current < 1.0) {
+        trackSkip(paper);
       }
     };
-  }, [paper, trackViewTime]);
+  }, [paper, trackViewTime, trackSkip]);
 
   const toggleExpanded = (e, newState) => {
     e.stopPropagation();

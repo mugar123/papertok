@@ -73,6 +73,8 @@ export function FeedProvider({ children }) {
             if (data.saved) affinities[cat] += 8;
             if (data.openedPdf) affinities[cat] += 4;
             if (data.viewTime) affinities[cat] += data.viewTime * 0.5;
+            if (data.skip) affinities[cat] -= 2;
+            if (data.pdfBounce) affinities[cat] -= 5;
           }
         });
         setLikedPaperIds(liked);
@@ -357,6 +359,34 @@ export function FeedProvider({ children }) {
     }
   }, [user]);
 
+  const trackSkip = useCallback(async (paper) => {
+    if (!user || IS_DEMO) return;
+    try {
+      const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+      await setDoc(ref, {
+        skip: increment(1),
+        paperCategory: paper.primaryCategory,
+        timestamp: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      console.error('Error tracking skip:', err);
+    }
+  }, [user]);
+
+  const trackPdfBounce = useCallback(async (paper) => {
+    if (!user || IS_DEMO) return;
+    try {
+      const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+      await setDoc(ref, {
+        pdfBounce: increment(1),
+        paperCategory: paper.primaryCategory,
+        timestamp: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      console.error('Error tracking PDF bounce:', err);
+    }
+  }, [user]);
+
   const markSaved = useCallback((paperId) => {
     setSavedPaperIds((prev) => {
       const next = new Set(prev);
@@ -392,6 +422,7 @@ export function FeedProvider({ children }) {
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
     toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
+    trackViewTime, trackPdfOpened, trackSkip, trackPdfBounce
   };
 
   return <FeedContext.Provider value={value}>{children}</FeedContext.Provider>;

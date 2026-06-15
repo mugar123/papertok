@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
+import { useFeed } from '../../context/FeedContext';
 import './PDFViewer.css';
 
 export default function PDFViewer({ paper, onClose }) {
@@ -8,8 +9,15 @@ export default function PDFViewer({ paper, onClose }) {
 
   const pdfUrl = `https://arxiv.org/pdf/${paper.arxivId}`;
 
+  const { trackPdfBounce } = useFeed();
+  const startTimeRef = useRef(Date.now());
+
   const handleClose = () => {
     setIsClosing(true);
+    const elapsed = (Date.now() - startTimeRef.current) / 1000;
+    if (elapsed < 5) {
+      trackPdfBounce(paper);
+    }
     setTimeout(() => {
       onClose();
     }, 300); // Wait for the animation to finish
