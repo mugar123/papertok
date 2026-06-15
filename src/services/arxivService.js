@@ -65,6 +65,34 @@ function parseArxivXml(xmlText) {
 }
 
 /**
+ * Helper to parse the rss2json format in production
+ */
+function parseRss2Json(data) {
+  if (data.status !== 'ok' || !data.items) return [];
+  
+  return data.items.map(item => {
+    const idUrl = item.guid || item.link;
+    const id = idUrl ? idUrl.split('/').pop() : 'unknown';
+    
+    const authors = item.author ? item.author.split(',').map(a => a.trim()) : ['Unknown Author'];
+    const categories = item.categories || [];
+    const primaryCategory = categories.length > 0 ? categories[0] : 'unknown';
+    
+    return {
+      id,
+      title: item.title ? item.title.replace(/\n/g, ' ').trim() : 'No Title',
+      summary: item.description ? item.description.replace(/\n/g, ' ').trim() : 'No summary available.',
+      authors,
+      published: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+      updated: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+      pdfLink: idUrl ? idUrl.replace('abs', 'pdf') : '',
+      primaryCategory,
+      categories
+    };
+  });
+}
+
+/**
  * Fetch papers from arXiv by categories or raw query.
  */
 export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20, mode = 'recent') {
@@ -97,24 +125,24 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
 
   try {
     let response;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
+    let papers = [];
     if (isDev) {
-      response = await fetch(url);
+      response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+      const xmlText = await response.text();
+      papers = parseArxivXml(xmlText);
     } else {
-      // In production, try direct first (arXiv may allow CORS)
-      try {
-        response = await fetch(url);
-      } catch {
-        // Fallback: use a CORS proxy
-        const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-        response = await fetch(proxyUrl);
-      }
+      // Fallback: use rss2json proxy which is highly reliable and handles CORS
+      const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`;
+      response = await fetch(proxyUrl, { signal: controller.signal });
+      if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+      const data = await response.json();
+      papers = parseRss2Json(data);
     }
-
-    if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-
-    const xmlText = await response.text();
-    const papers = parseArxivXml(xmlText);
+    clearTimeout(timeoutId);
 
     cache.set(cacheKey, { data: papers, timestamp: Date.now() });
     return papers;
@@ -156,21 +184,23 @@ export async function fetchPapersByIds(arxivIds) {
 
   try {
     let response;
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    let papers = [];
     if (isDev) {
-      response = await fetch(url);
+      response = await fetch(url, { signal: controller.signal });
+      if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+      const xmlText = await response.text();
+      papers = parseArxivXml(xmlText);
     } else {
-      try {
-        response = await fetch(url);
-      } catch {
-        const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-        response = await fetch(proxyUrl);
-      }
+      const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`;
+      response = await fetch(proxyUrl, { signal: controller.signal });
+      if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+      const data = await response.json();
+      papers = parseRss2Json(data);
     }
-
-    if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-
-    const xmlText = await response.text();
-    const papers = parseArxivXml(xmlText);
+    clearTimeout(timeoutId);
 
     cache.set(cacheKey, { data: papers, timestamp: Date.now() });
     return papers;
