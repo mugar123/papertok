@@ -228,12 +228,12 @@ export function FeedProvider({ children }) {
           .map(c => c.id);
         const randomCats = validRandom.sort(() => 0.5 - Math.random()).slice(0, 4);
 
-        // Fetch ALL layers in parallel!
+        // Fetch ALL layers in parallel, but catch individual errors so the whole feed doesn't crash if arXiv rate-limits one request.
         const [exploitPapers, graphPapers, trendingPapers, randomPapers] = await Promise.all([
-          fetchPapers(userPreferences, currentPage * 20, 20, 'recent'),
-          candidatesToFetch.length > 0 ? fetchPapersByIds(candidatesToFetch) : Promise.resolve([]),
-          trendingCategories.length > 0 ? fetchPapers(trendingCategories, currentPage * 10, 10, 'recent') : Promise.resolve([]),
-          randomCats.length > 0 ? fetchPapers(randomCats, currentPage * 5, 5, 'recent') : Promise.resolve([])
+          fetchPapers(userPreferences, currentPage * 20, 20, 'recent').catch(e => { console.warn('Exploit fetch failed', e); return []; }),
+          candidatesToFetch.length > 0 ? fetchPapersByIds(candidatesToFetch).catch(e => { console.warn('Graph fetch failed', e); return []; }) : Promise.resolve([]),
+          trendingCategories.length > 0 ? fetchPapers(trendingCategories, currentPage * 10, 10, 'recent').catch(e => { console.warn('Trending fetch failed', e); return []; }) : Promise.resolve([]),
+          randomCats.length > 0 ? fetchPapers(randomCats, currentPage * 5, 5, 'recent').catch(e => { console.warn('Random fetch failed', e); return []; }) : Promise.resolve([])
         ]);
         
         // --- OPENALEX ENRICHMENT ---
