@@ -35,9 +35,20 @@ export async function enrichPapersBatch(arxivIds) {
     const filterIds = chunk.map(id => `doi:10.48550/arxiv.${id}`).join('|');
     const url = `https://api.openalex.org/works?filter=${filterIds}&per-page=50&select=doi,concepts,cited_by_count,related_works`;
     
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     try {
-      const response = await fetch(url);
-      if (response.ok) {
+      let response = await fetch(url, { signal: controller.signal }).catch(() => null);
+      
+      // If direct fetch fails (e.g., Safari Private Relay block), try proxy
+      if (!response || !response.ok) {
+        console.warn('OpenAlex direct fetch failed, trying proxy');
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        response = await fetch(proxyUrl, { signal: controller.signal });
+      }
+      
+      clearTimeout(timeoutId);
+      if (response && response.ok) {
         const data = await response.json();
         if (data && data.results) {
           data.results.forEach(work => {
