@@ -76,7 +76,7 @@ export function FeedProvider({ children }) {
   }, [user]);
 
   // Load papers when preferences are available
-  const loadPapers = useCallback(async (reset = false, mode) => {
+  const loadPapers = useCallback(async (reset = false, mode, randomizeStart = false) => {
     if (!userPreferences || userPreferences.length === 0) return;
     if (!reset && loading) return;
 
@@ -84,7 +84,12 @@ export function FeedProvider({ children }) {
 
     setLoading(true);
     setError(null);
-    const currentPage = reset ? 0 : page;
+    
+    let currentPage = reset ? 0 : page;
+    if (randomizeStart) {
+      // Pick a random page between 0 and 5 to give a fresh slice of papers
+      currentPage = Math.floor(Math.random() * 6);
+    }
 
     try {
       const newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
@@ -94,7 +99,7 @@ export function FeedProvider({ children }) {
       let nextPage;
       if (reset) {
         nextPapers = filtered;
-        nextPage = 1;
+        nextPage = currentPage + 1;
       } else {
         const prev = papers;
         const existingIds = new Set(prev.map((p) => p.id));
@@ -162,12 +167,12 @@ export function FeedProvider({ children }) {
     setIsRefreshing(true);
     clearCache();
     feedCache.current = {};
-    setPapers([]);
-    setPage(0);
-    setHasMore(true);
+    // We intentionally DO NOT clear papers here to prevent a black screen flash.
+    // loadPapers will overwrite them once the fresh data arrives.
+    
     // Force a minimum visual delay of 800ms so the UI has time to show the spinner
     await Promise.all([
-      loadPapersRef.current(true),
+      loadPapersRef.current(true, null, true), // reset=true, mode=null, randomizeStart=true
       new Promise((resolve) => setTimeout(resolve, 800))
     ]);
     setIsRefreshing(false);
