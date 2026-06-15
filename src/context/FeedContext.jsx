@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { IS_DEMO, db } from '../services/firebase';
-import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { fetchPapers, clearCache } from '../services/arxivService';
 
@@ -274,7 +274,6 @@ export function FeedProvider({ children }) {
       demoSet('readPaperIds', Array.from(newRead));
     } else {
       try {
-        const { doc, updateDoc, deleteField } = await import('firebase/firestore');
         const ref = doc(db, 'users', user.uid, 'interactions', paperId);
         await updateDoc(ref, {
           read: deleteField()
