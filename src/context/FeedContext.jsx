@@ -3,6 +3,7 @@ import { IS_DEMO, db } from '../services/firebase';
 import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc, updateDoc, deleteField, increment } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { fetchPapers, clearCache } from '../services/arxivService';
+import { getDeviceInfo } from '../utils/device';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
@@ -69,14 +70,32 @@ export function FeedProvider({ children }) {
           const cat = data.paperCategory;
           if (cat) {
             if (!affinities[cat]) affinities[cat] = 0;
-            if (data.liked) affinities[cat] += 5;
-            if (data.saved) affinities[cat] += 8;
-            if (data.openedPdf) affinities[cat] += 4;
-            if (data.viewTime) affinities[cat] += data.viewTime * 0.5;
-            if (data.skip) affinities[cat] -= 2;
-            if (data.pdfBounce) affinities[cat] -= 5;
+            
+            // Time decay for historical interactions
+            let decayFactor = 1;
+            if (data.timestamp) {
+              const daysOld = (Date.now() - new Date(data.timestamp).getTime()) / (1000 * 60 * 60 * 24);
+              decayFactor = Math.max(0.2, Math.exp(-daysOld / 30)); // 30-day half life, min 0.2
+            }
+
+            let impact = 0;
+            if (data.liked) impact += 5;
+            if (data.saved) impact += 8;
+            if (data.openedPdf) impact += 4;
+            if (data.viewTime) impact += data.viewTime * 0.5;
+            if (data.skip) impact -= 1;
+            if (data.pdfBounce) impact -= 2;
+            if (data.notInterested) impact -= 10;
+            
+            affinities[cat] += impact * decayFactor;
           }
         });
+        
+        // Clamping to avoid infinite bubbles
+        Object.keys(affinities).forEach(cat => {
+          affinities[cat] = Math.max(-10, Math.min(100, affinities[cat]));
+        });
+        
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
@@ -119,18 +138,18 @@ export function FeedProvider({ children }) {
         const randomCats = ['math.HO', 'astro-ph.GA', 'econ.GN', 'stat.ML'];
         const randomPapers = await fetchPapers(randomCats, currentPage * 5, 5, 'recent');
         
-        const combined = [...exploitPapers, ...trendingPapers, ...randomPapers];
+        const corePapers = [...exploitPapers, ...trendingPapers];
         
-        // Deduplicate
+        // Deduplicate core
         const uniqueMap = new Map();
-        combined.forEach(p => {
+        corePapers.forEach(p => {
           if (!uniqueMap.has(p.id)) uniqueMap.set(p.id, p);
         });
         
-        newPapers = Array.from(uniqueMap.values());
+        const sortedCore = Array.from(uniqueMap.values());
 
-        // Score and Sort
-        newPapers.sort((a, b) => {
+        // Score and Sort ONLY exploit + trending
+        sortedCore.sort((a, b) => {
           const getScore = (paper) => {
             let score = 0;
             // Affinity bonus
@@ -147,6 +166,17 @@ export function FeedProvider({ children }) {
             return score;
           };
           return getScore(b) - getScore(a);
+        });
+
+        // Inject random papers dynamically (Anti-bubbles)
+        newPapers = [...sortedCore];
+        const uniqueRandoms = randomPapers.filter(p => !uniqueMap.has(p.id));
+        
+        uniqueRandoms.forEach(randomPaper => {
+          // Insert randomly in the top 80% of the feed so they are actually seen
+          const maxInsertIndex = Math.max(1, Math.floor(newPapers.length * 0.8));
+          const insertIndex = Math.floor(Math.random() * maxInsertIndex);
+          newPapers.splice(insertIndex, 0, randomPaper);
         });
       } else {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
@@ -265,6 +295,7 @@ export function FeedProvider({ children }) {
           paperCategory: paper.primaryCategory,
           paperAbstract: paper.summary?.substring(0, 500),
           timestamp: new Date().toISOString(),
+          deviceType: getDeviceInfo().type,
         }, { merge: true });
       } catch (err) {
         console.error('Error saving like:', err);
@@ -290,6 +321,7 @@ export function FeedProvider({ children }) {
           notInterested: true, paperCategory: paper.primaryCategory,
           paperAbstract: paper.summary?.substring(0, 500),
           timestamp: new Date().toISOString(),
+          deviceType: getDeviceInfo().type,
         }, { merge: true });
       } catch (err) {
         console.error('Error saving not interested:', err);
@@ -323,7 +355,9 @@ export function FeedProvider({ children }) {
         await setDoc(ref, {
           read: true,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
-          paperCategory: paper.primaryCategory, timestamp: new Date().toISOString()
+          paperCategory: paper.primaryCategory, 
+          timestamp: new Date().toISOString(),
+          deviceType: getDeviceInfo().type,
         }, { merge: true });
       } catch (err) {
         console.error('Error saving read status:', err);
@@ -338,7 +372,8 @@ export function FeedProvider({ children }) {
       await setDoc(ref, {
         viewTime: increment(timeInSeconds),
         paperCategory: paper.primaryCategory,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        deviceType: getDeviceInfo().type,
       }, { merge: true });
     } catch (err) {
       console.error('Error tracking view time:', err);
@@ -352,7 +387,9 @@ export function FeedProvider({ children }) {
       await setDoc(ref, {
         openedPdf: true,
         paperCategory: paper.primaryCategory,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        deviceType: getDeviceInfo().type,
+        context: 'feed',
       }, { merge: true });
     } catch (err) {
       console.error('Error tracking PDF open:', err);
@@ -366,7 +403,9 @@ export function FeedProvider({ children }) {
       await setDoc(ref, {
         skip: increment(1),
         paperCategory: paper.primaryCategory,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        deviceType: getDeviceInfo().type,
+        context: 'feed',
       }, { merge: true });
     } catch (err) {
       console.error('Error tracking skip:', err);
@@ -380,7 +419,9 @@ export function FeedProvider({ children }) {
       await setDoc(ref, {
         pdfBounce: increment(1),
         paperCategory: paper.primaryCategory,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        deviceType: getDeviceInfo().type,
+        context: 'feed',
       }, { merge: true });
     } catch (err) {
       console.error('Error tracking PDF bounce:', err);
