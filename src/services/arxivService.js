@@ -132,9 +132,8 @@ export function clearCache() { cache.clear(); }
  * Fetch papers by a specific author
  */
 export async function getAuthorPapers(authorName, maxResults = 10) {
-  // Format the author name for the query: au:"John Doe"
-  const formattedName = authorName.trim().replace(/\s+/g, '+');
-  const query = `au:"${formattedName}"`;
+  // We use quotes for exact match. URLSearchParams will safely encode spaces.
+  const query = `au:"${authorName.trim()}"`;
   return fetchPapers(query, 0, maxResults, 'submittedDate');
 }
 
