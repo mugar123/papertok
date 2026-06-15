@@ -300,8 +300,9 @@ export function FeedProvider({ children }) {
     
     let currentPage = reset ? 0 : (pageOverride !== undefined ? pageOverride : page);
     if (randomizeStart) {
-      // Pick a random page between 0 and 50 to give a fresh slice of papers
-      currentPage = Math.floor(Math.random() * 50);
+      // Pick a random page between 0 and 5 to avoid arXiv deep pagination timeouts
+      // Deep pagination (e.g. start > 500) takes 15+ seconds on arXiv and causes our timeout to trigger
+      currentPage = Math.floor(Math.random() * 5);
     }
 
     try {

@@ -11,16 +11,22 @@ const CACHE_TTL = 5 * 60 * 1000;
 
 async function fetchWithTimeout(url, timeoutMs = 8000) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const timeoutId1 = setTimeout(() => controller.abort(), timeoutMs);
   
-  return Promise.race([
-    fetch(url, { signal: controller.signal }),
-    new Promise((_, reject) => setTimeout(() => {
+  let timeoutId2;
+  const timeoutPromise = new Promise((_, reject) => {
+    timeoutId2 = setTimeout(() => {
        controller.abort();
        reject(new Error('Timeout'));
-    }, timeoutMs + 100))
+    }, timeoutMs + 100);
+  });
+
+  return Promise.race([
+    fetch(url, { signal: controller.signal }),
+    timeoutPromise
   ]).finally(() => {
-    clearTimeout(timeoutId);
+    clearTimeout(timeoutId1);
+    clearTimeout(timeoutId2);
   });
 }
 
