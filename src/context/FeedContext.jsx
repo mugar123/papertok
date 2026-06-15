@@ -340,8 +340,10 @@ export function FeedProvider({ children }) {
           .map(c => c.id);
         const randomCats = validRandom.sort(() => 0.5 - Math.random()).slice(0, 1);
 
+        const combinedCats = Array.from(new Set([...userPreferences, ...trendingCategories, ...randomCats]));
+        
         const promises = [
-          fetchPapers(userPreferences, currentPage * 20, 20, 'recent').catch(e => { console.warn('Exploit fetch failed', e); return []; })
+          fetchPapers(combinedCats, currentPage * 25, 30, 'recent').catch(e => { console.warn('Combined fetch failed', e); return []; })
         ];
         
         if (candidatesToFetch.length > 0) {
@@ -350,19 +352,27 @@ export function FeedProvider({ children }) {
           promises.push(Promise.resolve([]));
         }
 
-        if (trendingCategories.length > 0) {
-          promises.push(fetchPapers(trendingCategories, currentPage * 10, 10, 'recent').catch(e => { console.warn('Trending fetch failed', e); return []; }));
-        } else {
-          promises.push(Promise.resolve([]));
-        }
-
-        if (randomCats.length > 0) {
-          promises.push(fetchPapers(randomCats, currentPage * 5, 5, 'recent').catch(e => { console.warn('Random fetch failed', e); return []; }));
-        } else {
-          promises.push(Promise.resolve([]));
-        }
-
-        const [exploitPapers, graphPapers, trendingPapers, randomPapers] = await Promise.all(promises);
+        const [combinedPapers, graphPapers] = await Promise.all(promises);
+        
+        const exploitPapers = [];
+        const trendingPapers = [];
+        const randomPapers = [];
+        
+        combinedPapers.forEach(p => {
+          const isUserPref = p.allCategories.some(c => userPreferences.includes(c));
+          const isTrending = p.allCategories.some(c => trendingCategories.includes(c));
+          const isRandom = p.allCategories.some(c => randomCats.includes(c));
+          
+          if (isUserPref) {
+            exploitPapers.push(p);
+          } else if (isTrending) {
+            trendingPapers.push(p);
+          } else if (isRandom) {
+            randomPapers.push(p);
+          } else {
+            exploitPapers.push(p); // Fallback
+          }
+        });
         
         // --- OPENALEX ENRICHMENT ---
         const coreToEnrich = [...exploitPapers, ...graphPapers, ...trendingPapers];

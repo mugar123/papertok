@@ -25,6 +25,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     setShowLoader(false);
   }, [papers.length, loading, error]);
 
+  // Scroll to top when feed is refreshed manually or mode changes
+  useEffect(() => {
+    if (isRefreshing && feedRef.current) {
+      feedRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  }, [isRefreshing]);
+
   // Infinite scroll: observe sentinel element
   useEffect(() => {
     if (!sentinelRef.current) return;

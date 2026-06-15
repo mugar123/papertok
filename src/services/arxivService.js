@@ -141,6 +141,7 @@ function parseRss2Json(data) {
 }
 
 let fetchQueue = Promise.resolve();
+let lastFetchTime = 0;
 
 /**
  * Helper to fetch and parse arXiv XML or JSON using cascading proxies in production
@@ -162,8 +163,13 @@ async function fetchArxivData(url) {
   // Enqueue to avoid rss2json rate limits (1 req/sec)
   return new Promise((resolve) => {
     fetchQueue = fetchQueue.then(async () => {
-      // Delay 1.1s between requests to respect rate limit
-      await new Promise(r => setTimeout(r, 1100));
+      // Delay only if less than 1.1s has passed since the last fetch
+      const now = Date.now();
+      const timeSinceLast = now - lastFetchTime;
+      if (timeSinceLast < 1100) {
+        await new Promise(r => setTimeout(r, 1100 - timeSinceLast));
+      }
+      lastFetchTime = Date.now();
       
       try {
         // Strip out parentheses to help some proxies, though rss2json handles it
