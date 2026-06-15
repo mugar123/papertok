@@ -44,7 +44,7 @@ export async function enrichPapersBatch(arxivIds) {
              let arxivId = null;
              if (work.doi) {
                // work.doi is usually "https://doi.org/10.48550/arxiv.2403.01123"
-               const match = work.doi.match(/arxiv\.([^/]+)$/i);
+               const match = work.doi.match(/arxiv\.(.+)$/i);
                if (match) {
                  arxivId = match[1].replace(/v\d+$/, '');
                }
