@@ -196,16 +196,6 @@ export function FeedProvider({ children }) {
     try {
       let newPapers = [];
       if (activeMode === 'recent' || activeMode === null) {
-        // CAPA 1: Exploit (50%) -> fetch userPreferences
-        const exploitPapers = await fetchPapers(userPreferences, currentPage * 20, 20, 'recent');
-        
-        // CAPA 2: Graph/Related (25%) -> fetch from relatedCandidates pool
-        let graphPapers = [];
-        if (relatedCandidates && relatedCandidates.length > 0) {
-           const candidatesToFetch = [...relatedCandidates].sort(() => 0.5 - Math.random()).slice(0, 10);
-           graphPapers = await fetchPapersByIds(candidatesToFetch);
-        }
-        
         const allCategories = getAllLeafCategories();
         
         // Determine user's parent areas
@@ -215,32 +205,36 @@ export function FeedProvider({ children }) {
           if (leaf) userAreas.add(leaf.area);
         });
 
-        // CAPA 3: Trending Científico (15%) -> Pick trending categories
+        // Setup Capa 2: Graph/Related (25%) -> candidates pool
+        let candidatesToFetch = [];
+        if (relatedCandidates && relatedCandidates.length > 0) {
+           candidatesToFetch = [...relatedCandidates].sort(() => 0.5 - Math.random()).slice(0, 10);
+        }
+
+        // Setup Capa 3: Trending Científico (15%) -> Pick trending categories
         const validTrending = allCategories
           .filter(c => userAreas.has(c.area))
           .filter(c => !userPreferences.includes(c.id))
           .filter(c => (categoryAffinities[c.id] || 0) >= -2)
           .map(c => c.id);
-          
         const trendingCategories = validTrending.sort(() => 0.5 - Math.random()).slice(0, 5);
-        let trendingPapers = [];
-        if (trendingCategories.length > 0) {
-          trendingPapers = await fetchPapers(trendingCategories, currentPage * 10, 10, 'recent');
-        }
-        
-        // CAPA 4: Exploración (10%)
+
+        // Setup Capa 4: Exploración (10%)
         // Only explore within the user's parent areas, OR categories they've shown affinity for.
         const validRandom = allCategories
           .filter(c => !userPreferences.includes(c.id))
           .filter(c => userAreas.has(c.area) || (categoryAffinities[c.id] || 0) > 0)
           .filter(c => (categoryAffinities[c.id] || 0) >= -2)
           .map(c => c.id);
-          
         const randomCats = validRandom.sort(() => 0.5 - Math.random()).slice(0, 4);
-        let randomPapers = [];
-        if (randomCats.length > 0) {
-          randomPapers = await fetchPapers(randomCats, currentPage * 5, 5, 'recent');
-        }
+
+        // Fetch ALL layers in parallel!
+        const [exploitPapers, graphPapers, trendingPapers, randomPapers] = await Promise.all([
+          fetchPapers(userPreferences, currentPage * 20, 20, 'recent'),
+          candidatesToFetch.length > 0 ? fetchPapersByIds(candidatesToFetch) : Promise.resolve([]),
+          trendingCategories.length > 0 ? fetchPapers(trendingCategories, currentPage * 10, 10, 'recent') : Promise.resolve([]),
+          randomCats.length > 0 ? fetchPapers(randomCats, currentPage * 5, 5, 'recent') : Promise.resolve([])
+        ]);
         
         // --- OPENALEX ENRICHMENT ---
         const coreToEnrich = [...exploitPapers, ...graphPapers, ...trendingPapers];
