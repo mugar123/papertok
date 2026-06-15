@@ -479,10 +479,12 @@ export function FeedProvider({ children }) {
     categoryAffinities, categoryCooldowns, conceptAffinities, relatedCandidates
   ]);
 
+  const hasFetchedInitially = useRef(false);
   // Initial load
   useEffect(() => {
-    if (userPreferences && userPreferences.length > 0 && papers.length === 0) {
-      loadPapers(true);
+    if (userPreferences && userPreferences.length > 0 && papers.length === 0 && !hasFetchedInitially.current) {
+      hasFetchedInitially.current = true;
+      loadPapers(true, null, true); // randomizeStart = true to ensure fresh feed
     }
   }, [userPreferences]); // eslint-disable-line react-hooks/exhaustive-deps
 
