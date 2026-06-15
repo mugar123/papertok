@@ -4,7 +4,7 @@ import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, set
 import { useAuth } from './AuthContext';
 import { fetchPapers, clearCache } from '../services/arxivService';
 import { getDeviceInfo } from '../utils/device';
-import { CATEGORIES, getCategorySimilarity } from '../data/categories';
+import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data/categories';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
@@ -161,13 +161,39 @@ export function FeedProvider({ children }) {
         // 70% Exploit (user preferences)
         const exploitPapers = await fetchPapers(userPreferences, currentPage * 30, 30, 'recent');
         
-        // 20% Trending/Popular
-        const trendingCategories = ['cs.AI', 'cs.LG', 'quant-ph', 'physics.pop-ph', 'q-bio.NC'];
-        const trendingPapers = await fetchPapers(trendingCategories, currentPage * 10, 10, 'recent');
+        const allCategories = getAllLeafCategories();
         
-        // 10% Random
-        const randomCats = ['math.HO', 'astro-ph.GA', 'econ.GN', 'stat.ML'];
-        const randomPapers = await fetchPapers(randomCats, currentPage * 5, 5, 'recent');
+        // Determine user's parent areas
+        const userAreas = new Set();
+        userPreferences.forEach(pref => {
+          const leaf = allCategories.find(c => c.id === pref);
+          if (leaf) userAreas.add(leaf.area);
+        });
+
+        // 20% Trending/Popular (within user's parent areas, but NOT explicitly selected, and NOT penalized)
+        const validTrending = allCategories
+          .filter(c => userAreas.has(c.area))
+          .filter(c => !userPreferences.includes(c.id))
+          .filter(c => (categoryAffinities[c.id] || 0) >= -2)
+          .map(c => c.id);
+          
+        const trendingCategories = validTrending.sort(() => 0.5 - Math.random()).slice(0, 5);
+        let trendingPapers = [];
+        if (trendingCategories.length > 0) {
+          trendingPapers = await fetchPapers(trendingCategories, currentPage * 10, 10, 'recent');
+        }
+        
+        // 10% Random Exploration (any area, NOT explicitly selected, and NOT penalized)
+        const validRandom = allCategories
+          .filter(c => !userPreferences.includes(c.id))
+          .filter(c => (categoryAffinities[c.id] || 0) >= -2)
+          .map(c => c.id);
+          
+        const randomCats = validRandom.sort(() => 0.5 - Math.random()).slice(0, 4);
+        let randomPapers = [];
+        if (randomCats.length > 0) {
+          randomPapers = await fetchPapers(randomCats, currentPage * 5, 5, 'recent');
+        }
         
         const corePapers = [...exploitPapers, ...trendingPapers];
         
