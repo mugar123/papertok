@@ -37,7 +37,7 @@ export function FeedProvider({ children }) {
   const [error, setError] = useState(null);
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
-  const [feedMode, setFeedMode] = useState('recent'); // 'recent' or 'top'
+  const [feedMode, setFeedMode] = useState('top'); // Default to TikTok algorithm
 
   // Per-mode cache: { recent: { papers, page, hasMore }, top: { ... } }
   const feedCache = useRef({});
@@ -422,8 +422,10 @@ export function FeedProvider({ children }) {
 
       if (filtered.length === 0 && newPapers.length > 0) {
         if (currentPage < 20) {
-          console.log("All fetched chronological papers were seen, fetching next page...");
+          console.log("All fetched papers were seen, fetching next page automatically...");
           setPage(currentPage + 1);
+          // Set timeout to avoid deep recursion stack
+          setTimeout(() => loadPapers(false, activeMode, false), 0);
           return;
         }
       }
