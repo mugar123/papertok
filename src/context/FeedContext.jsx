@@ -352,7 +352,13 @@ export function FeedProvider({ children }) {
       } else {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }
-      const filtered = newPapers.filter((p) => !notInterestedIds.has(p.id) && !readPaperIds.has(p.id));
+      const filtered = newPapers.filter((p) => 
+        !notInterestedIds.has(p.id) && 
+        !readPaperIds.has(p.id) &&
+        !likedPaperIds.has(p.id) &&
+        !savedPaperIds.has(p.id) &&
+        !sessionSeenPapers.has(p.id)
+      );
 
       let nextPapers;
       let nextPage;
@@ -402,7 +408,15 @@ export function FeedProvider({ children }) {
     // Check if we have cached data for the new mode
     const cached = feedCache.current[newMode];
     if (cached && cached.papers.length > 0) {
-      setPapers(cached.papers);
+      // Re-filter cached papers to ensure newly liked/saved papers are removed
+      const refiltered = cached.papers.filter(p => 
+        !notInterestedIds.has(p.id) && 
+        !readPaperIds.has(p.id) &&
+        !likedPaperIds.has(p.id) &&
+        !savedPaperIds.has(p.id)
+      );
+      
+      setPapers(refiltered);
       setPage(cached.page);
       setHasMore(cached.hasMore);
       setFeedMode(newMode);
