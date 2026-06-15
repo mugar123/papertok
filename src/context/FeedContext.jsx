@@ -10,6 +10,9 @@ import { enrichPapersBatch, getArxivIdsForOpenAlexWorks } from '../services/open
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
 
+// Global session state to ensure fresh feed on reloads
+const sessionSeenPapers = new Set();
+
 // ── Demo mode storage helpers ──
 function demoGet(key, fallback) {
   try {
@@ -236,13 +239,23 @@ export function FeedProvider({ children }) {
         const arxivIdsToEnrich = coreToEnrich.map(p => p.id);
         const openAlexData = await enrichPapersBatch(arxivIdsToEnrich);
         
-        // Deduplicate core
+        // Deduplicate core and filter out already seen/interacted papers
         const uniqueMap = new Map();
-        corePapers.forEach(p => {
-          if (!uniqueMap.has(p.id)) uniqueMap.set(p.id, p);
+        coreToEnrich.forEach(p => {
+          if (!uniqueMap.has(p.id) &&
+              !likedPaperIds.has(p.id) &&
+              !savedPaperIds.has(p.id) &&
+              !readPaperIds.has(p.id) &&
+              !notInterestedIds.has(p.id) &&
+              !sessionSeenPapers.has(p.id)) {
+            uniqueMap.set(p.id, p);
+          }
         });
         
         const sortedCore = Array.from(uniqueMap.values());
+        
+        // Mark these as seen for the session so they don't repeat on next load
+        sortedCore.forEach(p => sessionSeenPapers.add(p.id));
 
         // Calculate and attach debug scores before sorting
         sortedCore.forEach(paper => {
@@ -253,11 +266,12 @@ export function FeedProvider({ children }) {
           
           let prefScore = 0;
           if (userPreferences.includes(paper.primaryCategory)) {
-            prefScore = 10;
+            prefScore = 20; // Increased base preference weight
           }
           
+          // Reduced recency dominance, max 20 points, decays over 30 days
           const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
-          const recencyBoost = Math.max(0, 50 * Math.exp(-daysOld / 14));
+          const recencyBoost = Math.max(0, 20 * Math.exp(-daysOld / 30));
           
           // SEMANTIC SCORE (OpenAlex)
           let semanticScore = 0;
@@ -267,11 +281,11 @@ export function FeedProvider({ children }) {
           if (oaData) {
             oaData.concepts.forEach(c => {
                if (conceptAffinities[c.id]) {
-                 semanticScore += c.score * conceptAffinities[c.id] * 5;
+                 semanticScore += c.score * conceptAffinities[c.id] * 10; // Increased semantic weight
                }
             });
             if (oaData.cited_by_count > 0) {
-              citationBoost = Math.log10(oaData.cited_by_count + 1) * 3; 
+              citationBoost = Math.log10(oaData.cited_by_count + 1) * 10; // Increased citation weight
             }
           }
           
