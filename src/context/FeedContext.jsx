@@ -217,7 +217,7 @@ export function FeedProvider({ children }) {
           .filter(c => !userPreferences.includes(c.id))
           .filter(c => (categoryAffinities[c.id] || 0) >= -2)
           .map(c => c.id);
-        const trendingCategories = validTrending.sort(() => 0.5 - Math.random()).slice(0, 5);
+        const trendingCategories = validTrending.sort(() => 0.5 - Math.random()).slice(0, 2);
 
         // Setup Capa 4: Exploración (10%)
         // Only explore within the user's parent areas, OR categories they've shown affinity for.
@@ -226,7 +226,7 @@ export function FeedProvider({ children }) {
           .filter(c => userAreas.has(c.area) || (categoryAffinities[c.id] || 0) > 0)
           .filter(c => (categoryAffinities[c.id] || 0) >= -2)
           .map(c => c.id);
-        const randomCats = validRandom.sort(() => 0.5 - Math.random()).slice(0, 4);
+        const randomCats = validRandom.sort(() => 0.5 - Math.random()).slice(0, 1);
 
         // Fetch ALL layers in parallel, but catch individual errors so the whole feed doesn't crash if arXiv rate-limits one request.
         const [exploitPapers, graphPapers, trendingPapers, randomPapers] = await Promise.all([
@@ -269,7 +269,7 @@ export function FeedProvider({ children }) {
           
           let prefScore = 0;
           if (userPreferences.includes(paper.primaryCategory)) {
-            prefScore = 20; // Increased base preference weight
+            prefScore = 100; // Massively increased base preference weight to focus feed
           }
           
           // Reduced recency dominance, max 20 points, decays over 30 days
@@ -340,9 +340,10 @@ export function FeedProvider({ children }) {
             recency: 0,
             isExploration: true
           };
-          // Insert randomly in the top 80% of the feed so they are actually seen
-          const maxInsertIndex = Math.max(1, Math.floor(newPapers.length * 0.8));
-          const insertIndex = Math.floor(Math.random() * maxInsertIndex);
+          // Insert randomly in the bottom 50% of the feed so they are not dominating the top
+          const maxInsertIndex = newPapers.length;
+          const minInsertIndex = Math.floor(newPapers.length * 0.5);
+          const insertIndex = minInsertIndex + Math.floor(Math.random() * (maxInsertIndex - minInsertIndex + 1));
           newPapers.splice(insertIndex, 0, randomPaper);
         });
       } else {
