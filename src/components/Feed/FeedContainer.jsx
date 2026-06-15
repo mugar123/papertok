@@ -18,8 +18,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     if (papers.length === 0 && loading && !error) {
       const timer = setTimeout(() => setShowLoader(true), 1500);
       return () => clearTimeout(timer);
+    } else {
+      const timer = setTimeout(() => setShowLoader(false), 0);
+      return () => clearTimeout(timer);
     }
-    setShowLoader(false);
   }, [papers.length, loading, error]);
 
   // Infinite scroll: observe sentinel element

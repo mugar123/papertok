@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { getAuthorWikiInfo } from '../../services/wikiService';
 import { getAuthorPapers } from '../../services/arxivService';
 import { X, ChevronLeft, ExternalLink, Loader2, BookOpen } from 'lucide-react';

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import './PDFViewer.css';
 
 export default function PDFViewer({ paper, onClose }) {
@@ -8,12 +8,12 @@ export default function PDFViewer({ paper, onClose }) {
 
   const pdfUrl = `https://arxiv.org/pdf/${paper.arxivId}`;
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setIsClosing(true);
     setTimeout(() => {
       onClose();
     }, 300); // Wait for the animation to finish
-  };
+  }, [onClose]);
 
   // Close on Escape key
   useEffect(() => {
@@ -35,7 +35,7 @@ export default function PDFViewer({ paper, onClose }) {
       document.body.style.overflow = '';
       clearTimeout(fallbackTimer);
     };
-  }, [iframeLoaded]); // removed onClose from deps to prevent stale closures if not needed, or we can just use the outer onClose
+  }, [iframeLoaded, handleClose]);
 
   return (
     <div className={`pdf-overlay ${isClosing ? 'is-closing' : ''}`} onClick={handleClose}>

@@ -1,3 +1,5 @@
+// @react-refresh reset
+
 import { createContext, useContext, useState, useEffect } from 'react';
 import { IS_DEMO, auth, googleProvider, db } from '../services/firebase';
 import { onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth';
@@ -27,12 +29,18 @@ export function AuthProvider({ children }) {
     if (IS_DEMO) {
       // Demo mode: check if user has "logged in" before
       const demoUser = demoGet('user', null);
-      if (demoUser) {
-        setUser(demoUser);
-        setOnboardingComplete(demoGet('onboardingComplete', false));
-        setUserPreferences(demoGet('selectedCategories', null));
-      }
-      setLoading(false);
+      const initDemo = () => {
+        if (demoUser) {
+          const syncDemoState = () => {
+            setUser(demoUser);
+            setOnboardingComplete(demoGet('onboardingComplete', false));
+            setUserPreferences(demoGet('selectedCategories', null));
+          };
+          syncDemoState();
+        }
+        setLoading(false);
+      };
+      initDemo();
       return;
     }
 
@@ -172,6 +180,7 @@ export function AuthProvider({ children }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useAuth() {
   const context = useContext(AuthContext);
   if (!context) {

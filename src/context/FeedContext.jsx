@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { IS_DEMO, db } from '../services/firebase';
-import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, updateDoc, deleteField } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { fetchPapers, clearCache } from '../services/arxivService';
 
@@ -316,6 +316,7 @@ export function FeedProvider({ children }) {
   return <FeedContext.Provider value={value}>{children}</FeedContext.Provider>;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components
 export function useFeed() {
   const context = useContext(FeedContext);
   if (!context) throw new Error('useFeed must be used within a FeedProvider');

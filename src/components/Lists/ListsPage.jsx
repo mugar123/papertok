@@ -5,7 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel } from '../../data/categories';
 import { getIcon } from '../../utils/icons';
-import { EyeOff, HeartOff, X } from 'lucide-react';
+import { X } from 'lucide-react';
 import './ListsPage.css';
 
 function demoGet(key, fallback) {

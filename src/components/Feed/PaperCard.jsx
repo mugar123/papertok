@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback, useMemo } from 'react';
 import { useFeed } from '../../context/FeedContext';
-import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
-import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2 } from 'lucide-react';
+import { getCategoryLabel, CATEGORIES } from '../../data/categories';
+import { Share2, Clock, FileText, Check, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2 } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
 import './PaperCard.css';
@@ -81,7 +81,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
   const getAreaInfo = () => {
     const cat = paper.primaryCategory || '';
     const prefix = cat.split('.')[0].split('-')[0];
-    for (const [key, area] of Object.entries(CATEGORIES)) {
+    for (const area of Object.values(CATEGORIES)) {
       if (area.subcategories && area.subcategories[cat]) {
         return area;
       }
