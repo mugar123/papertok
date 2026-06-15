@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
 import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
-import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2 } from 'lucide-react';
+import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
+import { useAuth } from '../../context/AuthContext';
 import './PaperCard.css';
 
 // Pool of icons for the background constellation per area
@@ -35,6 +36,13 @@ const PaperCard = memo(function PaperCard({
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isMarkingRead, setIsMarkingRead] = useState(false);
+  const { followedAuthors } = useAuth();
+  
+  const hasFollowedAuthor = useMemo(() => {
+    if (!paper || !paper.authors || !followedAuthors || followedAuthors.length === 0) return false;
+    return paper.authors.some(a => followedAuthors.includes(a));
+  }, [paper.authors, followedAuthors]);
+
   const lastTap = useRef(0);
   const abstractRef = useRef(null);
   const cardRef = useRef(null);
@@ -294,9 +302,16 @@ const PaperCard = memo(function PaperCard({
       {/* Content area - bottom aligned like TikTok */}
       <div className="pc-body">
         {/* Meta row */}
-        {/* Meta row */}
         <div className="pc-meta">
           <span className="pc-category-pill">{categoryLabel}</span>
+          {hasFollowedAuthor && (
+            <>
+              <span className="pc-meta-dot">·</span>
+              <span className="pc-followed-badge">
+                <UserCheck size={12} /> Autor Seguido
+              </span>
+            </>
+          )}
           <span className="pc-meta-dot">·</span>
           <span className="pc-date">{formatDate(paper.published)}</span>
           <span className="pc-meta-dot">·</span>

@@ -371,3 +371,44 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.ap-follow-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--brand);
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: auto;
+  margin-right: 12px;
+}
+
+.ap-follow-btn:active {
+  transform: scale(0.95);
+}
+
+.ap-follow-btn.following {
+  background: rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.ap-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ap-title {
+  margin: 0;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

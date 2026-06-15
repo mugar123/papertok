@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { getAuthorWikiInfo } from '../../services/wikiService';
 import { getAuthorPapers } from '../../services/arxivService';
 import { getAuthorProfile } from '../../services/openAlexService';
-import { X, ChevronLeft, ExternalLink, Loader2, BookOpen, Award, Building2 } from 'lucide-react';
+import { X, ChevronLeft, ExternalLink, Loader2, BookOpen, Award, Building2, UserPlus, UserCheck } from 'lucide-react';
 import { getCategoryLabel } from '../../data/categories';
+import { useAuth } from '../../context/AuthContext';
 import './AuthorPanel.css';
 
 export default function AuthorPanel({ authors, onClose, onOpenPdf }) {
@@ -12,6 +13,18 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf }) {
   const [papers, setPapers] = useState([]);
   const [openAlexProfile, setOpenAlexProfile] = useState(null);
   const [loading, setLoading] = useState(false);
+  const { followedAuthors, toggleFollowAuthor } = useAuth();
+
+  const isFollowing = selectedAuthor ? followedAuthors.includes(selectedAuthor) : false;
+
+  const handleToggleFollow = async () => {
+    if (!selectedAuthor) return;
+    try {
+      await toggleFollowAuthor(selectedAuthor);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   // Close when clicking outside panel
   const handleBackdropClick = (e) => {
@@ -69,6 +82,19 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf }) {
           <h2 className="ap-title">
             {selectedAuthor ? selectedAuthor : 'Autores'}
           </h2>
+          
+          {selectedAuthor && (
+            <button 
+              className={`ap-follow-btn ${isFollowing ? 'following' : ''}`}
+              onClick={handleToggleFollow}
+            >
+              {isFollowing ? (
+                <><UserCheck size={16} /> Siguiendo</>
+              ) : (
+                <><UserPlus size={16} /> Seguir</>
+              )}
+            </button>
+          )}
           
           <button className="ap-close-btn" onClick={onClose}>
             <X size={24} />

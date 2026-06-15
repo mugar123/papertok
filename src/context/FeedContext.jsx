@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef } f
 import { IS_DEMO, db } from '../services/firebase';
 import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc, updateDoc, deleteField, increment } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
-import { fetchPapers, clearCache, fetchPapersByIds } from '../services/arxivService';
+import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
 import { getDeviceInfo } from '../utils/device';
 import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data/categories';
 import { enrichPapersBatch, getArxivIdsForOpenAlexWorks } from '../services/openAlexService';
@@ -31,7 +31,7 @@ function demoSet(key, value) {
 }
 
 export function FeedProvider({ children }) {
-  const { user, userPreferences } = useAuth();
+  const { user, userPreferences, followedAuthors } = useAuth();
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -61,6 +61,13 @@ export function FeedProvider({ children }) {
     let prefScore = 0;
     if (userPreferences && userPreferences.includes(paper.primaryCategory)) {
       prefScore = 100;
+    }
+    
+    let authorBoost = 0;
+    if (paper.authors && followedAuthors && followedAuthors.length > 0) {
+      if (paper.authors.some(a => followedAuthors.includes(a))) {
+        authorBoost = 50; // Massive boost for followed authors
+      }
     }
     
     const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
@@ -96,7 +103,7 @@ export function FeedProvider({ children }) {
       }
     }
     
-    const baseScore = affinityScore + prefScore + recencyBoost + semanticScore + citationBoost + graphBoost;
+    const baseScore = affinityScore + prefScore + recencyBoost + semanticScore + citationBoost + graphBoost + authorBoost;
     const finalScore = baseScore * cooldownMultiplier;
     
     paper._dynamicScore = finalScore;
@@ -109,10 +116,11 @@ export function FeedProvider({ children }) {
       semantic: semanticScore,
       citations: citationBoost,
       graphBoost: graphBoost,
+      authorBoost: authorBoost,
       cooldownMultiplier: cooldownMultiplier,
       isExploration: paper._debugScore?.isExploration || false
     };
-  }, [userPreferences]);
+  }, [userPreferences, followedAuthors]);
 
   const reRankFeed = useCallback((sourcePaperId = null) => {
     setPapers(prevPapers => {
@@ -331,29 +339,39 @@ export function FeedProvider({ children }) {
           .map(c => c.id);
         const trendingCategories = validTrending.sort(() => 0.5 - Math.random()).slice(0, 2);
 
-        // Setup Capa 4: Exploración (10%)
-        // Only explore within the user's parent areas, OR categories they've shown affinity for.
-        const validRandom = allCategories
-          .filter(c => !userPreferences.includes(c.id))
-          .filter(c => userAreas.has(c.area) || (categoryAffinities.current[c.id] || 0) > 0)
-          .filter(c => (categoryAffinities.current[c.id] || 0) >= -2)
-          .map(c => c.id);
-        const randomCats = validRandom.sort(() => 0.5 - Math.random()).slice(0, 1);
+        // Setup Capa 4: Exploración/Random (10%) -> Pick random categories
+        const randomCats = allCategories
+          .filter(c => !userPreferences.includes(c.id) && !trendingCategories.includes(c.id))
+          .map(c => c.id)
+          .sort(() => 0.5 - Math.random())
+          .slice(0, 2);
 
+        // COMBINED FETCH
+        // Instead of making 4 parallel requests, we combine them into a single RSS/Atom request.
         const combinedCats = Array.from(new Set([...userPreferences, ...trendingCategories, ...randomCats]));
         
         const promises = [
           fetchPapers(combinedCats, currentPage * 25, 30, 'recent').catch(e => { console.warn('Combined fetch failed', e); return []; })
         ];
-        
+
         if (candidatesToFetch.length > 0) {
-          promises.push(fetchPapersByIds(candidatesToFetch).catch(e => { console.warn('Graph fetch failed', e); return []; }));
+           promises.push(fetchPapersByIds(candidatesToFetch).catch(() => []));
+        } else {
+           promises.push(Promise.resolve([]));
+        }
+        
+        // Inject 1 paper from a followed author
+        if (followedAuthors && followedAuthors.length > 0) {
+          const randAuthor = followedAuthors[Math.floor(Math.random() * followedAuthors.length)];
+          promises.push(getAuthorPapers(randAuthor, 2).catch(() => []));
         } else {
           promises.push(Promise.resolve([]));
         }
 
-        const [combinedPapers, graphPapers] = await Promise.all(promises);
-        
+        const [combinedPapers, graphPapers, authorPapers] = await Promise.all(promises);
+
+        // Separate the combined papers back into logic buckets to respect ratios (roughly)
+        let coreToEnrich = []; 
         const exploitPapers = [];
         const trendingPapers = [];
         const randomPapers = [];
@@ -375,7 +393,16 @@ export function FeedProvider({ children }) {
         });
         
         // --- OPENALEX ENRICHMENT ---
-        const coreToEnrich = [...exploitPapers, ...graphPapers, ...trendingPapers];
+        coreToEnrich = [...exploitPapers, ...graphPapers, ...trendingPapers];
+
+        if (authorPapers && authorPapers.length > 0) {
+          authorPapers.forEach(p => {
+             // We give it a special flag so it bypasses all cooldowns and gets forced to the top
+             p._debugScore = { isExploration: false };
+             coreToEnrich.push(p);
+          });
+        }
+
         const arxivIdsToEnrich = coreToEnrich.map(p => p.id);
         const openAlexData = await enrichPapersBatch(arxivIdsToEnrich);
         

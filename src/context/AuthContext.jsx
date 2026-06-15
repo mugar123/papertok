@@ -22,6 +22,7 @@ export function AuthProvider({ children }) {
   const [error, setError] = useState(null);
   const [onboardingComplete, setOnboardingComplete] = useState(false);
   const [userPreferences, setUserPreferences] = useState(null);
+  const [followedAuthors, setFollowedAuthors] = useState([]);
 
   useEffect(() => {
     if (IS_DEMO) {
@@ -31,6 +32,7 @@ export function AuthProvider({ children }) {
         setUser(demoUser);
         setOnboardingComplete(demoGet('onboardingComplete', false));
         setUserPreferences(demoGet('selectedCategories', null));
+        setFollowedAuthors(demoGet('followedAuthors', []));
       }
       setLoading(false);
       return;
@@ -49,6 +51,7 @@ export function AuthProvider({ children }) {
             const data = userDoc.data();
             setOnboardingComplete(data.onboardingComplete || false);
             setUserPreferences(data.selectedCategories || null);
+            setFollowedAuthors(data.followedAuthors || []);
           } else {
             await setDoc(userDocRef, {
               displayName: firebaseUser.displayName,
@@ -57,8 +60,10 @@ export function AuthProvider({ children }) {
               createdAt: new Date().toISOString(),
               onboardingComplete: false,
               selectedCategories: [],
+              followedAuthors: [],
             });
             setOnboardingComplete(false);
+            setFollowedAuthors([]);
           }
         } catch (err) {
           console.error('Error loading user data:', err);
@@ -67,6 +72,7 @@ export function AuthProvider({ children }) {
         setUser(null);
         setOnboardingComplete(false);
         setUserPreferences(null);
+        setFollowedAuthors([]);
       }
       setLoading(false);
     });
@@ -90,6 +96,7 @@ export function AuthProvider({ children }) {
         // Check onboarding
         setOnboardingComplete(demoGet('onboardingComplete', false));
         setUserPreferences(demoGet('selectedCategories', null));
+        setFollowedAuthors(demoGet('followedAuthors', []));
         setLoading(false);
       } else {
         await signInWithPopup(auth, googleProvider);
@@ -106,6 +113,7 @@ export function AuthProvider({ children }) {
         setUser(null);
         setOnboardingComplete(false);
         setUserPreferences(null);
+        setFollowedAuthors([]);
         localStorage.removeItem('papertok_user');
       } else {
         await firebaseSignOut(auth);
@@ -155,17 +163,42 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const toggleFollowAuthor = async (authorName) => {
+    if (!user) return;
+    try {
+      const isFollowing = followedAuthors.includes(authorName);
+      const newFollowed = isFollowing
+        ? followedAuthors.filter(a => a !== authorName)
+        : [...followedAuthors, authorName];
+
+      if (IS_DEMO) {
+        demoSet('followedAuthors', newFollowed);
+      } else {
+        const userDocRef = doc(db, 'users', user.uid);
+        await setDoc(userDocRef, { followedAuthors: newFollowed }, { merge: true });
+      }
+      setFollowedAuthors(newFollowed);
+      return newFollowed;
+    } catch (err) {
+      console.error('Error toggling author follow:', err);
+      setError(err.message);
+      throw err;
+    }
+  };
+
   const value = {
     user,
     loading,
     error,
     onboardingComplete,
     userPreferences,
+    followedAuthors,
     signInWithGoogle,
     signOut,
     completeOnboarding,
     updatePreferences,
     setUserPreferences,
+    toggleFollowAuthor,
     isDemo: IS_DEMO,
   };
 
