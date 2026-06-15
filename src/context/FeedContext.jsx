@@ -340,13 +340,29 @@ export function FeedProvider({ children }) {
           .map(c => c.id);
         const randomCats = validRandom.sort(() => 0.5 - Math.random()).slice(0, 1);
 
-        // Fetch ALL layers in parallel, but catch individual errors so the whole feed doesn't crash if arXiv rate-limits one request.
-        const [exploitPapers, graphPapers, trendingPapers, randomPapers] = await Promise.all([
-          fetchPapers(userPreferences, currentPage * 20, 20, 'recent').catch(e => { console.warn('Exploit fetch failed', e); return []; }),
-          candidatesToFetch.length > 0 ? fetchPapersByIds(candidatesToFetch).catch(e => { console.warn('Graph fetch failed', e); return []; }) : Promise.resolve([]),
-          trendingCategories.length > 0 ? fetchPapers(trendingCategories, currentPage * 10, 10, 'recent').catch(e => { console.warn('Trending fetch failed', e); return []; }) : Promise.resolve([]),
-          randomCats.length > 0 ? fetchPapers(randomCats, currentPage * 5, 5, 'recent').catch(e => { console.warn('Random fetch failed', e); return []; }) : Promise.resolve([])
-        ]);
+        const promises = [
+          fetchPapers(userPreferences, currentPage * 20, 20, 'recent').catch(e => { console.warn('Exploit fetch failed', e); return []; })
+        ];
+        
+        if (candidatesToFetch.length > 0) {
+          promises.push(fetchPapersByIds(candidatesToFetch).catch(e => { console.warn('Graph fetch failed', e); return []; }));
+        } else {
+          promises.push(Promise.resolve([]));
+        }
+
+        if (trendingCategories.length > 0) {
+          promises.push(fetchPapers(trendingCategories, currentPage * 10, 10, 'recent').catch(e => { console.warn('Trending fetch failed', e); return []; }));
+        } else {
+          promises.push(Promise.resolve([]));
+        }
+
+        if (randomCats.length > 0) {
+          promises.push(fetchPapers(randomCats, currentPage * 5, 5, 'recent').catch(e => { console.warn('Random fetch failed', e); return []; }));
+        } else {
+          promises.push(Promise.resolve([]));
+        }
+
+        const [exploitPapers, graphPapers, trendingPapers, randomPapers] = await Promise.all(promises);
         
         // --- OPENALEX ENRICHMENT ---
         const coreToEnrich = [...exploitPapers, ...graphPapers, ...trendingPapers];
@@ -421,8 +437,10 @@ export function FeedProvider({ children }) {
         !sessionSeenPapers.has(p.id)
       );
 
+      // If everything was filtered out but we actually fetched papers, it means the user has seen them all.
+      // We must fetch the NEXT page automatically.
       if (filtered.length === 0 && newPapers.length > 0) {
-        // Try bypassing sessionSeenPapers to avoid empty feed and rate-limiting cascades
+        // First try bypassing sessionSeenPapers to avoid empty feed
         const bypassSeen = newPapers.filter((p) => 
           !notInterestedIds.has(p.id) && 
           !readPaperIds.has(p.id) &&
@@ -432,20 +450,19 @@ export function FeedProvider({ children }) {
         if (bypassSeen.length > 0) {
           console.log("Bypassing sessionSeenPapers filter to prevent rate limit cascade.");
           filtered = bypassSeen;
-        } else {
-          if (currentPage < 20) {
-            console.log("All fetched papers were seen and interacted, fetching next page automatically...");
-            const nextPageToFetch = currentPage + 1;
-            setPage(nextPageToFetch);
-            setTimeout(() => {
-              if (loadPapersRef.current) {
-                loadPapersRef.current(false, activeMode, false, nextPageToFetch);
-              } else {
-                loadPapers(false, activeMode, false, nextPageToFetch);
-              }
-            }, 0);
-            return;
+        } else if (currentPage < 10) { // Limit auto-fetch depth to avoid infinite loops
+          console.log(`All fetched papers were seen and interacted, fetching page ${currentPage + 1} automatically...`);
+          const nextPageToFetch = currentPage + 1;
+          // Set loading to false so the next loadPapers doesn't get blocked by the `if (!reset && loading) return;` check
+          setLoading(false);
+          setPage(nextPageToFetch);
+          
+          if (loadPapersRef.current) {
+            setTimeout(() => loadPapersRef.current(false, activeMode, false, nextPageToFetch), 0);
+          } else {
+            setTimeout(() => loadPapers(false, activeMode, false, nextPageToFetch), 0);
           }
+          return;
         }
       }
 
