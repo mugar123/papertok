@@ -7,10 +7,9 @@ import AuthorPanel from './AuthorPanel';
 import './FeedContainer.css';
 
 export default function FeedContainer({ onOpenPdf, onSaveToList }) {
-  const { papers, loading, error, hasMore, loadMore, refreshFeed } = useFeed();
+  const { papers, loading, error, hasMore, loadMore, refreshFeed, isRefreshing } = useFeed();
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const [showLoader, setShowLoader] = useState(false);
   const [activeAuthors, setActiveAuthors] = useState(null);
 
@@ -41,9 +40,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   }, [hasMore, loading, loadMore]);
 
   const handleRefresh = useCallback(() => {
-    setIsRefreshing(true);
     refreshFeed();
-    setTimeout(() => setIsRefreshing(false), 1000);
   }, [refreshFeed]);
 
   if (error && papers.length === 0) {

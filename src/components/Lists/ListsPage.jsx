@@ -18,13 +18,16 @@ function demoSet(key, value) {
   catch (err) { console.error('Error in demoSet', err); }
 }
 
+// Simple in-memory cache for fast tab switching
+let listsPageCache = null;
+
 export default function ListsPage({ onOpenPdf }) {
   const { user } = useAuth();
   const { unmarkAsRead, toggleLike } = useFeed();
-  const [lists, setLists] = useState([]);
-  const [savedPapers, setSavedPapers] = useState({});
+  const [lists, setLists] = useState(listsPageCache?.lists || []);
+  const [savedPapers, setSavedPapers] = useState(listsPageCache?.savedPapers || {});
   const [expandedList, setExpandedList] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!listsPageCache);
 
   useEffect(() => {
     if (!user) return;
@@ -80,6 +83,9 @@ export default function ListsPage({ onOpenPdf }) {
             paperIds: readPaperIds, createdAt: 'default' },
           ...userLists,
         ];
+        
+        listsPageCache = { lists: allLists, savedPapers: papers };
+        
         setLists(allLists);
         setSavedPapers(papers);
       } catch (err) {
@@ -88,7 +94,14 @@ export default function ListsPage({ onOpenPdf }) {
         setLoading(false);
       }
     };
-    loadData();
+    
+    // Only fetch if we don't have cache, or fetch in background
+    if (!listsPageCache) {
+      loadData();
+    } else {
+      // Fetch in background to keep data fresh without blocking UI
+      loadData();
+    }
   }, [user]);
 
   const handleDeleteList = async (listId) => {

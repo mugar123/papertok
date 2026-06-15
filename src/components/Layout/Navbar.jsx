@@ -8,12 +8,11 @@ import './Navbar.css';
 
 export default function Navbar() {
   const { user, signOut } = useAuth();
-  const { feedMode, setFeedMode, refreshFeed } = useFeed();
+  const { feedMode, setFeedMode, refreshFeed, isRefreshing } = useFeed();
   const navigate = useNavigate();
   const location = useLocation();
   const [showDropdown, setShowDropdown] = useState(false);
   const [isEditInterestsOpen, setIsEditInterestsOpen] = useState(false);
-  const [isRefreshing, setIsRefreshing] = useState(false);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -32,9 +31,7 @@ export default function Navbar() {
   };
 
   const handleRefresh = () => {
-    setIsRefreshing(true);
     refreshFeed();
-    setTimeout(() => setIsRefreshing(false), 1000);
   };
 
   const isListsActive = location.pathname === '/lists';

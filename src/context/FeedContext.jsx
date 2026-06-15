@@ -156,13 +156,17 @@ export function FeedProvider({ children }) {
   const loadPapersRef = useRef(loadPapers);
   useEffect(() => { loadPapersRef.current = loadPapers; }, [loadPapers]);
 
-  const refreshFeed = useCallback(() => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const refreshFeed = useCallback(async () => {
+    setIsRefreshing(true);
     clearCache();
     feedCache.current = {};
     setPapers([]);
     setPage(0);
     setHasMore(true);
-    loadPapersRef.current(true);
+    await loadPapersRef.current(true);
+    setIsRefreshing(false);
   }, []);
 
   const toggleLike = useCallback(async (paper) => {
@@ -290,7 +294,7 @@ export function FeedProvider({ children }) {
   }, [user, readPaperIds]);
 
   const value = {
-    papers, loading, error, hasMore,
+    papers, loading, error, hasMore, isRefreshing,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
