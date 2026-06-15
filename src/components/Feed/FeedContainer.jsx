@@ -60,7 +60,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   }
 
   if (papers.length === 0 && !error) {
-    if (!showLoader) {
+    if (!showLoader && !isRefreshing) {
       return (
         <div className="feed-wrapper">
           <div className="feed-container">
@@ -74,8 +74,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
         <div className="atom-loader">
           <AnimatedAtom size={80} strokeWidth={1} className="atom-loader-icon" />
         </div>
-        <h2>{loading ? 'Sintetizando papers...' : 'Buscando descubrimientos...'}</h2>
-        <p>{loading ? 'Conectando con arXiv para traer lo último en ciencia' : 'Aún no hay papers en tus categorías. Prueba a ampliar tus intereses.'}</p>
+        <h2>{loading || isRefreshing ? 'Sintetizando papers...' : 'Buscando descubrimientos...'}</h2>
+        <p>{loading || isRefreshing ? 'Conectando con arXiv para traer lo último en ciencia' : 'Aún no hay papers en tus categorías. Prueba a ampliar tus intereses.'}</p>
         {!loading && (
           <button className="feed-retry-btn" onClick={handleRefresh}>
             Explorar de nuevo

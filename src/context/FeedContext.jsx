@@ -78,7 +78,7 @@ export function FeedProvider({ children }) {
   // Load papers when preferences are available
   const loadPapers = useCallback(async (reset = false, mode) => {
     if (!userPreferences || userPreferences.length === 0) return;
-    if (loading) return;
+    if (!reset && loading) return;
 
     const activeMode = mode || feedMode;
 
@@ -162,8 +162,7 @@ export function FeedProvider({ children }) {
     setPapers([]);
     setPage(0);
     setHasMore(true);
-    setLoading(false); // reset so the guard inside loadPapers doesn't bail
-    setTimeout(() => loadPapersRef.current(true), 0);
+    loadPapersRef.current(true);
   }, []);
 
   const toggleLike = useCallback(async (paper) => {

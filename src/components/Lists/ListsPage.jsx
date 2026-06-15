@@ -13,6 +13,11 @@ function demoGet(key, fallback) {
   catch { return fallback; }
 }
 
+function demoSet(key, value) {
+  try { localStorage.setItem(`papertok_${key}`, JSON.stringify(value)); }
+  catch (err) { console.error('Error in demoSet', err); }
+}
+
 export default function ListsPage({ onOpenPdf }) {
   const { user } = useAuth();
   const { unmarkAsRead, toggleLike } = useFeed();
@@ -229,7 +234,7 @@ export default function ListsPage({ onOpenPdf }) {
             );
           })()}
         </div>
-      ) : lists.length === 0 && Object.keys(readPapers).length === 0 ? (
+      ) : lists.length === 0 ? (
         <div className="lists-empty-state">
           <div className="lists-empty-state-icon">📚</div>
           <h3>Aún no tienes listas</h3>
