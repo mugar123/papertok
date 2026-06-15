@@ -113,3 +113,38 @@ export async function getArxivIdsForOpenAlexWorks(openAlexUrls) {
   }
   return result;
 }
+/**
+ * Fetch author profile from OpenAlex by name.
+ * @param {string} authorName 
+ * @returns {Promise<Object|null>}
+ */
+export async function getAuthorProfile(authorName) {
+  if (!authorName) return null;
+  const cleanName = encodeURIComponent(authorName.trim());
+  const url = `https://api.openalex.org/authors?search=${cleanName}`;
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return null;
+    
+    const data = await response.json();
+    if (data && data.results && data.results.length > 0) {
+      // Pick the first result as the best match
+      const author = data.results[0];
+      return {
+        id: author.id,
+        display_name: author.display_name,
+        works_count: author.works_count || 0,
+        cited_by_count: author.cited_by_count || 0,
+        h_index: author.summary_stats ? author.summary_stats.h_index : 0,
+        institution: (author.last_known_institutions && author.last_known_institutions.length > 0) 
+            ? author.last_known_institutions[0].display_name 
+            : null,
+        concepts: author.x_concepts ? author.x_concepts.slice(0, 5) : []
+      };
+    }
+  } catch (err) {
+    console.error("OpenAlex getAuthorProfile failed", err);
+  }
+  return null;
+}

@@ -11,7 +11,13 @@ const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
 
 // Global session state to ensure fresh feed on reloads
-const sessionSeenPapers = new Set();
+const storedSeen = typeof window !== 'undefined' ? localStorage.getItem('papertok_seenIds') : null;
+const sessionSeenPapers = new Set(storedSeen ? JSON.parse(storedSeen) : []);
+
+function saveSessionSeen() {
+  const seenArray = Array.from(sessionSeenPapers).slice(-500); // Keep last 500
+  localStorage.setItem('papertok_seenIds', JSON.stringify(seenArray));
+}
 
 // ── Demo mode storage helpers ──
 function demoGet(key, fallback) {
@@ -183,8 +189,8 @@ export function FeedProvider({ children }) {
     
     let currentPage = reset ? 0 : page;
     if (randomizeStart) {
-      // Pick a random page between 0 and 5 to give a fresh slice of papers
-      currentPage = Math.floor(Math.random() * 6);
+      // Pick a random page between 0 and 50 to give a fresh slice of papers
+      currentPage = Math.floor(Math.random() * 50);
     }
 
     try {
@@ -256,6 +262,7 @@ export function FeedProvider({ children }) {
         
         // Mark these as seen for the session so they don't repeat on next load
         sortedCore.forEach(p => sessionSeenPapers.add(p.id));
+        saveSessionSeen();
 
         // Calculate and attach debug scores before sorting
         sortedCore.forEach(paper => {
@@ -279,6 +286,7 @@ export function FeedProvider({ children }) {
           
           const oaData = openAlexData[paper.id];
           if (oaData) {
+            paper.openAlex = oaData; // Attach for UI display
             oaData.concepts.forEach(c => {
                if (conceptAffinities[c.id]) {
                  semanticScore += c.score * conceptAffinities[c.id] * 10; // Increased semantic weight

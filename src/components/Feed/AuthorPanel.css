@@ -152,7 +152,7 @@
 
 .ap-spinner {
   animation: spin 1s linear infinite;
-  color: var(--accent-primary);
+  color: var(--accent);
 }
 
 @keyframes spin {
@@ -160,7 +160,93 @@
   to { transform: rotate(360deg); }
 }
 
-/* ── Wiki Section ── */
+/* ── OpenAlex Stats Card ── */
+.ap-openalex-card {
+  background: linear-gradient(145deg, var(--bg-secondary), var(--bg-tertiary));
+  border: 1px solid var(--border-subtle);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+}
+
+.ap-oa-institution {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: var(--fw-medium);
+}
+
+.ap-oa-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  text-align: center;
+}
+
+.ap-oa-stat {
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  padding: 12px;
+  border-radius: 12px;
+  gap: 4px;
+}
+
+.ap-oa-stat-value {
+  font-size: 20px;
+  font-weight: 800;
+  color: var(--brand-light);
+}
+
+.ap-oa-stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-tertiary);
+  font-weight: 600;
+}
+
+.ap-oa-concepts {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.ap-oa-concepts-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin: 0;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.ap-oa-concepts-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.ap-oa-concept-tag {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── Wikipedia Section ── */
 .ap-wiki-card {
   display: flex;
   gap: 16px;

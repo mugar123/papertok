@@ -275,6 +275,7 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
       {/* Content area - bottom aligned like TikTok */}
       <div className="pc-body">
         {/* Meta row */}
+        {/* Meta row */}
         <div className="pc-meta">
           <span className="pc-category-pill">{categoryLabel}</span>
           <span className="pc-meta-dot">·</span>
@@ -283,7 +284,35 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
           <span className="pc-readtime" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <Clock size={12} /> {readTime} min
           </span>
+          {paper.openAlex && paper.openAlex.cited_by_count > 0 && (
+            <>
+              <span className="pc-meta-dot">·</span>
+              <span className="pc-citations" style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#ff9800', fontWeight: 'bold' }}>
+                🔥 {paper.openAlex.cited_by_count} Citas
+              </span>
+            </>
+          )}
         </div>
+        
+        {/* OpenAlex Semantic Concepts */}
+        {paper.openAlex && paper.openAlex.concepts && paper.openAlex.concepts.length > 0 && (
+          <div className="pc-semantic-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+            {paper.openAlex.concepts.slice(0, 4).map((concept, idx) => (
+              <span key={idx} className="pc-semantic-tag" style={{
+                background: 'rgba(255,255,255,0.1)',
+                padding: '2px 8px',
+                borderRadius: '12px',
+                fontSize: '11px',
+                fontWeight: '600',
+                color: 'rgba(255,255,255,0.9)',
+                border: '1px solid rgba(255,255,255,0.2)',
+                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+              }}>
+                {concept.display_name}
+              </span>
+            ))}
+          </div>
+        )}
 
         {/* Title */}
         <h2 className="pc-title">

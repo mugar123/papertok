@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { getAuthorWikiInfo } from '../../services/wikiService';
 import { getAuthorPapers } from '../../services/arxivService';
-import { X, ChevronLeft, ExternalLink, Loader2, BookOpen } from 'lucide-react';
+import { getAuthorProfile } from '../../services/openAlexService';
+import { X, ChevronLeft, ExternalLink, Loader2, BookOpen, Award, Building2 } from 'lucide-react';
 import { getCategoryLabel } from '../../data/categories';
 import './AuthorPanel.css';
 
@@ -9,6 +10,7 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf }) {
   const [selectedAuthor, setSelectedAuthor] = useState(null);
   const [wikiInfo, setWikiInfo] = useState(null);
   const [papers, setPapers] = useState([]);
+  const [openAlexProfile, setOpenAlexProfile] = useState(null);
   const [loading, setLoading] = useState(false);
 
   // Close when clicking outside panel
@@ -23,15 +25,18 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf }) {
     setLoading(true);
     setWikiInfo(null);
     setPapers([]);
+    setOpenAlexProfile(null);
 
     try {
       // Fetch in parallel
-      const [wiki, authorPapers] = await Promise.all([
+      const [wiki, authorPapers, oaProfile] = await Promise.all([
         getAuthorWikiInfo(author),
-        getAuthorPapers(author, 10)
+        getAuthorPapers(author, 10),
+        getAuthorProfile(author)
       ]);
       setWikiInfo(wiki);
       setPapers(authorPapers || []);
+      setOpenAlexProfile(oaProfile);
     } catch (err) {
       console.error('Error fetching author info:', err);
     } finally {
@@ -98,6 +103,45 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf }) {
                 </div>
               ) : (
                 <>
+                  {/* OpenAlex Stats Section */}
+                  {openAlexProfile && (
+                    <div className="ap-openalex-card">
+                      {openAlexProfile.institution && (
+                        <div className="ap-oa-institution">
+                          <Building2 size={16} /> {openAlexProfile.institution}
+                        </div>
+                      )}
+                      
+                      <div className="ap-oa-stats-grid">
+                        <div className="ap-oa-stat">
+                          <span className="ap-oa-stat-value">{openAlexProfile.h_index}</span>
+                          <span className="ap-oa-stat-label">H-Index</span>
+                        </div>
+                        <div className="ap-oa-stat">
+                          <span className="ap-oa-stat-value">{openAlexProfile.works_count}</span>
+                          <span className="ap-oa-stat-label">Publicaciones</span>
+                        </div>
+                        <div className="ap-oa-stat">
+                          <span className="ap-oa-stat-value">{openAlexProfile.cited_by_count.toLocaleString()}</span>
+                          <span className="ap-oa-stat-label">Citas Totales</span>
+                        </div>
+                      </div>
+
+                      {openAlexProfile.concepts && openAlexProfile.concepts.length > 0 && (
+                        <div className="ap-oa-concepts">
+                          <h4 className="ap-oa-concepts-title">
+                            <Award size={14} /> Especialidades
+                          </h4>
+                          <div className="ap-oa-concepts-list">
+                            {openAlexProfile.concepts.map((c, i) => (
+                              <span key={i} className="ap-oa-concept-tag">{c.display_name}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   {/* Wikipedia Section */}
                   {wikiInfo && (
                     <div className="ap-wiki-card">
