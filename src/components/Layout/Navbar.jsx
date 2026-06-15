@@ -66,7 +66,7 @@ export default function Navbar() {
               setFeedMode('recent');
             }}
           >
-            Recientes
+            Destacados
           </button>
           
           <button 
@@ -76,7 +76,7 @@ export default function Navbar() {
               setFeedMode('top');
             }}
           >
-            Destacados
+            Recientes
           </button>
           
           {/* Slider indicator */}

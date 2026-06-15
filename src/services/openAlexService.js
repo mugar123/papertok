@@ -31,9 +31,9 @@ export async function enrichPapersBatch(arxivIds) {
   const CHUNK_SIZE = 40;
   for (let i = 0; i < toFetch.length; i += CHUNK_SIZE) {
     const chunk = toFetch.slice(i, i + CHUNK_SIZE);
-    // Explicitly search by arxiv ID
-    const filterIds = chunk.map(id => `ids.arxiv:${id}`).join('|');
-    const url = `https://api.openalex.org/works?filter=${filterIds}&per-page=50&select=ids,concepts,cited_by_count,related_works`;
+    // Convert arXiv IDs to their official DOIs for OpenAlex lookup
+    const filterIds = chunk.map(id => `doi:10.48550/arxiv.${id}`).join('|');
+    const url = `https://api.openalex.org/works?filter=${filterIds}&per-page=50&select=doi,concepts,cited_by_count,related_works`;
     
     try {
       const response = await fetch(url);
@@ -42,8 +42,12 @@ export async function enrichPapersBatch(arxivIds) {
         if (data && data.results) {
           data.results.forEach(work => {
              let arxivId = null;
-             if (work.ids && work.ids.arxiv) {
-               arxivId = work.ids.arxiv.split('/').pop().replace(/v\d+$/, '');
+             if (work.doi) {
+               // work.doi is usually "https://doi.org/10.48550/arxiv.2403.01123"
+               const match = work.doi.match(/arxiv\.([^/]+)$/i);
+               if (match) {
+                 arxivId = match[1].replace(/v\d+$/, '');
+               }
              }
              
              if (arxivId) {

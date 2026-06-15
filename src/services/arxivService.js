@@ -77,7 +77,7 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
     searchQuery = categoriesOrQuery;
   }
 
-  const sortBy = mode === 'top' ? 'relevance' : 'submittedDate';
+  const sortBy = 'submittedDate';
 
   const params = new URLSearchParams({
     search_query: searchQuery,
