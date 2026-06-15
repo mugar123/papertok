@@ -10,6 +10,7 @@ import ListsPage from './components/Lists/ListsPage'
 import Navbar from './components/Layout/Navbar'
 import PDFViewer from './components/PDF/PDFViewer'
 import SaveToListModal from './components/Lists/SaveToListModal'
+import SearchPage from './components/Search/SearchPage'
 import './App.css'
 
 function AppContent() {
@@ -46,6 +47,14 @@ function AppContent() {
             <ProtectedRoute>
               <Navbar />
               <ListsPage onOpenPdf={setPdfPaper} />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/search"
+          element={
+            <ProtectedRoute>
+              <SearchPage />
             </ProtectedRoute>
           }
         />

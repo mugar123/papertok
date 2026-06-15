@@ -196,3 +196,37 @@ export async function getAuthorProfile(authorName) {
   }
   return null;
 }
+
+/**
+ * Search authors by name and return a list of matches.
+ * @param {string} query 
+ * @returns {Promise<Array>}
+ */
+export async function searchAuthors(query) {
+  if (!query) return [];
+  const cleanName = encodeURIComponent(query.trim());
+  const url = `https://api.openalex.org/authors?search=${cleanName}&per-page=10`;
+  
+  try {
+    const response = await fetchWithTimeout(url, 10000);
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    if (data && data.results) {
+      return data.results.map(author => ({
+        id: author.id,
+        display_name: author.display_name,
+        works_count: author.works_count || 0,
+        cited_by_count: author.cited_by_count || 0,
+        h_index: author.summary_stats ? author.summary_stats.h_index : 0,
+        institution: (author.last_known_institutions && author.last_known_institutions.length > 0) 
+            ? author.last_known_institutions[0].display_name 
+            : null,
+        concepts: author.x_concepts ? author.x_concepts.slice(0, 5) : []
+      }));
+    }
+  } catch (err) {
+    console.error("OpenAlex searchAuthors failed", err);
+  }
+  return [];
+}

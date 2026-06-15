@@ -206,7 +206,7 @@ async function fetchArxivData(url) {
 /**
  * Fetch papers from arXiv by categories or raw query.
  */
-export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20, mode = 'recent') {
+export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20, mode = 'recent', sortByOverride = 'submittedDate') {
   if (!categoriesOrQuery || categoriesOrQuery.length === 0) return [];
 
   let searchQuery = '';
@@ -216,7 +216,7 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
     searchQuery = categoriesOrQuery;
   }
 
-  const sortBy = 'submittedDate';
+  const sortBy = sortByOverride;
 
   const params = new URLSearchParams({
     search_query: searchQuery,
@@ -281,5 +281,14 @@ export async function fetchPapersByIds(arxivIds) {
     console.error('Error fetching papers by id:', error);
     throw error;
   }
+}
+
+/**
+ * Search papers by any string (all:query)
+ */
+export async function searchPapers(queryStr, start = 0, maxResults = 20) {
+  if (!queryStr || queryStr.trim() === '') return [];
+  const encodedQuery = `all:"${queryStr.trim()}"`;
+  return fetchPapers(encodedQuery, start, maxResults, 'recent', 'relevance');
 }
 

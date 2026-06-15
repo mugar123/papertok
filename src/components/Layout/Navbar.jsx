@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
-import { LogOut, Settings2, RotateCw } from 'lucide-react';
+import { LogOut, Settings2, RotateCw, Search } from 'lucide-react';
 import EditInterestsModal from '../Settings/EditInterestsModal';
 import './Navbar.css';
 
@@ -93,6 +93,14 @@ export default function Navbar() {
         </div>
 
         <div className="navbar-right">
+          <button 
+            className="navbar-action-btn"
+            onClick={() => navigate('/search')}
+            title="Buscar"
+          >
+            <Search size={20} />
+          </button>
+          
           {user && (
             <div className="navbar-profile" ref={dropdownRef}>
               <button
