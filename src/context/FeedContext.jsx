@@ -401,10 +401,6 @@ export function FeedProvider({ children }) {
         
         const sortedCore = Array.from(uniqueMap.values());
         
-        // Mark these as seen for the session so they don't repeat on next load
-        sortedCore.forEach(p => sessionSeenPapers.add(p.id));
-        saveSessionSeen();
-
         // Calculate and attach debug scores before sorting
         sortedCore.forEach(paper => {
            calculateAndAttachScore(paper, userPreferences);
@@ -474,6 +470,10 @@ export function FeedProvider({ children }) {
           return;
         }
       }
+
+      // NOW we add the final papers we are going to show to sessionSeenPapers
+      filtered.forEach(p => sessionSeenPapers.add(p.id));
+      saveSessionSeen();
 
       let nextPapers;
       let nextPage;
