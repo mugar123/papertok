@@ -229,8 +229,10 @@ export function FeedProvider({ children }) {
         }
         
         // CAPA 4: Exploración (10%)
+        // Only explore within the user's parent areas, OR categories they've shown affinity for.
         const validRandom = allCategories
           .filter(c => !userPreferences.includes(c.id))
+          .filter(c => userAreas.has(c.area) || (categoryAffinities[c.id] || 0) > 0)
           .filter(c => (categoryAffinities[c.id] || 0) >= -2)
           .map(c => c.id);
           
