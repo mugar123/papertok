@@ -35,19 +35,33 @@ export async function enrichPapersBatch(arxivIds) {
     const filterIds = chunk.map(id => `doi:10.48550/arxiv.${id}`).join('|');
     const url = `https://api.openalex.org/works?filter=${filterIds}&per-page=50&select=doi,concepts,cited_by_count,related_works`;
     
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    let response = null;
+    let primaryFailed = false;
+    const controller1 = new AbortController();
+    const timeoutId1 = setTimeout(() => controller1.abort(), 10000);
     try {
-      let response = await fetch(url, { signal: controller.signal }).catch(() => null);
-      
-      // If direct fetch fails (e.g., Safari Private Relay block), try proxy
+      response = await fetch(url, { signal: controller1.signal }).catch(() => null);
       if (!response || !response.ok) {
-        console.warn('OpenAlex direct fetch failed, trying proxy');
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        response = await fetch(proxyUrl, { signal: controller.signal });
+        primaryFailed = true;
       }
+    } finally {
+      clearTimeout(timeoutId1);
+    }
       
-      clearTimeout(timeoutId);
+    // If direct fetch fails (e.g., Safari Private Relay block), try proxy with NEW controller
+    if (primaryFailed) {
+      console.warn('OpenAlex direct fetch failed, trying proxy');
+      const controller2 = new AbortController();
+      const timeoutId2 = setTimeout(() => controller2.abort(), 10000);
+      try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        response = await fetch(proxyUrl, { signal: controller2.signal }).catch(() => null);
+      } finally {
+        clearTimeout(timeoutId2);
+      }
+    }
+      
+    try {
       if (response && response.ok) {
         const data = await response.json();
         if (data && data.results) {

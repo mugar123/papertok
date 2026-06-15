@@ -145,32 +145,49 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
 
   try {
     let response;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
-
     let papers = [];
     if (isDev) {
-      response = await fetch(url, { signal: controller.signal });
-      if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-      const xmlText = await response.text();
-      papers = parseArxivXml(xmlText);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      try {
+        response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+        const xmlText = await response.text();
+        papers = parseArxivXml(xmlText);
+      } finally {
+        clearTimeout(timeoutId);
+      }
     } else {
+      let primaryFailed = false;
+      const controller1 = new AbortController();
+      const timeoutId1 = setTimeout(() => controller1.abort(), 10000);
       try {
         const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        response = await fetch(proxyUrl, { signal: controller.signal });
+        response = await fetch(proxyUrl, { signal: controller1.signal });
         if (!response.ok) throw new Error('allorigins failed');
         const xmlText = await response.text();
         papers = parseArxivXml(xmlText);
       } catch (err) {
         console.warn('Primary proxy failed, trying fallback', err);
-        const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
-        response = await fetch(proxyUrl, { signal: controller.signal });
-        if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-        const data = await response.json();
-        papers = parseRss2Json(data);
+        primaryFailed = true;
+      } finally {
+        clearTimeout(timeoutId1);
+      }
+
+      if (primaryFailed) {
+        const controller2 = new AbortController();
+        const timeoutId2 = setTimeout(() => controller2.abort(), 10000);
+        try {
+          const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
+          response = await fetch(proxyUrl, { signal: controller2.signal });
+          if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+          const data = await response.json();
+          papers = parseRss2Json(data);
+        } finally {
+          clearTimeout(timeoutId2);
+        }
       }
     }
-    clearTimeout(timeoutId);
 
     cache.set(cacheKey, { data: papers, timestamp: Date.now() });
     return papers;
@@ -212,32 +229,49 @@ export async function fetchPapersByIds(arxivIds) {
 
   try {
     let response;
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
-
     let papers = [];
     if (isDev) {
-      response = await fetch(url, { signal: controller.signal });
-      if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-      const xmlText = await response.text();
-      papers = parseArxivXml(xmlText);
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      try {
+        response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+        const xmlText = await response.text();
+        papers = parseArxivXml(xmlText);
+      } finally {
+        clearTimeout(timeoutId);
+      }
     } else {
+      let primaryFailed = false;
+      const controller1 = new AbortController();
+      const timeoutId1 = setTimeout(() => controller1.abort(), 10000);
       try {
         const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        response = await fetch(proxyUrl, { signal: controller.signal });
+        response = await fetch(proxyUrl, { signal: controller1.signal });
         if (!response.ok) throw new Error('allorigins failed');
         const xmlText = await response.text();
         papers = parseArxivXml(xmlText);
       } catch (err) {
         console.warn('Primary proxy failed, trying fallback', err);
-        const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
-        response = await fetch(proxyUrl, { signal: controller.signal });
-        if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-        const data = await response.json();
-        papers = parseRss2Json(data);
+        primaryFailed = true;
+      } finally {
+        clearTimeout(timeoutId1);
+      }
+
+      if (primaryFailed) {
+        const controller2 = new AbortController();
+        const timeoutId2 = setTimeout(() => controller2.abort(), 10000);
+        try {
+          const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url + '&_cb=' + Date.now())}`;
+          response = await fetch(proxyUrl, { signal: controller2.signal });
+          if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+          const data = await response.json();
+          papers = parseRss2Json(data);
+        } finally {
+          clearTimeout(timeoutId2);
+        }
       }
     }
-    clearTimeout(timeoutId);
 
     cache.set(cacheKey, { data: papers, timestamp: Date.now() });
     return papers;
