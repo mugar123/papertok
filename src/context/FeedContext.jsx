@@ -2,9 +2,10 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef } f
 import { IS_DEMO, db } from '../services/firebase';
 import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc, updateDoc, deleteField, increment } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
-import { fetchPapers, clearCache } from '../services/arxivService';
+import { fetchPapers, clearCache, fetchPapersByIds } from '../services/arxivService';
 import { getDeviceInfo } from '../utils/device';
 import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data/categories';
+import { enrichPapersBatch, getArxivIdsForOpenAlexWorks } from '../services/openAlexService';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
@@ -38,6 +39,8 @@ export function FeedProvider({ children }) {
   const [readPaperIds, setReadPaperIds] = useState(new Set());
   const [categoryAffinities, setCategoryAffinities] = useState({});
   const [categoryCooldowns, setCategoryCooldowns] = useState({});
+  const [conceptAffinities, setConceptAffinities] = useState({});
+  const [relatedCandidates, setRelatedCandidates] = useState([]);
 
   // Load user interactions
   useEffect(() => {
@@ -126,12 +129,38 @@ export function FeedProvider({ children }) {
           affinities[cat] = Math.max(-10, Math.min(100, affinities[cat]));
         });
         
+        // --- OpenAlex Semantic Profile ---
+        const positiveIds = [...liked, ...saved];
+        let conceptWeights = {};
+        let relatedWorksPool = [];
+        
+        if (positiveIds.length > 0) {
+           const openAlexData = await enrichPapersBatch(positiveIds);
+           
+           positiveIds.forEach(id => {
+              const data = openAlexData[id];
+              if (data) {
+                 data.concepts.forEach(c => {
+                    if (!conceptWeights[c.id]) conceptWeights[c.id] = 0;
+                    conceptWeights[c.id] += c.score; // Score is confidence [0, 1]
+                 });
+                 if (data.related_works) {
+                    relatedWorksPool.push(...data.related_works);
+                 }
+              }
+           });
+        }
+        
+        const relatedArxivIds = await getArxivIdsForOpenAlexWorks(relatedWorksPool);
+        
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
         setReadPaperIds(read);
         setCategoryAffinities(affinities);
         setCategoryCooldowns(cooldowns);
+        setConceptAffinities(conceptWeights);
+        setRelatedCandidates(relatedArxivIds);
       } catch (err) {
         console.error('Error loading interactions:', err);
       }
@@ -158,8 +187,15 @@ export function FeedProvider({ children }) {
     try {
       let newPapers = [];
       if (activeMode === 'recent' || activeMode === null) {
-        // 70% Exploit (user preferences)
-        const exploitPapers = await fetchPapers(userPreferences, currentPage * 30, 30, 'recent');
+        // CAPA 1: Exploit (50%) -> fetch userPreferences
+        const exploitPapers = await fetchPapers(userPreferences, currentPage * 20, 20, 'recent');
+        
+        // CAPA 2: Graph/Related (25%) -> fetch from relatedCandidates pool
+        let graphPapers = [];
+        if (relatedCandidates && relatedCandidates.length > 0) {
+           const candidatesToFetch = [...relatedCandidates].sort(() => 0.5 - Math.random()).slice(0, 10);
+           graphPapers = await fetchPapersByIds(candidatesToFetch);
+        }
         
         const allCategories = getAllLeafCategories();
         
@@ -170,7 +206,7 @@ export function FeedProvider({ children }) {
           if (leaf) userAreas.add(leaf.area);
         });
 
-        // 20% Trending/Popular (within user's parent areas, but NOT explicitly selected, and NOT penalized)
+        // CAPA 3: Trending Científico (15%) -> Pick trending categories
         const validTrending = allCategories
           .filter(c => userAreas.has(c.area))
           .filter(c => !userPreferences.includes(c.id))
@@ -183,7 +219,7 @@ export function FeedProvider({ children }) {
           trendingPapers = await fetchPapers(trendingCategories, currentPage * 10, 10, 'recent');
         }
         
-        // 10% Random Exploration (any area, NOT explicitly selected, and NOT penalized)
+        // CAPA 4: Exploración (10%)
         const validRandom = allCategories
           .filter(c => !userPreferences.includes(c.id))
           .filter(c => (categoryAffinities[c.id] || 0) >= -2)
@@ -195,7 +231,10 @@ export function FeedProvider({ children }) {
           randomPapers = await fetchPapers(randomCats, currentPage * 5, 5, 'recent');
         }
         
-        const corePapers = [...exploitPapers, ...trendingPapers];
+        // --- OPENALEX ENRICHMENT ---
+        const coreToEnrich = [...exploitPapers, ...graphPapers, ...trendingPapers];
+        const arxivIdsToEnrich = coreToEnrich.map(p => p.id);
+        const openAlexData = await enrichPapersBatch(arxivIdsToEnrich);
         
         // Deduplicate core
         const uniqueMap = new Map();
@@ -220,17 +259,38 @@ export function FeedProvider({ children }) {
           const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
           const recencyBoost = Math.max(0, 50 * Math.exp(-daysOld / 14));
           
+          // SEMANTIC SCORE (OpenAlex)
+          let semanticScore = 0;
+          let citationBoost = 0;
+          
+          const oaData = openAlexData[paper.id];
+          if (oaData) {
+            oaData.concepts.forEach(c => {
+               if (conceptAffinities[c.id]) {
+                 semanticScore += c.score * conceptAffinities[c.id] * 5;
+               }
+            });
+            if (oaData.cited_by_count > 0) {
+              citationBoost = Math.log10(oaData.cited_by_count + 1) * 3; 
+            }
+          }
+          
+          // Graph Capa 2 Boost
+          let graphBoost = 0;
+          if (graphPapers.some(gp => gp.id === paper.id)) {
+             graphBoost = 15;
+          }
+          
           let cooldownMultiplier = 1.0;
           if (paper.primaryCategory && categoryCooldowns[paper.primaryCategory]) {
             const daysSinceRejection = (Date.now() - categoryCooldowns[paper.primaryCategory]) / (1000 * 60 * 60 * 24);
             if (daysSinceRejection < 14) {
-              // 0.2 at day 0, up to 1.0 at day 14
               cooldownMultiplier = 0.2 + (0.8 * (daysSinceRejection / 14));
               cooldownMultiplier = Math.max(0.2, Math.min(1.0, cooldownMultiplier));
             }
           }
           
-          const baseScore = affinityScore + prefScore + recencyBoost;
+          const baseScore = affinityScore + prefScore + recencyBoost + semanticScore + citationBoost + graphBoost;
           const finalScore = baseScore * cooldownMultiplier;
           
           paper._debugScore = {
@@ -239,6 +299,9 @@ export function FeedProvider({ children }) {
             affinity: affinityScore,
             preference: prefScore,
             recency: recencyBoost,
+            semantic: semanticScore,
+            citations: citationBoost,
+            graphBoost: graphBoost,
             cooldownMultiplier: cooldownMultiplier,
             isExploration: false
           };

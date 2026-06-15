@@ -137,3 +137,46 @@ export async function getAuthorPapers(authorName, maxResults = 10) {
   return fetchPapers(query, 0, maxResults, 'submittedDate');
 }
 
+/**
+ * Fetch papers by a list of arXiv IDs.
+ */
+export async function fetchPapersByIds(arxivIds) {
+  if (!arxivIds || arxivIds.length === 0) return [];
+  const idList = arxivIds.join(',');
+  const params = new URLSearchParams({
+    id_list: idList,
+  });
+
+  const baseUrl = isDev ? ARXIV_DEV : ARXIV_PROD;
+  const url = `${baseUrl}?${params.toString()}`;
+
+  const cacheKey = url;
+  const cached = cache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
+
+  try {
+    let response;
+    if (isDev) {
+      response = await fetch(url);
+    } else {
+      try {
+        response = await fetch(url);
+      } catch {
+        const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+        response = await fetch(proxyUrl);
+      }
+    }
+
+    if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
+
+    const xmlText = await response.text();
+    const papers = parseArxivXml(xmlText);
+
+    cache.set(cacheKey, { data: papers, timestamp: Date.now() });
+    return papers;
+  } catch (error) {
+    console.error('Error fetching papers by id:', error);
+    throw error;
+  }
+}
+

@@ -220,6 +220,15 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
           <div>Affinity: {paper._debugScore.affinity.toFixed(2)}</div>
           <div>Preference Match: {paper._debugScore.preference.toFixed(2)}</div>
           <div>Recency Boost: {paper._debugScore.recency.toFixed(2)}</div>
+          {paper._debugScore.semantic > 0 && (
+            <div style={{color: 'var(--brand)'}}>Semantic (OpenAlex): {paper._debugScore.semantic.toFixed(2)}</div>
+          )}
+          {paper._debugScore.citations > 0 && (
+            <div style={{color: 'var(--primary)'}}>Citation Boost: {paper._debugScore.citations.toFixed(2)}</div>
+          )}
+          {paper._debugScore.graphBoost > 0 && (
+            <div style={{color: 'var(--warning)'}}>Graph Connection: {paper._debugScore.graphBoost.toFixed(2)}</div>
+          )}
           {paper._debugScore.cooldownMultiplier < 1.0 && (
             <div style={{color: 'var(--danger)'}}>Cooldown: x{paper._debugScore.cooldownMultiplier.toFixed(2)}</div>
           )}
