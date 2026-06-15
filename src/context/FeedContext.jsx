@@ -379,7 +379,11 @@ export function FeedProvider({ children }) {
     } finally {
       setLoading(false);
     }
-  }, [userPreferences, page, papers, loading, notInterestedIds, readPaperIds, feedMode, categoryAffinities]);
+  }, [
+    userPreferences, page, papers, loading, feedMode, 
+    notInterestedIds, readPaperIds, likedPaperIds, savedPaperIds, 
+    categoryAffinities, categoryCooldowns, conceptAffinities, relatedCandidates
+  ]);
 
   // Initial load
   useEffect(() => {
