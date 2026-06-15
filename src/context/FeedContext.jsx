@@ -382,15 +382,14 @@ export function FeedProvider({ children }) {
         // Tag graph papers before deduplication
         graphPapers.forEach(p => p._isGraphCandidate = true);
         
-        // Deduplicate core and filter out already seen/interacted papers
+        // Deduplicate core and filter out explicitly interacted papers (DO NOT filter sessionSeenPapers here)
         const uniqueMap = new Map();
         coreToEnrich.forEach(p => {
           if (!uniqueMap.has(p.id) &&
               !likedPaperIds.has(p.id) &&
               !savedPaperIds.has(p.id) &&
               !readPaperIds.has(p.id) &&
-              !notInterestedIds.has(p.id) &&
-              !sessionSeenPapers.has(p.id)) {
+              !notInterestedIds.has(p.id)) {
             
             // Merge OpenAlex data immediately so re-ranking can use it
             if (openAlexData[p.id]) {
