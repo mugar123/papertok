@@ -113,7 +113,7 @@ export default function Navbar() {
               </button>
 
               {showDropdown && (
-                <div className="navbar-dropdown glass-strong">
+                <div className="navbar-dropdown">
                   <div className="navbar-dropdown-header">
                     <p className="navbar-dropdown-name">{user?.displayName}</p>
                     <p className="navbar-dropdown-email">{user?.email}</p>

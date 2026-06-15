@@ -60,7 +60,15 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   }
 
   if (papers.length === 0 && !error) {
-    if (!showLoader) return <div className="feed-empty" style={{ background: 'var(--bg-primary)' }} />;
+    if (!showLoader) {
+      return (
+        <div className="feed-wrapper">
+          <div className="feed-container">
+            <div className="feed-snap-item"><SkeletonCard /></div>
+          </div>
+        </div>
+      );
+    }
     return (
       <div className="feed-empty">
         <div className="atom-loader">

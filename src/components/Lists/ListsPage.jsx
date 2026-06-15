@@ -4,7 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel } from '../../data/categories';
 import { getIcon } from '../../utils/icons';
-import { EyeOff } from 'lucide-react';
+import { EyeOff, HeartOff } from 'lucide-react';
 import './ListsPage.css';
 
 function demoGet(key, fallback) {
@@ -14,7 +14,7 @@ function demoGet(key, fallback) {
 
 export default function ListsPage({ onOpenPdf }) {
   const { user } = useAuth();
-  const { unmarkAsRead } = useFeed();
+  const { unmarkAsRead, toggleLike } = useFeed();
   const [lists, setLists] = useState([]);
   const [savedPapers, setSavedPapers] = useState({});
   const [expandedList, setExpandedList] = useState(null);
@@ -110,6 +110,17 @@ export default function ListsPage({ onOpenPdf }) {
     }));
   };
 
+  const handleUnlike = async (e, paperId, paper) => {
+    e.stopPropagation();
+    await toggleLike(paper);
+    setLists((prev) => prev.map((list) => {
+      if (list.id === 'favorites') {
+        return { ...list, paperIds: list.paperIds.filter((id) => id !== paperId) };
+      }
+      return list;
+    }));
+  };
+
   const formatDate = (dateStr) => {
     try { return new Date(dateStr).toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' }); }
     catch { return ''; }
@@ -175,6 +186,16 @@ export default function ListsPage({ onOpenPdf }) {
                             title="Devolver al feed"
                           >
                             <EyeOff size={18} />
+                          </button>
+                        )}
+                        {list.id === 'favorites' && (
+                          <button 
+                            className="lists-paper-unmark-btn"
+                            style={{ color: 'var(--accent-primary)' }}
+                            onClick={(e) => handleUnlike(e, paperId, paper)}
+                            title="Quitar de favoritos"
+                          >
+                            <HeartOff size={18} />
                           </button>
                         )}
                       </div>
