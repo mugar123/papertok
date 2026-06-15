@@ -114,12 +114,21 @@ export function FeedProvider({ children }) {
     };
   }, [userPreferences]);
 
-  const reRankFeed = useCallback(() => {
+  const reRankFeed = useCallback((sourcePaperId = null) => {
     setPapers(prevPapers => {
        if (!prevPapers || prevPapers.length <= 1) return prevPapers;
-       // Index 0 is currently on screen, do not shift it under the user's feet
-       const currentPaper = prevPapers[0];
-       const queue = [...prevPapers.slice(1)];
+       
+       let splitIndex = 0;
+       if (sourcePaperId) {
+         const idx = prevPapers.findIndex(p => p.id === sourcePaperId);
+         if (idx !== -1) splitIndex = idx;
+       }
+       
+       // Index up to splitIndex are currently on screen or past, do not shift them under the user's feet
+       const lockedPapers = prevPapers.slice(0, splitIndex + 1);
+       const queue = [...prevPapers.slice(splitIndex + 1)];
+       
+       if (queue.length === 0) return prevPapers;
        
        queue.forEach(paper => {
           if (!paper._debugScore?.isExploration) {
@@ -143,7 +152,7 @@ export function FeedProvider({ children }) {
           newQueue.splice(insertIndex, 0, explorePaper);
        });
        
-       return [currentPaper, ...newQueue];
+       return [...lockedPapers, ...newQueue];
     });
   }, [calculateAndAttachScore]);
 
@@ -571,7 +580,7 @@ export function FeedProvider({ children }) {
          conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) - 2;
       });
     }
-    reRankFeed();
+    reRankFeed(paper.id);
 
     if (IS_DEMO) {
       demoSet('notInterestedIds', Array.from(newNotInterested));
@@ -639,7 +648,7 @@ export function FeedProvider({ children }) {
          conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + (Math.min(timeInSeconds, 60) * 0.05);
       });
     }
-    reRankFeed();
+    reRankFeed(paper.id);
 
     try {
       const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
@@ -666,7 +675,7 @@ export function FeedProvider({ children }) {
          conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + 1;
       });
     }
-    reRankFeed();
+    reRankFeed(paper.id);
 
     try {
       const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
@@ -689,7 +698,7 @@ export function FeedProvider({ children }) {
     if (paper.primaryCategory) {
       categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 1;
     }
-    reRankFeed();
+    reRankFeed(paper.id);
 
     try {
       const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
@@ -707,6 +716,7 @@ export function FeedProvider({ children }) {
 
   const trackPdfBounce = useCallback(async (paper) => {
     if (!user || IS_DEMO) return;
+    reRankFeed(paper.id);
     try {
       const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
       await setDoc(ref, {

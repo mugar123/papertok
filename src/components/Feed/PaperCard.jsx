@@ -41,6 +41,16 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
           if (viewStartTime.current) {
             totalViewTime.current += (Date.now() - viewStartTime.current) / 1000;
             viewStartTime.current = null;
+            
+            // Paper just went out of view. Report time and trigger re-rank!
+            if (totalViewTime.current >= 1.0) {
+              trackViewTime(paper, totalViewTime.current);
+            } else if (totalViewTime.current > 0.1 && totalViewTime.current < 1.0) {
+              trackSkip(paper);
+            }
+            
+            // Reset to prevent double counting if they scroll back up
+            totalViewTime.current = 0;
           }
         }
       },
@@ -52,11 +62,11 @@ export default function PaperCard({ paper, onOpenPdf, onSaveToList, onOpenAuthor
       observer.disconnect();
       if (viewStartTime.current) {
         totalViewTime.current += (Date.now() - viewStartTime.current) / 1000;
-      }
-      if (totalViewTime.current >= 1.0) {
-        trackViewTime(paper, totalViewTime.current);
-      } else if (totalViewTime.current > 0.1 && totalViewTime.current < 1.0) {
-        trackSkip(paper);
+        if (totalViewTime.current >= 1.0) {
+          trackViewTime(paper, totalViewTime.current);
+        } else if (totalViewTime.current > 0.1 && totalViewTime.current < 1.0) {
+          trackSkip(paper);
+        }
       }
     };
   }, [paper, trackViewTime, trackSkip]);
