@@ -152,13 +152,19 @@ export function FeedProvider({ children }) {
     if (hasMore && !loading) loadPapers(false);
   }, [hasMore, loading, loadPapers]);
 
+  // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
+  const loadPapersRef = useRef(loadPapers);
+  useEffect(() => { loadPapersRef.current = loadPapers; }, [loadPapers]);
+
   const refreshFeed = useCallback(() => {
     clearCache();
+    feedCache.current = {};
     setPapers([]);
     setPage(0);
     setHasMore(true);
-    setTimeout(() => loadPapers(true), 0);
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    setLoading(false); // reset so the guard inside loadPapers doesn't bail
+    setTimeout(() => loadPapersRef.current(true), 0);
+  }, []);
 
   const toggleLike = useCallback(async (paper) => {
     if (!user) return;
