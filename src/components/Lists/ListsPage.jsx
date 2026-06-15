@@ -188,10 +188,16 @@ export default function ListsPage({ onOpenPdf }) {
             );
           })()}
         </div>
+      ) : lists.length === 0 && Object.keys(readPapers).length === 0 ? (
+        <div className="lists-empty-state">
+          <div className="lists-empty-state-icon">📚</div>
+          <h3>Aún no tienes listas</h3>
+          <p>Guarda papers o marca algunos como leídos para organizarlos aquí.</p>
+        </div>
       ) : (
         <div className="lists-grid">
-          {lists.map((list) => (
-            <div key={list.id} className="list-card glass" onClick={() => setExpandedList(list.id)}>
+          {lists.map((list, idx) => (
+            <div key={list.id} className="list-card glass" onClick={() => setExpandedList(list.id)} style={{ '--stagger-index': idx }}>
               <div className="list-card-top">
                 <span className="list-card-emoji">
                   {(() => {

@@ -41,20 +41,47 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: var(--space-4);
-  animation: fadeIn 0.4s ease-out;
 }
 
 .list-card {
   border-radius: var(--radius-xl);
   padding: var(--space-5);
   cursor: pointer;
-  transition: all var(--transition-base);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: fadeInUp 0.5s ease backwards;
+  animation-delay: calc(var(--stagger-index, 0) * 0.05s);
+  position: relative;
+  overflow: hidden;
+}
+
+.list-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: radial-gradient(circle at top right, rgba(255,255,255,0.05), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
 .list-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-lg);
-  border-color: var(--border-default);
+  transform: translateY(-4px) scale(1.02);
+  box-shadow: 0 12px 24px rgba(0,0,0,0.4);
+  border-color: rgba(255,255,255,0.1);
+}
+
+.list-card:hover::before {
+  opacity: 1;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .list-card-top {
@@ -210,10 +237,58 @@
   color: var(--text-tertiary);
 }
 
+/* Empty States */
+.lists-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: var(--space-12) var(--space-6);
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: var(--radius-2xl);
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+  margin-top: var(--space-8);
+  animation: fadeIn 0.6s ease-out;
+}
+
+.lists-empty-state-icon {
+  font-size: 48px;
+  margin-bottom: var(--space-4);
+  opacity: 0.5;
+}
+
+.lists-empty-state h3 {
+  font-family: var(--font-heading);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.lists-empty-state p {
+  color: var(--text-secondary);
+  font-size: var(--fs-base);
+  max-width: 300px;
+}
+
 .lists-empty-text {
   text-align: center;
-  color: var(--text-tertiary);
   padding: var(--space-8);
+  color: var(--text-tertiary);
+  font-style: italic;
+  font-size: var(--fs-sm);
+  animation: fadeIn 0.3s ease;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 @media (max-width: 600px) {

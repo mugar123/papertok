@@ -17,7 +17,7 @@ function AppContent() {
   const [saveModalPaper, setSaveModalPaper] = useState(null)
 
   return (
-    <>
+    <FeedProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route
@@ -32,13 +32,11 @@ function AppContent() {
           path="/"
           element={
             <ProtectedRoute>
-              <FeedProvider>
-                <Navbar />
-                <FeedContainer
-                  onOpenPdf={setPdfPaper}
-                  onSaveToList={setSaveModalPaper}
-                />
-              </FeedProvider>
+              <Navbar />
+              <FeedContainer
+                onOpenPdf={setPdfPaper}
+                onSaveToList={setSaveModalPaper}
+              />
             </ProtectedRoute>
           }
         />
@@ -46,10 +44,8 @@ function AppContent() {
           path="/lists"
           element={
             <ProtectedRoute>
-              <FeedProvider>
-                <Navbar />
-                <ListsPage onOpenPdf={setPdfPaper} />
-              </FeedProvider>
+              <Navbar />
+              <ListsPage onOpenPdf={setPdfPaper} />
             </ProtectedRoute>
           }
         />
@@ -66,7 +62,7 @@ function AppContent() {
           onClose={() => setSaveModalPaper(null)}
         />
       )}
-    </>
+    </FeedProvider>
   )
 }
 
