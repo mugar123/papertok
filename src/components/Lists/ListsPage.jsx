@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 import { IS_DEMO, db } from '../../services/firebase';
+import { collection, getDocs, doc, deleteDoc, updateDoc, arrayRemove } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel } from '../../data/categories';
 import { getIcon } from '../../utils/icons';
-import { EyeOff, HeartOff } from 'lucide-react';
+import { EyeOff, HeartOff, X } from 'lucide-react';
 import './ListsPage.css';
 
 function demoGet(key, fallback) {
@@ -36,14 +37,13 @@ export default function ListsPage({ onOpenPdf }) {
           likedPaperIds = demoGet('likedPaperIds', []);
           readPaperIds = demoGet('readPaperIds', []);
         } else {
-          const { collection, getDocs } = await import('firebase/firestore');
           const listsRef = collection(db, 'users', user.uid, 'lists');
           const listsSnapshot = await getDocs(listsRef);
-          listsSnapshot.forEach((doc) => { userLists.push({ id: doc.id, ...doc.data() }); });
+          listsSnapshot.forEach((d) => { userLists.push({ id: d.id, ...d.data() }); });
 
           const papersRef = collection(db, 'users', user.uid, 'savedPapers');
           const papersSnapshot = await getDocs(papersRef);
-          papersSnapshot.forEach((doc) => { papers[doc.id] = { id: doc.id, ...doc.data() }; });
+          papersSnapshot.forEach((d) => { papers[d.id] = { id: d.id, ...d.data() }; });
 
           const interactionsRef = collection(db, 'users', user.uid, 'interactions');
           const intSnapshot = await getDocs(interactionsRef);
@@ -92,7 +92,6 @@ export default function ListsPage({ onOpenPdf }) {
       const allLists = demoGet('lists', []).filter((l) => l.id !== listId);
       localStorage.setItem('papertok_lists', JSON.stringify(allLists));
     } else {
-      const { doc, deleteDoc } = await import('firebase/firestore');
       await deleteDoc(doc(db, 'users', user.uid, 'lists', listId));
     }
     setLists((prev) => prev.filter((l) => l.id !== listId));
@@ -114,7 +113,32 @@ export default function ListsPage({ onOpenPdf }) {
     e.stopPropagation();
     await toggleLike(paper);
     setLists((prev) => prev.map((list) => {
-      if (list.id === 'favorites') {
+      if (list.id === '__favorites__') {
+        return { ...list, paperIds: list.paperIds.filter((id) => id !== paperId) };
+      }
+      return list;
+    }));
+  };
+
+  const handleRemoveFromCustomList = async (e, listId, paperId) => {
+    e.stopPropagation();
+    if (IS_DEMO) {
+      const allLists = demoGet('lists', []);
+      const idx = allLists.findIndex((l) => l.id === listId);
+      if (idx !== -1) {
+        allLists[idx].paperIds = (allLists[idx].paperIds || []).filter((id) => id !== paperId);
+        demoSet('lists', allLists);
+      }
+    } else {
+      try {
+        const listRef = doc(db, 'users', user.uid, 'lists', listId);
+        await updateDoc(listRef, { paperIds: arrayRemove(paperId) });
+      } catch (err) {
+        console.error('Error removing paper from custom list:', err);
+      }
+    }
+    setLists((prev) => prev.map((list) => {
+      if (list.id === listId) {
         return { ...list, paperIds: list.paperIds.filter((id) => id !== paperId) };
       }
       return list;
@@ -179,25 +203,21 @@ export default function ListsPage({ onOpenPdf }) {
                           )}
                           {paper.published && <span className="lists-paper-date">{formatDate(paper.published)}</span>}
                         </div>
-                        {list.id === '__read__' && (
-                          <button 
-                            className="lists-paper-unmark-btn"
-                            onClick={(e) => handleUnmarkAsRead(e, paperId)}
-                            title="Devolver al feed"
-                          >
-                            <EyeOff size={18} />
-                          </button>
-                        )}
-                        {list.id === 'favorites' && (
-                          <button 
-                            className="lists-paper-unmark-btn"
-                            style={{ color: 'var(--accent-primary)' }}
-                            onClick={(e) => handleUnlike(e, paperId, paper)}
-                            title="Quitar de favoritos"
-                          >
-                            <HeartOff size={18} />
-                          </button>
-                        )}
+                        <button 
+                          className="lists-paper-unmark-btn"
+                          onClick={(e) => {
+                            if (list.id === '__read__') {
+                              handleUnmarkAsRead(e, paperId);
+                            } else if (list.id === '__favorites__') {
+                              handleUnlike(e, paperId, paper);
+                            } else {
+                              handleRemoveFromCustomList(e, list.id, paperId);
+                            }
+                          }}
+                          title="Quitar de la lista"
+                        >
+                          <X size={18} />
+                        </button>
                       </div>
                     );
                   })}

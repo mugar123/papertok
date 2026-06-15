@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { IS_DEMO, db } from '../../services/firebase';
+import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, setDoc } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { getIcon, AVAILABLE_ICONS } from '../../utils/icons';
@@ -42,7 +43,6 @@ export default function SaveToListModal({ paper, onClose }) {
             }
           });
         } else {
-          const { collection, getDocs } = await import('firebase/firestore');
           const listsRef = collection(db, 'users', user.uid, 'lists');
           const snapshot = await getDocs(listsRef);
           snapshot.forEach((doc) => {
@@ -103,7 +103,6 @@ export default function SaveToListModal({ paper, onClose }) {
       }
     } else {
       try {
-        const { doc, updateDoc, arrayUnion, arrayRemove, setDoc } = await import('firebase/firestore');
         const listRef = doc(db, 'users', user.uid, 'lists', listId);
         if (isInList) {
           await updateDoc(listRef, { paperIds: arrayRemove(paper.id) });
@@ -139,7 +138,6 @@ export default function SaveToListModal({ paper, onClose }) {
       savePaperMetadata();
     } else {
       try {
-        const { doc, setDoc } = await import('firebase/firestore');
         const listRef = doc(db, 'users', user.uid, 'lists', listId);
         await setDoc(listRef, newList);
       } catch (err) {

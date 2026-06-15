@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { IS_DEMO, db } from '../services/firebase';
+import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { fetchPapers, clearCache } from '../services/arxivService';
 
@@ -49,7 +50,7 @@ export function FeedProvider({ children }) {
     // Firebase mode
     const loadInteractions = async () => {
       try {
-        const { collection, getDocs } = await import('firebase/firestore');
+        
         const interactionsRef = collection(db, 'users', user.uid, 'interactions');
         const snapshot = await getDocs(interactionsRef);
         const liked = new Set();
@@ -180,7 +181,7 @@ export function FeedProvider({ children }) {
       demoSet('savedPapersData', allSaved);
     } else {
       try {
-        const { doc, setDoc } = await import('firebase/firestore');
+        
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
         await setDoc(ref, {
           liked: !isCurrentlyLiked,
@@ -207,7 +208,7 @@ export function FeedProvider({ children }) {
       demoSet('notInterestedIds', Array.from(newNotInterested));
     } else {
       try {
-        const { doc, setDoc } = await import('firebase/firestore');
+        
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
         await setDoc(ref, {
           notInterested: true, paperCategory: paper.primaryCategory,
@@ -241,7 +242,7 @@ export function FeedProvider({ children }) {
       demoSet('savedPapersData', allSaved);
     } else {
       try {
-        const { doc, setDoc } = await import('firebase/firestore');
+        
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
         await setDoc(ref, {
           read: true,
