@@ -1,6 +1,8 @@
+// @react-refresh reset
+
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { IS_DEMO, db } from '../services/firebase';
-import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc, updateDoc, deleteField } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { fetchPapers, clearCache } from '../services/arxivService';
 
@@ -40,17 +42,20 @@ export function FeedProvider({ children }) {
     if (!user) return;
 
     if (IS_DEMO) {
-      setLikedPaperIds(new Set(demoGet('likedPaperIds', [])));
-      setNotInterestedIds(new Set(demoGet('notInterestedIds', [])));
-      setSavedPaperIds(new Set(demoGet('savedPaperIds', [])));
-      setReadPaperIds(new Set(demoGet('readPaperIds', [])));
+      const syncState = () => {
+        setLikedPaperIds(new Set(demoGet('likedPaperIds', [])));
+        setNotInterestedIds(new Set(demoGet('notInterestedIds', [])));
+        setSavedPaperIds(new Set(demoGet('savedPaperIds', [])));
+        setReadPaperIds(new Set(demoGet('readPaperIds', [])));
+      };
+      syncState();
       return;
     }
 
     // Firebase mode
     const loadInteractions = async () => {
       try {
-        
+
         const interactionsRef = collection(db, 'users', user.uid, 'interactions');
         const snapshot = await getDocs(interactionsRef);
         const liked = new Set();
@@ -120,9 +125,12 @@ export function FeedProvider({ children }) {
   // Initial load
   useEffect(() => {
     if (userPreferences && userPreferences.length > 0 && papers.length === 0) {
-      loadPapers(true);
+      const init = async () => {
+        await loadPapers(true);
+      };
+      init();
     }
-  }, [userPreferences]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [userPreferences, papers.length, loadPapers]);
 
   // Save current papers to cache before switching, then restore or fetch
   const handleSetFeedMode = useCallback((newMode) => {

@@ -70,12 +70,9 @@ function parseArxivXml(xmlText) {
 export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20, mode = 'recent') {
   if (!categoriesOrQuery || categoriesOrQuery.length === 0) return [];
 
-  let searchQuery = '';
-  if (Array.isArray(categoriesOrQuery)) {
-    searchQuery = `(${categoriesOrQuery.map((cat) => `cat:${cat}`).join(' OR ')})`;
-  } else {
-    searchQuery = categoriesOrQuery;
-  }
+  const searchQuery = Array.isArray(categoriesOrQuery)
+    ? `(${categoriesOrQuery.map((cat) => `cat:${cat}`).join(' OR ')})`
+    : categoriesOrQuery;
 
   const sortBy = mode === 'top' ? 'relevance' : 'submittedDate';
 

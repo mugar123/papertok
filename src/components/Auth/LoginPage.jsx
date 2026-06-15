@@ -29,14 +29,21 @@ export default function LoginPage() {
   };
 
   const floatingElements = useMemo(() => {
+    // Use i to deterministically seed pseudo-random values without calling Math.random()
     return Array.from({ length: 25 }).map((_, i) => {
       const Icon = FLOATING_ICONS[i % FLOATING_ICONS.length];
-      const x = Math.floor(Math.random() * 100);
-      const y = Math.floor(Math.random() * 100);
-      const delay = (Math.random() * 5).toFixed(2);
-      const size = Math.floor(Math.random() * 24) + 20; // 20 to 44
-      const opacity = (Math.random() * 0.15 + 0.05).toFixed(2); // 0.05 to 0.20
-      const duration = (Math.random() * 4 + 8).toFixed(2); // 8s to 12s
+      // Use index to create deterministic "random" values
+      const seed1 = Math.sin(i * 12.9898) * 43758.5453;
+      const seed2 = Math.sin((i + 1) * 78.233) * 43758.5453;
+      const seed3 = Math.sin((i + 2) * 45.164) * 43758.5453;
+      const seed4 = Math.sin((i + 3) * 94.673) * 43758.5453;
+      const seed5 = Math.sin((i + 4) * 37.289) * 43758.5453;
+      const x = Math.floor((seed1 - Math.floor(seed1)) * 100);
+      const y = Math.floor((seed2 - Math.floor(seed2)) * 100);
+      const delay = ((seed3 - Math.floor(seed3)) * 5).toFixed(2);
+      const size = Math.floor((seed4 - Math.floor(seed4)) * 24) + 20; // 20 to 44
+      const opacity = (((seed5 - Math.floor(seed5)) * 0.15) + 0.05).toFixed(2); // 0.05 to 0.20
+      const duration = (((seed1 - Math.floor(seed1)) * 4) + 8).toFixed(2); // 8s to 12s
       return { id: i, Icon, x, y, delay, size, opacity, duration };
     });
   }, []);
