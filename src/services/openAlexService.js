@@ -53,7 +53,7 @@ export async function enrichPapersBatch(arxivIds) {
        const cleanId = id.replace(/v\d+$/, '');
        return [`http://arxiv.org/abs/${cleanId}`, `https://arxiv.org/abs/${cleanId}`];
     }).join('|');
-    const url = `https://api.openalex.org/works?filter=locations.landing_page_url:${encodeURIComponent(filterIds)}&per-page=50&select=doi,concepts,cited_by_count,related_works,locations`;
+    const url = `https://api.openalex.org/works?filter=locations.landing_page_url:${encodeURIComponent(filterIds)}&per-page=50&select=doi,ids,concepts,cited_by_count,related_works,locations`;
     
     let response = null;
     let primaryFailed = false;
@@ -88,7 +88,10 @@ export async function enrichPapersBatch(arxivIds) {
         if (data && data.results) {
           data.results.forEach(work => {
              let arxivId = null;
-             if (work.locations) {
+             if (work.ids && work.ids.arxiv) {
+               arxivId = work.ids.arxiv.split('/').pop().replace(/^arxiv\./i, '').replace(/v\d+$/, '');
+             }
+             if (!arxivId && work.locations) {
                const arxivLoc = work.locations.find(loc => loc.source && loc.source.id === 'https://openalex.org/S4306400194');
                if (arxivLoc && arxivLoc.landing_page_url) {
                  const rawId = arxivLoc.landing_page_url.split('/').pop();

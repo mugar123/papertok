@@ -86,6 +86,18 @@ export function FeedProvider({ children }) {
   const [notInterestedIds, setNotInterestedIds] = useState(new Set());
   const [savedPaperIds, setSavedPaperIds] = useState(new Set());
   const [readPaperIds, setReadPaperIds] = useState(new Set());
+
+  // Mirror refs to prevent stale closures in asynchronous recommendation processes
+  const likedPaperIdsRef = useRef(likedPaperIds);
+  const savedPaperIdsRef = useRef(savedPaperIds);
+  const readPaperIdsRef = useRef(readPaperIds);
+  const notInterestedIdsRef = useRef(notInterestedIds);
+  const isTraversingNetwork = useRef(false);
+
+  useEffect(() => { likedPaperIdsRef.current = likedPaperIds; }, [likedPaperIds]);
+  useEffect(() => { savedPaperIdsRef.current = savedPaperIds; }, [savedPaperIds]);
+  useEffect(() => { readPaperIdsRef.current = readPaperIds; }, [readPaperIds]);
+  useEffect(() => { notInterestedIdsRef.current = notInterestedIds; }, [notInterestedIds]);
   const categoryAffinities = useRef({});
   const categoryCooldowns = useRef({});
   const conceptAffinities = useRef({});
@@ -206,8 +218,12 @@ export function FeedProvider({ children }) {
   }, [calculateAndAttachScore]);
 
   const traverseAndExpandNetwork = useCallback(async (paper) => {
-    if (!user || IS_DEMO) return;
+    if (isTraversingNetwork.current) {
+      console.log("[Recomendador] Expansión en progreso. Petición ignorada para evitar saturación de API.");
+      return;
+    }
     
+    isTraversingNetwork.current = true;
     try {
       let enriched = paper.openAlex;
       if (!enriched) {
@@ -224,10 +240,10 @@ export function FeedProvider({ children }) {
         
         const filteredIds = relatedArxivIds.filter(id => 
           id &&
-          !likedPaperIds.has(id) &&
-          !savedPaperIds.has(id) &&
-          !readPaperIds.has(id) &&
-          !notInterestedIds.has(id) &&
+          !likedPaperIdsRef.current.has(id) &&
+          !savedPaperIdsRef.current.has(id) &&
+          !readPaperIdsRef.current.has(id) &&
+          !notInterestedIdsRef.current.has(id) &&
           !sessionSeenPapers.has(id)
         );
         
@@ -271,8 +287,10 @@ export function FeedProvider({ children }) {
       }
     } catch (err) {
       console.error('[Recomendador] Error expandiendo la red del paper:', err);
+    } finally {
+      isTraversingNetwork.current = false;
     }
-  }, [user, likedPaperIds, savedPaperIds, readPaperIds, notInterestedIds, calculateAndAttachScore]);
+  }, [calculateAndAttachScore]);
 
   // Load user interactions
   useEffect(() => {
@@ -490,7 +508,8 @@ export function FeedProvider({ children }) {
           : 2; // Baseline of 2 exploration papers
 
         if (nearbyCats.length > 0) {
-          const fetchedExplore = await fetchPapers(nearbyCats, currentPage * exploreCount, exploreCount, queryMode).catch(() => []);
+          const randomStart = Math.floor(Math.random() * 30);
+          const fetchedExplore = await fetchPapers(nearbyCats, randomStart, exploreCount, queryMode).catch(() => []);
           fetchedExplore.forEach(p => { 
             p._type = 'exploration';
             p._debugScore = { isExploration: true };
@@ -507,7 +526,8 @@ export function FeedProvider({ children }) {
             .slice(0, 2);
           
           if (randomCats.length > 0) {
-            const randomPapers = await fetchPapers(randomCats, 0, 2, queryMode).catch(() => []);
+            const randomStart = Math.floor(Math.random() * 30);
+            const randomPapers = await fetchPapers(randomCats, randomStart, 2, queryMode).catch(() => []);
             randomPapers.forEach(p => { 
               p._type = 'exploration';
               p._debugScore = { isExploration: true };
@@ -522,10 +542,10 @@ export function FeedProvider({ children }) {
         const uniqueMap = new Map();
         allFetched.forEach(p => {
           if (!uniqueMap.has(p.id) &&
-              !likedPaperIds.has(p.id) &&
-              !savedPaperIds.has(p.id) &&
-              !readPaperIds.has(p.id) &&
-              !notInterestedIds.has(p.id)) {
+              !likedPaperIdsRef.current.has(p.id) &&
+              !savedPaperIdsRef.current.has(p.id) &&
+              !readPaperIdsRef.current.has(p.id) &&
+              !notInterestedIdsRef.current.has(p.id)) {
             uniqueMap.set(p.id, p);
           }
         });
@@ -542,10 +562,10 @@ export function FeedProvider({ children }) {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }
       let filtered = newPapers.filter((p) => 
-        !notInterestedIds.has(p.id) && 
-        !readPaperIds.has(p.id) &&
-        !likedPaperIds.has(p.id) &&
-        !savedPaperIds.has(p.id) &&
+        !notInterestedIdsRef.current.has(p.id) && 
+        !readPaperIdsRef.current.has(p.id) &&
+        !likedPaperIdsRef.current.has(p.id) &&
+        !savedPaperIdsRef.current.has(p.id) &&
         !sessionSeenPapers.has(p.id)
       );
 
@@ -554,10 +574,10 @@ export function FeedProvider({ children }) {
       if (filtered.length === 0 && newPapers.length > 0) {
         // First try bypassing sessionSeenPapers to avoid empty feed
         const bypassSeen = newPapers.filter((p) => 
-          !notInterestedIds.has(p.id) && 
-          !readPaperIds.has(p.id) &&
-          !likedPaperIds.has(p.id) &&
-          !savedPaperIds.has(p.id)
+          !notInterestedIdsRef.current.has(p.id) && 
+          !readPaperIdsRef.current.has(p.id) &&
+          !likedPaperIdsRef.current.has(p.id) &&
+          !savedPaperIdsRef.current.has(p.id)
         );
         if (bypassSeen.length > 0) {
           console.log("Bypassing sessionSeenPapers filter to prevent rate limit cascade.");
@@ -625,7 +645,6 @@ export function FeedProvider({ children }) {
     }
   }, [
     userPreferences, page, papers, loading, feedMode, 
-    notInterestedIds, readPaperIds, likedPaperIds, savedPaperIds, 
     categoryAffinities, categoryCooldowns, conceptAffinities, relatedCandidates
   ]);
 
@@ -650,10 +669,10 @@ export function FeedProvider({ children }) {
     if (cached && cached.papers.length > 0) {
       // Re-filter cached papers to ensure newly liked/saved papers are removed
       const refiltered = cached.papers.filter(p => 
-        !notInterestedIds.has(p.id) && 
-        !readPaperIds.has(p.id) &&
-        !likedPaperIds.has(p.id) &&
-        !savedPaperIds.has(p.id)
+        !notInterestedIdsRef.current.has(p.id) && 
+        !readPaperIdsRef.current.has(p.id) &&
+        !likedPaperIdsRef.current.has(p.id) &&
+        !savedPaperIdsRef.current.has(p.id)
       );
       
       setPapers(refiltered);
@@ -755,7 +774,7 @@ export function FeedProvider({ children }) {
 
   const markNotInterested = useCallback(async (paper) => {
     if (!user) return;
-    const newNotInterested = new Set(notInterestedIds);
+    const newNotInterested = new Set(notInterestedIdsRef.current);
     newNotInterested.add(paper.id);
     setNotInterestedIds(newNotInterested);
     setPapers((prev) => prev.filter((p) => p.id !== paper.id));
@@ -787,11 +806,11 @@ export function FeedProvider({ children }) {
         console.error('Error saving not interested:', err);
       }
     }
-  }, [user, notInterestedIds, reRankFeed]);
+  }, [user, reRankFeed]);
 
   const markAsRead = useCallback(async (paper) => {
     if (!user) return;
-    const newRead = new Set(readPaperIds);
+    const newRead = new Set(readPaperIdsRef.current);
     newRead.add(paper.id);
     setReadPaperIds(newRead);
     
@@ -823,7 +842,7 @@ export function FeedProvider({ children }) {
         console.error('Error saving read status:', err);
       }
     }
-  }, [user, readPaperIds]);
+  }, [user]);
 
   const trackViewTime = useCallback(async (paper, timeInSeconds) => {
     if (timeInSeconds < 1) return;
@@ -975,7 +994,7 @@ export function FeedProvider({ children }) {
 
   const unmarkAsRead = useCallback(async (paperId) => {
     if (!user) return;
-    const newRead = new Set(readPaperIds);
+    const newRead = new Set(readPaperIdsRef.current);
     newRead.delete(paperId);
     setReadPaperIds(newRead);
 
@@ -991,7 +1010,7 @@ export function FeedProvider({ children }) {
         console.error('Error unmarking read status:', err);
       }
     }
-  }, [user, readPaperIds]);
+  }, [user]);
 
   const value = {
     papers, loading, error, hasMore, isRefreshing,
