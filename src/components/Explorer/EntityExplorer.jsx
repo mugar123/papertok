@@ -435,15 +435,24 @@ export default function EntityExplorer() {
               </div>
             )}
             
-            <div className="feed-grid explorer-grid">
+            <div className="explorer-grid">
               {filteredPapers.map((paper, idx) => (
-                <PaperCard 
+                <div 
                   key={`${paper.id}-${idx}`} 
-                  paper={paper} 
-                  onAuthorClick={handleAuthorClick}
-                  onPdfClick={() => setPdfPaperToView(paper)}
-                  style={{ animationDelay: `${idx * 0.05}s` }}
-                />
+                  className="explorer-list-item"
+                  onClick={() => setPdfPaperToView(paper)}
+                  style={{ '--i': idx }}
+                >
+                  <div className="eli-header">
+                    <span className="eli-cat">{paper.primaryCategory}</span>
+                    <span className="eli-date">{new Date(paper.published).toLocaleDateString()}</span>
+                  </div>
+                  <h3 className="eli-title">{paper.title}</h3>
+                  <p className="eli-authors">{paper.authors?.join(', ')}</p>
+                  <p className="eli-summary">
+                    {paper.summary?.length > 200 ? paper.summary.substring(0, 200) + '...' : paper.summary}
+                  </p>
+                </div>
               ))}
               
               {isLoadingPapers && !isFetchingMore && (
