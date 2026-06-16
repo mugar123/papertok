@@ -27,6 +27,24 @@ export default function EntityExplorer() {
   const [isLoadingWiki, setIsLoadingWiki] = useState(false);
   const [activeAuthors, setActiveAuthors] = useState(null);
 
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const observerRef = useRef(null);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1); // Reset page on new search
+    }, 600);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
+
+  useEffect(() => {
+    setPage(1); // Reset page on sort or entity change
+  }, [type, id, sortBy]);
+
   useEffect(() => {
     async function loadEntity() {
       setIsLoadingEntity(true);
@@ -81,24 +99,53 @@ export default function EntityExplorer() {
   useEffect(() => {
     async function loadPapers() {
       if (!entity) return;
-      setIsLoadingPapers(true);
+      if (page === 1) setIsLoadingPapers(true);
+      else setIsFetchingMore(true);
       
       try {
-        const arxivIds = await getWorksByEntity(type, id, sortBy);
+        const { arxivIds, total } = await getWorksByEntity(type, id, sortBy, page, debouncedSearch);
+        let fetchedPapers = [];
         if (arxivIds.length > 0) {
-          const fetchedPapers = await fetchPapersByIds(arxivIds);
+          fetchedPapers = await fetchPapersByIds(arxivIds);
+        }
+        
+        if (page === 1) {
           setPapers(fetchedPapers);
         } else {
-          setPapers([]);
+          // Remove duplicates
+          setPapers(prev => {
+             const existingIds = new Set(prev.map(p => p.id));
+             const newPapers = fetchedPapers.filter(p => !existingIds.has(p.id));
+             return [...prev, ...newPapers];
+          });
         }
+        
+        // OpenAlex returns 'total' metadata. We have 30 per page.
+        // Assuming if arxivIds returned is > 0 and we haven't hit a huge number, we might have more.
+        // For simplicity, if we got some arxivIds back from this page, there might be more.
+        setHasMore(arxivIds.length > 0 && page * 30 < total);
       } catch (err) {
         console.error("Failed to load papers for entity", err);
-        setPapers([]);
+        if (page === 1) setPapers([]);
       }
       setIsLoadingPapers(false);
+      setIsFetchingMore(false);
     }
     loadPapers();
-  }, [type, id, entity, sortBy]);
+  }, [type, id, entity, sortBy, page, debouncedSearch]);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingPapers && !isFetchingMore) {
+          setPage(p => p + 1);
+        }
+      },
+      { threshold: 0.1 }
+    );
+    if (observerRef.current) observer.observe(observerRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, isLoadingPapers, isFetchingMore]);
 
   const uniqueCategories = useMemo(() => {
     const cats = new Set();
@@ -110,15 +157,11 @@ export default function EntityExplorer() {
 
   const filteredPapers = useMemo(() => {
     return papers.filter(p => {
-      const q = searchQuery.toLowerCase().trim();
-      if (!q) return selectedCategory === 'All' || p.primaryCategory === selectedCategory;
-      const matchesSearch = p.title.toLowerCase().includes(q) || 
-                            p.authors.some(a => a.toLowerCase().includes(q)) ||
-                            (p.summary && p.summary.toLowerCase().includes(q));
-      const matchesCat = selectedCategory === 'All' || p.primaryCategory === selectedCategory;
-      return matchesSearch && matchesCat;
+      // We no longer filter by search query locally because the API handles it
+      // but we still filter by the selected category locally
+      return selectedCategory === 'All' || p.primaryCategory === selectedCategory;
     });
-  }, [papers, searchQuery, selectedCategory]);
+  }, [papers, selectedCategory]);
 
   const handleAuthorClick = useCallback((authors, arxivId) => {
     setSelectedPaper(null);
@@ -263,6 +306,14 @@ export default function EntityExplorer() {
             </div>
           )}
         </div>
+        
+        {/* Infinite Scroll Sentinel */}
+        {hasMore && (
+          <div ref={observerRef} className="ehc-sentinel">
+            <Loader2 className="ehc-spinner" size={24} />
+            <span>Cargando más artículos...</span>
+          </div>
+        )}
       </div>
 
       {/* Sticky Toolbar Wrapper */}

@@ -431,18 +431,21 @@ export async function getEntityById(type, id) {
  * type: 'institution', 'concept', 'author'
  * sortBy: 'cited_by_count:desc' or 'publication_date:desc'
  */
-export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc') {
-  if (!id) return [];
+export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc', page = 1, searchQuery = '') {
+  if (!id) return { arxivIds: [], total: 0 };
   
   const filterKey = type === 'institution' ? 'institutions.id' : type === 'concept' ? 'concepts.id' : 'author.id';
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
   const filterParams = `${filterKey}:${cleanId},locations.source.id:S4306400194`;
   
-  const url = `https://api.openalex.org/works?filter=${filterParams}&sort=${sortBy}&per-page=30&select=id,locations`;
+  let url = `https://api.openalex.org/works?filter=${filterParams}&sort=${sortBy}&per-page=30&page=${page}&select=id,locations`;
+  if (searchQuery) {
+     url += `&search=${encodeURIComponent(searchQuery)}`;
+  }
   
   try {
     const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return [];
+    if (!response.ok) return { arxivIds: [], total: 0 };
     
     const data = await response.json();
     if (data && data.results) {
@@ -460,10 +463,10 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc')
                }
            }
        });
-       return arxivIds;
+       return { arxivIds, total: data.meta ? data.meta.count : 0 };
     }
   } catch (err) {
     console.error(`OpenAlex getWorksByEntity failed for ${type} ${id}`, err);
   }
-  return [];
+  return { arxivIds: [], total: 0 };
 }
