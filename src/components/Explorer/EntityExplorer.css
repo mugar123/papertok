@@ -1091,3 +1091,9 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+/* Hide scroll hint on PaperCard when inside EntityExplorer overlay */
+.explorer-overlay-content.hide-scroll-hint .pc-scroll-hint {
+  display: none !important;
+}
+

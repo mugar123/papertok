@@ -587,32 +587,49 @@ export default function EntityExplorer() {
       </AnimatePresence>
 
       {/* Paper Card Overlay */}
-      {selectedPaper && !pdfPaperToView && (
-        <div className="explorer-overlay">
-          <button 
-            className="explorer-overlay-close" 
-            onClick={() => setSelectedPaper(null)}
+      <AnimatePresence>
+        {selectedPaper && !pdfPaperToView && (
+          <motion.div 
+            className="explorer-overlay"
+            initial={{ opacity: 0, y: window.innerHeight }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: window.innerHeight }}
+            transition={{ type: 'spring', damping: 25, stiffness: 200 }}
           >
-            <ArrowLeft size={22} />
-          </button>
-          <div className="explorer-overlay-content">
-            <PaperCard 
-              paper={selectedPaper} 
-              onOpenPdf={(paper) => setPdfPaperToView(paper)}
-              onOpenAuthors={(authors) => handleAuthorClick(authors, selectedPaper.arxivId)} 
-              trackViewTime={() => {}}
-              trackSkip={() => {}}
-            />
-          </div>
-        </div>
-      )}
+            <button 
+              className="explorer-overlay-close" 
+              onClick={() => setSelectedPaper(null)}
+            >
+              <ArrowLeft size={22} />
+            </button>
+            <div className="explorer-overlay-content hide-scroll-hint">
+              <PaperCard 
+                paper={selectedPaper} 
+                onOpenPdf={(paper) => setPdfPaperToView(paper)}
+                onOpenAuthors={(authors) => handleAuthorClick(authors, selectedPaper.arxivId)} 
+                trackViewTime={() => {}}
+                trackSkip={() => {}}
+              />
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* PDF Viewer Overlay */}
-      {pdfPaperToView && (
-        <div className="explorer-overlay" style={{ zIndex: 1001 }}>
-          <PDFViewer paper={pdfPaperToView} onClose={() => setPdfPaperToView(null)} />
-        </div>
-      )}
+      <AnimatePresence>
+        {pdfPaperToView && (
+          <motion.div 
+            className="explorer-overlay" 
+            style={{ zIndex: 1001 }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.2 }}
+          >
+            <PDFViewer paper={pdfPaperToView} onClose={() => setPdfPaperToView(null)} />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Author Panel Overlay */}
       <AnimatePresence>
