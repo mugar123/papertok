@@ -430,7 +430,7 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc')
   
   const filterKey = type === 'institution' ? 'institutions.id' : type === 'concept' ? 'concepts.id' : 'author.id';
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
-  const filterParams = `${filterKey}:${cleanId},has_arxiv:true`;
+  const filterParams = `${filterKey}:${cleanId}`;
   
   const url = `https://api.openalex.org/works?filter=${filterParams}&sort=${sortBy}&per-page=30&select=id,ids`;
   
