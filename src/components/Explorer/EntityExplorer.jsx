@@ -591,9 +591,9 @@ export default function EntityExplorer() {
         {selectedPaper && !pdfPaperToView && (
           <motion.div 
             className="explorer-overlay"
-            initial={{ opacity: 0, y: window.innerHeight }}
+            initial={{ opacity: 0, y: '100vh' }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: window.innerHeight }}
+            exit={{ opacity: 0, y: '100vh' }}
             transition={{ type: 'spring', damping: 25, stiffness: 200 }}
           >
             <button 
