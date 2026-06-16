@@ -123,7 +123,7 @@ export default function SearchPage() {
               <div className="search-section">
                 <h3 className="search-section-title">Universidades e Instituciones</h3>
                 {institutionResults.map(inst => (
-                  <div key={inst.id} className="search-item" onClick={() => navigate(`/explore/institution/${inst.id}`)}>
+                  <div key={inst.id} className="search-item" onClick={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)}>
                     <div className="search-item-icon"><Building2 size={24} /></div>
                     <div className="search-item-info">
                       <h4>{inst.display_name}</h4>
@@ -139,7 +139,7 @@ export default function SearchPage() {
               <div className="search-section">
                 <h3 className="search-section-title">Temas y Áreas</h3>
                 {conceptResults.map(concept => (
-                  <div key={concept.id} className="search-item" onClick={() => navigate(`/explore/concept/${concept.id}`)}>
+                  <div key={concept.id} className="search-item" onClick={() => navigate(`/explorer/concept/${concept.id.split('/').pop()}`)}>
                     <div className="search-item-icon"><Lightbulb size={24} /></div>
                     <div className="search-item-info">
                       <h4>{concept.display_name}</h4>
@@ -157,7 +157,7 @@ export default function SearchPage() {
                 {authorResults.map(author => {
                   const isFollowing = followedAuthors.includes(author.display_name);
                   return (
-                    <div key={author.id} className="search-item" onClick={() => navigate(`/explore/author/${encodeURIComponent(author.display_name)}`)}>
+                    <div key={author.id} className="search-item" onClick={() => navigate(`/explorer/author/${encodeURIComponent(author.display_name)}`)}>
                       <div className="search-item-avatar">
                         {author.display_name.charAt(0).toUpperCase()}
                       </div>
