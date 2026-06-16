@@ -354,3 +354,57 @@
     padding: 16px;
   }
 }
+
+.ehc-wiki {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.85);
+  line-height: 1.5;
+}
+.ehc-wiki p {
+  margin-bottom: 0.5rem;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ehc-wiki a {
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 500;
+  display: inline-block;
+}
+.ehc-wiki a:hover {
+  text-decoration: underline;
+}
+.ehc-wiki-image {
+  margin-left: auto;
+  border-radius: 12px;
+  overflow: hidden;
+  width: 100px;
+  height: 100px;
+  flex-shrink: 0;
+  border: 1px solid rgba(255,255,255,0.1);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+.ehc-wiki-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+@media (max-width: 600px) {
+  .explorer-hero-content {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .ehc-wiki-image {
+    margin-left: 0;
+    margin-top: 1rem;
+    width: 100%;
+    height: 150px;
+  }
+}

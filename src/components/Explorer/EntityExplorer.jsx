@@ -21,6 +21,8 @@ export default function EntityExplorer() {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
+  const [wikiInfo, setWikiInfo] = useState(null);
+  const [isLoadingWiki, setIsLoadingWiki] = useState(false);
 
   useEffect(() => {
     async function loadEntity() {
@@ -28,6 +30,44 @@ export default function EntityExplorer() {
       const data = await getEntityById(type, id);
       setEntity(data);
       setIsLoadingEntity(false);
+
+      if (data && data.display_name) {
+        // Only fetch wikipedia for institutions or concepts 
+        if (type === 'institution' || type === 'concept') {
+          setIsLoadingWiki(true);
+          try {
+            // Wikipedia API request
+            const res = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(data.display_name)}`);
+            if (res.ok) {
+              const wikiData = await res.json();
+              if (wikiData.extract) {
+                setWikiInfo({
+                  extract: wikiData.extract,
+                  thumbnail: wikiData.thumbnail?.source || null,
+                  url: wikiData.content_urls?.desktop?.page || ''
+                });
+              }
+            } else {
+              // Try english if spanish fails
+              const resEn = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(data.display_name)}`);
+              if (resEn.ok) {
+                const wikiDataEn = await resEn.json();
+                if (wikiDataEn.extract) {
+                  setWikiInfo({
+                    extract: wikiDataEn.extract,
+                    thumbnail: wikiDataEn.thumbnail?.source || null,
+                    url: wikiDataEn.content_urls?.desktop?.page || ''
+                  });
+                }
+              }
+            }
+          } catch (e) {
+            console.error("Failed to fetch Wikipedia info", e);
+          } finally {
+            setIsLoadingWiki(false);
+          }
+        }
+      }
     }
     loadEntity();
   }, [type, id]);
@@ -128,7 +168,25 @@ export default function EntityExplorer() {
                 {entity.last_known_institutions?.[0]?.display_name || 'Institución desconocida'} • H-Index: {entity.summary_stats?.h_index}
               </p>
             )}
+
+            {isLoadingWiki && (
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '8px', color: 'rgba(255,255,255,0.6)' }}>
+                <Loader2 className="spinning" size={16} /> Cargando info de Wikipedia...
+              </div>
+            )}
+            
+            {wikiInfo && (
+              <div className="ehc-wiki">
+                <p>{wikiInfo.extract}</p>
+                <a href={wikiInfo.url} target="_blank" rel="noopener noreferrer">Leer más en Wikipedia</a>
+              </div>
+            )}
           </div>
+          {wikiInfo?.thumbnail && (
+             <div className="ehc-wiki-image">
+               <img src={wikiInfo.thumbnail} alt={entity.display_name} />
+             </div>
+          )}
         </div>
       </div>
 
@@ -225,7 +283,8 @@ export default function EntityExplorer() {
           <div style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
             <PaperCard 
               paper={selectedPaper} 
-              onOpenPdf={(paper) => setPdfPaperToView(paper)} 
+              onOpenPdf={(paper) => setPdfPaperToView(paper)}
+              onOpenAuthors={(authors) => navigate(`/explore/author/${encodeURIComponent(authors[0])}`)} 
               trackViewTime={() => {}}
               trackSkip={() => {}}
             />

@@ -14,6 +14,8 @@ export default function SearchPage() {
   
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
+  const [isDebouncing, setIsDebouncing] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   
   const [paperResults, setPaperResults] = useState([]);
   const [authorResults, setAuthorResults] = useState([]);
@@ -31,12 +33,16 @@ export default function SearchPage() {
       setAuthorResults([]);
       setInstitutionResults([]);
       setConceptResults([]);
+      setIsDebouncing(false);
+      setHasSearched(false);
       return;
     }
 
+    setIsDebouncing(true);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     
     timeoutRef.current = setTimeout(() => {
+      setIsDebouncing(false);
       performSearch(query);
     }, 600); // Debounce
     
@@ -45,6 +51,7 @@ export default function SearchPage() {
 
   const performSearch = async (searchTerm) => {
     setIsSearching(true);
+    setHasSearched(true);
     try {
       const [papers, authors, institutions, concepts] = await Promise.all([
         searchPapers(searchTerm, 0, 10).catch(() => []),
@@ -96,37 +103,70 @@ export default function SearchPage() {
 
       {/* Results */}
       <div className="search-results custom-scrollbar">
-        {isSearching && (
+        {isSearching || isDebouncing ? (
           <div className="search-loading">
-            <Loader2 className="spinning" size={32} />
-            <p>Buscando...</p>
+            <Loader2 className="spinning" size={40} />
+            <p>{isDebouncing ? 'Escribiendo...' : 'Buscando...'}</p>
           </div>
-        )}
+        ) : (
+          <div className="search-results-list animate-fade-in">
+            {!hasResults && query && hasSearched && (
+              <div className="search-empty">
+                <Search size={48} className="search-empty-icon" />
+                <p>No se encontraron resultados para "{query}"</p>
+                <span>Intenta con otros términos o busca en inglés</span>
+              </div>
+            )}
 
-        {!isSearching && query && !hasResults && (
-          <div className="search-empty">No se encontraron resultados para "{query}"</div>
-        )}
+            {/* Institutions */}
+            {institutionResults.length > 0 && (
+              <div className="search-section">
+                <h3 className="search-section-title">Universidades e Instituciones</h3>
+                {institutionResults.map(inst => (
+                  <div key={inst.id} className="search-item" onClick={() => navigate(`/explore/institution/${inst.id}`)}>
+                    <div className="search-item-icon"><Building2 size={24} /></div>
+                    <div className="search-item-info">
+                      <h4>{inst.display_name}</h4>
+                      <p>{inst.geo?.city || 'Ciudad desconocida'}, {inst.geo?.country || 'País desconocido'} • {inst.works_count?.toLocaleString()} obras</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
-        {!isSearching && hasResults && (
-          <div className="search-grouped-results">
-            
-            {/* Authors Section */}
+            {/* Concepts */}
+            {conceptResults.length > 0 && (
+              <div className="search-section">
+                <h3 className="search-section-title">Temas y Áreas</h3>
+                {conceptResults.map(concept => (
+                  <div key={concept.id} className="search-item" onClick={() => navigate(`/explore/concept/${concept.id}`)}>
+                    <div className="search-item-icon"><Lightbulb size={24} /></div>
+                    <div className="search-item-info">
+                      <h4>{concept.display_name}</h4>
+                      <p>Nivel {concept.level} • {concept.works_count?.toLocaleString()} obras relacionadas</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Authors */}
             {authorResults.length > 0 && (
               <div className="search-section">
-                <h3 className="search-section-title"><Users size={16}/> Autores</h3>
-                {authorResults.slice(0, 3).map(author => {
+                <h3 className="search-section-title">Autores</h3>
+                {authorResults.map(author => {
                   const isFollowing = followedAuthors.includes(author.display_name);
                   return (
-                    <div key={author.id} className="search-result-author" onClick={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}>
-                      <div className="sra-info">
-                        <h3 className="sra-name">{author.display_name}</h3>
-                        <p className="sra-inst">{author.institution || 'Institución desconocida'}</p>
-                        <div className="sra-stats">
-                          <span>H-Index: {author.h_index}</span> • <span>{author.cited_by_count} Citas</span>
-                        </div>
+                    <div key={author.id} className="search-item" onClick={() => navigate(`/explore/author/${encodeURIComponent(author.display_name)}`)}>
+                      <div className="search-item-avatar">
+                        {author.display_name.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="search-item-info">
+                        <h4>{author.display_name}</h4>
+                        <p>{author.last_known_institutions?.[0]?.display_name || 'Institución desconocida'}</p>
                       </div>
                       <button 
-                        className={`sra-follow-btn ${isFollowing ? 'following' : ''}`}
+                        className={`search-follow-btn ${isFollowing ? 'following' : ''}`}
                         onClick={(e) => handleToggleFollow(e, author.display_name)}
                       >
                         {isFollowing ? 'Siguiendo' : 'Seguir'}
@@ -137,58 +177,23 @@ export default function SearchPage() {
               </div>
             )}
 
-            {/* Institutions Section */}
-            {institutionResults.length > 0 && (
-              <div className="search-section">
-                <h3 className="search-section-title"><Building2 size={16}/> Universidades e Instituciones</h3>
-                {institutionResults.slice(0, 3).map(inst => (
-                  <div key={inst.id} className="search-result-entity" onClick={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)} style={{ cursor: 'pointer' }}>
-                    <div className="sre-info">
-                      <h3 className="sre-name">{inst.display_name} {inst.country_code && `(${inst.country_code})`}</h3>
-                      <p className="sre-desc">{inst.type ? inst.type.charAt(0).toUpperCase() + inst.type.slice(1) : 'Institución'}</p>
-                      <div className="sre-stats">
-                        <span>{inst.works_count.toLocaleString()} Obras</span> • <span>{inst.cited_by_count.toLocaleString()} Citas</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Concepts Section */}
-            {conceptResults.length > 0 && (
-              <div className="search-section">
-                <h3 className="search-section-title"><Lightbulb size={16}/> Áreas de Interés</h3>
-                {conceptResults.slice(0, 3).map(concept => (
-                  <div key={concept.id} className="search-result-entity" onClick={() => navigate(`/explorer/concept/${concept.id.split('/').pop()}`)} style={{ cursor: 'pointer' }}>
-                    <div className="sre-info">
-                      <h3 className="sre-name">{concept.display_name}</h3>
-                      {concept.description && <p className="sre-desc">{concept.description}</p>}
-                      <div className="sre-stats">
-                        <span>Nivel {concept.level}</span> • <span>{concept.works_count.toLocaleString()} Obras referenciadas</span>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Papers Section */}
+            {/* Papers */}
             {paperResults.length > 0 && (
               <div className="search-section">
-                <h3 className="search-section-title"><FileText size={16}/> Papers</h3>
+                <h3 className="search-section-title">Papers Recientes</h3>
                 {paperResults.map(paper => (
-                  <div key={paper.id} className="search-result-card" onClick={() => setSelectedPaper(paper)}>
-                    <h3 className="src-title">{paper.title}</h3>
-                    <p className="src-authors">{paper.authors.join(', ')}</p>
-                    <div className="src-meta">
-                      <span className="src-cat">{paper.primaryCategory}</span>
-                      <span className="src-date">{new Date(paper.published).toLocaleDateString()}</span>
+                  <div key={paper.id} className="search-item paper-item" onClick={() => setSelectedPaper(paper)}>
+                    <div className="search-item-icon"><FileText size={24} /></div>
+                    <div className="search-item-info">
+                      <h4>{paper.title}</h4>
+                      <p className="search-item-authors">{paper.authors.join(', ')}</p>
+                      <span className="search-item-meta">{new Date(paper.published).toLocaleDateString()} • {paper.primaryCategory}</span>
                     </div>
                   </div>
                 ))}
               </div>
             )}
+
 
           </div>
         )}
