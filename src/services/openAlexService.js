@@ -442,11 +442,39 @@ export async function searchConcepts(query) {
 }
 
 /**
+ * Search journals/sources by name.
+ */
+export async function searchSources(query) {
+  if (!query) return [];
+  const cleanQuery = encodeURIComponent(query.trim());
+  const url = `https://api.openalex.org/sources?search=${cleanQuery}&per-page=5`;
+  
+  try {
+    const response = await fetchWithTimeout(url, 10000);
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    if (data && data.results) {
+      return data.results.map(source => ({
+        id: source.id,
+        display_name: source.display_name,
+        host_organization_name: source.host_organization_name,
+        type: source.type,
+        works_count: source.works_count || 0
+      }));
+    }
+  } catch (err) {
+    console.error("OpenAlex searchSources failed", err);
+  }
+  return [];
+}
+
+/**
  * Fetch entity metadata by ID
  */
 export async function getEntityById(type, id) {
   if (!id) return null;
-  const endpoint = type === 'institution' ? 'institutions' : type === 'concept' ? 'concepts' : 'authors';
+  const endpoint = type === 'institution' ? 'institutions' : type === 'concept' ? 'concepts' : type === 'source' ? 'sources' : 'authors';
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
   const url = `https://api.openalex.org/${endpoint}/${cleanId}`;
   
@@ -499,10 +527,16 @@ const OA_CONCEPT_MAP = {
 export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc', page = 1, searchQuery = '', filters = {}) {
   if (!id) return { arxivIds: [], total: 0 };
   
-  const filterKey = type === 'institution' ? 'institutions.id' : type === 'concept' ? 'concepts.id' : 'author.id';
+  const filterKey = type === 'institution' ? 'institutions.id' : type === 'concept' ? 'concepts.id' : type === 'source' ? 'locations.source.id' : 'author.id';
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
   
-  let filterParams = `${filterKey}:${cleanId},locations.source.id:S4306400194`;
+  let filterParams = `${filterKey}:${cleanId}`;
+  
+  // Only restrict to arxiv source if we aren't explicitly querying a specific non-arxiv journal source.
+  // Actually, paper links in our app must be arxiv links. So we must always restrict to arxiv unless we want empty PDFs!
+  // Wait, if the user specifically searches for a Journal (e.g. Nature), the works MUST be on arXiv for us to show a PDF!
+  // OpenAlex correctly links Nature publications to their arXiv preprints if available!
+  filterParams += `,locations.source.id:S4306400194`;
   
   // Advanced Filters
   if (filters.peerReviewed) {

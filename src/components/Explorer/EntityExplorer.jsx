@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight } from 'lucide-react';
-import { getEntityById, getWorksByEntity, getAuthorsByEntity } from '../../services/openAlexService';
+import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, BadgeCheck, FileText } from 'lucide-react';
+import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
@@ -77,7 +77,7 @@ export default function EntityExplorer() {
       setIsLoadingEntity(false);
 
       if (data && data.display_name) {
-        if (type === 'institution' || type === 'concept') {
+        if (type === 'institution' || type === 'concept' || type === 'source') {
           setIsLoadingWiki(true);
           try {
             const res = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(data.display_name)}`);
@@ -124,7 +124,8 @@ export default function EntityExplorer() {
         const { arxivIds, total } = await getWorksByEntity(type, id, sortBy, page, debouncedSearch, filters);
         let fetchedPapers = [];
         if (arxivIds.length > 0) {
-          fetchedPapers = await fetchPapersByIds(arxivIds);
+          const rawPapers = await fetchPapersByIds(arxivIds);
+          fetchedPapers = await enrichPapersBatch(rawPapers);
         }
         
         if (page === 1) {
@@ -239,10 +240,12 @@ export default function EntityExplorer() {
   const renderIcon = () => {
     if (type === 'institution') return <Building2 size={36} />;
     if (type === 'concept') return <Lightbulb size={36} />;
+    if (type === 'source') return <FileText size={36} />;
     return <Users size={36} />;
   };
 
-  const entityTypeLabel = type === 'institution' ? 'Universidad / Institución' : type === 'concept' ? 'Área de Interés' : 'Autor';
+  const entityTypeLabel = type === 'author' ? 'Autor' : type === 'institution' ? 'Universidad / Institución' : type === 'source' ? 'Revista' : 'Tema';
+  const EntityIcon = type === 'author' ? Users : type === 'institution' ? Building2 : type === 'source' ? FileText : Lightbulb;
   const topConcepts = entity.x_concepts ? entity.x_concepts.slice(0, 4) : [];
 
   return (
@@ -310,7 +313,7 @@ export default function EntityExplorer() {
             {entity?.summary_stats?.h_index != null && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.summary_stats.h_index}</span>
-                <span className="ehc-stat-label">H-Index</span>
+                <span className="ehc-stat-label">{type === 'source' ? 'Tipo' : 'H-Index'}</span>
               </div>
             )}
             {entity?.summary_stats?.['2yr_mean_citedness'] != null && (
@@ -398,7 +401,14 @@ export default function EntityExplorer() {
                     <span className="eli-cat">{paper.primaryCategory}</span>
                     <span className="eli-date">{new Date(paper.published).toLocaleDateString()}</span>
                   </div>
-                  <h3 className="eli-title">{paper.title}</h3>
+                  <h3 className="eli-title">
+                    {paper.title}
+                    {paper.isPeerReviewed && (
+                      <span className="pc-tooltip" data-tooltip="Publicado en revista (Peer-reviewed)" style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: '6px' }}>
+                        <BadgeCheck size={16} style={{ color: '#1da1f2' }} />
+                      </span>
+                    )}
+                  </h3>
                   <p className="eli-authors">{paper.authors?.join(', ')}</p>
                   <p className="eli-summary">
                     {paper.summary?.length > 200 ? paper.summary.substring(0, 200) + '...' : paper.summary}

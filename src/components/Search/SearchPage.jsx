@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, FileText, Users, Loader2, ArrowLeft, Building2, Lightbulb } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { searchPapers } from '../../services/arxivService';
-import { searchAuthors, searchInstitutions, searchConcepts } from '../../services/openAlexService';
+import { searchAuthors, searchInstitutions, searchConcepts, searchSources } from '../../services/openAlexService';
 import { useAuth } from '../../context/AuthContext';
 import { AnimatePresence } from 'framer-motion';
 import PaperCard from '../Feed/PaperCard';
@@ -23,6 +23,7 @@ export default function SearchPage() {
   const [authorResults, setAuthorResults] = useState([]);
   const [institutionResults, setInstitutionResults] = useState([]);
   const [conceptResults, setConceptResults] = useState([]);
+  const [sourceResults, setSourceResults] = useState([]);
   
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaper, setPdfPaper] = useState(null);
@@ -35,7 +36,9 @@ export default function SearchPage() {
       setPaperResults([]);
       setAuthorResults([]);
       setInstitutionResults([]);
+      setInstitutionResults([]);
       setConceptResults([]);
+      setSourceResults([]);
       setIsDebouncing(false);
       setHasSearched(false);
       return;
@@ -56,17 +59,19 @@ export default function SearchPage() {
     setIsSearching(true);
     setHasSearched(true);
     try {
-      const [papers, authors, institutions, concepts] = await Promise.all([
+      const [papers, authors, institutions, concepts, sources] = await Promise.all([
         searchPapers(searchTerm, 0, 10).catch(() => []),
         searchAuthors(searchTerm).catch(() => []),
         searchInstitutions(searchTerm).catch(() => []),
-        searchConcepts(searchTerm).catch(() => [])
+        searchConcepts(searchTerm).catch(() => []),
+        searchSources(searchTerm).catch(() => [])
       ]);
       
       setPaperResults(papers);
       setAuthorResults(authors);
       setInstitutionResults(institutions);
       setConceptResults(concepts);
+      setSourceResults(sources);
     } catch (err) {
       console.error(err);
     }
@@ -89,7 +94,7 @@ export default function SearchPage() {
     setActiveAuthors({ authors, arxivId });
   }, []);
 
-  const hasResults = paperResults.length > 0 || authorResults.length > 0 || institutionResults.length > 0 || conceptResults.length > 0;
+  const hasResults = paperResults.length > 0 || authorResults.length > 0 || institutionResults.length > 0 || conceptResults.length > 0 || sourceResults.length > 0;
 
   return (
     <div className="search-page-container">
@@ -153,6 +158,22 @@ export default function SearchPage() {
                     <div className="search-item-info">
                       <h4>{concept.display_name}</h4>
                       <p>Nivel {concept.level} • {concept.works_count?.toLocaleString()} obras relacionadas</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Sources (Journals) */}
+            {sourceResults.length > 0 && (
+              <div className="search-section">
+                <h3 className="search-section-title">Revistas y Publicaciones</h3>
+                {sourceResults.map(source => (
+                  <div key={source.id} className="search-item" onClick={() => navigate(`/explorer/source/${source.id.split('/').pop()}`)}>
+                    <div className="search-item-icon"><FileText size={22} /></div>
+                    <div className="search-item-info">
+                      <h4>{source.display_name}</h4>
+                      <p>{source.host_organization_name ? `${source.host_organization_name} • ` : ''}{source.works_count?.toLocaleString()} obras relacionadas</p>
                     </div>
                   </div>
                 ))}
