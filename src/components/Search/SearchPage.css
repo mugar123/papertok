@@ -68,13 +68,19 @@
 .search-input {
   flex: 1;
   background: none;
-  border: none;
+  border: none !important;
   color: white;
   font-size: 0.95rem;
-  outline: none;
-  box-shadow: none;
+  outline: none !important;
+  box-shadow: none !important;
   -webkit-appearance: none;
   appearance: none;
+}
+
+.search-input:focus {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .search-input::placeholder {

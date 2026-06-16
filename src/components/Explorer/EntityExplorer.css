@@ -371,14 +371,20 @@
 .explorer-search-box input {
   flex: 1;
   background: transparent;
-  border: none;
+  border: none !important;
   color: var(--text-primary);
   font-size: 0.9rem;
-  outline: none;
-  box-shadow: none;
+  outline: none !important;
+  box-shadow: none !important;
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
+}
+
+.explorer-search-box input:focus {
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
 }
 
 .explorer-search-box input::placeholder {
