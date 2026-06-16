@@ -472,7 +472,7 @@ const PaperCard = memo(function PaperCard({
           <span>Me gusta</span>
         </button>
 
-        <button className={`pc-side-btn ${isSaved ? 'pc-side-btn--saved' : ''}`} onClick={(e) => { e.stopPropagation(); onSaveToList(); }}>
+        <button className={`pc-side-btn ${isSaved ? 'pc-side-btn--saved' : ''}`} onClick={(e) => { e.stopPropagation(); onSaveToList(paper); }}>
           <div className="pc-side-icon">
             <svg viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
