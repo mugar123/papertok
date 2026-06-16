@@ -375,29 +375,10 @@ export default function EntityExplorer() {
                 className={`filter-btn ${filters?.category || filters?.peerReviewed || filters?.dateRange ? 'active' : ''}`} 
                 onClick={() => setShowFilters(true)}
              >
-                <Filter size={16} />
              </button>
-          )}
-          <div className="explorer-sort-toggle">
-            <button 
-              className={`sort-btn ${sortBy === 'cited_by_count:desc' ? 'active' : ''}`}
-              onClick={() => setSortBy('cited_by_count:desc')}
-              title="Ordenar por número de citas"
-            >
-              <TrendingUp size={16} />
-              <span>Citados</span>
-            </button>
-            <button 
-              className={`sort-btn ${sortBy === 'publication_date:desc' ? 'active' : ''}`}
-              onClick={() => setSortBy('publication_date:desc')}
-              title="Ordenar por fecha de publicación"
-            >
-              <Clock size={16} />
-              <span>Recientes</span>
-            </button>
+            )}
           </div>
         </div>
-      </div>
 
       <div className="explorer-content">
         {activeTab === 'papers' ? (
@@ -441,19 +422,18 @@ export default function EntityExplorer() {
                   ))}
                 </>
               )}
+              {/* Infinite Scroll Sentinel */}
+              {hasMore && (
+                <div ref={observerRef} className="ehc-sentinel">
+                  <Loader2 className="ehc-spinner" size={24} />
+                  <span>Cargando más artículos...</span>
+                </div>
+              )}
             </div>
             
             {!isLoadingPapers && filteredPapers.length === 0 && (
               <div className="explorer-empty">
                 <p>No se encontraron resultados que coincidan con tu búsqueda y filtros.</p>
-              </div>
-            )}
-
-            {/* Infinite Scroll Sentinel */}
-            {hasMore && (
-              <div ref={observerRef} className="ehc-sentinel">
-                <Loader2 className="ehc-spinner" size={24} />
-                <span>Cargando más artículos...</span>
               </div>
             )}
           </>
@@ -512,6 +492,23 @@ export default function EntityExplorer() {
                 <button className="close-btn" onClick={() => setShowFilters(false)}><X size={20}/></button>
               </div>
               <div className="ee-filter-body">
+                <div className="ee-filter-section">
+                  <h4>Ordenar por</h4>
+                  <div className="ee-filter-chips">
+                    <button 
+                      className={`ee-filter-chip ${sortBy === 'cited_by_count:desc' ? 'active' : ''}`}
+                      onClick={() => setSortBy('cited_by_count:desc')}
+                    >
+                      Más Citados
+                    </button>
+                    <button 
+                      className={`ee-filter-chip ${sortBy === 'publication_date:desc' ? 'active' : ''}`}
+                      onClick={() => setSortBy('publication_date:desc')}
+                    >
+                      Más Recientes
+                    </button>
+                  </div>
+                </div>
                 <div className="ee-filter-section">
                   <h4>Categoría (Área)</h4>
                   <div className="ee-filter-chips">
