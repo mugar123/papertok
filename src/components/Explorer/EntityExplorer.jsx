@@ -1,9 +1,9 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, BadgeCheck, FileText } from 'lucide-react';
+import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, BadgeCheck, FileText, Briefcase } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
-import { getPapersByProject } from '../../services/openAireService';
+import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
 import PaperCard from '../Feed/PaperCard';
@@ -70,9 +70,26 @@ export default function EntityExplorer() {
       setIsLoadingEntity(true);
       if (type === 'project') {
         const urlParams = new URLSearchParams(window.location.search);
-        const name = urlParams.get('name') || id;
-        const funder = urlParams.get('funder') || '';
+        let name = urlParams.get('name') || id;
+        let funder = urlParams.get('funder') || '';
+        
+        // Optimistic display
         setEntity({ display_name: name, type: 'project', funder });
+        
+        // Fetch detailed info
+        const details = await getProjectDetails(id);
+        if (details) {
+           setEntity({
+             display_name: `${details.acronym}: ${details.title}`,
+             type: 'project',
+             funder: details.funder,
+             summary: details.summary,
+             startDate: details.startDate,
+             endDate: details.endDate,
+             totalCost: details.totalCost,
+             fundedAmount: details.fundedAmount
+           });
+        }
         setIsLoadingEntity(false);
         return;
       }
@@ -273,7 +290,7 @@ export default function EntityExplorer() {
     if (type === 'institution') return <Building2 size={36} />;
     if (type === 'concept') return <Lightbulb size={36} />;
     if (type === 'source') return <FileText size={36} />;
-    if (type === 'project') return <span style={{ fontSize: '36px' }}>🇪🇺</span>;
+    if (type === 'project') return <Briefcase size={36} />;
     return <Users size={36} />;
   };
 
@@ -360,7 +377,28 @@ export default function EntityExplorer() {
                 <span className="ehc-stat-label">Impacto Reciente</span>
               </div>
             )}
+            {type === 'project' && entity.totalCost != null && (
+              <div className="ehc-stat-box">
+                <span className="ehc-stat-value">
+                  {new Intl.NumberFormat('es-ES', { style: 'currency', currency: entity.currency || 'EUR', maximumFractionDigits: 0 }).format(entity.totalCost)}
+                </span>
+                <span className="ehc-stat-label">Presupuesto</span>
+              </div>
+            )}
+            {type === 'project' && entity.startDate && (
+              <div className="ehc-stat-box">
+                <span className="ehc-stat-value">{entity.startDate.split('-')[0]} - {entity.endDate?.split('-')[0] || '...'}</span>
+                <span className="ehc-stat-label">Duración</span>
+              </div>
+            )}
           </div>
+          
+          {/* Project Summary */}
+          {type === 'project' && entity?.summary && (
+            <div className="ehc-wiki">
+              <p>{entity.summary.length > 300 ? entity.summary.substring(0, 300) + '...' : entity.summary}</p>
+            </div>
+          )}
           
           {/* Wikipedia or external info */}
           {(wikiInfo || entity?.homepage_url) && (

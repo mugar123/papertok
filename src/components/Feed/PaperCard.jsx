@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
 import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
-import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck } from 'lucide-react';
+import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
 import { useAuth } from '../../context/AuthContext';
@@ -405,7 +405,7 @@ const PaperCard = memo(function PaperCard({
               }
             }}
           >
-            <span>🇪🇺</span>
+            <Briefcase size={12} />
             <span>{project.funderLevel || project.funder}: {project.acronym}</span>
           </div>
         )}

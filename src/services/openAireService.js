@@ -14,6 +14,44 @@ async function fetchWithTimeout(url, timeout = 10000) {
   }
 }
 
+export async function getProjectDetails(projectId) {
+  if (!projectId) return null;
+  const url = `https://api.openaire.eu/search/projects?format=json&size=1&projectID=${encodeURIComponent(projectId)}`;
+  try {
+    const response = await fetchWithTimeout(url);
+    if (!response.ok) return null;
+    const data = await response.json();
+    if (!data?.response?.results?.result) return null;
+    
+    let res = data.response.results.result;
+    if (Array.isArray(res)) res = res[0];
+    
+    const p = res?.metadata?.["oaf:entity"]?.["oaf:project"];
+    if (!p) return null;
+    
+    const funding = p.fundingtree?.funder || p.funding?.funder;
+    let funderName = "Unknown Funder";
+    if (funding?.["@shortname"]) funderName = funding["@shortname"];
+    else if (funding?.["@name"]) funderName = funding["@name"];
+
+    return {
+      id: p.code?.["$"],
+      title: p.title?.["$"] || "Unknown Project",
+      acronym: p.acronym?.["$"] || "Project",
+      funder: funderName,
+      summary: p.summary?.["$"],
+      startDate: p.startdate?.["$"],
+      endDate: p.enddate?.["$"],
+      totalCost: p.totalcost?.["$"],
+      fundedAmount: p.fundedamount?.["$"],
+      currency: p.currency?.["$"] || "EUR"
+    };
+  } catch (e) {
+    console.error("Error fetching project details:", e);
+    return null;
+  }
+}
+
 /**
  * Get project info from OpenAIRE using arXiv ID or DOI
  */

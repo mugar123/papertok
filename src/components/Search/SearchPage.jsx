@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, FileText, Users, Loader2, ArrowLeft, Building2, Lightbulb } from 'lucide-react';
+import { Search, FileText, Users, Loader2, ArrowLeft, Building2, Lightbulb, Briefcase } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { searchPapers } from '../../services/arxivService';
 import { searchAuthors, searchInstitutions, searchConcepts, searchSources } from '../../services/openAlexService';
@@ -158,7 +158,7 @@ export default function SearchPage() {
                 <h3 className="search-section-title">Proyectos de Investigación</h3>
                 {projectResults.map(project => (
                   <div key={project.id} className="search-item" onClick={() => navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}`)}>
-                    <div className="search-item-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>🇪🇺</div>
+                    <div className="search-item-icon"><Briefcase size={22} /></div>
                     <div className="search-item-info">
                       <h4>{project.acronym}: {project.title}</h4>
                       <p>Financiado por {project.funder}</p>
