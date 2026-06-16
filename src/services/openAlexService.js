@@ -273,11 +273,28 @@ export async function getAuthorProfileExact(authorName, arxivId) {
     }
     
     // If the exact match fails (e.g. OpenAlex hasn't indexed this arXiv paper yet), fallback:
-    return getAuthorProfile(authorName);
+    // DO NOT do a global search for the name, as it will likely return a completely different person (e.g. Medicine instead of Physics)
+    return {
+      id: `stub-${authorName.replace(/\s+/g, '-')}`,
+      display_name: authorName,
+      works_count: null,
+      cited_by_count: null,
+      h_index: null,
+      institution: null,
+      concepts: []
+    };
     
   } catch (err) {
     console.error("OpenAlex getAuthorProfileExact failed", err);
-    return getAuthorProfile(authorName);
+    return {
+      id: `stub-${authorName.replace(/\s+/g, '-')}`,
+      display_name: authorName,
+      works_count: null,
+      cited_by_count: null,
+      h_index: null,
+      institution: null,
+      concepts: []
+    };
   }
 }
 

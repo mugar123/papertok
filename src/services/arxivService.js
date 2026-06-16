@@ -108,37 +108,7 @@ function safeDateISO(dateStr) {
   return isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 }
 
-function parseRss2Json(data) {
-  if (data.status !== 'ok' || !data.items) return [];
-  
-  return data.items
-    .map(item => {
-      const idUrl = item.guid || item.link;
-      const id = idUrl ? idUrl.split('/').pop() : '';
-      if (!id || id.toLowerCase() === 'unknown') return null;
-      
-      const authors = item.author ? item.author.split(',').map(a => a.trim()) : ['Unknown Author'];
-      const categories = item.categories || [];
-      const primaryCategory = categories.length > 0 ? categories[0] : 'unknown';
-      
-      return {
-        id,
-        arxivId: id,
-        title: item.title ? item.title.replace(/\n/g, ' ').trim() : 'No Title',
-        summary: item.description ? item.description.replace(/\n/g, ' ').trim() : 'No summary available.',
-        authors,
-        published: safeDateISO(item.pubDate),
-        updated: safeDateISO(item.pubDate),
-        pdfUrl: idUrl ? idUrl.replace('abs', 'pdf') : '',
-        primaryCategory,
-        allCategories: categories,
-        doi: '',
-        journalRef: '',
-        comment: ''
-      };
-    })
-    .filter(Boolean);
-}
+
 
 let fetchQueue = Promise.resolve();
 let lastFetchTime = 0;
@@ -160,41 +130,27 @@ async function fetchArxivData(url) {
     }
   }
 
-  // Enqueue to avoid rss2json rate limits (1 req/sec)
+  // Enqueue to avoid heavy concurrent requests
   return new Promise((resolve) => {
     fetchQueue = fetchQueue.then(async () => {
-      // Delay only if less than 1.1s has passed since the last fetch
-      const now = Date.now();
-      const timeSinceLast = now - lastFetchTime;
-      if (timeSinceLast < 1100) {
-        await new Promise(r => setTimeout(r, 1100 - timeSinceLast));
-      }
-      lastFetchTime = Date.now();
-      
       try {
-        // Strip out parentheses to help some proxies, though rss2json handles it
-        // Remove `&_cb=` so it can be cached by rss2json server and reduce our rate usage
+        // Strip out parentheses to help some proxies
         const cleanUrl = url.replace(/[\(\)]/g, '');
-        const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(cleanUrl)}`;
-        console.log('Fetching via rss2json:', proxyUrl);
-        const response = await fetchWithTimeout(proxyUrl, 8000);
-        if (!response.ok) throw new Error(`arXiv API error via rss2json: ${response.status}`);
+        // We use allorigins /get endpoint because it returns JSON with the raw XML inside
+        // This allows us to parse the full XML and keep all authors (rss2json drops them)
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(cleanUrl)}`;
+        const response = await fetchWithTimeout(proxyUrl, 10000);
+        
+        if (!response.ok) throw new Error(`arXiv API error via allorigins: ${response.status}`);
         const data = await response.json();
-        resolve(parseRss2Json(data));
-      } catch (e) {
-        console.error('rss2json fallback failed', e);
-        // Fallback to allorigins just in case rss2json is completely blocked
-        try {
-          const proxyUrl2 = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-          const response2 = await fetchWithTimeout(proxyUrl2, 8000);
-          if (response2.ok) {
-            const xmlText = await response2.text();
-            resolve(parseArxivXml(xmlText));
-            return;
-          }
-        } catch (e2) {
-           console.warn('allorigins also failed', e2);
+        
+        if (data.contents) {
+          resolve(parseArxivXml(data.contents));
+        } else {
+          resolve([]);
         }
+      } catch (e) {
+        console.error('allorigins fallback failed', e);
         resolve([]); // return empty array on total failure
       }
     }).catch(e => {
