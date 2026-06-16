@@ -308,25 +308,25 @@ export default function EntityExplorer() {
 
           {/* Stats Grid */}
           <div className="ehc-stats-grid">
-            {entity.works_count !== undefined && (
+            {entity.works_count != null && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.works_count.toLocaleString()}</span>
                 <span className="ehc-stat-label">Publicaciones</span>
               </div>
             )}
-            {entity.cited_by_count !== undefined && (
+            {entity.cited_by_count != null && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.cited_by_count.toLocaleString()}</span>
                 <span className="ehc-stat-label">Citas Totales</span>
               </div>
             )}
-            {entity.summary_stats?.h_index !== undefined && (
+            {entity.summary_stats?.h_index != null && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.summary_stats.h_index}</span>
                 <span className="ehc-stat-label">H-Index</span>
               </div>
             )}
-            {entity.summary_stats?.['2yr_mean_citedness'] !== undefined && (
+            {entity.summary_stats?.['2yr_mean_citedness'] != null && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.summary_stats['2yr_mean_citedness'].toFixed(1)}</span>
                 <span className="ehc-stat-label">Impacto Reciente</span>
