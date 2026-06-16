@@ -33,6 +33,8 @@ export default function SearchPage() {
   
   const timeoutRef = useRef(null);
 
+  const searchIdRef = useRef(0);
+
   useEffect(() => {
     if (!query.trim()) {
       setPaperResults([]);
@@ -58,6 +60,7 @@ export default function SearchPage() {
   }, [query]);
 
   const performSearch = async (searchTerm) => {
+    const searchId = ++searchIdRef.current;
     setIsSearching(true);
     setHasSearched(true);
     try {
@@ -70,16 +73,21 @@ export default function SearchPage() {
         searchProjects(searchTerm).then(res => res.projects).catch(() => [])
       ]);
       
-      setPaperResults(papers);
-      setAuthorResults(authors);
-      setInstitutionResults(institutions);
-      setConceptResults(concepts);
-      setSourceResults(sources);
-      setProjectResults(projects);
+      if (searchId === searchIdRef.current) {
+        setPaperResults(papers);
+        setAuthorResults(authors);
+        setInstitutionResults(institutions);
+        setConceptResults(concepts);
+        setSourceResults(sources);
+        setProjectResults(projects);
+        setIsSearching(false);
+      }
     } catch (err) {
       console.error(err);
+      if (searchId === searchIdRef.current) {
+        setIsSearching(false);
+      }
     }
-    setIsSearching(false);
   };
 
   const handleToggleFollow = async (e, authorName) => {
