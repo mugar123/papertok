@@ -1,11 +1,12 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
 import { IS_DEMO, db } from '../services/firebase';
-import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc, updateDoc, deleteField, increment } from 'firebase/firestore';
+import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc, updateDoc, deleteField, increment, getDoc } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
-import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
+import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers, getPaperByArxivId } from '../services/arxivService';
 import { getDeviceInfo } from '../utils/device';
 import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data/categories';
 import { enrichPapersBatch, getArxivIdsForOpenAlexWorks } from '../services/openAlexService';
+import { getPaperRecommendations } from '../services/semanticScholarService';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
@@ -234,12 +235,24 @@ export function FeedProvider({ children }) {
         }
       }
       
+      let relatedArxivIds = [];
+      
+      try {
+        // Fetch ML recommendations from Semantic Scholar first (High quality)
+        const semanticRecs = await getPaperRecommendations(paper.arxivId);
+        relatedArxivIds = [...semanticRecs];
+      } catch (err) {
+        console.warn("Semantic Scholar fetch failed", err);
+      }
+      
       if (enriched && enriched.related_works && enriched.related_works.length > 0) {
         console.log(`[Recomendador] Travesando red de citas de OpenAlex para: ${paper.title}`);
-        const relatedArxivIds = await getArxivIdsForOpenAlexWorks(enriched.related_works);
+        const openAlexRecs = await getArxivIdsForOpenAlexWorks(enriched.related_works);
+        relatedArxivIds = [...new Set([...relatedArxivIds, ...openAlexRecs])];
+      }
         
-        const filteredIds = relatedArxivIds.filter(id => 
-          id &&
+      const filteredIds = relatedArxivIds.filter(id => 
+        id &&
           !likedPaperIdsRef.current.has(id) &&
           !savedPaperIdsRef.current.has(id) &&
           !readPaperIdsRef.current.has(id) &&
@@ -634,9 +647,6 @@ export function FeedProvider({ children }) {
                return p;
             });
          });
-         // Re-rank the feed now that we have semantic scores and citation data
-         // Small timeout to let React finish the state update above
-         setTimeout(() => reRankFeed(), 50);
       }).catch(err => console.error("Lazy enrichment failed", err));
     } catch (err) {
       setError(err.message);

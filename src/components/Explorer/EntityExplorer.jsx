@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, FileText, TrendingUp, Clock, X } from 'lucide-react';
+import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink } from 'lucide-react';
 import { getEntityById, getWorksByEntity } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
+import AuthorPanel from '../Feed/AuthorPanel';
 import './EntityExplorer.css';
 
 export default function EntityExplorer() {
@@ -23,6 +24,7 @@ export default function EntityExplorer() {
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
   const [wikiInfo, setWikiInfo] = useState(null);
   const [isLoadingWiki, setIsLoadingWiki] = useState(false);
+  const [activeAuthors, setActiveAuthors] = useState(null);
 
   useEffect(() => {
     async function loadEntity() {
@@ -117,15 +119,23 @@ export default function EntityExplorer() {
     });
   }, [papers, searchQuery, selectedCategory]);
 
-  // Handle author click from within overlay — close overlay first, then navigate
-  const handleAuthorClick = useCallback((authors) => {
+  const handleAuthorClick = useCallback((authors, arxivId) => {
     setSelectedPaper(null);
     setPdfPaperToView(null);
-    // Use setTimeout to allow overlay to close before navigating
-    setTimeout(() => {
-      navigate(`/explorer/author/${encodeURIComponent(authors[0])}`);
-    }, 50);
-  }, [navigate]);
+    setActiveAuthors({ authors, arxivId });
+  }, []);
+
+  const handleShare = () => {
+    if (navigator.share) {
+      navigator.share({
+        title: entity?.display_name || 'PaperTok',
+        url: window.location.href,
+      }).catch(console.error);
+    } else {
+      navigator.clipboard.writeText(window.location.href);
+      alert('Enlace copiado al portapapeles');
+    }
+  };
 
   const sortLabel = sortBy === 'cited_by_count:desc' ? 'Más citados' : 'Más recientes';
 
@@ -155,16 +165,26 @@ export default function EntityExplorer() {
   };
 
   const entityTypeLabel = type === 'institution' ? 'Universidad / Institución' : type === 'concept' ? 'Área de Interés' : 'Autor';
+  const topConcepts = entity.x_concepts ? entity.x_concepts.slice(0, 4) : [];
 
   return (
     <div className="explorer-container">
-      {/* Compact Header */}
+      {/* Immersive Hero */}
       <div className="explorer-hero">
+        {wikiInfo?.thumbnail && (
+          <div className="ehc-bg-blur" style={{ backgroundImage: `url(${wikiInfo.thumbnail})` }}></div>
+        )}
+        
         <div className="explorer-hero-top">
-          <button className="explorer-back-btn" onClick={() => navigate(-1)}>
-            <ArrowLeft size={20} />
+          <div className="eht-left">
+            <button className="explorer-back-btn" onClick={() => navigate(-1)}>
+              <ArrowLeft size={20} />
+            </button>
+            <span className="ehc-type">{entityTypeLabel}</span>
+          </div>
+          <button className="explorer-action-btn" onClick={handleShare} title="Compartir">
+            <Share2 size={18} />
           </button>
-          <span className="ehc-type">{entityTypeLabel}</span>
         </div>
         
         <div className="explorer-hero-content">
@@ -180,97 +200,137 @@ export default function EntityExplorer() {
               <h1 className="ehc-name">{entity.display_name}</h1>
               {type === 'institution' && (
                 <p className="ehc-meta">
-                  {entity.geo?.city}, {entity.geo?.country} • {entity.works_count?.toLocaleString()} obras
+                  {entity.geo?.city}, {entity.geo?.country}
                 </p>
               )}
-              {type === 'concept' && (
-                <p className="ehc-meta">
-                  Nivel {entity.level} • {entity.works_count?.toLocaleString()} obras
-                  {entity.description && <span className="ehc-desc"><br/>{entity.description}</span>}
-                </p>
-              )}
-              {type === 'author' && (
-                <p className="ehc-meta">
-                  {entity.last_known_institutions?.[0]?.display_name || 'Institución desconocida'} • H-Index: {entity.summary_stats?.h_index}
-                </p>
+              {topConcepts.length > 0 && (
+                <div className="ehc-tags">
+                  {topConcepts.map((c, i) => (
+                    <span key={i} className="ehc-tag">
+                      <Lightbulb size={12} /> {c.display_name}
+                    </span>
+                  ))}
+                </div>
               )}
             </div>
           </div>
+
+          {/* Stats Grid */}
+          <div className="ehc-stats-grid">
+            {entity.works_count !== undefined && (
+              <div className="ehc-stat-box">
+                <span className="ehc-stat-value">{entity.works_count.toLocaleString()}</span>
+                <span className="ehc-stat-label">Publicaciones</span>
+              </div>
+            )}
+            {entity.cited_by_count !== undefined && (
+              <div className="ehc-stat-box">
+                <span className="ehc-stat-value">{entity.cited_by_count.toLocaleString()}</span>
+                <span className="ehc-stat-label">Citas Totales</span>
+              </div>
+            )}
+            {entity.summary_stats?.h_index !== undefined && (
+              <div className="ehc-stat-box">
+                <span className="ehc-stat-value">{entity.summary_stats.h_index}</span>
+                <span className="ehc-stat-label">H-Index</span>
+              </div>
+            )}
+            {entity.summary_stats?.['2yr_mean_citedness'] !== undefined && (
+              <div className="ehc-stat-box">
+                <span className="ehc-stat-value">{entity.summary_stats['2yr_mean_citedness'].toFixed(1)}</span>
+                <span className="ehc-stat-label">Impacto Reciente</span>
+              </div>
+            )}
+          </div>
           
-          {wikiInfo && (
+          {/* Wikipedia or external info */}
+          {(wikiInfo || entity.homepage_url) && (
             <div className="ehc-wiki">
-              <p>{wikiInfo.extract}</p>
-              <a href={wikiInfo.url} target="_blank" rel="noopener noreferrer">Wikipedia →</a>
+              {wikiInfo && <p>{wikiInfo.extract}</p>}
+              <div className="ehc-links">
+                {wikiInfo && (
+                  <a href={wikiInfo.url} target="_blank" rel="noopener noreferrer" className="ehc-link">
+                    Wikipedia <ExternalLink size={14} />
+                  </a>
+                )}
+                {entity.homepage_url && (
+                  <a href={entity.homepage_url} target="_blank" rel="noopener noreferrer" className="ehc-link">
+                    Web Oficial <ExternalLink size={14} />
+                  </a>
+                )}
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div className="explorer-toolbar">
-        <div className="explorer-search-box">
-          <Search size={16} className="es-icon" />
-          <input 
-            type="text" 
-            placeholder="Filtrar por título, autor o resumen..." 
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-          />
-          {searchQuery && (
-            <button className="es-clear" onClick={() => setSearchQuery('')}>
-              <X size={14} />
-            </button>
-          )}
-        </div>
-        <div className="explorer-sort-toggle">
-          <button 
-            className={`sort-btn ${sortBy === 'cited_by_count:desc' ? 'active' : ''}`}
-            onClick={() => setSortBy('cited_by_count:desc')}
-            title="Ordenar por número de citas"
-          >
-            <TrendingUp size={16} />
-            <span>Citados</span>
-          </button>
-          <button 
-            className={`sort-btn ${sortBy === 'publication_date:desc' ? 'active' : ''}`}
-            onClick={() => setSortBy('publication_date:desc')}
-            title="Ordenar por fecha de publicación"
-          >
-            <Clock size={16} />
-            <span>Recientes</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Category Filters */}
-      {uniqueCategories.length > 1 && (
-        <div className="explorer-categories">
-          <button 
-            className={`ec-pill ${selectedCategory === 'All' ? 'active' : ''}`}
-            onClick={() => setSelectedCategory('All')}
-          >
-            Todos ({papers.length})
-          </button>
-          {uniqueCategories.map(cat => {
-            const count = papers.filter(p => p.primaryCategory === cat).length;
-            return (
-              <button 
-                key={cat}
-                className={`ec-pill ${selectedCategory === cat ? 'active' : ''}`}
-                onClick={() => setSelectedCategory(cat)}
-              >
-                {cat} ({count})
+      {/* Sticky Toolbar Wrapper */}
+      <div className="explorer-toolbar-wrapper">
+        <div className="explorer-toolbar">
+          <div className="explorer-search-box">
+            <Search size={16} className="es-icon" />
+            <input 
+              type="text" 
+              placeholder="Filtrar papers por título, autor..." 
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+            {searchQuery && (
+              <button className="es-clear" onClick={() => setSearchQuery('')}>
+                <X size={14} />
               </button>
-            );
-          })}
+            )}
+          </div>
+          <div className="explorer-sort-toggle">
+            <button 
+              className={`sort-btn ${sortBy === 'cited_by_count:desc' ? 'active' : ''}`}
+              onClick={() => setSortBy('cited_by_count:desc')}
+              title="Ordenar por número de citas"
+            >
+              <TrendingUp size={16} />
+              <span>Citados</span>
+            </button>
+            <button 
+              className={`sort-btn ${sortBy === 'publication_date:desc' ? 'active' : ''}`}
+              onClick={() => setSortBy('publication_date:desc')}
+              title="Ordenar por fecha de publicación"
+            >
+              <Clock size={16} />
+              <span>Recientes</span>
+            </button>
+          </div>
         </div>
-      )}
+
+        {/* Category Filters */}
+        {uniqueCategories.length > 1 && (
+          <div className="explorer-categories">
+            <button 
+              className={`ec-pill ${selectedCategory === 'All' ? 'active' : ''}`}
+              onClick={() => setSelectedCategory('All')}
+            >
+              Todos ({papers.length})
+            </button>
+            {uniqueCategories.map(cat => {
+              const count = papers.filter(p => p.primaryCategory === cat).length;
+              return (
+                <button 
+                  key={cat}
+                  className={`ec-pill ${selectedCategory === cat ? 'active' : ''}`}
+                  onClick={() => setSelectedCategory(cat)}
+                >
+                  {cat} ({count})
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Papers List */}
       <div className="explorer-list custom-scrollbar">
         {isLoadingPapers ? (
           <div className="explorer-feed-loading">
-            <Loader2 className="spinning" size={28} />
+            <Loader2 className="spinning" size={32} />
             <p>Cargando papers ({sortLabel})...</p>
           </div>
         ) : filteredPapers.length > 0 ? (
@@ -280,6 +340,7 @@ export default function EntityExplorer() {
                 key={paper.id + '-' + index} 
                 className="explorer-list-item"
                 onClick={() => setSelectedPaper(paper)}
+                style={{ '--i': index }}
               >
                 <div className="eli-header">
                   <span className="eli-cat">{paper.primaryCategory}</span>
@@ -287,7 +348,7 @@ export default function EntityExplorer() {
                 </div>
                 <h3 className="eli-title">{paper.title}</h3>
                 <p className="eli-authors">{paper.authors.slice(0, 4).join(', ')}{paper.authors.length > 4 ? ` +${paper.authors.length - 4}` : ''}</p>
-                <p className="eli-summary">{paper.summary.length > 180 ? paper.summary.substring(0, 180) + '...' : paper.summary}</p>
+                <p className="eli-summary">{paper.summary}</p>
               </div>
             ))}
           </div>
@@ -295,7 +356,7 @@ export default function EntityExplorer() {
           <div className="explorer-empty">
             {searchQuery ? (
               <>
-                <Search size={36} style={{ opacity: 0.4 }} />
+                <Search size={48} style={{ opacity: 0.3 }} />
                 <p>No se encontraron papers con "{searchQuery}"</p>
                 <button className="explorer-clear-btn" onClick={() => { setSearchQuery(''); setSelectedCategory('All'); }}>
                   Limpiar filtros
@@ -321,7 +382,7 @@ export default function EntityExplorer() {
             <PaperCard 
               paper={selectedPaper} 
               onOpenPdf={(paper) => setPdfPaperToView(paper)}
-              onOpenAuthors={(authors) => handleAuthorClick(authors)} 
+              onOpenAuthors={(authors) => handleAuthorClick(authors, selectedPaper.arxivId)} 
               trackViewTime={() => {}}
               trackSkip={() => {}}
             />
@@ -334,6 +395,19 @@ export default function EntityExplorer() {
         <div className="explorer-overlay" style={{ zIndex: 1001 }}>
           <PDFViewer paper={pdfPaperToView} onClose={() => setPdfPaperToView(null)} />
         </div>
+      )}
+
+      {/* Author Panel Overlay */}
+      {activeAuthors && (
+        <AuthorPanel 
+          authors={activeAuthors.authors} 
+          sourceArxivId={activeAuthors.arxivId}
+          onClose={() => setActiveAuthors(null)}
+          onOpenPdf={(paper) => {
+            setActiveAuthors(null);
+            setPdfPaperToView(paper);
+          }}
+        />
       )}
     </div>
   );

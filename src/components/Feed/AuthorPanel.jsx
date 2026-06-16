@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { getAuthorWikiInfo } from '../../services/wikiService';
 import { getAuthorPapers } from '../../services/arxivService';
 import { getAuthorProfileExact } from '../../services/openAlexService';
-import { X, ChevronLeft, ExternalLink, Loader2, BookOpen, Award, Building2, UserPlus, UserCheck } from 'lucide-react';
+import { getSimilarAuthors } from '../../services/semanticScholarService';
+import { X, ChevronLeft, ExternalLink, Loader2, BookOpen, Award, Building2, UserPlus, UserCheck, Users } from 'lucide-react';
 import { getCategoryLabel } from '../../data/categories';
 import { useAuth } from '../../context/AuthContext';
 import './AuthorPanel.css';
@@ -12,6 +13,7 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf, sourceArxivId
   const [wikiInfo, setWikiInfo] = useState(null);
   const [papers, setPapers] = useState([]);
   const [openAlexProfile, setOpenAlexProfile] = useState(null);
+  const [similarAuthors, setSimilarAuthors] = useState([]);
   const [loading, setLoading] = useState(false);
   const { followedAuthors, toggleFollowAuthor } = useAuth();
 
@@ -42,14 +44,16 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf, sourceArxivId
 
     try {
       // Fetch in parallel
-      const [wiki, authorPapers, oaProfile] = await Promise.all([
+      const [wiki, authorPapers, oaProfile, similarAuths] = await Promise.all([
         getAuthorWikiInfo(author),
         getAuthorPapers(author, 10),
-        getAuthorProfileExact(author, sourceArxivId)
+        getAuthorProfileExact(author, sourceArxivId),
+        getSimilarAuthors(author)
       ]);
       setWikiInfo(wiki);
       setPapers(authorPapers || []);
       setOpenAlexProfile(oaProfile);
+      setSimilarAuthors(similarAuths || []);
     } catch (err) {
       console.error('Error fetching author info:', err);
     } finally {
@@ -165,6 +169,39 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf, sourceArxivId
                           </div>
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Similar Authors Section */}
+                  {similarAuthors && similarAuthors.length > 0 && (
+                    <div className="ap-similar-authors-section" style={{ marginBottom: '20px' }}>
+                      <h4 className="ap-similar-authors-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.05rem', marginBottom: '12px', color: 'var(--text-primary)' }}>
+                        <Users size={16} /> Colaboradores Frecuentes
+                      </h4>
+                      <div className="ap-similar-authors-list" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                        {similarAuthors.map((sim, idx) => (
+                          <button 
+                            key={idx} 
+                            className="ap-similar-author-pill"
+                            onClick={() => selectAuthor(sim.name)}
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: '8px',
+                              background: 'rgba(255, 255, 255, 0.05)', border: '1px solid rgba(255, 255, 255, 0.1)',
+                              padding: '6px 12px 6px 6px', borderRadius: '20px', color: 'var(--text-primary)',
+                              cursor: 'pointer', transition: 'all 0.2s', fontSize: '0.85rem'
+                            }}
+                          >
+                            <div className="ap-similar-avatar" style={{
+                              width: '24px', height: '24px', borderRadius: '50%',
+                              background: 'var(--brand)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontWeight: 'bold', fontSize: '0.75rem'
+                            }}>
+                              {sim.name.charAt(0).toUpperCase()}
+                            </div>
+                            <span>{sim.name}</span>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   )}
 

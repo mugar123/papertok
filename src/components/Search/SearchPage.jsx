@@ -6,6 +6,7 @@ import { searchAuthors, searchInstitutions, searchConcepts } from '../../service
 import { useAuth } from '../../context/AuthContext';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
+import AuthorPanel from '../Feed/AuthorPanel';
 import './SearchPage.css';
 
 export default function SearchPage() {
@@ -24,6 +25,7 @@ export default function SearchPage() {
   
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaper, setPdfPaper] = useState(null);
+  const [activeAuthors, setActiveAuthors] = useState(null);
   
   const timeoutRef = useRef(null);
 
@@ -80,13 +82,11 @@ export default function SearchPage() {
   };
 
   // Handle author click from PaperCard overlay
-  const handleAuthorClick = useCallback((authors) => {
+  const handleAuthorClick = useCallback((authors, arxivId) => {
     setSelectedPaper(null);
     setPdfPaper(null);
-    setTimeout(() => {
-      navigate(`/explorer/author/${encodeURIComponent(authors[0])}`);
-    }, 50);
-  }, [navigate]);
+    setActiveAuthors({ authors, arxivId });
+  }, []);
 
   const hasResults = paperResults.length > 0 || authorResults.length > 0 || institutionResults.length > 0 || conceptResults.length > 0;
 
@@ -165,7 +165,7 @@ export default function SearchPage() {
                 {authorResults.map(author => {
                   const isFollowing = followedAuthors.includes(author.display_name);
                   return (
-                    <div key={author.id} className="search-item" onClick={() => navigate(`/explorer/author/${encodeURIComponent(author.display_name)}`)}>
+                    <div key={author.id} className="search-item" onClick={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}>
                       <div className="search-item-avatar">
                         {author.display_name.charAt(0).toUpperCase()}
                       </div>
@@ -219,7 +219,7 @@ export default function SearchPage() {
             <PaperCard 
               paper={selectedPaper} 
               onOpenPdf={(paper) => setPdfPaper(paper)}
-              onOpenAuthors={(authors) => handleAuthorClick(authors)}
+              onOpenAuthors={(authors) => handleAuthorClick(authors, selectedPaper.arxivId)}
               trackViewTime={() => {}}
               trackSkip={() => {}}
             />
@@ -232,6 +232,19 @@ export default function SearchPage() {
         <div className="search-overlay" style={{ zIndex: 1200 }}>
           <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />
         </div>
+      )}
+
+      {/* Author Panel Overlay */}
+      {activeAuthors && (
+        <AuthorPanel 
+          authors={activeAuthors.authors} 
+          sourceArxivId={activeAuthors.arxivId}
+          onClose={() => setActiveAuthors(null)}
+          onOpenPdf={(paper) => {
+            setActiveAuthors(null);
+            setPdfPaper(paper);
+          }}
+        />
       )}
     </div>
   );
