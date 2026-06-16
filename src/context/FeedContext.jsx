@@ -312,6 +312,12 @@ export function FeedProvider({ children }) {
     loadInteractions();
   }, [user]);
 
+  // --- BOREDOM DETECTION ---
+  // Tracks consecutive fast skips in the current session to detect user disengagement.
+  // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
+  const boredomLevel = useRef(0); // 0 = happy, higher = more bored
+  const BOREDOM_THRESHOLD = 5; // After 5 consecutive fast skips, start exploring
+
   // Load papers when preferences are available
   const loadPapers = useCallback(async (reset = false, mode, randomizeStart = false, pageOverride) => {
     if (!userPreferences || userPreferences.length === 0) return;
@@ -324,8 +330,6 @@ export function FeedProvider({ children }) {
     
     let currentPage = reset ? 0 : (pageOverride !== undefined ? pageOverride : page);
     if (randomizeStart) {
-      // Pick a random page between 0 and 5 to avoid arXiv deep pagination timeouts
-      // Deep pagination (e.g. start > 500) takes 15+ seconds on arXiv and causes our timeout to trigger
       currentPage = Math.floor(Math.random() * 5);
     }
 
@@ -334,133 +338,127 @@ export function FeedProvider({ children }) {
       if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
         
-        // Determine user's parent areas
-        const userAreas = new Set();
-        userPreferences.forEach(pref => {
-          const leaf = allCategories.find(c => c.id === pref);
-          if (leaf) userAreas.add(leaf.area);
+        // ─── STEP 1: Rank user's selected categories by learned affinity ───
+        const rankedPreferences = [...userPreferences].sort((a, b) => {
+          const affA = categoryAffinities.current[a] || 0;
+          const affB = categoryAffinities.current[b] || 0;
+          return affB - affA;
         });
 
-        // Setup Capa 2: Graph/Related (25%) -> candidates pool
-        let candidatesToFetch = [];
-        if (relatedCandidates.current && relatedCandidates.current.length > 0) {
-           candidatesToFetch = [...relatedCandidates.current].sort(() => 0.5 - Math.random()).slice(0, 10);
+        // ─── STEP 2: Choose query mode based on temporal preference ───
+        const pref = temporalPreference.current || 0;
+        let queryMode;
+        if (pref > 0.3) {
+          queryMode = 'recent';
+        } else if (pref < -0.3) {
+          queryMode = 'relevance';
+        } else {
+          queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';
         }
 
-        // Setup Capa 3: Trending Científico (15%) -> Pick trending categories
-        const validTrending = allCategories
-          .filter(c => userAreas.has(c.area))
-          .filter(c => !userPreferences.includes(c.id))
-          .filter(c => (categoryAffinities.current[c.id] || 0) >= -2)
-          .map(c => c.id);
-        const trendingCategories = validTrending.sort(() => 0.5 - Math.random()).slice(0, 2);
+        // ─── STEP 3: Fetch from USER'S CATEGORIES ONLY ───
+        const mainPapers = await fetchPapers(rankedPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode).catch(() => []);
+        mainPapers.forEach(p => { p._type = 'exploit'; });
 
-        // Setup Capa 4: Exploración/Random (10%) -> Pick random categories
-        const randomCats = allCategories
-          .filter(c => !userPreferences.includes(c.id) && !trendingCategories.includes(c.id))
-          .map(c => c.id)
-          .sort(() => 0.5 - Math.random())
-          .slice(0, 2);
-        
-        // Make sequential requests to preserve logic buckets and prevent high-volume categories 
-        // from drowning out low-volume categories, while avoiding arXiv API concurrent request limits.
-        const queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';
-        
-        // 1. User Preferences (60% ~ 15 papers)
-        const exploitPapers = await fetchPapers(userPreferences, currentPage * 15, 15, queryMode).catch(() => []);
-        
-        // 2. Trending (15% ~ 3 papers)
-        let trendingPapers = [];
-        if (trendingCategories.length > 0) {
-          trendingPapers = await fetchPapers(trendingCategories, currentPage * 3, 3, queryMode).catch(() => []);
-        }
-        
-        // 3. Random (10% ~ 2 papers)
-        let randomPapers = [];
-        if (randomCats.length > 0) {
-          randomPapers = await fetchPapers(randomCats, currentPage * 2, 2, queryMode).catch(() => []);
-        }
-
-        // 4. Graph/Related (15% ~ 5 papers)
+        // ─── STEP 4: Graph/Related papers (semantically similar to liked) ───
         let graphPapers = [];
-        if (candidatesToFetch.length > 0) {
-           graphPapers = await fetchPapersByIds(candidatesToFetch).catch(() => []);
+        if (relatedCandidates.current && relatedCandidates.current.length > 0) {
+          const candidatesToFetch = [...relatedCandidates.current].sort(() => 0.5 - Math.random()).slice(0, 5);
+          graphPapers = await fetchPapersByIds(candidatesToFetch).catch(() => []);
+          graphPapers.forEach(p => { p._type = 'graph'; p._isGraphCandidate = true; });
         }
-        
-        // 5. Followed Authors (Inject 1 or 2 papers)
+
+        // ─── STEP 5: Followed Authors ───
         let authorPapers = [];
         if (followedAuthors && followedAuthors.length > 0) {
           const randAuthor = followedAuthors[Math.floor(Math.random() * followedAuthors.length)];
           authorPapers = await getAuthorPapers(randAuthor, 2).catch(() => []);
+          authorPapers.forEach(p => { p._type = 'author'; });
         }
 
-        // Separate the combined papers back into logic buckets to respect ratios (roughly)
-        let coreToEnrich = []; 
+        // ─── STEP 6: ADAPTIVE EXPLORATION (only when bored) ───
+        let explorationPapers = [];
+        const currentBoredom = boredomLevel.current;
         
-        exploitPapers.forEach(p => { p._type = 'exploit'; });
-        trendingPapers.forEach(p => { p._type = 'trending'; });
-        randomPapers.forEach(p => { p._type = 'random'; });
-        graphPapers.forEach(p => { p._type = 'graph'; });
-        
-        // --- OPENALEX ENRICHMENT ---
-        coreToEnrich = [...exploitPapers, ...graphPapers, ...trendingPapers];
-
-        if (authorPapers && authorPapers.length > 0) {
-          authorPapers.forEach(p => {
-             // We give it a special flag so it bypasses all cooldowns and gets forced to the top
-             p._debugScore = { isExploration: false };
-             coreToEnrich.push(p);
+        if (currentBoredom >= BOREDOM_THRESHOLD) {
+          const userAreas = new Set();
+          userPreferences.forEach(pref => {
+            const leaf = allCategories.find(c => c.id === pref);
+            if (leaf) userAreas.add(leaf.area);
           });
+
+          const nearbyCats = allCategories
+            .filter(c => userAreas.has(c.area))
+            .filter(c => !userPreferences.includes(c.id))
+            .filter(c => (categoryAffinities.current[c.id] || 0) >= -2)
+            .map(c => c.id)
+            .sort(() => 0.5 - Math.random())
+            .slice(0, 3);
+
+          const exploreCount = Math.min(5, Math.floor((currentBoredom - BOREDOM_THRESHOLD) / 2) + 2);
+          
+          if (nearbyCats.length > 0) {
+            explorationPapers = await fetchPapers(nearbyCats, currentPage * exploreCount, exploreCount, queryMode).catch(() => []);
+            explorationPapers.forEach(p => { 
+              p._type = 'exploration';
+              p._debugScore = { isExploration: true };
+            });
+          }
+
+          if (currentBoredom >= BOREDOM_THRESHOLD * 2) {
+            const randomCats = allCategories
+              .filter(c => !userPreferences.includes(c.id) && !nearbyCats.includes(c.id))
+              .map(c => c.id)
+              .sort(() => 0.5 - Math.random())
+              .slice(0, 2);
+            
+            if (randomCats.length > 0) {
+              const randomPapers = await fetchPapers(randomCats, 0, 2, queryMode).catch(() => []);
+              randomPapers.forEach(p => { 
+                p._type = 'exploration';
+                p._debugScore = { isExploration: true };
+              });
+              explorationPapers.push(...randomPapers);
+            }
+          }
         }
 
-
-        // Tag graph papers before deduplication
-        graphPapers.forEach(p => p._isGraphCandidate = true);
+        // ─── STEP 7: Merge, deduplicate, score, and sort ───
+        const allFetched = [...mainPapers, ...graphPapers, ...authorPapers];
         
-        // Deduplicate core and filter out explicitly interacted papers (DO NOT filter sessionSeenPapers here)
         const uniqueMap = new Map();
-        coreToEnrich.forEach(p => {
+        allFetched.forEach(p => {
           if (!uniqueMap.has(p.id) &&
               !likedPaperIds.has(p.id) &&
               !savedPaperIds.has(p.id) &&
               !readPaperIds.has(p.id) &&
               !notInterestedIds.has(p.id)) {
-            
             uniqueMap.set(p.id, p);
           }
         });
         
-        const sortedCore = Array.from(uniqueMap.values());
+        const corePapers = Array.from(uniqueMap.values());
         
-        // Calculate and attach debug scores before sorting
-        sortedCore.forEach(paper => {
-           calculateAndAttachScore(paper, userPreferences);
+        corePapers.forEach(paper => {
+          calculateAndAttachScore(paper);
         });
 
-        // Sort ONLY exploit + trending
-        sortedCore.sort((a, b) => {
-          const scoreA = isNaN(a._debugScore?.total) ? 0 : a._debugScore.total;
-          const scoreB = isNaN(b._debugScore?.total) ? 0 : b._debugScore.total;
+        corePapers.sort((a, b) => {
+          const scoreA = isNaN(a._dynamicScore) ? 0 : a._dynamicScore;
+          const scoreB = isNaN(b._dynamicScore) ? 0 : b._dynamicScore;
           return scoreB - scoreA;
         });
 
-        // Inject random papers dynamically (Anti-bubbles)
-        newPapers = [...sortedCore];
-        const uniqueRandoms = randomPapers.filter(p => !uniqueMap.has(p.id));
+        newPapers = [...corePapers];
+        const uniqueExplore = explorationPapers.filter(p => !uniqueMap.has(p.id) &&
+          !likedPaperIds.has(p.id) && !savedPaperIds.has(p.id) && 
+          !readPaperIds.has(p.id) && !notInterestedIds.has(p.id));
         
-        uniqueRandoms.forEach(randomPaper => {
-          randomPaper._debugScore = {
-            total: 0,
-            affinity: 0,
-            preference: 0,
-            recency: 0,
-            isExploration: true
-          };
-          // Insert randomly in the bottom 50% of the feed so they are not dominating the top
-          const maxInsertIndex = newPapers.length;
-          const minInsertIndex = Math.floor(newPapers.length * 0.5);
-          const insertIndex = minInsertIndex + Math.floor(Math.random() * (maxInsertIndex - minInsertIndex + 1));
-          newPapers.splice(insertIndex, 0, randomPaper);
+        uniqueExplore.forEach(explorePaper => {
+          const maxIdx = newPapers.length;
+          const minIdx = Math.floor(newPapers.length * 0.6);
+          const insertIdx = minIdx + Math.floor(Math.random() * (maxIdx - minIdx + 1));
+          newPapers.splice(insertIdx, 0, explorePaper);
         });
       } else {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
@@ -624,6 +622,9 @@ export function FeedProvider({ children }) {
     const isCurrentlyLiked = likedPaperIds.has(paper.id);
     const newLiked = new Set(likedPaperIds);
 
+    // ─── BOREDOM RESET: liking = highly engaged ───
+    if (!isCurrentlyLiked) boredomLevel.current = 0;
+    
     if (isCurrentlyLiked) {
       newLiked.delete(paper.id);
       if (paper.primaryCategory) categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 5;
@@ -748,6 +749,11 @@ export function FeedProvider({ children }) {
   const trackViewTime = useCallback(async (paper, timeInSeconds) => {
     if (!user || IS_DEMO || timeInSeconds < 1) return;
     
+    // ─── BOREDOM RESET: user is engaging, not bored ───
+    if (timeInSeconds >= 5) {
+      boredomLevel.current = Math.max(0, boredomLevel.current - 3);
+    }
+    
     // Instantly update local weights for real-time re-ranking
     if (paper.primaryCategory) {
       categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) + (Math.min(timeInSeconds, 60) * 0.25);
@@ -783,6 +789,9 @@ export function FeedProvider({ children }) {
   const trackPdfOpened = useCallback(async (paper) => {
     if (!user || IS_DEMO) return;
     
+    // ─── BOREDOM RESET: opening PDF = highly engaged ───
+    boredomLevel.current = 0;
+    
     // Instantly update local weights for real-time re-ranking
     if (paper.primaryCategory) {
       categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) + 4;
@@ -810,6 +819,9 @@ export function FeedProvider({ children }) {
 
   const trackSkip = useCallback(async (paper) => {
     if (!user || IS_DEMO) return;
+    
+    // ─── BOREDOM DETECTION: fast skip = +1 boredom ───
+    boredomLevel.current = Math.min(20, boredomLevel.current + 1);
     
     // Instantly update local weights for real-time re-ranking
     if (paper.primaryCategory) {
@@ -849,6 +861,8 @@ export function FeedProvider({ children }) {
   }, [user]);
 
   const markSaved = useCallback((paperId) => {
+    // ─── BOREDOM RESET: saving = highly engaged ───
+    boredomLevel.current = 0;
     // Attempt to update temporal preference
     const paper = papers.find(p => p.id === paperId);
     if (paper) {
