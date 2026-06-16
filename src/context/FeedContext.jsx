@@ -357,23 +357,38 @@ export function FeedProvider({ children }) {
           .map(c => c.id)
           .sort(() => 0.5 - Math.random())
           .slice(0, 2);
-
-        // COMBINED FETCH
-        // Instead of making 4 parallel requests, we combine them into a single RSS/Atom request.
-        const combinedCats = Array.from(new Set([...userPreferences, ...trendingCategories, ...randomCats]));
         
+        // Make parallel requests to preserve logic buckets and prevent high-volume categories 
+        // from drowning out low-volume categories when sorted by date.
         const queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';
-        const promises = [
-          fetchPapers(combinedCats, currentPage * 25, 30, queryMode).catch(e => { console.warn('Combined fetch failed', e); return []; })
-        ];
+        
+        const promises = [];
+        
+        // 1. User Preferences (60% ~ 15 papers)
+        promises.push(fetchPapers(userPreferences, currentPage * 15, 15, queryMode).catch(() => []));
+        
+        // 2. Trending (15% ~ 5 papers)
+        if (trendingCategories.length > 0) {
+          promises.push(fetchPapers(trendingCategories, currentPage * 5, 5, queryMode).catch(() => []));
+        } else {
+          promises.push(Promise.resolve([]));
+        }
+        
+        // 3. Random (10% ~ 5 papers)
+        if (randomCats.length > 0) {
+          promises.push(fetchPapers(randomCats, currentPage * 5, 5, queryMode).catch(() => []));
+        } else {
+          promises.push(Promise.resolve([]));
+        }
 
+        // 4. Graph/Related (15% ~ 5 papers)
         if (candidatesToFetch.length > 0) {
            promises.push(fetchPapersByIds(candidatesToFetch).catch(() => []));
         } else {
            promises.push(Promise.resolve([]));
         }
         
-        // Inject 1 paper from a followed author
+        // 5. Followed Authors (Inject 1 or 2 papers)
         if (followedAuthors && followedAuthors.length > 0) {
           const randAuthor = followedAuthors[Math.floor(Math.random() * followedAuthors.length)];
           promises.push(getAuthorPapers(randAuthor, 2).catch(() => []));
@@ -381,29 +396,15 @@ export function FeedProvider({ children }) {
           promises.push(Promise.resolve([]));
         }
 
-        const [combinedPapers, graphPapers, authorPapers] = await Promise.all(promises);
+        const [exploitPapers, trendingPapers, randomPapers, graphPapers, authorPapers] = await Promise.all(promises);
 
         // Separate the combined papers back into logic buckets to respect ratios (roughly)
         let coreToEnrich = []; 
-        const exploitPapers = [];
-        const trendingPapers = [];
-        const randomPapers = [];
         
-        combinedPapers.forEach(p => {
-          const isUserPref = p.allCategories.some(c => userPreferences.includes(c));
-          const isTrending = p.allCategories.some(c => trendingCategories.includes(c));
-          const isRandom = p.allCategories.some(c => randomCats.includes(c));
-          
-          if (isUserPref) {
-            exploitPapers.push(p);
-          } else if (isTrending) {
-            trendingPapers.push(p);
-          } else if (isRandom) {
-            randomPapers.push(p);
-          } else {
-            exploitPapers.push(p); // Fallback
-          }
-        });
+        exploitPapers.forEach(p => { p._type = 'exploit'; });
+        trendingPapers.forEach(p => { p._type = 'trending'; });
+        randomPapers.forEach(p => { p._type = 'random'; });
+        graphPapers.forEach(p => { p._type = 'graph'; });
         
         // --- OPENALEX ENRICHMENT ---
         coreToEnrich = [...exploitPapers, ...graphPapers, ...trendingPapers];
