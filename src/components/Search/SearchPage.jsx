@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, FileText, Users, Loader2, ArrowLeft, Building2, Lightbulb } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { searchPapers } from '../../services/arxivService';
 import { searchAuthors, searchInstitutions, searchConcepts } from '../../services/openAlexService';
 import { useAuth } from '../../context/AuthContext';
-import AuthorPanel from '../Feed/AuthorPanel';
+import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import './SearchPage.css';
 
@@ -23,7 +23,7 @@ export default function SearchPage() {
   const [conceptResults, setConceptResults] = useState([]);
   
   const [selectedPaper, setSelectedPaper] = useState(null);
-  const [selectedAuthor, setSelectedAuthor] = useState(null);
+  const [pdfPaper, setPdfPaper] = useState(null);
   
   const timeoutRef = useRef(null);
 
@@ -44,7 +44,7 @@ export default function SearchPage() {
     timeoutRef.current = setTimeout(() => {
       setIsDebouncing(false);
       performSearch(query);
-    }, 600); // Debounce
+    }, 600);
     
     return () => clearTimeout(timeoutRef.current);
   }, [query]);
@@ -79,21 +79,30 @@ export default function SearchPage() {
     }
   };
 
+  // Handle author click from PaperCard overlay
+  const handleAuthorClick = useCallback((authors) => {
+    setSelectedPaper(null);
+    setPdfPaper(null);
+    setTimeout(() => {
+      navigate(`/explorer/author/${encodeURIComponent(authors[0])}`);
+    }, 50);
+  }, [navigate]);
+
   const hasResults = paperResults.length > 0 || authorResults.length > 0 || institutionResults.length > 0 || conceptResults.length > 0;
 
   return (
     <div className="search-page-container">
       {/* Header */}
-      <div className="search-header glass-panel">
+      <div className="search-header">
         <button className="search-back-btn" onClick={() => navigate('/')}>
-          <ArrowLeft size={24} />
+          <ArrowLeft size={22} />
         </button>
         <div className="search-input-wrapper">
-          <Search className="search-icon" size={20} />
+          <Search className="search-icon" size={18} />
           <input 
             type="text" 
             className="search-input"
-            placeholder="Buscar papers, autores, universidades, temas..."
+            placeholder="Buscar papers, autores, universidades..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
@@ -105,13 +114,13 @@ export default function SearchPage() {
       <div className="search-results custom-scrollbar">
         {isSearching || isDebouncing ? (
           <div className="search-loading">
-            <Loader2 className="spinning" size={40} />
+            <Loader2 className="spinning" size={36} />
           </div>
         ) : (
           <div className="search-results-list animate-fade-in">
             {!hasResults && query && hasSearched && (
               <div className="search-empty">
-                <Search size={48} className="search-empty-icon" />
+                <Search size={40} className="search-empty-icon" />
                 <p>No se encontraron resultados para "{query}"</p>
                 <span>Intenta con otros términos o busca en inglés</span>
               </div>
@@ -123,7 +132,7 @@ export default function SearchPage() {
                 <h3 className="search-section-title">Universidades e Instituciones</h3>
                 {institutionResults.map(inst => (
                   <div key={inst.id} className="search-item" onClick={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)}>
-                    <div className="search-item-icon"><Building2 size={24} /></div>
+                    <div className="search-item-icon"><Building2 size={22} /></div>
                     <div className="search-item-info">
                       <h4>{inst.display_name}</h4>
                       <p>{inst.geo?.city || 'Ciudad desconocida'}, {inst.geo?.country || 'País desconocido'} • {inst.works_count?.toLocaleString()} obras</p>
@@ -139,7 +148,7 @@ export default function SearchPage() {
                 <h3 className="search-section-title">Temas y Áreas</h3>
                 {conceptResults.map(concept => (
                   <div key={concept.id} className="search-item" onClick={() => navigate(`/explorer/concept/${concept.id.split('/').pop()}`)}>
-                    <div className="search-item-icon"><Lightbulb size={24} /></div>
+                    <div className="search-item-icon"><Lightbulb size={22} /></div>
                     <div className="search-item-info">
                       <h4>{concept.display_name}</h4>
                       <p>Nivel {concept.level} • {concept.works_count?.toLocaleString()} obras relacionadas</p>
@@ -182,40 +191,48 @@ export default function SearchPage() {
                 <h3 className="search-section-title">Papers Recientes</h3>
                 {paperResults.map(paper => (
                   <div key={paper.id} className="search-item paper-item" onClick={() => setSelectedPaper(paper)}>
-                    <div className="search-item-icon"><FileText size={24} /></div>
+                    <div className="search-item-icon"><FileText size={22} /></div>
                     <div className="search-item-info">
                       <h4>{paper.title}</h4>
-                      <p className="search-item-authors">{paper.authors.join(', ')}</p>
+                      <p className="search-item-authors">{paper.authors.slice(0, 3).join(', ')}{paper.authors.length > 3 ? ` +${paper.authors.length - 3}` : ''}</p>
                       <span className="search-item-meta">{new Date(paper.published).toLocaleDateString()} • {paper.primaryCategory}</span>
                     </div>
                   </div>
                 ))}
               </div>
             )}
-
-
           </div>
         )}
       </div>
 
-      {/* Overlays */}
-      {selectedPaper && (
+      {/* Paper Card Overlay */}
+      {selectedPaper && !pdfPaper && (
         <div className="search-overlay">
-          <PDFViewer 
-            pdfUrl={selectedPaper.pdfUrl} 
-            onClose={() => setSelectedPaper(null)} 
-          />
+          <button 
+            className="search-back-btn" 
+            onClick={() => setSelectedPaper(null)}
+            style={{ position: 'absolute', top: 'max(16px, env(safe-area-inset-top))', left: '16px', zIndex: 1200, background: 'rgba(255,255,255,0.1)', width: '40px', height: '40px' }}
+          >
+            <ArrowLeft size={22} />
+          </button>
+          <div style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
+            <PaperCard 
+              paper={selectedPaper} 
+              onOpenPdf={(paper) => setPdfPaper(paper)}
+              onOpenAuthors={(authors) => handleAuthorClick(authors)}
+              trackViewTime={() => {}}
+              trackSkip={() => {}}
+            />
+          </div>
         </div>
       )}
-      
-      {selectedAuthor && (
-        <AuthorPanel 
-          authors={[selectedAuthor]} 
-          onClose={() => setSelectedAuthor(null)}
-          onOpenPdf={(paper) => setSelectedPaper(paper)}
-        />
+
+      {/* PDF Viewer */}
+      {pdfPaper && (
+        <div className="search-overlay" style={{ zIndex: 1200 }}>
+          <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />
+        </div>
       )}
     </div>
   );
 }
-
