@@ -198,6 +198,76 @@ export async function getAuthorProfile(authorName) {
 }
 
 /**
+ * Fetch author profile EXACT match from OpenAlex using a specific paper (arxivId) to disambiguate.
+ * @param {string} authorName 
+ * @param {string} arxivId 
+ * @returns {Promise<Object|null>}
+ */
+export async function getAuthorProfileExact(authorName, arxivId) {
+  if (!authorName) return null;
+  
+  // If no arxivId, fallback to standard search
+  if (!arxivId) return getAuthorProfile(authorName);
+  
+  try {
+    // 1. Fetch the exact work from OpenAlex using the arXiv ID
+    const workUrl = `https://api.openalex.org/works/arxiv:${arxivId}`;
+    const workResponse = await fetchWithTimeout(workUrl, 10000);
+    
+    if (workResponse.ok) {
+      const workData = await workResponse.json();
+      
+      if (workData.authorships) {
+        // 2. Find the author in the paper's authors list that matches the requested name
+        const cleanReqName = authorName.toLowerCase().replace(/[^a-z]/g, '');
+        
+        // Exact match or closest match
+        let bestMatch = null;
+        for (const authorship of workData.authorships) {
+           const authorDisplayName = authorship.author.display_name;
+           if (!authorDisplayName) continue;
+           
+           const cleanAuthName = authorDisplayName.toLowerCase().replace(/[^a-z]/g, '');
+           
+           // Simple substring match or exact match on clean strings
+           if (cleanAuthName.includes(cleanReqName) || cleanReqName.includes(cleanAuthName)) {
+              bestMatch = authorship.author;
+              break;
+           }
+        }
+        
+        // 3. If we found the exact author ID, fetch their specific profile to get H-index etc.
+        if (bestMatch && bestMatch.id) {
+           const authorProfileUrl = bestMatch.id; // It's a full URL like https://api.openalex.org/authors/A...
+           const profileResponse = await fetchWithTimeout(authorProfileUrl, 10000);
+           if (profileResponse.ok) {
+              const author = await profileResponse.json();
+              return {
+                id: author.id,
+                display_name: author.display_name,
+                works_count: author.works_count || 0,
+                cited_by_count: author.cited_by_count || 0,
+                h_index: author.summary_stats ? author.summary_stats.h_index : 0,
+                institution: (author.last_known_institutions && author.last_known_institutions.length > 0) 
+                    ? author.last_known_institutions[0].display_name 
+                    : null,
+                concepts: author.x_concepts ? author.x_concepts.slice(0, 5) : []
+              };
+           }
+        }
+      }
+    }
+    
+    // If the exact match fails (e.g. OpenAlex hasn't indexed this arXiv paper yet), fallback:
+    return getAuthorProfile(authorName);
+    
+  } catch (err) {
+    console.error("OpenAlex getAuthorProfileExact failed", err);
+    return getAuthorProfile(authorName);
+  }
+}
+
+/**
  * Search authors by name and return a list of matches.
  * @param {string} query 
  * @returns {Promise<Array>}

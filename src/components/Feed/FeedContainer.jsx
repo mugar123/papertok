@@ -62,8 +62,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     onSaveToList(paper);
   }, [onSaveToList]);
 
-  const handleOpenAuthors = useCallback((authors) => {
-    setActiveAuthors(authors);
+  const handleOpenAuthors = useCallback((authors, arxivId) => {
+    setActiveAuthors({ authors, arxivId });
   }, []);
 
   if (error && papers.length === 0) {
@@ -139,13 +139,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
 
       {activeAuthors && (
         <AuthorPanel 
-          authors={activeAuthors} 
-          onClose={() => setActiveAuthors(null)} 
+          authors={activeAuthors.authors} 
+          sourceArxivId={activeAuthors.arxivId}
+          onClose={() => setActiveAuthors(null)}
           onOpenPdf={(paper) => {
-            trackPdfOpened(paper);
             setActiveAuthors(null);
-            onOpenPdf(paper);
-          }} 
+            handleOpenPdf(paper);
+          }}
         />
       )}
     </div>

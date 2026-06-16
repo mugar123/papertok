@@ -404,7 +404,6 @@ export function FeedProvider({ children }) {
         }
 
         const arxivIdsToEnrich = coreToEnrich.map(p => p.id);
-        const openAlexData = await enrichPapersBatch(arxivIdsToEnrich);
         
         // Tag graph papers before deduplication
         graphPapers.forEach(p => p._isGraphCandidate = true);
@@ -418,10 +417,6 @@ export function FeedProvider({ children }) {
               !readPaperIds.has(p.id) &&
               !notInterestedIds.has(p.id)) {
             
-            // Merge OpenAlex data immediately so re-ranking can use it
-            if (openAlexData[p.id]) {
-               p.openAlex = openAlexData[p.id];
-            }
             uniqueMap.set(p.id, p);
           }
         });
@@ -522,6 +517,21 @@ export function FeedProvider({ children }) {
 
       // Save to cache
       feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
+
+      // Asynchronous OpenAlex Enrichment (Lazy Loading to prevent UI blocking)
+      enrichPapersBatch(arxivIdsToEnrich).then(openAlexData => {
+         setPapers(current => {
+            return current.map(p => {
+               if (openAlexData[p.id]) {
+                  return { ...p, openAlex: openAlexData[p.id] };
+               }
+               return p;
+            });
+         });
+         // Re-rank the feed now that we have semantic scores and citation data
+         // Small timeout to let React finish the state update above
+         setTimeout(() => reRankFeed(), 50);
+      }).catch(err => console.error("Lazy enrichment failed", err));
     } catch (err) {
       setError(err.message);
     } finally {

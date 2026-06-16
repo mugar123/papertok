@@ -1,13 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { getAuthorWikiInfo } from '../../services/wikiService';
 import { getAuthorPapers } from '../../services/arxivService';
-import { getAuthorProfile } from '../../services/openAlexService';
+import { getAuthorProfileExact } from '../../services/openAlexService';
 import { X, ChevronLeft, ExternalLink, Loader2, BookOpen, Award, Building2, UserPlus, UserCheck } from 'lucide-react';
 import { getCategoryLabel } from '../../data/categories';
 import { useAuth } from '../../context/AuthContext';
 import './AuthorPanel.css';
 
-export default function AuthorPanel({ authors, onClose, onOpenPdf }) {
+export default function AuthorPanel({ authors, onClose, onOpenPdf, sourceArxivId = null }) {
   const [selectedAuthor, setSelectedAuthor] = useState(null);
   const [wikiInfo, setWikiInfo] = useState(null);
   const [papers, setPapers] = useState([]);
@@ -45,7 +45,7 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf }) {
       const [wiki, authorPapers, oaProfile] = await Promise.all([
         getAuthorWikiInfo(author),
         getAuthorPapers(author, 10),
-        getAuthorProfile(author)
+        getAuthorProfileExact(author, sourceArxivId)
       ]);
       setWikiInfo(wiki);
       setPapers(authorPapers || []);

@@ -358,7 +358,7 @@ const PaperCard = memo(function PaperCard({
           className="pc-authors" 
           onClick={(e) => {
             e.stopPropagation();
-            if (onOpenAuthors) onOpenAuthors(paper.authors || []);
+            if (onOpenAuthors) onOpenAuthors(paper.authors || [], paper.arxivId);
           }}
           style={{ cursor: onOpenAuthors ? 'pointer' : 'default' }}
         >
