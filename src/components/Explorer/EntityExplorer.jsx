@@ -308,43 +308,43 @@ export default function EntityExplorer() {
 
           {/* Stats Grid */}
           <div className="ehc-stats-grid">
-            {entity.works_count != null && (
+            {entity?.works_count != null && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.works_count.toLocaleString()}</span>
                 <span className="ehc-stat-label">Publicaciones</span>
               </div>
             )}
-            {entity.cited_by_count != null && (
+            {entity?.cited_by_count != null && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.cited_by_count.toLocaleString()}</span>
                 <span className="ehc-stat-label">Citas Totales</span>
               </div>
             )}
-            {entity.summary_stats?.h_index != null && (
+            {entity?.summary_stats?.h_index != null && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{entity.summary_stats.h_index}</span>
                 <span className="ehc-stat-label">H-Index</span>
               </div>
             )}
-            {entity.summary_stats?.['2yr_mean_citedness'] != null && (
+            {entity?.summary_stats?.['2yr_mean_citedness'] != null && (
               <div className="ehc-stat-box">
-                <span className="ehc-stat-value">{entity.summary_stats['2yr_mean_citedness'].toFixed(1)}</span>
+                <span className="ehc-stat-value">{Number(entity.summary_stats['2yr_mean_citedness']).toFixed(1)}</span>
                 <span className="ehc-stat-label">Impacto Reciente</span>
               </div>
             )}
           </div>
           
           {/* Wikipedia or external info */}
-          {(wikiInfo || entity.homepage_url) && (
+          {(wikiInfo || entity?.homepage_url) && (
             <div className="ehc-wiki">
               {wikiInfo && <p>{wikiInfo.extract}</p>}
               <div className="ehc-links">
-                {wikiInfo && (
+                {wikiInfo?.url && (
                   <a href={wikiInfo.url} target="_blank" rel="noopener noreferrer" className="ehc-link">
                     Wikipedia <ExternalLink size={14} />
                   </a>
                 )}
-                {entity.homepage_url && (
+                {entity?.homepage_url && (
                   <a href={entity.homepage_url} target="_blank" rel="noopener noreferrer" className="ehc-link">
                     Web Oficial <ExternalLink size={14} />
                   </a>
@@ -385,7 +385,7 @@ export default function EntityExplorer() {
           </div>
           {activeTab === 'papers' && (
              <button 
-                className={`filter-btn ${filters.category || filters.peerReviewed || filters.dateRange ? 'active' : ''}`} 
+                className={`filter-btn ${filters?.category || filters?.peerReviewed || filters?.dateRange ? 'active' : ''}`} 
                 onClick={() => setShowFilters(true)}
              >
                 <Filter size={16} />
