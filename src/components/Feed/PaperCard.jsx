@@ -5,7 +5,6 @@ import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
 import { useAuth } from '../../context/AuthContext';
 import { AnimatePresence } from 'framer-motion';
-import CitationGraphPanel from './CitationGraphPanel';
 import './PaperCard.css';
 
 // Pool of icons for the background constellation per area
@@ -48,7 +47,6 @@ const PaperCard = memo(function PaperCard({
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isMarkingRead, setIsMarkingRead] = useState(false);
-  const [showGraph, setShowGraph] = useState(false);
   const { followedAuthors } = useAuth();
   
   const hasFollowedAuthor = useMemo(() => {
@@ -490,13 +488,6 @@ const PaperCard = memo(function PaperCard({
           <span>Leer</span>
         </button>
 
-        <button className="pc-side-btn" onClick={(e) => { e.stopPropagation(); setShowGraph(true); }}>
-          <div className="pc-side-icon">
-            <Network size={24} />
-          </div>
-          <span>Grafo</span>
-        </button>
-
         <button className="pc-side-btn pc-side-btn--skip" onClick={handleNotInterested}>
           <div className="pc-side-icon">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -526,16 +517,6 @@ const PaperCard = memo(function PaperCard({
           </svg>
         </div>
       </div>
-
-      <AnimatePresence>
-        {showGraph && (
-          <CitationGraphPanel 
-            paper={paper} 
-            onClose={() => setShowGraph(false)} 
-            onOpenPdf={onOpenPdf} 
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 });
