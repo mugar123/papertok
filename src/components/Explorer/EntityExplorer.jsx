@@ -1,9 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Lightbulb, Users, Loader2 } from 'lucide-react';
-import { getEntityById, getWorksByEntity, getArxivIdsForOpenAlexWorks } from '../../services/openAlexService';
+import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, FileText } from 'lucide-react';
+import { getEntityById, getWorksByEntity } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
-import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import './EntityExplorer.css';
 
@@ -15,8 +14,10 @@ export default function EntityExplorer() {
   const [papers, setPapers] = useState([]);
   const [isLoadingEntity, setIsLoadingEntity] = useState(true);
   const [isLoadingPapers, setIsLoadingPapers] = useState(false);
-  const [sortBy, setSortBy] = useState('cited_by_count:desc'); // 'cited_by_count:desc' or 'publication_date:desc'
+  const [sortBy, setSortBy] = useState('cited_by_count:desc');
   
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedPaper, setSelectedPaper] = useState(null);
 
   useEffect(() => {
@@ -50,6 +51,24 @@ export default function EntityExplorer() {
     }
     loadPapers();
   }, [type, id, entity, sortBy]);
+
+  const uniqueCategories = useMemo(() => {
+    const cats = new Set();
+    papers.forEach(p => {
+      if (p.primaryCategory) cats.add(p.primaryCategory);
+    });
+    return Array.from(cats).sort();
+  }, [papers]);
+
+  const filteredPapers = useMemo(() => {
+    return papers.filter(p => {
+      const q = searchQuery.toLowerCase();
+      const matchesSearch = p.title.toLowerCase().includes(q) || 
+                            p.authors.some(a => a.toLowerCase().includes(q));
+      const matchesCat = selectedCategory === 'All' || p.primaryCategory === selectedCategory;
+      return matchesSearch && matchesCat;
+    });
+  }, [papers, searchQuery, selectedCategory]);
 
   if (isLoadingEntity) {
     return (
@@ -91,7 +110,6 @@ export default function EntityExplorer() {
             <span className="ehc-type">{entityTypeLabel}</span>
             <h1 className="ehc-name">{entity.display_name}</h1>
             
-            {/* Conditional Metadata based on type */}
             {type === 'institution' && (
               <p className="ehc-meta">
                 {entity.geo?.city}, {entity.geo?.country} • {entity.works_count?.toLocaleString()} Obras globales
@@ -112,9 +130,17 @@ export default function EntityExplorer() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="explorer-filters">
-        <h3>Papers asociados ({papers.length})</h3>
+      {/* Toolbar (Search & Sort) */}
+      <div className="explorer-toolbar">
+        <div className="explorer-search-box">
+          <Search size={18} className="es-icon" />
+          <input 
+            type="text" 
+            placeholder="Buscar papers en esta entidad..." 
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+          />
+        </div>
         <div className="explorer-sort-toggle">
           <button 
             className={`sort-btn ${sortBy === 'cited_by_count:desc' ? 'active' : ''}`}
@@ -131,25 +157,55 @@ export default function EntityExplorer() {
         </div>
       </div>
 
-      {/* Feed */}
-      <div className="explorer-feed custom-scrollbar">
+      {/* Category Filters */}
+      {uniqueCategories.length > 0 && (
+        <div className="explorer-categories">
+          <button 
+            className={`ec-pill ${selectedCategory === 'All' ? 'active' : ''}`}
+            onClick={() => setSelectedCategory('All')}
+          >
+            Todos
+          </button>
+          {uniqueCategories.map(cat => (
+            <button 
+              key={cat}
+              className={`ec-pill ${selectedCategory === cat ? 'active' : ''}`}
+              onClick={() => setSelectedCategory(cat)}
+            >
+              {cat}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Feed (List View) */}
+      <div className="explorer-list custom-scrollbar">
         {isLoadingPapers ? (
           <div className="explorer-feed-loading">
             <Loader2 className="spinning" size={32} />
             <p>Cargando papers de arXiv...</p>
           </div>
-        ) : papers.length > 0 ? (
-          papers.map((paper, index) => (
-            <div key={paper.id + '-' + index} className="explorer-paper-wrapper">
-              <PaperCard 
-                paper={paper} 
-                onOpenPdf={() => setSelectedPaper(paper)} 
-              />
-            </div>
-          ))
+        ) : filteredPapers.length > 0 ? (
+          <div className="explorer-grid">
+            {filteredPapers.map((paper, index) => (
+              <div 
+                key={paper.id + '-' + index} 
+                className="explorer-list-item"
+                onClick={() => setSelectedPaper(paper)}
+              >
+                <div className="eli-header">
+                  <span className="eli-cat">{paper.primaryCategory}</span>
+                  <span className="eli-date">{new Date(paper.published).toLocaleDateString()}</span>
+                </div>
+                <h3 className="eli-title">{paper.title}</h3>
+                <p className="eli-authors">{paper.authors.join(', ')}</p>
+                <p className="eli-summary">{paper.summary.length > 200 ? paper.summary.substring(0, 200) + '...' : paper.summary}</p>
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="explorer-empty">
-            <p>No se encontraron papers en arXiv para esta entidad.</p>
+            <p>No se encontraron papers con estos filtros.</p>
           </div>
         )}
       </div>
