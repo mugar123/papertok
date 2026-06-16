@@ -403,8 +403,7 @@ export function FeedProvider({ children }) {
           });
         }
 
-        const arxivIdsToEnrich = coreToEnrich.map(p => p.id);
-        
+
         // Tag graph papers before deduplication
         graphPapers.forEach(p => p._isGraphCandidate = true);
         
@@ -519,6 +518,7 @@ export function FeedProvider({ children }) {
       feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
 
       // Asynchronous OpenAlex Enrichment (Lazy Loading to prevent UI blocking)
+      const arxivIdsToEnrich = nextPapers.map(p => p.id);
       enrichPapersBatch(arxivIdsToEnrich).then(openAlexData => {
          setPapers(current => {
             return current.map(p => {
