@@ -117,7 +117,7 @@ export default function SearchPage() {
                 {authorResults.slice(0, 3).map(author => {
                   const isFollowing = followedAuthors.includes(author.display_name);
                   return (
-                    <div key={author.id} className="search-result-author" onClick={() => setSelectedAuthor(author.display_name)}>
+                    <div key={author.id} className="search-result-author" onClick={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}>
                       <div className="sra-info">
                         <h3 className="sra-name">{author.display_name}</h3>
                         <p className="sra-inst">{author.institution || 'Institución desconocida'}</p>
@@ -142,7 +142,7 @@ export default function SearchPage() {
               <div className="search-section">
                 <h3 className="search-section-title"><Building2 size={16}/> Universidades e Instituciones</h3>
                 {institutionResults.slice(0, 3).map(inst => (
-                  <div key={inst.id} className="search-result-entity">
+                  <div key={inst.id} className="search-result-entity" onClick={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)} style={{ cursor: 'pointer' }}>
                     <div className="sre-info">
                       <h3 className="sre-name">{inst.display_name} {inst.country_code && `(${inst.country_code})`}</h3>
                       <p className="sre-desc">{inst.type ? inst.type.charAt(0).toUpperCase() + inst.type.slice(1) : 'Institución'}</p>
@@ -160,7 +160,7 @@ export default function SearchPage() {
               <div className="search-section">
                 <h3 className="search-section-title"><Lightbulb size={16}/> Áreas de Interés</h3>
                 {conceptResults.slice(0, 3).map(concept => (
-                  <div key={concept.id} className="search-result-entity">
+                  <div key={concept.id} className="search-result-entity" onClick={() => navigate(`/explorer/concept/${concept.id.split('/').pop()}`)} style={{ cursor: 'pointer' }}>
                     <div className="sre-info">
                       <h3 className="sre-name">{concept.display_name}</h3>
                       {concept.description && <p className="sre-desc">{concept.description}</p>}

@@ -11,6 +11,7 @@ import Navbar from './components/Layout/Navbar'
 import PDFViewer from './components/PDF/PDFViewer'
 import SaveToListModal from './components/Lists/SaveToListModal'
 import SearchPage from './components/Search/SearchPage'
+import EntityExplorer from './components/Explorer/EntityExplorer'
 import './App.css'
 
 function AppContent() {
@@ -55,6 +56,14 @@ function AppContent() {
           element={
             <ProtectedRoute>
               <SearchPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/explorer/:type/:id"
+          element={
+            <ProtectedRoute>
+              <EntityExplorer />
             </ProtectedRoute>
           }
         />

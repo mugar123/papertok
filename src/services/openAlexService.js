@@ -400,3 +400,50 @@ export async function searchConcepts(query) {
   }
   return [];
 }
+
+/**
+ * Fetch entity metadata by ID
+ */
+export async function getEntityById(type, id) {
+  if (!id) return null;
+  const endpoint = type === 'institution' ? 'institutions' : type === 'concept' ? 'concepts' : 'authors';
+  const cleanId = id.includes('/') ? id.split('/').pop() : id;
+  const url = `https://api.openalex.org/${endpoint}/${cleanId}`;
+  
+  try {
+    const response = await fetchWithTimeout(url, 10000);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (err) {
+    console.error(`OpenAlex getEntityById failed for ${type} ${id}`, err);
+    return null;
+  }
+}
+
+/**
+ * Fetch works for a specific entity
+ * type: 'institution', 'concept', 'author'
+ * sortBy: 'cited_by_count:desc' or 'publication_date:desc'
+ */
+export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc') {
+  if (!id) return [];
+  
+  const filterKey = type === 'institution' ? 'institutions.id' : type === 'concept' ? 'concepts.id' : 'author.id';
+  const cleanId = id.includes('/') ? id.split('/').pop() : id;
+  const filterParams = `${filterKey}:${cleanId},has_arxiv:true`;
+  
+  const url = `https://api.openalex.org/works?filter=${filterParams}&sort=${sortBy}&per-page=30&select=id,ids`;
+  
+  try {
+    const response = await fetchWithTimeout(url, 10000);
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    if (data && data.results) {
+       return data.results.map(work => work.id);
+    }
+  } catch (err) {
+    console.error(`OpenAlex getWorksByEntity failed for ${type} ${id}`, err);
+  }
+  return [];
+}
