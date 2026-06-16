@@ -140,7 +140,6 @@ function parseRss2Json(data) {
     .filter(Boolean);
 }
 
-let fetchQueue = Promise.resolve();
 let lastFetchTime = 0;
 
 /**
@@ -160,51 +159,54 @@ async function fetchArxivData(url) {
     }
   }
 
-  // Enqueue to avoid heavy concurrent requests
-  return new Promise((resolve) => {
-    fetchQueue = fetchQueue.then(async () => {
-      const now = Date.now();
-      const timeSinceLast = now - lastFetchTime;
-      if (timeSinceLast < 1100) {
-        await new Promise(r => setTimeout(r, 1100 - timeSinceLast));
-      }
-      lastFetchTime = Date.now();
+  // Without fetchQueue, requests run in parallel.
+  // This prevents one slow proxy (like allorigins) from delaying the entire feed by 30+ seconds.
+  try {
+    // 1. Try corsproxy.io (fast, raw XML, keeps all authors)
+    const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+    const response = await fetchWithTimeout(proxyUrl, 6000);
+    
+    if (response.ok) {
+       const xmlText = await response.text();
+       const parsed = parseArxivXml(xmlText);
+       if (parsed.length > 0) {
+         return parsed;
+       }
+    }
+  } catch (e) {
+    console.warn('corsproxy failed', e);
+  }
 
-      try {
-        // Strip out parentheses to help some proxies
-        const cleanUrl = url.replace(/[\(\)]/g, '');
-        // 1. Try allorigins first (keeps all authors)
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(cleanUrl)}`;
-        const response = await fetchWithTimeout(proxyUrl, 6000);
+  try {
+    // Strip out parentheses to help some proxies
+    const cleanUrl = url.replace(/[\(\)]/g, '');
+    // 2. Try allorigins (keeps all authors)
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(cleanUrl)}`;
+    const response = await fetchWithTimeout(proxyUrl, 6000);
         
         if (response.ok) {
            const data = await response.json();
            if (data.contents) {
-             resolve(parseArxivXml(data.contents));
-             return;
+             const parsed = parseArxivXml(data.contents);
+             if (parsed.length > 0) return parsed;
            }
         }
       } catch (e) {
         console.warn('allorigins failed, trying rss2json', e);
       }
       
-      // 2. Fallback to rss2json (fast, but drops co-authors)
+      // 3. Fallback to rss2json (fast, but drops co-authors)
       try {
         const cleanUrl = url.replace(/[\(\)]/g, '');
         const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(cleanUrl)}`;
         const response = await fetchWithTimeout(proxyUrl, 8000);
         if (!response.ok) throw new Error(`arXiv API error via rss2json: ${response.status}`);
         const data = await response.json();
-        resolve(parseRss2Json(data));
+        return parseRss2Json(data);
       } catch (e) {
         console.error('All proxies failed', e);
-        resolve([]);
+        return [];
       }
-    }).catch(e => {
-      console.error('Queue error', e);
-      resolve([]);
-    });
-  });
 }
 
 /**
