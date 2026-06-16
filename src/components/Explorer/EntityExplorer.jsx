@@ -373,7 +373,7 @@ export default function EntityExplorer() {
             <Search size={16} className="es-icon" />
             <input 
               type="text" 
-              placeholder={`Filtrar ${activeTab === 'papers' ? 'papers' : 'autores'} por nombre...`}
+              placeholder={`Buscar ${activeTab === 'papers' ? 'papers' : 'autores'} de esta ${type === 'institution' ? 'universidad' : type === 'concept' ? 'área' : 'persona'}...`}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -440,7 +440,7 @@ export default function EntityExplorer() {
                 <div 
                   key={`${paper.id}-${idx}`} 
                   className="explorer-list-item"
-                  onClick={() => setPdfPaperToView(paper)}
+                  onClick={() => setSelectedPaper(paper)}
                   style={{ '--i': idx }}
                 >
                   <div className="eli-header">
@@ -456,10 +456,21 @@ export default function EntityExplorer() {
               ))}
               
               {isLoadingPapers && !isFetchingMore && (
-                <div className="explorer-grid-loading">
-                  <Loader2 className="spinning" size={32} />
-                  <span>Buscando papers...</span>
-                </div>
+                <>
+                  {[1, 2, 3, 4, 5].map((n) => (
+                    <div key={`skeleton-${n}`} className="explorer-list-item skeleton-item">
+                      <div className="eli-header">
+                        <div className="skeleton-pill"></div>
+                        <div className="skeleton-text short"></div>
+                      </div>
+                      <div className="skeleton-title"></div>
+                      <div className="skeleton-title short"></div>
+                      <div className="skeleton-text"></div>
+                      <div className="skeleton-text long"></div>
+                      <div className="skeleton-text medium"></div>
+                    </div>
+                  ))}
+                </>
               )}
             </div>
             
@@ -534,25 +545,47 @@ export default function EntityExplorer() {
               <div className="ee-filter-body">
                 <div className="ee-filter-section">
                   <h4>Categoría (Área)</h4>
-                  <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})}>
-                    <option value="">Todas</option>
+                  <div className="ee-filter-chips">
+                    <button 
+                      className={`ee-filter-chip ${filters.category === '' ? 'active' : ''}`}
+                      onClick={() => setFilters({...filters, category: ''})}
+                    >
+                      Todas
+                    </button>
                     {Object.entries(CATEGORIES).map(([key, cat]) => (
-                      <option key={key} value={key}>{cat.label}</option>
+                      <button 
+                        key={key} 
+                        className={`ee-filter-chip ${filters.category === key ? 'active' : ''}`}
+                        onClick={() => setFilters({...filters, category: key})}
+                      >
+                        {cat.label}
+                      </button>
                     ))}
-                  </select>
+                  </div>
                 </div>
                 <div className="ee-filter-section">
                   <h4>Fecha de Publicación</h4>
-                  <select value={filters.dateRange} onChange={e => setFilters({...filters, dateRange: e.target.value})}>
-                    <option value="">Cualquier fecha</option>
-                    <option value="last_year">Último año</option>
-                    <option value="last_5_years">Últimos 5 años</option>
-                  </select>
+                  <div className="ee-filter-chips">
+                    {['', 'last_year', 'last_5_years'].map(val => (
+                      <button 
+                        key={val}
+                        className={`ee-filter-chip ${filters.dateRange === val ? 'active' : ''}`}
+                        onClick={() => setFilters({...filters, dateRange: val})}
+                      >
+                        {val === '' ? 'Cualquier fecha' : val === 'last_year' ? 'Último año' : 'Últimos 5 años'}
+                      </button>
+                    ))}
+                  </div>
                 </div>
                 <div className="ee-filter-section">
                   <label className="ee-toggle-label">
-                    <input type="checkbox" checked={filters.peerReviewed} onChange={e => setFilters({...filters, peerReviewed: e.target.checked})} />
-                    Solo revisados por pares (Peer Reviewed)
+                    <input 
+                      type="checkbox" 
+                      checked={filters.peerReviewed} 
+                      onChange={e => setFilters({...filters, peerReviewed: e.target.checked})} 
+                    />
+                    <div className="ee-toggle-switch"></div>
+                    Solo revisados por pares
                   </label>
                 </div>
               </div>

@@ -515,6 +515,43 @@
   transform: scale(0.99);
 }
 
+/* ─── Skeleton Loading ─── */
+.skeleton-item {
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.01) !important;
+  border-color: rgba(255, 255, 255, 0.02) !important;
+  animation: pulseGlow 1.5s infinite alternate !important;
+}
+
+.skeleton-pill {
+  width: 80px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+}
+
+.skeleton-text {
+  height: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  margin-bottom: 8px;
+  width: 100%;
+}
+
+.skeleton-text.short { width: 40%; }
+.skeleton-text.medium { width: 70%; }
+.skeleton-text.long { width: 90%; }
+
+.skeleton-title {
+  height: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  margin-bottom: 12px;
+  width: 85%;
+}
+
+.skeleton-title.short { width: 60%; margin-bottom: 20px; }
+
 .eli-header {
   display: flex;
   align-items: center;
@@ -849,6 +886,74 @@
   color: var(--text-secondary);
   font-weight: 600;
   cursor: pointer;
+}
+
+.ee-filter-reset:hover {
+  background: rgba(255,255,255,0.1);
+  color: white;
+}
+
+.ee-filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ee-filter-chip {
+  padding: 8px 14px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.ee-filter-chip:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--text-primary);
+}
+
+.ee-filter-chip.active {
+  background: rgba(124, 58, 237, 0.2);
+  border-color: var(--accent-primary, #7c3aed);
+  color: var(--accent-primary, #7c3aed);
+}
+
+.ee-toggle-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 20px;
+  transition: all 0.3s;
+  flex-shrink: 0;
+}
+
+.ee-toggle-label input:checked + .ee-toggle-switch {
+  background: var(--accent-primary, #7c3aed);
+}
+
+.ee-toggle-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  background: white;
+  border-radius: 50%;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.ee-toggle-label input:checked + .ee-toggle-switch::after {
+  transform: translateX(18px);
+}
+
+.ee-toggle-label input {
+  display: none;
 }
 
 .ee-filter-apply {
