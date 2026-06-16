@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, FileText } from 'lucide-react';
 import { getEntityById, getWorksByEntity } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
+import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import './EntityExplorer.css';
 
@@ -19,6 +20,7 @@ export default function EntityExplorer() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedPaper, setSelectedPaper] = useState(null);
+  const [pdfUrlToView, setPdfUrlToView] = useState(null);
 
   useEffect(() => {
     async function loadEntity() {
@@ -210,9 +212,29 @@ export default function EntityExplorer() {
         )}
       </div>
 
-      {selectedPaper && (
+      {/* Paper Card Overlay */}
+      {selectedPaper && !pdfUrlToView && (
         <div className="explorer-overlay">
-          <PDFViewer pdfUrl={selectedPaper.pdfUrl} onClose={() => setSelectedPaper(null)} />
+          <button 
+            className="explorer-overlay-close" 
+            onClick={() => setSelectedPaper(null)}
+            style={{ position: 'absolute', top: 'max(20px, env(safe-area-inset-top))', left: '20px', zIndex: 1000, background: 'rgba(0,0,0,0.5)', border: 'none', borderRadius: '50%', width: '44px', height: '44px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', cursor: 'pointer', backdropFilter: 'blur(10px)' }}
+          >
+            <ArrowLeft size={24} />
+          </button>
+          <div style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
+            <PaperCard 
+              paper={selectedPaper} 
+              onOpenPdf={(paper) => setPdfUrlToView(paper.pdfUrl)} 
+            />
+          </div>
+        </div>
+      )}
+
+      {/* PDF Viewer Overlay */}
+      {pdfUrlToView && (
+        <div className="explorer-overlay" style={{ zIndex: 1001 }}>
+          <PDFViewer pdfUrl={pdfUrlToView} onClose={() => setPdfUrlToView(null)} />
         </div>
       )}
     </div>
