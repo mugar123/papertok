@@ -247,6 +247,7 @@ const PaperCard = memo(function PaperCard({
   const isVerified = Boolean(
     paper.doi || 
     paper.journalRef || 
+    paper.isPeerReviewed ||
     (paper.openAlex && paper.openAlex.primary_location && paper.openAlex.primary_location.source && paper.openAlex.primary_location.source.type === 'journal')
   );
 

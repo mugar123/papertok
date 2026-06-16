@@ -55,7 +55,7 @@ export async function enrichPapersBatch(arxivIds) {
        const cleanId = id.replace(/v\d+$/, '');
        return [`http://arxiv.org/abs/${cleanId}`, `https://arxiv.org/abs/${cleanId}`];
     }).join('|');
-    const url = `https://api.openalex.org/works?filter=locations.landing_page_url:${encodeURIComponent(filterIds)}&per-page=50&select=doi,ids,concepts,cited_by_count,related_works,locations`;
+    const url = `https://api.openalex.org/works?filter=locations.landing_page_url:${encodeURIComponent(filterIds)}&per-page=50&select=doi,ids,concepts,cited_by_count,related_works,locations,primary_location`;
     
     let response = null;
     let primaryFailed = false;
@@ -105,7 +105,8 @@ export async function enrichPapersBatch(arxivIds) {
                const enriched = {
                  concepts: work.concepts || [],
                  cited_by_count: work.cited_by_count || 0,
-                 related_works: work.related_works || []
+                 related_works: work.related_works || [],
+                 isPeerReviewed: work.primary_location?.is_published || false
                };
                CACHE.set(arxivId, enriched);
                result[arxivId] = enriched;
@@ -540,7 +541,7 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
   
   // Advanced Filters
   if (filters.peerReviewed) {
-    filterParams += ',is_peer_reviewed:true';
+    filterParams += ',primary_location.is_published:true';
   }
   if (filters.category) {
     const prefix = filters.category.split('.')[0];
