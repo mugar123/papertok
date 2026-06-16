@@ -43,8 +43,6 @@ function parseArxivXml(xmlText) {
 
     const title = (entry.querySelector('title')?.textContent || '').replace(/\s+/g, ' ').trim();
     const summary = (entry.querySelector('summary')?.textContent || '').replace(/\s+/g, ' ').trim();
-    const published = safeDateISO(entry.querySelector('published')?.textContent || '');
-    const updated = safeDateISO(entry.querySelector('updated')?.textContent || '');
 
     const authorElements = entry.querySelectorAll('author');
     const authors = [];
@@ -73,9 +71,15 @@ function parseArxivXml(xmlText) {
       if (term) allCategories.push(term);
     });
 
-    const doi = entry.querySelector('doi')?.textContent || '';
-    const journalRef = entry.querySelector('journal_ref')?.textContent || '';
-    const comment = entry.querySelector('comment')?.textContent || '';
+    const doi = entry.querySelector('doi')?.textContent || entry.getElementsByTagName('arxiv:doi')[0]?.textContent || entry.getElementsByTagNameNS('*', 'doi')[0]?.textContent || '';
+    const journalRef = entry.querySelector('journal_ref')?.textContent || entry.getElementsByTagName('arxiv:journal_ref')[0]?.textContent || entry.getElementsByTagNameNS('*', 'journal_ref')[0]?.textContent || '';
+    const comment = entry.querySelector('comment')?.textContent || entry.getElementsByTagName('arxiv:comment')[0]?.textContent || entry.getElementsByTagNameNS('*', 'comment')[0]?.textContent || '';
+
+    // Fix for published and updated just in case
+    const publishedRaw = entry.querySelector('published')?.textContent || entry.getElementsByTagNameNS('*', 'published')[0]?.textContent || '';
+    const updatedRaw = entry.querySelector('updated')?.textContent || entry.getElementsByTagNameNS('*', 'updated')[0]?.textContent || '';
+    const published = safeDateISO(publishedRaw);
+    const updated = safeDateISO(updatedRaw);
 
     papers.push({
       id: arxivId, arxivId, title, summary, published, updated,

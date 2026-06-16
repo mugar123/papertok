@@ -233,6 +233,11 @@ const PaperCard = memo(function PaperCard({
 
   const categoryLabel = getCategoryLabel(paper.primaryCategory);
   const readTime = getReadTime(paper.summary);
+  const isVerified = Boolean(
+    paper.doi || 
+    paper.journalRef || 
+    (paper.openAlex && paper.openAlex.primary_location && paper.openAlex.primary_location.source && paper.openAlex.primary_location.source.type === 'journal')
+  );
 
   return (
     <div ref={cardRef} className={`pc ${isMarkingRead ? 'pc--fade-out' : ''}`} onClick={handleDoubleTap}>
@@ -316,7 +321,7 @@ const PaperCard = memo(function PaperCard({
           <span className="pc-date">{formatDate(paper.published)}</span>
           <span className="pc-meta-dot">·</span>
           <span className="pc-readtime" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Clock size={12} /> {readTime} min
+            <Clock size={12} /> {readTime} min de lectura
           </span>
           {paper.openAlex && paper.openAlex.cited_by_count > 0 && (
             <>
@@ -371,10 +376,10 @@ const PaperCard = memo(function PaperCard({
           </div>
           <div className="pc-author-names" style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
             <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatAuthors(paper.authors)}</span>
-            {(paper.doi || paper.journalRef) && (
+            {isVerified && (
               <div 
                 className="pc-tooltip" 
-                data-tooltip="Este artículo está verificado" 
+                data-tooltip="Publicado en revista (Peer-reviewed)" 
                 style={{ display: 'flex' }}
               >
                 <BadgeCheck 
@@ -386,7 +391,7 @@ const PaperCard = memo(function PaperCard({
             )}
           </div>
           {/* Verification Ticker moved to the right of authors */}
-          {(paper.doi || paper.journalRef) && (
+          {isVerified && (
             <div 
               className={`pc-journal-ticker ${paper.doi ? 'pc-journal-ticker--clickable' : ''}`}
               onClick={(e) => {
@@ -396,7 +401,7 @@ const PaperCard = memo(function PaperCard({
             >
               <div className="pc-journal-ticker-text-wrapper">
                 <div className="pc-journal-ticker-text">
-                  <span>{paper.journalRef ? `Publicado en ${paper.journalRef}` : 'Peer-reviewed'} {paper.doi && `• DOI: ${paper.doi}`}</span>
+                  <span>{paper.journalRef ? `Publicado en ${paper.journalRef}` : (paper.openAlex?.primary_location?.source?.display_name ? `Publicado en ${paper.openAlex.primary_location.source.display_name}` : 'Peer-reviewed')} {paper.doi && `• DOI: ${paper.doi}`}</span>
                 </div>
               </div>
             </div>

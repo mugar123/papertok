@@ -130,7 +130,7 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf, sourceArxivId
               ) : (
                 <>
                   {/* OpenAlex Stats Section */}
-                  {openAlexProfile && (
+                  {openAlexProfile && !openAlexProfile.id?.startsWith('stub-') && (
                     <div className="ap-openalex-card">
                       {openAlexProfile.institution && (
                         <div className="ap-oa-institution">
@@ -148,7 +148,7 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf, sourceArxivId
                           <span className="ap-oa-stat-label">Publicaciones</span>
                         </div>
                         <div className="ap-oa-stat">
-                          <span className="ap-oa-stat-value">{openAlexProfile.cited_by_count.toLocaleString()}</span>
+                          <span className="ap-oa-stat-value">{openAlexProfile.cited_by_count?.toLocaleString() || 0}</span>
                           <span className="ap-oa-stat-label">Citas Totales</span>
                         </div>
                       </div>
