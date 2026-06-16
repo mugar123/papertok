@@ -60,8 +60,12 @@ export function FeedProvider({ children }) {
     }
     
     let prefScore = 0;
-    if (userPreferences && userPreferences.includes(paper.primaryCategory)) {
-      prefScore = 100;
+    if (userPreferences) {
+      if (userPreferences.includes(paper.primaryCategory)) {
+        prefScore = 100;
+      } else if (paper.allCategories && paper.allCategories.some(cat => userPreferences.includes(cat))) {
+        prefScore = 80;
+      }
     }
     
     let authorBoost = 0;
@@ -365,16 +369,16 @@ export function FeedProvider({ children }) {
         // 1. User Preferences (60% ~ 15 papers)
         const exploitPapers = await fetchPapers(userPreferences, currentPage * 15, 15, queryMode).catch(() => []);
         
-        // 2. Trending (15% ~ 5 papers)
+        // 2. Trending (15% ~ 3 papers)
         let trendingPapers = [];
         if (trendingCategories.length > 0) {
-          trendingPapers = await fetchPapers(trendingCategories, currentPage * 5, 5, queryMode).catch(() => []);
+          trendingPapers = await fetchPapers(trendingCategories, currentPage * 3, 3, queryMode).catch(() => []);
         }
         
-        // 3. Random (10% ~ 5 papers)
+        // 3. Random (10% ~ 2 papers)
         let randomPapers = [];
         if (randomCats.length > 0) {
-          randomPapers = await fetchPapers(randomCats, currentPage * 5, 5, queryMode).catch(() => []);
+          randomPapers = await fetchPapers(randomCats, currentPage * 2, 2, queryMode).catch(() => []);
         }
 
         // 4. Graph/Related (15% ~ 5 papers)
