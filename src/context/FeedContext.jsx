@@ -50,6 +50,7 @@ export function FeedProvider({ children }) {
   const categoryCooldowns = useRef({});
   const conceptAffinities = useRef({});
   const relatedCandidates = useRef([]);
+  const temporalPreference = useRef(0); // -1 (classic) to +1 (recent)
 
   // --- TIKTOK-STYLE SCORING & RE-RANKING ---
   const calculateAndAttachScore = useCallback((paper) => {
@@ -70,8 +71,18 @@ export function FeedProvider({ children }) {
       }
     }
     
+    const pref = temporalPreference.current || 0;
     const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
-    const recencyBoost = Math.max(0, 20 * Math.exp(-daysOld / 3)); // 3-day half-life for highly dynamic feed
+    
+    // Weak recency adjustment. Max 5 points. Half-life 7 days.
+    // If pref = -1, recency is 0. If pref = 1, recency is doubled (10 points).
+    const recencyBoost = Math.max(0, 5 * Math.exp(-daysOld / 7)) * (1 + pref);
+    
+    // Classic boost: If pref < 0, older papers with citations get a bonus
+    let classicBoost = 0;
+    if (pref < 0 && daysOld > 365 && paper.openAlex && paper.openAlex.cited_by_count > 10) {
+       classicBoost = Math.abs(pref) * Math.log10(paper.openAlex.cited_by_count) * 5;
+    }
     
     let semanticScore = 0;
     let citationBoost = 0;
@@ -103,7 +114,7 @@ export function FeedProvider({ children }) {
       }
     }
     
-    const baseScore = affinityScore + prefScore + recencyBoost + semanticScore + citationBoost + graphBoost + authorBoost;
+    const baseScore = affinityScore + prefScore + recencyBoost + classicBoost + semanticScore + citationBoost + graphBoost + authorBoost;
     const finalScore = baseScore * cooldownMultiplier;
     
     paper._dynamicScore = finalScore;
@@ -113,6 +124,7 @@ export function FeedProvider({ children }) {
       affinity: affinityScore,
       preference: prefScore,
       recency: recencyBoost,
+      classicBoost: classicBoost,
       semantic: semanticScore,
       citations: citationBoost,
       graphBoost: graphBoost,
@@ -350,8 +362,9 @@ export function FeedProvider({ children }) {
         // Instead of making 4 parallel requests, we combine them into a single RSS/Atom request.
         const combinedCats = Array.from(new Set([...userPreferences, ...trendingCategories, ...randomCats]));
         
+        const queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';
         const promises = [
-          fetchPapers(combinedCats, currentPage * 25, 30, 'recent').catch(e => { console.warn('Combined fetch failed', e); return []; })
+          fetchPapers(combinedCats, currentPage * 25, 30, queryMode).catch(e => { console.warn('Combined fetch failed', e); return []; })
         ];
 
         if (candidatesToFetch.length > 0) {
@@ -625,6 +638,11 @@ export function FeedProvider({ children }) {
            conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + 1;
         });
       }
+      
+      // Update temporal preference
+      const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
+      if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.1);
+      else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.1);
     }
     setLikedPaperIds(newLiked);
     reRankFeed();
@@ -742,6 +760,12 @@ export function FeedProvider({ children }) {
          conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + (Math.min(timeInSeconds, 60) * 0.05);
       });
     }
+    // Update temporal preference on high dwell time
+    if (timeInSeconds >= 10) {
+      const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
+      if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.05);
+      else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.05);
+    }
     if (timeInSeconds >= 3.0) {
       reRankFeed(paper.id);
     }
@@ -828,13 +852,22 @@ export function FeedProvider({ children }) {
   }, [user]);
 
   const markSaved = useCallback((paperId) => {
+    // Attempt to update temporal preference
+    const paper = papers.find(p => p.id === paperId);
+    if (paper) {
+      if (paper.primaryCategory) categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) + 8;
+      const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
+      if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.15);
+      else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.15);
+    }
+    
     setSavedPaperIds((prev) => {
       const next = new Set(prev);
       next.add(paperId);
       if (IS_DEMO) demoSet('savedPaperIds', Array.from(next));
       return next;
     });
-  }, []);
+  }, [papers]);
 
   const unmarkAsRead = useCallback(async (paperId) => {
     if (!user) return;

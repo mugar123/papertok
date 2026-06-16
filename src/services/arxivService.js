@@ -226,15 +226,17 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
     searchQuery = categoriesOrQuery;
   }
 
-  const sortBy = sortByOverride;
+  const sortBy = mode === 'relevance' ? 'relevance' : sortByOverride;
 
   const params = new URLSearchParams({
     search_query: searchQuery,
     start: start.toString(),
     max_results: maxResults.toString(),
     sortBy,
-    sortOrder: 'descending',
   });
+  if (sortBy !== 'relevance') {
+    params.append('sortOrder', 'descending');
+  }
 
   const baseUrl = isDev ? ARXIV_DEV : ARXIV_PROD;
   const url = `${baseUrl}?${params.toString()}`;

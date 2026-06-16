@@ -66,28 +66,17 @@ export default function Navbar() {
               setFeedMode('top');
             }}
           >
-            Destacados
-          </button>
-          
-          <button 
-            className={`navbar-tab ${!isListsActive && feedMode === 'recent' ? 'active' : ''}`}
-            onClick={() => {
-              if (isListsActive) navigate('/');
-              setFeedMode('recent');
-            }}
-          >
-            Recientes
+            Para ti
           </button>
           
           {/* Slider indicator */}
           <div 
             className="navbar-slider" 
             style={{ 
+              width: '50%',
               transform: isListsActive 
                 ? 'translateX(0)' 
-                : (!isListsActive && feedMode === 'top') 
-                  ? 'translateX(100%)' 
-                  : 'translateX(200%)' 
+                : 'translateX(100%)' 
             }} 
           />
         </div>
