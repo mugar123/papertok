@@ -210,9 +210,23 @@ export async function getAuthorProfileExact(authorName, arxivId) {
   if (!arxivId) return getAuthorProfile(authorName);
   
   try {
-    // 1. Fetch the exact work from OpenAlex using the arXiv ID
-    const workUrl = `https://api.openalex.org/works/arxiv:${arxivId}`;
-    const workResponse = await fetchWithTimeout(workUrl, 10000);
+    // 1. Fetch the exact work from OpenAlex using the arXiv pseudo-DOI
+    const cleanArxivId = arxivId.replace(/v\d+$/, '');
+    const workUrl = `https://api.openalex.org/works/doi:10.48550/arxiv.${cleanArxivId}`;
+    let workResponse = await fetchWithTimeout(workUrl, 8000).catch(() => null);
+
+    // If direct fetch fails (sometimes OpenAlex drops pseudo-DOIs), fallback to a filter search
+    if (!workResponse || !workResponse.ok) {
+       const searchUrl = `https://api.openalex.org/works?filter=doi:10.48550/arxiv.${cleanArxivId}`;
+       const searchRes = await fetchWithTimeout(searchUrl, 8000).catch(() => null);
+       if (searchRes && searchRes.ok) {
+          const data = await searchRes.json();
+          if (data.results && data.results.length > 0) {
+             // We mock a successful workResponse to reuse the logic below
+             workResponse = { ok: true, json: async () => data.results[0] };
+          }
+       }
+    }
     
     if (workResponse.ok) {
       const workData = await workResponse.json();
