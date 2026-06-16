@@ -18,6 +18,16 @@ const AREA_BG_ICONS = {
   'q-fin': [CircleDollarSign, TrendingUp, BarChart2, Network, Sigma, Activity],
 };
 
+const processLatex = (text) => {
+  if (!text) return '';
+  // 1. Remove newlines that break latex parsing
+  let processed = text.replace(/\n+/g, ' ');
+  // 2. Escape unescaped % signs to prevent them from acting as LaTeX comments
+  // This uses a regex that matches % not preceded by \
+  processed = processed.replace(/(^|[^\\])%/g, '$1\\%');
+  return processed;
+};
+
 const PaperCard = memo(function PaperCard({ 
   paper, 
   isLiked, 
@@ -319,10 +329,7 @@ const PaperCard = memo(function PaperCard({
           )}
           <span className="pc-meta-dot">·</span>
           <span className="pc-date">{formatDate(paper.published)}</span>
-          <span className="pc-meta-dot">·</span>
-          <span className="pc-readtime" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Clock size={12} /> {readTime} min de lectura
-          </span>
+
           {paper.openAlex && paper.openAlex.cited_by_count > 0 && (
             <>
               <span className="pc-meta-dot">·</span>
@@ -355,7 +362,7 @@ const PaperCard = memo(function PaperCard({
 
         {/* Title */}
         <h2 className="pc-title">
-          <Latex>{paper.title}</Latex>
+          <Latex>{processLatex(paper.title)}</Latex>
         </h2>
 
         {/* Authors */}
@@ -414,7 +421,7 @@ const PaperCard = memo(function PaperCard({
           className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''}`}
           onClick={(e) => toggleExpanded(e, !expanded)}
         >
-          <p><Latex>{paper.summary}</Latex></p>
+          <p><Latex>{processLatex(paper.summary)}</Latex></p>
           {!expanded && paper.summary && paper.summary.length > 200 && (
             <div className="pc-abstract-fade" />
           )}
