@@ -338,6 +338,7 @@
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(255, 255, 255, 0.2);
   box-shadow: 0 0 0 4px rgba(124, 58, 237, 0.15);
+  outline: none;
 }
 
 .es-icon {
@@ -374,6 +375,9 @@
   color: var(--text-primary);
   font-size: 0.9rem;
   outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
   width: 100%;
 }
 

@@ -72,6 +72,9 @@
   color: white;
   font-size: 0.95rem;
   outline: none;
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .search-input::placeholder {
