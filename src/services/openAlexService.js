@@ -572,11 +572,17 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
     if (data && data.results) {
        const arxivIds = [];
        data.results.forEach(work => {
-         const arxivLoc = work.locations?.find(loc => loc.source?.id === 'https://openalex.org/S4306400194');
-         if (arxivLoc && arxivLoc.landing_page_url) {
-            const match = arxivLoc.landing_page_url.match(/arxiv\.org\/abs\/([^/?#]+)/);
-            if (match) arxivIds.push(match[1]);
-         }
+           if (work.locations) {
+               const arxivLoc = work.locations.find(loc => loc.source && loc.source.id === 'https://openalex.org/S4306400194');
+               if (arxivLoc && arxivLoc.landing_page_url) {
+                   const rawId = arxivLoc.landing_page_url.split('/').pop();
+                   const arxivId = rawId.replace(/^arxiv\./i, '').replace(/v\d+$/, '');
+                   const isValidArxivId = /^\d{4}\.\d{4,5}$/.test(arxivId) || /^[a-z\-]+\/\d{7}$/i.test(arxivId);
+                   if (arxivId && arxivId !== 'arxiv.org' && isValidArxivId) {
+                       arxivIds.push(arxivId);
+                   }
+               }
+           }
        });
        return { arxivIds, total: data.meta ? data.meta.count : 0 };
     }
