@@ -339,3 +339,64 @@ export async function searchAuthors(query) {
   }
   return [];
 }
+
+/**
+ * Search institutions by name.
+ * @param {string} query 
+ * @returns {Promise<Array>}
+ */
+export async function searchInstitutions(query) {
+  if (!query) return [];
+  const cleanQuery = encodeURIComponent(query.trim());
+  const url = `https://api.openalex.org/institutions?search=${cleanQuery}&per-page=5`;
+  
+  try {
+    const response = await fetchWithTimeout(url, 10000);
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    if (data && data.results) {
+      return data.results.map(inst => ({
+        id: inst.id,
+        display_name: inst.display_name,
+        country_code: inst.geo?.country_code,
+        works_count: inst.works_count || 0,
+        cited_by_count: inst.cited_by_count || 0,
+        type: inst.type
+      }));
+    }
+  } catch (err) {
+    console.error("OpenAlex searchInstitutions failed", err);
+  }
+  return [];
+}
+
+/**
+ * Search concepts (fields of study) by name.
+ * @param {string} query 
+ * @returns {Promise<Array>}
+ */
+export async function searchConcepts(query) {
+  if (!query) return [];
+  const cleanQuery = encodeURIComponent(query.trim());
+  const url = `https://api.openalex.org/concepts?search=${cleanQuery}&per-page=5`;
+  
+  try {
+    const response = await fetchWithTimeout(url, 10000);
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    if (data && data.results) {
+      return data.results.map(concept => ({
+        id: concept.id,
+        display_name: concept.display_name,
+        level: concept.level,
+        description: concept.description,
+        works_count: concept.works_count || 0
+      }));
+    }
+  } catch (err) {
+    console.error("OpenAlex searchConcepts failed", err);
+  }
+  return [];
+}

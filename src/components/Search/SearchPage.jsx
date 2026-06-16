@@ -1,8 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
-import { Search, FileText, Users, Loader2, ArrowLeft } from 'lucide-react';
+import { Search, FileText, Users, Loader2, ArrowLeft, Building2, Lightbulb } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { searchPapers } from '../../services/arxivService';
-import { searchAuthors } from '../../services/openAlexService';
+import { searchAuthors, searchInstitutions, searchConcepts } from '../../services/openAlexService';
 import { useAuth } from '../../context/AuthContext';
 import AuthorPanel from '../Feed/AuthorPanel';
 import PDFViewer from '../PDF/PDFViewer';
@@ -13,11 +13,12 @@ export default function SearchPage() {
   const { followedAuthors, toggleFollowAuthor } = useAuth();
   
   const [query, setQuery] = useState('');
-  const [activeTab, setActiveTab] = useState('papers'); // 'papers' or 'authors'
   const [isSearching, setIsSearching] = useState(false);
   
   const [paperResults, setPaperResults] = useState([]);
   const [authorResults, setAuthorResults] = useState([]);
+  const [institutionResults, setInstitutionResults] = useState([]);
+  const [conceptResults, setConceptResults] = useState([]);
   
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [selectedAuthor, setSelectedAuthor] = useState(null);
@@ -28,6 +29,8 @@ export default function SearchPage() {
     if (!query.trim()) {
       setPaperResults([]);
       setAuthorResults([]);
+      setInstitutionResults([]);
+      setConceptResults([]);
       return;
     }
 
@@ -38,18 +41,22 @@ export default function SearchPage() {
     }, 600); // Debounce
     
     return () => clearTimeout(timeoutRef.current);
-  }, [query, activeTab]);
+  }, [query]);
 
   const performSearch = async (searchTerm) => {
     setIsSearching(true);
     try {
-      if (activeTab === 'papers') {
-        const results = await searchPapers(searchTerm, 0, 20);
-        setPaperResults(results);
-      } else {
-        const results = await searchAuthors(searchTerm);
-        setAuthorResults(results);
-      }
+      const [papers, authors, institutions, concepts] = await Promise.all([
+        searchPapers(searchTerm, 0, 10).catch(() => []),
+        searchAuthors(searchTerm).catch(() => []),
+        searchInstitutions(searchTerm).catch(() => []),
+        searchConcepts(searchTerm).catch(() => [])
+      ]);
+      
+      setPaperResults(papers);
+      setAuthorResults(authors);
+      setInstitutionResults(institutions);
+      setConceptResults(concepts);
     } catch (err) {
       console.error(err);
     }
@@ -65,6 +72,8 @@ export default function SearchPage() {
     }
   };
 
+  const hasResults = paperResults.length > 0 || authorResults.length > 0 || institutionResults.length > 0 || conceptResults.length > 0;
+
   return (
     <div className="search-page-container">
       {/* Header */}
@@ -77,28 +86,12 @@ export default function SearchPage() {
           <input 
             type="text" 
             className="search-input"
-            placeholder={activeTab === 'papers' ? "Buscar papers, temas, IDs..." : "Buscar investigadores..."}
+            placeholder="Buscar papers, autores, universidades, temas..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
           />
         </div>
-      </div>
-
-      {/* Tabs */}
-      <div className="search-tabs">
-        <button 
-          className={`search-tab ${activeTab === 'papers' ? 'active' : ''}`}
-          onClick={() => setActiveTab('papers')}
-        >
-          <FileText size={18} /> Papers
-        </button>
-        <button 
-          className={`search-tab ${activeTab === 'authors' ? 'active' : ''}`}
-          onClick={() => setActiveTab('authors')}
-        >
-          <Users size={18} /> Autores
-        </button>
       </div>
 
       {/* Results */}
@@ -110,45 +103,95 @@ export default function SearchPage() {
           </div>
         )}
 
-        {!isSearching && query && activeTab === 'papers' && paperResults.length === 0 && (
-          <div className="search-empty">No se encontraron papers para "{query}"</div>
-        )}
-        
-        {!isSearching && query && activeTab === 'authors' && authorResults.length === 0 && (
-          <div className="search-empty">No se encontraron autores para "{query}"</div>
+        {!isSearching && query && !hasResults && (
+          <div className="search-empty">No se encontraron resultados para "{query}"</div>
         )}
 
-        {!isSearching && activeTab === 'papers' && paperResults.map(paper => (
-          <div key={paper.id} className="search-result-card" onClick={() => setSelectedPaper(paper)}>
-            <h3 className="src-title">{paper.title}</h3>
-            <p className="src-authors">{paper.authors.join(', ')}</p>
-            <div className="src-meta">
-              <span className="src-cat">{paper.primaryCategory}</span>
-              <span className="src-date">{new Date(paper.published).toLocaleDateString()}</span>
-            </div>
-          </div>
-        ))}
-
-        {!isSearching && activeTab === 'authors' && authorResults.map(author => {
-          const isFollowing = followedAuthors.includes(author.display_name);
-          return (
-            <div key={author.id} className="search-result-author" onClick={() => setSelectedAuthor(author.display_name)}>
-              <div className="sra-info">
-                <h3 className="sra-name">{author.display_name}</h3>
-                <p className="sra-inst">{author.institution || 'Institución desconocida'}</p>
-                <div className="sra-stats">
-                  <span>H-Index: {author.h_index}</span> • <span>{author.cited_by_count} Citas</span>
-                </div>
+        {!isSearching && hasResults && (
+          <div className="search-grouped-results">
+            
+            {/* Authors Section */}
+            {authorResults.length > 0 && (
+              <div className="search-section">
+                <h3 className="search-section-title"><Users size={16}/> Autores</h3>
+                {authorResults.slice(0, 3).map(author => {
+                  const isFollowing = followedAuthors.includes(author.display_name);
+                  return (
+                    <div key={author.id} className="search-result-author" onClick={() => setSelectedAuthor(author.display_name)}>
+                      <div className="sra-info">
+                        <h3 className="sra-name">{author.display_name}</h3>
+                        <p className="sra-inst">{author.institution || 'Institución desconocida'}</p>
+                        <div className="sra-stats">
+                          <span>H-Index: {author.h_index}</span> • <span>{author.cited_by_count} Citas</span>
+                        </div>
+                      </div>
+                      <button 
+                        className={`sra-follow-btn ${isFollowing ? 'following' : ''}`}
+                        onClick={(e) => handleToggleFollow(e, author.display_name)}
+                      >
+                        {isFollowing ? 'Siguiendo' : 'Seguir'}
+                      </button>
+                    </div>
+                  );
+                })}
               </div>
-              <button 
-                className={`sra-follow-btn ${isFollowing ? 'following' : ''}`}
-                onClick={(e) => handleToggleFollow(e, author.display_name)}
-              >
-                {isFollowing ? 'Siguiendo' : 'Seguir'}
-              </button>
-            </div>
-          );
-        })}
+            )}
+
+            {/* Institutions Section */}
+            {institutionResults.length > 0 && (
+              <div className="search-section">
+                <h3 className="search-section-title"><Building2 size={16}/> Universidades e Instituciones</h3>
+                {institutionResults.slice(0, 3).map(inst => (
+                  <div key={inst.id} className="search-result-entity">
+                    <div className="sre-info">
+                      <h3 className="sre-name">{inst.display_name} {inst.country_code && `(${inst.country_code})`}</h3>
+                      <p className="sre-desc">{inst.type ? inst.type.charAt(0).toUpperCase() + inst.type.slice(1) : 'Institución'}</p>
+                      <div className="sre-stats">
+                        <span>{inst.works_count.toLocaleString()} Obras</span> • <span>{inst.cited_by_count.toLocaleString()} Citas</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Concepts Section */}
+            {conceptResults.length > 0 && (
+              <div className="search-section">
+                <h3 className="search-section-title"><Lightbulb size={16}/> Áreas de Interés</h3>
+                {conceptResults.slice(0, 3).map(concept => (
+                  <div key={concept.id} className="search-result-entity">
+                    <div className="sre-info">
+                      <h3 className="sre-name">{concept.display_name}</h3>
+                      {concept.description && <p className="sre-desc">{concept.description}</p>}
+                      <div className="sre-stats">
+                        <span>Nivel {concept.level}</span> • <span>{concept.works_count.toLocaleString()} Obras referenciadas</span>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Papers Section */}
+            {paperResults.length > 0 && (
+              <div className="search-section">
+                <h3 className="search-section-title"><FileText size={16}/> Papers</h3>
+                {paperResults.map(paper => (
+                  <div key={paper.id} className="search-result-card" onClick={() => setSelectedPaper(paper)}>
+                    <h3 className="src-title">{paper.title}</h3>
+                    <p className="src-authors">{paper.authors.join(', ')}</p>
+                    <div className="src-meta">
+                      <span className="src-cat">{paper.primaryCategory}</span>
+                      <span className="src-date">{new Date(paper.published).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+          </div>
+        )}
       </div>
 
       {/* Overlays */}
@@ -171,3 +214,4 @@ export default function SearchPage() {
     </div>
   );
 }
+

@@ -233,15 +233,19 @@
     gap: 4px;
   }
   
+  .navbar-center-pill {
+    width: 160px;
+  }
+
   .navbar-tab {
-    width: auto;
-    min-width: 70px;
-    font-size: 11px;
-    padding: 6px 8px;
+    width: 50%;
+    min-width: unset;
+    font-size: 12px;
+    padding: 6px 4px;
   }
   
   .navbar-slider {
-    width: 33.33%; /* Follow the width of the tabs dynamically */
+    width: calc(50% - 4px); /* Account for pill padding */
   }
 
   .navbar-action-btn {
