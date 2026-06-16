@@ -201,9 +201,10 @@ export function FeedProvider({ children }) {
          if (idx !== -1) splitIndex = idx;
        }
        
-       // Index up to splitIndex are currently on screen or past, do not shift them under the user's feet
-       const lockedPapers = prevPapers.slice(0, splitIndex + 1);
-       const queue = [...prevPapers.slice(splitIndex + 1)];
+       // Index up to splitIndex + 3 are currently on screen or next, do not shift them under the user's feet
+       const safeSplit = Math.min(splitIndex + 3, prevPapers.length);
+       const lockedPapers = prevPapers.slice(0, safeSplit);
+       const queue = [...prevPapers.slice(safeSplit)];
        
        if (queue.length === 0) return prevPapers;
        
@@ -275,13 +276,15 @@ export function FeedProvider({ children }) {
           
           saveSessionSeen();
           
-          // Insert them in the papers queue right after this paper
+          // Insert them in the papers queue ahead of the user
           setPapers(current => {
             const idx = current.findIndex(p => p.id === paper.id);
             if (idx === -1) return current; // paper not found in current feed
             
-            const locked = current.slice(0, idx + 1);
-            const rest = current.slice(idx + 1);
+            // Index up to idx + 3 are currently on screen or next, do not shift them
+            const safeSplit = Math.min(idx + 3, current.length);
+            const locked = current.slice(0, safeSplit);
+            const rest = current.slice(safeSplit);
             
             // Deduplicate against rest of the queue
             const restFiltered = rest.filter(rp => !newGraphPapers.some(ng => ng.id === rp.id));
