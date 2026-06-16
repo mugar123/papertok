@@ -125,7 +125,18 @@ export default function EntityExplorer() {
         let fetchedPapers = [];
         if (arxivIds.length > 0) {
           const rawPapers = await fetchPapersByIds(arxivIds);
-          fetchedPapers = await enrichPapersBatch(rawPapers);
+          const enrichmentMap = await enrichPapersBatch(arxivIds);
+          fetchedPapers = rawPapers.map(paper => {
+            const enriched = enrichmentMap[paper.id];
+            if (!enriched) return paper;
+            return {
+              ...paper,
+              citationCount: enriched.cited_by_count,
+              topics: enriched.concepts ? enriched.concepts.slice(0, 3) : [],
+              isPeerReviewed: enriched.isPeerReviewed,
+              _isOpenAlexEnriched: true
+            };
+          });
         }
         
         if (page === 1) {
