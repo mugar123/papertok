@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity } from '../../services/openAlexService';
