@@ -35,15 +35,10 @@ export default function EntityExplorer() {
       setIsLoadingPapers(true);
       
       try {
-        const openAlexWorksUrls = await getWorksByEntity(type, id, sortBy);
-        if (openAlexWorksUrls.length > 0) {
-          const arxivIds = await getArxivIdsForOpenAlexWorks(openAlexWorksUrls);
-          if (arxivIds.length > 0) {
-            const fetchedPapers = await fetchPapersByIds(arxivIds);
-            setPapers(fetchedPapers);
-          } else {
-            setPapers([]);
-          }
+        const arxivIds = await getWorksByEntity(type, id, sortBy);
+        if (arxivIds.length > 0) {
+          const fetchedPapers = await fetchPapersByIds(arxivIds);
+          setPapers(fetchedPapers);
         } else {
           setPapers([]);
         }

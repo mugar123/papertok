@@ -440,7 +440,14 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc')
     
     const data = await response.json();
     if (data && data.results) {
-       return data.results.map(work => work.id);
+       const arxivIds = [];
+       data.results.forEach(work => {
+           if (work.ids && work.ids.arxiv) {
+               const arxivId = work.ids.arxiv.split('/').pop().replace(/v\d+$/, '');
+               arxivIds.push(arxivId);
+           }
+       });
+       return arxivIds;
     }
   } catch (err) {
     console.error(`OpenAlex getWorksByEntity failed for ${type} ${id}`, err);
