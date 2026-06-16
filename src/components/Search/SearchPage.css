@@ -11,6 +11,16 @@
   z-index: 1000;
 }
 
+.search-loading, .search-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 200px;
+  color: var(--text-secondary);
+  gap: 1rem;
+}
+
 .search-header {
   display: flex;
   align-items: center;
