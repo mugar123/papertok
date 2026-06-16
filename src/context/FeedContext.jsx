@@ -696,7 +696,6 @@ export function FeedProvider({ children }) {
   }, []);
 
   const toggleLike = useCallback(async (paper) => {
-    if (!user) return;
     const isCurrentlyLiked = likedPaperIds.has(paper.id);
     const newLiked = new Set(likedPaperIds);
 
@@ -736,9 +735,8 @@ export function FeedProvider({ children }) {
         arxivId: paper.arxivId, summary: paper.summary?.substring(0, 500),
       };
       demoSet('savedPapersData', allSaved);
-    } else {
+    } else if (user) {
       try {
-        
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
         await setDoc(ref, {
           liked: !isCurrentlyLiked,
@@ -828,7 +826,7 @@ export function FeedProvider({ children }) {
   }, [user, readPaperIds]);
 
   const trackViewTime = useCallback(async (paper, timeInSeconds) => {
-    if (!user || IS_DEMO || timeInSeconds < 1) return;
+    if (timeInSeconds < 1) return;
     
     // ─── BOREDOM RESET: user is engaging, not bored ───
     if (timeInSeconds >= 5) {
@@ -857,22 +855,21 @@ export function FeedProvider({ children }) {
       reRankFeed(paper.id);
     }
 
-    try {
-      const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-      await setDoc(ref, {
-        viewTime: increment(timeInSeconds),
-        paperCategory: paper.primaryCategory,
-        timestamp: new Date().toISOString(),
-        deviceType: getDeviceInfo().type,
-      }, { merge: true });
-    } catch (err) {
-      console.error('Error tracking view time:', err);
+    if (user && !IS_DEMO) {
+      try {
+        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+        await setDoc(ref, {
+          viewTime: increment(timeInSeconds),
+          paperCategory: paper.primaryCategory,
+          timestamp: new Date().toISOString(),
+        }, { merge: true });
+      } catch (err) {
+        console.error('Error tracking view time:', err);
+      }
     }
   }, [user, reRankFeed, traverseAndExpandNetwork]);
 
   const trackPdfOpened = useCallback(async (paper) => {
-    if (!user || IS_DEMO) return;
-    
     // ─── BOREDOM RESET & GRAFO EXPANSION: opening PDF = highly engaged ───
     boredomLevel.current = 0;
     traverseAndExpandNetwork(paper);
@@ -888,23 +885,23 @@ export function FeedProvider({ children }) {
     }
     reRankFeed(paper.id);
 
-    try {
-      const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-      await setDoc(ref, {
-        openedPdf: true,
-        paperCategory: paper.primaryCategory,
-        timestamp: new Date().toISOString(),
-        deviceType: getDeviceInfo().type,
-        context: 'feed',
-      }, { merge: true });
-    } catch (err) {
-      console.error('Error tracking PDF open:', err);
+    if (user && !IS_DEMO) {
+      try {
+        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+        await setDoc(ref, {
+          openedPdf: true,
+          paperCategory: paper.primaryCategory,
+          timestamp: new Date().toISOString(),
+          deviceType: getDeviceInfo().type,
+          context: 'feed',
+        }, { merge: true });
+      } catch (err) {
+        console.error('Error tracking PDF open:', err);
+      }
     }
   }, [user, reRankFeed, traverseAndExpandNetwork]);
 
   const trackSkip = useCallback(async (paper) => {
-    if (!user || IS_DEMO) return;
-    
     // ─── BOREDOM DETECTION: fast skip = +1 boredom ───
     boredomLevel.current = Math.min(20, boredomLevel.current + 1);
     
@@ -912,42 +909,44 @@ export function FeedProvider({ children }) {
     if (paper.primaryCategory) {
       categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 1;
     }
-    // DO NOT call reRankFeed here to prevent lag when scrolling past cards quickly
 
-    try {
-      const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-      await setDoc(ref, {
-        skip: increment(1),
-        paperCategory: paper.primaryCategory,
-        timestamp: new Date().toISOString(),
-        deviceType: getDeviceInfo().type,
-        context: 'feed',
-      }, { merge: true });
-    } catch (err) {
-      console.error('Error tracking skip:', err);
+    if (user && !IS_DEMO) {
+      try {
+        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+        await setDoc(ref, {
+          skip: increment(1),
+          paperCategory: paper.primaryCategory,
+          timestamp: new Date().toISOString(),
+          deviceType: getDeviceInfo().type,
+          context: 'feed',
+        }, { merge: true });
+      } catch (err) {
+        console.error('Error tracking skip:', err);
+      }
     }
   }, [user]);
 
   const trackPdfBounce = useCallback(async (paper) => {
-    if (!user || IS_DEMO) return;
-    
     // Deduct category affinity for bounce (user opened PDF but closed it instantly)
     if (paper.primaryCategory) {
       categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 3;
     }
     
     reRankFeed(paper.id);
-    try {
-      const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-      await setDoc(ref, {
-        pdfBounce: increment(1),
-        paperCategory: paper.primaryCategory,
-        timestamp: new Date().toISOString(),
-        deviceType: getDeviceInfo().type,
-        context: 'feed',
-      }, { merge: true });
-    } catch (err) {
-      console.error('Error tracking PDF bounce:', err);
+    
+    if (user && !IS_DEMO) {
+      try {
+        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+        await setDoc(ref, {
+          pdfBounce: increment(1),
+          paperCategory: paper.primaryCategory,
+          timestamp: new Date().toISOString(),
+          deviceType: getDeviceInfo().type,
+          context: 'feed',
+        }, { merge: true });
+      } catch (err) {
+        console.error('Error tracking PDF bounce:', err);
+      }
     }
   }, [user, reRankFeed]);
 
