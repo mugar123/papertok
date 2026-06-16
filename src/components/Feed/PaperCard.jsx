@@ -333,8 +333,8 @@ const PaperCard = memo(function PaperCard({
           {paper.openAlex && paper.openAlex.cited_by_count > 0 && (
             <>
               <span className="pc-meta-dot">·</span>
-              <span className="pc-citations" style={{ display: 'flex', alignItems: 'center', gap: '4px', color: '#ff9800', fontWeight: 'bold' }}>
-                🔥 {paper.openAlex.cited_by_count} Citas
+              <span className="pc-citations" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                {paper.openAlex.cited_by_count} Citas
               </span>
             </>
           )}
