@@ -4,6 +4,7 @@ import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChar
 import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
 import { useAuth } from '../../context/AuthContext';
+import { AnimatePresence } from 'framer-motion';
 import CitationGraphPanel from './CitationGraphPanel';
 import './PaperCard.css';
 
@@ -526,13 +527,15 @@ const PaperCard = memo(function PaperCard({
         </div>
       </div>
 
-      {showGraph && (
-        <CitationGraphPanel 
-          paper={paper} 
-          onClose={() => setShowGraph(false)} 
-          onOpenPdf={onOpenPdf} 
-        />
-      )}
+      <AnimatePresence>
+        {showGraph && (
+          <CitationGraphPanel 
+            paper={paper} 
+            onClose={() => setShowGraph(false)} 
+            onOpenPdf={onOpenPdf} 
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 });

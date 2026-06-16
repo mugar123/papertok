@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { searchPapers } from '../../services/arxivService';
 import { searchAuthors, searchInstitutions, searchConcepts } from '../../services/openAlexService';
 import { useAuth } from '../../context/AuthContext';
+import { AnimatePresence } from 'framer-motion';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import AuthorPanel from '../Feed/AuthorPanel';
@@ -235,17 +236,19 @@ export default function SearchPage() {
       )}
 
       {/* Author Panel Overlay */}
-      {activeAuthors && (
-        <AuthorPanel 
-          authors={activeAuthors.authors} 
-          sourceArxivId={activeAuthors.arxivId}
-          onClose={() => setActiveAuthors(null)}
-          onOpenPdf={(paper) => {
-            setActiveAuthors(null);
-            setPdfPaper(paper);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {activeAuthors && (
+          <AuthorPanel 
+            authors={activeAuthors.authors} 
+            sourceArxivId={activeAuthors.arxivId}
+            onClose={() => setActiveAuthors(null)}
+            onOpenPdf={(paper) => {
+              setActiveAuthors(null);
+              setPdfPaper(paper);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

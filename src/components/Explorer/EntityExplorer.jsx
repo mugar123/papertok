@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink } from 'lucide-react';
 import { getEntityById, getWorksByEntity } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
+import { AnimatePresence } from 'framer-motion';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import AuthorPanel from '../Feed/AuthorPanel';
@@ -398,17 +399,19 @@ export default function EntityExplorer() {
       )}
 
       {/* Author Panel Overlay */}
-      {activeAuthors && (
-        <AuthorPanel 
-          authors={activeAuthors.authors} 
-          sourceArxivId={activeAuthors.arxivId}
-          onClose={() => setActiveAuthors(null)}
-          onOpenPdf={(paper) => {
-            setActiveAuthors(null);
-            setPdfPaperToView(paper);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {activeAuthors && (
+          <AuthorPanel 
+            authors={activeAuthors.authors} 
+            sourceArxivId={activeAuthors.arxivId}
+            onClose={() => setActiveAuthors(null)}
+            onOpenPdf={(paper) => {
+              setActiveAuthors(null);
+              setPdfPaperToView(paper);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

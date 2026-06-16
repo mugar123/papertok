@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Loader2, Link, BookOpen, Quote, ChevronLeft, ChevronRight, FileText } from 'lucide-react';
 import { getPaperCitationsAndReferences } from '../../services/semanticScholarService';
+import { motion } from 'framer-motion';
 import './CitationGraphPanel.css';
 
 export default function CitationGraphPanel({ paper, onClose, onOpenPdf }) {
@@ -49,8 +50,20 @@ export default function CitationGraphPanel({ paper, onClose, onOpenPdf }) {
   const list = activeTab === 'references' ? data.references : data.citations;
 
   return (
-    <div className="cgp-backdrop" onClick={handleBackdropClick}>
-      <div className="cgp-container">
+    <motion.div 
+      className="cgp-backdrop" 
+      onClick={handleBackdropClick}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div 
+        className="cgp-container"
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+      >
         {/* Header */}
         <div className="cgp-header">
           <div className="cgp-header-top">
@@ -116,7 +129,7 @@ export default function CitationGraphPanel({ paper, onClose, onOpenPdf }) {
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }

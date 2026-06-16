@@ -1,5 +1,6 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useFeed } from '../../context/FeedContext';
+import { AnimatePresence } from 'framer-motion';
 import AnimatedAtom from './AnimatedAtom';
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
@@ -137,17 +138,19 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
         {hasMore && <div ref={sentinelRef} className="feed-sentinel" />}
       </div>
 
-      {activeAuthors && (
-        <AuthorPanel 
-          authors={activeAuthors.authors} 
-          sourceArxivId={activeAuthors.arxivId}
-          onClose={() => setActiveAuthors(null)}
-          onOpenPdf={(paper) => {
-            setActiveAuthors(null);
-            handleOpenPdf(paper);
-          }}
-        />
-      )}
+      <AnimatePresence>
+        {activeAuthors && (
+          <AuthorPanel 
+            authors={activeAuthors.authors} 
+            sourceArxivId={activeAuthors.arxivId}
+            onClose={() => setActiveAuthors(null)}
+            onOpenPdf={(paper) => {
+              setActiveAuthors(null);
+              handleOpenPdf(paper);
+            }}
+          />
+        )}
+      </AnimatePresence>
     </div>
   );
 }

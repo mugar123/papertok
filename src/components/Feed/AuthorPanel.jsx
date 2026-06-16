@@ -6,6 +6,7 @@ import { getSimilarAuthors } from '../../services/semanticScholarService';
 import { X, ChevronLeft, ExternalLink, Loader2, BookOpen, Award, Building2, UserPlus, UserCheck, Users } from 'lucide-react';
 import { getCategoryLabel } from '../../data/categories';
 import { useAuth } from '../../context/AuthContext';
+import { motion } from 'framer-motion';
 import './AuthorPanel.css';
 
 export default function AuthorPanel({ authors, onClose, onOpenPdf, sourceArxivId = null }) {
@@ -71,8 +72,20 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf, sourceArxivId
   };
 
   return (
-    <div className="ap-backdrop" onClick={handleBackdropClick}>
-      <div className="ap-container">
+    <motion.div 
+      className="ap-backdrop" 
+      onClick={handleBackdropClick}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+    >
+      <motion.div 
+        className="ap-container"
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", bounce: 0, duration: 0.4 }}
+      >
         {/* Header */}
         <div className="ap-header">
           {selectedAuthor ? (
@@ -258,7 +271,7 @@ export default function AuthorPanel({ authors, onClose, onOpenPdf, sourceArxivId
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
