@@ -271,6 +271,11 @@ export async function getAuthorProfileExact(authorName, arxivId) {
                 concepts: author.x_concepts ? author.x_concepts.slice(0, 5) : []
               };
            }
+        } else if (bestMatch) {
+           // We found the author in the paper, but OpenAlex failed to link an ID to them for this specific work.
+           // Fallback to searching the author database directly using their matched display name.
+           const fallback = await getAuthorProfile(bestMatch.display_name || authorName);
+           if (fallback) return fallback;
         }
       }
     }
