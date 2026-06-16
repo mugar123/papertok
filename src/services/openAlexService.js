@@ -233,7 +233,7 @@ export async function getAuthorProfileExact(authorName, arxivId) {
       
       if (workData.authorships) {
         // 2. Find the author in the paper's authors list that matches the requested name
-        const cleanReqName = authorName.toLowerCase().replace(/[^a-z]/g, '');
+        const reqParts = authorName.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
         
         // Exact match or closest match
         let bestMatch = null;
@@ -241,10 +241,13 @@ export async function getAuthorProfileExact(authorName, arxivId) {
            const authorDisplayName = authorship.author.display_name;
            if (!authorDisplayName) continue;
            
-           const cleanAuthName = authorDisplayName.toLowerCase().replace(/[^a-z]/g, '');
+           const oaParts = authorDisplayName.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
            
-           // Simple substring match or exact match on clean strings
-           if (cleanAuthName.includes(cleanReqName) || cleanReqName.includes(cleanAuthName)) {
+           // If all parts of one are present in the other (accounts for 'Last, First' vs 'First Last')
+           const reqInOa = reqParts.length > 0 && reqParts.every(p => oaParts.some(o => o.includes(p) || p.includes(o)));
+           const oaInReq = oaParts.length > 0 && oaParts.every(o => reqParts.some(p => p.includes(o) || o.includes(p)));
+           
+           if (reqInOa || oaInReq) {
               bestMatch = authorship.author;
               break;
            }
