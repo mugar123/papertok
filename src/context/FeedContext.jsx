@@ -14,6 +14,46 @@ const PAGE_SIZE = 15;
 const storedSeen = typeof window !== 'undefined' ? localStorage.getItem('papertok_seenIds') : null;
 const sessionSeenPapers = new Set(storedSeen ? JSON.parse(storedSeen) : []);
 
+// Helper for weighted shuffle without replacement
+function weightedShuffle(arr) {
+  const pool = [...arr];
+  const result = [];
+  while (pool.length > 0) {
+    let totalWeight = 0;
+    const weights = pool.map(p => {
+      const isExplore = p._debugScore?.isExploration || p._type === 'exploration';
+      const score = p._dynamicScore || 0;
+      
+      // Explore papers get a smaller base weight so they appear in a lower proportion.
+      const baseWeight = isExplore ? 5 : 15;
+      const w = Math.max(0.1, score + baseWeight);
+      totalWeight += w;
+      return w;
+    });
+    
+    if (totalWeight <= 0) {
+      // Fallback: select randomly
+      const idx = Math.floor(Math.random() * pool.length);
+      result.push(pool[idx]);
+      pool.splice(idx, 1);
+      continue;
+    }
+    
+    let rand = Math.random() * totalWeight;
+    let selectedIdx = 0;
+    for (let i = 0; i < pool.length; i++) {
+      rand -= weights[i];
+      if (rand <= 0) {
+        selectedIdx = i;
+        break;
+      }
+    }
+    result.push(pool[selectedIdx]);
+    pool.splice(selectedIdx, 1);
+  }
+  return result;
+}
+
 function saveSessionSeen() {
   const seenArray = Array.from(sessionSeenPapers).slice(-500); // Keep last 500
   localStorage.setItem('papertok_seenIds', JSON.stringify(seenArray));
@@ -155,34 +195,84 @@ export function FeedProvider({ children }) {
        if (queue.length === 0) return prevPapers;
        
        queue.forEach(paper => {
-          if (!paper._debugScore?.isExploration) {
-            calculateAndAttachScore(paper);
-          }
+         calculateAndAttachScore(paper);
        });
        
-       // Only sort non-exploration papers, keeping exploration papers loosely in their bottom 50% slots
-       const exploitQueue = queue.filter(p => !p._debugScore?.isExploration);
-       const exploreQueue = queue.filter(p => p._debugScore?.isExploration);
-       
-       exploitQueue.sort((a, b) => {
-          const scoreA = isNaN(a._dynamicScore) ? 0 : a._dynamicScore;
-          const scoreB = isNaN(b._dynamicScore) ? 0 : b._dynamicScore;
-          return scoreB - scoreA;
-       });
-       
-       // Reconstruct queue
-       const newQueue = [...exploitQueue];
-       exploreQueue.forEach(explorePaper => {
-          // Re-inject randomly in the bottom half
-          const maxInsertIndex = newQueue.length;
-          const minInsertIndex = Math.floor(newQueue.length * 0.5);
-          const insertIndex = minInsertIndex + Math.floor(Math.random() * (maxInsertIndex - minInsertIndex + 1));
-          newQueue.splice(insertIndex, 0, explorePaper);
-       });
+       // Re-rank the unread queue using weighted shuffle to allow random mixing in smaller proportions
+       const newQueue = weightedShuffle(queue);
        
        return [...lockedPapers, ...newQueue];
     });
   }, [calculateAndAttachScore]);
+
+  const traverseAndExpandNetwork = useCallback(async (paper) => {
+    if (!user || IS_DEMO) return;
+    
+    try {
+      let enriched = paper.openAlex;
+      if (!enriched) {
+        const res = await enrichPapersBatch([paper.id]);
+        enriched = res[paper.id];
+        if (enriched) {
+          setPapers(current => current.map(p => p.id === paper.id ? { ...p, openAlex: enriched } : p));
+        }
+      }
+      
+      if (enriched && enriched.related_works && enriched.related_works.length > 0) {
+        console.log(`[Recomendador] Travesando red de citas de OpenAlex para: ${paper.title}`);
+        const relatedArxivIds = await getArxivIdsForOpenAlexWorks(enriched.related_works);
+        
+        const filteredIds = relatedArxivIds.filter(id => 
+          id &&
+          !likedPaperIds.has(id) &&
+          !savedPaperIds.has(id) &&
+          !readPaperIds.has(id) &&
+          !notInterestedIds.has(id) &&
+          !sessionSeenPapers.has(id)
+        );
+        
+        if (filteredIds.length === 0) return;
+        
+        // Fetch the top 5 papers from this citation network
+        const newGraphPapers = await fetchPapersByIds(filteredIds.slice(0, 5)).catch(() => []);
+        
+        if (newGraphPapers.length > 0) {
+          newGraphPapers.forEach(p => {
+            p._type = 'graph';
+            p._isGraphCandidate = true;
+            calculateAndAttachScore(p);
+            sessionSeenPapers.add(p.id); // Mark as seen to avoid duplicate fetches
+          });
+          
+          saveSessionSeen();
+          
+          // Insert them in the papers queue right after this paper
+          setPapers(current => {
+            const idx = current.findIndex(p => p.id === paper.id);
+            if (idx === -1) return current; // paper not found in current feed
+            
+            const locked = current.slice(0, idx + 1);
+            const rest = current.slice(idx + 1);
+            
+            // Deduplicate against rest of the queue
+            const restFiltered = rest.filter(rp => !newGraphPapers.some(ng => ng.id === rp.id));
+            
+            // Combine rest and new papers
+            const combinedRest = [...newGraphPapers, ...restFiltered];
+            
+            // Re-rank the unread queue using weighted shuffle
+            const reRankedRest = weightedShuffle(combinedRest);
+            
+            return [...locked, ...reRankedRest];
+          });
+          
+          console.log(`[Recomendador] Insertados ${newGraphPapers.length} papers relacionados de OpenAlex en el feed.`);
+        }
+      }
+    } catch (err) {
+      console.error('[Recomendador] Error expandiendo la red del paper:', err);
+    }
+  }, [user, likedPaperIds, savedPaperIds, readPaperIds, notInterestedIds, calculateAndAttachScore]);
 
   // Load user interactions
   useEffect(() => {
@@ -376,55 +466,58 @@ export function FeedProvider({ children }) {
           authorPapers.forEach(p => { p._type = 'author'; });
         }
 
-        // ─── STEP 6: ADAPTIVE EXPLORATION (only when bored) ───
+        // ─── STEP 6: ADAPTIVE EXPLORATION (always baseline, more if bored) ───
         let explorationPapers = [];
         const currentBoredom = boredomLevel.current;
         
-        if (currentBoredom >= BOREDOM_THRESHOLD) {
-          const userAreas = new Set();
-          userPreferences.forEach(pref => {
-            const leaf = allCategories.find(c => c.id === pref);
-            if (leaf) userAreas.add(leaf.area);
-          });
+        const userAreas = new Set();
+        userPreferences.forEach(pref => {
+          const leaf = allCategories.find(c => c.id === pref);
+          if (leaf) userAreas.add(leaf.area);
+        });
 
-          const nearbyCats = allCategories
-            .filter(c => userAreas.has(c.area))
-            .filter(c => !userPreferences.includes(c.id))
-            .filter(c => (categoryAffinities.current[c.id] || 0) >= -2)
+        // Fetch adjacent categories within the user's parent areas
+        const nearbyCats = allCategories
+          .filter(c => userAreas.has(c.area))
+          .filter(c => !userPreferences.includes(c.id))
+          .filter(c => (categoryAffinities.current[c.id] || 0) >= -2)
+          .map(c => c.id)
+          .sort(() => 0.5 - Math.random())
+          .slice(0, 3);
+
+        const exploreCount = currentBoredom >= BOREDOM_THRESHOLD
+          ? Math.min(6, Math.floor((currentBoredom - BOREDOM_THRESHOLD) / 2) + 4)
+          : 2; // Baseline of 2 exploration papers
+
+        if (nearbyCats.length > 0) {
+          const fetchedExplore = await fetchPapers(nearbyCats, currentPage * exploreCount, exploreCount, queryMode).catch(() => []);
+          fetchedExplore.forEach(p => { 
+            p._type = 'exploration';
+            p._debugScore = { isExploration: true };
+          });
+          explorationPapers.push(...fetchedExplore);
+        }
+
+        // If highly bored, pull from completely random categories outside user areas
+        if (currentBoredom >= BOREDOM_THRESHOLD * 1.5) {
+          const randomCats = allCategories
+            .filter(c => !userPreferences.includes(c.id) && !nearbyCats.includes(c.id))
             .map(c => c.id)
             .sort(() => 0.5 - Math.random())
-            .slice(0, 3);
-
-          const exploreCount = Math.min(5, Math.floor((currentBoredom - BOREDOM_THRESHOLD) / 2) + 2);
+            .slice(0, 2);
           
-          if (nearbyCats.length > 0) {
-            explorationPapers = await fetchPapers(nearbyCats, currentPage * exploreCount, exploreCount, queryMode).catch(() => []);
-            explorationPapers.forEach(p => { 
+          if (randomCats.length > 0) {
+            const randomPapers = await fetchPapers(randomCats, 0, 2, queryMode).catch(() => []);
+            randomPapers.forEach(p => { 
               p._type = 'exploration';
               p._debugScore = { isExploration: true };
             });
-          }
-
-          if (currentBoredom >= BOREDOM_THRESHOLD * 2) {
-            const randomCats = allCategories
-              .filter(c => !userPreferences.includes(c.id) && !nearbyCats.includes(c.id))
-              .map(c => c.id)
-              .sort(() => 0.5 - Math.random())
-              .slice(0, 2);
-            
-            if (randomCats.length > 0) {
-              const randomPapers = await fetchPapers(randomCats, 0, 2, queryMode).catch(() => []);
-              randomPapers.forEach(p => { 
-                p._type = 'exploration';
-                p._debugScore = { isExploration: true };
-              });
-              explorationPapers.push(...randomPapers);
-            }
+            explorationPapers.push(...randomPapers);
           }
         }
 
-        // ─── STEP 7: Merge, deduplicate, score, and sort ───
-        const allFetched = [...mainPapers, ...graphPapers, ...authorPapers];
+        // ─── STEP 7: Merge, deduplicate, score, and shuffle ───
+        const allFetched = [...mainPapers, ...graphPapers, ...authorPapers, ...explorationPapers];
         
         const uniqueMap = new Map();
         allFetched.forEach(p => {
@@ -443,23 +536,8 @@ export function FeedProvider({ children }) {
           calculateAndAttachScore(paper);
         });
 
-        corePapers.sort((a, b) => {
-          const scoreA = isNaN(a._dynamicScore) ? 0 : a._dynamicScore;
-          const scoreB = isNaN(b._dynamicScore) ? 0 : b._dynamicScore;
-          return scoreB - scoreA;
-        });
-
-        newPapers = [...corePapers];
-        const uniqueExplore = explorationPapers.filter(p => !uniqueMap.has(p.id) &&
-          !likedPaperIds.has(p.id) && !savedPaperIds.has(p.id) && 
-          !readPaperIds.has(p.id) && !notInterestedIds.has(p.id));
-        
-        uniqueExplore.forEach(explorePaper => {
-          const maxIdx = newPapers.length;
-          const minIdx = Math.floor(newPapers.length * 0.6);
-          const insertIdx = minIdx + Math.floor(Math.random() * (maxIdx - minIdx + 1));
-          newPapers.splice(insertIdx, 0, explorePaper);
-        });
+        // Use weighted shuffle to mix core and explore papers together proportionally!
+        newPapers = weightedShuffle(corePapers);
       } else {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }
@@ -622,8 +700,11 @@ export function FeedProvider({ children }) {
     const isCurrentlyLiked = likedPaperIds.has(paper.id);
     const newLiked = new Set(likedPaperIds);
 
-    // ─── BOREDOM RESET: liking = highly engaged ───
-    if (!isCurrentlyLiked) boredomLevel.current = 0;
+    // ─── BOREDOM RESET & GRAFO EXPANSION: liking = highly engaged ───
+    if (!isCurrentlyLiked) {
+      boredomLevel.current = 0;
+      traverseAndExpandNetwork(paper);
+    }
     
     if (isCurrentlyLiked) {
       newLiked.delete(paper.id);
@@ -643,7 +724,7 @@ export function FeedProvider({ children }) {
       else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.1);
     }
     setLikedPaperIds(newLiked);
-    reRankFeed();
+    reRankFeed(paper.id);
 
     if (IS_DEMO) {
       demoSet('likedPaperIds', Array.from(newLiked));
@@ -672,7 +753,7 @@ export function FeedProvider({ children }) {
         setLikedPaperIds(likedPaperIds);
       }
     }
-  }, [user, likedPaperIds, reRankFeed]);
+  }, [user, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
 
   const markNotInterested = useCallback(async (paper) => {
     if (!user) return;
@@ -763,11 +844,14 @@ export function FeedProvider({ children }) {
          conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + (Math.min(timeInSeconds, 60) * 0.05);
       });
     }
-    // Update temporal preference on high dwell time
+    // Update temporal preference and expand graph on high dwell time
     if (timeInSeconds >= 10) {
       const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.05);
       else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.05);
+      
+      // Expand network via OpenAlex
+      traverseAndExpandNetwork(paper);
     }
     if (timeInSeconds >= 3.0) {
       reRankFeed(paper.id);
@@ -784,13 +868,14 @@ export function FeedProvider({ children }) {
     } catch (err) {
       console.error('Error tracking view time:', err);
     }
-  }, [user, reRankFeed]);
+  }, [user, reRankFeed, traverseAndExpandNetwork]);
 
   const trackPdfOpened = useCallback(async (paper) => {
     if (!user || IS_DEMO) return;
     
-    // ─── BOREDOM RESET: opening PDF = highly engaged ───
+    // ─── BOREDOM RESET & GRAFO EXPANSION: opening PDF = highly engaged ───
     boredomLevel.current = 0;
+    traverseAndExpandNetwork(paper);
     
     // Instantly update local weights for real-time re-ranking
     if (paper.primaryCategory) {
@@ -815,7 +900,7 @@ export function FeedProvider({ children }) {
     } catch (err) {
       console.error('Error tracking PDF open:', err);
     }
-  }, [user, reRankFeed]);
+  }, [user, reRankFeed, traverseAndExpandNetwork]);
 
   const trackSkip = useCallback(async (paper) => {
     if (!user || IS_DEMO) return;
@@ -845,6 +930,12 @@ export function FeedProvider({ children }) {
 
   const trackPdfBounce = useCallback(async (paper) => {
     if (!user || IS_DEMO) return;
+    
+    // Deduct category affinity for bounce (user opened PDF but closed it instantly)
+    if (paper.primaryCategory) {
+      categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 3;
+    }
+    
     reRankFeed(paper.id);
     try {
       const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
@@ -858,7 +949,7 @@ export function FeedProvider({ children }) {
     } catch (err) {
       console.error('Error tracking PDF bounce:', err);
     }
-  }, [user]);
+  }, [user, reRankFeed]);
 
   const markSaved = useCallback((paperId) => {
     // ─── BOREDOM RESET: saving = highly engaged ───
@@ -870,6 +961,9 @@ export function FeedProvider({ children }) {
       const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.15);
       else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.15);
+      
+      // Expand network via OpenAlex
+      traverseAndExpandNetwork(paper);
     }
     
     setSavedPaperIds((prev) => {
@@ -878,7 +972,7 @@ export function FeedProvider({ children }) {
       if (IS_DEMO) demoSet('savedPaperIds', Array.from(next));
       return next;
     });
-  }, [papers]);
+  }, [papers, traverseAndExpandNetwork]);
 
   const unmarkAsRead = useCallback(async (paperId) => {
     if (!user) return;
