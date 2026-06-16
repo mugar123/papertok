@@ -284,7 +284,7 @@ export default function EntityExplorer() {
             <PaperCard 
               paper={selectedPaper} 
               onOpenPdf={(paper) => setPdfPaperToView(paper)}
-              onOpenAuthors={(authors) => navigate(`/explore/author/${encodeURIComponent(authors[0])}`)} 
+              onOpenAuthors={(authors) => navigate(`/explorer/author/${encodeURIComponent(authors[0])}`)} 
               trackViewTime={() => {}}
               trackSkip={() => {}}
             />

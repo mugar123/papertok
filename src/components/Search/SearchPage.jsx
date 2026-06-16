@@ -106,7 +106,6 @@ export default function SearchPage() {
         {isSearching || isDebouncing ? (
           <div className="search-loading">
             <Loader2 className="spinning" size={40} />
-            <p>{isDebouncing ? 'Escribiendo...' : 'Buscando...'}</p>
           </div>
         ) : (
           <div className="search-results-list animate-fade-in">
