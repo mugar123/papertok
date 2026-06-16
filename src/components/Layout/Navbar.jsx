@@ -52,13 +52,6 @@ export default function Navbar() {
         </div>
 
         <div className="navbar-center-pill">
-          <NavLink 
-            to="/lists" 
-            className={`navbar-tab ${isListsActive ? 'active' : ''}`}
-          >
-            Listas
-          </NavLink>
-          
           <button 
             className={`navbar-tab ${!isListsActive && feedMode === 'top' ? 'active' : ''}`}
             onClick={() => {
@@ -69,14 +62,20 @@ export default function Navbar() {
             Para ti
           </button>
           
+          <NavLink 
+            to="/lists" 
+            className={`navbar-tab ${isListsActive ? 'active' : ''}`}
+          >
+            Listas
+          </NavLink>
+          
           {/* Slider indicator */}
           <div 
             className="navbar-slider" 
             style={{ 
-              width: '50%',
               transform: isListsActive 
-                ? 'translateX(0)' 
-                : 'translateX(100%)' 
+                ? 'translateX(100%)' 
+                : 'translateX(0)' 
             }} 
           />
         </div>
