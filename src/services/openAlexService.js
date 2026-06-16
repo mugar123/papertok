@@ -3,6 +3,8 @@
  * Handles semantic enrichment, concept extraction, and citation graphs.
  */
 
+import { CATEGORIES } from '../data/categories';
+
 const CACHE = new Map();
 const GRAPH_CACHE = new Map(); // caches W... to arxivId mappings
 
@@ -384,7 +386,26 @@ export async function searchInstitutions(query) {
  */
 export async function searchConcepts(query) {
   if (!query) return [];
-  const cleanQuery = encodeURIComponent(query.trim());
+  
+  let searchQuery = query.trim();
+  const qLower = searchQuery.toLowerCase();
+  
+  // Try to find a matching Spanish category to translate to English for better OpenAlex search
+  let engMatch = '';
+  Object.values(CATEGORIES).forEach(cat => {
+    if (cat.label.toLowerCase().includes(qLower)) {
+      engMatch = cat.labelEn;
+    } else if (cat.subcategories) {
+      Object.values(cat.subcategories).forEach(sub => {
+         if (sub.label.toLowerCase().includes(qLower)) {
+           engMatch = sub.labelEn;
+         }
+      });
+    }
+  });
+
+  const finalQuery = engMatch || searchQuery;
+  const cleanQuery = encodeURIComponent(finalQuery);
   const url = `https://api.openalex.org/concepts?search=${cleanQuery}&per-page=5`;
   
   try {
@@ -393,13 +414,26 @@ export async function searchConcepts(query) {
     
     const data = await response.json();
     if (data && data.results) {
-      return data.results.map(concept => ({
-        id: concept.id,
-        display_name: concept.display_name,
-        level: concept.level,
-        description: concept.description,
-        works_count: concept.works_count || 0
-      }));
+      return data.results.map(concept => {
+        let translatedName = concept.display_name;
+        // backward search to translate english concepts back to spanish
+        Object.values(CATEGORIES).forEach(cat => {
+          if (cat.labelEn.toLowerCase() === concept.display_name?.toLowerCase()) translatedName = cat.label;
+          if (cat.subcategories) {
+            Object.values(cat.subcategories).forEach(sub => {
+              if (sub.labelEn.toLowerCase() === concept.display_name?.toLowerCase()) translatedName = sub.label;
+            });
+          }
+        });
+
+        return {
+          id: concept.id,
+          display_name: translatedName,
+          level: concept.level,
+          description: concept.description,
+          works_count: concept.works_count || 0
+        };
+      });
     }
   } catch (err) {
     console.error("OpenAlex searchConcepts failed", err);
@@ -419,7 +453,23 @@ export async function getEntityById(type, id) {
   try {
     const response = await fetchWithTimeout(url, 10000);
     if (!response.ok) return null;
-    return await response.json();
+    const data = await response.json();
+    
+    // If it's a concept, translate back to Spanish
+    if (type === 'concept' && data && data.display_name) {
+      let translatedName = data.display_name;
+      Object.values(CATEGORIES).forEach(cat => {
+        if (cat.labelEn.toLowerCase() === data.display_name.toLowerCase()) translatedName = cat.label;
+        if (cat.subcategories) {
+          Object.values(cat.subcategories).forEach(sub => {
+            if (sub.labelEn.toLowerCase() === data.display_name.toLowerCase()) translatedName = sub.label;
+          });
+        }
+      });
+      data.display_name = translatedName;
+    }
+    
+    return data;
   } catch (err) {
     console.error(`OpenAlex getEntityById failed for ${type} ${id}`, err);
     return null;

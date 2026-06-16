@@ -374,8 +374,9 @@ export default function EntityExplorer() {
              <button 
                 className={`filter-btn ${filters?.category || filters?.peerReviewed || filters?.dateRange ? 'active' : ''}`} 
                 onClick={() => setShowFilters(true)}
-             >
-             </button>
+              >
+                <Filter size={16} />
+              </button>
             )}
           </div>
         </div>
