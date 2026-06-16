@@ -96,8 +96,18 @@ export async function enrichPapersBatch(arxivIds) {
              if (!arxivId && work.locations) {
                const arxivLoc = work.locations.find(loc => loc.source && loc.source.id === 'https://openalex.org/S4306400194');
                if (arxivLoc && arxivLoc.landing_page_url) {
-                 const rawId = arxivLoc.landing_page_url.split('/').pop();
-                 arxivId = rawId.replace(/^arxiv\./i, '').replace(/v\d+$/, '');
+                 const url = arxivLoc.landing_page_url;
+                 let rawId = null;
+                 if (url.includes('/abs/')) {
+                     rawId = url.split('/abs/')[1];
+                 } else if (url.includes('arxiv.')) {
+                     rawId = url.split('arxiv.')[1];
+                 } else {
+                     rawId = url.split('/').pop();
+                 }
+                 if (rawId) {
+                     arxivId = rawId.split('?')[0].replace(/v\d+$/, '');
+                 }
                }
              }
              
@@ -575,14 +585,24 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
        data.results.forEach(work => {
            if (work.locations) {
                const arxivLoc = work.locations.find(loc => loc.source && loc.source.id === 'https://openalex.org/S4306400194');
-               if (arxivLoc && arxivLoc.landing_page_url) {
-                   const rawId = arxivLoc.landing_page_url.split('/').pop();
-                   const arxivId = rawId.replace(/^arxiv\./i, '').replace(/v\d+$/, '');
-                   const isValidArxivId = /^\d{4}\.\d{4,5}$/.test(arxivId) || /^[a-z\-]+\/\d{7}$/i.test(arxivId);
-                   if (arxivId && arxivId !== 'arxiv.org' && isValidArxivId) {
-                       arxivIds.push(arxivId);
-                   }
-               }
+                if (arxivLoc && arxivLoc.landing_page_url) {
+                    const url = arxivLoc.landing_page_url;
+                    let rawId = null;
+                    if (url.includes('/abs/')) {
+                        rawId = url.split('/abs/')[1];
+                    } else if (url.includes('arxiv.')) {
+                        rawId = url.split('arxiv.')[1];
+                    } else {
+                        rawId = url.split('/').pop();
+                    }
+                    if (rawId) {
+                        const arxivId = rawId.split('?')[0].replace(/v\d+$/, '');
+                        const isValidArxivId = /^\d{4}\.\d{4,5}$/.test(arxivId) || /^[a-z\-]+\/\d{7}$/i.test(arxivId);
+                        if (arxivId && arxivId !== 'arxiv.org' && isValidArxivId) {
+                            arxivIds.push(arxivId);
+                        }
+                    }
+                }
            }
        });
        return { arxivIds, total: data.meta ? data.meta.count : 0 };
