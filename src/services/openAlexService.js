@@ -432,7 +432,7 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc')
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
   const filterParams = `${filterKey}:${cleanId},locations.source.id:S4306400194`;
   
-  const url = `https://api.openalex.org/works?filter=${filterParams}&sort=${sortBy}&per-page=30&select=id,ids`;
+  const url = `https://api.openalex.org/works?filter=${filterParams}&sort=${sortBy}&per-page=30&select=id,locations`;
   
   try {
     const response = await fetchWithTimeout(url, 10000);
@@ -442,9 +442,14 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc')
     if (data && data.results) {
        const arxivIds = [];
        data.results.forEach(work => {
-           if (work.ids && work.ids.arxiv) {
-               const arxivId = work.ids.arxiv.split('/').pop().replace(/v\d+$/, '');
-               arxivIds.push(arxivId);
+           if (work.locations) {
+               const arxivLoc = work.locations.find(loc => loc.source && loc.source.id === 'https://openalex.org/S4306400194');
+               if (arxivLoc && arxivLoc.landing_page_url) {
+                   const arxivId = arxivLoc.landing_page_url.split('/').pop().replace(/v\d+$/, '');
+                   if (arxivId && arxivId !== 'arxiv.org') {
+                       arxivIds.push(arxivId);
+                   }
+               }
            }
        });
        return arxivIds;
