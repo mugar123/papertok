@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef } f
 import { IS_DEMO, db } from '../services/firebase';
 import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc, updateDoc, deleteField, increment, getDoc } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
-import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers, getPaperByArxivId } from '../services/arxivService';
+import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
 import { getDeviceInfo } from '../utils/device';
 import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data/categories';
 import { enrichPapersBatch, getArxivIdsForOpenAlexWorks } from '../services/openAlexService';
@@ -297,7 +297,6 @@ export function FeedProvider({ children }) {
           
           console.log(`[Recomendador] Insertados ${newGraphPapers.length} papers relacionados de OpenAlex en el feed.`);
         }
-      }
     } catch (err) {
       console.error('[Recomendador] Error expandiendo la red del paper:', err);
     } finally {
