@@ -427,16 +427,50 @@ export async function getEntityById(type, id) {
 }
 
 /**
+ * OpenAlex Concept Mapping for PaperTok Categories
+ */
+const OA_CONCEPT_MAP = {
+  'physics': 'C121332964',
+  'cs': 'C41008148',
+  'math': 'C33923547',
+  'q-bio': 'C86803240',
+  'stat': 'C105795698',
+  'econ': 'C162324750',
+  'eess': 'C127413603',
+  'q-fin': 'C144133560'
+};
+
+/**
  * Fetch works for a specific entity
  * type: 'institution', 'concept', 'author'
  * sortBy: 'cited_by_count:desc' or 'publication_date:desc'
+ * filters: { category: string, peerReviewed: boolean, dateRange: string }
  */
-export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc', page = 1, searchQuery = '') {
+export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc', page = 1, searchQuery = '', filters = {}) {
   if (!id) return { arxivIds: [], total: 0 };
   
   const filterKey = type === 'institution' ? 'institutions.id' : type === 'concept' ? 'concepts.id' : 'author.id';
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
-  const filterParams = `${filterKey}:${cleanId},locations.source.id:S4306400194`;
+  
+  let filterParams = `${filterKey}:${cleanId},locations.source.id:S4306400194`;
+  
+  // Advanced Filters
+  if (filters.peerReviewed) {
+    filterParams += ',is_peer_reviewed:true';
+  }
+  if (filters.category && OA_CONCEPT_MAP[filters.category]) {
+    filterParams += `,concepts.id:${OA_CONCEPT_MAP[filters.category]}`;
+  }
+  if (filters.dateRange) {
+    const today = new Date();
+    if (filters.dateRange === 'last_year') {
+      const lastYear = new Date(today.setFullYear(today.getFullYear() - 1)).toISOString().split('T')[0];
+      filterParams += `,from_publication_date:${lastYear}`;
+    } else if (filters.dateRange === 'last_5_years') {
+      const last5Years = new Date(today.setFullYear(today.getFullYear() - 5)).toISOString().split('T')[0];
+      filterParams += `,from_publication_date:${last5Years}`;
+    }
+  }
   
   let url = `https://api.openalex.org/works?filter=${filterParams}&sort=${sortBy}&per-page=30&page=${page}&select=id,locations`;
   if (searchQuery) {
@@ -469,4 +503,47 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
     console.error(`OpenAlex getWorksByEntity failed for ${type} ${id}`, err);
   }
   return { arxivIds: [], total: 0 };
+}
+
+/**
+ * Fetch authors for a specific entity (e.g. institution or concept)
+ * @param {string} type 
+ * @param {string} id 
+ * @param {number} page 
+ * @param {string} searchQuery 
+ */
+export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '') {
+  if (!id || type === 'author') return { authors: [], total: 0 };
+  
+  const filterKey = type === 'institution' ? 'last_known_institutions.id' : 'x_concepts.id';
+  const cleanId = id.includes('/') ? id.split('/').pop() : id;
+  
+  let url = `https://api.openalex.org/authors?filter=${filterKey}:${cleanId}&sort=cited_by_count:desc&per-page=30&page=${page}`;
+  if (searchQuery) {
+     url += `&search=${encodeURIComponent(searchQuery)}`;
+  }
+  
+  try {
+    const response = await fetchWithTimeout(url, 10000);
+    if (!response.ok) return { authors: [], total: 0 };
+    
+    const data = await response.json();
+    if (data && data.results) {
+       const authors = data.results.map(author => ({
+          id: author.id,
+          display_name: author.display_name,
+          works_count: author.works_count || 0,
+          cited_by_count: author.cited_by_count || 0,
+          h_index: author.summary_stats ? author.summary_stats.h_index : 0,
+          institution: (author.last_known_institutions && author.last_known_institutions.length > 0) 
+              ? author.last_known_institutions[0].display_name 
+              : null,
+          concepts: author.x_concepts ? author.x_concepts.slice(0, 3) : []
+       }));
+       return { authors, total: data.meta ? data.meta.count : 0 };
+    }
+  } catch (err) {
+    console.error(`OpenAlex getAuthorsByEntity failed for ${type} ${id}`, err);
+  }
+  return { authors: [], total: 0 };
 }

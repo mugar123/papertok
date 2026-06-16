@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink } from 'lucide-react';
-import { getEntityById, getWorksByEntity } from '../../services/openAlexService';
+import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight } from 'lucide-react';
+import { getEntityById, getWorksByEntity, getAuthorsByEntity } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
+import { CATEGORIES } from '../../data/categories';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import AuthorPanel from '../Feed/AuthorPanel';
@@ -33,17 +34,35 @@ export default function EntityExplorer() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const observerRef = useRef(null);
 
+  const [activeTab, setActiveTab] = useState('papers');
+  
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    category: '',
+    peerReviewed: false,
+    dateRange: ''
+  });
+
+  const [entityAuthors, setEntityAuthors] = useState([]);
+  const [isLoadingAuthors, setIsLoadingAuthors] = useState(false);
+  const [isFetchingMoreAuthors, setIsFetchingMoreAuthors] = useState(false);
+  const [authorsPage, setAuthorsPage] = useState(1);
+  const [hasMoreAuthors, setHasMoreAuthors] = useState(false);
+  const observerAuthorsRef = useRef(null);
+
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchQuery);
-      setPage(1); // Reset page on new search
+      setPage(1);
+      setAuthorsPage(1);
     }, 600);
     return () => clearTimeout(handler);
   }, [searchQuery]);
 
   useEffect(() => {
-    setPage(1); // Reset page on sort or entity change
-  }, [type, id, sortBy]);
+    setPage(1);
+    setAuthorsPage(1);
+  }, [type, id, sortBy, filters]);
 
   useEffect(() => {
     async function loadEntity() {
@@ -98,12 +117,12 @@ export default function EntityExplorer() {
 
   useEffect(() => {
     async function loadPapers() {
-      if (!entity) return;
+      if (!entity || activeTab !== 'papers') return;
       if (page === 1) setIsLoadingPapers(true);
       else setIsFetchingMore(true);
       
       try {
-        const { arxivIds, total } = await getWorksByEntity(type, id, sortBy, page, debouncedSearch);
+        const { arxivIds, total } = await getWorksByEntity(type, id, sortBy, page, debouncedSearch, filters);
         let fetchedPapers = [];
         if (arxivIds.length > 0) {
           fetchedPapers = await fetchPapersByIds(arxivIds);
@@ -112,17 +131,12 @@ export default function EntityExplorer() {
         if (page === 1) {
           setPapers(fetchedPapers);
         } else {
-          // Remove duplicates
           setPapers(prev => {
              const existingIds = new Set(prev.map(p => p.id));
              const newPapers = fetchedPapers.filter(p => !existingIds.has(p.id));
              return [...prev, ...newPapers];
           });
         }
-        
-        // OpenAlex returns 'total' metadata. We have 30 per page.
-        // Assuming if arxivIds returned is > 0 and we haven't hit a huge number, we might have more.
-        // For simplicity, if we got some arxivIds back from this page, there might be more.
         setHasMore(arxivIds.length > 0 && page * 30 < total);
       } catch (err) {
         console.error("Failed to load papers for entity", err);
@@ -132,20 +146,53 @@ export default function EntityExplorer() {
       setIsFetchingMore(false);
     }
     loadPapers();
-  }, [type, id, entity, sortBy, page, debouncedSearch]);
+  }, [type, id, entity, sortBy, page, debouncedSearch, filters, activeTab]);
+
+  useEffect(() => {
+    async function loadAuthors() {
+      if (!entity || type === 'author' || activeTab !== 'authors') return;
+      if (authorsPage === 1) setIsLoadingAuthors(true);
+      else setIsFetchingMoreAuthors(true);
+      
+      try {
+        const { authors, total } = await getAuthorsByEntity(type, id, authorsPage, debouncedSearch);
+        
+        if (authorsPage === 1) {
+          setEntityAuthors(authors);
+        } else {
+          setEntityAuthors(prev => {
+            const existingIds = new Set(prev.map(a => a.id));
+            const newAuthors = authors.filter(a => !existingIds.has(a.id));
+            return [...prev, ...newAuthors];
+          });
+        }
+        setHasMoreAuthors(authors.length > 0 && authorsPage * 30 < total);
+      } catch (err) {
+        console.error("Failed to load authors for entity", err);
+      }
+      setIsLoadingAuthors(false);
+      setIsFetchingMoreAuthors(false);
+    }
+    loadAuthors();
+  }, [type, id, entity, authorsPage, debouncedSearch, activeTab]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingPapers && !isFetchingMore) {
-          setPage(p => p + 1);
+        if (entries[0].isIntersecting) {
+          if (activeTab === 'papers' && hasMore && !isLoadingPapers && !isFetchingMore) {
+            setPage(p => p + 1);
+          } else if (activeTab === 'authors' && hasMoreAuthors && !isLoadingAuthors && !isFetchingMoreAuthors) {
+            setAuthorsPage(p => p + 1);
+          }
         }
       },
       { threshold: 0.1 }
     );
-    if (observerRef.current) observer.observe(observerRef.current);
+    if (activeTab === 'papers' && observerRef.current) observer.observe(observerRef.current);
+    if (activeTab === 'authors' && observerAuthorsRef.current) observer.observe(observerAuthorsRef.current);
     return () => observer.disconnect();
-  }, [hasMore, isLoadingPapers, isFetchingMore]);
+  }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab]);
 
   const uniqueCategories = useMemo(() => {
     const cats = new Set();
@@ -307,13 +354,16 @@ export default function EntityExplorer() {
           )}
         </div>
         
-        {/* Infinite Scroll Sentinel */}
-        {hasMore && (
-          <div ref={observerRef} className="ehc-sentinel">
-            <Loader2 className="ehc-spinner" size={24} />
-            <span>Cargando más artículos...</span>
-          </div>
-        )}
+        <div className="ee-tabs">
+          <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => setActiveTab('papers')}>
+             Papers
+          </button>
+          {type !== 'author' && (
+             <button className={`ee-tab ${activeTab === 'authors' ? 'active' : ''}`} onClick={() => setActiveTab('authors')}>
+               Autores
+             </button>
+          )}
+        </div>
       </div>
 
       {/* Sticky Toolbar Wrapper */}
@@ -323,7 +373,7 @@ export default function EntityExplorer() {
             <Search size={16} className="es-icon" />
             <input 
               type="text" 
-              placeholder="Filtrar papers por título, autor..." 
+              placeholder={`Filtrar ${activeTab === 'papers' ? 'papers' : 'autores'} por nombre...`}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
             />
@@ -333,6 +383,14 @@ export default function EntityExplorer() {
               </button>
             )}
           </div>
+          {activeTab === 'papers' && (
+             <button 
+                className={`filter-btn ${filters.category || filters.peerReviewed || filters.dateRange ? 'active' : ''}`} 
+                onClick={() => setShowFilters(true)}
+             >
+                <Filter size={16} />
+             </button>
+          )}
           <div className="explorer-sort-toggle">
             <button 
               className={`sort-btn ${sortBy === 'cited_by_count:desc' ? 'active' : ''}`}
@@ -352,74 +410,151 @@ export default function EntityExplorer() {
             </button>
           </div>
         </div>
-
-        {/* Category Filters */}
-        {uniqueCategories.length > 1 && (
-          <div className="explorer-categories">
-            <button 
-              className={`ec-pill ${selectedCategory === 'All' ? 'active' : ''}`}
-              onClick={() => setSelectedCategory('All')}
-            >
-              Todos ({papers.length})
-            </button>
-            {uniqueCategories.map(cat => {
-              const count = papers.filter(p => p.primaryCategory === cat).length;
-              return (
-                <button 
-                  key={cat}
-                  className={`ec-pill ${selectedCategory === cat ? 'active' : ''}`}
-                  onClick={() => setSelectedCategory(cat)}
-                >
-                  {cat} ({count})
-                </button>
-              );
-            })}
-          </div>
-        )}
       </div>
 
-      {/* Papers List */}
-      <div className="explorer-list custom-scrollbar">
-        {isLoadingPapers ? (
-          <div className="explorer-feed-loading">
-            <Loader2 className="spinning" size={32} />
-            <p>Cargando papers ({sortLabel})...</p>
-          </div>
-        ) : filteredPapers.length > 0 ? (
-          <div className="explorer-grid">
-            {filteredPapers.map((paper, index) => (
-              <div 
-                key={paper.id + '-' + index} 
-                className="explorer-list-item"
-                onClick={() => setSelectedPaper(paper)}
-                style={{ '--i': index }}
-              >
-                <div className="eli-header">
-                  <span className="eli-cat">{paper.primaryCategory}</span>
-                  <span className="eli-date">{new Date(paper.published).toLocaleDateString()}</span>
+      <div className="explorer-content">
+        {activeTab === 'papers' ? (
+          <>
+            {filteredPapers.length > 0 && (
+              <div className="categories-filter">
+                <button 
+                  className={`cat-pill ${selectedCategory === 'All' ? 'active' : ''}`}
+                  onClick={() => setSelectedCategory('All')}
+                >
+                  Todas las categorías
+                </button>
+                {uniqueCategories.map(cat => (
+                  <button 
+                    key={cat}
+                    className={`cat-pill ${selectedCategory === cat ? 'active' : ''}`}
+                    onClick={() => setSelectedCategory(cat)}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
+            )}
+            
+            <div className="feed-grid explorer-grid">
+              {filteredPapers.map((paper, idx) => (
+                <PaperCard 
+                  key={`${paper.id}-${idx}`} 
+                  paper={paper} 
+                  onAuthorClick={handleAuthorClick}
+                  onPdfClick={() => setPdfPaperToView(paper)}
+                  style={{ animationDelay: `${idx * 0.05}s` }}
+                />
+              ))}
+              
+              {isLoadingPapers && !isFetchingMore && (
+                <div className="explorer-grid-loading">
+                  <Loader2 className="spinning" size={32} />
+                  <span>Buscando papers...</span>
                 </div>
-                <h3 className="eli-title">{paper.title}</h3>
-                <p className="eli-authors">{paper.authors.slice(0, 4).join(', ')}{paper.authors.length > 4 ? ` +${paper.authors.length - 4}` : ''}</p>
-                <p className="eli-summary">{paper.summary}</p>
+              )}
+            </div>
+            
+            {!isLoadingPapers && filteredPapers.length === 0 && (
+              <div className="explorer-empty">
+                <p>No se encontraron resultados que coincidan con tu búsqueda y filtros.</p>
+              </div>
+            )}
+
+            {/* Infinite Scroll Sentinel */}
+            {hasMore && (
+              <div ref={observerRef} className="ehc-sentinel">
+                <Loader2 className="ehc-spinner" size={24} />
+                <span>Cargando más artículos...</span>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="ee-authors-grid">
+            {entityAuthors.map(author => (
+              <div key={author.id} className="ee-author-card" onClick={() => navigate(`/explorer/author/${encodeURIComponent(author.id)}`)}>
+                <div className="ee-author-icon"><Users size={24} /></div>
+                <div className="ee-author-info">
+                  <h4>{author.display_name}</h4>
+                  <p className="ee-author-metrics">
+                    H-Index: {author.h_index} • {author.cited_by_count.toLocaleString()} citas
+                  </p>
+                </div>
+                <ChevronRight size={18} className="ee-author-arrow" />
               </div>
             ))}
-          </div>
-        ) : (
-          <div className="explorer-empty">
-            {searchQuery ? (
-              <>
-                <Search size={48} style={{ opacity: 0.3 }} />
-                <p>No se encontraron papers con "{searchQuery}"</p>
-                <button className="explorer-clear-btn" onClick={() => { setSearchQuery(''); setSelectedCategory('All'); }}>
-                  Limpiar filtros
-                </button>
-              </>
-            ) : (
-              <p>No se encontraron papers disponibles en arXiv.</p>
+            
+            {isLoadingAuthors && !isFetchingMoreAuthors && (
+              <div className="explorer-grid-loading">
+                <Loader2 className="spinning" size={32} />
+                <span>Cargando autores...</span>
+              </div>
+            )}
+            
+            {hasMoreAuthors && (
+              <div ref={observerAuthorsRef} className="ehc-sentinel">
+                <Loader2 className="ehc-spinner" size={24} />
+                <span>Cargando más autores...</span>
+              </div>
             )}
           </div>
         )}
       </div>
+
+      {/* Filter Drawer */}
+      <AnimatePresence>
+        {showFilters && (
+          <>
+            <motion.div 
+              className="ee-filter-backdrop" 
+              onClick={() => setShowFilters(false)} 
+              initial={{opacity:0}} 
+              animate={{opacity:1}} 
+              exit={{opacity:0}} 
+            />
+            <motion.div 
+              className="ee-filter-drawer" 
+              initial={{x:'100%'}} 
+              animate={{x:0}} 
+              exit={{x:'100%'}} 
+              transition={{type:'spring', damping:25, stiffness:200}}
+            >
+              <div className="ee-filter-header">
+                <h3><SlidersHorizontal size={18}/> Filtros Avanzados</h3>
+                <button className="close-btn" onClick={() => setShowFilters(false)}><X size={20}/></button>
+              </div>
+              <div className="ee-filter-body">
+                <div className="ee-filter-section">
+                  <h4>Categoría (Área)</h4>
+                  <select value={filters.category} onChange={e => setFilters({...filters, category: e.target.value})}>
+                    <option value="">Todas</option>
+                    {Object.entries(CATEGORIES).map(([key, cat]) => (
+                      <option key={key} value={key}>{cat.label}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="ee-filter-section">
+                  <h4>Fecha de Publicación</h4>
+                  <select value={filters.dateRange} onChange={e => setFilters({...filters, dateRange: e.target.value})}>
+                    <option value="">Cualquier fecha</option>
+                    <option value="last_year">Último año</option>
+                    <option value="last_5_years">Últimos 5 años</option>
+                  </select>
+                </div>
+                <div className="ee-filter-section">
+                  <label className="ee-toggle-label">
+                    <input type="checkbox" checked={filters.peerReviewed} onChange={e => setFilters({...filters, peerReviewed: e.target.checked})} />
+                    Solo revisados por pares (Peer Reviewed)
+                  </label>
+                </div>
+              </div>
+              <div className="ee-filter-footer">
+                <button className="ee-filter-reset" onClick={() => { setFilters({category:'', peerReviewed:false, dateRange:''}); setShowFilters(false); }}>Restablecer</button>
+                <button className="ee-filter-apply" onClick={() => setShowFilters(false)}>Aplicar Filtros</button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
       {/* Paper Card Overlay */}
       {selectedPaper && !pdfPaperToView && (
