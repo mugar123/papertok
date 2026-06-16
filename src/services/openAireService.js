@@ -16,7 +16,7 @@ async function fetchWithTimeout(url, timeout = 10000) {
 
 export async function getProjectDetails(projectId) {
   if (!projectId) return null;
-  const url = `https://api.openaire.eu/search/projects?format=json&size=1&projectID=${encodeURIComponent(projectId)}`;
+  const url = `https://api.openaire.eu/search/projects?format=json&size=1&grantID=${encodeURIComponent(projectId)}`;
   try {
     const response = await fetchWithTimeout(url);
     if (!response.ok) return null;
