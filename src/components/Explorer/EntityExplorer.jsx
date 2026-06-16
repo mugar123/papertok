@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, BadgeCheck, FileText } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
+import { getPapersByProject } from '../../services/openAireService';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
 import PaperCard from '../Feed/PaperCard';
@@ -67,6 +68,14 @@ export default function EntityExplorer() {
   useEffect(() => {
     async function loadEntity() {
       setIsLoadingEntity(true);
+      if (type === 'project') {
+        const urlParams = new URLSearchParams(window.location.search);
+        const name = urlParams.get('name') || id;
+        const funder = urlParams.get('funder') || '';
+        setEntity({ display_name: name, type: 'project', funder });
+        setIsLoadingEntity(false);
+        return;
+      }
       setEntity(null);
       setPapers([]);
       setSearchQuery('');
@@ -121,7 +130,19 @@ export default function EntityExplorer() {
       else setIsFetchingMore(true);
       
       try {
-        const { arxivIds, total } = await getWorksByEntity(type, id, sortBy, page, debouncedSearch, filters);
+        let arxivIds = [];
+        let total = 0;
+        
+        if (type === 'project') {
+           const res = await getPapersByProject(id, page);
+           arxivIds = res.arxivIds;
+           total = res.total;
+        } else {
+           const res = await getWorksByEntity(type, id, sortBy, page, debouncedSearch, filters);
+           arxivIds = res.arxivIds;
+           total = res.total;
+        }
+        
         let fetchedPapers = [];
         if (arxivIds.length > 0) {
           const rawPapers = await fetchPapersByIds(arxivIds);
@@ -252,10 +273,11 @@ export default function EntityExplorer() {
     if (type === 'institution') return <Building2 size={36} />;
     if (type === 'concept') return <Lightbulb size={36} />;
     if (type === 'source') return <FileText size={36} />;
+    if (type === 'project') return <span style={{ fontSize: '36px' }}>🇪🇺</span>;
     return <Users size={36} />;
   };
 
-  const entityTypeLabel = type === 'author' ? 'Autor' : type === 'institution' ? 'Universidad / Institución' : type === 'source' ? 'Revista' : 'Tema';
+  const entityTypeLabel = type === 'author' ? 'Autor' : type === 'institution' ? 'Universidad / Institución' : type === 'source' ? 'Revista' : type === 'project' ? 'Proyecto de Investigación' : 'Tema';
   const EntityIcon = type === 'author' ? Users : type === 'institution' ? Building2 : type === 'source' ? FileText : Lightbulb;
   const topConcepts = entity.x_concepts ? entity.x_concepts.slice(0, 4) : [];
 
@@ -293,6 +315,11 @@ export default function EntityExplorer() {
               {type === 'institution' && (
                 <p className="ehc-meta">
                   {entity.geo?.city}, {entity.geo?.country}
+                </p>
+              )}
+              {type === 'project' && entity.funder && (
+                <p className="ehc-meta">
+                  Financiado por: {entity.funder}
                 </p>
               )}
               {topConcepts.length > 0 && (

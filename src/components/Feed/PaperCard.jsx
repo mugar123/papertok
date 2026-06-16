@@ -4,6 +4,8 @@ import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChar
 import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
 import { useAuth } from '../../context/AuthContext';
+import { getProjectForPaper } from '../../services/openAireService';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import './PaperCard.css';
 
@@ -48,6 +50,7 @@ const PaperCard = memo(function PaperCard({
   const [copied, setCopied] = useState(false);
   const [isMarkingRead, setIsMarkingRead] = useState(false);
   const { followedAuthors } = useAuth();
+  const navigate = useNavigate();
   
   const hasFollowedAuthor = useMemo(() => {
     if (!paper || !paper.authors || !followedAuthors || followedAuthors.length === 0) return false;
@@ -100,6 +103,19 @@ const PaperCard = memo(function PaperCard({
       }
     };
   }, [paper, trackViewTime, trackSkip]);
+
+  const [project, setProject] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    if (!paper) return;
+    getProjectForPaper(paper.arxivId, paper.doi).then(proj => {
+      if (isMounted && proj) {
+        setProject(proj);
+      }
+    });
+    return () => { isMounted = false; };
+  }, [paper]);
 
   const toggleExpanded = (e, newState) => {
     e.stopPropagation();
@@ -359,6 +375,38 @@ const PaperCard = memo(function PaperCard({
                 {concept.display_name}
               </span>
             ))}
+          </div>
+        )}
+
+        {/* OpenAIRE Project Badge */}
+        {project && (
+          <div 
+            className="pc-project-badge"
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: '6px',
+              background: 'rgba(29, 161, 242, 0.15)',
+              padding: '4px 10px',
+              borderRadius: '16px',
+              fontSize: '11px',
+              fontWeight: '600',
+              color: '#1da1f2',
+              border: '1px solid rgba(29, 161, 242, 0.3)',
+              marginBottom: '10px',
+              cursor: 'pointer'
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (project.code) {
+                // Navigate to the explorer for this project, passing the acronym as the id or name if we want, 
+                // but we need the code as the ID. The URL is /explorer/project/{code}
+                navigate(`/explorer/project/${project.code}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}`);
+              }
+            }}
+          >
+            <span>🇪🇺</span>
+            <span>{project.funderLevel || project.funder}: {project.acronym}</span>
           </div>
         )}
 

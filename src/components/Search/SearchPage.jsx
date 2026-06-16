@@ -3,6 +3,7 @@ import { Search, FileText, Users, Loader2, ArrowLeft, Building2, Lightbulb } fro
 import { useNavigate } from 'react-router-dom';
 import { searchPapers } from '../../services/arxivService';
 import { searchAuthors, searchInstitutions, searchConcepts, searchSources } from '../../services/openAlexService';
+import { searchProjects } from '../../services/openAireService';
 import { useAuth } from '../../context/AuthContext';
 import { AnimatePresence } from 'framer-motion';
 import PaperCard from '../Feed/PaperCard';
@@ -24,6 +25,7 @@ export default function SearchPage() {
   const [institutionResults, setInstitutionResults] = useState([]);
   const [conceptResults, setConceptResults] = useState([]);
   const [sourceResults, setSourceResults] = useState([]);
+  const [projectResults, setProjectResults] = useState([]);
   
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaper, setPdfPaper] = useState(null);
@@ -36,9 +38,9 @@ export default function SearchPage() {
       setPaperResults([]);
       setAuthorResults([]);
       setInstitutionResults([]);
-      setInstitutionResults([]);
       setConceptResults([]);
       setSourceResults([]);
+      setProjectResults([]);
       setIsDebouncing(false);
       setHasSearched(false);
       return;
@@ -59,12 +61,13 @@ export default function SearchPage() {
     setIsSearching(true);
     setHasSearched(true);
     try {
-      const [papers, authors, institutions, concepts, sources] = await Promise.all([
+      const [papers, authors, institutions, concepts, sources, projects] = await Promise.all([
         searchPapers(searchTerm, 0, 10).catch(() => []),
         searchAuthors(searchTerm).catch(() => []),
         searchInstitutions(searchTerm).catch(() => []),
         searchConcepts(searchTerm).catch(() => []),
-        searchSources(searchTerm).catch(() => [])
+        searchSources(searchTerm).catch(() => []),
+        searchProjects(searchTerm).then(res => res.projects).catch(() => [])
       ]);
       
       setPaperResults(papers);
@@ -72,6 +75,7 @@ export default function SearchPage() {
       setInstitutionResults(institutions);
       setConceptResults(concepts);
       setSourceResults(sources);
+      setProjectResults(projects);
     } catch (err) {
       console.error(err);
     }
@@ -142,6 +146,22 @@ export default function SearchPage() {
                     <div className="search-item-info">
                       <h4>{inst.display_name}</h4>
                       <p>{inst.geo?.city || 'Ciudad desconocida'}, {inst.geo?.country || 'País desconocido'} • {inst.works_count?.toLocaleString()} obras</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Projects */}
+            {projectResults.length > 0 && (
+              <div className="search-section">
+                <h3 className="search-section-title">Proyectos de Investigación</h3>
+                {projectResults.map(project => (
+                  <div key={project.id} className="search-item" onClick={() => navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}`)}>
+                    <div className="search-item-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '22px' }}>🇪🇺</div>
+                    <div className="search-item-info">
+                      <h4>{project.acronym}: {project.title}</h4>
+                      <p>Financiado por {project.funder}</p>
                     </div>
                   </div>
                 ))}
