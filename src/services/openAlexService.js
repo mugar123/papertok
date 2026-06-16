@@ -48,9 +48,12 @@ export async function enrichPapersBatch(arxivIds) {
   const CHUNK_SIZE = 40;
   for (let i = 0; i < toFetch.length; i += CHUNK_SIZE) {
     const chunk = toFetch.slice(i, i + CHUNK_SIZE);
-    // Convert arXiv IDs to their official DOIs for OpenAlex lookup
-    const filterIds = chunk.map(id => `doi:10.48550/arxiv.${id.replace(/v\d+$/, '')}`).join('|');
-    const url = `https://api.openalex.org/works?filter=${filterIds}&per-page=50&select=doi,concepts,cited_by_count,related_works`;
+    // Use landing_page_url to reliably find arXiv papers instead of DOIs
+    const filterIds = chunk.flatMap(id => {
+       const cleanId = id.replace(/v\d+$/, '');
+       return [`http://arxiv.org/abs/${cleanId}`, `https://arxiv.org/abs/${cleanId}`];
+    }).join('|');
+    const url = `https://api.openalex.org/works?filter=locations.landing_page_url:${encodeURIComponent(filterIds)}&per-page=50&select=doi,concepts,cited_by_count,related_works,locations`;
     
     let response = null;
     let primaryFailed = false;
@@ -85,11 +88,11 @@ export async function enrichPapersBatch(arxivIds) {
         if (data && data.results) {
           data.results.forEach(work => {
              let arxivId = null;
-             if (work.doi) {
-               // work.doi is usually "https://doi.org/10.48550/arxiv.2403.01123"
-               const match = work.doi.match(/arxiv\.(.+)$/i);
-               if (match) {
-                 arxivId = match[1].replace(/v\d+$/, '');
+             if (work.locations) {
+               const arxivLoc = work.locations.find(loc => loc.source && loc.source.id === 'https://openalex.org/S4306400194');
+               if (arxivLoc && arxivLoc.landing_page_url) {
+                 const rawId = arxivLoc.landing_page_url.split('/').pop();
+                 arxivId = rawId.replace(/^arxiv\./i, '').replace(/v\d+$/, '');
                }
              }
              
@@ -445,7 +448,8 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc')
            if (work.locations) {
                const arxivLoc = work.locations.find(loc => loc.source && loc.source.id === 'https://openalex.org/S4306400194');
                if (arxivLoc && arxivLoc.landing_page_url) {
-                   const arxivId = arxivLoc.landing_page_url.split('/').pop().replace(/v\d+$/, '');
+                   const rawId = arxivLoc.landing_page_url.split('/').pop();
+               const arxivId = rawId.replace(/^arxiv\./i, '').replace(/v\d+$/, '');
                    if (arxivId && arxivId !== 'arxiv.org') {
                        arxivIds.push(arxivId);
                    }
