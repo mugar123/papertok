@@ -21,7 +21,7 @@ export default function EntityExplorer() {
   const [sortBy, setSortBy] = useState('cited_by_count:desc');
   
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('All');
+
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
   const [wikiInfo, setWikiInfo] = useState(null);
@@ -70,7 +70,6 @@ export default function EntityExplorer() {
       setEntity(null);
       setPapers([]);
       setSearchQuery('');
-      setSelectedCategory('All');
       setWikiInfo(null);
       
       const data = await getEntityById(type, id);
@@ -194,21 +193,9 @@ export default function EntityExplorer() {
     return () => observer.disconnect();
   }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab]);
 
-  const uniqueCategories = useMemo(() => {
-    const cats = new Set();
-    papers.forEach(p => {
-      if (p.primaryCategory) cats.add(p.primaryCategory);
-    });
-    return Array.from(cats).sort();
-  }, [papers]);
-
   const filteredPapers = useMemo(() => {
-    return papers.filter(p => {
-      // We no longer filter by search query locally because the API handles it
-      // but we still filter by the selected category locally
-      return selectedCategory === 'All' || p.primaryCategory === selectedCategory;
-    });
-  }, [papers, selectedCategory]);
+    return papers;
+  }, [papers]);
 
   const handleAuthorClick = useCallback((authors, arxivId) => {
     setSelectedPaper(null);
@@ -415,25 +402,7 @@ export default function EntityExplorer() {
       <div className="explorer-content">
         {activeTab === 'papers' ? (
           <>
-            {filteredPapers.length > 0 && (
-              <div className="categories-filter">
-                <button 
-                  className={`cat-pill ${selectedCategory === 'All' ? 'active' : ''}`}
-                  onClick={() => setSelectedCategory('All')}
-                >
-                  Todas las categorías
-                </button>
-                {uniqueCategories.map(cat => (
-                  <button 
-                    key={cat}
-                    className={`cat-pill ${selectedCategory === cat ? 'active' : ''}`}
-                    onClick={() => setSelectedCategory(cat)}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            )}
+
             
             <div className="explorer-grid">
               {filteredPapers.map((paper, idx) => (

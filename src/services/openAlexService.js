@@ -458,8 +458,11 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
   if (filters.peerReviewed) {
     filterParams += ',is_peer_reviewed:true';
   }
-  if (filters.category && OA_CONCEPT_MAP[filters.category]) {
-    filterParams += `,concepts.id:${OA_CONCEPT_MAP[filters.category]}`;
+  if (filters.category) {
+    const prefix = filters.category.split('.')[0];
+    if (OA_CONCEPT_MAP[prefix]) {
+      filterParams += `,concepts.id:${OA_CONCEPT_MAP[prefix]}`;
+    }
   }
   if (filters.dateRange) {
     const today = new Date();
