@@ -20,7 +20,7 @@ export default function EntityExplorer() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [selectedPaper, setSelectedPaper] = useState(null);
-  const [pdfUrlToView, setPdfUrlToView] = useState(null);
+  const [pdfPaperToView, setPdfPaperToView] = useState(null);
 
   useEffect(() => {
     async function loadEntity() {
@@ -213,18 +213,18 @@ export default function EntityExplorer() {
       </div>
 
       {/* Paper Details Overlay */}
-      {selectedPaper && !pdfUrlToView && (
+      {selectedPaper && !pdfPaperToView && (
         <PaperDetailsModal 
           paper={selectedPaper}
           onClose={() => setSelectedPaper(null)}
-          onOpenPdf={(paper) => setPdfUrlToView(paper.pdfUrl)}
+          onOpenPdf={(paper) => setPdfPaperToView(paper)}
         />
       )}
 
       {/* PDF Viewer Overlay */}
-      {pdfUrlToView && (
+      {pdfPaperToView && (
         <div className="explorer-overlay" style={{ zIndex: 1001 }}>
-          <PDFViewer pdfUrl={pdfUrlToView} onClose={() => setPdfUrlToView(null)} />
+          <PDFViewer paper={pdfPaperToView} onClose={() => setPdfPaperToView(null)} />
         </div>
       )}
     </div>
