@@ -38,13 +38,13 @@ function AppContent() {
             path="/"
             element={
               <ProtectedRoute>
-                <PageTransition>
+                <>
                   <Navbar />
                   <FeedContainer
                     onOpenPdf={setPdfPaper}
                     onSaveToList={setSaveModalPaper}
                   />
-                </PageTransition>
+                </>
               </ProtectedRoute>
             }
           />
@@ -52,10 +52,10 @@ function AppContent() {
             path="/lists"
             element={
               <ProtectedRoute>
-                <PageTransition>
+                <>
                   <Navbar />
                   <ListsPage onOpenPdf={setPdfPaper} />
-                </PageTransition>
+                </>
               </ProtectedRoute>
             }
           />
