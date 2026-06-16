@@ -140,11 +140,12 @@ export default function EntityExplorer() {
           </div>
         ) : papers.length > 0 ? (
           papers.map((paper, index) => (
-            <PaperCard 
-              key={paper.id + '-' + index} 
-              paper={paper} 
-              onOpenPdf={() => setSelectedPaper(paper)} 
-            />
+            <div key={paper.id + '-' + index} className="explorer-paper-wrapper">
+              <PaperCard 
+                paper={paper} 
+                onOpenPdf={() => setSelectedPaper(paper)} 
+              />
+            </div>
           ))
         ) : (
           <div className="explorer-empty">

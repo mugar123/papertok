@@ -150,6 +150,21 @@
   flex-direction: column;
   gap: 24px;
   align-items: center;
+  /* Make it a snap container similar to the main feed, but padded */
+  scroll-snap-type: y mandatory;
+}
+
+.explorer-paper-wrapper {
+  width: 100%;
+  max-width: 600px; /* Constrain width for a nicer feed on desktop */
+  height: 85vh;     /* Give it a fixed immersive height */
+  min-height: 600px;
+  border-radius: 20px;
+  overflow: hidden;
+  flex-shrink: 0;
+  scroll-snap-align: center;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+  position: relative;
 }
 
 .explorer-feed-loading {
