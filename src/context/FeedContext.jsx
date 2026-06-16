@@ -358,45 +358,37 @@ export function FeedProvider({ children }) {
           .sort(() => 0.5 - Math.random())
           .slice(0, 2);
         
-        // Make parallel requests to preserve logic buckets and prevent high-volume categories 
-        // from drowning out low-volume categories when sorted by date.
+        // Make sequential requests to preserve logic buckets and prevent high-volume categories 
+        // from drowning out low-volume categories, while avoiding arXiv API concurrent request limits.
         const queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';
         
-        const promises = [];
-        
         // 1. User Preferences (60% ~ 15 papers)
-        promises.push(fetchPapers(userPreferences, currentPage * 15, 15, queryMode).catch(() => []));
+        const exploitPapers = await fetchPapers(userPreferences, currentPage * 15, 15, queryMode).catch(() => []);
         
         // 2. Trending (15% ~ 5 papers)
+        let trendingPapers = [];
         if (trendingCategories.length > 0) {
-          promises.push(fetchPapers(trendingCategories, currentPage * 5, 5, queryMode).catch(() => []));
-        } else {
-          promises.push(Promise.resolve([]));
+          trendingPapers = await fetchPapers(trendingCategories, currentPage * 5, 5, queryMode).catch(() => []);
         }
         
         // 3. Random (10% ~ 5 papers)
+        let randomPapers = [];
         if (randomCats.length > 0) {
-          promises.push(fetchPapers(randomCats, currentPage * 5, 5, queryMode).catch(() => []));
-        } else {
-          promises.push(Promise.resolve([]));
+          randomPapers = await fetchPapers(randomCats, currentPage * 5, 5, queryMode).catch(() => []);
         }
 
         // 4. Graph/Related (15% ~ 5 papers)
+        let graphPapers = [];
         if (candidatesToFetch.length > 0) {
-           promises.push(fetchPapersByIds(candidatesToFetch).catch(() => []));
-        } else {
-           promises.push(Promise.resolve([]));
+           graphPapers = await fetchPapersByIds(candidatesToFetch).catch(() => []);
         }
         
         // 5. Followed Authors (Inject 1 or 2 papers)
+        let authorPapers = [];
         if (followedAuthors && followedAuthors.length > 0) {
           const randAuthor = followedAuthors[Math.floor(Math.random() * followedAuthors.length)];
-          promises.push(getAuthorPapers(randAuthor, 2).catch(() => []));
-        } else {
-          promises.push(Promise.resolve([]));
+          authorPapers = await getAuthorPapers(randAuthor, 2).catch(() => []);
         }
-
-        const [exploitPapers, trendingPapers, randomPapers, graphPapers, authorPapers] = await Promise.all(promises);
 
         // Separate the combined papers back into logic buckets to respect ratios (roughly)
         let coreToEnrich = []; 
