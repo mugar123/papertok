@@ -169,7 +169,7 @@ export default function SearchPage() {
                     <div className="search-item-icon"><Briefcase size={22} /></div>
                     <div className="search-item-info">
                       <h4>{project.acronym ? `${project.acronym}: ${project.title}` : project.title}</h4>
-                      <p>{project.funder}{project.budget > 0 ? ` • ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: project.currency || 'EUR', maximumFractionDigits: 0 }).format(project.budget)}` : ''}</p>
+                      <p>{project.funder}{project.budget > 0 ? (() => { try { return ` • ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget)}`; } catch { return ` • ${project.budget.toLocaleString('es-ES')} €`; } })() : ''}</p>
                     </div>
                   </div>
                 ))}

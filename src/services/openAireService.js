@@ -14,6 +14,13 @@ async function fetchWithTimeout(url, timeout = 10000) {
   }
 }
 
+/** Validate that a string is a plausible 3-letter ISO 4217 currency code */
+function validCurrency(code) {
+  if (!code || typeof code !== 'string') return 'EUR';
+  const upper = code.trim().toUpperCase();
+  return /^[A-Z]{3}$/.test(upper) ? upper : 'EUR';
+}
+
 /**
  * Extract funder info from the fundingtree structure.
  * fundingtree can be an array of objects or a single object,
@@ -73,7 +80,7 @@ export async function getProjectDetails(projectId) {
       startDate: p.startdate?.["$"],
       endDate: p.enddate?.["$"],
       budget,
-      currency: p.currency?.["$"] || "EUR"
+      currency: validCurrency(p.currency?.["$"])
     };
   } catch (e) {
     console.error("Error fetching project details:", e);
@@ -267,7 +274,7 @@ export async function searchProjects(query, page = 1) {
         funder: funderName,
         fundingStream,
         budget,
-        currency: p.currency?.["$"] || "EUR",
+        currency: validCurrency(p.currency?.["$"]),
       };
     }).filter(Boolean);
 

@@ -384,7 +384,7 @@ export default function EntityExplorer() {
             {type === 'project' && entity.budget > 0 && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">
-                  {new Intl.NumberFormat('es-ES', { style: 'currency', currency: entity.currency || 'EUR', maximumFractionDigits: 0 }).format(entity.budget)}
+                  {(() => { try { return new Intl.NumberFormat('es-ES', { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.budget); } catch { return `${entity.budget.toLocaleString('es-ES')} €`; } })()}
                 </span>
                 <span className="ehc-stat-label">Presupuesto</span>
               </div>
