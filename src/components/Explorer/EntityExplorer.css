@@ -1329,16 +1329,16 @@
 
 .orcid-career-section--animate > * {
   opacity: 0;
-  animation: orcidChildReveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: orcidChildReveal 0.5s cubic-bezier(0.25, 1, 0.5, 1) forwards;
 }
 
-.orcid-career-section--animate > *:nth-child(1) { animation-delay: 0.05s; }
-.orcid-career-section--animate > *:nth-child(2) { animation-delay: 0.12s; }
-.orcid-career-section--animate > *:nth-child(3) { animation-delay: 0.19s; }
-.orcid-career-section--animate > *:nth-child(4) { animation-delay: 0.26s; }
-.orcid-career-section--animate > *:nth-child(5) { animation-delay: 0.33s; }
-.orcid-career-section--animate > *:nth-child(6) { animation-delay: 0.4s; }
-.orcid-career-section--animate > *:nth-child(7) { animation-delay: 0.47s; }
+.orcid-career-section--animate > *:nth-child(1) { animation-delay: 0.04s; }
+.orcid-career-section--animate > *:nth-child(2) { animation-delay: 0.1s; }
+.orcid-career-section--animate > *:nth-child(3) { animation-delay: 0.16s; }
+.orcid-career-section--animate > *:nth-child(4) { animation-delay: 0.22s; }
+.orcid-career-section--animate > *:nth-child(5) { animation-delay: 0.28s; }
+.orcid-career-section--animate > *:nth-child(6) { animation-delay: 0.34s; }
+.orcid-career-section--animate > *:nth-child(7) { animation-delay: 0.4s; }
 
 @keyframes orcidReveal {
   from { opacity: 0; }
@@ -1348,7 +1348,7 @@
 @keyframes orcidChildReveal {
   from {
     opacity: 0;
-    transform: translateY(14px);
+    transform: translateY(6px);
   }
   to {
     opacity: 1;
