@@ -189,10 +189,20 @@ function isNameMatch(p, o) {
   return false;
 }
 
+function normalizeNameForMatch(name) {
+  return name.normalize("NFD")
+             .replace(/[\u0300-\u036f]/g, "") // Remove accents
+             .replace(/-/g, ' ') // Convert hyphens to spaces
+             .toLowerCase()
+             .replace(/[^a-z\s]/g, '') // Keep only letters and spaces
+             .split(/\s+/)
+             .filter(Boolean);
+}
+
 function matchesAuthorName(reqName, oaName) {
   if (!reqName || !oaName) return false;
-  const reqParts = reqName.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
-  const oaParts = oaName.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
+  const reqParts = normalizeNameForMatch(reqName);
+  const oaParts = normalizeNameForMatch(oaName);
   
   const reqInOa = reqParts.length > 0 && reqParts.every(p => oaParts.some(o => isNameMatch(p, o)));
   const oaInReq = oaParts.length > 0 && oaParts.every(o => reqParts.some(p => isNameMatch(p, o)));
