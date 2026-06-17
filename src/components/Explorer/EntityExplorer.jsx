@@ -336,8 +336,7 @@ export default function EntityExplorer() {
 
   const sortLabel = sortBy === 'cited_by_count:desc' ? 'Más citados' : 'Más recientes';
 
-  if (isLoadingEntity) {
-    return (
+  if (isLoadingEntity) return (
       <div className="explorer-container">
         <div className="explorer-hero">
           <div className="explorer-hero-top">
@@ -345,40 +344,40 @@ export default function EntityExplorer() {
               <button className="explorer-back-btn" onClick={() => navigate(-1)}>
                 <ArrowLeft size={20} />
               </button>
-              <div className="skel-item" style={{ width: '80px', height: '16px' }}></div>
+              <div className="skeleton-item" style={{ width: '80px', height: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}></div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="explorer-action-btn skel-item" style={{ border: 'none' }}></button>
+              <button className="explorer-action-btn skeleton-item" style={{ border: 'none', background: 'rgba(255,255,255,0.05)' }}></button>
             </div>
           </div>
           
           <div className="explorer-hero-content">
             <div className="ehc-main">
-              <div className="ehc-icon skel-item" style={{ background: 'rgba(255,255,255,0.05)', borderColor: 'transparent' }}></div>
-              <div className="ehc-info">
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  <div className="skel-item" style={{ width: '60%', height: '34px', borderRadius: '4px' }}></div>
-                </div>
-                <div className="skel-item" style={{ width: '35%', height: '16px', marginTop: '8px', borderRadius: '4px' }}></div>
-                <div className="skel-item" style={{ width: '20%', height: '16px', marginTop: '6px', borderRadius: '4px' }}></div>
+              <div className="ehc-icon skeleton-item" style={{ background: 'rgba(255,255,255,0.05)', borderColor: 'transparent' }}></div>
+              <div className="ehc-info" style={{ width: '100%' }}>
+                <div className="skeleton-item skeleton-title" style={{ width: '200px', maxWidth: '80%', height: '28px', margin: '0 0 12px 0' }}></div>
+                <div className="skeleton-item skeleton-text medium"></div>
+                <div className="skeleton-item skeleton-text short"></div>
               </div>
             </div>
             
             <div className="ehc-stats-grid">
-              {[1, 2, 3, 4].map(i => (
-                <div key={i} className="ehc-stat-box skel-item" style={{ height: '60px', background: 'rgba(255,255,255,0.03)' }}></div>
+              {[1, 2, 3].map(i => (
+                <div key={i} className="ehc-stat-box skeleton-item" style={{ height: '60px', background: 'rgba(255,255,255,0.03)' }}></div>
               ))}
             </div>
           </div>
         </div>
-        <div className="explorer-content" style={{ padding: '24px 16px' }}>
-          {[1,2,3,4].map(i => (
-             <div key={i} className="explorer-list-item skel-item" style={{ height: '160px', marginBottom: '16px', borderRadius: '16px' }}></div>
-          ))}
+
+        <div className="explorer-content">
+          <div className="explorer-list">
+            {[1, 2, 3].map(i => (
+             <div key={i} className="explorer-list-item skeleton-item" style={{ height: '160px', marginBottom: '16px', borderRadius: '16px', background: 'rgba(255,255,255,0.02)' }}></div>
+            ))}
+          </div>
         </div>
       </div>
     );
-  }
 
   if (!entity) {
     return (
