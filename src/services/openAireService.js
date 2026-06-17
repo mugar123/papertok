@@ -261,22 +261,32 @@ export async function getPapersByProject(projectCode, page = 1) {
       if (!pids) return;
       if (!Array.isArray(pids)) pids = [pids];
 
-      let foundArxiv = false;
+      let foundArxiv = null;
       let foundDoi = null;
+
+      for (const pid of pids) {
+        const type = pid["@classname"]?.toLowerCase();
+        if (type === "digital object identifier" || type === "doi") {
+          foundDoi = pid["$"];
+        }
+      }
 
       for (const pid of pids) {
         const type = pid["@classname"]?.toLowerCase();
         // Sometimes arxiv IDs are under "arxiv" classname, sometimes in handling. We just look for "arxiv"
         if (type === "arxiv") {
-          arxivIds.push(pid["$"]);
-          foundArxiv = true;
+          if (foundDoi && typeof foundDoi === 'string' && foundDoi.includes('arxiv.')) {
+            foundArxiv = foundDoi.split('arxiv.')[1];
+          } else {
+            foundArxiv = String(pid["$"]);
+          }
           break;
         }
-        if (type === "digital object identifier" || type === "doi") {
-          foundDoi = pid["$"];
-        }
       }
-      if (!foundArxiv && foundDoi) {
+      
+      if (foundArxiv) {
+        arxivIds.push(foundArxiv);
+      } else if (foundDoi) {
         dois.push(foundDoi);
       }
     });
