@@ -237,25 +237,68 @@
 
 /* ─── Follow Button ─── */
 .search-follow-btn {
-  background: var(--accent-primary, #7c3aed);
-  color: white;
-  border: none;
-  padding: 6px 14px;
-  border-radius: 20px;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: var(--accent-primary, #a78bfa);
+  border: 1.5px solid var(--accent-primary, #a78bfa);
+  padding: 5px 16px;
+  border-radius: 999px;
   font-weight: 600;
-  font-size: 0.82rem;
+  font-size: 0.8rem;
+  letter-spacing: 0.02em;
   cursor: pointer;
-  transition: all 0.2s;
   flex-shrink: 0;
+  transition: background 0.22s, color 0.22s, border-color 0.22s, box-shadow 0.22s, transform 0.15s;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.search-follow-btn::before {
+  content: '+';
+  font-size: 1rem;
+  font-weight: 300;
+  line-height: 1;
+  transition: transform 0.2s, opacity 0.2s;
 }
 
 .search-follow-btn:hover {
-  filter: brightness(1.1);
+  background: rgba(167, 139, 250, 0.12);
+  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.18);
+  transform: scale(1.04);
+}
+
+.search-follow-btn:active {
+  transform: scale(0.97);
 }
 
 .search-follow-btn.following {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--text-secondary);
+  background: rgba(167, 139, 250, 0.1);
+  color: var(--text-secondary, #a0a0b0);
+  border-color: rgba(255, 255, 255, 0.12);
+  box-shadow: none;
+}
+
+.search-follow-btn.following::before {
+  content: '✓';
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #a6ce39;
+}
+
+.search-follow-btn.following:hover {
+  background: rgba(239, 68, 68, 0.08);
+  color: #f87171;
+  border-color: rgba(239, 68, 68, 0.3);
+  box-shadow: none;
+}
+
+.search-follow-btn.following:hover::before {
+  content: '×';
+  font-size: 1rem;
+  color: #f87171;
 }
 
 /* ─── Animations ─── */
