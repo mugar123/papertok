@@ -70,6 +70,38 @@ export async function getProjectDetails(projectId) {
     const fundedAmount = parseFloat(p.fundedamount?.["$"]) || 0;
     const budget = totalCost > 0 ? totalCost : fundedAmount;
 
+    // Extract subjects/topics
+    let subjects = [];
+    if (p.subject) {
+      const subArr = Array.isArray(p.subject) ? p.subject : [p.subject];
+      subjects = [...new Set(subArr.map(s => s["$"]).filter(Boolean))];
+    }
+
+    // Extract participant organizations
+    let participants = [];
+    if (p.rels?.rel) {
+      const rels = Array.isArray(p.rels.rel) ? p.rels.rel : [p.rels.rel];
+      participants = rels
+        .filter(r => r.to?.["@class"] === "hasParticipant")
+        .map(r => ({
+          name: r.legalshortname?.["$"] || r.legalname?.["$"] || "Unknown",
+          country: r.country?.["@classname"] || null,
+          website: r.websiteurl?.["$"] || null,
+        }));
+    }
+
+    // Extract impact measures
+    const measures = {};
+    if (p.measure) {
+      const mArr = Array.isArray(p.measure) ? p.measure : [p.measure];
+      for (const m of mArr) {
+        if (m["@id"] === "totalCitationCount") measures.citations = parseInt(m["@score"]) || 0;
+        if (m["@id"] === "downloads") measures.downloads = parseInt(m["@count"]) || 0;
+        if (m["@id"] === "views") measures.views = parseInt(m["@count"]) || 0;
+        if (m["@id"] === "numOfInfluentialResults") measures.influentialResults = parseInt(m["@score"]) || 0;
+      }
+    }
+
     return {
       id: p.code?.["$"],
       title: p.title?.["$"] || "Unknown Project",
@@ -80,7 +112,14 @@ export async function getProjectDetails(projectId) {
       startDate: p.startdate?.["$"],
       endDate: p.enddate?.["$"],
       budget,
-      currency: validCurrency(p.currency?.["$"])
+      fundedAmount,
+      currency: validCurrency(p.currency?.["$"]),
+      callIdentifier: p.callidentifier?.["$"] || null,
+      contractType: p.contracttype?.["@classname"] || null,
+      subjects,
+      participants,
+      measures,
+      openAccess: p.oamandatepublications?.["$"] === true,
     };
   } catch (e) {
     console.error("Error fetching project details:", e);

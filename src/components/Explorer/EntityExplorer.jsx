@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, BadgeCheck, FileText, Briefcase } from 'lucide-react';
+import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
@@ -36,6 +36,7 @@ export default function EntityExplorer() {
   const observerRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState('papers');
+  const [expandedSummary, setExpandedSummary] = useState(false);
   
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
@@ -91,7 +92,14 @@ export default function EntityExplorer() {
              startDate: details.startDate,
              endDate: details.endDate,
              budget: details.budget,
+             fundedAmount: details.fundedAmount,
              currency: details.currency,
+             callIdentifier: details.callIdentifier,
+             contractType: details.contractType,
+             subjects: details.subjects,
+             participants: details.participants,
+             measures: details.measures,
+             openAccess: details.openAccess,
            });
         }
         setIsLoadingEntity(false);
@@ -386,7 +394,15 @@ export default function EntityExplorer() {
                 <span className="ehc-stat-value">
                   {(() => { try { return new Intl.NumberFormat('es-ES', { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.budget); } catch { return `${entity.budget.toLocaleString('es-ES')} €`; } })()}
                 </span>
-                <span className="ehc-stat-label">Presupuesto</span>
+                <span className="ehc-stat-label">Presupuesto Total</span>
+              </div>
+            )}
+            {type === 'project' && entity.fundedAmount > 0 && entity.fundedAmount !== entity.budget && (
+              <div className="ehc-stat-box">
+                <span className="ehc-stat-value">
+                  {(() => { try { return new Intl.NumberFormat('es-ES', { style: 'currency', currency: entity.currency, maximumFractionDigits: 0 }).format(entity.fundedAmount); } catch { return `${entity.fundedAmount.toLocaleString('es-ES')} €`; } })()}
+                </span>
+                <span className="ehc-stat-label">Financiación</span>
               </div>
             )}
             {type === 'project' && entity.startDate && (
@@ -395,12 +411,82 @@ export default function EntityExplorer() {
                 <span className="ehc-stat-label">Duración</span>
               </div>
             )}
+            {type === 'project' && entity.participants?.length > 0 && (
+              <div className="ehc-stat-box">
+                <span className="ehc-stat-value">{entity.participants.length}</span>
+                <span className="ehc-stat-label">Participantes</span>
+              </div>
+            )}
+            {type === 'project' && entity.measures?.citations > 0 && (
+              <div className="ehc-stat-box">
+                <span className="ehc-stat-value">{entity.measures.citations.toLocaleString()}</span>
+                <span className="ehc-stat-label">Citas</span>
+              </div>
+            )}
           </div>
           
-          {/* Project Summary */}
+          {/* Project metadata chips */}
+          {type === 'project' && (entity.callIdentifier || entity.contractType || entity.openAccess) && (
+            <div className="project-meta-chips">
+              {entity.callIdentifier && (
+                <span className="project-chip"><BookOpen size={13} /> {entity.callIdentifier}</span>
+              )}
+              {entity.contractType && (
+                <span className="project-chip"><Award size={13} /> {entity.contractType}</span>
+              )}
+              {entity.openAccess && (
+                <span className="project-chip project-chip--oa"><BookOpen size={13} /> Open Access</span>
+              )}
+              {entity.measures?.downloads > 0 && (
+                <span className="project-chip"><Download size={13} /> {entity.measures.downloads.toLocaleString()} descargas</span>
+              )}
+              {entity.measures?.views > 0 && (
+                <span className="project-chip"><Eye size={13} /> {entity.measures.views.toLocaleString()} vistas</span>
+              )}
+            </div>
+          )}
+
+          {/* Project Summary - expandable */}
           {type === 'project' && entity?.summary && (
-            <div className="ehc-wiki">
-              <p>{entity.summary.length > 300 ? entity.summary.substring(0, 300) + '...' : entity.summary}</p>
+            <div className="project-summary-box" onClick={() => setExpandedSummary(!expandedSummary)}>
+              <p className={expandedSummary ? 'expanded' : 'collapsed'}>
+                {entity.summary}
+              </p>
+              <button className="project-summary-toggle">
+                {expandedSummary ? <><ChevronUp size={14} /> Mostrar menos</> : <><ChevronDown size={14} /> Leer más</>}
+              </button>
+            </div>
+          )}
+
+          {/* Project subjects */}
+          {type === 'project' && entity.subjects?.length > 0 && (
+            <div className="project-subjects">
+              <h4 className="project-section-title"><Tag size={14} /> Temas del proyecto</h4>
+              <div className="project-subjects-list">
+                {entity.subjects.map((s, i) => (
+                  <span key={i} className="ehc-tag">{s}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Participating organizations */}
+          {type === 'project' && entity.participants?.length > 0 && (
+            <div className="project-participants">
+              <h4 className="project-section-title"><Building2 size={14} /> Organizaciones participantes</h4>
+              <div className="project-participants-grid">
+                {entity.participants.slice(0, expandedSummary ? entity.participants.length : 6).map((p, i) => (
+                  <div key={i} className="project-participant-card">
+                    <span className="project-participant-name">{p.name}</span>
+                    {p.country && <span className="project-participant-country"><MapPin size={11} /> {p.country}</span>}
+                  </div>
+                ))}
+              </div>
+              {entity.participants.length > 6 && !expandedSummary && (
+                <button className="project-show-more" onClick={() => setExpandedSummary(true)}>
+                  +{entity.participants.length - 6} organizaciones más
+                </button>
+              )}
             </div>
           )}
           
