@@ -436,20 +436,20 @@ const PaperCard = memo(function PaperCard({
                </span>
             ))}
             {(paper.authors || []).length > 3 && <span> et al.</span>}
-            {isVerified && (
-              <div 
-                className="pc-tooltip" 
-                data-tooltip="Publicado en revista (Peer-reviewed)" 
-                style={{ display: 'flex' }}
-              >
-                <BadgeCheck 
-                  size={14} 
-                  className="pc-verified-badge" 
-                  style={{ color: '#1da1f2', flexShrink: 0, cursor: 'default' }} 
-                />
-              </div>
-            )}
           </div>
+          {isVerified && (
+            <div 
+              className="pc-tooltip" 
+              data-tooltip="Publicado en revista (Peer-reviewed)" 
+              style={{ display: 'flex' }}
+            >
+              <BadgeCheck 
+                size={14} 
+                className="pc-verified-badge" 
+                style={{ color: '#1da1f2', flexShrink: 0, cursor: 'default' }} 
+              />
+            </div>
+          )}
           {/* Verification Ticker moved to the right of authors */}
           {isVerified && (
             <div 
@@ -475,9 +475,6 @@ const PaperCard = memo(function PaperCard({
           onClick={(e) => toggleExpanded(e, !expanded)}
         >
           <p><Latex>{processLatex(paper.summary)}</Latex></p>
-          {!expanded && paper.summary && paper.summary.length > 200 && (
-            <div className="pc-abstract-fade" />
-          )}
         </div>
 
         {!expanded && paper.summary && paper.summary.length > 200 && (
