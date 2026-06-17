@@ -423,12 +423,12 @@ const PaperCard = memo(function PaperCard({
               </div>
             ))}
           </div>
-          <div className="pc-author-names" style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
+          <div className="pc-author-names" style={{ position: 'relative' }}>
             {(paper.authors || []).slice(0, 3).map((author, index) => (
                <span 
                  key={index}
                  onClick={(e) => { e.stopPropagation(); navigate(`/explorer/author/${encodeURIComponent(author)}?arxivId=${paper.arxivId}`); }}
-                 style={{ cursor: 'pointer' }}
+                 style={{ cursor: 'pointer', padding: '4px 0' }}
                  onMouseOver={(e) => e.currentTarget.style.textDecoration = 'underline'}
                  onMouseOut={(e) => e.currentTarget.style.textDecoration = 'none'}
                >
