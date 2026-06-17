@@ -237,68 +237,44 @@
 
 /* ─── Follow Button ─── */
 .search-follow-btn {
-  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  background: transparent;
-  color: var(--accent-primary, #a78bfa);
-  border: 1.5px solid var(--accent-primary, #a78bfa);
-  padding: 5px 16px;
+  justify-content: center;
+  background: var(--accent-primary, #7c3aed);
+  color: #fff;
+  border: none;
+  padding: 6px 20px;
   border-radius: 999px;
   font-weight: 600;
   font-size: 0.8rem;
   letter-spacing: 0.02em;
   cursor: pointer;
   flex-shrink: 0;
-  transition: background 0.22s, color 0.22s, border-color 0.22s, box-shadow 0.22s, transform 0.15s;
-  overflow: hidden;
+  transition: background 0.25s, box-shadow 0.25s, transform 0.15s, opacity 0.2s;
   white-space: nowrap;
 }
 
-.search-follow-btn::before {
-  content: '+';
-  font-size: 1rem;
-  font-weight: 300;
-  line-height: 1;
-  transition: transform 0.2s, opacity 0.2s;
-}
-
 .search-follow-btn:hover {
-  background: rgba(167, 139, 250, 0.12);
-  box-shadow: 0 0 0 3px rgba(167, 139, 250, 0.18);
-  transform: scale(1.04);
+  background: #6d28d9;
+  box-shadow: 0 0 16px rgba(124, 58, 237, 0.35);
+  transform: scale(1.03);
 }
 
 .search-follow-btn:active {
-  transform: scale(0.97);
+  transform: scale(0.96);
 }
 
 .search-follow-btn.following {
-  background: rgba(167, 139, 250, 0.1);
+  background: rgba(255, 255, 255, 0.07);
   color: var(--text-secondary, #a0a0b0);
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: none;
-}
-
-.search-follow-btn.following::before {
-  content: '✓';
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: #a6ce39;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .search-follow-btn.following:hover {
-  background: rgba(239, 68, 68, 0.08);
+  background: rgba(239, 68, 68, 0.1);
   color: #f87171;
-  border-color: rgba(239, 68, 68, 0.3);
+  border-color: rgba(239, 68, 68, 0.25);
   box-shadow: none;
-}
-
-.search-follow-btn.following:hover::before {
-  content: '×';
-  font-size: 1rem;
-  color: #f87171;
 }
 
 /* ─── Animations ─── */
