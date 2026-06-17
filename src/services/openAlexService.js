@@ -302,7 +302,10 @@ export async function getAuthorProfileExact(authorName, arxivId) {
     }
     
     // If the exact match fails (e.g. OpenAlex hasn't indexed this arXiv paper yet), fallback:
-    // DO NOT do a global search for the name, as it will likely return a completely different person (e.g. Medicine instead of Physics)
+    // Do a global search for the name, as it's better than showing an empty stub
+    const fallbackProfile = await getAuthorProfile(authorName);
+    if (fallbackProfile) return fallbackProfile;
+
     return {
       id: `stub-${authorName.replace(/\s+/g, '-')}`,
       display_name: authorName,
@@ -315,6 +318,9 @@ export async function getAuthorProfileExact(authorName, arxivId) {
     
   } catch (err) {
     console.error("OpenAlex getAuthorProfileExact failed", err);
+    const fallbackProfile = await getAuthorProfile(authorName);
+    if (fallbackProfile) return fallbackProfile;
+    
     return {
       id: `stub-${authorName.replace(/\s+/g, '-')}`,
       display_name: authorName,
