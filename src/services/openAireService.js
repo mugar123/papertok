@@ -198,15 +198,27 @@ function parseProjectFromResult(result) {
         }
         
         let funderLevel = "";
-        if (funding?.funding_level_0?.["@name"]) funderLevel = funding.funding_level_0["@name"];
+        if (funding?.funding_level_0?.["@name"]) {
+            funderLevel = funding.funding_level_0["@name"];
+            if (funderLevel.toLowerCase().includes('project') || funderLevel.toLowerCase() === 'programmes') {
+                funderLevel = funderName;
+            }
+        }
+
+        let title = rel.title?.["$"] || "Unknown Project Title";
+        let acronym = rel.acronym?.["$"];
+        
+        if (!acronym) {
+            acronym = title.length > 50 ? title.substring(0, 47) + '...' : title;
+        }
 
         return {
           id: rel.to["$"], 
           code: rel.code?.["$"],
-          acronym: rel.acronym?.["$"] || "Project",
-          title: rel.title?.["$"] || "Unknown Project Title",
+          acronym: acronym,
+          title: title,
           funder: funderName,
-          funderLevel: funderLevel
+          funderLevel: funderLevel || funderName
         };
       }
     }
