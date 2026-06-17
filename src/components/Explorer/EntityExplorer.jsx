@@ -395,6 +395,11 @@ export default function EntityExplorer() {
                   {entity.geo?.city}, {entity.geo?.country}
                 </p>
               )}
+              {type === 'author' && (entity.institution || entity.last_known_institutions?.[0]?.display_name) && (
+                <p className="ehc-meta" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <Building2 size={14} /> {entity.institution || entity.last_known_institutions[0].display_name}
+                </p>
+              )}
               {type === 'project' && entity.funder && (
                 <p className="ehc-meta">
                   {entity.funder}{entity.fundingStream ? ` — ${entity.fundingStream}` : ''}
@@ -426,9 +431,9 @@ export default function EntityExplorer() {
                 <span className="ehc-stat-label">Citas Totales</span>
               </div>
             )}
-            {entity?.summary_stats?.h_index != null && (
+            {(entity?.summary_stats?.h_index != null || entity?.h_index != null) && (
               <div className="ehc-stat-box">
-                <span className="ehc-stat-value">{entity.summary_stats.h_index}</span>
+                <span className="ehc-stat-value">{entity?.summary_stats?.h_index ?? entity?.h_index}</span>
                 <span className="ehc-stat-label">{type === 'source' ? 'Tipo' : 'H-Index'}</span>
               </div>
             )}
