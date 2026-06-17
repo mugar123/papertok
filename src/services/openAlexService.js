@@ -692,39 +692,78 @@ export async function fetchPapersByDois(dois) {
   }
   
   return results.map(work => {
-    let summary = 'No summary available.';
-    if (work.abstract_inverted_index) {
-      const words = [];
-      for (const [word, positions] of Object.entries(work.abstract_inverted_index)) {
-        for (const pos of positions) {
-          words[pos] = word;
-        }
-      }
-      summary = words.join(' ').replace(/\n/g, ' ').trim();
-    }
-    
-    const authors = work.authorships?.map(a => a.author?.display_name || 'Unknown Author') || ['Unknown Author'];
-    const categories = work.concepts?.map(c => c.display_name) || [];
-    const openAlexId = work.id.split('/').pop();
-    
-    return {
-      id: openAlexId,
-      arxivId: null,
-      title: work.title || 'No Title',
-      summary: summary || 'No summary available.',
-      authors,
-      published: work.publication_date ? new Date(work.publication_date).toISOString() : new Date().toISOString(),
-      updated: work.updated_date ? new Date(work.updated_date).toISOString() : new Date().toISOString(),
-      pdfUrl: work.open_access?.oa_url || '',
-      primaryCategory: categories.length > 0 ? categories[0] : 'unknown',
-      allCategories: categories,
-      doi: work.doi ? work.doi.replace('https://doi.org/', '') : '',
-      journalRef: work.primary_location?.source?.display_name || '',
-      comment: '',
-      citationCount: work.cited_by_count || 0,
-      topics: work.concepts ? work.concepts.slice(0, 3) : [],
-      isPeerReviewed: work.primary_location?.is_published || false,
-      _isOpenAlexEnriched: true
-    };
+    return formatOpenAlexWorkAsPaper(work);
   });
 }
+
+function formatOpenAlexWorkAsPaper(work) {
+  let summary = 'No summary available.';
+  if (work.abstract_inverted_index) {
+    const words = [];
+    for (const [word, positions] of Object.entries(work.abstract_inverted_index)) {
+      for (const pos of positions) {
+        words[pos] = word;
+      }
+    }
+    summary = words.join(' ').replace(/\n/g, ' ').trim();
+  }
+  
+  const authors = work.authorships?.map(a => a.author?.display_name || 'Unknown Author') || ['Unknown Author'];
+  const categories = work.concepts?.map(c => c.display_name) || [];
+  const openAlexId = work.id.split('/').pop();
+  
+  return {
+    id: openAlexId,
+    arxivId: null,
+    title: work.title || 'No Title',
+    summary: summary || 'No summary available.',
+    authors,
+    published: work.publication_date ? new Date(work.publication_date).toISOString() : new Date().toISOString(),
+    updated: work.updated_date ? new Date(work.updated_date).toISOString() : new Date().toISOString(),
+    pdfUrl: work.open_access?.oa_url || '',
+    primaryCategory: categories.length > 0 ? categories[0] : 'unknown',
+    allCategories: categories,
+    doi: work.doi ? work.doi.replace('https://doi.org/', '') : '',
+    journalRef: work.primary_location?.source?.display_name || '',
+    comment: '',
+    citationCount: work.cited_by_count || 0,
+    topics: work.concepts ? work.concepts.slice(0, 3) : [],
+    isPeerReviewed: work.primary_location?.is_published || false,
+    _isOpenAlexEnriched: true
+  };
+}
+
+/**
+ * Fetch trending (highly cited recently) papers.
+ * Varies slightly over time by using a random offset or different filter.
+ */
+export async function getTrendingPapers() {
+  const cacheKey = 'trending_papers_v2';
+  const cached = CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < 1000 * 60 * 60) return cached.data; // Cache for 1 hour
+
+  try {
+    const year = new Date().getFullYear();
+    const month = String(new Date().getMonth() + 1).padStart(2, '0');
+    // Get papers published in the last year, sort by citations
+    const filter = `from_publication_date:${year - 1}-${month}-01,has_doi:true,type:article`;
+    
+    // Slight randomization of page to make it change from time to time
+    const page = Math.floor(Math.random() * 3) + 1; 
+    const url = `https://api.openalex.org/works?filter=${filter}&sort=cited_by_count:desc&per-page=10&page=${page}`;
+    
+    const response = await fetchWithTimeout(url, 8000);
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    if (!data || !data.results) return [];
+    
+    const papers = data.results.map(formatOpenAlexWorkAsPaper);
+    CACHE.set(cacheKey, { data: papers, timestamp: Date.now() });
+    return papers;
+  } catch (err) {
+    console.error("Failed to fetch trending papers", err);
+    return [];
+  }
+}
+

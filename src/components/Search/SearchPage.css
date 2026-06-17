@@ -305,7 +305,8 @@
 .search-initial-icon {
   color: var(--accent-primary, #8b5cf6);
   opacity: 0.8;
-  margin-bottom: 16px;
+  margin: 0 auto 16px auto;
+  display: block;
   filter: drop-shadow(0 0 15px rgba(139, 92, 246, 0.3));
 }
 
@@ -374,4 +375,18 @@
 .search-suggestion-chip svg {
   color: var(--accent-primary, #8b5cf6);
   opacity: 0.8;
+}
+
+.search-trending {
+  width: 100%;
+  max-width: 600px;
+  display: flex;
+  flex-direction: column;
+}
+
+.search-trending-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
 }

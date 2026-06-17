@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { Search, FileText, Users, Loader2, ArrowLeft, Building2, Lightbulb, Briefcase, Sparkles, Compass, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { searchPapers } from '../../services/arxivService';
-import { searchAuthors, searchInstitutions, searchConcepts, searchSources } from '../../services/openAlexService';
+import { searchAuthors, searchInstitutions, searchConcepts, searchSources, getTrendingPapers } from '../../services/openAlexService';
 import { searchProjects } from '../../services/openAireService';
 import { useAuth } from '../../context/AuthContext';
 import { AnimatePresence } from 'framer-motion';
@@ -27,6 +27,9 @@ export default function SearchPage() {
   const [sourceResults, setSourceResults] = useState([]);
   const [projectResults, setProjectResults] = useState([]);
   
+  const [trendingPapers, setTrendingPapers] = useState([]);
+  const [isLoadingTrending, setIsLoadingTrending] = useState(false);
+  
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaper, setPdfPaper] = useState(null);
   const [activeAuthors, setActiveAuthors] = useState(null);
@@ -34,6 +37,21 @@ export default function SearchPage() {
   const timeoutRef = useRef(null);
 
   const searchIdRef = useRef(0);
+
+  useEffect(() => {
+    async function loadTrending() {
+      setIsLoadingTrending(true);
+      try {
+        const papers = await getTrendingPapers();
+        setTrendingPapers(papers.slice(0, 5)); // Just take top 5
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoadingTrending(false);
+      }
+    }
+    loadTrending();
+  }, []);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -166,6 +184,26 @@ export default function SearchPage() {
                       <TrendingUp size={14} /> Computación Cuántica
                     </button>
                   </div>
+                </div>
+
+                <div className="search-trending">
+                  <h3 className="search-suggestions-title" style={{ marginTop: '32px' }}><TrendingUp size={16} /> Papers Populares</h3>
+                  {isLoadingTrending ? (
+                    <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
+                      <Loader2 className="spinning" size={24} style={{ opacity: 0.5 }} />
+                    </div>
+                  ) : trendingPapers.length > 0 ? (
+                    <div className="search-trending-grid">
+                      {trendingPapers.map(paper => (
+                        <PaperCard 
+                          key={paper.id} 
+                          paper={paper} 
+                          onClick={() => setSelectedPaper(paper)}
+                          onAuthorClick={handleAuthorClick}
+                        />
+                      ))}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}
