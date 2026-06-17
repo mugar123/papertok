@@ -6,6 +6,8 @@ import SkeletonCard from './SkeletonCard';
 import AnimatedAtom from './AnimatedAtom';
 import './FeedContainer.css';
 
+let savedFeedScroll = 0;
+
 export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const { 
     papers, loading, error, hasMore, loadMore, refreshFeed, isRefreshing, trackPdfOpened,
@@ -14,6 +16,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
   const [showLoader, setShowLoader] = useState(false);
+
+  // Restore and save scroll position
+  useEffect(() => {
+    if (feedRef.current && papers.length > 0 && savedFeedScroll > 0) {
+      feedRef.current.scrollTop = savedFeedScroll;
+    }
+  }, [papers.length]);
 
   // Only show the atom loader if loading takes more than 1.5s
   useEffect(() => {
@@ -102,7 +111,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
 
   return (
     <div className="feed-wrapper">
-      <div className="feed-container" ref={feedRef}>
+      <div className="feed-container" ref={feedRef} onScroll={(e) => savedFeedScroll = e.target.scrollTop}>
         {papers.map((paper) => (
           <div key={paper.id} className="feed-snap-item">
             <PaperCard
