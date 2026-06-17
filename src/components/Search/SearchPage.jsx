@@ -124,7 +124,10 @@ export default function SearchPage() {
     setActiveAuthors({ authors, arxivId });
   }, []);
 
-  const hasResults = paperResults.length > 0 || authorResults.length > 0 || institutionResults.length > 0 || conceptResults.length > 0 || sourceResults.length > 0;
+  const orcidMatch = query.match(/\b(\d{4}-\d{4}-\d{4}-\d{3}[\dX])\b/i);
+  const cleanOrcid = orcidMatch ? orcidMatch[1].toUpperCase() : null;
+
+  const hasResults = paperResults.length > 0 || authorResults.length > 0 || institutionResults.length > 0 || conceptResults.length > 0 || sourceResults.length > 0 || !!cleanOrcid;
 
   return (
     <div className="search-page-container">
@@ -225,6 +228,22 @@ export default function SearchPage() {
                 <Search size={40} className="search-empty-icon" />
                 <p>No se encontraron resultados para "{query}"</p>
                 <span>Intenta con otros términos o busca en inglés</span>
+              </div>
+            )}
+
+            {/* Direct ORCID */}
+            {cleanOrcid && (
+              <div className="search-section">
+                <h3 className="search-section-title">Búsqueda Directa ORCID</h3>
+                <div className="search-item" onClick={() => navigate(`/explorer/author/https%3A%2F%2Forcid.org%2F${cleanOrcid}`)}>
+                  <div className="search-item-icon" style={{ background: '#a6ce39', color: 'white' }}>
+                    <Users size={22} />
+                  </div>
+                  <div className="search-item-info">
+                    <h4 style={{ color: '#a6ce39' }}>Ver perfil ORCID de {cleanOrcid}</h4>
+                    <p>Explorar autor e historial mediante su identificador único verificado</p>
+                  </div>
+                </div>
               </div>
             )}
 

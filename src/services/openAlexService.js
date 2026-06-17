@@ -204,6 +204,7 @@ export async function getAuthorProfile(authorName) {
         works_count: author.works_count || 0,
         cited_by_count: author.cited_by_count || 0,
         h_index: author.summary_stats ? author.summary_stats.h_index : 0,
+        orcid: author.orcid || null,
         institution: (author.last_known_institutions && author.last_known_institutions.length > 0) 
             ? author.last_known_institutions[0].display_name 
             : null,
@@ -284,6 +285,7 @@ export async function getAuthorProfileExact(authorName, arxivId) {
                 works_count: author.works_count || 0,
                 cited_by_count: author.cited_by_count || 0,
                 h_index: author.summary_stats ? author.summary_stats.h_index : 0,
+                orcid: author.orcid || null,
                 institution: (author.last_known_institutions && author.last_known_institutions.length > 0) 
                     ? author.last_known_institutions[0].display_name 
                     : null,

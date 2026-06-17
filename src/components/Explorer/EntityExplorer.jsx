@@ -4,6 +4,7 @@ import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Cl
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
+import { getOrcidRecord } from '../../services/orcidService';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
 import PaperCard from '../Feed/PaperCard';
@@ -27,6 +28,8 @@ export default function EntityExplorer() {
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
   const [wikiInfo, setWikiInfo] = useState(null);
   const [isLoadingWiki, setIsLoadingWiki] = useState(false);
+  const [orcidInfo, setOrcidInfo] = useState(null);
+  const [isLoadingOrcid, setIsLoadingOrcid] = useState(false);
   const [activeAuthors, setActiveAuthors] = useState(null);
 
   const [page, setPage] = useState(1);
@@ -115,6 +118,14 @@ export default function EntityExplorer() {
       setIsLoadingEntity(false);
 
       if (data && data.display_name) {
+        if (type === 'author' && data.orcid) {
+          setIsLoadingOrcid(true);
+          getOrcidRecord(data.orcid)
+            .then(record => setOrcidInfo(record))
+            .catch(e => console.error("Error loading ORCID", e))
+            .finally(() => setIsLoadingOrcid(false));
+        }
+
         if (type === 'institution' || type === 'concept' || type === 'source') {
           setIsLoadingWiki(true);
           try {
@@ -516,6 +527,49 @@ export default function EntityExplorer() {
                   </a>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* ORCID Info */}
+          {isLoadingOrcid && (
+            <div className="ehc-wiki" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
+              <Loader2 size={16} className="spin" /> Cargando datos de ORCID...
+            </div>
+          )}
+          {orcidInfo && !isLoadingOrcid && (
+            <div className="ehc-wiki">
+              <div className="ehc-links" style={{ marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                  <img src="https://info.orcid.org/wp-content/uploads/2019/11/orcid_16x16.png" alt="ORCID iD icon" style={{ width: '16px', height: '16px' }}/>
+                  <span style={{ fontWeight: '600', color: '#a6ce39', fontSize: '0.9rem' }}>Perfil Verificado ORCID</span>
+                </div>
+                <a href={`https://orcid.org/${orcidInfo.orcid}`} target="_blank" rel="noopener noreferrer" className="ehc-link" style={{ marginLeft: 'auto' }}>
+                  {orcidInfo.orcid} <ExternalLink size={14} />
+                </a>
+              </div>
+              
+              {orcidInfo.biography && <p style={{ whiteSpace: 'pre-line' }}>{orcidInfo.biography}</p>}
+              
+              {orcidInfo.employments?.length > 0 && (
+                <div style={{ marginTop: '16px' }}>
+                  <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Briefcase size={14} /> Experiencia Principal
+                  </h4>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {orcidInfo.employments.slice(0, 3).map((emp, i) => (
+                      <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-primary)', marginTop: '6px' }} />
+                        <div>
+                          <span style={{ fontWeight: '500', display: 'block', color: 'var(--text-primary)' }}>{emp.organization}</span>
+                          <span style={{ color: 'var(--text-tertiary)' }}>
+                            {emp.role ? `${emp.role} ` : ''} {emp.startDate ? `(${emp.startDate} - ${emp.endDate})` : ''}
+                          </span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </div>
