@@ -329,13 +329,27 @@ export default function EntityExplorer() {
               </button>
               <div className="skel-item" style={{ width: '80px', height: '16px' }}></div>
             </div>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="explorer-action-btn skel-item" style={{ border: 'none' }}></button>
+            </div>
           </div>
-          <div className="explorer-hero-content" style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
-            <div className="ehc-icon skel-item" style={{ borderRadius: '50%', width: '80px', height: '80px', flexShrink: 0 }}></div>
-            <div className="ehc-info" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <div className="skel-item" style={{ width: '70%', height: '32px' }}></div>
-              <div className="skel-item" style={{ width: '40%', height: '18px' }}></div>
-              <div className="skel-item" style={{ width: '25%', height: '16px', marginTop: '8px' }}></div>
+          
+          <div className="explorer-hero-content">
+            <div className="ehc-main">
+              <div className="ehc-icon skel-item" style={{ background: 'rgba(255,255,255,0.05)', borderColor: 'transparent' }}></div>
+              <div className="ehc-info">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  <div className="skel-item" style={{ width: '60%', height: '34px', borderRadius: '4px' }}></div>
+                </div>
+                <div className="skel-item" style={{ width: '35%', height: '16px', marginTop: '8px', borderRadius: '4px' }}></div>
+                <div className="skel-item" style={{ width: '20%', height: '16px', marginTop: '6px', borderRadius: '4px' }}></div>
+              </div>
+            </div>
+            
+            <div className="ehc-stats-grid">
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className="ehc-stat-box skel-item" style={{ height: '60px', background: 'rgba(255,255,255,0.03)' }}></div>
+              ))}
             </div>
           </div>
         </div>
