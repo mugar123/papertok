@@ -195,12 +195,24 @@ export default function SearchPage() {
                   ) : trendingPapers.length > 0 ? (
                     <div className="search-trending-grid">
                       {trendingPapers.map(paper => (
-                        <PaperCard 
-                          key={paper.id} 
-                          paper={paper} 
-                          onClick={() => setSelectedPaper(paper)}
-                          onAuthorClick={handleAuthorClick}
-                        />
+                        <div key={paper.id} className="search-item paper-item" onClick={() => setSelectedPaper(paper)}>
+                          <div className="search-item-icon"><FileText size={22} /></div>
+                          <div className="search-item-info">
+                            <h4>{paper.title}</h4>
+                            <p className="search-item-authors">{paper.authors?.slice(0, 3).join(', ')}{paper.authors?.length > 3 ? ' et al.' : ''}</p>
+                            <div className="search-item-meta">
+                              <span>{paper.citationCount.toLocaleString()} citas</span>
+                              <span>•</span>
+                              <span>{new Date(paper.published).getFullYear()}</span>
+                              {paper.primaryCategory && paper.primaryCategory !== 'unknown' && (
+                                <>
+                                  <span>•</span>
+                                  <span>{paper.primaryCategory}</span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        </div>
                       ))}
                     </div>
                   ) : null}
