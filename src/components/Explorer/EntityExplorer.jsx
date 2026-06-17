@@ -550,21 +550,74 @@ export default function EntityExplorer() {
               
               {orcidInfo.biography && <p style={{ whiteSpace: 'pre-line' }}>{orcidInfo.biography}</p>}
               
-              {orcidInfo.employments?.length > 0 && (
-                <div style={{ marginTop: '16px' }}>
+              {orcidInfo.researcherUrls?.length > 0 && (
+                <div style={{ marginTop: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                  {orcidInfo.researcherUrls.map((url, i) => (
+                    <a key={i} href={url.url} target="_blank" rel="noopener noreferrer" className="ehc-link" style={{ fontSize: '0.85rem' }}>
+                      <Globe size={12} style={{ marginRight: '4px' }} /> {url.name || 'Enlace Externo'}
+                    </a>
+                  ))}
+                </div>
+              )}
+
+              {(orcidInfo.employments?.length > 0 || orcidInfo.educations?.length > 0) && (
+                <div style={{ marginTop: '16px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+                  {orcidInfo.employments?.length > 0 && (
+                    <div style={{ flex: '1 1 250px' }}>
+                      <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Briefcase size={14} /> Experiencia
+                      </h4>
+                      <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {orcidInfo.employments.slice(0, 3).map((emp, i) => (
+                          <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-primary)', marginTop: '6px' }} />
+                            <div>
+                              <span style={{ fontWeight: '500', display: 'block', color: 'var(--text-primary)' }}>{emp.organization}</span>
+                              <span style={{ color: 'var(--text-tertiary)' }}>
+                                {emp.role ? `${emp.role} ` : ''} {emp.startDate ? `(${emp.startDate} - ${emp.endDate})` : ''}
+                              </span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {orcidInfo.educations?.length > 0 && (
+                    <div style={{ flex: '1 1 250px' }}>
+                      <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <BookOpen size={14} /> Educación
+                      </h4>
+                      <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                        {orcidInfo.educations.slice(0, 3).map((edu, i) => (
+                          <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#a6ce39', marginTop: '6px' }} />
+                            <div>
+                              <span style={{ fontWeight: '500', display: 'block', color: 'var(--text-primary)' }}>{edu.organization}</span>
+                              <span style={{ color: 'var(--text-tertiary)' }}>
+                                {edu.role ? `${edu.role} ` : ''} {edu.startDate ? `(${edu.startDate} - ${edu.endDate})` : ''}
+                              </span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {orcidInfo.works?.length > 0 && (
+                <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
                   <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <Briefcase size={14} /> Experiencia Principal
+                    <FileText size={14} /> Actividad Reciente (ORCID)
                   </h4>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                    {orcidInfo.employments.slice(0, 3).map((emp, i) => (
-                      <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                        <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-primary)', marginTop: '6px' }} />
-                        <div>
-                          <span style={{ fontWeight: '500', display: 'block', color: 'var(--text-primary)' }}>{emp.organization}</span>
-                          <span style={{ color: 'var(--text-tertiary)' }}>
-                            {emp.role ? `${emp.role} ` : ''} {emp.startDate ? `(${emp.startDate} - ${emp.endDate})` : ''}
-                          </span>
-                        </div>
+                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {orcidInfo.works.map((work, i) => (
+                      <li key={i}>
+                        <span style={{ display: 'block', fontWeight: '500', color: 'var(--text-primary)' }}>{work.title}</span>
+                        <span style={{ color: 'var(--text-tertiary)' }}>
+                          {work.year || 'S/A'} {work.type ? `• ${work.type}` : ''}
+                        </span>
                       </li>
                     ))}
                   </ul>
