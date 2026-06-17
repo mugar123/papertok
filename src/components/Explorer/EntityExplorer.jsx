@@ -626,7 +626,6 @@ export default function EntityExplorer() {
                           title={emp.ror ? `Ver perfil de ${emp.organization}` : undefined}
                         >
                           {emp.organization}
-                          {emp.ror && <ExternalLink size={11} style={{ marginLeft: '5px', opacity: 0.5 }} />}
                         </div>
                         {emp.role && <div className="orcid-item-role">{emp.role}</div>}
                         {emp.startDate && (
@@ -661,7 +660,6 @@ export default function EntityExplorer() {
                           title={edu.ror ? `Ver perfil de ${edu.organization}` : undefined}
                         >
                           {edu.organization}
-                          {edu.ror && <ExternalLink size={11} style={{ marginLeft: '5px', opacity: 0.5 }} />}
                         </div>
                         {edu.role && <div className="orcid-item-role">{edu.role}</div>}
                         {edu.startDate && (
