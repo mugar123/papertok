@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact } from '../../services/openAlexService';
-import { fetchPapersByIds } from '../../services/arxivService';
+import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { getOrcidRecord } from '../../services/orcidService';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -192,6 +192,10 @@ export default function EntityExplorer() {
            arxivIds = res.arxivIds;
            dois = res.dois || [];
            total = res.total;
+        } else if (type === 'author' && resolvedId.startsWith('stub-')) {
+           const arxivPapers = await getAuthorPapers(entity.display_name, 30);
+           fetchedPapers.push(...arxivPapers);
+           total = arxivPapers.length;
         } else {
            const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
            arxivIds = res.arxivIds;
