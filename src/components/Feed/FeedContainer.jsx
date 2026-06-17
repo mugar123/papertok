@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from 'react';
+import { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { AnimatePresence } from 'framer-motion';
 import PaperCard from './PaperCard';
@@ -17,10 +17,17 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const sentinelRef = useRef(null);
   const [showLoader, setShowLoader] = useState(false);
 
-  // Restore and save scroll position
-  useEffect(() => {
+  // Restore scroll position instantly before browser paints
+  useLayoutEffect(() => {
     if (feedRef.current && papers.length > 0 && savedFeedScroll > 0) {
-      feedRef.current.scrollTop = savedFeedScroll;
+      const el = feedRef.current;
+      const prevBehavior = el.style.scrollBehavior;
+      el.style.scrollBehavior = 'auto'; // Force instant jump
+      el.scrollTop = savedFeedScroll;
+      
+      requestAnimationFrame(() => {
+        el.style.scrollBehavior = prevBehavior;
+      });
     }
   }, [papers.length]);
 
