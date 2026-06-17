@@ -82,28 +82,34 @@ function formatOrcidData(data, orcidId) {
     url: u.url?.value
   })) || [];
 
-  // Employments
-  const employments = activities.employments?.['affiliation-group']?.map(group => {
-    const summary = group['employment-summary']?.[0];
-    if (!summary) return null;
-    return {
-      organization: summary.organization?.name,
-      role: summary['role-title'],
-      startDate: summary['start-date']?.year?.value,
-      endDate: summary['end-date']?.year?.value || 'Present'
-    };
+  // Employments — ORCID v3 uses group.summaries[0]['employment-summary']
+  const employments = activities.employments?.['affiliation-group']?.flatMap(group => {
+    const items = group['summaries'] || [group]; // v3 uses 'summaries', fallback for older shape
+    return items.map(item => {
+      const summary = item['employment-summary'];
+      if (!summary) return null;
+      return {
+        organization: summary.organization?.name,
+        role: summary['role-title'],
+        startDate: summary['start-date']?.year?.value,
+        endDate: summary['end-date']?.year?.value || 'Presente'
+      };
+    });
   }).filter(Boolean) || [];
 
-  // Educations
-  const educations = activities.educations?.['affiliation-group']?.map(group => {
-    const summary = group['education-summary']?.[0];
-    if (!summary) return null;
-    return {
-      organization: summary.organization?.name,
-      role: summary['role-title'],
-      startDate: summary['start-date']?.year?.value,
-      endDate: summary['end-date']?.year?.value
-    };
+  // Educations — same structure change
+  const educations = activities.educations?.['affiliation-group']?.flatMap(group => {
+    const items = group['summaries'] || [group];
+    return items.map(item => {
+      const summary = item['education-summary'];
+      if (!summary) return null;
+      return {
+        organization: summary.organization?.name,
+        role: summary['role-title'],
+        startDate: summary['start-date']?.year?.value,
+        endDate: summary['end-date']?.year?.value
+      };
+    });
   }).filter(Boolean) || [];
 
   // Top Works (just getting titles and years of a few recent works to show activity)
