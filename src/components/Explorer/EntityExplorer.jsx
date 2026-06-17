@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
-import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact } from '../../services/openAlexService';
+import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getInstitutionByRor } from '../../services/openAlexService';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { getOrcidRecord } from '../../services/orcidService';
@@ -617,7 +617,17 @@ export default function EntityExplorer() {
                   <div className="orcid-timeline">
                     {orcidInfo.employments.map((emp, i) => (
                       <div key={i} className="orcid-timeline-item">
-                        <div className="orcid-item-org">{emp.organization}</div>
+                        <div
+                          className={`orcid-item-org${emp.ror ? ' orcid-item-org--link' : ''}`}
+                          onClick={emp.ror ? async () => {
+                            const inst = await getInstitutionByRor(emp.ror);
+                            if (inst) navigate(`/explorer/institution/${inst.id}`);
+                          } : undefined}
+                          title={emp.ror ? `Ver perfil de ${emp.organization}` : undefined}
+                        >
+                          {emp.organization}
+                          {emp.ror && <ExternalLink size={11} style={{ marginLeft: '5px', opacity: 0.5 }} />}
+                        </div>
                         {emp.role && <div className="orcid-item-role">{emp.role}</div>}
                         {emp.startDate && (
                           <div className="orcid-item-dates">
@@ -642,7 +652,17 @@ export default function EntityExplorer() {
                   <div className="orcid-timeline">
                     {orcidInfo.educations.map((edu, i) => (
                       <div key={i} className="orcid-timeline-item orcid-timeline-item--edu">
-                        <div className="orcid-item-org">{edu.organization}</div>
+                        <div
+                          className={`orcid-item-org${edu.ror ? ' orcid-item-org--link' : ''}`}
+                          onClick={edu.ror ? async () => {
+                            const inst = await getInstitutionByRor(edu.ror);
+                            if (inst) navigate(`/explorer/institution/${inst.id}`);
+                          } : undefined}
+                          title={edu.ror ? `Ver perfil de ${edu.organization}` : undefined}
+                        >
+                          {edu.organization}
+                          {edu.ror && <ExternalLink size={11} style={{ marginLeft: '5px', opacity: 0.5 }} />}
+                        </div>
                         {edu.role && <div className="orcid-item-role">{edu.role}</div>}
                         {edu.startDate && (
                           <div className="orcid-item-dates">

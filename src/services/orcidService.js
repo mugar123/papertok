@@ -88,8 +88,13 @@ function formatOrcidData(data, orcidId) {
     return items.map(item => {
       const summary = item['employment-summary'];
       if (!summary) return null;
+      const org = summary.organization || {};
+      const ror = org['disambiguated-organization']?.['disambiguation-source'] === 'ROR'
+        ? org['disambiguated-organization']['disambiguated-organization-identifier']
+        : null;
       return {
-        organization: summary.organization?.name,
+        organization: org.name,
+        ror,
         role: summary['role-title'],
         startDate: summary['start-date']?.year?.value,
         endDate: summary['end-date']?.year?.value || 'Presente'
@@ -103,8 +108,13 @@ function formatOrcidData(data, orcidId) {
     return items.map(item => {
       const summary = item['education-summary'];
       if (!summary) return null;
+      const org = summary.organization || {};
+      const ror = org['disambiguated-organization']?.['disambiguation-source'] === 'ROR'
+        ? org['disambiguated-organization']['disambiguated-organization-identifier']
+        : null;
       return {
-        organization: summary.organization?.name,
+        organization: org.name,
+        ror,
         role: summary['role-title'],
         startDate: summary['start-date']?.year?.value,
         endDate: summary['end-date']?.year?.value

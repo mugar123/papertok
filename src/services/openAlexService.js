@@ -489,6 +489,31 @@ export async function searchSources(query) {
 }
 
 /**
+ * Look up an OpenAlex institution by its ROR identifier.
+ * Returns { id, display_name } or null if not found.
+ */
+export async function getInstitutionByRor(rorUrl) {
+  if (!rorUrl) return null;
+  // Extract bare ROR id (e.g. "05591te55") from full URL
+  const rorId = rorUrl.replace(/^https?:\/\/ror\.org\//, '');
+  const url = `https://api.openalex.org/institutions?filter=ror:${rorId}&select=id,display_name`;
+  try {
+    const res = await fetchWithTimeout(url, 6000);
+    if (!res.ok) return null;
+    const data = await res.json();
+    const inst = data.results?.[0];
+    if (!inst) return null;
+    // Return just the short OpenAlex ID (e.g. "I12345678")
+    return {
+      id: inst.id.split('/').pop(),
+      display_name: inst.display_name
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fetch entity metadata by ID
  */
 export async function getEntityById(type, id) {
