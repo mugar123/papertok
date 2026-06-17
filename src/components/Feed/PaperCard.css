@@ -147,12 +147,12 @@
   padding-right: 75px; /* Spacing for the right side buttons */
   padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--space-5));
   max-width: 750px;
-  animation: cardSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: cardSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 @keyframes cardSlideUp {
-  from { opacity: 0; transform: translateY(40px); }
-  to { opacity: 1; transform: translateY(0); }
+  0% { opacity: 0; transform: translateY(40px); }
+  100% { opacity: 1; transform: none; }
 }
 
 /* ── Meta row ── */
@@ -478,6 +478,8 @@
   align-items: center;
   gap: var(--space-6);
   z-index: 3;
+  animation: cardSlideUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: 0.15s;
 }
 
 .pc-side-btn {
