@@ -5,8 +5,8 @@
   background-color: var(--bg-primary, #0a0a0f);
   position: relative;
   /* Page Entrance Animation */
-  opacity: 0;
-  animation: pageReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  opacity: 1;
+  animation: pageReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 @keyframes pageReveal {
@@ -17,8 +17,8 @@
   }
   100% {
     opacity: 1;
-    transform: scale(1) translateY(0);
-    filter: blur(0);
+    transform: none;
+    filter: none;
   }
 }
 
