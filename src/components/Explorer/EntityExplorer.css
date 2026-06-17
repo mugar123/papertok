@@ -28,6 +28,9 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  /* Page Entrance Animation for loading screens */
+  opacity: 1;
+  animation: pageReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1);
   color: var(--text-secondary);
   gap: 1rem;
   background: var(--bg-primary, #0a0a0f);
