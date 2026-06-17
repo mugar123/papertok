@@ -1457,13 +1457,14 @@
   left: 8px;
   top: 10px;
   bottom: 10px;
-  width: 1.5px;
+  width: 2px;
   background: linear-gradient(to bottom,
     rgba(255,255,255,0.14) 0%,
     rgba(255,255,255,0.06) 70%,
     rgba(255,255,255,0.01) 100%
   );
   border-radius: 2px;
+  transform: translateX(-50%);
 }
 
 .orcid-timeline-item {
@@ -1484,7 +1485,7 @@
 .orcid-timeline-item::before {
   content: '';
   position: absolute;
-  left: -22px;
+  left: -20px;
   top: 50%;
   transform: translateY(-50%);
   width: 9px;
