@@ -1445,7 +1445,7 @@
 
 .orcid-timeline {
   position: relative;
-  padding-left: 28px;
+  padding-left: 32px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1454,7 +1454,7 @@
 .orcid-timeline::before {
   content: '';
   position: absolute;
-  left: 8px;
+  left: 16px;
   top: 10px;
   bottom: 10px;
   width: 2px;
@@ -1485,11 +1485,11 @@
 .orcid-timeline-item::before {
   content: '';
   position: absolute;
-  left: -20px;
+  left: -21px;
   top: 50%;
   transform: translateY(-50%);
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: var(--accent-primary, #7c3aed);
   border: 2px solid rgba(10, 10, 15, 0.95);
