@@ -320,8 +320,30 @@ export default function EntityExplorer() {
 
   if (isLoadingEntity) {
     return (
-      <div className="explorer-loading">
-        <Loader2 className="spinning" size={40} />
+      <div className="explorer-container">
+        <div className="explorer-hero">
+          <div className="explorer-hero-top">
+            <div className="eht-left">
+              <button className="explorer-back-btn" onClick={() => navigate(-1)}>
+                <ArrowLeft size={20} />
+              </button>
+              <div className="skel-item" style={{ width: '80px', height: '16px' }}></div>
+            </div>
+          </div>
+          <div className="explorer-hero-content" style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+            <div className="ehc-icon skel-item" style={{ borderRadius: '50%', width: '80px', height: '80px', flexShrink: 0 }}></div>
+            <div className="ehc-info" style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <div className="skel-item" style={{ width: '70%', height: '32px' }}></div>
+              <div className="skel-item" style={{ width: '40%', height: '18px' }}></div>
+              <div className="skel-item" style={{ width: '25%', height: '16px', marginTop: '8px' }}></div>
+            </div>
+          </div>
+        </div>
+        <div className="explorer-content" style={{ padding: '24px 16px' }}>
+          {[1,2,3,4].map(i => (
+             <div key={i} className="explorer-list-item skel-item" style={{ height: '160px', marginBottom: '16px', borderRadius: '16px' }}></div>
+          ))}
+        </div>
       </div>
     );
   }

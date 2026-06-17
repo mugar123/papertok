@@ -38,13 +38,13 @@ function AppContent() {
             path="/"
             element={
               <ProtectedRoute>
-                <>
+                <PageTransition>
                   <Navbar />
                   <FeedContainer
                     onOpenPdf={setPdfPaper}
                     onSaveToList={setSaveModalPaper}
                   />
-                </>
+                </PageTransition>
               </ProtectedRoute>
             }
           />

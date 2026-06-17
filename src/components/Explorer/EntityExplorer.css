@@ -22,7 +22,7 @@
   }
 }
 
-.explorer-loading, .explorer-error {
+.explorer-error {
   height: 100vh;
   display: flex;
   flex-direction: column;
