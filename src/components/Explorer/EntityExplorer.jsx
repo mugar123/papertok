@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
-import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch } from '../../services/openAlexService';
+import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { AnimatePresence, motion } from 'framer-motion';
@@ -160,11 +160,13 @@ export default function EntityExplorer() {
       
       try {
         let arxivIds = [];
+        let dois = [];
         let total = 0;
         
         if (type === 'project') {
            const res = await getPapersByProject(id, page);
            arxivIds = res.arxivIds;
+           dois = res.dois || [];
            total = res.total;
         } else {
            const res = await getWorksByEntity(type, id, sortBy, page, debouncedSearch, filters);
@@ -173,10 +175,12 @@ export default function EntityExplorer() {
         }
         
         let fetchedPapers = [];
+        
+        // 1. Fetch arXiv papers
         if (arxivIds.length > 0) {
           const rawPapers = await fetchPapersByIds(arxivIds);
           const enrichmentMap = await enrichPapersBatch(arxivIds);
-          fetchedPapers = rawPapers.map(paper => {
+          const enrichedArxiv = rawPapers.map(paper => {
             const enriched = enrichmentMap[paper.id];
             if (!enriched) return paper;
             return {
@@ -187,8 +191,14 @@ export default function EntityExplorer() {
               _isOpenAlexEnriched: true
             };
           });
+          fetchedPapers.push(...enrichedArxiv);
         }
         
+        // 2. Fetch non-arXiv DOIs directly from OpenAlex
+        if (dois.length > 0) {
+          const doiPapers = await fetchPapersByDois(dois);
+          fetchedPapers.push(...doiPapers);
+        }        
         if (page === 1) {
           setPapers(fetchedPapers);
         } else {

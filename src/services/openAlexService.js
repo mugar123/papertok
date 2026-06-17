@@ -655,3 +655,76 @@ export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '') {
   }
   return { authors: [], total: 0 };
 }
+
+/**
+ * Fetch full paper metadata from OpenAlex using a list of DOIs,
+ * and format them as standard Paper objects (since they might not be on arXiv).
+ * @param {string[]} dois 
+ */
+export async function fetchPapersByDois(dois) {
+  if (!dois || dois.length === 0) return [];
+  
+  const cleanDois = dois.map(doi => {
+    if (doi.includes('doi.org/')) return doi.split('doi.org/')[1];
+    return doi;
+  }).filter(Boolean);
+  
+  if (cleanDois.length === 0) return [];
+  
+  const results = [];
+  const chunkSize = 40;
+  for (let i = 0; i < cleanDois.length; i += chunkSize) {
+    const chunk = cleanDois.slice(i, i + chunkSize);
+    const filterIds = chunk.map(d => `doi:${d}`).join('|');
+    const url = `https://api.openalex.org/works?filter=${filterIds}&per-page=50`;
+    
+    try {
+      const response = await fetchWithTimeout(url, 10000);
+      if (response.ok) {
+        const data = await response.json();
+        if (data && data.results) {
+          results.push(...data.results);
+        }
+      }
+    } catch (err) {
+      console.error("OpenAlex fetchPapersByDois failed", err);
+    }
+  }
+  
+  return results.map(work => {
+    let summary = 'No summary available.';
+    if (work.abstract_inverted_index) {
+      const words = [];
+      for (const [word, positions] of Object.entries(work.abstract_inverted_index)) {
+        for (const pos of positions) {
+          words[pos] = word;
+        }
+      }
+      summary = words.join(' ').replace(/\n/g, ' ').trim();
+    }
+    
+    const authors = work.authorships?.map(a => a.author?.display_name || 'Unknown Author') || ['Unknown Author'];
+    const categories = work.concepts?.map(c => c.display_name) || [];
+    const openAlexId = work.id.split('/').pop();
+    
+    return {
+      id: openAlexId,
+      arxivId: null,
+      title: work.title || 'No Title',
+      summary: summary || 'No summary available.',
+      authors,
+      published: work.publication_date ? new Date(work.publication_date).toISOString() : new Date().toISOString(),
+      updated: work.updated_date ? new Date(work.updated_date).toISOString() : new Date().toISOString(),
+      pdfUrl: work.open_access?.oa_url || '',
+      primaryCategory: categories.length > 0 ? categories[0] : 'unknown',
+      allCategories: categories,
+      doi: work.doi ? work.doi.replace('https://doi.org/', '') : '',
+      journalRef: work.primary_location?.source?.display_name || '',
+      comment: '',
+      citationCount: work.cited_by_count || 0,
+      topics: work.concepts ? work.concepts.slice(0, 3) : [],
+      isPeerReviewed: work.primary_location?.is_published || false,
+      _isOpenAlexEnriched: true
+    };
+  });
+}
