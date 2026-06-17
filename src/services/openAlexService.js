@@ -180,6 +180,26 @@ export async function getArxivIdsForOpenAlexWorks(openAlexUrls) {
   }
   return result;
 }
+// Helper for strict author name matching
+function isNameMatch(p, o) {
+  if (p === o) return true;
+  if (p.length === 1 && o.charAt(0) === p) return true;
+  if (o.length === 1 && p.charAt(0) === o) return true;
+  if (p.length > 3 && o.length > 3 && (p.startsWith(o) || o.startsWith(p))) return true;
+  return false;
+}
+
+function matchesAuthorName(reqName, oaName) {
+  if (!reqName || !oaName) return false;
+  const reqParts = reqName.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
+  const oaParts = oaName.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
+  
+  const reqInOa = reqParts.length > 0 && reqParts.every(p => oaParts.some(o => isNameMatch(p, o)));
+  const oaInReq = oaParts.length > 0 && oaParts.every(o => reqParts.some(p => isNameMatch(p, o)));
+  
+  return reqInOa || oaInReq;
+}
+
 /**
  * Fetch author profile from OpenAlex by name.
  * @param {string} authorName 
@@ -196,19 +216,28 @@ export async function getAuthorProfile(authorName) {
     
     const data = await response.json();
     if (data && data.results && data.results.length > 0) {
-      // Pick the first result as the best match
-      const author = data.results[0];
+      // Find the first result that actually matches the name reasonably well
+      let bestAuthor = null;
+      for (const author of data.results) {
+        if (matchesAuthorName(authorName, author.display_name)) {
+          bestAuthor = author;
+          break;
+        }
+      }
+      
+      if (!bestAuthor) return null;
+      
       return {
-        id: author.id,
-        display_name: author.display_name,
-        works_count: author.works_count || 0,
-        cited_by_count: author.cited_by_count || 0,
-        h_index: author.summary_stats ? author.summary_stats.h_index : 0,
-        orcid: author.orcid || null,
-        institution: (author.last_known_institutions && author.last_known_institutions.length > 0) 
-            ? author.last_known_institutions[0].display_name 
+        id: bestAuthor.id,
+        display_name: bestAuthor.display_name,
+        works_count: bestAuthor.works_count || 0,
+        cited_by_count: bestAuthor.cited_by_count || 0,
+        h_index: bestAuthor.summary_stats ? bestAuthor.summary_stats.h_index : 0,
+        orcid: bestAuthor.orcid || null,
+        institution: (bestAuthor.last_known_institutions && bestAuthor.last_known_institutions.length > 0) 
+            ? bestAuthor.last_known_institutions[0].display_name 
             : null,
-        concepts: author.x_concepts ? author.x_concepts.slice(0, 5) : []
+        concepts: bestAuthor.x_concepts ? bestAuthor.x_concepts.slice(0, 5) : []
       };
     }
   } catch (err) {
@@ -253,30 +282,14 @@ export async function getAuthorProfileExact(authorName, arxivId) {
       
       if (workData.authorships) {
         // 2. Find the author in the paper's authors list that matches the requested name
-        const reqParts = authorName.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
-        
+
         // Exact match or closest match
         let bestMatch = null;
         for (const authorship of workData.authorships) {
            const authorDisplayName = authorship.author.display_name;
            if (!authorDisplayName) continue;
            
-           const oaParts = authorDisplayName.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
-           
-           // Strict matching function for names/initials
-           const isNameMatch = (p, o) => {
-             if (p === o) return true;
-             if (p.length === 1 && o.charAt(0) === p) return true;
-             if (o.length === 1 && p.charAt(0) === o) return true;
-             if (p.length > 3 && o.length > 3 && (p.startsWith(o) || o.startsWith(p))) return true;
-             return false;
-           };
-           
-           // If all parts of one are present in the other (accounts for 'Last, First' vs 'First Last')
-           const reqInOa = reqParts.length > 0 && reqParts.every(p => oaParts.some(o => isNameMatch(p, o)));
-           const oaInReq = oaParts.length > 0 && oaParts.every(o => reqParts.some(p => isNameMatch(p, o)));
-           
-           if (reqInOa || oaInReq) {
+           if (matchesAuthorName(authorName, authorDisplayName)) {
               bestMatch = authorship.author;
               break;
            }
