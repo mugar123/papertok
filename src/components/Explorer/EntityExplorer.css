@@ -1329,30 +1329,32 @@
 
 .orcid-career-section--animate > * {
   opacity: 0;
-  animation: orcidChildReveal 0.75s cubic-bezier(0.25, 1, 0.5, 1) forwards;
+  animation: orcidPremiumReveal 1.2s cubic-bezier(0.19, 1, 0.22, 1) forwards;
 }
 
 .orcid-career-section--animate > *:nth-child(1) { animation-delay: 0.05s; }
-.orcid-career-section--animate > *:nth-child(2) { animation-delay: 0.13s; }
-.orcid-career-section--animate > *:nth-child(3) { animation-delay: 0.21s; }
-.orcid-career-section--animate > *:nth-child(4) { animation-delay: 0.29s; }
-.orcid-career-section--animate > *:nth-child(5) { animation-delay: 0.37s; }
-.orcid-career-section--animate > *:nth-child(6) { animation-delay: 0.45s; }
-.orcid-career-section--animate > *:nth-child(7) { animation-delay: 0.53s; }
+.orcid-career-section--animate > *:nth-child(2) { animation-delay: 0.15s; }
+.orcid-career-section--animate > *:nth-child(3) { animation-delay: 0.25s; }
+.orcid-career-section--animate > *:nth-child(4) { animation-delay: 0.35s; }
+.orcid-career-section--animate > *:nth-child(5) { animation-delay: 0.45s; }
+.orcid-career-section--animate > *:nth-child(6) { animation-delay: 0.55s; }
+.orcid-career-section--animate > *:nth-child(7) { animation-delay: 0.65s; }
 
 @keyframes orcidReveal {
   from { opacity: 0; }
   to { opacity: 1; }
 }
 
-@keyframes orcidChildReveal {
-  from {
+@keyframes orcidPremiumReveal {
+  0% {
     opacity: 0;
-    transform: translateY(6px);
+    transform: translateY(12px);
+    filter: blur(4px);
   }
-  to {
+  100% {
     opacity: 1;
     transform: translateY(0);
+    filter: blur(0);
   }
 }
 
