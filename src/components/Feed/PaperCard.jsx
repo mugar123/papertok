@@ -33,17 +33,17 @@ const processLatex = (text) => {
 
 const PaperCard = memo(function PaperCard({ 
   paper, 
-  isLiked, 
-  isSaved, 
-  isRead, 
-  onLike,
-  onNotInterested,
-  onMarkAsRead,
-  trackViewTime,
-  trackSkip,
-  onOpenPdf,
-  onSaveToList,
-  onOpenAuthors 
+  isLiked = false, 
+  isSaved = false, 
+  isRead = false, 
+  onLike = () => {},
+  onNotInterested = () => {},
+  onMarkAsRead = () => {},
+  trackViewTime = () => {},
+  trackSkip = () => {},
+  onOpenPdf = () => {},
+  onSaveToList = () => {},
+  onOpenAuthors = () => {}
 }) {
   const [expanded, setExpanded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
