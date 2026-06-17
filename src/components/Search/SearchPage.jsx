@@ -8,7 +8,7 @@ import { useAuth } from '../../context/AuthContext';
 import { AnimatePresence } from 'framer-motion';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
-import AuthorPanel from '../Feed/AuthorPanel';
+import { getCategoryLabel } from '../../data/categories';
 import './SearchPage.css';
 
 export default function SearchPage() {
@@ -32,7 +32,6 @@ export default function SearchPage() {
   
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaper, setPdfPaper] = useState(null);
-  const [activeAuthors, setActiveAuthors] = useState(null);
   
   const timeoutRef = useRef(null);
 
@@ -116,13 +115,6 @@ export default function SearchPage() {
       console.error(err);
     }
   };
-
-  // Handle author click from PaperCard overlay
-  const handleAuthorClick = useCallback((authors, arxivId) => {
-    setSelectedPaper(null);
-    setPdfPaper(null);
-    setActiveAuthors({ authors, arxivId });
-  }, []);
 
   const orcidMatch = query.match(/\b(\d{4}-\d{4}-\d{4}-\d{3}[\dX])\b/i);
   const cleanOrcid = orcidMatch ? orcidMatch[1].toUpperCase() : null;
@@ -372,7 +364,7 @@ export default function SearchPage() {
             <PaperCard 
               paper={selectedPaper} 
               onOpenPdf={(paper) => setPdfPaper(paper)}
-              onOpenAuthors={(authors) => handleAuthorClick(authors, selectedPaper.arxivId)}
+              onOpenAuthors={() => {}}
               trackViewTime={() => {}}
               trackSkip={() => {}}
             />
@@ -386,21 +378,6 @@ export default function SearchPage() {
           <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />
         </div>
       )}
-
-      {/* Author Panel Overlay */}
-      <AnimatePresence>
-        {activeAuthors && (
-          <AuthorPanel 
-            authors={activeAuthors.authors} 
-            sourceArxivId={activeAuthors.arxivId}
-            onClose={() => setActiveAuthors(null)}
-            onOpenPdf={(paper) => {
-              setActiveAuthors(null);
-              setPdfPaper(paper);
-            }}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }

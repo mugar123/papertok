@@ -1,10 +1,9 @@
 import { useRef, useEffect, useCallback, useState } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { AnimatePresence } from 'framer-motion';
-import AnimatedAtom from './AnimatedAtom';
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
-import AuthorPanel from './AuthorPanel';
+import AnimatedAtom from './AnimatedAtom';
 import './FeedContainer.css';
 
 export default function FeedContainer({ onOpenPdf, onSaveToList }) {
@@ -15,7 +14,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
   const [showLoader, setShowLoader] = useState(false);
-  const [activeAuthors, setActiveAuthors] = useState(null);
 
   // Only show the atom loader if loading takes more than 1.5s
   useEffect(() => {
@@ -62,10 +60,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const handleSaveToList = useCallback((paper) => {
     onSaveToList(paper);
   }, [onSaveToList]);
-
-  const handleOpenAuthors = useCallback((authors, arxivId) => {
-    setActiveAuthors({ authors, arxivId });
-  }, []);
 
   if (error && papers.length === 0) {
     return (
@@ -123,7 +117,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
               trackSkip={trackSkip}
               onOpenPdf={handleOpenPdf}
               onSaveToList={handleSaveToList}
-              onOpenAuthors={handleOpenAuthors}
             />
           </div>
         ))}
@@ -137,20 +130,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
         {/* Sentinel for infinite scroll */}
         {hasMore && <div ref={sentinelRef} className="feed-sentinel" />}
       </div>
-
-      <AnimatePresence>
-        {activeAuthors && (
-          <AuthorPanel 
-            authors={activeAuthors.authors} 
-            sourceArxivId={activeAuthors.arxivId}
-            onClose={() => setActiveAuthors(null)}
-            onOpenPdf={(paper) => {
-              setActiveAuthors(null);
-              handleOpenPdf(paper);
-            }}
-          />
-        )}
-      </AnimatePresence>
     </div>
   );
 }

@@ -1,20 +1,22 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
-import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois } from '../../services/openAlexService';
+import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact } from '../../services/openAlexService';
 import { fetchPapersByIds } from '../../services/arxivService';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { getOrcidRecord } from '../../services/orcidService';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
+import { useAuth } from '../../context/AuthContext';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
-import AuthorPanel from '../Feed/AuthorPanel';
 import './EntityExplorer.css';
 
 export default function EntityExplorer() {
   const { type, id } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const { followedAuthors, toggleFollowAuthor } = useAuth();
 
   const [entity, setEntity] = useState(null);
   const [papers, setPapers] = useState([]);
@@ -113,7 +115,14 @@ export default function EntityExplorer() {
       setSearchQuery('');
       setWikiInfo(null);
       
-      const data = await getEntityById(type, id);
+      let data = null;
+      if (type === 'author' && !id.startsWith('A') && !id.startsWith('http')) {
+        const arxivId = searchParams.get('arxivId');
+        data = await getAuthorProfileExact(id, arxivId);
+      } else {
+        data = await getEntityById(type, id);
+      }
+      
       setEntity(data);
       setIsLoadingEntity(false);
 
@@ -346,9 +355,19 @@ export default function EntityExplorer() {
             </button>
             <span className="ehc-type">{entityTypeLabel}</span>
           </div>
-          <button className="explorer-action-btn" onClick={handleShare} title="Compartir">
-            <Share2 size={18} />
-          </button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {type === 'author' && entity?.display_name && (
+              <button 
+                className={`search-follow-btn ${followedAuthors.includes(entity.display_name) ? 'following' : ''}`}
+                onClick={(e) => { e.stopPropagation(); toggleFollowAuthor(entity.display_name); }}
+              >
+                {followedAuthors.includes(entity.display_name) ? 'Siguiendo' : 'Seguir'}
+              </button>
+            )}
+            <button className="explorer-action-btn" onClick={handleShare} title="Compartir">
+              <Share2 size={18} />
+            </button>
+          </div>
         </div>
         
         <div className="explorer-hero-content">
@@ -878,7 +897,6 @@ export default function EntityExplorer() {
               <PaperCard 
                 paper={selectedPaper} 
                 onOpenPdf={(paper) => setPdfPaperToView(paper)}
-                onOpenAuthors={(authors) => handleAuthorClick(authors, selectedPaper.arxivId)} 
                 trackViewTime={() => {}}
                 trackSkip={() => {}}
               />
@@ -887,7 +905,7 @@ export default function EntityExplorer() {
         )}
       </AnimatePresence>
 
-      {/* PDF Viewer Overlay */}
+    {/* PDF Viewer Overlay */}
       <AnimatePresence>
         {pdfPaperToView && (
           <motion.div 
@@ -900,21 +918,6 @@ export default function EntityExplorer() {
           >
             <PDFViewer paper={pdfPaperToView} onClose={() => setPdfPaperToView(null)} />
           </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* Author Panel Overlay */}
-      <AnimatePresence>
-        {activeAuthors && (
-          <AuthorPanel 
-            authors={activeAuthors.authors} 
-            sourceArxivId={activeAuthors.arxivId}
-            onClose={() => setActiveAuthors(null)}
-            onOpenPdf={(paper) => {
-              setActiveAuthors(null);
-              setPdfPaperToView(paper);
-            }}
-          />
         )}
       </AnimatePresence>
     </div>

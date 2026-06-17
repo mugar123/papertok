@@ -42,8 +42,7 @@ const PaperCard = memo(function PaperCard({
   trackViewTime = () => {},
   trackSkip = () => {},
   onOpenPdf = () => {},
-  onSaveToList = () => {},
-  onOpenAuthors = () => {}
+  onSaveToList = () => {}
 }) {
   const [expanded, setExpanded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
@@ -416,14 +415,7 @@ const PaperCard = memo(function PaperCard({
         </h2>
 
         {/* Authors */}
-        <div 
-          className="pc-authors" 
-          onClick={(e) => {
-            e.stopPropagation();
-            if (onOpenAuthors) onOpenAuthors(paper.authors || [], paper.arxivId);
-          }}
-          style={{ cursor: onOpenAuthors ? 'pointer' : 'default' }}
-        >
+        <div className="pc-authors">
           <div className="pc-author-avatars">
             {(paper.authors || []).slice(0, 3).map((author, i) => (
               <div key={i} className="pc-author-avatar" style={{ '--i': i }}>
@@ -432,7 +424,18 @@ const PaperCard = memo(function PaperCard({
             ))}
           </div>
           <div className="pc-author-names" style={{ display: 'flex', alignItems: 'center', gap: '4px', position: 'relative' }}>
-            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{formatAuthors(paper.authors)}</span>
+            {(paper.authors || []).slice(0, 3).map((author, index) => (
+               <span 
+                 key={index}
+                 onClick={(e) => { e.stopPropagation(); navigate(`/explorer/author/${encodeURIComponent(author)}?arxivId=${paper.arxivId}`); }}
+                 style={{ cursor: 'pointer' }}
+                 onMouseOver={(e) => e.currentTarget.style.textDecoration = 'underline'}
+                 onMouseOut={(e) => e.currentTarget.style.textDecoration = 'none'}
+               >
+                 {author}{index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
+               </span>
+            ))}
+            {(paper.authors || []).length > 3 && <span> et al.</span>}
             {isVerified && (
               <div 
                 className="pc-tooltip" 
