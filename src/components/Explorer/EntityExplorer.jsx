@@ -184,6 +184,7 @@ export default function EntityExplorer() {
         let arxivIds = [];
         let dois = [];
         let total = 0;
+        let fetchedPapers = [];
         
         const resolvedId = entity.id || id;
         
@@ -201,8 +202,6 @@ export default function EntityExplorer() {
            arxivIds = res.arxivIds;
            total = res.total;
         }
-        
-        let fetchedPapers = [];
         
         // 1. Fetch arXiv papers
         if (arxivIds.length > 0) {
