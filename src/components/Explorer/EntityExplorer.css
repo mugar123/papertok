@@ -1513,8 +1513,7 @@
 
 .orcid-item-org--link {
   cursor: pointer;
-  color: var(--accent-primary, #a78bfa);
-  transition: opacity 0.15s, color 0.15s;
+  transition: opacity 0.15s;
 }
 
 .orcid-item-org--link:hover {
