@@ -568,12 +568,21 @@ export default function EntityExplorer() {
 
           {/* ORCID Career Section */}
           {isLoadingOrcid && (
-            <div className="ehc-wiki" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
-              <Loader2 size={16} className="spin" /> Cargando perfil ORCID...
+            <div className="orcid-skeleton">
+              <div className="orcid-skeleton-header">
+                <div className="skel skel-circle" />
+                <div style={{ flex: 1 }}>
+                  <div className="skel skel-line" style={{ width: '40%', marginBottom: '6px' }} />
+                  <div className="skel skel-line" style={{ width: '25%' }} />
+                </div>
+              </div>
+              <div className="skel skel-line" style={{ width: '60%', marginTop: '16px' }} />
+              <div className="skel skel-line" style={{ width: '80%', marginTop: '8px' }} />
+              <div className="skel skel-line" style={{ width: '70%', marginTop: '8px' }} />
             </div>
           )}
           {orcidInfo && !isLoadingOrcid && (
-            <div className="orcid-career-section">
+            <div className="orcid-career-section orcid-career-section--animate">
 
               {/* Header: Badge + link */}
               <div className="orcid-career-header">
