@@ -227,6 +227,25 @@ export default function EntityExplorer() {
           const doiPapers = await fetchPapersByDois(dois);
           fetchedPapers.push(...doiPapers);
         }        
+        // 3. Guarantee source paper is present (failsafe for OpenAlex index gaps)
+        if (page === 1 && type === 'author') {
+           const sourceArxivId = searchParams.get('arxivId');
+           if (sourceArxivId) {
+             const cleanSourceId = sourceArxivId.replace(/v\d+$/, '');
+             const hasSource = fetchedPapers.some(p => p.id && p.id.replace(/v\d+$/, '') === cleanSourceId);
+             if (!hasSource) {
+               try {
+                 const sourcePaperReq = await fetchPapersByIds([cleanSourceId]);
+                 if (sourcePaperReq && sourcePaperReq.length > 0) {
+                   fetchedPapers.unshift(sourcePaperReq[0]);
+                 }
+               } catch (e) {
+                 console.error("Failed to fetch source paper failsafe", e);
+               }
+             }
+           }
+        }
+
         if (page === 1) {
           setPapers(fetchedPapers);
         } else {
