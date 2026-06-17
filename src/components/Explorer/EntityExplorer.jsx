@@ -79,15 +79,19 @@ export default function EntityExplorer() {
         // Fetch detailed info
         const details = await getProjectDetails(id);
         if (details) {
+           const displayName = details.acronym 
+             ? `${details.acronym}: ${details.title}` 
+             : details.title;
            setEntity({
-             display_name: `${details.acronym}: ${details.title}`,
+             display_name: displayName,
              type: 'project',
              funder: details.funder,
+             fundingStream: details.fundingStream,
              summary: details.summary,
              startDate: details.startDate,
              endDate: details.endDate,
-             totalCost: details.totalCost,
-             fundedAmount: details.fundedAmount
+             budget: details.budget,
+             currency: details.currency,
            });
         }
         setIsLoadingEntity(false);
@@ -336,7 +340,7 @@ export default function EntityExplorer() {
               )}
               {type === 'project' && entity.funder && (
                 <p className="ehc-meta">
-                  Financiado por: {entity.funder}
+                  {entity.funder}{entity.fundingStream ? ` — ${entity.fundingStream}` : ''}
                 </p>
               )}
               {topConcepts.length > 0 && (
@@ -377,10 +381,10 @@ export default function EntityExplorer() {
                 <span className="ehc-stat-label">Impacto Reciente</span>
               </div>
             )}
-            {type === 'project' && entity.totalCost != null && (
+            {type === 'project' && entity.budget > 0 && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">
-                  {new Intl.NumberFormat('es-ES', { style: 'currency', currency: entity.currency || 'EUR', maximumFractionDigits: 0 }).format(entity.totalCost)}
+                  {new Intl.NumberFormat('es-ES', { style: 'currency', currency: entity.currency || 'EUR', maximumFractionDigits: 0 }).format(entity.budget)}
                 </span>
                 <span className="ehc-stat-label">Presupuesto</span>
               </div>

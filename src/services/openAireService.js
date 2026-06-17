@@ -14,6 +14,33 @@ async function fetchWithTimeout(url, timeout = 10000) {
   }
 }
 
+/**
+ * Extract funder info from the fundingtree structure.
+ * fundingtree can be an array of objects or a single object,
+ * and funder shortname/name use the {"$": "value"} pattern.
+ */
+function extractFunder(p) {
+  let funderName = "Funder desconocido";
+  let fundingStream = "";
+  
+  let tree = p.fundingtree;
+  if (!tree) return { funderName, fundingStream };
+  
+  // Normalize to array
+  if (!Array.isArray(tree)) tree = [tree];
+  
+  const first = tree[0];
+  if (!first?.funder) return { funderName, fundingStream };
+  
+  const funder = first.funder;
+  if (funder.shortname?.["$"]) funderName = funder.shortname["$"];
+  else if (funder.name?.["$"]) funderName = funder.name["$"];
+  
+  if (first.funding_level_0?.name?.["$"]) fundingStream = first.funding_level_0.name["$"];
+  
+  return { funderName, fundingStream };
+}
+
 export async function getProjectDetails(projectId) {
   if (!projectId) return null;
   const url = `https://api.openaire.eu/search/projects?format=json&size=1&grantID=${encodeURIComponent(projectId)}`;
@@ -29,21 +56,23 @@ export async function getProjectDetails(projectId) {
     const p = res?.metadata?.["oaf:entity"]?.["oaf:project"];
     if (!p) return null;
     
-    const funding = p.fundingtree?.funder || p.funding?.funder;
-    let funderName = "Unknown Funder";
-    if (funding?.["@shortname"]) funderName = funding["@shortname"];
-    else if (funding?.["@name"]) funderName = funding["@name"];
+    const { funderName, fundingStream } = extractFunder(p);
+
+    // Use fundedamount as fallback when totalcost is 0
+    const totalCost = parseFloat(p.totalcost?.["$"]) || 0;
+    const fundedAmount = parseFloat(p.fundedamount?.["$"]) || 0;
+    const budget = totalCost > 0 ? totalCost : fundedAmount;
 
     return {
       id: p.code?.["$"],
       title: p.title?.["$"] || "Unknown Project",
-      acronym: p.acronym?.["$"] || "Project",
+      acronym: p.acronym?.["$"] || null,
       funder: funderName,
+      fundingStream,
       summary: p.summary?.["$"],
       startDate: p.startdate?.["$"],
       endDate: p.enddate?.["$"],
-      totalCost: p.totalcost?.["$"],
-      fundedAmount: p.fundedamount?.["$"],
+      budget,
       currency: p.currency?.["$"] || "EUR"
     };
   } catch (e) {
@@ -209,7 +238,7 @@ export async function getPapersByProject(projectCode, page = 1) {
  */
 export async function searchProjects(query, page = 1) {
   if (!query) return { projects: [], total: 0 };
-  const url = `https://api.openaire.eu/search/projects?format=json&size=20&page=${page}&keywords=${encodeURIComponent(query)}`;
+  const url = `https://api.openaire.eu/search/projects?format=json&size=5&page=${page}&keywords=${encodeURIComponent(query)}`;
   
   try {
     const response = await fetchWithTimeout(url);
@@ -225,19 +254,20 @@ export async function searchProjects(query, page = 1) {
       const p = res?.metadata?.["oaf:entity"]?.["oaf:project"];
       if (!p) return null;
       
-      const funding = p.fundingtree?.funder || p.funding?.funder;
-      let funderName = "Unknown Funder";
-      if (funding?.["@shortname"]) {
-          funderName = funding["@shortname"];
-      } else if (funding?.["@name"]) {
-          funderName = funding["@name"];
-      }
+      const { funderName, fundingStream } = extractFunder(p);
+      
+      const totalCost = parseFloat(p.totalcost?.["$"]) || 0;
+      const fundedAmount = parseFloat(p.fundedamount?.["$"]) || 0;
+      const budget = totalCost > 0 ? totalCost : fundedAmount;
 
       return {
-        id: p.code?.["$"], // We use the code as ID for navigation
+        id: p.code?.["$"],
         title: p.title?.["$"] || "Unknown Project",
-        acronym: p.acronym?.["$"] || "Project",
+        acronym: p.acronym?.["$"] || null,
         funder: funderName,
+        fundingStream,
+        budget,
+        currency: p.currency?.["$"] || "EUR",
       };
     }).filter(Boolean);
 

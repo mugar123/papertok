@@ -165,11 +165,11 @@ export default function SearchPage() {
               <div className="search-section">
                 <h3 className="search-section-title">Proyectos de Investigación</h3>
                 {projectResults.map(project => (
-                  <div key={project.id} className="search-item" onClick={() => navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}`)}>
+                  <div key={project.id} className="search-item" onClick={() => navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`)}>
                     <div className="search-item-icon"><Briefcase size={22} /></div>
                     <div className="search-item-info">
-                      <h4>{project.acronym}: {project.title}</h4>
-                      <p>Financiado por {project.funder}</p>
+                      <h4>{project.acronym ? `${project.acronym}: ${project.title}` : project.title}</h4>
+                      <p>{project.funder}{project.budget > 0 ? ` • ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: project.currency || 'EUR', maximumFractionDigits: 0 }).format(project.budget)}` : ''}</p>
                     </div>
                   </div>
                 ))}
