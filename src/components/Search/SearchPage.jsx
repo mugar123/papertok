@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, FileText, Users, Loader2, ArrowLeft, Building2, Lightbulb, Briefcase } from 'lucide-react';
+import { Search, FileText, Users, Loader2, ArrowLeft, Building2, Lightbulb, Briefcase, Sparkles, Compass, TrendingUp } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { searchPapers } from '../../services/arxivService';
 import { searchAuthors, searchInstitutions, searchConcepts, searchSources } from '../../services/openAlexService';
@@ -136,6 +136,40 @@ export default function SearchPage() {
           </div>
         ) : (
           <div className="search-results-list animate-fade-in">
+            {!query && !isSearching && (
+              <div className="search-initial-state animate-fade-in">
+                <div className="search-initial-hero">
+                  <Compass size={48} className="search-initial-icon" />
+                  <h2>Explora el conocimiento</h2>
+                  <p>Busca entre millones de papers, investigadores, universidades y proyectos financiados a nivel global.</p>
+                </div>
+                
+                <div className="search-suggestions">
+                  <h3 className="search-suggestions-title"><Sparkles size={16} /> Búsquedas sugeridas</h3>
+                  <div className="search-suggestions-grid">
+                    <button onClick={() => setQuery('Massachusetts Institute of Technology')} className="search-suggestion-chip">
+                      <Building2 size={14} /> MIT
+                    </button>
+                    <button onClick={() => setQuery('DeepMind')} className="search-suggestion-chip">
+                      <Building2 size={14} /> DeepMind
+                    </button>
+                    <button onClick={() => setQuery('CRISPR')} className="search-suggestion-chip">
+                      <FileText size={14} /> CRISPR Cas9
+                    </button>
+                    <button onClick={() => setQuery('Horizon')} className="search-suggestion-chip">
+                      <Briefcase size={14} /> Proyectos Horizon
+                    </button>
+                    <button onClick={() => setQuery('Geoffrey Hinton')} className="search-suggestion-chip">
+                      <Users size={14} /> Geoffrey Hinton
+                    </button>
+                    <button onClick={() => setQuery('Quantum Computing')} className="search-suggestion-chip">
+                      <TrendingUp size={14} /> Computación Cuántica
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {!hasResults && query && hasSearched && (
               <div className="search-empty">
                 <Search size={40} className="search-empty-icon" />

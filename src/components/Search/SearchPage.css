@@ -279,3 +279,99 @@
   background: rgba(10, 10, 15, 0.98);
   animation: fadeIn 0.2s ease-out forwards;
 }
+
+/* Hide scrollbar completely to make it look cleaner */
+.search-results::-webkit-scrollbar {
+  display: none;
+}
+
+/* ─── Initial State ─── */
+.search-initial-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  min-height: 50vh;
+  padding: 20px;
+}
+
+.search-initial-hero {
+  text-align: center;
+  margin-bottom: 40px;
+  max-width: 400px;
+}
+
+.search-initial-icon {
+  color: var(--accent-primary, #8b5cf6);
+  opacity: 0.8;
+  margin-bottom: 16px;
+  filter: drop-shadow(0 0 15px rgba(139, 92, 246, 0.3));
+}
+
+.search-initial-hero h2 {
+  font-size: 1.4rem;
+  font-weight: 700;
+  margin: 0 0 8px 0;
+  color: white;
+  letter-spacing: -0.02em;
+}
+
+.search-initial-hero p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.search-suggestions {
+  width: 100%;
+  max-width: 600px;
+}
+
+.search-suggestions-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin: 0 0 16px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.search-suggestions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.search-suggestion-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+}
+
+.search-suggestion-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(139, 92, 246, 0.4);
+  color: white;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.search-suggestion-chip svg {
+  color: var(--accent-primary, #8b5cf6);
+  opacity: 0.8;
+}
