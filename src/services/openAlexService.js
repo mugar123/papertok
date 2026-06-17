@@ -263,9 +263,18 @@ export async function getAuthorProfileExact(authorName, arxivId) {
            
            const oaParts = authorDisplayName.toLowerCase().replace(/[^a-z\s]/g, '').split(/\s+/).filter(Boolean);
            
+           // Strict matching function for names/initials
+           const isNameMatch = (p, o) => {
+             if (p === o) return true;
+             if (p.length === 1 && o.charAt(0) === p) return true;
+             if (o.length === 1 && p.charAt(0) === o) return true;
+             if (p.length > 3 && o.length > 3 && (p.startsWith(o) || o.startsWith(p))) return true;
+             return false;
+           };
+           
            // If all parts of one are present in the other (accounts for 'Last, First' vs 'First Last')
-           const reqInOa = reqParts.length > 0 && reqParts.every(p => oaParts.some(o => o.includes(p) || p.includes(o)));
-           const oaInReq = oaParts.length > 0 && oaParts.every(o => reqParts.some(p => p.includes(o) || o.includes(p)));
+           const reqInOa = reqParts.length > 0 && reqParts.every(p => oaParts.some(o => isNameMatch(p, o)));
+           const oaInReq = oaParts.length > 0 && oaParts.every(o => reqParts.some(p => isNameMatch(p, o)));
            
            if (reqInOa || oaInReq) {
               bestMatch = authorship.author;
