@@ -563,99 +563,99 @@ export default function EntityExplorer() {
             </div>
           )}
 
-          {/* ORCID Info */}
+          {/* ORCID Career Section */}
           {isLoadingOrcid && (
             <div className="ehc-wiki" style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)' }}>
-              <Loader2 size={16} className="spin" /> Cargando datos de ORCID...
+              <Loader2 size={16} className="spin" /> Cargando perfil ORCID...
             </div>
           )}
           {orcidInfo && !isLoadingOrcid && (
-            <div className="ehc-wiki">
-              <div className="ehc-links" style={{ marginBottom: '12px', paddingBottom: '8px', borderBottom: '1px solid var(--border-color)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <img src="https://info.orcid.org/wp-content/uploads/2019/11/orcid_16x16.png" alt="ORCID iD icon" style={{ width: '16px', height: '16px' }}/>
-                  <span style={{ fontWeight: '600', color: '#a6ce39', fontSize: '0.9rem' }}>Perfil Verificado ORCID</span>
+            <div className="orcid-career-section">
+
+              {/* Header: Badge + link */}
+              <div className="orcid-career-header">
+                <div className="orcid-badge">
+                  <div className="orcid-badge-icon">
+                    <img src="https://info.orcid.org/wp-content/uploads/2019/11/orcid_16x16.png" alt="ORCID" />
+                  </div>
+                  <div className="orcid-badge-text">
+                    <span className="orcid-badge-label">Perfil Verificado ORCID</span>
+                    <span className="orcid-badge-id">{orcidInfo.orcid}</span>
+                  </div>
                 </div>
-                <a href={`https://orcid.org/${orcidInfo.orcid}`} target="_blank" rel="noopener noreferrer" className="ehc-link" style={{ marginLeft: 'auto' }}>
-                  {orcidInfo.orcid} <ExternalLink size={14} />
+                <a href={`https://orcid.org/${orcidInfo.orcid}`} target="_blank" rel="noopener noreferrer" className="orcid-profile-link">
+                  Ver perfil <ExternalLink size={12} />
                 </a>
               </div>
-              
-              {orcidInfo.biography && <p style={{ whiteSpace: 'pre-line' }}>{orcidInfo.biography}</p>}
-              
+
+              {/* Biography */}
+              {orcidInfo.biography && (
+                <div className="orcid-biography">
+                  {orcidInfo.biography}
+                </div>
+              )}
+
+              {/* External links */}
               {orcidInfo.researcherUrls?.length > 0 && (
-                <div style={{ marginTop: '12px', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
-                  {orcidInfo.researcherUrls.map((url, i) => (
-                    <a key={i} href={url.url} target="_blank" rel="noopener noreferrer" className="ehc-link" style={{ fontSize: '0.85rem' }}>
-                      <Globe size={12} style={{ marginRight: '4px' }} /> {url.name || 'Enlace Externo'}
+                <div className="orcid-links-row">
+                  {orcidInfo.researcherUrls.map((u, i) => (
+                    <a key={i} href={u.url} target="_blank" rel="noopener noreferrer" className="orcid-ext-link">
+                      <Globe size={12} />
+                      {u.name || 'Enlace externo'}
                     </a>
                   ))}
                 </div>
               )}
 
-              {(orcidInfo.employments?.length > 0 || orcidInfo.educations?.length > 0) && (
-                <div style={{ marginTop: '16px', display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-                  {orcidInfo.employments?.length > 0 && (
-                    <div style={{ flex: '1 1 250px' }}>
-                      <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <Briefcase size={14} /> Experiencia
-                      </h4>
-                      <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {orcidInfo.employments.slice(0, 3).map((emp, i) => (
-                          <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: 'var(--accent-primary)', marginTop: '6px' }} />
-                            <div>
-                              <span style={{ fontWeight: '500', display: 'block', color: 'var(--text-primary)' }}>{emp.organization}</span>
-                              <span style={{ color: 'var(--text-tertiary)' }}>
-                                {emp.role ? `${emp.role} ` : ''} {emp.startDate ? `(${emp.startDate} - ${emp.endDate})` : ''}
-                              </span>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-
-                  {orcidInfo.educations?.length > 0 && (
-                    <div style={{ flex: '1 1 250px' }}>
-                      <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                        <BookOpen size={14} /> Educación
-                      </h4>
-                      <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                        {orcidInfo.educations.slice(0, 3).map((edu, i) => (
-                          <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                            <div style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#a6ce39', marginTop: '6px' }} />
-                            <div>
-                              <span style={{ fontWeight: '500', display: 'block', color: 'var(--text-primary)' }}>{edu.organization}</span>
-                              <span style={{ color: 'var(--text-tertiary)' }}>
-                                {edu.role ? `${edu.role} ` : ''} {edu.startDate ? `(${edu.startDate} - ${edu.endDate})` : ''}
-                              </span>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
-
-              {orcidInfo.works?.length > 0 && (
-                <div style={{ marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--border-color)' }}>
-                  <h4 style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <FileText size={14} /> Actividad Reciente (ORCID)
-                  </h4>
-                  <ul style={{ listStyle: 'none', padding: 0, margin: 0, fontSize: '0.85rem', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {orcidInfo.works.map((work, i) => (
-                      <li key={i}>
-                        <span style={{ display: 'block', fontWeight: '500', color: 'var(--text-primary)' }}>{work.title}</span>
-                        <span style={{ color: 'var(--text-tertiary)' }}>
-                          {work.year || 'S/A'} {work.type ? `• ${work.type}` : ''}
-                        </span>
-                      </li>
+              {/* Work experience timeline */}
+              {orcidInfo.employments?.length > 0 && (
+                <div className="orcid-timeline-block">
+                  <div className="orcid-timeline-title">
+                    <span className="orcid-tl-icon orcid-tl-icon--work"><Briefcase size={12} /></span>
+                    Experiencia profesional
+                  </div>
+                  <div className="orcid-timeline">
+                    {orcidInfo.employments.map((emp, i) => (
+                      <div key={i} className="orcid-timeline-item">
+                        <div className="orcid-item-org">{emp.organization}</div>
+                        {emp.role && <div className="orcid-item-role">{emp.role}</div>}
+                        {emp.startDate && (
+                          <div className="orcid-item-dates">
+                            {emp.startDate}
+                            <span className="dot-separator">→</span>
+                            {emp.endDate || 'Presente'}
+                          </div>
+                        )}
+                      </div>
                     ))}
-                  </ul>
+                  </div>
                 </div>
               )}
+
+              {/* Education timeline */}
+              {orcidInfo.educations?.length > 0 && (
+                <div className="orcid-timeline-block">
+                  <div className="orcid-timeline-title">
+                    <span className="orcid-tl-icon orcid-tl-icon--edu"><BookOpen size={12} /></span>
+                    Formación académica
+                  </div>
+                  <div className="orcid-timeline">
+                    {orcidInfo.educations.map((edu, i) => (
+                      <div key={i} className="orcid-timeline-item orcid-timeline-item--edu">
+                        <div className="orcid-item-org">{edu.organization}</div>
+                        {edu.role && <div className="orcid-item-role">{edu.role}</div>}
+                        {edu.startDate && (
+                          <div className="orcid-item-dates">
+                            {edu.startDate}
+                            {edu.endDate && <><span className="dot-separator">→</span>{edu.endDate}</>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
             </div>
           )}
         </div>
