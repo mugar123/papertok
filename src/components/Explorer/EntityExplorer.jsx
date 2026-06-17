@@ -365,14 +365,6 @@ export default function EntityExplorer() {
             <span className="ehc-type">{entityTypeLabel}</span>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            {type === 'author' && entity?.display_name && (
-              <button 
-                className={`search-follow-btn ${followedAuthors.includes(entity.display_name) ? 'following' : ''}`}
-                onClick={(e) => { e.stopPropagation(); toggleFollowAuthor(entity.display_name); }}
-              >
-                {followedAuthors.includes(entity.display_name) ? 'Siguiendo' : 'Seguir'}
-              </button>
-            )}
             <button className="explorer-action-btn" onClick={handleShare} title="Compartir">
               <Share2 size={18} />
             </button>
@@ -389,7 +381,18 @@ export default function EntityExplorer() {
               <div className="ehc-icon">{renderIcon()}</div>
             )}
             <div className="ehc-info">
-              <h1 className="ehc-name">{entity.display_name}</h1>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                <h1 className="ehc-name" style={{ margin: 0 }}>{entity.display_name}</h1>
+                {type === 'author' && entity?.display_name && (
+                  <button 
+                    className={`search-follow-btn ${followedAuthors.includes(entity.display_name) ? 'following' : ''}`}
+                    onClick={(e) => { e.stopPropagation(); toggleFollowAuthor(entity.display_name); }}
+                    style={{ transform: 'scale(0.9)', transformOrigin: 'left center' }}
+                  >
+                    {followedAuthors.includes(entity.display_name) ? 'Siguiendo' : 'Seguir'}
+                  </button>
+                )}
+              </div>
               {type === 'institution' && (
                 <p className="ehc-meta">
                   {entity.geo?.city}, {entity.geo?.country}
