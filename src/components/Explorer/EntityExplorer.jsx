@@ -116,7 +116,9 @@ export default function EntityExplorer() {
       setWikiInfo(null);
       
       let data = null;
-      if (type === 'author' && !id.startsWith('A') && !id.startsWith('http')) {
+      const isOpenAlexId = /^A\d+$/.test(id) || id.startsWith('http');
+      
+      if (type === 'author' && !isOpenAlexId) {
         const arxivId = searchParams.get('arxivId');
         data = await getAuthorProfileExact(id, arxivId);
       } else {
@@ -183,13 +185,15 @@ export default function EntityExplorer() {
         let dois = [];
         let total = 0;
         
+        const resolvedId = entity.id || id;
+        
         if (type === 'project') {
-           const res = await getPapersByProject(id, page);
+           const res = await getPapersByProject(resolvedId, page);
            arxivIds = res.arxivIds;
            dois = res.dois || [];
            total = res.total;
         } else {
-           const res = await getWorksByEntity(type, id, sortBy, page, debouncedSearch, filters);
+           const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
            arxivIds = res.arxivIds;
            total = res.total;
         }
@@ -246,7 +250,8 @@ export default function EntityExplorer() {
       else setIsFetchingMoreAuthors(true);
       
       try {
-        const { authors, total } = await getAuthorsByEntity(type, id, authorsPage, debouncedSearch);
+        const resolvedId = entity.id || id;
+        const { authors, total } = await getAuthorsByEntity(type, resolvedId, authorsPage, debouncedSearch);
         
         if (authorsPage === 1) {
           setEntityAuthors(authors);
