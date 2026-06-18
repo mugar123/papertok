@@ -652,25 +652,20 @@ export default function EntityExplorer() {
           </AnimatePresence>
 
           {/* ORCID Career Section */}
-          <AnimatePresence>
-            {isLoadingOrcid && (
-              <motion.div 
-                className="orcid-skeleton"
-                exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.3 } }}
-              >
-                <div className="orcid-skeleton-header">
-                  <div className="skel skel-circle" />
-                  <div style={{ flex: 1 }}>
-                    <div className="skel skel-line" style={{ width: '40%', marginBottom: '6px' }} />
-                    <div className="skel skel-line" style={{ width: '25%' }} />
-                  </div>
+          {isLoadingOrcid && (
+            <div className="orcid-skeleton">
+              <div className="orcid-skeleton-header">
+                <div className="skel skel-circle" />
+                <div style={{ flex: 1 }}>
+                  <div className="skel skel-line" style={{ width: '40%', marginBottom: '6px' }} />
+                  <div className="skel skel-line" style={{ width: '25%' }} />
                 </div>
-                <div className="skel skel-line" style={{ width: '60%', marginTop: '16px' }} />
-                <div className="skel skel-line" style={{ width: '80%', marginTop: '8px' }} />
-                <div className="skel skel-line" style={{ width: '70%', marginTop: '8px' }} />
-              </motion.div>
-            )}
-          </AnimatePresence>
+              </div>
+              <div className="skel skel-line" style={{ width: '60%', marginTop: '16px' }} />
+              <div className="skel skel-line" style={{ width: '80%', marginTop: '8px' }} />
+              <div className="skel skel-line" style={{ width: '70%', marginTop: '8px' }} />
+            </div>
+          )}
           {orcidInfo && !isLoadingOrcid && (
             <div className="orcid-career-section orcid-career-section--animate">
 
