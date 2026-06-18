@@ -513,8 +513,8 @@
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   /* Staggered animation values injected via style="--i: index" */
   opacity: 0;
-  animation: staggerFadeUp 1.8s cubic-bezier(0.19, 1, 0.22, 1) forwards;
-  animation-delay: calc(var(--i, 0) * 0.1s);
+  animation: staggerFadeUp 2.8s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 0.15s);
 }
 
 /* Glass shine effect on hover */
@@ -547,7 +547,7 @@
   pointer-events: none;
   background: rgba(255, 255, 255, 0.01) !important;
   border-color: rgba(255, 255, 255, 0.02) !important;
-  animation: pulseGlow 2.5s infinite alternate !important;
+  animation: pulseGlow 4.5s infinite alternate !important;
 }
 
 .skeleton-pill {
@@ -1324,7 +1324,7 @@
     rgba(255,255,255,0.04) 75%
   );
   background-size: 200% 100%;
-  animation: skelShimmer 2.5s ease-in-out infinite;
+  animation: skelShimmer 4.5s ease-in-out infinite;
   border-radius: 6px;
 }
 
@@ -1358,7 +1358,7 @@
 
 .orcid-career-section--animate > * {
   opacity: 0;
-  animation: orcidPremiumReveal 1.8s cubic-bezier(0.19, 1, 0.22, 1) forwards;
+  animation: orcidPremiumReveal 2.8s cubic-bezier(0.19, 1, 0.22, 1) forwards;
 }
 
 .orcid-career-section--animate > *:nth-child(1) { animation-delay: 0.05s; }
