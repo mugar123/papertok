@@ -5,7 +5,7 @@ import { searchPapers } from '../../services/arxivService';
 import { searchAuthors, searchInstitutions, searchConcepts, searchSources, getTrendingPapers } from '../../services/openAlexService';
 import { searchProjects } from '../../services/openAireService';
 import { useAuth } from '../../context/AuthContext';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import { getCategoryLabel } from '../../data/categories';
@@ -121,6 +121,15 @@ export default function SearchPage() {
 
   const hasResults = paperResults.length > 0 || authorResults.length > 0 || institutionResults.length > 0 || conceptResults.length > 0 || sourceResults.length > 0 || !!cleanOrcid;
 
+  const suggestedQueries = [
+    { label: 'MIT', icon: <Building2 size={14} />, query: 'Massachusetts Institute of Technology' },
+    { label: 'DeepMind', icon: <Building2 size={14} />, query: 'DeepMind' },
+    { label: 'CRISPR Cas9', icon: <FileText size={14} />, query: 'CRISPR' },
+    { label: 'Proyectos Horizon', icon: <Briefcase size={14} />, query: 'Horizon' },
+    { label: 'Geoffrey Hinton', icon: <Users size={14} />, query: 'Geoffrey Hinton' },
+    { label: 'Computación Cuántica', icon: <TrendingUp size={14} />, query: 'Quantum Computing' },
+  ];
+
   return (
     <div className="search-page-container">
       {/* Header */}
@@ -160,24 +169,18 @@ export default function SearchPage() {
                 <div className="search-suggestions">
                   <h3 className="search-suggestions-title"><Sparkles size={16} /> Búsquedas sugeridas</h3>
                   <div className="search-suggestions-grid">
-                    <button onClick={() => setQuery('Massachusetts Institute of Technology')} className="search-suggestion-chip">
-                      <Building2 size={14} /> MIT
-                    </button>
-                    <button onClick={() => setQuery('DeepMind')} className="search-suggestion-chip">
-                      <Building2 size={14} /> DeepMind
-                    </button>
-                    <button onClick={() => setQuery('CRISPR')} className="search-suggestion-chip">
-                      <FileText size={14} /> CRISPR Cas9
-                    </button>
-                    <button onClick={() => setQuery('Horizon')} className="search-suggestion-chip">
-                      <Briefcase size={14} /> Proyectos Horizon
-                    </button>
-                    <button onClick={() => setQuery('Geoffrey Hinton')} className="search-suggestion-chip">
-                      <Users size={14} /> Geoffrey Hinton
-                    </button>
-                    <button onClick={() => setQuery('Quantum Computing')} className="search-suggestion-chip">
-                      <TrendingUp size={14} /> Computación Cuántica
-                    </button>
+                    {suggestedQueries.map((item, idx) => (
+                      <motion.button 
+                        key={item.label}
+                        onClick={() => setQuery(item.query)} 
+                        className="search-suggestion-chip"
+                        initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        transition={{ duration: 0.6, delay: 0.1 + (idx * 0.05), type: 'spring' }}
+                      >
+                        {item.icon} {item.label}
+                      </motion.button>
+                    ))}
                   </div>
                 </div>
 
@@ -189,8 +192,15 @@ export default function SearchPage() {
                     </div>
                   ) : trendingPapers.length > 0 ? (
                     <div className="search-trending-grid">
-                      {trendingPapers.map(paper => (
-                        <div key={paper.id} className="search-item paper-item" onClick={() => setSelectedPaper(paper)}>
+                      {trendingPapers.map((paper, idx) => (
+                        <motion.div 
+                          key={paper.id} 
+                          className="search-item paper-item" 
+                          onClick={() => setSelectedPaper(paper)}
+                          initial={{ opacity: 0, y: 20 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          transition={{ duration: 0.8, delay: 0.2 + (idx * 0.1), ease: [0.16, 1, 0.3, 1] }}
+                        >
                           <div className="search-item-icon"><FileText size={22} /></div>
                           <div className="search-item-info">
                             <h4>{paper.title}</h4>
@@ -207,7 +217,7 @@ export default function SearchPage() {
                               )}
                             </div>
                           </div>
-                        </div>
+                        </motion.div>
                       ))}
                     </div>
                   ) : null}
