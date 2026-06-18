@@ -405,7 +405,7 @@ export default function EntityExplorer() {
   return (
     <div className="explorer-container">
       {/* Immersive Hero */}
-      <div className="explorer-hero">
+      <motion.div layout transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="explorer-hero">
         <AnimatePresence>
           {wikiInfo?.thumbnail && (
             <motion.div 
@@ -778,10 +778,10 @@ export default function EntityExplorer() {
              </button>
           )}
         </div>
-      </div>
+      </motion.div>
 
       {/* Sticky Toolbar Wrapper */}
-      <div className="explorer-toolbar-wrapper">
+      <motion.div layout transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="explorer-toolbar-wrapper">
         <div className="explorer-toolbar">
           <div className="explorer-search-box">
             <Search size={16} className="es-icon" />
@@ -806,9 +806,9 @@ export default function EntityExplorer() {
               </button>
             )}
           </div>
-        </div>
+        </motion.div>
 
-      <div className="explorer-content">
+      <motion.div layout transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="explorer-content">
         {activeTab === 'papers' ? (
           <>
 
@@ -905,7 +905,7 @@ export default function EntityExplorer() {
             )}
           </div>
         )}
-      </div>
+      </motion.div>
 
       {/* Filter Drawer */}
       <AnimatePresence>
