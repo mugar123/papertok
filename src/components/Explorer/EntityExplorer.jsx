@@ -406,9 +406,18 @@ export default function EntityExplorer() {
     <div className="explorer-container">
       {/* Immersive Hero */}
       <div className="explorer-hero">
-        {wikiInfo?.thumbnail && (
-          <div className="ehc-bg-blur" style={{ backgroundImage: `url(${wikiInfo.thumbnail})` }}></div>
-        )}
+        <AnimatePresence>
+          {wikiInfo?.thumbnail && (
+            <motion.div 
+              key="bg-blur"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 1.0 }}
+              className="ehc-bg-blur" 
+              style={{ backgroundImage: `url(${wikiInfo.thumbnail})` }}
+            ></motion.div>
+          )}
+        </AnimatePresence>
         
         <div className="explorer-hero-top">
           <div className="eht-left">
@@ -426,13 +435,29 @@ export default function EntityExplorer() {
         
         <div className="explorer-hero-content">
           <div className="ehc-main">
-            {wikiInfo?.thumbnail ? (
-              <div className="ehc-wiki-image">
-                <img src={wikiInfo.thumbnail} alt={entity.display_name} />
-              </div>
-            ) : (
-              <div className="ehc-icon">{renderIcon()}</div>
-            )}
+            <AnimatePresence mode="wait">
+              {wikiInfo?.thumbnail ? (
+                <motion.div 
+                  key="wiki-image"
+                  initial={{ opacity: 0, scale: 0.9 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  transition={{ duration: 0.6 }}
+                  className="ehc-wiki-image"
+                >
+                  <img src={wikiInfo.thumbnail} alt={entity.display_name} />
+                </motion.div>
+              ) : (
+                <motion.div 
+                  key="icon"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0, scale: 0.9 }}
+                  className="ehc-icon"
+                >
+                  {renderIcon()}
+                </motion.div>
+              )}
+            </AnimatePresence>
             <div className="ehc-info">
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 <h1 className="ehc-name" style={{ margin: 0 }}>{entity.display_name}</h1>
@@ -789,7 +814,7 @@ export default function EntityExplorer() {
 
             
             <div className="explorer-grid">
-              {filteredPapers.map((paper, idx) => (
+              {(!isLoadingPapers || isFetchingMore) && filteredPapers.map((paper, idx) => (
                 <div 
                   key={`${paper.id}-${idx}`} 
                   className="explorer-list-item"
@@ -815,23 +840,26 @@ export default function EntityExplorer() {
                 </div>
               ))}
               
-              {isLoadingPapers && !isFetchingMore && (
-                <>
-                  {[1, 2, 3, 4, 5].map((n) => (
-                    <div key={`skeleton-${n}`} className="explorer-list-item skeleton-item">
-                      <div className="eli-header">
-                        <div className="skeleton-pill"></div>
-                        <div className="skeleton-text short"></div>
-                      </div>
-                      <div className="skeleton-title"></div>
-                      <div className="skeleton-title short"></div>
-                      <div className="skeleton-text"></div>
-                      <div className="skeleton-text long"></div>
-                      <div className="skeleton-text medium"></div>
+              <AnimatePresence>
+                {isLoadingPapers && !isFetchingMore && [1, 2, 3, 4, 5].map((n) => (
+                  <motion.div 
+                    key={`skeleton-${n}`} 
+                    className="explorer-list-item skeleton-item"
+                    exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.3 } }}
+                  >
+                    <div className="eli-header">
+                      <div className="skeleton-pill"></div>
+                      <div className="skeleton-text short"></div>
                     </div>
-                  ))}
-                </>
-              )}
+                    <div className="skeleton-title"></div>
+                    <div className="skeleton-title short"></div>
+                    <div className="skeleton-text"></div>
+                    <div className="skeleton-text long"></div>
+                    <div className="skeleton-text medium"></div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+
               {/* Infinite Scroll Sentinel */}
               {hasMore && (
                 <div ref={observerRef} className="ehc-sentinel">
