@@ -6,19 +6,19 @@
   position: relative;
   /* Page Entrance Animation */
   opacity: 1;
-  animation: pageReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: pageReveal 0.9s cubic-bezier(0.19, 1, 0.22, 1);
 }
 
 @keyframes pageReveal {
   0% {
     opacity: 0;
-    transform: scale(0.98) translateY(10px);
-    filter: blur(2px);
+    transform: scale(0.97) translateY(15px);
+    filter: blur(8px);
   }
   100% {
     opacity: 1;
     transform: none;
-    filter: none;
+    filter: blur(0px);
   }
 }
 
@@ -117,7 +117,7 @@
   display: flex;
   flex-direction: column;
   gap: 16px;
-  animation: slideUpFade 0.5s ease-out forwards;
+  animation: slideUpFade 1.2s cubic-bezier(0.19, 1, 0.22, 1) forwards;
 }
 
 .ehc-main {
@@ -716,8 +716,8 @@
 
 /* ─── Animations ─── */
 @keyframes slideUpFade {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; transform: translateY(20px); filter: blur(8px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
 
 @keyframes staggerFadeUp {
