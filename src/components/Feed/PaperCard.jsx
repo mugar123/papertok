@@ -6,7 +6,7 @@ import Latex from 'react-latex-next';
 import { useAuth } from '../../context/AuthContext';
 import { getProjectForPaper } from '../../services/openAireService';
 import { useNavigate } from 'react-router-dom';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import './PaperCard.css';
 
 // Pool of icons for the background constellation per area
@@ -48,6 +48,7 @@ const PaperCard = memo(function PaperCard({
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
   const [isMarkingRead, setIsMarkingRead] = useState(false);
+  const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   const { followedAuthors } = useAuth();
   const navigate = useNavigate();
   
@@ -415,7 +416,15 @@ const PaperCard = memo(function PaperCard({
         </h2>
 
         {/* Authors */}
-        <div className="pc-authors">
+        <div 
+          className="pc-authors pc-authors--mobile-clickable"
+          onClick={(e) => {
+            if (window.innerWidth <= 768) {
+              e.stopPropagation();
+              setShowAuthorsModal(true);
+            }
+          }}
+        >
           <div className="pc-author-avatars">
             {(paper.authors || []).slice(0, 3).map((author, i) => (
               <div key={i} className="pc-author-avatar" style={{ '--i': i }}>
@@ -566,6 +575,51 @@ const PaperCard = memo(function PaperCard({
           </svg>
         </div>
       </div>
+
+      <AnimatePresence>
+        {showAuthorsModal && (
+          <motion.div 
+            className="pc-authors-modal-overlay"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={(e) => { e.stopPropagation(); setShowAuthorsModal(false); }}
+          >
+            <motion.div 
+              className="pc-authors-modal-sheet"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="pc-authors-modal-header">
+                <h3>Autores</h3>
+                <button onClick={() => setShowAuthorsModal(false)}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+              <div className="pc-authors-modal-list">
+                {(paper.authors || []).map((author, idx) => (
+                  <div 
+                    key={idx} 
+                    className="pc-authors-modal-item"
+                    onClick={() => {
+                      setShowAuthorsModal(false);
+                      navigate(`/explorer/author/${encodeURIComponent(author)}?arxivId=${paper.arxivId}`);
+                    }}
+                  >
+                    <div className="pc-author-avatar-large" style={{ '--i': idx }}>
+                      {author.charAt(0).toUpperCase()}
+                    </div>
+                    <span>{author}</span>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 });

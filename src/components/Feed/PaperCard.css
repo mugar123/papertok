@@ -766,3 +766,117 @@
   border-radius: 4px;
   font-size: 0.75rem;
 }
+
+/* ── Mobile Authors Bottom Sheet ── */
+.pc-authors-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  z-index: 10000;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.pc-authors-modal-sheet {
+  background: var(--bg-primary, #0a0a0f);
+  border-top-left-radius: 24px;
+  border-top-right-radius: 24px;
+  padding: 24px;
+  padding-bottom: calc(env(safe-area-inset-bottom, 20px) + 24px);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 -10px 40px rgba(0, 0, 0, 0.5);
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.pc-authors-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.pc-authors-modal-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #fff;
+  font-weight: 700;
+}
+
+.pc-authors-modal-header button {
+  background: rgba(255,255,255,0.1);
+  border: none;
+  color: #fff;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.pc-authors-modal-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.pc-authors-modal-item {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.pc-authors-modal-item:active {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.pc-author-avatar-large {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, #7c3aed, #4f46e5);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+
+.pc-authors-modal-item:nth-child(2n) .pc-author-avatar-large {
+  background: linear-gradient(135deg, #06b6d4, #3b82f6);
+}
+
+.pc-authors-modal-item:nth-child(3n) .pc-author-avatar-large {
+  background: linear-gradient(135deg, #f59e0b, #ef4444);
+}
+
+.pc-authors-modal-item span {
+  font-size: 1.1rem;
+  color: #fff;
+  font-weight: 600;
+}
+
+@media (max-width: 767px) {
+  .pc-authors--mobile-clickable {
+    cursor: pointer;
+  }
+  .pc-authors--mobile-clickable .pc-author-avatars,
+  .pc-authors--mobile-clickable .pc-author-names span {
+    pointer-events: none;
+  }
+}
