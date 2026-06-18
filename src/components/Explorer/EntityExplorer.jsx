@@ -781,7 +781,7 @@ export default function EntityExplorer() {
       </motion.div>
 
       {/* Sticky Toolbar Wrapper */}
-      <motion.div layout transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="explorer-toolbar-wrapper">
+      <motion.div layout="position" transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="explorer-toolbar-wrapper">
         <div className="explorer-toolbar">
           <div className="explorer-search-box">
             <Search size={16} className="es-icon" />
@@ -808,7 +808,7 @@ export default function EntityExplorer() {
           </div>
         </motion.div>
 
-      <motion.div layout transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="explorer-content">
+      <motion.div layout="position" transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="explorer-content">
         {activeTab === 'papers' ? (
           <>
 
