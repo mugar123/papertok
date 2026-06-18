@@ -626,39 +626,51 @@ export default function EntityExplorer() {
           )}
           
           {/* Wikipedia or external info */}
-          {(wikiInfo || entity?.homepage_url) && (
-            <div className="ehc-wiki">
-              {wikiInfo && <p>{wikiInfo.extract}</p>}
-              <div className="ehc-links">
-                {wikiInfo?.url && (
-                  <a href={wikiInfo.url} target="_blank" rel="noopener noreferrer" className="ehc-link">
-                    Wikipedia <ExternalLink size={14} />
-                  </a>
-                )}
-                {entity?.homepage_url && (
-                  <a href={entity.homepage_url} target="_blank" rel="noopener noreferrer" className="ehc-link">
-                    Web Oficial <ExternalLink size={14} />
-                  </a>
-                )}
-              </div>
-            </div>
-          )}
+          <AnimatePresence>
+            {(wikiInfo || entity?.homepage_url) && (
+              <motion.div 
+                className="ehc-wiki"
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.8, ease: "easeOut" }}
+              >
+                {wikiInfo && <p>{wikiInfo.extract}</p>}
+                <div className="ehc-links">
+                  {wikiInfo?.url && (
+                    <a href={wikiInfo.url} target="_blank" rel="noopener noreferrer" className="ehc-link">
+                      Wikipedia <ExternalLink size={14} />
+                    </a>
+                  )}
+                  {entity?.homepage_url && (
+                    <a href={entity.homepage_url} target="_blank" rel="noopener noreferrer" className="ehc-link">
+                      Web Oficial <ExternalLink size={14} />
+                    </a>
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* ORCID Career Section */}
-          {isLoadingOrcid && (
-            <div className="orcid-skeleton">
-              <div className="orcid-skeleton-header">
-                <div className="skel skel-circle" />
-                <div style={{ flex: 1 }}>
-                  <div className="skel skel-line" style={{ width: '40%', marginBottom: '6px' }} />
-                  <div className="skel skel-line" style={{ width: '25%' }} />
+          <AnimatePresence>
+            {isLoadingOrcid && (
+              <motion.div 
+                className="orcid-skeleton"
+                exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.3 } }}
+              >
+                <div className="orcid-skeleton-header">
+                  <div className="skel skel-circle" />
+                  <div style={{ flex: 1 }}>
+                    <div className="skel skel-line" style={{ width: '40%', marginBottom: '6px' }} />
+                    <div className="skel skel-line" style={{ width: '25%' }} />
+                  </div>
                 </div>
-              </div>
-              <div className="skel skel-line" style={{ width: '60%', marginTop: '16px' }} />
-              <div className="skel skel-line" style={{ width: '80%', marginTop: '8px' }} />
-              <div className="skel skel-line" style={{ width: '70%', marginTop: '8px' }} />
-            </div>
-          )}
+                <div className="skel skel-line" style={{ width: '60%', marginTop: '16px' }} />
+                <div className="skel skel-line" style={{ width: '80%', marginTop: '8px' }} />
+                <div className="skel skel-line" style={{ width: '70%', marginTop: '8px' }} />
+              </motion.div>
+            )}
+          </AnimatePresence>
           {orcidInfo && !isLoadingOrcid && (
             <div className="orcid-career-section orcid-career-section--animate">
 
@@ -877,8 +889,13 @@ export default function EntityExplorer() {
           </>
         ) : (
           <div className="ee-authors-grid">
-            {entityAuthors.map(author => (
-              <div key={author.id} className="ee-author-card" onClick={() => navigate(`/explorer/author/${encodeURIComponent(author.id)}`)}>
+            {(!isLoadingAuthors || isFetchingMoreAuthors) && entityAuthors.map((author, idx) => (
+              <div 
+                key={author.id} 
+                className="ee-author-card staggerFadeUp" 
+                style={{ '--i': idx }}
+                onClick={() => navigate(`/explorer/author/${encodeURIComponent(author.id)}`)}
+              >
                 <div className="ee-author-icon"><Users size={24} /></div>
                 <div className="ee-author-info">
                   <h4>{author.display_name}</h4>
@@ -890,12 +907,21 @@ export default function EntityExplorer() {
               </div>
             ))}
             
-            {isLoadingAuthors && !isFetchingMoreAuthors && (
-              <div className="explorer-grid-loading">
-                <Loader2 className="spinning" size={32} />
-                <span>Cargando autores...</span>
-              </div>
-            )}
+            <AnimatePresence>
+              {isLoadingAuthors && !isFetchingMoreAuthors && [1, 2, 3, 4, 5, 6].map(n => (
+                <motion.div 
+                  key={`skel-author-${n}`} 
+                  className="ee-author-card skeleton-item"
+                  exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.3 } }}
+                >
+                  <div className="ee-author-icon skel skel-circle" style={{ width: '40px', height: '40px' }}></div>
+                  <div className="ee-author-info">
+                    <div className="skel skel-line" style={{ width: '70%', height: '18px', marginBottom: '8px' }}></div>
+                    <div className="skel skel-line" style={{ width: '50%', height: '12px' }}></div>
+                  </div>
+                </motion.div>
+              ))}
+            </AnimatePresence>
             
             {hasMoreAuthors && (
               <div ref={observerAuthorsRef} className="ehc-sentinel">
