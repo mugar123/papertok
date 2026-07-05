@@ -266,6 +266,8 @@ const PaperCard = memo(function PaperCard({
     paper.isPeerReviewed ||
     (paper.openAlex && paper.openAlex.primary_location && paper.openAlex.primary_location.source && paper.openAlex.primary_location.source.type === 'journal')
   );
+  const showRankingDebug = typeof window !== 'undefined'
+    && window.localStorage?.getItem('DEBUG_RANKING') === 'true';
 
   return (
     <div ref={cardRef} className={`pc ${isMarkingRead ? 'pc--fade-out' : ''}`} onClick={handleDoubleTap}>
@@ -274,9 +276,10 @@ const PaperCard = memo(function PaperCard({
       <div className="pc-bg-overlay" />
 
       {/* DEBUG PANEL */}
-      {localStorage.getItem('DEBUG_RANKING') === 'true' && paper._debugScore && (
+      {showRankingDebug && paper._debugScore && (
         <div className="pc-debug-panel">
           <div><strong>TOTAL SCORE: {paper._debugScore.total.toFixed(2)}</strong></div>
+          <div>Why: {paper._debugScore.explanation}</div>
           <div>Affinity: {paper._debugScore.affinity.toFixed(2)}</div>
           <div>Preference Match: {paper._debugScore.preference.toFixed(2)}</div>
           <div>Recency Boost: {paper._debugScore.recency.toFixed(2)}</div>

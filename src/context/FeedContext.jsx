@@ -7,6 +7,12 @@ import { getDeviceInfo } from '../utils/device';
 import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data/categories';
 import { enrichPapersBatch, getArxivIdsForOpenAlexWorks } from '../services/openAlexService';
 import { getPaperRecommendations } from '../services/semanticScholarService';
+import {
+  applyRecommendationScore,
+  logRankingBatch,
+  readRecommendationWeights,
+  weightedShuffle,
+} from '../utils/recommendationEngine';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
@@ -14,46 +20,6 @@ const PAGE_SIZE = 15;
 // Global session state to ensure fresh feed on reloads
 const storedSeen = typeof window !== 'undefined' ? localStorage.getItem('papertok_seenIds') : null;
 const sessionSeenPapers = new Set(storedSeen ? JSON.parse(storedSeen) : []);
-
-// Helper for weighted shuffle without replacement
-function weightedShuffle(arr) {
-  const pool = [...arr];
-  const result = [];
-  while (pool.length > 0) {
-    let totalWeight = 0;
-    const weights = pool.map(p => {
-      const isExplore = p._debugScore?.isExploration || p._type === 'exploration';
-      const score = p._dynamicScore || 0;
-      
-      // Explore papers get a smaller base weight so they appear in a lower proportion.
-      const baseWeight = isExplore ? 5 : 15;
-      const w = Math.max(0.1, score + baseWeight);
-      totalWeight += w;
-      return w;
-    });
-    
-    if (totalWeight <= 0) {
-      // Fallback: select randomly
-      const idx = Math.floor(Math.random() * pool.length);
-      result.push(pool[idx]);
-      pool.splice(idx, 1);
-      continue;
-    }
-    
-    let rand = Math.random() * totalWeight;
-    let selectedIdx = 0;
-    for (let i = 0; i < pool.length; i++) {
-      rand -= weights[i];
-      if (rand <= 0) {
-        selectedIdx = i;
-        break;
-      }
-    }
-    result.push(pool[selectedIdx]);
-    pool.splice(selectedIdx, 1);
-  }
-  return result;
-}
 
 function saveSessionSeen() {
   const seenArray = Array.from(sessionSeenPapers).slice(-500); // Keep last 500
@@ -104,91 +70,19 @@ export function FeedProvider({ children }) {
   const conceptAffinities = useRef({});
   const relatedCandidates = useRef([]);
   const temporalPreference = useRef(0); // -1 (classic) to +1 (recent)
+  const recommendationWeights = useRef(readRecommendationWeights());
 
   // --- TIKTOK-STYLE SCORING & RE-RANKING ---
   const calculateAndAttachScore = useCallback((paper) => {
-    let affinityScore = 0;
-    if (paper.primaryCategory && categoryAffinities.current[paper.primaryCategory]) {
-      affinityScore = categoryAffinities.current[paper.primaryCategory];
-    }
-    
-    let prefScore = 0;
-    if (userPreferences) {
-      if (userPreferences.includes(paper.primaryCategory)) {
-        prefScore = 100;
-      } else if (paper.allCategories && paper.allCategories.some(cat => userPreferences.includes(cat))) {
-        prefScore = 80;
-      }
-    }
-    
-    let authorBoost = 0;
-    if (paper.authors && followedAuthors && followedAuthors.length > 0) {
-      if (paper.authors.some(a => followedAuthors.includes(a))) {
-        authorBoost = 50; // Massive boost for followed authors
-      }
-    }
-    
-    const pref = temporalPreference.current || 0;
-    const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
-    
-    // Weak recency adjustment. Max 5 points. Half-life 7 days.
-    // If pref = -1, recency is 0. If pref = 1, recency is doubled (10 points).
-    const recencyBoost = Math.max(0, 5 * Math.exp(-daysOld / 7)) * (1 + pref);
-    
-    // Classic boost: If pref < 0, older papers with citations get a bonus
-    let classicBoost = 0;
-    if (pref < 0 && daysOld > 365 && paper.openAlex && paper.openAlex.cited_by_count > 10) {
-       classicBoost = Math.abs(pref) * Math.log10(paper.openAlex.cited_by_count) * 5;
-    }
-    
-    let semanticScore = 0;
-    let citationBoost = 0;
-    
-    if (paper.openAlex) {
-      if (paper.openAlex.concepts) {
-        paper.openAlex.concepts.forEach(c => {
-           if (conceptAffinities.current[c.id]) {
-             semanticScore += c.score * conceptAffinities.current[c.id] * 20; // Massive semantic weight
-           }
-        });
-      }
-      if (paper.openAlex.cited_by_count > 0) {
-        citationBoost = Math.log10(paper.openAlex.cited_by_count + 1) * 5; // Reduced citation dominance
-      }
-    }
-    
-    let graphBoost = 0;
-    if (paper._isGraphCandidate) {
-       graphBoost = 15;
-    }
-    
-    let cooldownMultiplier = 1.0;
-    if (paper.primaryCategory && categoryCooldowns.current[paper.primaryCategory]) {
-      const daysSinceRejection = (Date.now() - categoryCooldowns.current[paper.primaryCategory]) / (1000 * 60 * 60 * 24);
-      if (daysSinceRejection < 14) {
-        cooldownMultiplier = 0.1 + (0.9 * (daysSinceRejection / 14)); // drops to 0.1 on recent skip
-        cooldownMultiplier = Math.max(0.1, Math.min(1.0, cooldownMultiplier));
-      }
-    }
-    
-    const baseScore = affinityScore + prefScore + recencyBoost + classicBoost + semanticScore + citationBoost + graphBoost + authorBoost;
-    const finalScore = baseScore * cooldownMultiplier;
-    
-    paper._dynamicScore = finalScore;
-    paper._debugScore = {
-      total: finalScore,
-      baseTotal: baseScore,
-      affinity: affinityScore,
-      preference: prefScore,
-      recency: recencyBoost,
-      classicBoost: classicBoost,
-      semantic: semanticScore,
-      citations: citationBoost,
-      graphBoost: graphBoost,
-      authorBoost: authorBoost,
-      cooldownMultiplier: cooldownMultiplier,
-      isExploration: paper._debugScore?.isExploration || false
-    };
+    return applyRecommendationScore(paper, {
+      userPreferences,
+      followedAuthors,
+      categoryAffinities: categoryAffinities.current,
+      categoryCooldowns: categoryCooldowns.current,
+      conceptAffinities: conceptAffinities.current,
+      temporalPreference: temporalPreference.current,
+      weights: recommendationWeights.current,
+    });
   }, [userPreferences, followedAuthors]);
 
   const reRankFeed = useCallback((sourcePaperId = null) => {
@@ -213,7 +107,8 @@ export function FeedProvider({ children }) {
        });
        
        // Re-rank the unread queue using weighted shuffle to allow random mixing in smaller proportions
-       const newQueue = weightedShuffle(queue);
+       const newQueue = weightedShuffle(queue, recommendationWeights.current);
+       logRankingBatch('rerank queue', newQueue);
        
        return [...lockedPapers, ...newQueue];
     });
@@ -293,7 +188,8 @@ export function FeedProvider({ children }) {
             const combinedRest = [...newGraphPapers, ...restFiltered];
             
             // Re-rank the unread queue using weighted shuffle
-            const reRankedRest = weightedShuffle(combinedRest);
+            const reRankedRest = weightedShuffle(combinedRest, recommendationWeights.current);
+            logRankingBatch('graph expansion', reRankedRest);
             
             return [...locked, ...reRankedRest];
           });
@@ -572,7 +468,8 @@ export function FeedProvider({ children }) {
         });
 
         // Use weighted shuffle to mix core and explore papers together proportionally!
-        newPapers = weightedShuffle(corePapers);
+        newPapers = weightedShuffle(corePapers, recommendationWeights.current);
+        logRankingBatch('fresh feed', newPapers);
       } else {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }

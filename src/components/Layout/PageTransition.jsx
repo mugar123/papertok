@@ -1,16 +1,14 @@
 import { motion } from 'framer-motion';
 
 const variants = {
-  initial: { opacity: 0, scale: 0.98, y: 10 },
-  enter: { opacity: 1, scale: 1, y: 0 },
-  exit: { opacity: 0, scale: 1.02, y: -10 }
+  initial: { opacity: 0 },
+  enter: { opacity: 1 },
+  exit: { opacity: 0 }
 };
 
 const transition = {
-  type: "spring",
-  stiffness: 300,
-  damping: 30,
-  mass: 1
+  duration: 0.2,
+  ease: "easeInOut"
 };
 
 export default function PageTransition({ children }) {

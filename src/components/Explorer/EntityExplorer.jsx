@@ -57,6 +57,14 @@ export default function EntityExplorer() {
   const [hasMoreAuthors, setHasMoreAuthors] = useState(false);
   const observerAuthorsRef = useRef(null);
 
+  // Reset overlays when navigating to a different entity
+  useEffect(() => {
+    setSelectedPaper(null);
+    setPdfPaperToView(null);
+    setOrcidInfo(null);
+    setActiveTab('papers');
+  }, [type, id]);
+
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchQuery);
@@ -405,7 +413,7 @@ export default function EntityExplorer() {
   return (
     <div className="explorer-container">
       {/* Immersive Hero */}
-      <motion.div layout transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="explorer-hero">
+      <div className="explorer-hero">
         <AnimatePresence>
           {wikiInfo?.thumbnail && (
             <motion.div 
@@ -785,10 +793,10 @@ export default function EntityExplorer() {
              </button>
           )}
         </div>
-      </motion.div>
+      </div>
 
       {/* Sticky Toolbar Wrapper */}
-      <motion.div layout="position" transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="explorer-toolbar-wrapper">
+      <div className="explorer-toolbar-wrapper">
         <div className="explorer-toolbar">
           <div className="explorer-search-box">
             <Search size={16} className="es-icon" />
@@ -813,9 +821,9 @@ export default function EntityExplorer() {
               </button>
             )}
           </div>
-        </motion.div>
+        </div>
 
-      <motion.div layout="position" transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }} className="explorer-content">
+      <div className="explorer-content">
         {activeTab === 'papers' ? (
           <>
 
@@ -926,7 +934,7 @@ export default function EntityExplorer() {
             )}
           </div>
         )}
-      </motion.div>
+      </div>
 
       {/* Filter Drawer */}
       <AnimatePresence>
