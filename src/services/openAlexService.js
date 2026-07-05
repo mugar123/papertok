@@ -64,7 +64,7 @@ export async function enrichPapersBatch(arxivIds) {
       if (!response || !response.ok) {
         primaryFailed = true;
       }
-    } catch (e) {
+    } catch {
       primaryFailed = true;
     }
       
@@ -74,13 +74,13 @@ export async function enrichPapersBatch(arxivIds) {
       try {
         const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
         response = await fetchWithTimeout(proxyUrl, 8000).catch(() => null);
-      } catch (e) { }
+      } catch { /* proxy fallback failed, try next */ }
 
       if (!response || !response.ok) {
         try {
           const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
           response = await fetchWithTimeout(proxyUrl, 8000).catch(() => null);
-        } catch (e) { }
+        } catch { /* proxy fallback failed */ }
       }
     }
       
@@ -97,7 +97,7 @@ export async function enrichPapersBatch(arxivIds) {
                const arxivLoc = work.locations.find(loc => loc.source && loc.source.id === 'https://openalex.org/S4306400194');
                if (arxivLoc && arxivLoc.landing_page_url) {
                  const url = arxivLoc.landing_page_url;
-                 let rawId = null;
+                 let rawId;
                  if (url.includes('/abs/')) {
                      rawId = url.split('/abs/')[1];
                  } else if (url.includes('arxiv.')) {
@@ -124,8 +124,8 @@ export async function enrichPapersBatch(arxivIds) {
           });
         }
       }
-    } catch (err) {
-      console.error("OpenAlex enrichment failed", err);
+    } catch {
+      // Enrichment processing failed
     }
   }
   
@@ -175,8 +175,8 @@ export async function getArxivIdsForOpenAlexWorks(openAlexUrls) {
            GRAPH_CACHE.set(wId, arxivId); // Cache even if null to avoid re-fetching non-arxiv works
         });
      }
-  } catch (err) {
-    console.error("OpenAlex related works fetch failed", err);
+  } catch {
+    // Related works fetch failed
   }
   return result;
 }
@@ -250,8 +250,8 @@ export async function getAuthorProfile(authorName) {
         concepts: bestAuthor.x_concepts ? bestAuthor.x_concepts.slice(0, 5) : []
       };
     }
-  } catch (err) {
-    console.error("OpenAlex getAuthorProfile failed", err);
+  } catch {
+    // Get author profile failed
   }
   return null;
 }
@@ -287,7 +287,7 @@ export async function getAuthorProfileExact(authorName, arxivId) {
        }
     }
     
-    if (workResponse.ok) {
+    if (workResponse && workResponse.ok) {
       const workData = await workResponse.json();
       
       if (workData.authorships) {
@@ -348,8 +348,8 @@ export async function getAuthorProfileExact(authorName, arxivId) {
       concepts: []
     };
     
-  } catch (err) {
-    console.error("OpenAlex getAuthorProfileExact failed", err);
+  } catch {
+    // Fallback if full logic fails
     const fallbackProfile = await getAuthorProfile(authorName);
     if (fallbackProfile) return fallbackProfile;
     
@@ -393,8 +393,8 @@ export async function searchAuthors(query) {
         concepts: author.x_concepts ? author.x_concepts.slice(0, 5) : []
       }));
     }
-  } catch (err) {
-    console.error("OpenAlex searchAuthors failed", err);
+  } catch {
+    // Search authors failed
   }
   return [];
 }
@@ -424,8 +424,8 @@ export async function searchInstitutions(query) {
         type: inst.type
       }));
     }
-  } catch (err) {
-    console.error("OpenAlex searchInstitutions failed", err);
+  } catch {
+    // Search institutions failed
   }
   return [];
 }
@@ -486,8 +486,8 @@ export async function searchConcepts(query) {
         };
       });
     }
-  } catch (err) {
-    console.error("OpenAlex searchConcepts failed", err);
+  } catch {
+    // Search concepts failed
   }
   return [];
 }
@@ -514,8 +514,8 @@ export async function searchSources(query) {
         works_count: source.works_count || 0
       }));
     }
-  } catch (err) {
-    console.error("OpenAlex searchSources failed", err);
+  } catch {
+    // Search sources failed
   }
   return [];
 }
@@ -540,7 +540,7 @@ export async function findInstitution({ rorUrl, name }) {
           };
         }
       }
-    } catch {}
+    } catch { /* ROR lookup failed, try name search */ }
   }
 
   // Fallback: search by name
@@ -558,7 +558,7 @@ export async function findInstitution({ rorUrl, name }) {
           };
         }
       }
-    } catch {}
+    } catch { /* institution name search failed */ }
   }
   
   return null;
@@ -593,8 +593,8 @@ export async function getEntityById(type, id) {
     }
     
     return data;
-  } catch (err) {
-    console.error(`OpenAlex getEntityById failed for ${type} ${id}`, err);
+  } catch {
+    // Get entity by id failed
     return null;
   }
 }
@@ -671,7 +671,7 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
                const arxivLoc = work.locations.find(loc => loc.source && loc.source.id === 'https://openalex.org/S4306400194');
                 if (arxivLoc && arxivLoc.landing_page_url) {
                     const url = arxivLoc.landing_page_url;
-                    let rawId = null;
+                    let rawId;
                     if (url.includes('/abs/')) {
                         rawId = url.split('/abs/')[1];
                     } else if (url.includes('arxiv.')) {
@@ -681,7 +681,7 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
                     }
                     if (rawId) {
                         const arxivId = rawId.split('?')[0].replace(/v\d+$/, '');
-                        const isValidArxivId = /^\d{4}\.\d{4,5}$/.test(arxivId) || /^[a-z\-]+\/\d{7}$/i.test(arxivId);
+                        const isValidArxivId = /^\d{4}\.\d{4,5}$/.test(arxivId) || /^[a-z-]+\/\d{7}$/i.test(arxivId);
                         if (arxivId && arxivId !== 'arxiv.org' && isValidArxivId) {
                             arxivIds.push(arxivId);
                         }

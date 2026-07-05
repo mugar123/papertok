@@ -28,14 +28,14 @@ export function readRecommendationWeights(storageKey = 'PAPERTOK_RECOMMENDATION_
   if (typeof window === 'undefined') return DEFAULT_RECOMMENDATION_WEIGHTS;
 
   const globalOverrides = window.PAPERTOK_RECOMMENDATION_WEIGHTS || {};
-  let storedOverrides = {};
-
-  try {
-    const raw = window.localStorage?.getItem(storageKey);
-    storedOverrides = raw ? JSON.parse(raw) : {};
-  } catch {
-    storedOverrides = {};
-  }
+  const storedOverrides = (() => {
+    try {
+      const raw = window.localStorage?.getItem(storageKey);
+      return raw ? JSON.parse(raw) : {};
+    } catch {
+      return {};
+    }
+  })();
 
   return mergeRecommendationWeights({ ...globalOverrides, ...storedOverrides });
 }

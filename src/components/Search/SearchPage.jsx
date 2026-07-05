@@ -5,10 +5,10 @@ import { searchPapers } from '../../services/arxivService';
 import { searchAuthors, searchInstitutions, searchConcepts, searchSources, getTrendingPapers } from '../../services/openAlexService';
 import { searchProjects } from '../../services/openAireService';
 import { useAuth } from '../../context/AuthContext';
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
-import { getCategoryLabel } from '../../data/categories';
+
 import './SearchPage.css';
 
 export default function SearchPage() {
@@ -37,46 +37,7 @@ export default function SearchPage() {
 
   const searchIdRef = useRef(0);
 
-  useEffect(() => {
-    async function loadTrending() {
-      setIsLoadingTrending(true);
-      try {
-        const papers = await getTrendingPapers();
-        setTrendingPapers(papers.slice(0, 5)); // Just take top 5
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setIsLoadingTrending(false);
-      }
-    }
-    loadTrending();
-  }, []);
-
-  useEffect(() => {
-    if (!query.trim()) {
-      setPaperResults([]);
-      setAuthorResults([]);
-      setInstitutionResults([]);
-      setConceptResults([]);
-      setSourceResults([]);
-      setProjectResults([]);
-      setIsDebouncing(false);
-      setHasSearched(false);
-      return;
-    }
-
-    setIsDebouncing(true);
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    
-    timeoutRef.current = setTimeout(() => {
-      setIsDebouncing(false);
-      performSearch(query);
-    }, 600);
-    
-    return () => clearTimeout(timeoutRef.current);
-  }, [query]);
-
-  const performSearch = async (searchTerm) => {
+  const performSearch = useCallback(async (searchTerm) => {
     const searchId = ++searchIdRef.current;
     setIsSearching(true);
     setHasSearched(true);
@@ -105,7 +66,48 @@ export default function SearchPage() {
         setIsSearching(false);
       }
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    async function loadTrending() {
+      setIsLoadingTrending(true);
+      try {
+        const papers = await getTrendingPapers();
+        setTrendingPapers(papers.slice(0, 5)); // Just take top 5
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoadingTrending(false);
+      }
+    }
+    loadTrending();
+  }, []);
+
+  useEffect(() => {
+    if (!query.trim()) {
+      setTimeout(() => {
+        setPaperResults([]);
+        setAuthorResults([]);
+        setInstitutionResults([]);
+        setConceptResults([]);
+        setSourceResults([]);
+        setProjectResults([]);
+        setIsDebouncing(false);
+        setHasSearched(false);
+      }, 0);
+      return;
+    }
+
+    setTimeout(() => setIsDebouncing(true), 0);
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    
+    timeoutRef.current = setTimeout(() => {
+      setIsDebouncing(false);
+      performSearch(query);
+    }, 600);
+    
+    return () => clearTimeout(timeoutRef.current);
+  }, [query, performSearch]);
 
   const handleToggleFollow = async (e, authorName) => {
     e.stopPropagation();

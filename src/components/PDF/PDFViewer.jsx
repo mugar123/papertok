@@ -10,7 +10,7 @@ export default function PDFViewer({ paper, onClose }) {
   const pdfUrl = `https://arxiv.org/pdf/${paper.arxivId}`;
 
   const { trackPdfBounce } = useFeed();
-  const startTimeRef = useRef(Date.now());
+  const startTimeRef = useRef(null);
 
   const handleClose = useCallback(() => {
     setIsClosing(true);
@@ -25,6 +25,7 @@ export default function PDFViewer({ paper, onClose }) {
 
   // Close on Escape key
   useEffect(() => {
+    startTimeRef.current = Date.now();
     const handleKeyDown = (e) => {
       if (e.key === 'Escape') handleClose();
     };

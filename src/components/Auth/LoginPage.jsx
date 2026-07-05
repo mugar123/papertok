@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { FileText, Bookmark, Microscope, FlaskConical, Atom, Dna, Brain, Cpu, Database, Orbit, Network, Activity } from 'lucide-react';
@@ -28,17 +28,21 @@ export default function LoginPage() {
     setIsLoading(false);
   };
 
-  const floatingElements = useMemo(() => {
-    return Array.from({ length: 25 }).map((_, i) => {
-      const Icon = FLOATING_ICONS[i % FLOATING_ICONS.length];
-      const x = Math.floor(Math.random() * 100);
-      const y = Math.floor(Math.random() * 100);
-      const delay = (Math.random() * 5).toFixed(2);
-      const size = Math.floor(Math.random() * 24) + 20; // 20 to 44
-      const opacity = (Math.random() * 0.15 + 0.05).toFixed(2); // 0.05 to 0.20
-      const duration = (Math.random() * 4 + 8).toFixed(2); // 8s to 12s
-      return { id: i, Icon, x, y, delay, size, opacity, duration };
-    });
+  const [floatingElements, setFloatingElements] = useState([]);
+
+  useEffect(() => {
+    setTimeout(() => setFloatingElements(
+      Array.from({ length: 25 }).map((_, i) => {
+        const Icon = FLOATING_ICONS[i % FLOATING_ICONS.length];
+        const x = Math.floor(Math.random() * 100);
+        const y = Math.floor(Math.random() * 100);
+        const delay = (Math.random() * 5).toFixed(2);
+        const size = Math.floor(Math.random() * 24) + 20; // 20 to 44
+        const opacity = (Math.random() * 0.15 + 0.05).toFixed(2); // 0.05 to 0.20
+        const duration = (Math.random() * 4 + 8).toFixed(2); // 8s to 12s
+        return { id: i, Icon, x, y, delay, size, opacity, duration };
+      })
+    ), 0);
   }, []);
 
   return (

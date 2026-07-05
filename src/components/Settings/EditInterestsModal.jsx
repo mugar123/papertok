@@ -13,8 +13,10 @@ export default function EditInterestsModal({ isOpen, onClose }) {
   // Initialize selection when modal opens
   useEffect(() => {
     if (isOpen && userPreferences) {
-      setSelected(new Set(userPreferences));
-      setIsClosing(false);
+      setTimeout(() => {
+        setSelected(new Set(userPreferences));
+        setIsClosing(false);
+      }, 0);
     }
   }, [isOpen, userPreferences]);
 

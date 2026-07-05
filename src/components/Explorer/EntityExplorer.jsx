@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, TrendingUp, Clock, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
+import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, findInstitution } from '../../services/openAlexService';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
@@ -29,10 +29,8 @@ export default function EntityExplorer() {
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
   const [wikiInfo, setWikiInfo] = useState(null);
-  const [isLoadingWiki, setIsLoadingWiki] = useState(false);
   const [orcidInfo, setOrcidInfo] = useState(null);
   const [isLoadingOrcid, setIsLoadingOrcid] = useState(false);
-  const [activeAuthors, setActiveAuthors] = useState(null);
 
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
@@ -59,10 +57,12 @@ export default function EntityExplorer() {
 
   // Reset overlays when navigating to a different entity
   useEffect(() => {
-    setSelectedPaper(null);
-    setPdfPaperToView(null);
-    setOrcidInfo(null);
-    setActiveTab('papers');
+    setTimeout(() => {
+      setSelectedPaper(null);
+      setPdfPaperToView(null);
+      setOrcidInfo(null);
+      setActiveTab('papers');
+    }, 0);
   }, [type, id]);
 
   useEffect(() => {
@@ -75,8 +75,10 @@ export default function EntityExplorer() {
   }, [searchQuery]);
 
   useEffect(() => {
-    setPage(1);
-    setAuthorsPage(1);
+    setTimeout(() => {
+      setPage(1);
+      setAuthorsPage(1);
+    }, 0);
   }, [type, id, sortBy, filters]);
 
   useEffect(() => {
@@ -123,7 +125,7 @@ export default function EntityExplorer() {
       setSearchQuery('');
       setWikiInfo(null);
       
-      let data = null;
+      let data;
       const isOpenAlexId = /^A\d+$/.test(id) || id.startsWith('http');
       
       if (type === 'author' && !isOpenAlexId) {
@@ -146,7 +148,6 @@ export default function EntityExplorer() {
         }
 
         if (type === 'institution' || type === 'concept' || type === 'source') {
-          setIsLoadingWiki(true);
           try {
             const res = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(data.display_name)}`);
             if (res.ok) {
@@ -173,14 +174,12 @@ export default function EntityExplorer() {
             }
           } catch (e) {
             console.error("Failed to fetch Wikipedia info", e);
-          } finally {
-            setIsLoadingWiki(false);
           }
         }
       }
     }
     loadEntity();
-  }, [type, id]);
+  }, [type, id, searchParams]);
 
   useEffect(() => {
     async function loadPapers() {
@@ -271,7 +270,7 @@ export default function EntityExplorer() {
       setIsFetchingMore(false);
     }
     loadPapers();
-  }, [type, id, entity, sortBy, page, debouncedSearch, filters, activeTab]);
+  }, [type, id, entity, sortBy, page, debouncedSearch, filters, activeTab, searchParams]);
 
   useEffect(() => {
     async function loadAuthors() {
@@ -324,12 +323,6 @@ export default function EntityExplorer() {
     return papers;
   }, [papers]);
 
-  const handleAuthorClick = useCallback((authors, arxivId) => {
-    setSelectedPaper(null);
-    setPdfPaperToView(null);
-    setActiveAuthors({ authors, arxivId });
-  }, []);
-
   const handleShare = () => {
     if (navigator.share) {
       navigator.share({
@@ -341,8 +334,6 @@ export default function EntityExplorer() {
       alert('Enlace copiado al portapapeles');
     }
   };
-
-  const sortLabel = sortBy === 'cited_by_count:desc' ? 'Más citados' : 'Más recientes';
 
   if (isLoadingEntity) return (
       <div className="explorer-container">
@@ -407,7 +398,6 @@ export default function EntityExplorer() {
   };
 
   const entityTypeLabel = type === 'author' ? 'Autor' : type === 'institution' ? 'Universidad / Institución' : type === 'source' ? 'Revista' : type === 'project' ? 'Proyecto de Investigación' : 'Tema';
-  const EntityIcon = type === 'author' ? Users : type === 'institution' ? Building2 : type === 'source' ? FileText : Lightbulb;
   const topConcepts = entity.x_concepts ? entity.x_concepts.slice(0, 4) : [];
 
   return (

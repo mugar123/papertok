@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useCallback, useEffect, useRef } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
 import { IS_DEMO, db } from '../services/firebase';
-import { collection, query, where, orderBy, limit, getDocs, startAfter, doc, setDoc, deleteDoc, updateDoc, deleteField, increment, getDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, setDoc, updateDoc, deleteField, increment } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
 import { getDeviceInfo } from '../utils/device';
@@ -58,6 +59,7 @@ export function FeedProvider({ children }) {
   const likedPaperIdsRef = useRef(likedPaperIds);
   const savedPaperIdsRef = useRef(savedPaperIds);
   const readPaperIdsRef = useRef(readPaperIds);
+  const loadPapersRef = useRef(null);
   const notInterestedIdsRef = useRef(notInterestedIds);
   const isTraversingNetwork = useRef(false);
 
@@ -208,10 +210,12 @@ export function FeedProvider({ children }) {
     if (!user) return;
 
     if (IS_DEMO) {
-      setLikedPaperIds(new Set(demoGet('likedPaperIds', [])));
-      setNotInterestedIds(new Set(demoGet('notInterestedIds', [])));
-      setSavedPaperIds(new Set(demoGet('savedPaperIds', [])));
-      setReadPaperIds(new Set(demoGet('readPaperIds', [])));
+      setTimeout(() => {
+        setLikedPaperIds(new Set(demoGet('likedPaperIds', [])));
+        setNotInterestedIds(new Set(demoGet('notInterestedIds', [])));
+        setSavedPaperIds(new Set(demoGet('savedPaperIds', [])));
+        setReadPaperIds(new Set(demoGet('readPaperIds', [])));
+      }, 0);
       return;
     }
 
@@ -274,7 +278,7 @@ export function FeedProvider({ children }) {
                     const sim = getCategorySimilarity(cat, otherCat);
                     if (sim > 0) {
                       if (!affinities[otherCat]) affinities[otherCat] = 0;
-                      let penalty = 0;
+                      let penalty;
                       if (sim >= 0.8) penalty = -5;
                       else if (sim >= 0.4) penalty = -3;
                       else penalty = -1;
@@ -503,8 +507,6 @@ export function FeedProvider({ children }) {
           
           if (loadPapersRef.current) {
             setTimeout(() => loadPapersRef.current(false, activeMode, false, nextPageToFetch), 0);
-          } else {
-            setTimeout(() => loadPapers(false, activeMode, false, nextPageToFetch), 0);
           }
           return;
         }
@@ -554,7 +556,8 @@ export function FeedProvider({ children }) {
     }
   }, [
     userPreferences, page, papers, loading, feedMode, 
-    categoryAffinities, categoryCooldowns, conceptAffinities, relatedCandidates
+    categoryAffinities, relatedCandidates,
+    calculateAndAttachScore, followedAuthors
   ]);
 
   const hasFetchedInitially = useRef(false);
@@ -603,8 +606,9 @@ export function FeedProvider({ children }) {
   }, [hasMore, loading, loadPapers]);
 
   // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
-  const loadPapersRef = useRef(loadPapers);
-  useEffect(() => { loadPapersRef.current = loadPapers; }, [loadPapers]);
+  useLayoutEffect(() => {
+    loadPapersRef.current = loadPapers;
+  }, [loadPapers]);
 
   const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -938,5 +942,3 @@ export function useFeed() {
   if (!context) throw new Error('useFeed must be used within a FeedProvider');
   return context;
 }
-
-export default FeedContext;

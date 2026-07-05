@@ -144,14 +144,11 @@ function parseRss2Json(data) {
     .filter(Boolean);
 }
 
-let lastFetchTime = 0;
 
 /**
  * Helper to fetch and parse arXiv XML or JSON using cascading proxies in production
  */
 async function fetchArxivData(url) {
-  const baseUrl = isDev ? ARXIV_DEV : ARXIV_PROD;
-  
   if (isDev) {
     try {
       const response = await fetchWithTimeout(url, 10000);
@@ -183,7 +180,7 @@ async function fetchArxivData(url) {
 
   try {
     // Strip out parentheses to help some proxies
-    const cleanUrl = url.replace(/[\(\)]/g, '');
+    const cleanUrl = url.replace(/[()]/g, '');
     // 2. Try allorigins (keeps all authors)
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(cleanUrl)}`;
     const response = await fetchWithTimeout(proxyUrl, 6000);
@@ -201,7 +198,7 @@ async function fetchArxivData(url) {
       
       // 3. Fallback to rss2json (fast, but drops co-authors)
       try {
-        const cleanUrl = url.replace(/[\(\)]/g, '');
+        const cleanUrl = url.replace(/[()]/g, '');
         const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(cleanUrl)}`;
         const response = await fetchWithTimeout(proxyUrl, 8000);
         if (!response.ok) throw new Error(`arXiv API error via rss2json: ${response.status}`);
@@ -219,12 +216,9 @@ async function fetchArxivData(url) {
 export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20, mode = 'recent', sortByOverride = 'submittedDate') {
   if (!categoriesOrQuery || categoriesOrQuery.length === 0) return [];
 
-  let searchQuery = '';
-  if (Array.isArray(categoriesOrQuery)) {
-    searchQuery = `(${categoriesOrQuery.map((cat) => `cat:${cat}`).join(' OR ')})`;
-  } else {
-    searchQuery = categoriesOrQuery;
-  }
+  const searchQuery = Array.isArray(categoriesOrQuery)
+    ? `(${categoriesOrQuery.map((cat) => `cat:${cat}`).join(' OR ')})`
+    : categoriesOrQuery;
 
   const sortBy = mode === 'relevance' ? 'relevance' : sortByOverride;
 

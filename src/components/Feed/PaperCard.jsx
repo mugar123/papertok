@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
-import { getCategoryLabel, getCategoryGradient, CATEGORIES } from '../../data/categories';
-import { Share2, Clock, FileText, Check, Atom, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase } from 'lucide-react';
+import { getCategoryLabel, CATEGORIES } from '../../data/categories';
+import { Share2, FileText, Check, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
 import { useAuth } from '../../context/AuthContext';
@@ -55,7 +55,7 @@ const PaperCard = memo(function PaperCard({
   const hasFollowedAuthor = useMemo(() => {
     if (!paper || !paper.authors || !followedAuthors || followedAuthors.length === 0) return false;
     return paper.authors.some(a => followedAuthors.includes(a));
-  }, [paper.authors, followedAuthors]);
+  }, [paper, followedAuthors]);
 
   const lastTap = useRef(0);
   const abstractRef = useRef(null);
@@ -153,23 +153,15 @@ const PaperCard = memo(function PaperCard({
     } catch { return ''; }
   };
 
-  const formatAuthors = (authors) => {
-    if (!authors || authors.length === 0) return '';
-    if (authors.length <= 2) return authors.join(' & ');
-    return `${authors[0]} et al.`;
-  };
 
-  const getReadTime = (text) => {
-    if (!text) return 1;
-    const words = text.split(/\s+/).length;
-    return Math.max(1, Math.ceil(words / 200));
-  };
+
+
 
   // Get area info for the gradient background
   const getAreaInfo = () => {
     const cat = paper.primaryCategory || '';
     const prefix = cat.split('.')[0].split('-')[0];
-    for (const [key, area] of Object.entries(CATEGORIES)) {
+    for (const [, area] of Object.entries(CATEGORIES)) {
       if (area.subcategories && area.subcategories[cat]) {
         return area;
       }
@@ -259,7 +251,7 @@ const PaperCard = memo(function PaperCard({
   };
 
   const categoryLabel = getCategoryLabel(paper.primaryCategory);
-  const readTime = getReadTime(paper.summary);
+
   const isVerified = Boolean(
     paper.doi || 
     paper.journalRef || 

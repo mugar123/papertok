@@ -1,6 +1,6 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useState } from 'react';
 import { useFeed } from '../../context/FeedContext';
-import { AnimatePresence } from 'framer-motion';
+
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
 import AnimatedAtom from './AnimatedAtom';
@@ -37,7 +37,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
       const timer = setTimeout(() => setShowLoader(true), 1500);
       return () => clearTimeout(timer);
     }
-    setShowLoader(false);
+    const hideTimer = setTimeout(() => setShowLoader(false), 0);
+    return () => clearTimeout(hideTimer);
   }, [papers.length, loading, error]);
 
   // Scroll to top when feed is refreshed manually or mode changes

@@ -1,0 +1,308 @@
+
+> papertok@0.0.0 lint
+> eslint .
+
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/src/components/Auth/LoginPage.jsx
+  34:28  error  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+  32 |     return Array.from({ length: 25 }).map((_, i) => {
+  33 |       const Icon = FLOATING_ICONS[i % FLOATING_ICONS.length];
+> 34 |       const x = Math.floor(Math.random() * 100);
+     |                            ^^^^^^^^^^^^^ Cannot call impure function
+  35 |       const y = Math.floor(Math.random() * 100);
+  36 |       const delay = (Math.random() * 5).toFixed(2);
+  37 |       const size = Math.floor(Math.random() * 24) + 20; // 20 to 44                                                            react-hooks/purity
+  35:28  error  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+  33 |       const Icon = FLOATING_ICONS[i % FLOATING_ICONS.length];
+  34 |       const x = Math.floor(Math.random() * 100);
+> 35 |       const y = Math.floor(Math.random() * 100);
+     |                            ^^^^^^^^^^^^^ Cannot call impure function
+  36 |       const delay = (Math.random() * 5).toFixed(2);
+  37 |       const size = Math.floor(Math.random() * 24) + 20; // 20 to 44
+  38 |       const opacity = (Math.random() * 0.15 + 0.05).toFixed(2); // 0.05 to 0.20                                  react-hooks/purity
+  36:22  error  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+  34 |       const x = Math.floor(Math.random() * 100);
+  35 |       const y = Math.floor(Math.random() * 100);
+> 36 |       const delay = (Math.random() * 5).toFixed(2);
+     |                      ^^^^^^^^^^^^^ Cannot call impure function
+  37 |       const size = Math.floor(Math.random() * 24) + 20; // 20 to 44
+  38 |       const opacity = (Math.random() * 0.15 + 0.05).toFixed(2); // 0.05 to 0.20
+  39 |       const duration = (Math.random() * 4 + 8).toFixed(2); // 8s to 12s                              react-hooks/purity
+  37:31  error  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+  35 |       const y = Math.floor(Math.random() * 100);
+  36 |       const delay = (Math.random() * 5).toFixed(2);
+> 37 |       const size = Math.floor(Math.random() * 24) + 20; // 20 to 44
+     |                               ^^^^^^^^^^^^^ Cannot call impure function
+  38 |       const opacity = (Math.random() * 0.15 + 0.05).toFixed(2); // 0.05 to 0.20
+  39 |       const duration = (Math.random() * 4 + 8).toFixed(2); // 8s to 12s
+  40 |       return { id: i, Icon, x, y, delay, size, opacity, duration };  react-hooks/purity
+  38:24  error  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+  36 |       const delay = (Math.random() * 5).toFixed(2);
+  37 |       const size = Math.floor(Math.random() * 24) + 20; // 20 to 44
+> 38 |       const opacity = (Math.random() * 0.15 + 0.05).toFixed(2); // 0.05 to 0.20
+     |                        ^^^^^^^^^^^^^ Cannot call impure function
+  39 |       const duration = (Math.random() * 4 + 8).toFixed(2); // 8s to 12s
+  40 |       return { id: i, Icon, x, y, delay, size, opacity, duration };
+  41 |     });                                                  react-hooks/purity
+  39:25  error  Error: Cannot call impure function during render
+
+`Math.random` is an impure function. Calling an impure function can produce unstable results that update unpredictably when the component happens to re-render. (https://react.dev/reference/rules/components-and-hooks-must-be-pure#components-and-hooks-must-be-idempotent).
+
+  37 |       const size = Math.floor(Math.random() * 24) + 20; // 20 to 44
+  38 |       const opacity = (Math.random() * 0.15 + 0.05).toFixed(2); // 0.05 to 0.20
+> 39 |       const duration = (Math.random() * 4 + 8).toFixed(2); // 8s to 12s
+     |                         ^^^^^^^^^^^^^ Cannot call impure function
+  40 |       return { id: i, Icon, x, y, delay, size, opacity, duration };
+  41 |     });
+  42 |   }, []);                                                                                           react-hooks/purity
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/src/components/Explorer/EntityExplorer.jsx
+    3:67  error    'TrendingUp' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  no-unused-vars
+    3:79  error    'Clock' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       no-unused-vars
+   32:10  error    'isLoadingWiki' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      no-unused-vars
+   35:10  error    'activeAuthors' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      no-unused-vars
+   62:5   error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  60 |   // Reset overlays when navigating to a different entity
+  61 |   useEffect(() => {
+> 62 |     setSelectedPaper(null);
+     |     ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  63 |     setPdfPaperToView(null);
+  64 |     setOrcidInfo(null);
+  65 |     setActiveTab('papers');  react-hooks/set-state-in-effect
+   78:5   error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  76 |
+  77 |   useEffect(() => {
+> 78 |     setPage(1);
+     |     ^^^^^^^ Avoid calling setState() directly within an effect
+  79 |     setAuthorsPage(1);
+  80 |   }, [type, id, sortBy, filters]);
+  81 |                                                                                                        react-hooks/set-state-in-effect
+  126:11  error    The value assigned to 'data' is not used in subsequent statements                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       no-useless-assignment
+  183:6   warning  React Hook useEffect has a missing dependency: 'searchParams'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         react-hooks/exhaustive-deps
+  274:6   warning  React Hook useEffect has a missing dependency: 'searchParams'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         react-hooks/exhaustive-deps
+  327:9   error    'handleAuthorClick' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  no-unused-vars
+  345:9   error    'sortLabel' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          no-unused-vars
+  410:9   error    'EntityIcon' is assigned a value but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         no-unused-vars
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/src/components/Feed/FeedContainer.jsx
+   3:10  error  'AnimatePresence' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 no-unused-vars
+  40:5   error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  38 |       return () => clearTimeout(timer);
+  39 |     }
+> 40 |     setShowLoader(false);
+     |     ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  41 |   }, [papers.length, loading, error]);
+  42 |
+  43 |   // Scroll to top when feed is refreshed manually or mode changes  react-hooks/set-state-in-effect
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/src/components/Feed/PaperCard.jsx
+  158:9   error  'getReadTime' is assigned a value but never used  no-unused-vars
+  168:17  error  '_key' is assigned a value but never used         no-unused-vars
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/src/components/Search/SearchPage.jsx
+  88:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  86 |   useEffect(() => {
+  87 |     if (!query.trim()) {
+> 88 |       setPaperResults([]);
+     |       ^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  89 |       setAuthorResults([]);
+  90 |       setInstitutionResults([]);
+  91 |       setConceptResults([]);  react-hooks/set-state-in-effect
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/src/components/Settings/EditInterestsModal.jsx
+  16:7  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  14 |   useEffect(() => {
+  15 |     if (isOpen && userPreferences) {
+> 16 |       setSelected(new Set(userPreferences));
+     |       ^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  17 |       setIsClosing(false);
+  18 |     }
+  19 |   }, [isOpen, userPreferences]);  react-hooks/set-state-in-effect
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/src/context/AuthContext.jsx
+   32:9   error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  30 |       const demoUser = demoGet('user', null);
+  31 |       if (demoUser) {
+> 32 |         setUser(demoUser);
+     |         ^^^^^^^ Avoid calling setState() directly within an effect
+  33 |         setOnboardingComplete(demoGet('onboardingComplete', false));
+  34 |         setUserPreferences(demoGet('selectedCategories', null));
+  35 |         setFollowedAuthors(demoGet('followedAuthors', []));  react-hooks/set-state-in-effect
+  208:17  error  Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           react-refresh/only-export-components
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/src/context/FeedContext.jsx
+    3:22   error    'query' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 no-unused-vars
+    3:29   error    'where' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 no-unused-vars
+    3:36   error    'orderBy' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               no-unused-vars
+    3:45   error    'limit' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 no-unused-vars
+    3:61   error    'startAfter' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            no-unused-vars
+    3:86   error    'deleteDoc' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             no-unused-vars
+    3:132  error    'getDoc' is defined but never used                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                no-unused-vars
+  211:7    error    Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+  209 |
+  210 |     if (IS_DEMO) {
+> 211 |       setLikedPaperIds(new Set(demoGet('likedPaperIds', [])));
+      |       ^^^^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  212 |       setNotInterestedIds(new Set(demoGet('notInterestedIds', [])));
+  213 |       setSavedPaperIds(new Set(demoGet('savedPaperIds', [])));
+  214 |       setReadPaperIds(new Set(demoGet('readPaperIds', [])));                                                                                                                                                                                                                                                                                                                                                           react-hooks/set-state-in-effect
+  277:27   error    The value assigned to 'penalty' is not used in subsequent statements                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              no-useless-assignment
+  507:30   error    Error: Cannot access variable before it is declared
+
+`loadPapers` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+  505 |             setTimeout(() => loadPapersRef.current(false, activeMode, false, nextPageToFetch), 0);
+  506 |           } else {
+> 507 |             setTimeout(() => loadPapers(false, activeMode, false, nextPageToFetch), 0);
+      |                              ^^^^^^^^^^ `loadPapers` accessed before it is declared
+  508 |           }
+  509 |           return;
+  510 |         }
+
+  339 |
+  340 |   // Load papers when preferences are available
+> 341 |   const loadPapers = useCallback(async (reset = false, mode, randomizeStart = false, pageOverride) => {
+      |   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 342 |     if (!userPreferences || userPreferences.length === 0) return;
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 343 |     if (!reset && loading) return;
+      …
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 557 |     categoryAffinities, categoryCooldowns, conceptAffinities, relatedCandidates
+      | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 558 |   ]);
+      | ^^^^^^ `loadPapers` is declared here
+  559 |
+  560 |   const hasFetchedInitially = useRef(false);
+  561 |   // Initial load  react-hooks/immutability
+  555:6    warning  React Hook useCallback has missing dependencies: 'calculateAndAttachScore' and 'followedAuthors'. Either include them or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              react-hooks/exhaustive-deps
+  607:21   error    Error: This value cannot be modified
+
+Modifying a value previously passed as an argument to a hook is not allowed. Consider moving the modification before calling the hook.
+
+  605 |   // Keep a ref to the latest loadPapers so refreshFeed never captures a stale closure
+  606 |   const loadPapersRef = useRef(loadPapers);
+> 607 |   useEffect(() => { loadPapersRef.current = loadPapers; }, [loadPapers]);
+      |                     ^^^^^^^^^^^^^ `loadPapersRef` cannot be modified
+  608 |
+  609 |   const [isRefreshing, setIsRefreshing] = useState(false);
+  610 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                react-hooks/immutability
+  936:17   error    Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    react-refresh/only-export-components
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/src/services/openAlexService.js
+  100:22  error  The value assigned to 'rawId' is not used in subsequent statements  no-useless-assignment
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/test-fetch.js
+  27:97   error  Unnecessary escape character: \(  no-useless-escape
+  27:99   error  Unnecessary escape character: \)  no-useless-escape
+  32:107  error  Unnecessary escape character: \(  no-useless-escape
+  32:109  error  Unnecessary escape character: \)  no-useless-escape
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/test-long3.js
+  8:39  error  Unnecessary escape character: \(  no-useless-escape
+  8:41  error  Unnecessary escape character: \)  no-useless-escape
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/test-project.js
+  6:27  error  'total' is assigned a value but never used  no-unused-vars
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/test-rss-seq.js
+  9:90  error  Unnecessary escape character: \(  no-useless-escape
+  9:92  error  Unnecessary escape character: \)  no-useless-escape
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/test-rss.js
+  20:39  error  Unnecessary escape character: \(  no-useless-escape
+  20:41  error  Unnecessary escape character: \)  no-useless-escape
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/test-trending.js
+  1:10  error  'fetchWithTimeout' is defined but never used  no-unused-vars
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/test-trim.js
+  2:7  error  'validIds' is assigned a value but never used  no-unused-vars
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/testFetch.js
+  17:34  error  Unnecessary escape character: \(  no-useless-escape
+  17:36  error  Unnecessary escape character: \)  no-useless-escape
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/test_arxiv_stanford.js
+  1:1  error  'global' is not defined  no-undef
+
+/Users/nicolasmunozgarcia/.gemini/antigravity/scratch/papertok/test_harvard.js
+   1:10  error  'renderToString' is defined but never used  no-unused-vars
+   2:8   error  'React' is defined but never used           no-unused-vars
+   3:8   error  'EntityExplorer' is defined but never used  no-unused-vars
+   4:10  error  'MemoryRouter' is defined but never used    no-unused-vars
+   4:24  error  'Routes' is defined but never used          no-unused-vars
+   4:32  error  'Route' is defined but never used           no-unused-vars
+   5:8   error  'fetch' is defined but never used           no-unused-vars
+   8:1   error  'global' is not defined                     no-undef
+  17:27  error  'global' is not defined                     no-undef
+  18:5   error  'global' is not defined                     no-undef
+  23:29  error  'require' is not defined                    no-undef
+  32:5   error  'require' is not defined                    no-undef
+
+✖ 68 problems (65 errors, 3 warnings)
+

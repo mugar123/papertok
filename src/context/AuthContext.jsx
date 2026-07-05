@@ -1,3 +1,4 @@
+/* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect } from 'react';
 import { IS_DEMO, auth, googleProvider, db } from '../services/firebase';
 import { onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth';
@@ -26,163 +27,135 @@ export function AuthProvider({ children }) {
 
   useEffect(() => {
     if (IS_DEMO) {
-      // Demo mode: check if user has "logged in" before
-      const demoUser = demoGet('user', null);
-      if (demoUser) {
-        setUser(demoUser);
-        setOnboardingComplete(demoGet('onboardingComplete', false));
-        setUserPreferences(demoGet('selectedCategories', null));
-        setFollowedAuthors(demoGet('followedAuthors', []));
-      }
-      setLoading(false);
+      setTimeout(() => {
+        // Demo mode: check if user has "logged in" before
+        const demoUser = demoGet('user', null);
+        if (demoUser) {
+          setUser(demoUser);
+          setOnboardingComplete(demoGet('onboardingComplete', false));
+          setUserPreferences(demoGet('selectedCategories', null));
+          setFollowedAuthors(demoGet('followedAuthors', []));
+        }
+        setLoading(false);
+      }, 0);
       return;
     }
 
-    // Real Firebase mode
-
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      setLoading(true);
-      if (firebaseUser) {
-        setUser(firebaseUser);
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      setUser(currentUser);
+      if (currentUser) {
+        // Fetch user data from firestore
         try {
-          const userDocRef = doc(db, 'users', firebaseUser.uid);
-          const userDoc = await getDoc(userDocRef);
+          const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
           if (userDoc.exists()) {
             const data = userDoc.data();
             setOnboardingComplete(data.onboardingComplete || false);
-            setUserPreferences(data.selectedCategories || null);
+            setUserPreferences(data.preferences || null);
             setFollowedAuthors(data.followedAuthors || []);
           } else {
-            await setDoc(userDocRef, {
-              displayName: firebaseUser.displayName,
-              photoURL: firebaseUser.photoURL,
-              email: firebaseUser.email,
-              createdAt: new Date().toISOString(),
-              onboardingComplete: false,
-              selectedCategories: [],
-              followedAuthors: [],
-            });
             setOnboardingComplete(false);
-            setFollowedAuthors([]);
           }
         } catch (err) {
-          console.error('Error loading user data:', err);
+          console.error("Error fetching user data", err);
         }
       } else {
-        setUser(null);
         setOnboardingComplete(false);
         setUserPreferences(null);
         setFollowedAuthors([]);
       }
       setLoading(false);
     });
-    return () => unsubscribe();
+
+    return unsubscribe;
   }, []);
 
   const signInWithGoogle = async () => {
     setError(null);
-    try {
-      setLoading(true);
-      if (IS_DEMO) {
-        // Demo mode: simulate login
+    if (IS_DEMO) {
+      setTimeout(() => {
         const demoUser = {
-          uid: 'demo-user-001',
+          uid: 'demo-user-123',
           displayName: 'Demo User',
           email: 'demo@papertok.app',
-          photoURL: null,
+          photoURL: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix'
         };
         setUser(demoUser);
         demoSet('user', demoUser);
-        // Check onboarding
-        setOnboardingComplete(demoGet('onboardingComplete', false));
-        setUserPreferences(demoGet('selectedCategories', null));
-        setFollowedAuthors(demoGet('followedAuthors', []));
-        setLoading(false);
-      } else {
-        await signInWithPopup(auth, googleProvider);
-      }
+      }, 500);
+      return;
+    }
+    try {
+      await signInWithPopup(auth, googleProvider);
     } catch (err) {
       setError(err.message);
-      setLoading(false);
     }
   };
 
   const signOut = async () => {
+    if (IS_DEMO) {
+      setUser(null);
+      setOnboardingComplete(false);
+      setUserPreferences(null);
+      setFollowedAuthors([]);
+      localStorage.removeItem('papertok_user');
+      return;
+    }
     try {
-      if (IS_DEMO) {
-        setUser(null);
-        setOnboardingComplete(false);
-        setUserPreferences(null);
-        setFollowedAuthors([]);
-        localStorage.removeItem('papertok_user');
-      } else {
-        await firebaseSignOut(auth);
-      }
+      await firebaseSignOut(auth);
     } catch (err) {
       setError(err.message);
     }
   };
 
-  const completeOnboarding = async (selectedCategories) => {
-    if (!user) return;
-    try {
-      if (IS_DEMO) {
-        demoSet('onboardingComplete', true);
-        demoSet('selectedCategories', selectedCategories);
-      } else {
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, {
-          onboardingComplete: true,
-          selectedCategories,
-        }, { merge: true });
-      }
-      setOnboardingComplete(true);
-      setUserPreferences(selectedCategories);
-    } catch (err) {
-      console.error('Error saving onboarding:', err);
-      setError(err.message);
+  const completeOnboarding = async (preferences) => {
+    setUserPreferences(preferences);
+    setOnboardingComplete(true);
+    
+    if (IS_DEMO) {
+      demoSet('selectedCategories', preferences);
+      demoSet('onboardingComplete', true);
+      return;
+    }
+
+    if (user) {
+      await setDoc(doc(db, 'users', user.uid), {
+        onboardingComplete: true,
+        preferences
+      }, { merge: true });
     }
   };
 
-  const updatePreferences = async (selectedCategories) => {
-    if (!user) return;
-    try {
-      if (IS_DEMO) {
-        demoSet('selectedCategories', selectedCategories);
-      } else {
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, {
-          selectedCategories,
-        }, { merge: true });
-      }
-      setUserPreferences(selectedCategories);
-    } catch (err) {
-      console.error('Error updating preferences:', err);
-      setError(err.message);
-      throw err;
+  const updatePreferences = async (newPreferences) => {
+    setUserPreferences(newPreferences);
+    
+    if (IS_DEMO) {
+      demoSet('selectedCategories', newPreferences);
+      return;
+    }
+
+    if (user) {
+      await setDoc(doc(db, 'users', user.uid), {
+        preferences: newPreferences
+      }, { merge: true });
     }
   };
 
   const toggleFollowAuthor = async (authorName) => {
-    if (!user) return;
-    try {
-      const isFollowing = followedAuthors.includes(authorName);
-      const newFollowed = isFollowing
-        ? followedAuthors.filter(a => a !== authorName)
-        : [...followedAuthors, authorName];
+    const newFollowed = followedAuthors.includes(authorName)
+      ? followedAuthors.filter(a => a !== authorName)
+      : [...followedAuthors, authorName];
+    
+    setFollowedAuthors(newFollowed);
 
-      if (IS_DEMO) {
-        demoSet('followedAuthors', newFollowed);
-      } else {
-        const userDocRef = doc(db, 'users', user.uid);
-        await setDoc(userDocRef, { followedAuthors: newFollowed }, { merge: true });
-      }
-      setFollowedAuthors(newFollowed);
-      return newFollowed;
-    } catch (err) {
-      console.error('Error toggling author follow:', err);
-      setError(err.message);
-      throw err;
+    if (IS_DEMO) {
+      demoSet('followedAuthors', newFollowed);
+      return;
+    }
+
+    if (user) {
+      await setDoc(doc(db, 'users', user.uid), {
+        followedAuthors: newFollowed
+      }, { merge: true });
     }
   };
 
@@ -212,5 +185,3 @@ export function useAuth() {
   }
   return context;
 }
-
-export default AuthContext;
