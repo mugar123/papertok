@@ -50,7 +50,7 @@ export function AuthProvider({ children }) {
           if (userDoc.exists()) {
             const data = userDoc.data();
             setOnboardingComplete(data.onboardingComplete || false);
-            setUserPreferences(data.preferences || null);
+            setUserPreferences(data.preferences || data.selectedCategories || null);
             setFollowedAuthors(data.followedAuthors || []);
           } else {
             setOnboardingComplete(false);

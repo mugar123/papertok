@@ -21,10 +21,15 @@ function AppContent() {
   const [saveModalPaper, setSaveModalPaper] = useState(null)
   const location = useLocation()
 
-  return (
-    <FeedProvider>
-      <AnimatePresence mode="wait">
-        <Routes location={location} key={location.pathname}>
+    const getRouteKey = (pathname) => {
+      if (pathname.startsWith('/explorer/')) return '/explorer';
+      return pathname;
+    };
+
+    return (
+      <FeedProvider>
+        <AnimatePresence mode="wait">
+          <Routes location={location} key={getRouteKey(location.pathname)}>
           <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
           <Route
             path="/onboarding"

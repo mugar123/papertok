@@ -1,2 +1,10 @@
-import { fetchPapersByIds } from './src/services/arxivService.js';
-fetchPapersByIds([2507.18226, 2507.11219, 2410.06684]).then(console.log).catch(console.error);
+import { fetchPapers } from './src/services/arxivService.js';
+async function run() {
+  try {
+    const res = await fetchPapers(['cs.AI'], 0, 10, 'recent');
+    console.log("Papers:", res.length);
+  } catch (err) {
+    console.error("Error:", err);
+  }
+}
+run();
