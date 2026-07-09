@@ -229,22 +229,6 @@ const PaperCard = memo(function PaperCard({
     }
   };
 
-  const handleShare = async (e) => {
-    e.stopPropagation();
-    const url = `https://arxiv.org/abs/${paper.arxivId}`;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: paper.title, url });
-      } else {
-        await navigator.clipboard.writeText(url);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      }
-    } catch {
-      window.open(url, '_blank');
-    }
-  };
-
   const handleNotInterested = (e) => {
     e.stopPropagation();
     onNotInterested(paper);
@@ -492,8 +476,9 @@ const PaperCard = memo(function PaperCard({
           </button>
         )}
 
-        {/* arXiv ID */}
-        <span className="pc-arxiv-id">arXiv:{paper.arxivId}</span>
+        {/* ID */}
+        {paper.arxivId && <span className="pc-arxiv-id">arXiv:{paper.arxivId}</span>}
+        {!paper.arxivId && paper.doi && <span className="pc-arxiv-id">DOI:{paper.doi}</span>}
 
         {/* Bottom action bar */}
         <div className="pc-action-bar">
@@ -502,11 +487,21 @@ const PaperCard = memo(function PaperCard({
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <polyline points="14 2 14 8 20 8" />
             </svg>
-            Leer Paper
+            {!paper.pdfUrl && !paper.arxivId ? 'Abrir Fuente' : 'Leer Paper'}
           </button>
           <button
             className="pc-read-btn pc-read-btn--secondary"
-            onClick={(e) => { e.stopPropagation(); handleShare(e); }}
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              const url = paper.arxivId ? `https://arxiv.org/abs/${paper.arxivId}` : (paper.doi ? `https://doi.org/${paper.doi}` : `https://openalex.org/${paper.id}`);
+              if (navigator.share) {
+                navigator.share({ title: paper.title, url });
+              } else {
+                navigator.clipboard.writeText(url);
+                setCopied(true);
+                setTimeout(() => setCopied(false), 2000);
+              }
+            }}
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             {copied ? <><Check size={16} /> Copiado</> : <><Share2 size={16} /> Compartir</>}

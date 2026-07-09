@@ -7,7 +7,7 @@ export default function PDFViewer({ paper, onClose }) {
   const [showFallback, setShowFallback] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
-  const pdfUrl = `https://arxiv.org/pdf/${paper.arxivId}`;
+  const pdfUrl = paper.pdfUrl || (paper.arxivId ? `https://arxiv.org/pdf/${paper.arxivId}` : '');
 
   const { trackPdfBounce } = useFeed();
   const startTimeRef = useRef(null);
@@ -43,8 +43,14 @@ export default function PDFViewer({ paper, onClose }) {
     };
   }, []);
 
+  const externalUrl = pdfUrl || (paper.doi ? `https://doi.org/${paper.doi}` : `https://openalex.org/${paper.id}`);
+
   // Fallback timeout
   useEffect(() => {
+    if (!pdfUrl) {
+      setShowFallback(true);
+      return;
+    }
     const fallbackTimer = setTimeout(() => {
       if (!iframeLoaded) setShowFallback(true);
     }, 8000);
@@ -52,7 +58,7 @@ export default function PDFViewer({ paper, onClose }) {
     return () => {
       clearTimeout(fallbackTimer);
     };
-  }, [iframeLoaded]); // removed onClose from deps to prevent stale closures if not needed, or we can just use the outer onClose
+  }, [iframeLoaded, pdfUrl]);
 
   return (
     <div className={`pdf-overlay ${isClosing ? 'is-closing' : ''}`} onClick={handleClose}>
@@ -69,7 +75,7 @@ export default function PDFViewer({ paper, onClose }) {
           <h3 className="pdf-title">{paper.title}</h3>
 
           <a
-            href={pdfUrl}
+            href={externalUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="pdf-external-btn"
@@ -94,9 +100,9 @@ export default function PDFViewer({ paper, onClose }) {
         {/* Fallback message */}
         {showFallback && !iframeLoaded && (
           <div className="pdf-fallback">
-            <p>El PDF no pudo cargarse en la app.</p>
-            <a href={pdfUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
-              Abrir PDF en nueva pestaña →
+            <p>{!pdfUrl ? 'No hay PDF de acceso abierto disponible.' : 'El PDF no pudo cargarse en la app.'}</p>
+            <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
+              Abrir fuente original en nueva pestaña →
             </a>
           </div>
         )}

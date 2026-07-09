@@ -781,7 +781,7 @@ export async function fetchPapersByDois(dois) {
 }
 
 function formatOpenAlexWorkAsPaper(work) {
-  let summary = 'No summary available.';
+  let summary = 'Resumen no disponible.';
   if (work.abstract_inverted_index) {
     const words = [];
     for (const [word, positions] of Object.entries(work.abstract_inverted_index)) {
@@ -789,7 +789,7 @@ function formatOpenAlexWorkAsPaper(work) {
         words[pos] = word;
       }
     }
-    summary = words.join(' ').replace(/\n/g, ' ').trim();
+    summary = words.join(' ').replace(/\s+/g, ' ').trim();
   }
   
   const authors = work.authorships?.map(a => a.author?.display_name || 'Unknown Author') || ['Unknown Author'];
