@@ -139,7 +139,7 @@ export async function enrichPapersBatch(arxivIds) {
                  pdfUrl: work.open_access?.oa_url,
                  landingPageUrl: work.primary_location?.landing_page_url
                };
-               CACHE.set(arxivId, enriched);
+               CACHE.set(`openalex_work_${arxivId}`, enriched);
                result[arxivId] = enriched;
              }
           });
