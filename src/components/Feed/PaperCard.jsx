@@ -406,8 +406,11 @@ const PaperCard = memo(function PaperCard({
           <div className="pc-author-names" style={{ position: 'relative' }}>
             {(paper.authors || []).slice(0, 3).map((author, index) => (
                <span 
-                 key={index}
-                 onClick={(e) => { e.stopPropagation(); navigate(`/explorer/author/${encodeURIComponent(author.name || author)}`); }}
+                 onClick={(e) => { 
+                   e.stopPropagation(); 
+                   const pId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
+                   navigate(`/explorer/author/${encodeURIComponent(author.name || author)}?arxivId=${pId}`); 
+                 }}
                  style={{ cursor: 'pointer', padding: '4px 0' }}
                  onMouseOver={(e) => e.currentTarget.style.textDecoration = 'underline'}
                  onMouseOut={(e) => e.currentTarget.style.textDecoration = 'none'}
