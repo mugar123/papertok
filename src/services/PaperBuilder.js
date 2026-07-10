@@ -71,8 +71,8 @@ export class PaperBuilder {
     
     if (!merged.doi && newDoi) {
       merged.doi = newDoi;
-      // Upgrade ID to DOI if it was previously something else
-      merged.id = newDoi; 
+      // NOTE: Do NOT overwrite merged.id here. The id must remain stable (arXiv ID)
+      // so that all subsequent state updates can find the paper by its original ID.
     }
 
     // Merge string fields (prefer existing if they are solid, but enrichment might have better data like journal name)
