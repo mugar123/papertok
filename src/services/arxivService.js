@@ -4,6 +4,8 @@
  */
 
 const isDev = import.meta.env.DEV;
+import { PaperBuilder } from './PaperBuilder';
+
 const ARXIV_DEV = '/api/arxiv';
 const ARXIV_PROD = 'https://export.arxiv.org/api/query';
 const cache = new Map();
@@ -77,14 +79,24 @@ function parseArxivXml(xmlText) {
 
     // Fix for published and updated just in case
     const publishedRaw = entry.querySelector('published')?.textContent || entry.getElementsByTagNameNS('*', 'published')[0]?.textContent || '';
-    const updatedRaw = entry.querySelector('updated')?.textContent || entry.getElementsByTagNameNS('*', 'updated')[0]?.textContent || '';
     const published = safeDateISO(publishedRaw);
-    const updated = safeDateISO(updatedRaw);
 
-    papers.push({
-      id: arxivId, arxivId, title, summary, published, updated,
-      authors, pdfUrl, primaryCategory, allCategories, doi, journalRef, comment,
-    });
+    papers.push(PaperBuilder.create({
+      id: arxivId,
+      sources: { primary: 'arxiv', enrichedBy: [] },
+      title,
+      abstract: summary,
+      authors: authors.map(name => ({ name })),
+      doi,
+      journal: journalRef,
+      year: new Date(published).getFullYear(),
+      publicationType: 'preprint',
+      openAccess: true,
+      pdfUrl,
+      landingPageUrl: `https://arxiv.org/abs/${arxivId}`,
+      categories: allCategories,
+      keywords: allCategories
+    }));
   });
 
   return papers;
@@ -125,21 +137,22 @@ function parseRss2Json(data) {
       const categories = item.categories || [];
       const primaryCategory = categories.length > 0 ? categories[0] : 'unknown';
       
-      return {
+      const published = safeDateISO(item.pubDate);
+      
+      return PaperBuilder.create({
         id,
-        arxivId: id,
+        sources: { primary: 'arxiv', enrichedBy: [] },
         title: item.title ? item.title.replace(/\n/g, ' ').trim() : 'No Title',
-        summary: item.description ? item.description.replace(/\n/g, ' ').trim() : 'No summary available.',
-        authors,
-        published: safeDateISO(item.pubDate),
-        updated: safeDateISO(item.pubDate),
+        abstract: item.description ? item.description.replace(/\n/g, ' ').trim() : 'No summary available.',
+        authors: authors.map(name => ({ name })),
+        year: new Date(published).getFullYear(),
+        publicationType: 'preprint',
+        openAccess: true,
         pdfUrl: idUrl ? idUrl.replace('abs', 'pdf') : '',
-        primaryCategory,
-        allCategories: categories,
-        doi: '',
-        journalRef: '',
-        comment: ''
-      };
+        landingPageUrl: idUrl || `https://arxiv.org/abs/${id}`,
+        categories: categories,
+        keywords: categories
+      });
     })
     .filter(Boolean);
 }

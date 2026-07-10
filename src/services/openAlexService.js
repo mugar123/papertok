@@ -4,6 +4,7 @@
  */
 
 import { CATEGORIES } from '../data/categories';
+import { PaperBuilder } from './PaperBuilder';
 
 const CACHE = new Map();
 const GRAPH_CACHE = new Map(); // caches W... to arxivId mappings
@@ -20,8 +21,14 @@ async function fetchWithTimeout(url, timeoutMs = 8000) {
     }, timeoutMs + 100);
   });
 
+  // Automatically append mailto parameter to enter Polite Pool and avoid budget limits
+  let finalUrl = url;
+  if (finalUrl.includes('api.openalex.org')) {
+    finalUrl += finalUrl.includes('?') ? '&mailto=papertok@example.com' : '?mailto=papertok@example.com';
+  }
+
   return Promise.race([
-    fetch(url, { signal: controller.signal }),
+    fetch(finalUrl, { signal: controller.signal }),
     timeoutPromise
   ]).finally(() => {
     clearTimeout(timeoutId1);
@@ -114,9 +121,16 @@ export async function enrichPapersBatch(arxivIds) {
              if (arxivId) {
                const enriched = {
                  concepts: work.concepts || [],
-                 cited_by_count: work.cited_by_count || 0,
+                 citationCount: work.cited_by_count || 0,
                  related_works: work.related_works || [],
-                 isPeerReviewed: work.primary_location?.is_published || false
+                 publicationType: work.primary_location?.source?.type || undefined,
+                 publicationStatus: work.primary_location?.is_published ? 'published' : 'preprint',
+                 doi: work.doi,
+                 journal: work.primary_location?.source?.display_name,
+                 publisher: work.primary_location?.source?.host_organization_name,
+                 openAccess: work.open_access?.is_oa,
+                 pdfUrl: work.open_access?.oa_url,
+                 landingPageUrl: work.primary_location?.landing_page_url
                };
                CACHE.set(arxivId, enriched);
                result[arxivId] = enriched;
@@ -792,29 +806,30 @@ function formatOpenAlexWorkAsPaper(work) {
     summary = words.join(' ').replace(/\s+/g, ' ').trim();
   }
   
-  const authors = work.authorships?.map(a => a.author?.display_name || 'Unknown Author') || ['Unknown Author'];
+  const authors = work.authorships?.map(a => ({ name: a.author?.display_name || 'Unknown Author', id: a.author?.id })) || [{ name: 'Unknown Author' }];
   const categories = work.concepts?.map(c => c.display_name) || [];
   const openAlexId = work.id.split('/').pop();
   
-  return {
+  return PaperBuilder.create({
     id: openAlexId,
-    arxivId: null,
+    sources: { primary: 'openalex', enrichedBy: [] },
     title: work.title || 'No Title',
-    summary: summary || 'No summary available.',
+    abstract: summary || 'No summary available.',
     authors,
-    published: work.publication_date ? new Date(work.publication_date).toISOString() : new Date().toISOString(),
-    updated: work.updated_date ? new Date(work.updated_date).toISOString() : new Date().toISOString(),
-    pdfUrl: work.open_access?.oa_url || '',
-    primaryCategory: categories.length > 0 ? categories[0] : 'unknown',
-    allCategories: categories,
-    doi: work.doi ? work.doi.replace('https://doi.org/', '') : '',
-    journalRef: work.primary_location?.source?.display_name || '',
-    comment: '',
+    year: work.publication_date ? new Date(work.publication_date).getFullYear() : new Date().getFullYear(),
+    publicationType: work.primary_location?.source?.type || 'journal',
+    publicationStatus: work.primary_location?.is_published ? 'published' : 'preprint',
+    openAccess: work.open_access?.is_oa,
+    pdfUrl: work.open_access?.oa_url,
+    landingPageUrl: work.primary_location?.landing_page_url || work.id,
+    doi: work.doi,
+    journal: work.primary_location?.source?.display_name,
+    publisher: work.primary_location?.source?.host_organization_name,
     citationCount: work.cited_by_count || 0,
-    topics: work.concepts ? work.concepts.slice(0, 3) : [],
-    isPeerReviewed: work.primary_location?.is_published || false,
-    _isOpenAlexEnriched: true
-  };
+    concepts: work.concepts || [],
+    categories: categories,
+    keywords: categories
+  });
 }
 
 /**

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
-import { getCategoryLabel, CATEGORIES } from '../../data/categories';
-import { Share2, FileText, Check, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase } from 'lucide-react';
+import { CATEGORIES } from '../../data/categories';
+import { Share2, FileText, Check, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, Unlock, Lock, ExternalLink } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
 import { useAuth } from '../../context/AuthContext';
@@ -138,28 +138,9 @@ const PaperCard = memo(function PaperCard({
     }, 1500); // give time for animation before unmounting
   };
 
-  const formatDate = (dateStr) => {
-    try {
-      const date = new Date(dateStr);
-      const now = new Date();
-      const diffMs = now - date;
-      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-      if (diffDays === 0) return 'Hoy';
-      if (diffDays === 1) return 'Ayer';
-      if (diffDays < 7) return `Hace ${diffDays} días`;
-      if (diffDays < 30) return `Hace ${Math.floor(diffDays / 7)} sem`;
-      if (diffDays >= 365) return date.toLocaleDateString('es-ES', { month: 'short', day: 'numeric', year: 'numeric' });
-      return date.toLocaleDateString('es-ES', { month: 'short', day: 'numeric' });
-    } catch { return ''; }
-  };
-
-
-
-
-
   // Get area info for the gradient background
   const getAreaInfo = () => {
-    const cat = paper.primaryCategory || '';
+    const cat = (paper.categories && paper.categories[0]) || '';
     const prefix = cat.split('.')[0].split('-')[0];
     for (const [, area] of Object.entries(CATEGORIES)) {
       if (area.subcategories && area.subcategories[cat]) {
@@ -174,12 +155,19 @@ const PaperCard = memo(function PaperCard({
     return { icon: FileText, gradient: 'linear-gradient(135deg, #667eea, #764ba2)' };
   };
 
+  const getCategoryLabelText = () => {
+    const cat = (paper.categories && paper.categories[0]) || '';
+    const area = Object.values(CATEGORIES).find(a => a.subcategories && a.subcategories[cat]);
+    if (area) return area.subcategories[cat];
+    return cat || 'Research Paper';
+  };
+
   const areaInfo = getAreaInfo();
+  const categoryLabel = getCategoryLabelText();
 
   // Generate scattered background icons (stable per paper id)
   const bgIcons = useMemo(() => {
-    // Find the area key for this paper
-    const cat = paper.primaryCategory || '';
+    const cat = (paper.categories && paper.categories[0]) || '';
     let areaKey = 'physics';
     for (const [key, area] of Object.entries(CATEGORIES)) {
       if (area.subcategories && area.subcategories[cat]) {
@@ -188,7 +176,6 @@ const PaperCard = memo(function PaperCard({
       }
     }
     const iconPool = AREA_BG_ICONS[areaKey] || AREA_BG_ICONS.physics;
-    // Seed RNG based on paper id for consistency
     let seed = 0;
     for (let i = 0; i < (paper.id || '').length; i++) seed += paper.id.charCodeAt(i);
     const seededRandom = (i) => {
@@ -198,15 +185,15 @@ const PaperCard = memo(function PaperCard({
     return Array.from({ length: 12 }).map((_, i) => ({
       id: i,
       Icon: iconPool[i % iconPool.length],
-      x: 5 + seededRandom(i * 2) * 90,          // 5%-95%
-      y: 5 + seededRandom(i * 2 + 1) * 60,       // top 5-65% (above content)
-      size: 18 + seededRandom(i * 3) * 40,        // 18-58px
-      opacity: 0.03 + seededRandom(i * 4) * 0.06, // 0.03-0.09
-      delay: seededRandom(i * 5) * 6,             // 0-6s
-      duration: 10 + seededRandom(i * 6) * 8,     // 10-18s
-      rotate: seededRandom(i * 7) * 360,          // 0-360deg
+      x: 5 + seededRandom(i * 2) * 90,
+      y: 5 + seededRandom(i * 2 + 1) * 60,
+      size: 18 + seededRandom(i * 3) * 40,
+      opacity: 0.03 + seededRandom(i * 4) * 0.06,
+      delay: seededRandom(i * 5) * 6,
+      duration: 10 + seededRandom(i * 6) * 8,
+      rotate: seededRandom(i * 7) * 360,
     }));
-  }, [paper.id, paper.primaryCategory]);
+  }, [paper.id, paper.categories]);
 
   const handleDoubleTap = useCallback(() => {
     const now = Date.now();
@@ -234,20 +221,12 @@ const PaperCard = memo(function PaperCard({
     onNotInterested(paper);
   };
 
-  const categoryLabel = getCategoryLabel(paper.primaryCategory);
-
-  const isVerified = Boolean(
-    paper.doi || 
-    paper.journalRef || 
-    paper.isPeerReviewed ||
-    (paper.openAlex && paper.openAlex.primary_location && paper.openAlex.primary_location.source && paper.openAlex.primary_location.source.type === 'journal')
-  );
-  const showRankingDebug = typeof window !== 'undefined'
-    && window.localStorage?.getItem('DEBUG_RANKING') === 'true';
+  const isPreprint = paper.publicationStatus === 'preprint';
+  const isOpenAccess = paper.openAccess;
+  const showRankingDebug = typeof window !== 'undefined' && window.localStorage?.getItem('DEBUG_RANKING') === 'true';
 
   return (
     <div ref={cardRef} className={`pc ${isMarkingRead ? 'pc--fade-out' : ''}`} onClick={handleDoubleTap}>
-      {/* Immersive gradient background */}
       <div className="pc-bg" style={{ background: areaInfo.gradient }} />
       <div className="pc-bg-overlay" />
 
@@ -260,7 +239,7 @@ const PaperCard = memo(function PaperCard({
           <div>Preference Match: {paper._debugScore.preference.toFixed(2)}</div>
           <div>Recency Boost: {paper._debugScore.recency.toFixed(2)}</div>
           {paper._debugScore.semantic > 0 && (
-            <div style={{color: 'var(--brand)'}}>Semantic (OpenAlex): {paper._debugScore.semantic.toFixed(2)}</div>
+            <div style={{color: 'var(--brand)'}}>Semantic: {paper._debugScore.semantic.toFixed(2)}</div>
           )}
           {paper._debugScore.citations > 0 && (
             <div style={{color: 'var(--primary)'}}>Citation Boost: {paper._debugScore.citations.toFixed(2)}</div>
@@ -271,11 +250,10 @@ const PaperCard = memo(function PaperCard({
           {paper._debugScore.cooldownMultiplier < 1.0 && (
             <div style={{color: 'var(--danger)'}}>Cooldown: x{paper._debugScore.cooldownMultiplier.toFixed(2)}</div>
           )}
-          <div>Exploration: {paper._debugScore.isExploration ? 'YES (Randomly Injected)' : 'NO'}</div>
+          <div>Exploration: {paper._debugScore.isExploration ? 'YES' : 'NO'}</div>
         </div>
       )}
 
-      {/* Floating category icon constellation */}
       <div className="pc-bg-constellation">
         {bgIcons.map((item) => (
           <span
@@ -295,7 +273,6 @@ const PaperCard = memo(function PaperCard({
         ))}
       </div>
 
-      {/* Animated mesh grid lines */}
       <svg className="pc-mesh" viewBox="0 0 400 400" preserveAspectRatio="none">
         <line x1="0" y1="80" x2="400" y2="120" className="pc-mesh-line" style={{ '--mesh-delay': '0s' }} />
         <line x1="50" y1="0" x2="350" y2="200" className="pc-mesh-line" style={{ '--mesh-delay': '1s' }} />
@@ -311,9 +288,7 @@ const PaperCard = memo(function PaperCard({
         <circle cx="50" cy="300" r="1.5" className="pc-mesh-dot" style={{ '--mesh-delay': '1.5s' }} />
       </svg>
 
-      {/* Content area - bottom aligned like TikTok */}
       <div className="pc-body">
-        {/* Meta row */}
         <div className="pc-meta">
           <span className="pc-category-pill">{categoryLabel}</span>
           {hasFollowedAuthor && (
@@ -325,22 +300,43 @@ const PaperCard = memo(function PaperCard({
             </>
           )}
           <span className="pc-meta-dot">·</span>
-          <span className="pc-date">{formatDate(paper.published)}</span>
+          <span className="pc-date">{paper.year}</span>
 
-          {paper.openAlex && paper.openAlex.cited_by_count > 0 && (
+          {paper.citationCount > 0 && (
             <>
               <span className="pc-meta-dot">·</span>
               <span className="pc-citations" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {paper.openAlex.cited_by_count} Citas
+                {paper.citationCount} Citas
               </span>
             </>
           )}
         </div>
         
-        {/* OpenAlex Semantic Concepts */}
-        {paper.openAlex && paper.openAlex.concepts && paper.openAlex.concepts.length > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px', fontSize: '11px', fontWeight: '500' }}>
+          {isPreprint ? (
+             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+               <FileText size={12} /> Preprint
+             </span>
+          ) : (
+             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+               <BadgeCheck size={12} /> Verified
+             </span>
+          )}
+
+          {isOpenAccess ? (
+             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+               <Unlock size={12} /> Open Access
+             </span>
+          ) : (
+             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+               <Lock size={12} /> Subscription
+             </span>
+          )}
+        </div>
+        
+        {paper.concepts && paper.concepts.length > 0 && (
           <div className="pc-semantic-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-            {paper.openAlex.concepts.slice(0, 4).map((concept, idx) => (
+            {paper.concepts.slice(0, 4).map((concept, idx) => (
               <span key={idx} className="pc-semantic-tag" style={{
                 background: 'rgba(255,255,255,0.1)',
                 padding: '2px 8px',
@@ -357,7 +353,6 @@ const PaperCard = memo(function PaperCard({
           </div>
         )}
 
-        {/* OpenAIRE Project Badge */}
         {project && (
           <div 
             className="pc-project-badge"
@@ -378,8 +373,6 @@ const PaperCard = memo(function PaperCard({
             onClick={(e) => {
               e.stopPropagation();
               if (project.code) {
-                // Navigate to the explorer for this project, passing the acronym as the id or name if we want, 
-                // but we need the code as the ID. The URL is /explorer/project/{code}
                 navigate(`/explorer/project/${project.code}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}`);
               }
             }}
@@ -389,12 +382,10 @@ const PaperCard = memo(function PaperCard({
           </div>
         )}
 
-        {/* Title */}
         <h2 className="pc-title">
           <Latex>{processLatex(paper.title)}</Latex>
         </h2>
 
-        {/* Authors */}
         <div 
           className="pc-authors pc-authors--mobile-clickable"
           onClick={(e) => {
@@ -407,7 +398,7 @@ const PaperCard = memo(function PaperCard({
           <div className="pc-author-avatars">
             {(paper.authors || []).slice(0, 3).map((author, i) => (
               <div key={i} className="pc-author-avatar" style={{ '--i': i }}>
-                {author.charAt(0).toUpperCase()}
+                {author.name ? author.name.charAt(0).toUpperCase() : 'U'}
               </div>
             ))}
           </div>
@@ -415,85 +406,48 @@ const PaperCard = memo(function PaperCard({
             {(paper.authors || []).slice(0, 3).map((author, index) => (
                <span 
                  key={index}
-                 onClick={(e) => { e.stopPropagation(); navigate(`/explorer/author/${encodeURIComponent(author)}?arxivId=${paper.arxivId}`); }}
+                 onClick={(e) => { e.stopPropagation(); navigate(`/explorer/author/${encodeURIComponent(author.name || author)}`); }}
                  style={{ cursor: 'pointer', padding: '4px 0' }}
                  onMouseOver={(e) => e.currentTarget.style.textDecoration = 'underline'}
                  onMouseOut={(e) => e.currentTarget.style.textDecoration = 'none'}
                >
-                 {author}{index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
+                 {author.name || author}{index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
                </span>
             ))}
             {(paper.authors || []).length > 3 && <span> et al.</span>}
           </div>
-          {isVerified && (
-            <div 
-              className="pc-tooltip" 
-              data-tooltip="Publicado en revista (Peer-reviewed)" 
-              style={{ display: 'flex' }}
-            >
-              <BadgeCheck 
-                size={14} 
-                className="pc-verified-badge" 
-                style={{ color: '#1da1f2', flexShrink: 0, cursor: 'default' }} 
-              />
-            </div>
-          )}
-          {/* Verification Ticker moved to the right of authors */}
-          {isVerified && (
-            <div 
-              className={`pc-journal-ticker ${paper.doi ? 'pc-journal-ticker--clickable' : ''}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (paper.doi) window.open(`https://doi.org/${paper.doi}`, '_blank');
-              }}
-            >
-              <div className="pc-journal-ticker-text-wrapper">
-                <div className="pc-journal-ticker-text">
-                  <span>{paper.journalRef ? `Publicado en ${paper.journalRef}` : (paper.openAlex?.primary_location?.source?.display_name ? `Publicado en ${paper.openAlex.primary_location.source.display_name}` : 'Peer-reviewed')} {paper.doi && `• DOI: ${paper.doi}`}</span>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Abstract */}
         <div
           ref={abstractRef}
           className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''}`}
           onClick={(e) => toggleExpanded(e, !expanded)}
         >
-          <p><Latex>{processLatex(paper.summary)}</Latex></p>
+          <p><Latex>{processLatex(paper.abstract)}</Latex></p>
         </div>
 
-        {!expanded && paper.summary && paper.summary.length > 200 && (
-          <button className="pc-expand-btn" onClick={(e) => toggleExpanded(e, true)}>
-            Leer más ↓
-          </button>
-        )}
-        {expanded && (
-          <button className="pc-expand-btn" onClick={(e) => toggleExpanded(e, false)}>
-            Mostrar menos ↑
-          </button>
-        )}
-
-        {/* ID */}
-        {paper.arxivId && <span className="pc-arxiv-id">arXiv:{paper.arxivId}</span>}
-        {!paper.arxivId && paper.doi && <span className="pc-arxiv-id">DOI:{paper.doi}</span>}
-
-        {/* Bottom action bar */}
         <div className="pc-action-bar">
-          <button className="pc-read-btn" onClick={(e) => { e.stopPropagation(); onOpenPdf(paper); }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>
-            {!paper.pdfUrl && !paper.arxivId ? 'Abrir Fuente' : 'Leer Paper'}
+          <button 
+            className="pc-action-btn primary"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (paper.pdfUrl) {
+                window.open(paper.pdfUrl, '_blank');
+              } else if (paper.landingPageUrl) {
+                window.open(paper.landingPageUrl, '_blank');
+              } else {
+                onOpenPdf(paper);
+              }
+            }}
+          >
+            <ExternalLink size={20} />
+            <span>{paper.pdfUrl ? 'Leer PDF' : 'Abrir Fuente'}</span>
           </button>
           <button
-            className="pc-read-btn pc-read-btn--secondary"
+            className="pc-action-btn secondary"
             onClick={(e) => { 
               e.stopPropagation(); 
-              const url = paper.arxivId ? `https://arxiv.org/abs/${paper.arxivId}` : (paper.doi ? `https://doi.org/${paper.doi}` : `https://openalex.org/${paper.id}`);
+              const url = paper.pdfUrl || paper.landingPageUrl || (paper.arxivId ? `https://arxiv.org/abs/${paper.arxivId}` : '');
               if (navigator.share) {
                 navigator.share({ title: paper.title, url });
               } else {

@@ -8,6 +8,7 @@ import { getDeviceInfo } from '../utils/device';
 import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data/categories';
 import { enrichPapersBatch, getArxivIdsForOpenAlexWorks } from '../services/openAlexService';
 import { getPaperRecommendations } from '../services/semanticScholarService';
+import { PaperBuilder } from '../services/PaperBuilder';
 import {
   applyRecommendationScore,
   logRankingBatch,
@@ -542,8 +543,10 @@ export function FeedProvider({ children }) {
       enrichPapersBatch(arxivIdsToEnrich).then(openAlexData => {
          setPapers(current => {
             return current.map(p => {
-               if (openAlexData[p.id]) {
-                  return { ...p, openAlex: openAlexData[p.id] };
+               // Extract pure ID to match enrichment cache
+               const pid = p.id.startsWith('arxiv:') ? p.id.split(':')[1] : p.id;
+               if (openAlexData[pid]) {
+                  return PaperBuilder.merge(p, openAlexData[pid], 'openalex');
                }
                return p;
             });

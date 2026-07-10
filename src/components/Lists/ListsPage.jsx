@@ -5,6 +5,7 @@ import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { getCategoryLabel } from '../../data/categories';
 import { getIcon } from '../../utils/icons';
+import { paperLegacyAdapter } from '../../models/Paper';
 import { X } from 'lucide-react';
 import './ListsPage.css';
 
@@ -50,7 +51,7 @@ export default function ListsPage({ onOpenPdf }) {
 
           const papersRef = collection(db, 'users', user.uid, 'savedPapers');
           const papersSnapshot = await getDocs(papersRef);
-          papersSnapshot.forEach((d) => { papers[d.id] = { id: d.id, ...d.data() }; });
+          papersSnapshot.forEach((d) => { papers[d.id] = paperLegacyAdapter({ id: d.id, ...d.data() }); });
 
           const interactionsRef = collection(db, 'users', user.uid, 'interactions');
           const intSnapshot = await getDocs(interactionsRef);
@@ -59,17 +60,17 @@ export default function ListsPage({ onOpenPdf }) {
             if (data.liked) {
               likedPaperIds.push(doc.id);
               if (!papers[doc.id]) {
-                papers[doc.id] = { id: doc.id, title: data.paperTitle || doc.id,
+                papers[doc.id] = paperLegacyAdapter({ id: doc.id, title: data.paperTitle || doc.id,
                   authors: data.paperAuthors || [], primaryCategory: data.paperCategory || '',
-                  published: data.timestamp, arxivId: doc.id };
+                  published: data.timestamp, arxivId: doc.id });
               }
             }
             if (data.read) {
               readPaperIds.push(doc.id);
               if (!papers[doc.id]) {
-                papers[doc.id] = { id: doc.id, title: data.paperTitle || doc.id,
+                papers[doc.id] = paperLegacyAdapter({ id: doc.id, title: data.paperTitle || doc.id,
                   authors: data.paperAuthors || [], primaryCategory: data.paperCategory || '',
-                  published: data.timestamp, arxivId: doc.id };
+                  published: data.timestamp, arxivId: doc.id });
               }
             }
           });
@@ -154,10 +155,7 @@ export default function ListsPage({ onOpenPdf }) {
     }));
   };
 
-  const formatDate = (dateStr) => {
-    try { return new Date(dateStr).toLocaleDateString('es-ES', { year: 'numeric', month: 'short', day: 'numeric' }); }
-    catch { return ''; }
-  };
+
 
   if (loading) {
     return (
@@ -201,16 +199,16 @@ export default function ListsPage({ onOpenPdf }) {
                       <div key={paperId} className="lists-paper-item"
                         onClick={() => onOpenPdf({ ...paper, arxivId: paper.arxivId || paper.id })}>
                         <div className="lists-paper-item-content">
-                          {paper.primaryCategory && (
-                            <span className="lists-paper-cat">{getCategoryLabel(paper.primaryCategory)}</span>
+                          {paper.categories && paper.categories.length > 0 && (
+                            <span className="lists-paper-cat">{getCategoryLabel(paper.categories[0])}</span>
                           )}
                           <p className="lists-paper-title">{paper.title}</p>
                           {paper.authors && (
                             <p className="lists-paper-authors">
-                              {paper.authors.slice(0, 3).join(', ')}{paper.authors.length > 3 && ' et al.'}
+                              {paper.authors.slice(0, 3).map(a => a.name).join(', ')}{paper.authors.length > 3 && ' et al.'}
                             </p>
                           )}
-                          {paper.published && <span className="lists-paper-date">{formatDate(paper.published)}</span>}
+                          {paper.year && <span className="lists-paper-date">{paper.year}</span>}
                         </div>
                         <button 
                           className="lists-paper-unmark-btn"
