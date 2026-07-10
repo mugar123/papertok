@@ -827,8 +827,8 @@ export default function EntityExplorer() {
                   style={{ '--i': idx }}
                 >
                   <div className="eli-header">
-                    <span className="eli-cat">{paper.primaryCategory}</span>
-                    <span className="eli-date">{new Date(paper.published).toLocaleDateString()}</span>
+                    <span className="eli-cat">{paper.categories && paper.categories.length > 0 ? paper.categories[0] : 'Paper'}</span>
+                    <span className="eli-date">{paper.year}</span>
                   </div>
                   <h3 className="eli-title">
                     {paper.title}
@@ -838,9 +838,9 @@ export default function EntityExplorer() {
                       </span>
                     )}
                   </h3>
-                  <p className="eli-authors">{paper.authors?.join(', ')}</p>
+                  <p className="eli-authors">{(paper.authors || []).map(a => a.name || a).join(', ')}</p>
                   <p className="eli-summary">
-                    {paper.summary?.length > 200 ? paper.summary.substring(0, 200) + '...' : paper.summary}
+                    {paper.abstract?.length > 200 ? paper.abstract.substring(0, 200) + '...' : paper.abstract}
                   </p>
                 </div>
               ))}

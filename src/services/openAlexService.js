@@ -60,8 +60,8 @@ export async function enrichPapersBatch(arxivIds) {
   
   if (toFetch.length === 0) return result;
   
-  // OpenAlex supports up to 50 items in an OR filter
-  const CHUNK_SIZE = 40;
+  // OpenAlex supports up to 50 items in an OR filter. Since we use 2 URLs per ID, max chunk is 25.
+  const CHUNK_SIZE = 20;
   for (let i = 0; i < toFetch.length; i += CHUNK_SIZE) {
     const chunk = toFetch.slice(i, i + CHUNK_SIZE);
     // Use landing_page_url to reliably find arXiv papers instead of DOIs
