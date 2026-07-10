@@ -506,6 +506,18 @@ export default function EntityExplorer() {
                   {entity.funder}{entity.fundingStream ? ` — ${entity.fundingStream}` : ''}
                 </p>
               )}
+              {type === 'project' && entity.code && (
+                <p className="ehc-meta" style={{ marginTop: '4px' }}>
+                  <a 
+                    href={`https://explore.openaire.eu/search/project?projectId=${entity.id}`} 
+                    target="_blank" 
+                    rel="noreferrer"
+                    style={{ color: '#1da1f2', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
+                  >
+                    Ver web del proyecto ↗
+                  </a>
+                </p>
+              )}
               {topConcepts.length > 0 && (
                 <div className="ehc-tags">
                   {topConcepts.map((c, i) => (
