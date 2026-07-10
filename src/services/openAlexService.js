@@ -45,7 +45,10 @@ export async function enrichPapersBatch(arxivIds) {
   const validIds = arxivIds
     .map(String)
     .filter(id => id && id.trim() !== '')
-    .map(id => id.startsWith('arxiv:') ? id.split(':')[1] : id);
+    .map(id => {
+      const pure = id.startsWith('arxiv:') ? id.split(':')[1] : id;
+      return pure.replace(/v\d+$/, '');
+    });
     
   const toFetch = validIds.filter(id => !CACHE.has(id));
   const result = {};

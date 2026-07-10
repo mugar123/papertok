@@ -128,9 +128,10 @@ export function FeedProvider({ children }) {
       let enriched = paper.openAlex;
       if (!enriched) {
         const res = await enrichPapersBatch([paper.id]);
-        enriched = res[paper.id];
+        const pid = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1].replace(/v\d+$/, '') : paper.id.replace(/v\d+$/, '');
+        enriched = res[pid];
         if (enriched) {
-          setPapers(current => current.map(p => p.id === paper.id ? { ...p, openAlex: enriched } : p));
+          setPapers(current => current.map(p => p.id === paper.id ? PaperBuilder.merge(p, enriched, 'openalex') : p));
         }
       }
       
@@ -306,7 +307,8 @@ export function FeedProvider({ children }) {
            const openAlexData = await enrichPapersBatch(positiveIds);
            
            positiveIds.forEach(id => {
-              const data = openAlexData[id];
+              const pid = id.startsWith('arxiv:') ? id.split(':')[1].replace(/v\d+$/, '') : id.replace(/v\d+$/, '');
+              const data = openAlexData[pid];
               if (data) {
                  data.concepts.forEach(c => {
                     if (!conceptWeights[c.id]) conceptWeights[c.id] = 0;
@@ -543,8 +545,9 @@ export function FeedProvider({ children }) {
       enrichPapersBatch(arxivIdsToEnrich).then(openAlexData => {
          setPapers(current => {
             return current.map(p => {
-               // Extract pure ID to match enrichment cache
-               const pid = p.id.startsWith('arxiv:') ? p.id.split(':')[1] : p.id;
+               // Extract pure ID to match enrichment cache, removing any version suffix (e.g. v1)
+               const rawId = p.id.startsWith('arxiv:') ? p.id.split(':')[1] : p.id;
+               const pid = rawId.replace(/v\d+$/, '');
                if (openAlexData[pid]) {
                   return PaperBuilder.merge(p, openAlexData[pid], 'openalex');
                }
