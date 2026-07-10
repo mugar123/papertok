@@ -238,7 +238,11 @@ export default function EntityExplorer() {
            const sourceArxivId = searchParams.get('arxivId');
            if (sourceArxivId) {
              const cleanSourceId = sourceArxivId.replace(/v\d+$/, '');
-             const sourceIndex = fetchedPapers.findIndex(p => p.id && p.id.replace(/v\d+$/, '') === cleanSourceId);
+             const sourceIndex = fetchedPapers.findIndex(p => {
+               if (!p.id) return false;
+               const pClean = p.id.startsWith('arxiv:') ? p.id.split(':')[1] : p.id;
+               return pClean.replace(/v\d+$/, '') === cleanSourceId;
+             });
              
              if (sourceIndex !== -1) {
                // Paper exists in the list, move it to the front
