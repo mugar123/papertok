@@ -374,7 +374,7 @@ const PaperCard = memo(function PaperCard({
               e.stopPropagation();
               if (project.code) {
                 const paperId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
-                navigate(`/explorer/project/${project.code}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`);
+                navigate(`/explorer/project/${encodeURIComponent(project.code)}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`);
               }
             }}
           >
