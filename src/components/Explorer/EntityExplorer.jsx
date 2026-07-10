@@ -261,10 +261,11 @@ export default function EntityExplorer() {
              return [...prev, ...newPapers];
           });
         }
-        setHasMore(arxivIds.length > 0 && page * 30 < total);
+        setHasMore(page * 30 < total);
       } catch (err) {
         console.error("Failed to load papers for entity", err);
         if (page === 1) setPapers([]);
+        setHasMore(false); // Stop infinite looping on errors
       }
       setIsLoadingPapers(false);
       setIsFetchingMore(false);
@@ -291,9 +292,10 @@ export default function EntityExplorer() {
             return [...prev, ...newAuthors];
           });
         }
-        setHasMoreAuthors(authors.length > 0 && authorsPage * 30 < total);
+        setHasMoreAuthors(authorsPage * 30 < total);
       } catch (err) {
         console.error("Failed to load authors for entity", err);
+        setHasMoreAuthors(false); // Stop infinite looping on errors
       }
       setIsLoadingAuthors(false);
       setIsFetchingMoreAuthors(false);
