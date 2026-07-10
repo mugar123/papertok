@@ -158,7 +158,7 @@ const PaperCard = memo(function PaperCard({
   const getCategoryLabelText = () => {
     const cat = (paper.categories && paper.categories[0]) || '';
     const area = Object.values(CATEGORIES).find(a => a.subcategories && a.subcategories[cat]);
-    if (area) return area.subcategories[cat];
+    if (area) return area.subcategories[cat].label;
     return cat || 'Research Paper';
   };
 
