@@ -478,7 +478,17 @@ export default function EntityExplorer() {
               )}
               {type === 'author' && (entity.institution || entity.last_known_institutions?.[0]?.display_name) && (
                 <p className="ehc-meta" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Building2 size={14} /> {entity.institution || entity.last_known_institutions[0].display_name}
+                  <Building2 size={14} /> 
+                  {entity.last_known_institutions?.[0]?.id ? (
+                    <span 
+                      onClick={() => navigate(`/explorer/institution/${entity.last_known_institutions[0].id.split('/').pop()}`)}
+                      style={{ cursor: 'pointer', textDecoration: 'underline' }}
+                    >
+                      {entity.institution || entity.last_known_institutions[0].display_name}
+                    </span>
+                  ) : (
+                    <span>{entity.institution || entity.last_known_institutions[0].display_name}</span>
+                  )}
                 </p>
               )}
               {type === 'project' && entity.funder && (
@@ -779,7 +789,7 @@ export default function EntityExplorer() {
           <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => setActiveTab('papers')}>
              Papers
           </button>
-          {type !== 'author' && (
+          {(type !== 'author' && type !== 'project') && (
              <button className={`ee-tab ${activeTab === 'authors' ? 'active' : ''}`} onClick={() => setActiveTab('authors')}>
                Autores
              </button>
