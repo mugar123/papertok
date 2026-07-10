@@ -233,13 +233,19 @@ export default function EntityExplorer() {
           const doiPapers = await fetchPapersByDois(dois);
           fetchedPapers.push(...doiPapers);
         }        
-        // 3. Guarantee source paper is present (failsafe for OpenAlex index gaps)
-        if (page === 1 && type === 'author') {
+        // 3. Guarantee source paper is ALWAYS first in the list
+        if (page === 1) {
            const sourceArxivId = searchParams.get('arxivId');
            if (sourceArxivId) {
              const cleanSourceId = sourceArxivId.replace(/v\d+$/, '');
-             const hasSource = fetchedPapers.some(p => p.id && p.id.replace(/v\d+$/, '') === cleanSourceId);
-             if (!hasSource) {
+             const sourceIndex = fetchedPapers.findIndex(p => p.id && p.id.replace(/v\d+$/, '') === cleanSourceId);
+             
+             if (sourceIndex !== -1) {
+               // Paper exists in the list, move it to the front
+               const [sourcePaper] = fetchedPapers.splice(sourceIndex, 1);
+               fetchedPapers.unshift(sourcePaper);
+             } else {
+               // Paper is missing, fetch it and put it in front
                try {
                  const sourcePaperReq = await fetchPapersByIds([cleanSourceId]);
                  if (sourcePaperReq && sourcePaperReq.length > 0) {
