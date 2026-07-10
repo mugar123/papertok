@@ -42,7 +42,11 @@ async function fetchWithTimeout(url, timeoutMs = 8000) {
  * @returns {Promise<Object>} Map of { arxivId: { concepts, cited_by_count, related_works } }
  */
 export async function enrichPapersBatch(arxivIds) {
-  const validIds = arxivIds.map(String).filter(id => id && id.trim() !== '');
+  const validIds = arxivIds
+    .map(String)
+    .filter(id => id && id.trim() !== '')
+    .map(id => id.startsWith('arxiv:') ? id.split(':')[1] : id);
+    
   const toFetch = validIds.filter(id => !CACHE.has(id));
   const result = {};
   

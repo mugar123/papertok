@@ -539,7 +539,7 @@ export function FeedProvider({ children }) {
       feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
 
       // Asynchronous OpenAlex Enrichment (Lazy Loading to prevent UI blocking)
-      const arxivIdsToEnrich = nextPapers.map(p => p.id);
+      const arxivIdsToEnrich = nextPapers.map(p => p.id.startsWith('arxiv:') ? p.id.split(':')[1] : p.id);
       enrichPapersBatch(arxivIdsToEnrich).then(openAlexData => {
          setPapers(current => {
             return current.map(p => {
