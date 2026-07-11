@@ -159,7 +159,9 @@ const PaperCard = memo(function PaperCard({
     const cat = (paper.categories && paper.categories[0]) || '';
     const area = Object.values(CATEGORIES).find(a => a.subcategories && a.subcategories[cat]);
     if (area) return area.subcategories[cat].label;
-    return cat || 'Research Paper';
+    if (cat) return cat;
+    if (paper.journal) return paper.journal;
+    return 'Research Paper';
   };
 
   const areaInfo = getAreaInfo();
@@ -473,7 +475,7 @@ const PaperCard = memo(function PaperCard({
               if (paper.pdfUrl || paper.arxivId) {
                 onOpenPdf(paper);
               } else if (paper.landingPageUrl) {
-                window.location.href = paper.landingPageUrl;
+                window.open(paper.landingPageUrl, '_blank');
               }
             }}
           >

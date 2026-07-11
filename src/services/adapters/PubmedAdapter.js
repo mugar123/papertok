@@ -49,30 +49,69 @@ export class PubmedAdapter extends BaseAdapter {
       const results = pmids.map(pmid => summaryData.result[pmid]).filter(Boolean);
       let mappedPapers = results.map(item => this.mapToStandard(item));
 
-      // 3. Enrich with efetch for abstracts and categories
+      // 3. Enrich with efetch AND OpenAlex
       try {
           const enrichmentMap = {};
           if (pmids.length > 0) {
               const fetchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${pmids.join(',')}&retmode=xml`;
-              const fetchRes = await fetch(fetchUrl);
-              const xmlText = await fetchRes.text();
-              const parser = new DOMParser();
-              const xmlDoc = parser.parseFromString(xmlText, "text/xml");
+              const fetchProm = fetch(fetchUrl).then(r => r.text()).catch(() => '');
               
-              const articles = xmlDoc.querySelectorAll('PubmedArticle');
-              articles.forEach(article => {
-                  const pmidEl = article.querySelector('PMID');
-                  if (!pmidEl) return;
-                  const pmid = pmidEl.textContent;
+              const oaUrl = `https://api.openalex.org/works?filter=ids.pmid:${pmids.join('|')}&select=ids,abstract_inverted_index,concepts`;
+              const oaProm = fetch(oaUrl).then(r => r.json()).catch(() => null);
+              
+              const [xmlText, oaData] = await Promise.all([fetchProm, oaProm]);
+              
+              // Parse XML (EFetch)
+              if (xmlText) {
+                  const parser = new DOMParser();
+                  const xmlDoc = parser.parseFromString(xmlText, "text/xml");
                   
-                  const abstractTexts = article.querySelectorAll('AbstractText');
-                  const abstract = Array.from(abstractTexts).map(el => el.textContent).join(' ');
-                  
-                  const meshHeadings = article.querySelectorAll('MeshHeading > DescriptorName');
-                  const categories = Array.from(meshHeadings).map(el => el.textContent);
-                  
-                  enrichmentMap[`pmid:${pmid}`] = { abstract, categories };
-              });
+                  const articles = xmlDoc.querySelectorAll('PubmedArticle');
+                  articles.forEach(article => {
+                      const pmidEl = article.querySelector('PMID');
+                      if (!pmidEl) return;
+                      const pmid = pmidEl.textContent;
+                      
+                      const abstractTexts = article.querySelectorAll('AbstractText');
+                      const abstract = Array.from(abstractTexts).map(el => el.textContent).join(' ');
+                      
+                      const meshHeadings = article.querySelectorAll('MeshHeading > DescriptorName');
+                      const categories = Array.from(meshHeadings).map(el => el.textContent);
+                      
+                      enrichmentMap[`pmid:${pmid}`] = { abstract, categories };
+                  });
+              }
+              
+              // Parse OpenAlex
+              if (oaData && oaData.results) {
+                  oaData.results.forEach(work => {
+                      if (work.ids && work.ids.pmid) {
+                          const pmid = work.ids.pmid.split('/').pop();
+                          const pmidKey = `pmid:${pmid}`;
+                          if (!enrichmentMap[pmidKey]) enrichmentMap[pmidKey] = { abstract: '', categories: [] };
+                          
+                          let abstract = '';
+                          if (work.abstract_inverted_index) {
+                              const words = [];
+                              for (const [word, positions] of Object.entries(work.abstract_inverted_index)) {
+                                  for (const pos of positions) {
+                                      words[pos] = word;
+                                  }
+                              }
+                              abstract = words.join(' ').replace(/\s+/g, ' ').trim();
+                          }
+                          const categories = work.concepts?.map(c => c.display_name) || [];
+                          
+                          // Merge (prefer efetch abstract if exists, prefer whichever has categories)
+                          if (!enrichmentMap[pmidKey].abstract && abstract) {
+                              enrichmentMap[pmidKey].abstract = abstract;
+                          }
+                          if (enrichmentMap[pmidKey].categories.length === 0 && categories.length > 0) {
+                              enrichmentMap[pmidKey].categories = categories;
+                          }
+                      }
+                  });
+              }
 
               mappedPapers = mappedPapers.map(p => {
                 const enrichment = enrichmentMap[p.id];
@@ -87,7 +126,7 @@ export class PubmedAdapter extends BaseAdapter {
               });
           }
       } catch (err) {
-        console.warn("PubmedAdapter efetch enrichment failed:", err);
+        console.warn("PubmedAdapter enrichment failed:", err);
       }
 
       return { papers: mappedPapers, total };
@@ -122,7 +161,8 @@ export class PubmedAdapter extends BaseAdapter {
     
     if (pmc) {
       isOpenAccess = true;
-      pdfUrl = `https://www.ncbi.nlm.nih.gov/pmc/articles/${pmc}/pdf/`;
+      // We don't set pdfUrl because PMC PDFs block iframes (X-Frame-Options: SAMEORIGIN)
+      // The landing page URL will be used instead, opening natively in a new tab.
     }
 
     const landingPageUrl = `https://pubmed.ncbi.nlm.nih.gov/${id}/`;
