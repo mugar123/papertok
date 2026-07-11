@@ -673,13 +673,17 @@
   .pc-body {
     padding: var(--space-4);
     padding-right: 68px;
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + var(--nav-height-mobile));
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 50px);
   }
 
   .pc-title {
     font-size: 1.25rem;
     -webkit-line-clamp: 3;
     margin-bottom: var(--space-2);
+  }
+
+  .pc-abstract {
+    margin-bottom: 24px;
   }
 
   .pc-abstract p {
@@ -689,7 +693,7 @@
 
   .pc-side-actions {
     right: var(--space-2);
-    bottom: calc(env(safe-area-inset-bottom, 0px) + var(--nav-height-mobile) + 70px);
+    bottom: calc(env(safe-area-inset-bottom, 0px) + var(--nav-height-mobile) + 20px);
     gap: var(--space-4);
   }
 
@@ -705,7 +709,7 @@
 
   .pc-action-bar { 
     gap: var(--space-2); 
-    margin-top: var(--space-2);
+    margin-top: 0;
   }
 
   .pc-read-btn {

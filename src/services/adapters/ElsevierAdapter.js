@@ -129,7 +129,7 @@ export class ElsevierAdapter extends BaseAdapter {
       sourceName,
       sourceType,
       publicationStatus: 'published', // Scopus indexa contenido publicado/peer-reviewed
-      isOpenAccess,
+      openAccess: isOpenAccess,
       pdfUrl: null, // Scopus API no devuelve PDF directo sin auth institucional, excepto OA vía ScienceDirect API, requeriría otro endpoint.
       landingPageUrl,
       citationsCount: parseInt(raw['citedby-count'] || '0'),
