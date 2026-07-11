@@ -5,6 +5,7 @@
 
 const isDev = import.meta.env.DEV;
 import { PaperBuilder } from './PaperBuilder';
+import CATEGORIES from '../data/categories';
 
 const ARXIV_DEV = '/api/arxiv';
 const ARXIV_PROD = 'https://export.arxiv.org/api/query';
@@ -232,9 +233,29 @@ async function fetchArxivData(url) {
 export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20, mode = 'recent', sortByOverride = 'submittedDate') {
   if (!categoriesOrQuery || categoriesOrQuery.length === 0) return [];
 
-  const searchQuery = Array.isArray(categoriesOrQuery)
-    ? `(${categoriesOrQuery.map((cat) => `cat:${cat}`).join(' OR ')})`
-    : categoriesOrQuery;
+  let searchQuery = categoriesOrQuery;
+  if (Array.isArray(categoriesOrQuery)) {
+    // Determine if a category should be searched as a cat: or as a keyword search
+    // arXiv specific categories usually start with cs., math., physics., eess., q-bio., q-fin., stat., econ.
+    const arxivPrefixes = ['cs.', 'math.', 'physics.', 'eess.', 'q-bio.', 'q-fin.', 'stat.', 'econ.', 'astro-ph.', 'cond-mat.', 'gr-qc.', 'hep-ex.', 'hep-lat.', 'hep-ph.', 'hep-th.', 'nlin.', 'nucl-ex.', 'nucl-th.', 'quant-ph.'];
+    
+    // Dynamic import to avoid circular dependencies if any, but we can just require it or use the already known mapping
+    const isArxivCat = (cat) => arxivPrefixes.some(prefix => cat.startsWith(prefix));
+
+    const allCategoryDefs = Object.values(CATEGORIES).flatMap(a => 
+      Object.entries(a.subcategories || {}).map(([id, label]) => ({ id, labelEn: label.labelEn }))
+    );
+
+    searchQuery = `(${categoriesOrQuery.map((cat) => {
+      if (isArxivCat(cat)) {
+        return `cat:${cat}`;
+      } else {
+        const catDef = allCategoryDefs.find(x => x.id === cat);
+        const searchPhrase = catDef && catDef.labelEn ? catDef.labelEn : cat.replace(/\./g, ' ');
+        return `all:"${searchPhrase}"`;
+      }
+    }).join(' OR ')})`;
+  }
 
   const sortBy = mode === 'relevance' ? 'relevance' : sortByOverride;
 

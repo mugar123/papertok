@@ -9,7 +9,7 @@ import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data
 import { enrichPapersBatch, getArxivIdsForOpenAlexWorks } from '../services/openAlexService';
 import { getPaperRecommendations } from '../services/semanticScholarService';
 import { PaperBuilder } from '../services/PaperBuilder';
-import { ElsevierAdapter, PubmedAdapter } from '../services/adapters';
+import { PubmedAdapter } from '../services/adapters';
 import {
   applyRecommendationScore,
   logRankingBatch,
@@ -409,21 +409,8 @@ export function FeedProvider({ children }) {
              return null;
           };
 
-          const elsevierAllowedAreas = ['eess', 'mech', 'civil', 'chemeng', 'med', 'bio', 'q-bio'];
           const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
-
-          const elsevierCats = rankedPreferences.filter(c => elsevierAllowedAreas.includes(getParentArea(c))).slice(0, 3);
           const pubmedCats = rankedPreferences.filter(c => pubmedAllowedAreas.includes(getParentArea(c))).slice(0, 3);
-
-          let elsevierProm = Promise.resolve([]);
-          if (elsevierCats.length > 0) {
-             const elsevierAdapter = new ElsevierAdapter();
-             const elsevierQuery = elsevierCats.map(c => {
-                const cat = allCategories.find(x => x.id === c);
-                return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
-             }).join(' OR ');
-             elsevierProm = elsevierAdapter.search(elsevierQuery, currentPage + 1, { internalCategories: elsevierCats }).then(res => res.papers).catch(() => []);
-          }
 
           let pubmedProm = Promise.resolve([]);
           if (pubmedCats.length > 0) {
@@ -435,8 +422,8 @@ export function FeedProvider({ children }) {
              pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats }).then(res => res.papers).catch(() => []);
           }
           
-          const [arx, els, pub] = await Promise.all([arxivProm, elsevierProm, pubmedProm]);
-          mainPapers = PaperBuilder.deduplicate([...arx, ...els, ...pub]);
+          const [arx, pub] = await Promise.all([arxivProm, pubmedProm]);
+          mainPapers = PaperBuilder.deduplicate([...arx, ...pub]);
         } catch (e) {
           console.error("Error fetching main papers:", e);
         }
@@ -482,27 +469,24 @@ export function FeedProvider({ children }) {
           ? Math.min(6, Math.floor((currentBoredom - BOREDOM_THRESHOLD) / 2) + 4)
           : 2; // Baseline of 2 exploration papers
 
-        if (nearbyCats.length > 0) {
+          if (nearbyCats.length > 0) {
           const randomStart = Math.floor(Math.random() * 30);
           
           let fetchedExplore = [];
           try {
             const arxivProm = fetchPapers(nearbyCats, randomStart, exploreCount, queryMode).catch(() => []);
             
-            const elsevierAdapter = new ElsevierAdapter();
             const elsevierQuery = nearbyCats.slice(0, 3).map(c => {
                const cat = allCategories.find(x => x.id === c);
                return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
             }).join(' OR ');
-            // We ask for page randomly just like arxiv
-            const elsevierProm = elsevierAdapter.search(elsevierQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
             
             const pubmedAdapter = new PubmedAdapter();
             const pubmedProm = pubmedAdapter.search(elsevierQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
             
-            const [arx, els, pub] = await Promise.all([arxivProm, elsevierProm, pubmedProm]);
+            const [arx, pub] = await Promise.all([arxivProm, pubmedProm]);
             // Limit to exploreCount
-            fetchedExplore = PaperBuilder.deduplicate([...arx, ...els, ...pub]).slice(0, exploreCount * 2);
+            fetchedExplore = PaperBuilder.deduplicate([...arx, ...pub]).slice(0, exploreCount * 2);
           } catch (e) {
             console.error("Error fetching explore papers:", e);
           }
