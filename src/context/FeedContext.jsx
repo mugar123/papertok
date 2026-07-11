@@ -403,7 +403,7 @@ export function FeedProvider({ children }) {
           
           // Determine parent areas for each preference
           const getParentArea = (catId) => {
-             for (const [areaId, area] of Object.entries(allCategoriesObj)) {
+             for (const [areaId, area] of Object.entries(CATEGORIES)) {
                if (area.subcategories && area.subcategories[catId]) return areaId;
              }
              return null;
