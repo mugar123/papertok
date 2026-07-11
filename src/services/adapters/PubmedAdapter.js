@@ -71,7 +71,7 @@ export class PubmedAdapter extends BaseAdapter {
                    abstract = words.join(' ').replace(/\s+/g, ' ').trim();
                  }
                  const categories = work.concepts?.map(c => c.display_name) || [];
-                 enrichmentMap[`pmid:${pmid}`] = { abstract, categories };
+                 enrichmentMap[pmid] = { abstract, categories };
                }
              });
 

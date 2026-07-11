@@ -203,19 +203,33 @@ export default function EntityExplorer() {
            arxivIds = res.arxivIds;
            dois = res.dois || [];
            total = res.total;
-        } else if (type === 'author' && resolvedId.startsWith('stub-')) {
-           const arxivProm = getAuthorPapers(entity.display_name, 30).catch(() => []);
+        } else if (type === 'author') {
+           let arxIdsFromOA = [];
+           let arxPapersFromNative = [];
+           
+           if (!resolvedId.startsWith('stub-')) {
+               const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
+               arxIdsFromOA = res.arxivIds;
+               total = res.total;
+           } else {
+               arxPapersFromNative = await getAuthorPapers(entity.display_name, 30).catch(() => []);
+           }
+           
            const elsevierAdapter = new ElsevierAdapter();
-           const elsevierProm = elsevierAdapter.search(`"${entity.display_name}"`, 1, { type: 'author' }).then(res => res.papers).catch(() => []);
+           const elsevierProm = elsevierAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }).then(res => res.papers).catch(() => []);
            
            const pubmedAdapter = new PubmedAdapter();
-           const pubmedProm = pubmedAdapter.search(`"${entity.display_name}"`, 1, { type: 'author' }).then(res => res.papers).catch(() => []);
+           const pubmedProm = pubmedAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }).then(res => res.papers).catch(() => []);
            
-           const [arx, els, pub] = await Promise.all([arxivProm, elsevierProm, pubmedProm]);
-           const allPapers = PaperBuilder.deduplicate([...arx, ...els, ...pub]);
+           const [els, pub] = await Promise.all([elsevierProm, pubmedProm]);
            
-           fetchedPapers.push(...allPapers);
-           total = allPapers.length;
+           fetchedPapers.push(...arxPapersFromNative, ...els, ...pub);
+           
+           arxivIds = arxIdsFromOA;
+           
+           if (resolvedId.startsWith('stub-')) {
+             total = fetchedPapers.length;
+           }
         } else {
            const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
            arxivIds = res.arxivIds;
@@ -240,7 +254,9 @@ export default function EntityExplorer() {
         if (dois.length > 0) {
           const doiPapers = await fetchPapersByDois(dois);
           fetchedPapers.push(...doiPapers);
-        }        
+        }
+        
+        fetchedPapers = PaperBuilder.deduplicate(fetchedPapers);
         // 3. Guarantee source paper is ALWAYS first in the list
         if (page === 1) {
            const sourceArxivId = searchParams.get('arxivId');
