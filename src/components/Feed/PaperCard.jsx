@@ -443,7 +443,7 @@ const PaperCard = memo(function PaperCard({
           <div className="pc-author-avatars">
             {(paper.authors || []).slice(0, 3).map((author, i) => (
               <div key={i} className="pc-author-avatar" style={{ '--i': i }}>
-                {author.name ? author.name.charAt(0).toUpperCase() : 'U'}
+                {(author.name || author).charAt(0).toUpperCase()}
               </div>
             ))}
           </div>
@@ -602,13 +602,14 @@ const PaperCard = memo(function PaperCard({
                     className="pc-authors-modal-item"
                     onClick={() => {
                       setShowAuthorsModal(false);
-                      navigate(`/explorer/author/${encodeURIComponent(author)}?arxivId=${paper.arxivId}`);
+                      const authorStr = typeof author === 'string' ? author : author.name;
+                      navigate(`/explorer/author/${encodeURIComponent(authorStr)}?arxivId=${paper.arxivId || ''}`);
                     }}
                   >
                     <div className="pc-author-avatar-large" style={{ '--i': idx }}>
-                      {author.charAt(0).toUpperCase()}
+                      {(author.name || author).charAt(0).toUpperCase()}
                     </div>
-                    <span>{author}</span>
+                    <span>{author.name || author}</span>
                   </div>
                 ))}
               </div>
