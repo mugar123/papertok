@@ -260,7 +260,7 @@ export default function SearchPage() {
                     <div className="search-item-icon"><Building2 size={22} /></div>
                     <div className="search-item-info">
                       <h4>{inst.display_name}</h4>
-                      <p>{inst.geo?.city || 'Ciudad desconocida'}, {inst.geo?.country || 'País desconocido'} • {inst.works_count?.toLocaleString()} obras</p>
+                      <p>{inst.country_code || 'País desconocido'} • Institución académica</p>
                     </div>
                   </div>
                 ))}
