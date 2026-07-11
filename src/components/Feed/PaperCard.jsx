@@ -1,6 +1,9 @@
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
 import { CATEGORIES } from '../../data/categories';
-import { Share2, FileText, Check, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, Unlock, Lock, ExternalLink } from 'lucide-react';
+import { 
+  Share2, FileText, Check, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, Unlock, Lock, ExternalLink,
+  Rocket, Settings, Wrench, Cog, PenTool, Building, Map, Compass, Beaker, TestTube, Thermometer, HeartPulse, Stethoscope, Syringe, Pill, Leaf, Bug, Sprout, Landmark, Coins, Radio, Box
+} from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
 import Latex from 'react-latex-next';
 import { useAuth } from '../../context/AuthContext';
@@ -11,14 +14,18 @@ import './PaperCard.css';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
-  physics: [AnimatedAtom, Orbit, Zap, Activity, FlaskConical, Microscope],
+  physics: [AnimatedAtom, Orbit, Zap, Activity, Rocket, Microscope],
   cs: [Monitor, Cpu, Database, Brain, Network, Binary],
-  math: [Calculator, Sigma, Activity, Orbit, Brain, Network],
-  'q-bio': [Dna, Microscope, FlaskConical, Activity, Brain, Database],
+  math: [Calculator, Sigma, Activity, Orbit, Network, Box],
   stat: [BarChart2, TrendingUp, Sigma, Activity, Database, Brain],
-  econ: [TrendingUp, BarChart2, CircleDollarSign, Activity, Network, Sigma],
-  eess: [Zap, Monitor, Activity, Cpu, Network, Orbit],
+  econ: [TrendingUp, BarChart2, CircleDollarSign, Landmark, Coins, Activity],
   'q-fin': [CircleDollarSign, TrendingUp, BarChart2, Network, Sigma, Activity],
+  eess: [Zap, Monitor, Radio, Cpu, Network, Orbit],
+  mech: [Settings, Wrench, Cog, PenTool, Activity, Box],
+  civil: [Building, Map, Compass, Activity, Box, Network],
+  chemeng: [Beaker, FlaskConical, TestTube, Thermometer, AnimatedAtom, Activity],
+  med: [HeartPulse, Activity, Stethoscope, Syringe, Pill, Microscope],
+  bio: [Dna, Leaf, Microscope, Bug, Sprout, FlaskConical],
 };
 
 const processLatex = (text) => {
