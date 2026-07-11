@@ -334,7 +334,7 @@ const PaperCard = memo(function PaperCard({
           )}
         </div>
         
-        {paper.concepts && paper.concepts.length > 0 && (
+        {(paper.concepts && paper.concepts.length > 0) ? (
           <div className="pc-semantic-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
             {paper.concepts.slice(0, 4).map((concept, idx) => (
               <span key={idx} className="pc-semantic-tag" style={{
@@ -351,7 +351,29 @@ const PaperCard = memo(function PaperCard({
               </span>
             ))}
           </div>
-        )}
+        ) : (paper.categories && paper.categories.length > 1) ? (
+          <div className="pc-semantic-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+            {paper.categories.slice(1, 4).map((cat, idx) => {
+              let label = cat;
+              const area = Object.values(CATEGORIES).find(a => a.subcategories && a.subcategories[cat]);
+              if (area) label = area.subcategories[cat].label;
+              return (
+                <span key={idx} className="pc-semantic-tag" style={{
+                  background: 'rgba(255,255,255,0.1)',
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  fontSize: '11px',
+                  fontWeight: '600',
+                  color: 'rgba(255,255,255,0.9)',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                }}>
+                  {label}
+                </span>
+              );
+            })}
+          </div>
+        ) : null}
 
         {project && (
           <div 

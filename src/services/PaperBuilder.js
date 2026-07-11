@@ -16,10 +16,9 @@ export class PaperBuilder {
     if (doi && doi.startsWith('https://doi.org/')) {
       doi = doi.replace('https://doi.org/', '');
     }
-
-    // Canonical ID preference: DOI > Original ID
-    const canonicalId = doi || data.id;
-
+    // Canonical ID preference: Original ID > DOI
+    // Using Original ID ensures arXiv IDs remain stable for internal fetching and navigation.
+    const canonicalId = data.id || doi || `unknown-${Date.now()}`;
     return {
       id: canonicalId,
       sources: data.sources || { primary: 'unknown', enrichedBy: [] },
@@ -97,9 +96,12 @@ export class PaperBuilder {
     }
 
     // Upgrade publication status/type if enrichment indicates it's peer-reviewed/published
-    if (enrichmentData.publicationType && enrichmentData.publicationType !== 'preprint') {
-      merged.publicationType = enrichmentData.publicationType;
-      merged.publicationStatus = enrichmentData.publicationStatus || 'published';
+    if (
+      (enrichmentData.publicationType && enrichmentData.publicationType !== 'preprint') || 
+      (enrichmentData.publicationStatus && enrichmentData.publicationStatus === 'published')
+    ) {
+      merged.publicationType = enrichmentData.publicationType || merged.publicationType;
+      merged.publicationStatus = 'published';
     }
 
     // Re-calculate deterministic fields

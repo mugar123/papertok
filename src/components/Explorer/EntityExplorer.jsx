@@ -4,6 +4,7 @@ import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, Ext
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, findInstitution } from '../../services/openAlexService';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
+import { PaperBuilder } from '../../services/PaperBuilder';
 import { getOrcidRecord } from '../../services/orcidService';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
@@ -217,13 +218,9 @@ export default function EntityExplorer() {
           const enrichedArxiv = rawPapers.map(paper => {
             const enriched = enrichmentMap[paper.id];
             if (!enriched) return paper;
-            return {
-              ...paper,
-              citationCount: enriched.cited_by_count,
-              topics: enriched.concepts ? enriched.concepts.slice(0, 3) : [],
-              isPeerReviewed: enriched.isPeerReviewed,
-              _isOpenAlexEnriched: true
-            };
+            const merged = PaperBuilder.merge(paper, enriched, 'openalex');
+            merged._isOpenAlexEnriched = true;
+            return merged;
           });
           fetchedPapers.push(...enrichedArxiv);
         }
@@ -593,7 +590,7 @@ export default function EntityExplorer() {
           </div>
           
           {/* Project metadata chips */}
-          {type === 'project' && (entity.callIdentifier || entity.contractType || entity.openAccess) && (
+          {type === 'project' && (entity.callIdentifier || entity.contractType || entity.openAccess || entity.websiteUrl) && (
             <div className="project-meta-chips">
               {entity.callIdentifier && (
                 <span className="project-chip"><BookOpen size={13} /> {entity.callIdentifier}</span>
@@ -603,6 +600,11 @@ export default function EntityExplorer() {
               )}
               {entity.openAccess && (
                 <span className="project-chip project-chip--oa"><BookOpen size={13} /> Open Access</span>
+              )}
+              {entity.websiteUrl && (
+                <a href={entity.websiteUrl} target="_blank" rel="noopener noreferrer" className="project-chip" style={{ textDecoration: 'none', cursor: 'pointer', color: 'inherit' }}>
+                  <ExternalLink size={13} /> Sitio Web
+                </a>
               )}
               {entity.measures?.downloads > 0 && (
                 <span className="project-chip"><Download size={13} /> {entity.measures.downloads.toLocaleString()} descargas</span>

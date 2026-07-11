@@ -116,6 +116,7 @@ export async function getProjectDetails(projectId) {
       currency: validCurrency(p.currency?.["$"]),
       callIdentifier: p.callidentifier?.["$"] || null,
       contractType: p.contracttype?.["@classname"] || null,
+      websiteUrl: p.websiteurl?.["$"] || null,
       subjects,
       participants,
       measures,
@@ -241,7 +242,8 @@ export async function getPapersByProject(projectCode, page = 1) {
   }
 
   try {
-    const url = `https://api.openaire.eu/search/publications?format=json&size=30&page=${page}&projectID=${encodeURIComponent(projectCode)}`;
+    const paramName = projectCode.includes('::') ? 'openaireProjectID' : 'projectID';
+    const url = `https://api.openaire.eu/search/publications?format=json&size=30&page=${page}&${paramName}=${encodeURIComponent(projectCode)}`;
     const response = await fetchWithTimeout(url);
     if (!response.ok) return { arxivIds: [], dois: [], total: 0 };
 
@@ -329,7 +331,8 @@ export async function searchProjects(query, page = 1) {
       const budget = totalCost > 0 ? totalCost : fundedAmount;
 
       return {
-        id: p.code?.["$"],
+        id: p.code?.["$"] || res.header?.["dri:objIdentifier"]?.["$"],
+        code: p.code?.["$"],
         title: p.title?.["$"] || "Unknown Project",
         acronym: p.acronym?.["$"] || null,
         funder: funderName,

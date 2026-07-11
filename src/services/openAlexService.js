@@ -69,7 +69,7 @@ export async function enrichPapersBatch(arxivIds) {
        const cleanId = id.replace(/v\d+$/, '');
        return [`http://arxiv.org/abs/${cleanId}`, `https://arxiv.org/abs/${cleanId}`];
     }).join('|');
-    const url = `https://api.openalex.org/works?filter=locations.landing_page_url:${encodeURIComponent(filterIds)}&per-page=50&select=doi,ids,concepts,cited_by_count,related_works,locations,primary_location`;
+    const url = `https://api.openalex.org/works?filter=locations.landing_page_url:${encodeURIComponent(filterIds)}&per-page=50&select=doi,ids,concepts,cited_by_count,related_works,locations,primary_location,type`;
     
     let response = null;
     let primaryFailed = false;
@@ -130,8 +130,8 @@ export async function enrichPapersBatch(arxivIds) {
                  concepts: work.concepts || [],
                  citationCount: work.cited_by_count || 0,
                  related_works: work.related_works || [],
-                 publicationType: work.primary_location?.source?.type || undefined,
-                 publicationStatus: work.primary_location?.is_published ? 'published' : 'preprint',
+                 publicationType: (work.type && work.type !== 'preprint') ? work.type : (work.primary_location?.source?.type || 'preprint'),
+                 publicationStatus: (work.primary_location?.is_published || (work.locations && work.locations.some(l => l.is_published)) || (work.type && work.type !== 'preprint')) ? 'published' : 'preprint',
                  doi: work.doi,
                  journal: work.primary_location?.source?.display_name,
                  publisher: work.primary_location?.source?.host_organization_name,
@@ -780,8 +780,9 @@ export async function fetchPapersByDois(dois) {
   const chunkSize = 40;
   for (let i = 0; i < cleanDois.length; i += chunkSize) {
     const chunk = cleanDois.slice(i, i + chunkSize);
-    const filterIds = chunk.map(d => `doi:${d}`).join('|');
-    const url = `https://api.openalex.org/works?filter=${filterIds}&per-page=50`;
+    // OpenAlex OR syntax requires the property name once: filter=doi:A|B|C
+    const filterIds = chunk.join('|');
+    const url = `https://api.openalex.org/works?filter=doi:${filterIds}&per-page=50`;
     
     try {
       const response = await fetchWithTimeout(url, 10000);
