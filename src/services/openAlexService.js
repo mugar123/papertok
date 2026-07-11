@@ -675,47 +675,24 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
     }
   }
   
-  let url = `https://api.openalex.org/works?filter=${filterParams}&sort=${sortBy}&per-page=30&page=${page}&select=id,locations`;
+  let url = `https://api.openalex.org/works?filter=${filterParams}&sort=${sortBy}&per-page=30&page=${page}`;
   if (searchQuery) {
      url += `&search=${encodeURIComponent(searchQuery)}`;
   }
   
   try {
     const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return { arxivIds: [], total: 0 };
+    if (!response.ok) return { papers: [], total: 0 };
     
     const data = await response.json();
     if (data && data.results) {
-       const arxivIds = [];
-       data.results.forEach(work => {
-           if (work.locations) {
-               const arxivLoc = work.locations.find(loc => loc.source && loc.source.id === 'https://openalex.org/S4306400194');
-                if (arxivLoc && arxivLoc.landing_page_url) {
-                    const url = arxivLoc.landing_page_url;
-                    let rawId;
-                    if (url.includes('/abs/')) {
-                        rawId = url.split('/abs/')[1];
-                    } else if (url.includes('arxiv.')) {
-                        rawId = url.split('arxiv.')[1];
-                    } else {
-                        rawId = url.split('/').pop();
-                    }
-                    if (rawId) {
-                        const arxivId = rawId.split('?')[0].replace(/v\d+$/, '');
-                        const isValidArxivId = /^\d{4}\.\d{4,5}$/.test(arxivId) || /^[a-z-]+\/\d{7}$/i.test(arxivId);
-                        if (arxivId && arxivId !== 'arxiv.org' && isValidArxivId) {
-                            arxivIds.push(arxivId);
-                        }
-                    }
-                }
-           }
-       });
-       return { arxivIds, total: data.meta ? data.meta.count : 0 };
+       const papers = data.results.map(formatOpenAlexWorkAsPaper).filter(Boolean);
+       return { papers, total: data.meta ? data.meta.count : 0 };
     }
   } catch (err) {
     console.error(`OpenAlex getWorksByEntity failed for ${type} ${id}`, err);
   }
-  return { arxivIds: [], total: 0 };
+  return { papers: [], total: 0 };
 }
 
 /**

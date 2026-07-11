@@ -204,37 +204,35 @@ export default function EntityExplorer() {
            dois = res.dois || [];
            total = res.total;
         } else if (type === 'author') {
-           let arxIdsFromOA = [];
-           let arxPapersFromNative = [];
-           
-           if (!resolvedId.startsWith('stub-')) {
-               const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
-               arxIdsFromOA = res.arxivIds;
-               total = res.total;
-           } else {
-               arxPapersFromNative = await getAuthorPapers(entity.display_name, 30).catch(() => []);
-           }
-           
-           const elsevierAdapter = new ElsevierAdapter();
-           const elsevierProm = elsevierAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }).then(res => res.papers).catch(() => []);
-           
-           const pubmedAdapter = new PubmedAdapter();
-           const pubmedProm = pubmedAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }).then(res => res.papers).catch(() => []);
-           
-           const [els, pub] = await Promise.all([elsevierProm, pubmedProm]);
-           
-           fetchedPapers.push(...arxPapersFromNative, ...els, ...pub);
-           
-           arxivIds = arxIdsFromOA;
-           
-           if (resolvedId.startsWith('stub-')) {
-             total = fetchedPapers.length;
-           }
-        } else {
-           const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
-           arxivIds = res.arxivIds;
-           total = res.total;
-        }
+            let papersFromOA = [];
+            let arxPapersFromNative = [];
+            
+            if (!resolvedId.startsWith('stub-')) {
+                const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
+                papersFromOA = res.papers || [];
+                total = res.total;
+            } else {
+                arxPapersFromNative = await getAuthorPapers(entity.display_name, 30).catch(() => []);
+            }
+            
+            const elsevierAdapter = new ElsevierAdapter();
+            const elsevierProm = elsevierAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }).then(res => res.papers).catch(() => []);
+            
+            const pubmedAdapter = new PubmedAdapter();
+            const pubmedProm = pubmedAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }).then(res => res.papers).catch(() => []);
+            
+            const [els, pub] = await Promise.all([elsevierProm, pubmedProm]);
+            
+            fetchedPapers.push(...papersFromOA, ...arxPapersFromNative, ...els, ...pub);
+            
+            if (resolvedId.startsWith('stub-')) {
+              total = fetchedPapers.length;
+            }
+         } else {
+            const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
+            fetchedPapers.push(...(res.papers || []));
+            total = res.total;
+         }
         
         // 1. Fetch arXiv papers
         if (arxivIds.length > 0) {
