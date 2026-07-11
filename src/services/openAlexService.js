@@ -648,11 +648,8 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
   
   let filterParams = `${filterKey}:${cleanId}`;
   
-  // Only restrict to arxiv source if we aren't explicitly querying a specific non-arxiv journal source.
-  // Actually, paper links in our app must be arxiv links. So we must always restrict to arxiv unless we want empty PDFs!
-  // Wait, if the user specifically searches for a Journal (e.g. Nature), the works MUST be on arXiv for us to show a PDF!
-  // OpenAlex correctly links Nature publications to their arXiv preprints if available!
-  filterParams += `,locations.source.id:S4306400194`;
+  // Removed arxiv source restriction because user wants all papers, even if not open access
+  // filterParams += `,locations.source.id:S4306400194`;
   
   // Advanced Filters
   if (filters.peerReviewed) {
