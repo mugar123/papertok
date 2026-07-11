@@ -61,11 +61,21 @@ export class ElsevierAdapter extends BaseAdapter {
       let mappedPapers = results.map(item => this.mapToStandard(item));
 
       if (filters && filters.internalCategories && filters.internalCategories.length > 0) {
-        mappedPapers.forEach(p => {
-          p.categories = [...(p.categories || []), ...filters.internalCategories];
+        mappedPapers = mappedPapers.map(p => {
+          const paperText = `${p.title} ${p.abstract || ''}`.toLowerCase();
+          let bestMatch = null;
+          for (const catId of filters.internalCategories) {
+              const keywords = catId.split('.');
+              if (keywords.some(kw => kw.length > 2 && paperText.includes(kw))) {
+                  bestMatch = catId;
+                  break;
+              }
+          }
+          const selectedCat = bestMatch || filters.internalCategories[Math.floor(Math.random() * filters.internalCategories.length)];
+          p.categories = [selectedCat, ...(p.categories || [])];
+          return p;
         });
       }
-
       return { papers: mappedPapers, total };
     } catch (e) {
       console.error("Error fetching from Elsevier:", e);

@@ -123,7 +123,19 @@ export class PubmedAdapter extends BaseAdapter {
                   }
                 }
                 if (filters && filters.internalCategories && filters.internalCategories.length > 0) {
-                    p.categories = [...(p.categories || []), ...filters.internalCategories];
+                    // Try to find the most relevant internal category by matching words in title/abstract/categories
+                    const paperText = `${p.title} ${p.abstract || ''} ${(p.categories || []).join(' ')}`.toLowerCase();
+                    let bestMatch = null;
+                    for (const catId of filters.internalCategories) {
+                        const keywords = catId.split('.'); // e.g. 'med', 'onco'
+                        if (keywords.some(kw => kw.length > 2 && paperText.includes(kw))) {
+                            bestMatch = catId;
+                            break;
+                        }
+                    }
+                    
+                    const selectedCat = bestMatch || filters.internalCategories[Math.floor(Math.random() * filters.internalCategories.length)];
+                    p.categories = [selectedCat, ...(p.categories || [])];
                 }
                 return p;
               });
