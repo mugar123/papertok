@@ -436,8 +436,8 @@ export async function searchInstitutions(query) {
     if (data && data.items) {
       return data.items.slice(0, 5).map(inst => ({
         id: inst.id,
-        display_name: inst.name,
-        country_code: inst.country?.country_code || '',
+        display_name: inst.names?.find(n => n.types?.includes('ror_display'))?.value || inst.name,
+        country_code: inst.locations?.[0]?.geonames_details?.country_name || inst.country?.country_code || '',
         works_count: 0,
         cited_by_count: 0,
         type: inst.types?.[0] || 'education'
