@@ -126,4 +126,66 @@ export class PaperBuilder {
 
     return merged;
   }
+
+  /**
+   * Deduplicates and merges an array of papers coming from different adapters.
+   * Uses DOI primarily, and Title + First Author as a fallback heuristic.
+   * @param {Array<Object>} papers - Array of paper objects from adapters
+   * @returns {Array<Object>} Deduplicated and merged array
+   */
+  static deduplicate(papers) {
+    if (!papers || papers.length === 0) return [];
+    
+    const mergedMap = new Map(); // key -> merged paper
+
+    for (const paper of papers) {
+      if (!paper) continue;
+
+      // 1. Determine deduplication keys
+      let doiKey = paper.doi ? paper.doi.toLowerCase().trim() : null;
+      if (doiKey && doiKey.startsWith('https://doi.org/')) {
+        doiKey = doiKey.replace('https://doi.org/', '');
+      }
+
+      // Heuristic key: Alphanumeric title + first author's last name
+      const cleanTitle = (paper.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const firstAuthor = paper.authors && paper.authors.length > 0 ? (paper.authors[0].name || '').toLowerCase().split(' ').pop() : '';
+      const heuristicKey = cleanTitle && firstAuthor ? `${cleanTitle}_${firstAuthor}` : null;
+
+      // 2. Find existing match
+      let matchKey = null;
+      if (doiKey && mergedMap.has(doiKey)) {
+        matchKey = doiKey;
+      } else if (heuristicKey && mergedMap.has(heuristicKey)) {
+        matchKey = heuristicKey;
+      }
+
+      // 3. Merge or Add
+      if (matchKey) {
+        const existing = mergedMap.get(matchKey);
+        // We use merge to combine the two. existing is the base, paper is the "enrichment"
+        // We might want to prefer arXiv's PDF, but Elsevier's publication status
+        const merged = this.merge(existing, paper, paper.provider);
+        mergedMap.set(matchKey, merged);
+        
+        // Ensure both keys point to the same merged object to prevent future duplicates missing the link
+        if (doiKey) mergedMap.set(doiKey, merged);
+        if (heuristicKey) mergedMap.set(heuristicKey, merged);
+      } else {
+        // Create base paper using the builder to normalize
+        const basePaper = this.create(paper);
+        if (doiKey) mergedMap.set(doiKey, basePaper);
+        if (heuristicKey && !doiKey) mergedMap.set(heuristicKey, basePaper);
+        
+        // If neither key exists (very rare, no title/author and no DOI), just use ID
+        if (!doiKey && !heuristicKey) {
+           mergedMap.set(paper.id, basePaper);
+        }
+      }
+    }
+
+    // Since multiple keys might point to the same object reference, we get unique values
+    return Array.from(new Set(mergedMap.values()));
+  }
 }
+

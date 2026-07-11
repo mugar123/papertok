@@ -9,6 +9,7 @@ import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data
 import { enrichPapersBatch, getArxivIdsForOpenAlexWorks } from '../services/openAlexService';
 import { getPaperRecommendations } from '../services/semanticScholarService';
 import { PaperBuilder } from '../services/PaperBuilder';
+import { ElsevierAdapter } from '../services/adapters';
 import {
   applyRecommendationScore,
   logRankingBatch,
@@ -76,7 +77,7 @@ export function FeedProvider({ children }) {
   const recommendationWeights = useRef(readRecommendationWeights());
 
   // --- TIKTOK-STYLE SCORING & RE-RANKING ---
-  const calculateAndAttachScore = useCallback((paper) => {
+  const calculateAndAttachScore = useCallback((paper, recentPropsCount = {}) => {
     return applyRecommendationScore(paper, {
       userPreferences,
       followedAuthors,
@@ -85,6 +86,7 @@ export function FeedProvider({ children }) {
       conceptAffinities: conceptAffinities.current,
       temporalPreference: temporalPreference.current,
       weights: recommendationWeights.current,
+      recentPropsCount
     });
   }, [userPreferences, followedAuthors]);
 
@@ -102,12 +104,24 @@ export function FeedProvider({ children }) {
        const safeSplit = Math.min(splitIndex + 3, prevPapers.length);
        const lockedPapers = prevPapers.slice(0, safeSplit);
        const queue = [...prevPapers.slice(safeSplit)];
-       
-       if (queue.length === 0) return prevPapers;
-       
-       queue.forEach(paper => {
-         calculateAndAttachScore(paper);
-       });
+       const recentPapers = lockedPapers.slice(-5);
+        const recentPropsCount = { preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0 };
+        recentPapers.forEach(p => {
+            if (p.publicationStatus === 'preprint' || p.publicationType === 'preprint') recentPropsCount.preprint++;
+            else if (p.publicationStatus === 'published') recentPropsCount.published++;
+
+            if (p.openAccess) recentPropsCount.openAccess++;
+            else recentPropsCount.subscription++;
+
+            if (p.sourceType === 'journal' || p.journal) recentPropsCount.journal++;
+            if (p.sourceType === 'conference' || p.conference) recentPropsCount.conference++;
+        });
+
+        if (queue.length === 0) return prevPapers;
+        
+        queue.forEach(paper => {
+          calculateAndAttachScore(paper, recentPropsCount);
+        });
        
        // Re-rank the unread queue using weighted shuffle to allow random mixing in smaller proportions
        const newQueue = weightedShuffle(queue, recommendationWeights.current);
@@ -383,7 +397,20 @@ export function FeedProvider({ children }) {
         }
 
         // ─── STEP 3: Fetch from USER'S CATEGORIES ONLY ───
-        const mainPapers = await fetchPapers(rankedPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode).catch(() => []);
+        let mainPapers = [];
+        try {
+          const arxivProm = fetchPapers(rankedPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode).catch(() => []);
+          
+          const elsevierAdapter = new ElsevierAdapter();
+          const elsevierQuery = rankedPreferences.slice(0, 3).map(c => `"${c.replace(/\./g, ' ')}"`).join(' OR ');
+          const elsevierProm = elsevierAdapter.search(elsevierQuery, currentPage + 1).then(res => res.papers).catch(() => []);
+          
+          const [arx, els] = await Promise.all([arxivProm, elsevierProm]);
+          mainPapers = PaperBuilder.deduplicate([...arx, ...els]);
+        } catch (e) {
+          console.error("Error fetching main papers:", e);
+        }
+        
         mainPapers.forEach(p => { p._type = 'exploit'; });
 
         // ─── STEP 4: Graph/Related papers (semantically similar to liked) ───
@@ -427,7 +454,23 @@ export function FeedProvider({ children }) {
 
         if (nearbyCats.length > 0) {
           const randomStart = Math.floor(Math.random() * 30);
-          const fetchedExplore = await fetchPapers(nearbyCats, randomStart, exploreCount, queryMode).catch(() => []);
+          
+          let fetchedExplore = [];
+          try {
+            const arxivProm = fetchPapers(nearbyCats, randomStart, exploreCount, queryMode).catch(() => []);
+            
+            const elsevierAdapter = new ElsevierAdapter();
+            const elsevierQuery = nearbyCats.slice(0, 3).map(c => `"${c.replace(/\./g, ' ')}"`).join(' OR ');
+            // We ask for page randomly just like arxiv
+            const elsevierProm = elsevierAdapter.search(elsevierQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+            
+            const [arx, els] = await Promise.all([arxivProm, elsevierProm]);
+            // Limit to exploreCount
+            fetchedExplore = PaperBuilder.deduplicate([...arx, ...els]).slice(0, exploreCount * 2);
+          } catch (e) {
+            console.error("Error fetching explore papers:", e);
+          }
+
           fetchedExplore.forEach(p => { 
             p._type = 'exploration';
             p._debugScore = { isExploration: true };

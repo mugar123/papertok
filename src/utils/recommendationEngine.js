@@ -71,6 +71,7 @@ export function scorePaperForRecommendation(paper, context = {}) {
   const primaryCategory = paper.primaryCategory || '';
   const allCategories = paper.allCategories || [];
   const isExploration = paper._debugScore?.isExploration || paper._type === 'exploration';
+  const recentPropsCount = context.recentPropsCount || { preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0 };
 
   const affinity = primaryCategory ? categoryAffinities[primaryCategory] || 0 : 0;
 
@@ -105,6 +106,24 @@ export function scorePaperForRecommendation(paper, context = {}) {
 
   const graphBoost = paper._isGraphCandidate ? weights.graphCandidate : 0;
 
+  // --- Content Diversity Soft Constraints ---
+  let diversityBoost = 0;
+  const isPreprint = paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint';
+  const isPublished = paper.publicationStatus === 'published';
+  const isOA = paper.openAccess;
+  const isJournal = paper.sourceType === 'journal' || paper.journal;
+  const isConference = paper.sourceType === 'conference' || paper.conference;
+
+  // If the last 5 cards are saturated with one type, boost the opposite type
+  if (recentPropsCount.published >= 4 && isPreprint) diversityBoost += 10;
+  if (recentPropsCount.preprint >= 4 && isPublished) diversityBoost += 10;
+  
+  if (recentPropsCount.subscription >= 3 && isOA) diversityBoost += 8;
+  if (recentPropsCount.openAccess >= 4 && !isOA) diversityBoost += 5;
+
+  if (recentPropsCount.conference >= 3 && isJournal) diversityBoost += 8;
+  if (recentPropsCount.journal >= 4 && isConference) diversityBoost += 5;
+
   let cooldownMultiplier = 1;
   if (primaryCategory && categoryCooldowns[primaryCategory]) {
     const cooldownAge = daysSince(categoryCooldowns[primaryCategory], now);
@@ -124,6 +143,7 @@ export function scorePaperForRecommendation(paper, context = {}) {
     citations,
     graphBoost,
     authorBoost,
+    diversityBoost,
   };
   const baseTotal = Object.values(parts).reduce((sum, value) => sum + value, 0);
   const total = baseTotal * cooldownMultiplier;
