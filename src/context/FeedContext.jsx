@@ -399,8 +399,6 @@ export function FeedProvider({ children }) {
         // ─── STEP 3: Fetch from USER'S CATEGORIES ONLY ───
         let mainPapers = [];
         try {
-          const arxivProm = fetchPapers(rankedPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode).catch(() => []);
-          
           // Determine parent areas for each preference
           const getParentArea = (catId) => {
              for (const [areaId, area] of Object.entries(CATEGORIES)) {
@@ -408,6 +406,14 @@ export function FeedProvider({ children }) {
              }
              return null;
           };
+
+          const arxivAllowedAreas = ['phys', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
+          const arxivCats = rankedPreferences.filter(c => arxivAllowedAreas.includes(getParentArea(c))).slice(0, 5);
+
+          let arxivProm = Promise.resolve([]);
+          if (arxivCats.length > 0) {
+              arxivProm = fetchPapers(arxivCats, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode).catch(() => []);
+          }
 
           const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
           const pubmedCats = rankedPreferences.filter(c => pubmedAllowedAreas.includes(getParentArea(c))).slice(0, 3);
@@ -474,15 +480,32 @@ export function FeedProvider({ children }) {
           
           let fetchedExplore = [];
           try {
-            const arxivProm = fetchPapers(nearbyCats, randomStart, exploreCount, queryMode).catch(() => []);
+            const arxivAllowedAreas = ['phys', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
+            const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
+
+            const getParentArea = (catId) => {
+               for (const [areaId, area] of Object.entries(CATEGORIES)) {
+                 if (area.subcategories && area.subcategories[catId]) return areaId;
+               }
+               return null;
+            };
+
+            const arxivNearby = nearbyCats.filter(c => arxivAllowedAreas.includes(getParentArea(c)));
+            let arxivProm = Promise.resolve([]);
+            if (arxivNearby.length > 0) {
+               arxivProm = fetchPapers(arxivNearby, randomStart, exploreCount, queryMode).catch(() => []);
+            }
             
-            const elsevierQuery = nearbyCats.slice(0, 3).map(c => {
-               const cat = allCategories.find(x => x.id === c);
-               return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
-            }).join(' OR ');
-            
-            const pubmedAdapter = new PubmedAdapter();
-            const pubmedProm = pubmedAdapter.search(elsevierQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+            const pubmedNearby = nearbyCats.filter(c => pubmedAllowedAreas.includes(getParentArea(c))).slice(0, 3);
+            let pubmedProm = Promise.resolve([]);
+            if (pubmedNearby.length > 0) {
+                const pubmedQuery = pubmedNearby.map(c => {
+                   const cat = allCategories.find(x => x.id === c);
+                   return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+                }).join(' OR ');
+                const pubmedAdapter = new PubmedAdapter();
+                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+            }
             
             const [arx, pub] = await Promise.all([arxivProm, pubmedProm]);
             // Limit to exploreCount
@@ -508,7 +531,41 @@ export function FeedProvider({ children }) {
           
           if (randomCats.length > 0) {
             const randomStart = Math.floor(Math.random() * 30);
-            const randomPapers = await fetchPapers(randomCats, randomStart, 2, queryMode).catch(() => []);
+            const arxivAllowedAreas = ['phys', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
+            const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
+            
+            const getParentArea = (catId) => {
+               for (const [areaId, area] of Object.entries(CATEGORIES)) {
+                 if (area.subcategories && area.subcategories[catId]) return areaId;
+               }
+               return null;
+            };
+
+            const arxivRandom = randomCats.filter(c => arxivAllowedAreas.includes(getParentArea(c)));
+            let arxivProm = Promise.resolve([]);
+            if (arxivRandom.length > 0) {
+                arxivProm = fetchPapers(arxivRandom, randomStart, 2, queryMode).catch(() => []);
+            }
+            
+            const pubmedRandom = randomCats.filter(c => pubmedAllowedAreas.includes(getParentArea(c)));
+            let pubmedProm = Promise.resolve([]);
+            if (pubmedRandom.length > 0) {
+                const pubmedQuery = pubmedRandom.map(c => {
+                   const cat = allCategories.find(x => x.id === c);
+                   return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+                }).join(' OR ');
+                const pubmedAdapter = new PubmedAdapter();
+                pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+            }
+            
+            let randomPapers = [];
+            try {
+                const [arx, pub] = await Promise.all([arxivProm, pubmedProm]);
+                randomPapers = PaperBuilder.deduplicate([...arx, ...pub]).slice(0, 2);
+            } catch (e) {
+                console.error("Error fetching random bored papers:", e);
+            }
+
             randomPapers.forEach(p => { 
               p._type = 'exploration';
               p._debugScore = { isExploration: true };
