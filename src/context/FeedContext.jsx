@@ -402,7 +402,10 @@ export function FeedProvider({ children }) {
           const arxivProm = fetchPapers(rankedPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode).catch(() => []);
           
           const elsevierAdapter = new ElsevierAdapter();
-          const elsevierQuery = rankedPreferences.slice(0, 3).map(c => `"${c.replace(/\./g, ' ')}"`).join(' OR ');
+          const elsevierQuery = rankedPreferences.slice(0, 3).map(c => {
+             const cat = allCategories.find(x => x.id === c);
+             return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+          }).join(' OR ');
           const elsevierProm = elsevierAdapter.search(elsevierQuery, currentPage + 1).then(res => res.papers).catch(() => []);
           
           const pubmedAdapter = new PubmedAdapter();
@@ -463,7 +466,10 @@ export function FeedProvider({ children }) {
             const arxivProm = fetchPapers(nearbyCats, randomStart, exploreCount, queryMode).catch(() => []);
             
             const elsevierAdapter = new ElsevierAdapter();
-            const elsevierQuery = nearbyCats.slice(0, 3).map(c => `"${c.replace(/\./g, ' ')}"`).join(' OR ');
+            const elsevierQuery = nearbyCats.slice(0, 3).map(c => {
+               const cat = allCategories.find(x => x.id === c);
+               return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+            }).join(' OR ');
             // We ask for page randomly just like arxiv
             const elsevierProm = elsevierAdapter.search(elsevierQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
             
