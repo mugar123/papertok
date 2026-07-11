@@ -328,7 +328,7 @@ export default function SearchPage() {
                       </div>
                       <div className="search-item-info">
                         <h4>{author.display_name}</h4>
-                        <p>{author.last_known_institutions?.[0]?.display_name || 'Institución desconocida'}</p>
+                        <p>{author.institution || 'Institución desconocida'}</p>
                       </div>
                       <button 
                         className={`search-follow-btn ${isFollowing ? 'following' : ''}`}
