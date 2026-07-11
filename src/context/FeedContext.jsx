@@ -407,7 +407,7 @@ export function FeedProvider({ children }) {
              return null;
           };
 
-          const arxivAllowedAreas = ['phys', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
+          const arxivAllowedAreas = ['physics', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
           const arxivCats = rankedPreferences.filter(c => arxivAllowedAreas.includes(getParentArea(c))).slice(0, 5);
 
           let arxivProm = Promise.resolve([]);
@@ -480,7 +480,7 @@ export function FeedProvider({ children }) {
           
           let fetchedExplore = [];
           try {
-            const arxivAllowedAreas = ['phys', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
+            const arxivAllowedAreas = ['physics', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
             const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
 
             const getParentArea = (catId) => {
@@ -531,7 +531,7 @@ export function FeedProvider({ children }) {
           
           if (randomCats.length > 0) {
             const randomStart = Math.floor(Math.random() * 30);
-            const arxivAllowedAreas = ['phys', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
+            const arxivAllowedAreas = ['physics', 'math', 'cs', 'quant', 'eess', 'stat', 'econ', 'elec', 'mech', 'civil', 'chemeng'];
             const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
             
             const getParentArea = (catId) => {
