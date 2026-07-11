@@ -317,10 +317,23 @@ const PaperCard = memo(function PaperCard({
              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
                <FileText size={12} /> Preprint
              </span>
-          ) : (
-             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
-               <BadgeCheck size={12} /> Verified
-             </span>
+           ) : (
+             <>
+               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
+                 <BadgeCheck size={12} /> Verified
+               </span>
+               {paper.doi && (
+                 <a 
+                   href={`https://doi.org/${paper.doi}`} 
+                   target="_blank" 
+                   rel="noopener noreferrer"
+                   style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.1)', padding: '2px 6px', borderRadius: '4px', textDecoration: 'none' }}
+                   onClick={(e) => e.stopPropagation()}
+                 >
+                   <ExternalLink size={12} /> DOI
+                 </a>
+               )}
+             </>
           )}
 
           {isOpenAccess ? (
