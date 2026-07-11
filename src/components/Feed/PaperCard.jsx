@@ -472,10 +472,11 @@ const PaperCard = memo(function PaperCard({
             className="pc-read-btn"
             onClick={(e) => {
               e.stopPropagation();
-              if (paper.pdfUrl || paper.arxivId) {
+              const hasValidPdf = paper.pdfUrl && (paper.pdfUrl.includes('arxiv.org') || paper.pdfUrl.toLowerCase().endsWith('.pdf'));
+              if (paper.arxivId || hasValidPdf) {
                 onOpenPdf(paper);
-              } else if (paper.landingPageUrl) {
-                window.open(paper.landingPageUrl, '_blank');
+              } else if (paper.pdfUrl || paper.landingPageUrl) {
+                window.open(paper.pdfUrl || paper.landingPageUrl, '_blank');
               }
             }}
           >
