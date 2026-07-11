@@ -22,8 +22,11 @@ export class ElsevierAdapter extends BaseAdapter {
     
     try {
       const url = new URL(this.baseUrl);
-      // Solo buscar artículos de journals/conferences
-      url.searchParams.append('query', `TITLE-ABS-KEY(${query})`);
+      let finalQuery = `TITLE-ABS-KEY(${query})`;
+      if (filters && filters.type === 'author') {
+        finalQuery = `AUTH(${query})`;
+      }
+      url.searchParams.append('query', finalQuery);
       url.searchParams.append('start', start);
       url.searchParams.append('count', count);
 

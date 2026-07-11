@@ -3,6 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, findInstitution } from '../../services/openAlexService';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
+import { ElsevierAdapter } from '../../services/adapters';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { PaperBuilder } from '../../services/PaperBuilder';
 import { getOrcidRecord } from '../../services/orcidService';
@@ -203,9 +204,15 @@ export default function EntityExplorer() {
            dois = res.dois || [];
            total = res.total;
         } else if (type === 'author' && resolvedId.startsWith('stub-')) {
-           const arxivPapers = await getAuthorPapers(entity.display_name, 30);
-           fetchedPapers.push(...arxivPapers);
-           total = arxivPapers.length;
+           const arxivProm = getAuthorPapers(entity.display_name, 30).catch(() => []);
+           const elsevierAdapter = new ElsevierAdapter();
+           const elsevierProm = elsevierAdapter.search(`"${entity.display_name}"`, 1, { type: 'author' }).then(res => res.papers).catch(() => []);
+           
+           const [arx, els] = await Promise.all([arxivProm, elsevierProm]);
+           const allPapers = PaperBuilder.deduplicate([...arx, ...els]);
+           
+           fetchedPapers.push(...allPapers);
+           total = allPapers.length;
         } else {
            const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
            arxivIds = res.arxivIds;

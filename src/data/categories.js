@@ -179,6 +179,36 @@ export const CATEGORIES = {
       'q-fin.TR': { label: 'Trading', labelEn: 'Trading and Market Microstructure' },
     },
   },
+  med: {
+    label: 'Medicina',
+    labelEn: 'Medicine',
+    icon: Dna, // Fallback icon
+    gradient: 'linear-gradient(135deg, #ff758c, #ff7eb3)',
+    description: 'Investigación médica, ensayos clínicos y salud pública',
+    subcategories: {
+      'med.gen': { label: 'Medicina General', labelEn: 'General Medicine' },
+      'med.onco': { label: 'Oncología', labelEn: 'Oncology' },
+      'med.cardio': { label: 'Cardiología', labelEn: 'Cardiology' },
+      'med.neuro': { label: 'Neurología', labelEn: 'Neurology' },
+      'med.immuno': { label: 'Inmunología', labelEn: 'Immunology' },
+      'med.pubh': { label: 'Salud Pública', labelEn: 'Public Health' },
+    },
+  },
+  bio: {
+    label: 'Biología',
+    labelEn: 'Biology',
+    icon: Dna,
+    gradient: 'linear-gradient(135deg, #11998e, #38ef7d)',
+    description: 'De la genética a los ecosistemas',
+    subcategories: {
+      'bio.gen': { label: 'Genética', labelEn: 'Genetics' },
+      'bio.mol': { label: 'Biología Molecular', labelEn: 'Molecular Biology' },
+      'bio.eco': { label: 'Ecología', labelEn: 'Ecology' },
+      'bio.zoo': { label: 'Zoología', labelEn: 'Zoology' },
+      'bio.bot': { label: 'Botánica', labelEn: 'Botany' },
+      'bio.micro': { label: 'Microbiología', labelEn: 'Microbiology' },
+    },
+  },
 };
 
 /**
