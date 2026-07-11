@@ -447,7 +447,7 @@ export function FeedProvider({ children }) {
           let openAlexProm = Promise.resolve([]);
           const openAlexCats = rankedPreferences.slice(0, 5);
           if (openAlexCats.length > 0) {
-             const openAlexAdapter = new ElsevierAdapter();
+             const openAlexAdapter = new OpenAlexAdapter();
              const openAlexQuery = openAlexCats.map(c => {
                 const cat = allCategories.find(x => x.id === c);
                 return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
@@ -543,7 +543,7 @@ export function FeedProvider({ children }) {
             let openAlexProm = Promise.resolve([]);
             const openAlexNearby = nearbyCats.slice(0, 3);
             if (openAlexNearby.length > 0) {
-                const openAlexAdapter = new ElsevierAdapter();
+                const openAlexAdapter = new OpenAlexAdapter();
                 const openAlexQuery = openAlexNearby.map(c => {
                    const cat = allCategories.find(x => x.id === c);
                    return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
@@ -605,7 +605,7 @@ export function FeedProvider({ children }) {
             let openAlexProm = Promise.resolve([]);
             const openAlexRandom = randomCats;
             if (openAlexRandom.length > 0) {
-                const openAlexAdapter = new ElsevierAdapter();
+                const openAlexAdapter = new OpenAlexAdapter();
                 const openAlexQuery = openAlexRandom.map(c => {
                    const cat = allCategories.find(x => x.id === c);
                    return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
