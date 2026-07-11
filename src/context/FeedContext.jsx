@@ -444,6 +444,7 @@ export function FeedProvider({ children }) {
              pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats }).then(res => res.papers);
           }
           
+          let openAlexProm = Promise.resolve([]);
           const openAlexCats = rankedPreferences.slice(0, 5);
           if (openAlexCats.length > 0) {
              const openAlexAdapter = new ElsevierAdapter();
