@@ -98,7 +98,7 @@ export class OpenAlexAdapter extends BaseAdapter {
       sourceName,
       sourceType: work.type === 'proceedings-article' ? 'conference' : 'journal',
       publicationStatus: 'published',
-      isOpenAccess,
+      openAccess: isOpenAccess,
       pdfUrl,
       landingPageUrl,
       citationsCount: work.cited_by_count || 0,
