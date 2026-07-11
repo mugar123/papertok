@@ -45,7 +45,13 @@ export class ElsevierAdapter extends BaseAdapter {
       const results = data['search-results']?.entry || [];
       const total = parseInt(data['search-results']?.['opensearch:totalResults'] || '0');
 
-      const mappedPapers = results.map(item => this.mapToStandard(item));
+      let mappedPapers = results.map(item => this.mapToStandard(item));
+
+      if (filters && filters.internalCategories && filters.internalCategories.length > 0) {
+        mappedPapers.forEach(p => {
+          p.categories = [...(p.categories || []), ...filters.internalCategories];
+        });
+      }
 
       return { papers: mappedPapers, total };
     } catch (e) {

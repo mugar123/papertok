@@ -122,6 +122,9 @@ export class PubmedAdapter extends BaseAdapter {
                     p.keywords = enrichment.categories;
                   }
                 }
+                if (filters && filters.internalCategories && filters.internalCategories.length > 0) {
+                    p.categories = [...(p.categories || []), ...filters.internalCategories];
+                }
                 return p;
               });
           }

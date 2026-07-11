@@ -422,7 +422,7 @@ export function FeedProvider({ children }) {
                 const cat = allCategories.find(x => x.id === c);
                 return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
-             elsevierProm = elsevierAdapter.search(elsevierQuery, currentPage + 1).then(res => res.papers).catch(() => []);
+             elsevierProm = elsevierAdapter.search(elsevierQuery, currentPage + 1, { internalCategories: elsevierCats }).then(res => res.papers).catch(() => []);
           }
 
           let pubmedProm = Promise.resolve([]);
@@ -432,7 +432,7 @@ export function FeedProvider({ children }) {
                 const cat = allCategories.find(x => x.id === c);
                 return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
-             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1).then(res => res.papers).catch(() => []);
+             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats }).then(res => res.papers).catch(() => []);
           }
           
           const [arx, els, pub] = await Promise.all([arxivProm, elsevierProm, pubmedProm]);
