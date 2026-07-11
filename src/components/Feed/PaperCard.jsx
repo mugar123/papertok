@@ -537,7 +537,9 @@ const PaperCard = memo(function PaperCard({
           <div className="pc-side-icon">
             {isReadActive ? <CheckCircle2 size={24} color="#10b981" /> : <Eye size={24} />}
           </div>
-          <span>Leer</span>
+          <span style={{ fontSize: '10px', textAlign: 'center', lineHeight: '1.2' }}>
+            {paper.pdfUrl ? 'Leer artículo' : (paper.landingPageUrl || paper.doi ? 'Abrir fuente' : 'Leer')}
+          </span>
         </button>
 
         <button className="pc-side-btn pc-side-btn--skip" onClick={handleNotInterested}>

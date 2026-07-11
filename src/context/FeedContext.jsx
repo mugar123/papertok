@@ -6,10 +6,12 @@ import { useAuth } from './AuthContext';
 import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
 import { getDeviceInfo } from '../utils/device';
 import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data/categories';
-import { enrichPapersBatch, getArxivIdsForOpenAlexWorks } from '../services/openAlexService';
+import { PubmedAdapter } from '../services/adapters/PubmedAdapter';
+import { ElsevierAdapter } from '../services/adapters/ElsevierAdapter';
+import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter';
+import { getArxivIdsForOpenAlexWorks, enrichPapersBatch } from '../services/openAlexService';
 import { getPaperRecommendations } from '../services/semanticScholarService';
 import { PaperBuilder } from '../services/PaperBuilder';
-import { PubmedAdapter } from '../services/adapters';
 import {
   applyRecommendationScore,
   logRankingBatch,
@@ -442,7 +444,18 @@ export function FeedProvider({ children }) {
              pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats }).then(res => res.papers);
           }
           
-          const sourceResults = await Promise.allSettled([arxivProm, pubmedProm]);
+          let openAlexProm = Promise.resolve([]);
+          const openAlexCats = rankedPreferences.slice(0, 5);
+          if (openAlexCats.length > 0) {
+             const openAlexAdapter = new OpenAlexAdapter();
+             const openAlexQuery = openAlexCats.map(c => {
+                const cat = allCategories.find(x => x.id === c);
+                return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+             }).join(' OR ');
+             openAlexProm = openAlexAdapter.search(openAlexQuery, currentPage + 1).then(res => res.papers);
+          }
+          
+          const sourceResults = await Promise.allSettled([arxivProm, pubmedProm, openAlexProm]);
           mainPapers = PaperBuilder.deduplicate(
             sourceResults.flatMap(result => result.status === 'fulfilled' ? result.value : [])
           );
@@ -527,9 +540,20 @@ export function FeedProvider({ children }) {
                 pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
             }
             
-            const [arx, pub] = await Promise.all([arxivProm, pubmedProm]);
+            let openAlexProm = Promise.resolve([]);
+            const openAlexNearby = nearbyCats.slice(0, 3);
+            if (openAlexNearby.length > 0) {
+                const openAlexAdapter = new OpenAlexAdapter();
+                const openAlexQuery = openAlexNearby.map(c => {
+                   const cat = allCategories.find(x => x.id === c);
+                   return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+                }).join(' OR ');
+                openAlexProm = openAlexAdapter.search(openAlexQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+            }
+            
+            const [arx, pub, oa] = await Promise.all([arxivProm, pubmedProm, openAlexProm]);
             // Limit to exploreCount
-            fetchedExplore = PaperBuilder.deduplicate([...arx, ...pub]).slice(0, exploreCount * 2);
+            fetchedExplore = PaperBuilder.deduplicate([...arx, ...pub, ...oa]).slice(0, exploreCount * 2);
           } catch (e) {
             console.error("Error fetching explore papers:", e);
           }
@@ -578,10 +602,21 @@ export function FeedProvider({ children }) {
                 pubmedProm = pubmedAdapter.search(pubmedQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
             }
             
+            let openAlexProm = Promise.resolve([]);
+            const openAlexRandom = randomCats;
+            if (openAlexRandom.length > 0) {
+                const openAlexAdapter = new OpenAlexAdapter();
+                const openAlexQuery = openAlexRandom.map(c => {
+                   const cat = allCategories.find(x => x.id === c);
+                   return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+                }).join(' OR ');
+                openAlexProm = openAlexAdapter.search(openAlexQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+            }
+            
             let randomPapers = [];
             try {
-                const [arx, pub] = await Promise.all([arxivProm, pubmedProm]);
-                randomPapers = PaperBuilder.deduplicate([...arx, ...pub]).slice(0, 2);
+                const [arx, pub, oa] = await Promise.all([arxivProm, pubmedProm, openAlexProm]);
+                randomPapers = PaperBuilder.deduplicate([...arx, ...pub, ...oa]).slice(0, 2);
             } catch (e) {
                 console.error("Error fetching random bored papers:", e);
             }
