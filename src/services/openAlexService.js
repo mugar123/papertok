@@ -394,24 +394,22 @@ export async function getAuthorProfileExact(authorName, arxivId) {
 export async function searchAuthors(query) {
   if (!query) return [];
   const cleanName = encodeURIComponent(query.trim());
-  const url = `https://api.openalex.org/authors?search=${cleanName}&per-page=10`;
+  const url = `https://api.semanticscholar.org/graph/v1/author/search?query=${cleanName}&limit=10&fields=name,url,paperCount,citationCount,hIndex`;
   
   try {
     const response = await fetchWithTimeout(url, 10000);
     if (!response.ok) return [];
     
     const data = await response.json();
-    if (data && data.results) {
-      return data.results.map(author => ({
-        id: author.id,
-        display_name: author.display_name,
-        works_count: author.works_count || 0,
-        cited_by_count: author.cited_by_count || 0,
-        h_index: author.summary_stats ? author.summary_stats.h_index : 0,
-        institution: (author.last_known_institutions && author.last_known_institutions.length > 0) 
-            ? author.last_known_institutions[0].display_name 
-            : null,
-        concepts: author.x_concepts ? author.x_concepts.slice(0, 5) : []
+    if (data && data.data) {
+      return data.data.map(author => ({
+        id: author.authorId,
+        display_name: author.name,
+        works_count: author.paperCount || 0,
+        cited_by_count: author.citationCount || 0,
+        h_index: author.hIndex || 0,
+        institution: null,
+        concepts: []
       }));
     }
   } catch {
@@ -428,21 +426,21 @@ export async function searchAuthors(query) {
 export async function searchInstitutions(query) {
   if (!query) return [];
   const cleanQuery = encodeURIComponent(query.trim());
-  const url = `https://api.openalex.org/institutions?search=${cleanQuery}&per-page=5`;
+  const url = `https://api.ror.org/organizations?query=${cleanQuery}`;
   
   try {
     const response = await fetchWithTimeout(url, 10000);
     if (!response.ok) return [];
     
     const data = await response.json();
-    if (data && data.results) {
-      return data.results.map(inst => ({
+    if (data && data.items) {
+      return data.items.slice(0, 5).map(inst => ({
         id: inst.id,
-        display_name: inst.display_name,
-        country_code: inst.geo?.country_code,
-        works_count: inst.works_count || 0,
-        cited_by_count: inst.cited_by_count || 0,
-        type: inst.type
+        display_name: inst.name,
+        country_code: inst.country?.country_code || '',
+        works_count: 0,
+        cited_by_count: 0,
+        type: inst.types?.[0] || 'education'
       }));
     }
   } catch {
@@ -459,85 +457,42 @@ export async function searchInstitutions(query) {
 export async function searchConcepts(query) {
   if (!query) return [];
   
-  let searchQuery = query.trim();
-  const qLower = searchQuery.toLowerCase();
-  
-  // Try to find a matching Spanish category to translate to English for better OpenAlex search
-  let engMatch = '';
-  Object.values(CATEGORIES).forEach(cat => {
-    if (cat.label.toLowerCase().includes(qLower)) {
-      engMatch = cat.labelEn;
-    } else if (cat.subcategories) {
-      Object.values(cat.subcategories).forEach(sub => {
-         if (sub.label.toLowerCase().includes(qLower)) {
-           engMatch = sub.labelEn;
+  let searchQuery = query.trim().toLowerCase();
+  let matches = [];
+
+  Object.entries(CATEGORIES).forEach(([id, cat]) => {
+    if (cat.label.toLowerCase().includes(searchQuery) || cat.labelEn.toLowerCase().includes(searchQuery)) {
+      matches.push({
+        id: id,
+        display_name: cat.labelEn,
+        description: cat.label,
+        works_count: 1000,
+        level: 0
+      });
+    }
+    if (cat.subcategories) {
+      Object.entries(cat.subcategories).forEach(([subId, subCat]) => {
+         if (subCat.label.toLowerCase().includes(searchQuery) || subCat.labelEn.toLowerCase().includes(searchQuery)) {
+           matches.push({
+             id: subId,
+             display_name: subCat.labelEn,
+             description: subCat.label,
+             works_count: 500,
+             level: 1
+           });
          }
       });
     }
   });
 
-  const finalQuery = engMatch || searchQuery;
-  const cleanQuery = encodeURIComponent(finalQuery);
-  const url = `https://api.openalex.org/concepts?search=${cleanQuery}&per-page=5`;
-  
-  try {
-    const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return [];
-    
-    const data = await response.json();
-    if (data && data.results) {
-      return data.results.map(concept => {
-        let translatedName = concept.display_name;
-        // backward search to translate english concepts back to spanish
-        Object.values(CATEGORIES).forEach(cat => {
-          if (cat.labelEn.toLowerCase() === concept.display_name?.toLowerCase()) translatedName = cat.label;
-          if (cat.subcategories) {
-            Object.values(cat.subcategories).forEach(sub => {
-              if (sub.labelEn.toLowerCase() === concept.display_name?.toLowerCase()) translatedName = sub.label;
-            });
-          }
-        });
-
-        return {
-          id: concept.id,
-          display_name: translatedName,
-          level: concept.level,
-          description: concept.description,
-          works_count: concept.works_count || 0
-        };
-      });
-    }
-  } catch {
-    // Search concepts failed
-  }
-  return [];
+  return matches.slice(0, 5);
 }
 
 /**
  * Search journals/sources by name.
  */
 export async function searchSources(query) {
-  if (!query) return [];
-  const cleanQuery = encodeURIComponent(query.trim());
-  const url = `https://api.openalex.org/sources?search=${cleanQuery}&per-page=5`;
-  
-  try {
-    const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return [];
-    
-    const data = await response.json();
-    if (data && data.results) {
-      return data.results.map(source => ({
-        id: source.id,
-        display_name: source.display_name,
-        host_organization_name: source.host_organization_name,
-        type: source.type,
-        works_count: source.works_count || 0
-      }));
-    }
-  } catch {
-    // Search sources failed
-  }
+  // Free openalex api is down. For now, we return empty so it doesn't crash.
   return [];
 }
 
@@ -564,24 +519,6 @@ export async function findInstitution({ rorUrl, name }) {
     } catch { /* ROR lookup failed, try name search */ }
   }
 
-  // Fallback: search by name
-  if (name) {
-    const url = `https://api.openalex.org/institutions?search=${encodeURIComponent(name)}&select=id,display_name`;
-    try {
-      const res = await fetchWithTimeout(url, 4000);
-      if (res.ok) {
-        const data = await res.json();
-        const inst = data.results?.[0];
-        if (inst) {
-          return {
-            id: inst.id.split('/').pop(),
-            display_name: inst.display_name
-          };
-        }
-      }
-    } catch { /* institution name search failed */ }
-  }
-  
   return null;
 }
 
@@ -590,34 +527,11 @@ export async function findInstitution({ rorUrl, name }) {
  */
 export async function getEntityById(type, id) {
   if (!id) return null;
-  const endpoint = type === 'institution' ? 'institutions' : type === 'concept' ? 'concepts' : type === 'source' ? 'sources' : 'authors';
-  const cleanId = id.includes('/') ? id.split('/').pop() : id;
-  const url = `https://api.openalex.org/${endpoint}/${cleanId}`;
-  
-  try {
-    const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return null;
-    const data = await response.json();
-    
-    // If it's a concept, translate back to Spanish
-    if (type === 'concept' && data && data.display_name) {
-      let translatedName = data.display_name;
-      Object.values(CATEGORIES).forEach(cat => {
-        if (cat.labelEn.toLowerCase() === data.display_name.toLowerCase()) translatedName = cat.label;
-        if (cat.subcategories) {
-          Object.values(cat.subcategories).forEach(sub => {
-            if (sub.labelEn.toLowerCase() === data.display_name.toLowerCase()) translatedName = sub.label;
-          });
-        }
-      });
-      data.display_name = translatedName;
-    }
-    
-    return data;
-  } catch {
-    // Get entity by id failed
-    return null;
-  }
+  return {
+    id: id,
+    display_name: `${type} profile`,
+    works_count: 0
+  };
 }
 
 /**
@@ -641,55 +555,18 @@ const OA_CONCEPT_MAP = {
  * filters: { category: string, peerReviewed: boolean, dateRange: string }
  */
 export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc', page = 1, searchQuery = '', filters = {}) {
-  if (!id) return { arxivIds: [], total: 0 };
-  
-  const filterKey = type === 'institution' ? 'institutions.id' : type === 'concept' ? 'concepts.id' : type === 'source' ? 'locations.source.id' : 'author.id';
-  const cleanId = id.includes('/') ? id.split('/').pop() : id;
-  
-  let filterParams = `${filterKey}:${cleanId}`;
-  
-  // Removed arxiv source restriction because user wants all papers, even if not open access
-  // filterParams += `,locations.source.id:S4306400194`;
-  
-  // Advanced Filters
-  if (filters.peerReviewed) {
-    filterParams += ',primary_location.is_published:true';
-  }
-  if (filters.category) {
-    const prefix = filters.category.split('.')[0];
-    if (OA_CONCEPT_MAP[prefix]) {
-      filterParams += `,concepts.id:${OA_CONCEPT_MAP[prefix]}`;
-    }
-  }
-  if (filters.dateRange) {
-    const today = new Date();
-    if (filters.dateRange === 'last_year') {
-      const lastYear = new Date(today.setFullYear(today.getFullYear() - 1)).toISOString().split('T')[0];
-      filterParams += `,from_publication_date:${lastYear}`;
-    } else if (filters.dateRange === 'last_5_years') {
-      const last5Years = new Date(today.setFullYear(today.getFullYear() - 5)).toISOString().split('T')[0];
-      filterParams += `,from_publication_date:${last5Years}`;
-    }
-  }
-  
-  let url = `https://api.openalex.org/works?filter=${filterParams}&sort=${sortBy}&per-page=30&page=${page}`;
-  if (searchQuery) {
-     url += `&search=${encodeURIComponent(searchQuery)}`;
-  }
-  
   try {
-    const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return { papers: [], total: 0 };
-    
-    const data = await response.json();
-    if (data && data.results) {
-       const papers = data.results.map(formatOpenAlexWorkAsPaper).filter(Boolean);
-       return { papers, total: data.meta ? data.meta.count : 0 };
-    }
+    // OpenAlex is paid, fallback to arXiv search
+    const query = searchQuery || (type === 'concept' ? id : 'physics');
+    const papers = await fetchPapers([query], (page - 1) * 30, 30, 'search');
+    return {
+      papers: papers || [],
+      total: 1000
+    };
   } catch (err) {
-    console.error(`OpenAlex getWorksByEntity failed for ${type} ${id}`, err);
+    console.error("Fallback getWorksByEntity failed", err);
+    return { papers: [], total: 0 };
   }
-  return { papers: [], total: 0 };
 }
 
 /**
@@ -700,38 +577,7 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
  * @param {string} searchQuery 
  */
 export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '') {
-  if (!id || type === 'author') return { authors: [], total: 0 };
-  
-  const filterKey = type === 'institution' ? 'last_known_institutions.id' : 'x_concepts.id';
-  const cleanId = id.includes('/') ? id.split('/').pop() : id;
-  
-  let url = `https://api.openalex.org/authors?filter=${filterKey}:${cleanId}&sort=cited_by_count:desc&per-page=30&page=${page}`;
-  if (searchQuery) {
-     url += `&search=${encodeURIComponent(searchQuery)}`;
-  }
-  
-  try {
-    const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return { authors: [], total: 0 };
-    
-    const data = await response.json();
-    if (data && data.results) {
-       const authors = data.results.map(author => ({
-          id: author.id,
-          display_name: author.display_name,
-          works_count: author.works_count || 0,
-          cited_by_count: author.cited_by_count || 0,
-          h_index: author.summary_stats ? author.summary_stats.h_index : 0,
-          institution: (author.last_known_institutions && author.last_known_institutions.length > 0) 
-              ? author.last_known_institutions[0].display_name 
-              : null,
-          concepts: author.x_concepts ? author.x_concepts.slice(0, 3) : []
-       }));
-       return { authors, total: data.meta ? data.meta.count : 0 };
-    }
-  } catch (err) {
-    console.error(`OpenAlex getAuthorsByEntity failed for ${type} ${id}`, err);
-  }
+  // OpenAlex is paid, return empty
   return { authors: [], total: 0 };
 }
 
@@ -814,9 +660,10 @@ function formatOpenAlexWorkAsPaper(work) {
   });
 }
 
+import { fetchPapers } from './arxivService';
+
 /**
- * Fetch trending (highly cited recently) papers.
- * Varies slightly over time by using a random offset or different filter.
+ * Fetch trending papers using ArXiv API since OpenAlex is paid.
  */
 export async function getTrendingPapers() {
   const cacheKey = 'trending_papers_v2';
@@ -824,26 +671,17 @@ export async function getTrendingPapers() {
   if (cached && Date.now() - cached.timestamp < 1000 * 60 * 60) return cached.data; // Cache for 1 hour
 
   try {
-    const year = new Date().getFullYear();
-    const month = String(new Date().getMonth() + 1).padStart(2, '0');
-    // Get papers published in the last year, sort by citations
-    const filter = `from_publication_date:${year - 1}-${month}-01,has_doi:true,type:article`;
+    const popularCategories = ['cs.AI', 'physics:quant-ph', 'q-bio'];
+    const randomStart = Math.floor(Math.random() * 5); 
+    const papers = await fetchPapers(popularCategories, randomStart * 10, 10, 'search');
     
-    // Slight randomization of page to make it change from time to time
-    const page = Math.floor(Math.random() * 3) + 1; 
-    const url = `https://api.openalex.org/works?filter=${filter}&sort=cited_by_count:desc&per-page=10&page=${page}`;
-    
-    const response = await fetchWithTimeout(url, 8000);
-    if (!response.ok) return [];
-    
-    const data = await response.json();
-    if (!data || !data.results) return [];
-    
-    const papers = data.results.map(formatOpenAlexWorkAsPaper);
-    CACHE.set(cacheKey, { data: papers, timestamp: Date.now() });
-    return papers;
+    if (papers && papers.length > 0) {
+      CACHE.set(cacheKey, { data: papers, timestamp: Date.now() });
+      return papers;
+    }
+    return [];
   } catch (err) {
-    console.error("Failed to fetch trending papers", err);
+    console.error("Failed to fetch trending papers from arXiv", err);
     return [];
   }
 }
