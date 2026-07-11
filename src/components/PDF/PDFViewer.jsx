@@ -44,13 +44,11 @@ export default function PDFViewer({ paper, onClose }) {
   }, []);
 
   const externalUrl = pdfUrl || (paper.doi ? `https://doi.org/${paper.doi}` : `https://openalex.org/${paper.id}`);
+  const shouldShowFallback = !pdfUrl || showFallback;
 
   // Fallback timeout
   useEffect(() => {
-    if (!pdfUrl) {
-      setShowFallback(true);
-      return;
-    }
+    if (!pdfUrl) return undefined;
     const fallbackTimer = setTimeout(() => {
       if (!iframeLoaded) setShowFallback(true);
     }, 8000);
@@ -98,7 +96,7 @@ export default function PDFViewer({ paper, onClose }) {
         )}
 
         {/* Fallback message */}
-        {showFallback && !iframeLoaded && (
+        {shouldShowFallback && !iframeLoaded && (
           <div className="pdf-fallback">
             <p>{!pdfUrl ? 'No hay PDF de acceso abierto disponible.' : 'El PDF no pudo cargarse en la app.'}</p>
             <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
@@ -108,12 +106,12 @@ export default function PDFViewer({ paper, onClose }) {
         )}
 
         {/* PDF iframe */}
-        <iframe
+        {pdfUrl && <iframe
           src={pdfUrl}
           className={`pdf-iframe ${iframeLoaded ? 'pdf-iframe--loaded' : ''}`}
           title={`PDF: ${paper.title}`}
           onLoad={() => setIframeLoaded(true)}
-        />
+        />}
       </div>
     </div>
   );

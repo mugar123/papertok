@@ -83,7 +83,7 @@ export class ElsevierAdapter extends BaseAdapter {
     }
   }
 
-  async getDetails(id) {
+  async getDetails() {
     // Para simplificar, devolvemos null, ya que el search suele traer lo necesario
     // Si queremos detalle específico por DOI: https://api.elsevier.com/content/article/doi/{doi}
     return null; 

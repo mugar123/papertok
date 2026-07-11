@@ -69,7 +69,7 @@ export function scorePaperForRecommendation(paper, context = {}) {
   const temporalPreference = context.temporalPreference || 0;
 
   const primaryCategory = paper.primaryCategory || '';
-  const allCategories = paper.allCategories || [];
+  const allCategories = paper.allCategories || paper.categories || [];
   const isExploration = paper._debugScore?.isExploration || paper._type === 'exploration';
   const recentPropsCount = context.recentPropsCount || { preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0 };
 
@@ -82,7 +82,7 @@ export function scorePaperForRecommendation(paper, context = {}) {
     preference = weights.relatedSelectedCategory;
   }
 
-  const authorBoost = paper.authors?.some((author) => followedAuthors.includes(author))
+  const authorBoost = paper.authors?.some((author) => followedAuthors.includes(author?.name || author))
     ? weights.followedAuthor
     : 0;
 
@@ -90,7 +90,7 @@ export function scorePaperForRecommendation(paper, context = {}) {
   const recency = Math.max(0, weights.maxRecency * Math.exp(-ageDays / weights.recencyHalfLifeDays))
     * (1 + temporalPreference);
 
-  const citedBy = paper.openAlex?.cited_by_count || 0;
+  const citedBy = paper.openAlex?.cited_by_count ?? paper.openAlex?.citationCount ?? paper.citationCount ?? 0;
   const classicBoost = temporalPreference < 0 && ageDays > 365 && citedBy > 10
     ? Math.abs(temporalPreference) * Math.log10(citedBy) * weights.classicCitationMultiplier
     : 0;

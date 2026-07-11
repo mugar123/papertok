@@ -1,5 +1,4 @@
 import { ElsevierAdapter } from '../src/services/adapters/ElsevierAdapter.js';
-import CATEGORIES from '../src/data/categories.js';
 
 async function testMech() {
   const elsevierAdapter = new ElsevierAdapter();

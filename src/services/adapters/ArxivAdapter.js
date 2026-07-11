@@ -1,12 +1,11 @@
 import { BaseAdapter } from './BaseAdapter';
-import { PaperBuilder } from '../PaperBuilder';
 
 export class ArxivAdapter extends BaseAdapter {
   constructor() {
     super('arxiv');
   }
 
-  async search(query, page = 1, filters = {}) {
+  async search(query, page = 1) {
     try {
       // ArXiv pagination
       const maxResults = 30;

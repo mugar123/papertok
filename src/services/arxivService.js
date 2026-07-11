@@ -3,14 +3,50 @@
  * Uses Vite proxy in dev, CORS proxy in production (GitHub Pages).
  */
 
-const isDev = import.meta.env.DEV;
-import { PaperBuilder } from './PaperBuilder';
-import CATEGORIES from '../data/categories';
+const isDev = import.meta.env?.DEV === true;
+import { PaperBuilder } from './PaperBuilder.js';
+import CATEGORIES from '../data/categories.js';
 
 const ARXIV_DEV = '/api/arxiv';
 const ARXIV_PROD = 'https://export.arxiv.org/api/query';
 const cache = new Map();
 const CACHE_TTL = 5 * 60 * 1000;
+const ARXIV_PREFIXES = ['cs', 'math', 'physics', 'eess', 'q-bio', 'q-fin', 'stat', 'econ', 'astro-ph', 'cond-mat', 'gr-qc', 'hep-ex', 'hep-lat', 'hep-ph', 'hep-th', 'nlin', 'nucl-ex', 'nucl-th', 'quant-ph', 'math-ph'];
+const CATEGORY_DEFINITIONS = new Map(
+  Object.values(CATEGORIES).flatMap(area =>
+    Object.entries(area.subcategories || {}).map(([id, category]) => [id, category])
+  )
+);
+
+function isArxivCategory(category) {
+  return ARXIV_PREFIXES.some(prefix => category === prefix || category.startsWith(`${prefix}.`));
+}
+
+function categoryMatchScore(paper, categoryId) {
+  if (paper.categories?.includes(categoryId) || paper.primaryCategory === categoryId) return Number.POSITIVE_INFINITY;
+
+  const label = CATEGORY_DEFINITIONS.get(categoryId)?.labelEn || categoryId.replace(/\./g, ' ');
+  const terms = label.toLowerCase().split(/[^a-z0-9]+/).filter(term => term.length >= 4);
+  const text = `${paper.title || ''} ${paper.abstract || ''}`.toLowerCase();
+  return terms.reduce((score, term) => score + (text.includes(term) ? 1 : 0), 0);
+}
+
+export function assignRequestedCategories(papers, requestedCategories) {
+  if (!Array.isArray(requestedCategories) || requestedCategories.length === 0) return papers;
+
+  return papers.map(paper => {
+    const selectedCategory = requestedCategories.reduce((best, categoryId) => {
+      return categoryMatchScore(paper, categoryId) > categoryMatchScore(paper, best) ? categoryId : best;
+    }, requestedCategories[0]);
+    const providerCategories = paper.allCategories || paper.categories || [];
+
+    return {
+      ...paper,
+      primaryCategory: selectedCategory,
+      allCategories: [...new Set([selectedCategory, ...providerCategories])],
+    };
+  });
+}
 
 async function fetchWithTimeout(url, timeoutMs = 8000) {
   const controller = new AbortController();
@@ -86,6 +122,7 @@ function parseArxivXml(xmlText) {
 
     papers.push(PaperBuilder.create({
       id: arxivId,
+      arxivId,
       sources: { primary: 'arxiv', enrichedBy: [] },
       title,
       abstract: summary,
@@ -99,7 +136,9 @@ function parseArxivXml(xmlText) {
       pdfUrl,
       landingPageUrl: `https://arxiv.org/abs/${arxivId}`,
       categories: allCategories,
-      keywords: allCategories
+      keywords: allCategories,
+      primaryCategory,
+      published,
     }));
   });
 
@@ -145,6 +184,7 @@ function parseRss2Json(data) {
       
       return PaperBuilder.create({
         id,
+        arxivId: id,
         sources: { primary: 'arxiv', enrichedBy: [] },
         title: item.title ? item.title.replace(/\n/g, ' ').trim() : 'No Title',
         abstract: item.description ? item.description.replace(/\n/g, ' ').trim() : 'No summary available.',
@@ -155,7 +195,9 @@ function parseRss2Json(data) {
         pdfUrl: idUrl ? idUrl.replace('abs', 'pdf') : '',
         landingPageUrl: idUrl || `https://arxiv.org/abs/${id}`,
         categories: categories,
-        keywords: categories
+        keywords: categories,
+        primaryCategory,
+        published,
       });
     })
     .filter(Boolean);
@@ -196,10 +238,8 @@ async function fetchArxivData(url) {
   }
 
   try {
-    // Strip out parentheses to help some proxies
-    const cleanUrl = url.replace(/[()]/g, '');
     // 2. Try allorigins (keeps all authors)
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(cleanUrl)}`;
+    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
     const response = await fetchWithTimeout(proxyUrl, 6000);
         if (response.ok) {
            const data = await response.json();
@@ -219,15 +259,14 @@ async function fetchArxivData(url) {
       
       // 3. Fallback to rss2json (fast, but drops co-authors)
       try {
-        const cleanUrl = url.replace(/[()]/g, '');
-        const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(cleanUrl)}`;
+        const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`;
         const response = await fetchWithTimeout(proxyUrl, 8000);
         if (!response.ok) throw new Error(`arXiv API error via rss2json: ${response.status}`);
         const data = await response.json();
         return parseRss2Json(data);
       } catch (e) {
         console.error('All proxies failed', e);
-        return [];
+        throw new Error('No se pudo conectar con arXiv. Inténtalo de nuevo en unos segundos.', { cause: e });
       }
 }
 
@@ -240,22 +279,11 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
   let searchQuery = categoriesOrQuery;
   if (Array.isArray(categoriesOrQuery)) {
     // Determine if a category should be searched as a cat: or as a keyword search
-    // arXiv specific categories usually start with cs., math., physics., eess., q-bio., q-fin., stat., econ.
-    const arxivPrefixes = ['cs', 'math', 'physics', 'eess', 'q-bio', 'q-fin', 'stat', 'econ', 'astro-ph', 'cond-mat', 'gr-qc', 'hep-ex', 'hep-lat', 'hep-ph', 'hep-th', 'nlin', 'nucl-ex', 'nucl-th', 'quant-ph', 'math-ph'];
-    
-    // Dynamic import to avoid circular dependencies if any, but we can just require it or use the already known mapping
-    const isArxivCat = (cat) => arxivPrefixes.some(prefix => cat === prefix || cat.startsWith(`${prefix}.`));
-
-    const allCategoryDefs = Object.values(CATEGORIES).flatMap(a => 
-      Object.entries(a.subcategories || {}).map(([id, label]) => ({ id, labelEn: label.labelEn }))
-    );
-
     searchQuery = `(${categoriesOrQuery.map((cat) => {
-      if (isArxivCat(cat)) {
+      if (isArxivCategory(cat)) {
         return `cat:${cat}`;
       } else {
-        const catDef = allCategoryDefs.find(x => x.id === cat);
-        const searchPhrase = catDef && catDef.labelEn ? catDef.labelEn : cat.replace(/\./g, ' ');
+        const searchPhrase = CATEGORY_DEFINITIONS.get(cat)?.labelEn || cat.replace(/\./g, ' ');
         return `all:"${searchPhrase}"`;
       }
     }).join(' OR ')})`;
@@ -281,7 +309,10 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
 
   try {
-    const papers = await fetchArxivData(url);
+    const fetchedPapers = await fetchArxivData(url);
+    const papers = Array.isArray(categoriesOrQuery)
+      ? assignRequestedCategories(fetchedPapers, categoriesOrQuery)
+      : fetchedPapers;
     cache.set(cacheKey, { data: papers, timestamp: Date.now() });
     return papers;
   } catch (error) {
@@ -338,4 +369,3 @@ export async function searchPapers(queryStr, start = 0, maxResults = 20) {
   const encodedQuery = `all:"${queryStr.trim()}"`;
   return fetchPapers(encodedQuery, start, maxResults, 'recent', 'relevance');
 }
-

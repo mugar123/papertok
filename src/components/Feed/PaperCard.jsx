@@ -61,7 +61,7 @@ const PaperCard = memo(function PaperCard({
   
   const hasFollowedAuthor = useMemo(() => {
     if (!paper || !paper.authors || !followedAuthors || followedAuthors.length === 0) return false;
-    return paper.authors.some(a => followedAuthors.includes(a));
+    return paper.authors.some(author => followedAuthors.includes(author?.name || author));
   }, [paper, followedAuthors]);
 
   const lastTap = useRef(0);

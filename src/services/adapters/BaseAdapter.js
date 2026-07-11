@@ -15,7 +15,7 @@ export class BaseAdapter {
    * @param {object} filters - Filtros adicionales.
    * @returns {Promise<{papers: Array, total: number}>}
    */
-  async search(query, page = 1, filters = {}) {
+  async search() {
     throw new Error('search() debe ser implementado por la clase hija');
   }
 
@@ -24,7 +24,7 @@ export class BaseAdapter {
    * @param {string} id - El identificador.
    * @returns {Promise<Object>}
    */
-  async getDetails(id) {
+  async getDetails() {
     throw new Error('getDetails() debe ser implementado por la clase hija');
   }
 
@@ -50,7 +50,7 @@ export class BaseAdapter {
    *   raw: Object // El objeto original del proveedor
    * }
    */
-  mapToStandard(rawItem) {
+  mapToStandard() {
     throw new Error('mapToStandard() debe ser implementado por la clase hija');
   }
 }

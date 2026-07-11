@@ -148,7 +148,7 @@ export class PubmedAdapter extends BaseAdapter {
 
     } catch (error) {
       console.error("PubmedAdapter Error:", error);
-      return { papers: [], total: 0 };
+      throw error;
     }
   }
 

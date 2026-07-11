@@ -21,12 +21,26 @@ const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
 
 // Global session state to ensure fresh feed on reloads
-const storedSeen = typeof window !== 'undefined' ? localStorage.getItem('papertok_seenIds') : null;
-const sessionSeenPapers = new Set(storedSeen ? JSON.parse(storedSeen) : []);
+function readSessionSeen() {
+  if (typeof window === 'undefined') return new Set();
+  try {
+    const storedSeen = localStorage.getItem('papertok_seenIds');
+    const parsed = storedSeen ? JSON.parse(storedSeen) : [];
+    return new Set(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    return new Set();
+  }
+}
+
+const sessionSeenPapers = readSessionSeen();
 
 function saveSessionSeen() {
   const seenArray = Array.from(sessionSeenPapers).slice(-500); // Keep last 500
-  localStorage.setItem('papertok_seenIds', JSON.stringify(seenArray));
+  try {
+    localStorage.setItem('papertok_seenIds', JSON.stringify(seenArray));
+  } catch {
+    // Browsing can continue even when storage is unavailable or full.
+  }
 }
 
 // ── Demo mode storage helpers ──
@@ -412,7 +426,7 @@ export function FeedProvider({ children }) {
 
           let arxivProm = Promise.resolve([]);
           if (arxivCats.length > 0) {
-              arxivProm = fetchPapers(arxivCats, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode).catch(() => []);
+              arxivProm = fetchPapers(arxivCats, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode);
           }
 
           const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
@@ -425,13 +439,19 @@ export function FeedProvider({ children }) {
                 const cat = allCategories.find(x => x.id === c);
                 return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
-             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats }).then(res => res.papers).catch(() => []);
+             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1, { internalCategories: pubmedCats }).then(res => res.papers);
           }
           
-          const [arx, pub] = await Promise.all([arxivProm, pubmedProm]);
-          mainPapers = PaperBuilder.deduplicate([...arx, ...pub]);
+          const sourceResults = await Promise.allSettled([arxivProm, pubmedProm]);
+          mainPapers = PaperBuilder.deduplicate(
+            sourceResults.flatMap(result => result.status === 'fulfilled' ? result.value : [])
+          );
+          if (mainPapers.length === 0 && sourceResults.some(result => result.status === 'rejected')) {
+            throw new Error('No se pudieron cargar papers de tus fuentes. Reinténtalo en unos segundos.');
+          }
         } catch (e) {
           console.error("Error fetching main papers:", e);
+          throw e;
         }
         
         mainPapers.forEach(p => { p._type = 'exploit'; });
@@ -746,11 +766,14 @@ export function FeedProvider({ children }) {
     // loadPapers will overwrite them once the fresh data arrives.
     
     // Force a minimum visual delay of 800ms so the UI has time to show the spinner
-    await Promise.all([
-      loadPapersRef.current(true, null, true), // reset=true, mode=null, randomizeStart=true
-      new Promise((resolve) => setTimeout(resolve, 800))
-    ]);
-    setIsRefreshing(false);
+    try {
+      await Promise.all([
+        loadPapersRef.current?.(true, null, true), // reset=true, mode=null, randomizeStart=true
+        new Promise((resolve) => setTimeout(resolve, 800))
+      ]);
+    } finally {
+      setIsRefreshing(false);
+    }
   }, []);
 
   const toggleLike = useCallback(async (paper) => {

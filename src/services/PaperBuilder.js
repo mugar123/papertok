@@ -25,6 +25,7 @@ export class PaperBuilder {
       title: data.title || 'Untitled',
       abstract: data.abstract || 'No abstract available.',
       authors: Array.isArray(data.authors) ? data.authors : [],
+      arxivId: data.arxivId || undefined,
       doi: doi || undefined,
       journal: data.journal || undefined,
       conference: data.conference || undefined,
@@ -36,11 +37,16 @@ export class PaperBuilder {
       openAccess: data.openAccess !== undefined ? data.openAccess : true,
       pdfUrl: data.pdfUrl || undefined,
       landingPageUrl: data.landingPageUrl || '',
-      citationCount: data.citationCount || 0,
+      citationCount: data.citationCount ?? data.citationsCount ?? 0,
       referenceCount: data.referenceCount || 0,
       concepts: data.concepts || [],
       keywords: data.keywords || [],
-      categories: data.categories || []
+      categories: data.categories || [],
+      allCategories: data.allCategories || data.categories || [],
+      primaryCategory: data.primaryCategory || data.categories?.[0] || '',
+      published: data.published || data.publishedDate || '',
+      sourceType: data.sourceType || undefined,
+      summary: data.summary || data.abstract || '',
     };
   }
 
@@ -124,6 +130,10 @@ export class PaperBuilder {
       merged.openAccess = true;
     }
 
+    if (sourceName === 'openalex') {
+      merged.openAlex = enrichmentData;
+    }
+
     return merged;
   }
 
@@ -188,4 +198,3 @@ export class PaperBuilder {
     return Array.from(new Set(mergedMap.values()));
   }
 }
-
