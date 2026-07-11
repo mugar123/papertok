@@ -237,10 +237,10 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
   if (Array.isArray(categoriesOrQuery)) {
     // Determine if a category should be searched as a cat: or as a keyword search
     // arXiv specific categories usually start with cs., math., physics., eess., q-bio., q-fin., stat., econ.
-    const arxivPrefixes = ['cs.', 'math.', 'physics.', 'eess.', 'q-bio.', 'q-fin.', 'stat.', 'econ.', 'astro-ph.', 'cond-mat.', 'gr-qc.', 'hep-ex.', 'hep-lat.', 'hep-ph.', 'hep-th.', 'nlin.', 'nucl-ex.', 'nucl-th.', 'quant-ph.'];
+    const arxivPrefixes = ['cs', 'math', 'physics', 'eess', 'q-bio', 'q-fin', 'stat', 'econ', 'astro-ph', 'cond-mat', 'gr-qc', 'hep-ex', 'hep-lat', 'hep-ph', 'hep-th', 'nlin', 'nucl-ex', 'nucl-th', 'quant-ph', 'math-ph'];
     
     // Dynamic import to avoid circular dependencies if any, but we can just require it or use the already known mapping
-    const isArxivCat = (cat) => arxivPrefixes.some(prefix => cat.startsWith(prefix));
+    const isArxivCat = (cat) => arxivPrefixes.some(prefix => cat === prefix || cat.startsWith(`${prefix}.`));
 
     const allCategoryDefs = Object.values(CATEGORIES).flatMap(a => 
       Object.entries(a.subcategories || {}).map(([id, label]) => ({ id, labelEn: label.labelEn }))

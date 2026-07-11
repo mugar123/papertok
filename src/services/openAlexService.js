@@ -24,7 +24,7 @@ async function fetchWithTimeout(url, timeoutMs = 8000) {
   // Automatically append mailto parameter to enter Polite Pool and avoid budget limits
   let finalUrl = url;
   if (finalUrl.includes('api.openalex.org')) {
-    finalUrl += finalUrl.includes('?') ? '&mailto=papertok@example.com' : '?mailto=papertok@example.com';
+    finalUrl += finalUrl.includes('?') ? '&mailto=app@papertok.io' : '?mailto=app@papertok.io';
   }
 
   return Promise.race([

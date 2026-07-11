@@ -517,20 +517,20 @@ const PaperCard = memo(function PaperCard({
       <div className="pc-side-actions">
         <button className={`pc-side-btn ${isLiked ? 'pc-side-btn--liked' : ''}`} onClick={handleLike}>
           <div className="pc-side-icon">
-            <svg viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+            <svg viewBox="0 0 24 24" fill={isLiked ? '#ff2d55' : 'none'} stroke={isLiked ? '#ff2d55' : 'currentColor'} strokeWidth="2" style={isLiked ? { filter: 'drop-shadow(0 0 8px rgba(255, 45, 85, 0.6))' } : {}}>
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
             </svg>
           </div>
-          <span>Me gusta</span>
+          <span style={isLiked ? { color: '#ff2d55' } : {}}>Me gusta</span>
         </button>
 
         <button className={`pc-side-btn ${isSaved ? 'pc-side-btn--saved' : ''}`} onClick={(e) => { e.stopPropagation(); onSaveToList(paper); }}>
           <div className="pc-side-icon">
-            <svg viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="2">
+            <svg viewBox="0 0 24 24" fill={isSaved ? '#ffd60a' : 'none'} stroke={isSaved ? '#ffd60a' : 'currentColor'} strokeWidth="2" style={isSaved ? { filter: 'drop-shadow(0 0 8px rgba(255, 214, 10, 0.6))' } : {}}>
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
           </div>
-          <span>Guardar</span>
+          <span style={isSaved ? { color: '#ffd60a' } : {}}>Guardar</span>
         </button>
 
         <button className={`pc-side-btn ${isReadActive ? 'pc-side-btn--read' : ''}`} onClick={handleMarkAsRead}>
