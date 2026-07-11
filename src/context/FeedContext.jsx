@@ -401,15 +401,39 @@ export function FeedProvider({ children }) {
         try {
           const arxivProm = fetchPapers(rankedPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, queryMode).catch(() => []);
           
-          const elsevierAdapter = new ElsevierAdapter();
-          const elsevierQuery = rankedPreferences.slice(0, 3).map(c => {
-             const cat = allCategories.find(x => x.id === c);
-             return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
-          }).join(' OR ');
-          const elsevierProm = elsevierAdapter.search(elsevierQuery, currentPage + 1).then(res => res.papers).catch(() => []);
-          
-          const pubmedAdapter = new PubmedAdapter();
-          const pubmedProm = pubmedAdapter.search(elsevierQuery, currentPage + 1).then(res => res.papers).catch(() => []);
+          // Determine parent areas for each preference
+          const getParentArea = (catId) => {
+             for (const [areaId, area] of Object.entries(allCategoriesObj)) {
+               if (area.subcategories && area.subcategories[catId]) return areaId;
+             }
+             return null;
+          };
+
+          const elsevierAllowedAreas = ['eess', 'mech', 'civil', 'chemeng', 'med', 'bio', 'q-bio'];
+          const pubmedAllowedAreas = ['med', 'bio', 'q-bio'];
+
+          const elsevierCats = rankedPreferences.filter(c => elsevierAllowedAreas.includes(getParentArea(c))).slice(0, 3);
+          const pubmedCats = rankedPreferences.filter(c => pubmedAllowedAreas.includes(getParentArea(c))).slice(0, 3);
+
+          let elsevierProm = Promise.resolve([]);
+          if (elsevierCats.length > 0) {
+             const elsevierAdapter = new ElsevierAdapter();
+             const elsevierQuery = elsevierCats.map(c => {
+                const cat = allCategories.find(x => x.id === c);
+                return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+             }).join(' OR ');
+             elsevierProm = elsevierAdapter.search(elsevierQuery, currentPage + 1).then(res => res.papers).catch(() => []);
+          }
+
+          let pubmedProm = Promise.resolve([]);
+          if (pubmedCats.length > 0) {
+             const pubmedAdapter = new PubmedAdapter();
+             const pubmedQuery = pubmedCats.map(c => {
+                const cat = allCategories.find(x => x.id === c);
+                return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
+             }).join(' OR ');
+             pubmedProm = pubmedAdapter.search(pubmedQuery, currentPage + 1).then(res => res.papers).catch(() => []);
+          }
           
           const [arx, els, pub] = await Promise.all([arxivProm, elsevierProm, pubmedProm]);
           mainPapers = PaperBuilder.deduplicate([...arx, ...els, ...pub]);
