@@ -29,13 +29,26 @@ export class ElsevierAdapter extends BaseAdapter {
       url.searchParams.append('query', finalQuery);
       url.searchParams.append('start', start);
       url.searchParams.append('count', count);
+      // append apiKey so it passes through the proxy without needing headers
+      url.searchParams.append('apiKey', this.apiKey);
 
-      const response = await fetch(url.toString(), {
-        headers: {
-          'X-ELS-APIKey': this.apiKey,
-          'Accept': 'application/json'
-        }
-      });
+      let response = null;
+      
+      try {
+        const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url.toString())}`;
+        response = await fetch(proxyUrl, {
+          headers: { 'Accept': 'application/json' }
+        });
+      } catch (err) {
+        console.warn("corsproxy.io failed for Elsevier, trying codetabs", err);
+      }
+
+      if (!response || !response.ok) {
+        const fallbackProxyUrl = `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url.toString())}`;
+        response = await fetch(fallbackProxyUrl, {
+          headers: { 'Accept': 'application/json' }
+        });
+      }
 
       if (!response.ok) {
         throw new Error(`Elsevier API Error: ${response.status}`);
