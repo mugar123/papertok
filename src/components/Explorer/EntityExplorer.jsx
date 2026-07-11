@@ -183,6 +183,7 @@ export default function EntityExplorer() {
   }, [type, id, searchParams]);
 
   useEffect(() => {
+    let isCancelled = false;
     async function loadPapers() {
       if (!entity || activeTab !== 'papers') return;
       if (page === 1) setIsLoadingPapers(true);
@@ -259,6 +260,8 @@ export default function EntityExplorer() {
            }
         }
 
+        if (isCancelled) return;
+
         if (page === 1) {
           setPapers(fetchedPapers);
         } else {
@@ -271,16 +274,20 @@ export default function EntityExplorer() {
         setHasMore(page * 30 < total);
       } catch (err) {
         console.error("Failed to load papers for entity", err);
+        if (isCancelled) return;
         if (page === 1) setPapers([]);
         setHasMore(false); // Stop infinite looping on errors
       }
+      if (isCancelled) return;
       setIsLoadingPapers(false);
       setIsFetchingMore(false);
     }
     loadPapers();
+    return () => { isCancelled = true; };
   }, [type, id, entity, sortBy, page, debouncedSearch, filters, activeTab, searchParams]);
 
   useEffect(() => {
+    let isCancelled = false;
     async function loadAuthors() {
       if (!entity || type === 'author' || activeTab !== 'authors') return;
       if (authorsPage === 1) setIsLoadingAuthors(true);
@@ -290,6 +297,7 @@ export default function EntityExplorer() {
         const resolvedId = entity.id || id;
         const { authors, total } = await getAuthorsByEntity(type, resolvedId, authorsPage, debouncedSearch);
         
+        if (isCancelled) return;
         if (authorsPage === 1) {
           setEntityAuthors(authors);
         } else {
@@ -302,12 +310,15 @@ export default function EntityExplorer() {
         setHasMoreAuthors(authorsPage * 30 < total);
       } catch (err) {
         console.error("Failed to load authors for entity", err);
+        if (isCancelled) return;
         setHasMoreAuthors(false); // Stop infinite looping on errors
       }
+      if (isCancelled) return;
       setIsLoadingAuthors(false);
       setIsFetchingMoreAuthors(false);
     }
     loadAuthors();
+    return () => { isCancelled = true; };
   }, [type, id, entity, authorsPage, debouncedSearch, activeTab]);
 
   useEffect(() => {
