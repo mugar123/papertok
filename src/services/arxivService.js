@@ -201,11 +201,15 @@ async function fetchArxivData(url) {
     // 2. Try allorigins (keeps all authors)
     const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(cleanUrl)}`;
     const response = await fetchWithTimeout(proxyUrl, 6000);
-        
         if (response.ok) {
            const data = await response.json();
            if (data.contents) {
-             const parsed = parseArxivXml(data.contents);
+             let xmlText = data.contents;
+             if (xmlText.startsWith('data:')) {
+               const base64Data = xmlText.split(',')[1];
+               xmlText = atob(base64Data);
+             }
+             const parsed = parseArxivXml(xmlText);
              if (parsed.length > 0) return parsed;
            }
         }

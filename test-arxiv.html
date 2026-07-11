@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html>
+<head><title>Test</title></head>
+<body>
+  <script type="module">
+    import { fetchPapers } from './src/services/arxivService.js';
+    fetchPapers(['quant-ph']).then(console.log).catch(console.error);
+  </script>
+</body>
+</html>
