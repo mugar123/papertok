@@ -47,7 +47,50 @@ export class PubmedAdapter extends BaseAdapter {
       const summaryData = await summaryRes.json();
 
       const results = pmids.map(pmid => summaryData.result[pmid]).filter(Boolean);
-      const mappedPapers = results.map(item => this.mapToStandard(item));
+      let mappedPapers = results.map(item => this.mapToStandard(item));
+
+      // 3. Enrich with OpenAlex for abstracts and categories
+      try {
+        const openAlexUrl = `https://api.openalex.org/works?filter=ids.pmid:${pmids.join('|')}&per-page=50&select=ids,abstract_inverted_index,concepts`;
+        const oaRes = await fetch(openAlexUrl);
+        if (oaRes.ok) {
+          const oaData = await oaRes.json();
+          if (oaData && oaData.results) {
+             const enrichmentMap = {};
+             oaData.results.forEach(work => {
+               if (work.ids && work.ids.pmid) {
+                 const pmid = work.ids.pmid.split('/').pop();
+                 let abstract = '';
+                 if (work.abstract_inverted_index) {
+                   const words = [];
+                   for (const [word, positions] of Object.entries(work.abstract_inverted_index)) {
+                     for (const pos of positions) {
+                       words[pos] = word;
+                     }
+                   }
+                   abstract = words.join(' ').replace(/\s+/g, ' ').trim();
+                 }
+                 const categories = work.concepts?.map(c => c.display_name) || [];
+                 enrichmentMap[`pmid:${pmid}`] = { abstract, categories };
+               }
+             });
+
+             mappedPapers = mappedPapers.map(p => {
+               const enrichment = enrichmentMap[p.id];
+               if (enrichment) {
+                 if (enrichment.abstract) p.abstract = enrichment.abstract;
+                 if (enrichment.categories && enrichment.categories.length > 0) {
+                   p.categories = enrichment.categories;
+                   p.keywords = enrichment.categories;
+                 }
+               }
+               return p;
+             });
+          }
+        }
+      } catch (err) {
+        console.warn("PubmedAdapter OpenAlex enrichment failed:", err);
+      }
 
       return { papers: mappedPapers, total };
 
