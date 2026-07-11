@@ -3,7 +3,7 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, findInstitution } from '../../services/openAlexService';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
-import { ElsevierAdapter } from '../../services/adapters';
+import { ElsevierAdapter, PubmedAdapter } from '../../services/adapters';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { PaperBuilder } from '../../services/PaperBuilder';
 import { getOrcidRecord } from '../../services/orcidService';
@@ -208,8 +208,11 @@ export default function EntityExplorer() {
            const elsevierAdapter = new ElsevierAdapter();
            const elsevierProm = elsevierAdapter.search(`"${entity.display_name}"`, 1, { type: 'author' }).then(res => res.papers).catch(() => []);
            
-           const [arx, els] = await Promise.all([arxivProm, elsevierProm]);
-           const allPapers = PaperBuilder.deduplicate([...arx, ...els]);
+           const pubmedAdapter = new PubmedAdapter();
+           const pubmedProm = pubmedAdapter.search(`"${entity.display_name}"`, 1, { type: 'author' }).then(res => res.papers).catch(() => []);
+           
+           const [arx, els, pub] = await Promise.all([arxivProm, elsevierProm, pubmedProm]);
+           const allPapers = PaperBuilder.deduplicate([...arx, ...els, ...pub]);
            
            fetchedPapers.push(...allPapers);
            total = allPapers.length;

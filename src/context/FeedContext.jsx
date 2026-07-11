@@ -9,7 +9,7 @@ import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data
 import { enrichPapersBatch, getArxivIdsForOpenAlexWorks } from '../services/openAlexService';
 import { getPaperRecommendations } from '../services/semanticScholarService';
 import { PaperBuilder } from '../services/PaperBuilder';
-import { ElsevierAdapter } from '../services/adapters';
+import { ElsevierAdapter, PubmedAdapter } from '../services/adapters';
 import {
   applyRecommendationScore,
   logRankingBatch,
@@ -405,8 +405,11 @@ export function FeedProvider({ children }) {
           const elsevierQuery = rankedPreferences.slice(0, 3).map(c => `"${c.replace(/\./g, ' ')}"`).join(' OR ');
           const elsevierProm = elsevierAdapter.search(elsevierQuery, currentPage + 1).then(res => res.papers).catch(() => []);
           
-          const [arx, els] = await Promise.all([arxivProm, elsevierProm]);
-          mainPapers = PaperBuilder.deduplicate([...arx, ...els]);
+          const pubmedAdapter = new PubmedAdapter();
+          const pubmedProm = pubmedAdapter.search(elsevierQuery, currentPage + 1).then(res => res.papers).catch(() => []);
+          
+          const [arx, els, pub] = await Promise.all([arxivProm, elsevierProm, pubmedProm]);
+          mainPapers = PaperBuilder.deduplicate([...arx, ...els, ...pub]);
         } catch (e) {
           console.error("Error fetching main papers:", e);
         }
@@ -464,9 +467,12 @@ export function FeedProvider({ children }) {
             // We ask for page randomly just like arxiv
             const elsevierProm = elsevierAdapter.search(elsevierQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
             
-            const [arx, els] = await Promise.all([arxivProm, elsevierProm]);
+            const pubmedAdapter = new PubmedAdapter();
+            const pubmedProm = pubmedAdapter.search(elsevierQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+            
+            const [arx, els, pub] = await Promise.all([arxivProm, elsevierProm, pubmedProm]);
             // Limit to exploreCount
-            fetchedExplore = PaperBuilder.deduplicate([...arx, ...els]).slice(0, exploreCount * 2);
+            fetchedExplore = PaperBuilder.deduplicate([...arx, ...els, ...pub]).slice(0, exploreCount * 2);
           } catch (e) {
             console.error("Error fetching explore papers:", e);
           }
