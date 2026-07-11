@@ -55,32 +55,35 @@ export class ArxivAdapter extends BaseAdapter {
       });
 
       const published = entry.getElementsByTagName('published')[0]?.textContent || new Date().toISOString();
-      const year = new Date(published).getFullYear();
+      const publishedYear = new Date(published).getFullYear();
       
-      const doiNode = Array.from(entry.getElementsByTagName('link')).find(link => link.getAttribute('title') === 'doi');
-      const doi = doiNode ? doiNode.getAttribute('href').replace('http://dx.doi.org/', '') : null;
+      const allCategories = Array.from(entry.getElementsByTagName('category')).map(c => c.getAttribute('term'));
 
       // Extract PDF URL
       const pdfNode = Array.from(entry.getElementsByTagName('link')).find(link => link.getAttribute('title') === 'pdf');
-      const pdfUrl = pdfNode ? pdfNode.getAttribute('href') + '.pdf' : null;
+      const pdfUrl = pdfNode ? pdfNode.getAttribute('href') : null;
+
+      const doi = entry.querySelector('doi')?.textContent || entry.getElementsByTagName('arxiv:doi')[0]?.textContent || entry.getElementsByTagNameNS('*', 'doi')[0]?.textContent || '';
+      const journalRef = entry.querySelector('journal_ref')?.textContent || entry.getElementsByTagName('arxiv:journal_ref')[0]?.textContent || entry.getElementsByTagNameNS('*', 'journal_ref')[0]?.textContent || '';
+      const comment = entry.querySelector('comment')?.textContent || entry.getElementsByTagName('arxiv:comment')[0]?.textContent || entry.getElementsByTagNameNS('*', 'comment')[0]?.textContent || '';
+
+      const isPublishedInArxiv = !!(doi || journalRef || (comment && comment.match(/(accepted|published|appears|to appear) in/i)));
 
       return {
-        id,
-        doi,
+        id: `arxiv:${id}`,
         title,
         abstract,
         authors,
-        publishedDate: published,
-        year,
-        sourceName: 'arXiv',
-        sourceType: 'repository',
-        publicationStatus: 'preprint',
-        isOpenAccess: true,
+        year: publishedYear,
+        publicationStatus: isPublishedInArxiv ? 'published' : 'preprint',
+        publicationType: isPublishedInArxiv ? 'article' : 'preprint',
+        openAccess: true,
         pdfUrl,
         landingPageUrl: `https://arxiv.org/abs/${id}`,
-        citationsCount: 0,
-        provider: this.name,
-        raw: null // XML nodes are tricky to serialize, skip for now
+        categories: allCategories,
+        doi,
+        journal: journalRef,
+        sources: { primary: 'arxiv' }
       };
     } catch (e) {
       console.error("Error parsing arXiv entry:", e);

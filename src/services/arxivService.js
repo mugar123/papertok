@@ -81,6 +81,8 @@ function parseArxivXml(xmlText) {
     const publishedRaw = entry.querySelector('published')?.textContent || entry.getElementsByTagNameNS('*', 'published')[0]?.textContent || '';
     const published = safeDateISO(publishedRaw);
 
+    const isPublishedInArxiv = !!(doi || journalRef || (comment && comment.match(/(accepted|published|appears|to appear) in/i)));
+
     papers.push(PaperBuilder.create({
       id: arxivId,
       sources: { primary: 'arxiv', enrichedBy: [] },
@@ -90,7 +92,8 @@ function parseArxivXml(xmlText) {
       doi,
       journal: journalRef,
       year: new Date(published).getFullYear(),
-      publicationType: 'preprint',
+      publicationType: isPublishedInArxiv ? 'article' : 'preprint',
+      publicationStatus: isPublishedInArxiv ? 'published' : 'preprint',
       openAccess: true,
       pdfUrl,
       landingPageUrl: `https://arxiv.org/abs/${arxivId}`,
