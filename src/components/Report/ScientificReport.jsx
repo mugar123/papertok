@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { getScientificReport } from '../../services/scientificReportService';
-import PaperCard from '../Feed/PaperCard';
 import { getCategoryGradient } from '../../data/categories';
 import { FileText, Calendar, Award, BookOpen, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink } from 'lucide-react';
 import './ScientificReport.css';
@@ -252,23 +251,71 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           {/* Highlighted Papers Section */}
           {report.highlights?.length > 0 && (
             <div className="report-highlights-section">
-              <h2 className="report-section-title">Artículos destacados</h2>
-              <div className="report-highlights-list">
-                {report.highlights.map((paper) => (
-                  <div key={paper.id} className="report-card-wrapper">
-                    <PaperCard
-                      paper={paper}
-                      isLiked={likedPaperIds.has(paper.id)}
-                      isSaved={savedPaperIds.has(paper.id)}
-                      isRead={readPaperIds?.has(paper.id)}
-                      onLike={toggleLike}
-                      onNotInterested={markNotInterested}
-                      onMarkAsRead={markAsRead}
-                      trackViewTime={trackViewTime}
-                      trackSkip={trackSkip}
-                      onOpenPdf={onOpenPdf}
-                      onSaveToList={onSaveToList}
-                    />
+              <h2 className="report-section-title">Otras Investigaciones Destacadas</h2>
+              <div className="report-highlights-list-editorial">
+                {report.highlights.map((paper, index) => (
+                  <div 
+                    key={paper.id} 
+                    className="report-highlight-card glass-strong"
+                    onClick={() => {
+                      const hasValidPdf = paper.pdfUrl && (paper.pdfUrl.includes('arxiv.org') || paper.pdfUrl.toLowerCase().endsWith('.pdf'));
+                      if (paper.arxivId || hasValidPdf) {
+                        onOpenPdf(paper);
+                      } else if (paper.pdfUrl || paper.landingPageUrl) {
+                        window.open(paper.pdfUrl || paper.landingPageUrl, '_blank');
+                      }
+                    }}
+                  >
+                    <div className="report-highlight-number">
+                      {String(index + 1).padStart(2, '0')}
+                    </div>
+                    <div className="report-highlight-content">
+                      <div className="report-highlight-meta">
+                        <span className="rh-category">
+                          {paper.primaryCategory ? paper.primaryCategory.toUpperCase() : 'CIENCIA'}
+                        </span>
+                        <span className="rh-bullet">•</span>
+                        <span>{paper.year}</span>
+                        {paper.journal && (
+                          <>
+                            <span className="rh-bullet">•</span>
+                            <span>{paper.journal}</span>
+                          </>
+                        )}
+                      </div>
+                      
+                      <h3 className="report-highlight-title">{paper.title}</h3>
+                      
+                      <div className="report-highlight-authors">
+                        {paper.authors?.slice(0, 3).map(a => a.name || a).join(', ')}
+                        {paper.authors?.length > 3 ? ' et al.' : ''}
+                      </div>
+                      
+                      <p className="report-highlight-abstract">
+                        {paper.abstract}
+                      </p>
+                      
+                      <div className="report-highlight-footer">
+                        <div className="rh-badges">
+                          {paper.openAccess && (
+                            <span className="rh-badge rh-badge-oa">
+                              <Unlock size={10} /> OA
+                            </span>
+                          )}
+                          {paper.citationCount > 0 && (
+                            <span className="rh-badge rh-badge-cites">
+                              <Award size={10} /> {paper.citationCount} citas
+                            </span>
+                          )}
+                        </div>
+                        <span className="rh-read-btn">
+                          Leer artículo 
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                          </svg>
+                        </span>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>

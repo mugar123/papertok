@@ -264,46 +264,162 @@
   margin-top: var(--space-2);
 }
 
-/* ── Highlights Section ── */
+/* ── Highlights Section (Editorial Style) ── */
 .report-highlights-section {
   width: 100%;
 }
 
-.report-highlights-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-  gap: var(--space-6);
-  align-items: start;
+.report-highlights-list-editorial {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin-top: var(--space-4);
 }
 
-.report-card-wrapper {
-  height: 580px; /* fixed dashboard height */
-  width: 100%;
-  border-radius: 28px;
+.report-highlight-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-6) var(--space-8);
+  border-radius: 24px;
+  background: rgba(20, 20, 25, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  background: rgba(15, 15, 20, 0.5);
+  cursor: pointer;
+  transition: all 0.3s ease;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.report-highlight-card:hover {
+  background: rgba(30, 30, 35, 0.6);
+  transform: translateY(-4px);
+  border-color: rgba(255, 255, 255, 0.15);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.3);
+}
+
+.report-highlight-number {
+  position: absolute;
+  top: -20px;
+  right: 20px;
+  font-size: 140px;
+  font-family: var(--font-title);
+  font-weight: 900;
+  color: rgba(255, 255, 255, 0.03);
+  line-height: 1;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+}
+
+.report-highlight-content {
   position: relative;
-  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
 }
 
-.report-card-wrapper:hover {
-  transform: translateY(-8px);
-  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15);
+.report-highlight-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  letter-spacing: 0.05em;
 }
 
-/* Override absolute full-screen side layout of PaperCard so it functions nicely in vertical cards list */
-.report-card-wrapper .pc {
-  height: 100% !important;
+.rh-category {
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+.rh-bullet {
+  color: rgba(255, 255, 255, 0.2);
+}
+
+.report-highlight-title {
+  font-family: var(--font-title);
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: #fff;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+
+.report-highlight-authors {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.6);
+  font-weight: 500;
+}
+
+.report-highlight-abstract {
+  font-size: 14px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.7);
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.report-highlight-footer {
+  display: flex;
   justify-content: space-between;
+  align-items: center;
+  margin-top: var(--space-2);
+  padding-top: var(--space-4);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.report-card-wrapper .pc-side-actions {
-  right: 16px !important;
-  bottom: 16px !important;
+.rh-badges {
+  display: flex;
+  gap: 8px;
+}
+
+.rh-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-secondary);
+}
+
+.rh-badge-oa {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.rh-badge-cites {
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.rh-read-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #fff;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  transition: gap 0.2s ease, color 0.2s ease;
+}
+
+.report-highlight-card:hover .rh-read-btn {
+  color: var(--accent);
+  gap: 10px;
 }
 
 /* ── Loading, retry, spinners ── */
