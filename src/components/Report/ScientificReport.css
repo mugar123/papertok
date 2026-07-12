@@ -96,8 +96,27 @@
 }
 .sr-retry:hover { background: rgba(255, 255, 255, 0.14); }
 
+/* ── Animations ── */
+@keyframes sr-fade-up {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
 /* ── Body ── */
-.sr-body { display: flex; flex-direction: column; gap: 40px; }
+.sr-body {
+  display: flex;
+  flex-direction: column;
+  gap: 40px;
+}
+
+.sr-body > * {
+  animation: sr-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.sr-body > .sr-stats-bar { animation-delay: 0.1s; }
+.sr-body > .sr-hero { animation-delay: 0.2s; }
+.sr-body > .sr-highlights { animation-delay: 0.3s; }
+
 
 /* ============================================
    STATS BAR
@@ -287,6 +306,7 @@
   -webkit-backdrop-filter: blur(10px);
   border: 1px solid rgba(255, 255, 255, 0.05);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: sr-fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .sr-bento-card:hover {

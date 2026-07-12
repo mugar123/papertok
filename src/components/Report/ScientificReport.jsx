@@ -193,6 +193,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                       key={paper.id}
                       className={`sr-bento-card ${isWide ? 'wide' : 'narrow'}`}
                       onClick={() => setSelectedPaper(paper)}
+                      style={{ animationDelay: `${0.3 + i * 0.1}s` }}
                     >
                       <div className="sr-bento-accent" style={{ background: accent }} />
                       <div className="sr-bento-body">
