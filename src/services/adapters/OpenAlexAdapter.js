@@ -103,6 +103,7 @@ export class OpenAlexAdapter extends BaseAdapter {
       landingPageUrl,
       citationsCount: work.cited_by_count || 0,
       provider: this.name,
+      categories: concepts,
       keywords: concepts,
       raw: work
     };
