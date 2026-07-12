@@ -525,13 +525,29 @@ export async function findInstitution({ rorUrl, name }) {
 /**
  * Fetch entity metadata by ID
  */
-/**
- * Fetch entity metadata by ID
- */
 export async function getEntityById(type, id) {
   if (!id) return null;
-  const endpoint = type === 'institution' ? 'institutions' : type === 'concept' ? 'concepts' : type === 'source' ? 'sources' : 'authors';
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
+  
+  // If it's an institution and the ID is a ROR ID, resolve via ROR filter
+  if (type === 'institution' && (id.includes('ror.org') || !cleanId.startsWith('I'))) {
+    const rorUrl = id.startsWith('http') ? id : `https://ror.org/${cleanId}`;
+    const url = `https://api.openalex.org/institutions?filter=ror:${encodeURIComponent(rorUrl)}`;
+    try {
+      const response = await fetchWithTimeout(url, 10000);
+      if (!response.ok) return null;
+      const data = await response.json();
+      if (data.results && data.results.length > 0) {
+        return data.results[0];
+      }
+      return null;
+    } catch (err) {
+      console.error(`OpenAlex getEntityById by ROR filter failed for ${id}`, err);
+      return null;
+    }
+  }
+  
+  const endpoint = type === 'institution' ? 'institutions' : type === 'concept' ? 'concepts' : type === 'source' ? 'sources' : 'authors';
   const url = `https://api.openalex.org/${endpoint}/${cleanId}`;
   
   try {
@@ -583,10 +599,22 @@ const OA_CONCEPT_MAP = {
 export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc', page = 1, searchQuery = '', filters = {}) {
   if (!id) return { papers: [], total: 0 };
   
-  const filterKey = type === 'institution' ? 'institutions.id' : type === 'concept' ? 'concepts.id' : type === 'source' ? 'locations.source.id' : 'author.id';
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
+  const isRor = type === 'institution' && (id.includes('ror.org') || !cleanId.startsWith('I'));
   
-  let filterParams = `${filterKey}:${cleanId}`;
+  let filterKey;
+  if (type === 'institution') {
+    filterKey = isRor ? 'institutions.ror' : 'institutions.id';
+  } else if (type === 'concept') {
+    filterKey = 'concepts.id';
+  } else if (type === 'source') {
+    filterKey = 'locations.source.id';
+  } else {
+    filterKey = 'author.id';
+  }
+  
+  const filterId = isRor ? (id.startsWith('http') ? id : `https://ror.org/${cleanId}`) : cleanId;
+  let filterParams = `${filterKey}:${filterId}`;
   
   // Advanced Filters
   if (filters.peerReviewed) {
@@ -635,10 +663,18 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
 export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '') {
   if (!id || type === 'author') return { authors: [], total: 0 };
   
-  const filterKey = type === 'institution' ? 'last_known_institutions.id' : 'x_concepts.id';
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
+  const isRor = type === 'institution' && (id.includes('ror.org') || !cleanId.startsWith('I'));
   
-  let url = `https://api.openalex.org/authors?filter=${filterKey}:${cleanId}&sort=cited_by_count:desc&per-page=30&page=${page}`;
+  let filterKey;
+  if (type === 'institution') {
+    filterKey = isRor ? 'last_known_institutions.ror' : 'last_known_institutions.id';
+  } else {
+    filterKey = 'x_concepts.id';
+  }
+  
+  const filterId = isRor ? (id.startsWith('http') ? id : `https://ror.org/${cleanId}`) : cleanId;
+  let url = `https://api.openalex.org/authors?filter=${filterKey}:${filterId}&sort=cited_by_count:desc&per-page=30&page=${page}`;
   if (searchQuery) {
      url += `&search=${encodeURIComponent(searchQuery)}`;
   }
