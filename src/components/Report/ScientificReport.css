@@ -90,11 +90,13 @@
 
 .report-hero-card {
   position: relative;
-  border-radius: 28px;
+  border-radius: 32px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(20, 20, 25, 0.4);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 15, 20, 0.4);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
 /* Dynamic category colors as backdrop blur */
@@ -157,13 +159,13 @@
 
 .report-hero-title {
   font-family: var(--font-title);
-  font-size: calc(var(--fs-xl) * 1.25);
-  font-weight: var(--fw-bold);
-  line-height: 1.25;
-  color: #fff;
-  margin: 0;
-  letter-spacing: -0.025em;
-  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+  font-size: calc(var(--fs-xl) * 1.5);
+  font-weight: 800;
+  line-height: 1.15;
+  color: #ffffff;
+  margin: var(--space-2) 0;
+  letter-spacing: -0.03em;
+  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
 }
 
 .report-hero-authors {
@@ -229,15 +231,18 @@
 }
 
 .report-hero-abstract {
-  font-size: var(--fs-sm);
-  line-height: 1.6;
-  color: var(--text-secondary);
-  background: rgba(0, 0, 0, 0.2);
-  padding: var(--space-4);
-  border-radius: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  max-height: 250px;
+  font-size: var(--fs-md);
+  line-height: 1.7;
+  color: rgba(255, 255, 255, 0.9);
+  background: transparent;
+  padding: 4px 0 4px 24px;
+  border-left: 3px solid var(--accent);
+  margin-top: var(--space-2);
+  margin-bottom: var(--space-2);
+  max-height: 300px;
   overflow-y: auto;
+  font-style: italic;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
 }
 
 /* Custom scrollbars for the abstracts */
@@ -265,20 +270,29 @@
 }
 
 .report-highlights-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: var(--space-6);
+  align-items: start;
 }
 
 .report-card-wrapper {
-  height: 520px; /* fixed dashboard height */
+  height: 580px; /* fixed dashboard height */
   width: 100%;
-  border-radius: 24px;
+  border-radius: 28px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(20, 20, 25, 0.45);
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(15, 15, 20, 0.5);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: 0 15px 40px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.08);
   position: relative;
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease;
+}
+
+.report-card-wrapper:hover {
+  transform: translateY(-8px);
+  box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 
 /* Override absolute full-screen side layout of PaperCard so it functions nicely in vertical cards list */
