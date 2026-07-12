@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useFeed } from '../../context/FeedContext';
-import PaperCard from '../Feed/PaperCard';
+import { getScientificReport } from '../../services/scientificReportService';
 import CustomDateSelector from './CustomDateSelector';
 import { getCategoryGradient } from '../../data/categories';
 import { FileText, Calendar, Award, BookOpen, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink } from 'lucide-react';
