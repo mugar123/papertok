@@ -210,7 +210,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                             {paper.citationCount > 0 && <span className="sr-micro">{paper.citationCount} citas</span>}
                             {paper.journal && <span className="sr-micro venue">{paper.journal}</span>}
                           </div>
-                          <span className="sr-bento-read">Leer <ArrowRight size={13} /></span>
                         </div>
                       </div>
                     </article>
