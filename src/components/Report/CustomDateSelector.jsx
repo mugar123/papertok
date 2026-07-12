@@ -16,8 +16,14 @@ export default function CustomDateSelector({ onApply, onCancel }) {
   
   const [exactDateMode, setExactDateMode] = useState(false);
   const [selectedMonth, setSelectedMonth] = useState(0); 
-  const [startDay, setStartDay] = useState(null);
-  const [endDay, setEndDay] = useState(null);
+  
+  // Start and End full date strings (YYYY-MM-DD)
+  const [startDateStr, setStartDateStr] = useState(null);
+  const [endDateStr, setEndDateStr] = useState(null);
+
+  const formatYMD = (year, month, day) => {
+    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+  };
 
   const popoverRef = useRef(null);
 
@@ -36,19 +42,14 @@ export default function CustomDateSelector({ onApply, onCancel }) {
   useEffect(() => {
     if (!isSingleYear) {
       setExactDateMode(false);
-      setStartDay(null);
-      setEndDay(null);
+      setStartDateStr(null);
+      setEndDateStr(null);
     }
   }, [isSingleYear, yearRange]);
 
   const handleApply = () => {
-    if (isSingleYear && exactDateMode && startDay) {
-      const y = yearRange[0];
-      const m = String(selectedMonth + 1).padStart(2, '0');
-      const sD = String(startDay).padStart(2, '0');
-      const eD = String(endDay || startDay).padStart(2, '0');
-      
-      onApply({ type: 'custom', from: `${y}-${m}-${sD}`, to: `${y}-${m}-${eD}` });
+    if (isSingleYear && exactDateMode && startDateStr) {
+      onApply({ type: 'custom', from: startDateStr, to: endDateStr || startDateStr });
     } else {
       onApply({ type: 'custom', from: `${yearRange[0]}-01-01`, to: `${yearRange[1]}-12-31` });
     }
@@ -67,33 +68,37 @@ export default function CustomDateSelector({ onApply, onCancel }) {
 
   const handleDayClick = (day) => {
     if (!day) return;
-    if (startDay && endDay) {
-      setStartDay(day);
-      setEndDay(null);
-    } else if (startDay && !endDay) {
-      if (day < startDay) {
-        setEndDay(startDay);
-        setStartDay(day);
+    const clickedDateStr = formatYMD(yearRange[0], selectedMonth, day);
+    
+    if (startDateStr && endDateStr) {
+      setStartDateStr(clickedDateStr);
+      setEndDateStr(null);
+    } else if (startDateStr && !endDateStr) {
+      if (clickedDateStr < startDateStr) {
+        setEndDateStr(startDateStr);
+        setStartDateStr(clickedDateStr);
       } else {
-        setEndDay(day);
+        setEndDateStr(clickedDateStr);
       }
     } else {
-      setStartDay(day);
-      setEndDay(null);
+      setStartDateStr(clickedDateStr);
+      setEndDateStr(null);
     }
   };
 
   const isDaySelected = (day) => {
     if (!day) return false;
-    if (startDay === day) return true;
-    if (endDay === day) return true;
-    if (startDay && endDay && day > startDay && day < endDay) return true;
+    const cellDateStr = formatYMD(yearRange[0], selectedMonth, day);
+    if (startDateStr === cellDateStr) return true;
+    if (endDateStr === cellDateStr) return true;
+    if (startDateStr && endDateStr && cellDateStr > startDateStr && cellDateStr < endDateStr) return true;
     return false;
   };
 
   const isDayEndpoint = (day) => {
     if (!day) return false;
-    return day === startDay || day === endDay;
+    const cellDateStr = formatYMD(yearRange[0], selectedMonth, day);
+    return cellDateStr === startDateStr || cellDateStr === endDateStr;
   };
 
   const daysArray = getDaysArray(yearRange[0], selectedMonth);
@@ -137,7 +142,7 @@ export default function CustomDateSelector({ onApply, onCancel }) {
               onClick={() => setExactDateMode(!exactDateMode)}
             >
               <CalendarIcon size={14} />
-              <span>{startDay ? `Día exacto: ${startDay}/${selectedMonth+1}/${yearRange[0]}` : `Precisión diaria en ${yearRange[0]}`}</span>
+              <span>{startDateStr ? `Selección: ${startDateStr}` : `Precisión diaria en ${yearRange[0]}`}</span>
               <ChevronDown size={14} className={`cds-badge-arrow ${exactDateMode ? 'rotated' : ''}`} />
             </button>
 
@@ -164,6 +169,14 @@ export default function CustomDateSelector({ onApply, onCancel }) {
                       {day}
                     </div>
                   ))}
+                </div>
+                
+                <div className="cds-exact-summary" style={{ marginTop: 16, fontSize: 13, color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
+                  {startDateStr ? (
+                    <>Desde: <strong>{startDateStr}</strong> {endDateStr ? <><br/>Hasta: <strong>{endDateStr}</strong></> : ''}</>
+                  ) : (
+                    <span className="cds-summary-placeholder">Selecciona los días límite</span>
+                  )}
                 </div>
               </div>
             )}
