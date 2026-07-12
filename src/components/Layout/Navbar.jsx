@@ -34,13 +34,22 @@ export default function Navbar() {
     refreshFeed();
   };
 
+  const isReportActive = location.pathname === '/report';
   const isListsActive = location.pathname === '/lists';
+  const isHomeActive = location.pathname === '/';
+
+  let sliderTransform = 'translateX(0)';
+  if (isReportActive) {
+    sliderTransform = 'translateX(100%)';
+  } else if (isListsActive) {
+    sliderTransform = 'translateX(200%)';
+  }
 
   return (
     <>
       <nav className="navbar glass-strong">
         <div className="navbar-left">
-          {!isListsActive && (
+          {isHomeActive && (
             <button 
               className={`navbar-action-btn ${isRefreshing ? 'spinning' : ''}`}
               onClick={handleRefresh}
@@ -53,15 +62,22 @@ export default function Navbar() {
 
         <div className="navbar-center-pill">
           <button 
-            className={`navbar-tab ${!isListsActive && feedMode === 'top' ? 'active' : ''}`}
+            className={`navbar-tab ${isHomeActive && feedMode === 'top' ? 'active' : ''}`}
             onClick={() => {
-              if (isListsActive) navigate('/');
+              if (location.pathname !== '/') navigate('/');
               setFeedMode('top');
             }}
           >
             Para ti
           </button>
           
+          <NavLink 
+            to="/report" 
+            className={`navbar-tab ${isReportActive ? 'active' : ''}`}
+          >
+            Reporte
+          </NavLink>
+
           <NavLink 
             to="/lists" 
             className={`navbar-tab ${isListsActive ? 'active' : ''}`}
@@ -73,9 +89,7 @@ export default function Navbar() {
           <div 
             className="navbar-slider" 
             style={{ 
-              transform: isListsActive 
-                ? 'translateX(100%)' 
-                : 'translateX(0)' 
+              transform: sliderTransform
             }} 
           />
         </div>

@@ -1,0 +1,309 @@
+/* ============================================
+   Scientific Report View Layout & Styling
+   ============================================ */
+
+.report-page {
+  width: 100%;
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 100px var(--space-4) 80px var(--space-4); /* margin top to clear fixed navbar */
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+}
+
+/* ── Time Selector Pill ── */
+.report-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: var(--space-8);
+  text-align: center;
+}
+
+.report-selector-pill {
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: 30px;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: var(--space-4);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  width: fit-content;
+}
+
+.report-selector-tab {
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  padding: 8px 16px;
+  cursor: pointer;
+  border-radius: 20px;
+  transition: all 0.3s ease;
+  min-width: 80px;
+  text-align: center;
+}
+
+.report-selector-tab:hover {
+  color: #fff;
+}
+
+.report-selector-tab.active {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 8px rgba(0, 0, 0, 0.25);
+}
+
+.report-context-text {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  font-weight: var(--fw-medium);
+  max-width: 600px;
+  line-height: 1.5;
+}
+
+/* ── Main Section Titles ── */
+.report-section-title {
+  font-family: var(--font-title);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-bold);
+  margin-bottom: var(--space-4);
+  color: #fff;
+  letter-spacing: -0.02em;
+}
+
+/* ── Hero discovery Section ── */
+.report-hero-section {
+  margin-bottom: var(--space-8);
+}
+
+.report-hero-card {
+  position: relative;
+  border-radius: 28px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(20, 20, 25, 0.4);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+/* Dynamic category colors as backdrop blur */
+.report-hero-bg {
+  position: absolute;
+  inset: 0;
+  background: var(--hero-gradient, var(--gradient-brand));
+  opacity: 0.25;
+  z-index: 0;
+  filter: blur(100px);
+}
+
+.report-hero-bg-overlay {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at top left, rgba(255, 255, 255, 0.03), transparent 70%),
+              linear-gradient(180deg, rgba(15, 15, 20, 0.3) 0%, rgba(10, 10, 15, 0.8) 100%);
+  z-index: 1;
+}
+
+.report-hero-body {
+  position: relative;
+  z-index: 2;
+  padding: var(--space-6) var(--space-8);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.report-hero-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.report-hero-badge {
+  font-size: 10px;
+  font-weight: var(--fw-bold);
+  letter-spacing: 0.1em;
+  padding: 4px 10px;
+  border-radius: 100px;
+  text-transform: uppercase;
+}
+
+.report-hero-badge--primary {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.report-hero-meta-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--fs-xs);
+  color: var(--text-secondary);
+  font-weight: var(--fw-semibold);
+}
+
+.report-hero-title {
+  font-family: var(--font-title);
+  font-size: calc(var(--fs-xl) * 1.25);
+  font-weight: var(--fw-bold);
+  line-height: 1.25;
+  color: #fff;
+  margin: 0;
+  letter-spacing: -0.025em;
+  text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+}
+
+.report-hero-authors {
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  font-weight: var(--fw-medium);
+}
+
+.report-hero-author {
+  color: var(--text-secondary);
+}
+
+.report-hero-journal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--fs-xs);
+  color: var(--accent);
+  font-weight: var(--fw-semibold);
+}
+
+.report-hero-badges-row {
+  display: flex;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.report-hero-abstract {
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  background: rgba(0, 0, 0, 0.2);
+  padding: var(--space-4);
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  max-height: 250px;
+  overflow-y: auto;
+}
+
+/* Custom scrollbars for the abstracts */
+.report-hero-abstract::-webkit-scrollbar {
+  width: 4px;
+}
+.report-hero-abstract::-webkit-scrollbar-track {
+  background: transparent;
+}
+.report-hero-abstract::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 10px;
+}
+
+.report-hero-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+
+/* ── Highlights Section ── */
+.report-highlights-section {
+  width: 100%;
+}
+
+.report-highlights-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.report-card-wrapper {
+  height: 520px; /* fixed dashboard height */
+  width: 100%;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(20, 20, 25, 0.45);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  position: relative;
+}
+
+/* Override absolute full-screen side layout of PaperCard so it functions nicely in vertical cards list */
+.report-card-wrapper .pc {
+  height: 100% !important;
+  justify-content: space-between;
+}
+
+.report-card-wrapper .pc-side-actions {
+  right: 16px !important;
+  bottom: 16px !important;
+}
+
+/* ── Loading, retry, spinners ── */
+.report-loading-container,
+.report-error-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 100px 0;
+  gap: var(--space-4);
+  color: var(--text-secondary);
+}
+
+.report-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid rgba(255, 255, 255, 0.08);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: report-spin 0.8s linear infinite;
+}
+
+@keyframes report-spin {
+  to { transform: rotate(360deg); }
+}
+
+.report-retry-btn {
+  background: var(--accent);
+  border: none;
+  color: #fff;
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-sm);
+  padding: 10px 24px;
+  border-radius: 100px;
+  cursor: pointer;
+  transition: opacity 0.2s ease;
+  box-shadow: 0 4px 15px rgba(255, 45, 85, 0.3);
+}
+
+.report-retry-btn:hover {
+  opacity: 0.9;
+}
+
+/* ── Responsive adjustments ── */
+@media (max-width: 600px) {
+  .report-page {
+    padding-top: 85px;
+  }
+  .report-hero-body {
+    padding: var(--space-4) var(--space-4);
+  }
+  .report-hero-title {
+    font-size: var(--fs-lg);
+  }
+  .report-card-wrapper {
+    height: 480px;
+  }
+}

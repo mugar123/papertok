@@ -14,6 +14,7 @@ import PDFViewer from './components/PDF/PDFViewer'
 import SaveToListModal from './components/Lists/SaveToListModal'
 import SearchPage from './components/Search/SearchPage'
 import EntityExplorer from './components/Explorer/EntityExplorer'
+import ScientificReport from './components/Report/ScientificReport'
 import './App.css'
 
 function AppContent() {
@@ -61,6 +62,20 @@ function AppContent() {
                   <Navbar />
                   <ListsPage onOpenPdf={setPdfPaper} />
                 </>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/report"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <Navbar />
+                  <ScientificReport
+                    onOpenPdf={setPdfPaper}
+                    onSaveToList={setSaveModalPaper}
+                  />
+                </PageTransition>
               </ProtectedRoute>
             }
           />
