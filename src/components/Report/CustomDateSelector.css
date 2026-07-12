@@ -1,246 +1,252 @@
-.cds-container {
+.cds-minimal-container {
   width: 100%;
   max-width: 600px;
   margin: 0 auto 24px auto;
-  border-radius: 24px;
-  background: rgba(20, 20, 25, 0.6);
-  backdrop-filter: blur(30px);
-  -webkit-backdrop-filter: blur(30px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  overflow: hidden;
+  padding: 20px 24px;
+  background: transparent;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   animation: cdsFadeIn 0.3s ease;
+  position: relative;
 }
 
 @keyframes cdsFadeIn {
-  from { opacity: 0; transform: translateY(-10px); }
+  from { opacity: 0; transform: translateY(-5px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
-.cds-header {
+.cds-minimal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 24px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  margin-bottom: 24px;
 }
 
-.cds-header h3 {
-  margin: 0;
-  font-family: var(--font-title);
-  font-size: 16px;
-  font-weight: 700;
-  color: #fff;
+.cds-minimal-title {
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: rgba(255, 255, 255, 0.5);
 }
 
-.cds-close-btn {
+.cds-minimal-close {
   background: transparent;
   border: none;
-  color: rgba(255, 255, 255, 0.5);
-  font-size: 18px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 16px;
   cursor: pointer;
   padding: 4px;
   transition: color 0.2s;
 }
 
-.cds-close-btn:hover {
+.cds-minimal-close:hover {
   color: #fff;
 }
 
-.cds-body {
-  padding: 24px;
-}
-
-.cds-section {
+/* Timeline Layout */
+.cds-minimal-timeline {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  margin-bottom: 32px;
+}
+
+.cds-timeline-labels {
+  display: flex;
+  align-items: center;
   gap: 16px;
-}
-
-.cds-labels-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-end;
-}
-
-.cds-label-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.5);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.cds-label-value {
-  font-size: 24px;
-  font-weight: 800;
-  font-family: var(--font-title);
-  color: var(--accent);
-}
-
-.cds-slider-wrapper {
-  padding: 10px 10px;
-}
-
-.cds-single-year-hint {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  margin-top: 12px;
-  background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  color: #fff;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 0.2s;
-  align-self: flex-start;
-}
-
-.cds-single-year-hint:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-/* Calendar Section */
-.cds-calendar-section {
-  margin-top: 24px;
-  padding-top: 24px;
-  border-top: 1px dashed rgba(255, 255, 255, 0.1);
-}
-
-.slide-in {
-  animation: slideIn 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-@keyframes slideIn {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-.cds-calendar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-bottom: 16px;
 }
 
-.cds-cal-title {
-  font-size: 18px;
-  font-weight: 700;
-  color: #fff;
+.cds-year-label {
   font-family: var(--font-title);
+  font-size: 32px;
+  font-weight: 800;
+  color: #fff;
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
 }
 
-.cds-cal-nav {
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+.cds-year-divider {
+  color: rgba(255, 255, 255, 0.3);
+  font-weight: 300;
+}
+
+.cds-timeline-slider {
+  width: 100%;
+  padding: 0 10px;
+}
+
+/* Actions Row */
+.cds-minimal-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cds-badge-placeholder {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.3);
+  font-style: italic;
+}
+
+/* Popover Wrapper */
+.cds-popover-wrapper {
+  position: relative;
+}
+
+.cds-badge-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  background: rgba(155, 135, 245, 0.1);
+  border: 1px solid rgba(155, 135, 245, 0.2);
+  border-radius: 20px;
+  color: #9b87f5;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.cds-badge-btn:hover, .cds-badge-btn.active {
+  background: rgba(155, 135, 245, 0.2);
+  border-color: rgba(155, 135, 245, 0.4);
+  box-shadow: 0 0 15px rgba(155, 135, 245, 0.2);
   color: #fff;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+}
+
+.cds-badge-arrow {
+  transition: transform 0.3s;
+}
+
+.cds-badge-arrow.rotated {
+  transform: rotate(180deg);
+}
+
+/* Floating Calendar */
+.cds-floating-calendar {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  margin-bottom: 12px;
+  width: 280px;
+  background: rgba(15, 15, 20, 0.85);
+  backdrop-filter: blur(40px);
+  -webkit-backdrop-filter: blur(40px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
+  z-index: 100;
+  animation: popoverFade 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes popoverFade {
+  from { opacity: 0; transform: translateY(10px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.cds-fcal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.cds-fcal-month {
+  font-size: 14px;
+  font-weight: 700;
+  color: #fff;
+}
+
+.cds-fcal-nav {
+  background: transparent;
+  border: none;
+  color: rgba(255, 255, 255, 0.5);
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s;
+  transition: color 0.2s;
 }
 
-.cds-cal-nav:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
+.cds-fcal-nav:hover:not(:disabled) {
+  color: #fff;
 }
 
-.cds-cal-nav:disabled {
-  opacity: 0.3;
+.cds-fcal-nav:disabled {
+  opacity: 0.2;
   cursor: not-allowed;
 }
 
-.cds-calendar-grid {
+.cds-fcal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 6px;
+  gap: 4px;
 }
 
-.cds-cal-weekday {
+.cds-fcal-wd {
   text-align: center;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(255, 255, 255, 0.3);
   padding-bottom: 8px;
 }
 
-.cds-cal-day {
+.cds-fcal-day {
   aspect-ratio: 1;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  color: rgba(255, 255, 255, 0.7);
+  transition: all 0.2s ease;
 }
 
-.cds-cal-day.empty {
+.cds-fcal-day.empty {
   cursor: default;
 }
 
-.cds-cal-day.active {
-  background: rgba(255, 255, 255, 0.05);
+.cds-fcal-day:not(.empty):hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+}
+
+.cds-fcal-day.selected {
+  background: rgba(155, 135, 245, 0.2);
   color: #fff;
 }
 
-.cds-cal-day.active:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.cds-cal-day.selected {
-  background: rgba(167, 139, 250, 0.2); /* var(--accent) with opacity */
-  color: #fff;
-}
-
-.cds-cal-day.endpoint {
+.cds-fcal-day.endpoint {
   background: var(--accent) !important;
   color: #fff;
-  box-shadow: 0 4px 12px rgba(167, 139, 250, 0.4);
+  box-shadow: 0 0 15px rgba(155, 135, 245, 0.6);
+  text-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
 }
 
-.cds-exact-summary {
-  margin-top: 16px;
-  font-size: 14px;
-  color: rgba(255, 255, 255, 0.8);
-  text-align: center;
-}
-
-.cds-summary-placeholder {
-  color: rgba(255, 255, 255, 0.4);
-  font-style: italic;
-}
-
-.cds-footer {
-  padding: 16px 24px;
-  background: rgba(0, 0, 0, 0.2);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  display: flex;
-  justify-content: flex-end;
-}
-
-.cds-apply-btn {
+/* Apply Button */
+.cds-minimal-apply {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 20px;
-  background: #fff;
-  color: #000;
-  border: none;
-  border-radius: 12px;
-  font-size: 14px;
-  font-weight: 700;
+  background: transparent;
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 8px 20px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition: all 0.3s ease;
 }
 
-.cds-apply-btn:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 15px rgba(255, 255, 255, 0.2);
+.cds-minimal-apply:hover {
+  background: #fff;
+  color: #000;
+  box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
 }
