@@ -31,10 +31,16 @@
   font-size: 28px;
   font-weight: 800;
   letter-spacing: -0.03em;
-  background: linear-gradient(135deg, #fff 0%, rgba(255, 255, 255, 0.6) 100%);
+  background: linear-gradient(135deg, #fff 0%, rgba(255, 255, 255, 0.4) 50%, #fff 100%);
+  background-size: 200% auto;
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
+  animation: sr-gradient-shift 8s linear infinite;
   margin: 0;
+}
+
+@keyframes sr-gradient-shift {
+  to { background-position: 200% center; }
 }
 
 .sr-edition {
@@ -63,9 +69,11 @@
   padding: 7px 16px;
   border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: center;
 }
 .sr-tab:hover { color: rgba(255, 255, 255, 0.75); }
+.sr-tab:active { transform: scale(0.95); }
 .sr-tab.active { background: rgba(255, 255, 255, 0.1); color: #fff; }
 
 /* ── States ── */
@@ -265,13 +273,15 @@
 .sr-hero-actions { display: flex; gap: 12px; margin-top: 6px; }
 
 .sr-btn {
-  display: inline-flex; align-items: center; gap: 8px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   font-size: 14px; font-weight: 600;
   padding: 10px 22px; border-radius: 10px;
-  cursor: pointer; border: none; transition: all 0.25s;
+  cursor: pointer; border: none; transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: center;
 }
+.sr-btn:active { transform: scale(0.97) !important; }
 .sr-btn.primary { background: #fff; color: #000; }
-.sr-btn.primary:hover { transform: translateY(-1px); box-shadow: 0 4px 16px rgba(255,255,255,0.15); }
+.sr-btn.primary:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(255,255,255,0.15); }
 .sr-btn.ghost { background: transparent; color: rgba(255,255,255,0.55); border: 1px solid rgba(255,255,255,0.1); }
 .sr-btn.ghost:hover { color: #fff; border-color: rgba(255,255,255,0.2); }
 
@@ -314,6 +324,10 @@
   border-color: rgba(255, 255, 255, 0.15);
   transform: translateY(-4px) scale(1.01);
   box-shadow: 0 16px 32px rgba(0, 0, 0, 0.4);
+}
+
+.sr-bento-card:active {
+  transform: scale(0.98);
 }
 
 .sr-bento-card.wide {
