@@ -59,45 +59,45 @@ export async function enrichPapersBatch(arxivIds) {
   });
   
   if (toFetch.length === 0) return result;
+
+  // Separate OpenAlex IDs and ArXiv IDs
+  const openAlexIds = [];
+  const arxivIdsOnly = [];
   
-  // OpenAlex supports up to 50 items in an OR filter. Since we use 2 URLs per ID, max chunk is 25.
-  const CHUNK_SIZE = 20;
-  for (let i = 0; i < toFetch.length; i += CHUNK_SIZE) {
-    const chunk = toFetch.slice(i, i + CHUNK_SIZE);
-    // Use landing_page_url to reliably find arXiv papers instead of DOIs
-    const filterIds = chunk.flatMap(id => {
-       const cleanId = id.replace(/v\d+$/, '');
-       return [`http://arxiv.org/abs/${cleanId}`, `https://arxiv.org/abs/${cleanId}`];
-    }).join('|');
-    const url = `https://api.openalex.org/works?filter=locations.landing_page_url:${encodeURIComponent(filterIds)}&per-page=50&select=doi,ids,concepts,cited_by_count,related_works,locations,primary_location,type`;
-    
+  toFetch.forEach(id => {
+    if (id.startsWith('openalex:') || id.startsWith('https://openalex.org/') || /^W\d+$/.test(id)) {
+      openAlexIds.push(id.replace('openalex:', '').replace('https://openalex.org/', ''));
+    } else {
+      arxivIdsOnly.push(id);
+    }
+  });
+
+  const fetchChunk = async (filterParam) => {
+    const url = `https://api.openalex.org/works?filter=${filterParam}&per-page=50&select=doi,ids,concepts,cited_by_count,related_works,locations,primary_location,type`;
     let response = null;
     let primaryFailed = false;
     try {
       response = await fetchWithTimeout(url, 10000).catch(() => null);
-      if (!response || !response.ok) {
-        primaryFailed = true;
-      }
+      if (!response || !response.ok) primaryFailed = true;
     } catch {
       primaryFailed = true;
     }
-      
-    // If direct fetch fails (e.g., Safari Private Relay block), try proxy cascade
+    
     if (primaryFailed) {
       console.warn('OpenAlex direct fetch failed, trying proxy cascade');
       try {
         const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
         response = await fetchWithTimeout(proxyUrl, 8000).catch(() => null);
-      } catch { /* proxy fallback failed, try next */ }
+      } catch { }
 
       if (!response || !response.ok) {
         try {
           const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
           response = await fetchWithTimeout(proxyUrl, 8000).catch(() => null);
-        } catch { /* proxy fallback failed */ }
+        } catch { }
       }
     }
-      
+
     try {
       if (response && response.ok) {
         const data = await response.json();
@@ -124,32 +124,55 @@ export async function enrichPapersBatch(arxivIds) {
                  }
                }
              }
+
+             const openAlexIdOnly = work.id.split('/').pop();
              
+             const enriched = {
+               concepts: work.concepts || [],
+               citationCount: work.cited_by_count || 0,
+               related_works: work.related_works || [],
+               publicationType: (work.type && work.type !== 'preprint') ? work.type : (work.primary_location?.source?.type || 'preprint'),
+               publicationStatus: (work.primary_location?.is_published || (work.locations && work.locations.some(l => l.is_published)) || (work.type && work.type !== 'preprint')) ? 'published' : 'preprint',
+               doi: work.doi,
+               journal: work.primary_location?.source?.display_name,
+               publisher: work.primary_location?.source?.host_organization_name,
+               openAccess: work.open_access?.is_oa,
+               pdfUrl: work.open_access?.oa_url,
+               landingPageUrl: work.primary_location?.landing_page_url
+             };
+
              if (arxivId) {
-               const enriched = {
-                 concepts: work.concepts || [],
-                 citationCount: work.cited_by_count || 0,
-                 related_works: work.related_works || [],
-                 publicationType: (work.type && work.type !== 'preprint') ? work.type : (work.primary_location?.source?.type || 'preprint'),
-                 publicationStatus: (work.primary_location?.is_published || (work.locations && work.locations.some(l => l.is_published)) || (work.type && work.type !== 'preprint')) ? 'published' : 'preprint',
-                 doi: work.doi,
-                 journal: work.primary_location?.source?.display_name,
-                 publisher: work.primary_location?.source?.host_organization_name,
-                 openAccess: work.open_access?.is_oa,
-                 pdfUrl: work.open_access?.oa_url,
-                 landingPageUrl: work.primary_location?.landing_page_url
-               };
-               CACHE.set(`openalex_work_${arxivId}`, enriched);
+               CACHE.set(arxivId, enriched);
                result[arxivId] = enriched;
              }
+             CACHE.set(`openalex:${openAlexIdOnly}`, enriched);
+             result[`openalex:${openAlexIdOnly}`] = enriched;
           });
         }
       }
-    } catch {
-      // Enrichment processing failed
+    } catch (e) {
+      console.error("Enrichment processing failed", e);
     }
+  };
+
+  // Fetch ArXiv IDs
+  const CHUNK_SIZE = 20;
+  for (let i = 0; i < arxivIdsOnly.length; i += CHUNK_SIZE) {
+    const chunk = arxivIdsOnly.slice(i, i + CHUNK_SIZE);
+    const filterIds = chunk.flatMap(id => {
+       const cleanId = id.replace(/v\d+$/, '');
+       return [`http://arxiv.org/abs/${cleanId}`, `https://arxiv.org/abs/${cleanId}`];
+    }).join('|');
+    await fetchChunk(`locations.landing_page_url:${encodeURIComponent(filterIds)}`);
   }
-  
+
+  // Fetch OpenAlex IDs
+  for (let i = 0; i < openAlexIds.length; i += CHUNK_SIZE) {
+    const chunk = openAlexIds.slice(i, i + CHUNK_SIZE);
+    const filterIds = chunk.join('|');
+    await fetchChunk(`openalex:${encodeURIComponent(filterIds)}`);
+  }
+
   return result;
 }
 
