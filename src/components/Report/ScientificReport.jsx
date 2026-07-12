@@ -3,7 +3,7 @@ import { useFeed } from '../../context/FeedContext';
 import { getScientificReport } from '../../services/scientificReportService';
 import CustomDateSelector from './CustomDateSelector';
 import { getCategoryGradient } from '../../data/categories';
-import { FileText, Calendar, Award, BookOpen, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink } from 'lucide-react';
+import { FileText, Calendar, Award, BookOpen, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, ChevronRight } from 'lucide-react';
 import './ScientificReport.css';
 
 export default function ScientificReport({ onOpenPdf, onSaveToList }) {
