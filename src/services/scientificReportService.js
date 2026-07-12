@@ -40,6 +40,16 @@ function formatDate(date) {
  * Helper to get date thresholds based on timeframe
  */
 function getDateThresholds(timeframe) {
+  if (typeof timeframe === 'object' && timeframe.type === 'custom') {
+    const fromDate = new Date(timeframe.from);
+    const toDate = new Date(timeframe.to);
+    return {
+      fromStr: timeframe.from,
+      toStr: timeframe.to,
+      days: Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24)) || 1
+    };
+  }
+
   const today = new Date();
   let fromDate = new Date();
   
@@ -58,7 +68,7 @@ function getDateThresholds(timeframe) {
   return {
     fromStr: formatDate(fromDate),
     toStr: formatDate(today),
-    days: Math.ceil((today - fromDate) / (1000 * 60 * 60 * 24))
+    days: Math.ceil((today - fromDate) / (1000 * 60 * 60 * 24)) || 1
   };
 }
 
@@ -252,20 +262,28 @@ function scorePaper(paper, timeframe, seenCategories, daysThreshold) {
  * Core orchestrator function to build, deduplicate, score, and rank candidates
  */
 export async function getScientificReport(timeframe = '7d') {
-  // Validate timeframe
-  const validTimeframes = ['24h', '7d', '30d', '1y', '10y'];
-  const tf = validTimeframes.includes(timeframe) ? timeframe : '7d';
+  let tf = '7d';
+  let cacheKey = '7d';
+  
+  if (typeof timeframe === 'object' && timeframe.type === 'custom') {
+    tf = timeframe;
+    cacheKey = `custom_${timeframe.from}_${timeframe.to}`;
+  } else {
+    const validTimeframes = ['24h', '7d', '30d', '1y', '10y'];
+    tf = validTimeframes.includes(timeframe) ? timeframe : '7d';
+    cacheKey = tf;
+  }
   
   // Check global cache
-  const cached = REPORT_CACHE.get(tf);
+  const cached = REPORT_CACHE.get(cacheKey);
   if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
-    console.log(`[ScientificReport] Returning cached stable edition for: ${tf}`);
+    console.log(`[ScientificReport] Returning cached stable edition for: ${cacheKey}`);
     return cached.data;
   }
   
   const { fromStr, toStr, days } = getDateThresholds(tf);
   
-  console.log(`[ScientificReport] Generating stable report for: ${tf} (from ${fromStr} to ${toStr})`);
+  console.log(`[ScientificReport] Generating stable report for: ${cacheKey} (from ${fromStr} to ${toStr})`);
   
   // 1. Fetch Candidates from all sources in parallel
   const [arxivCandidates, openAlexCandidates, pubmedCandidates] = await Promise.all([
@@ -318,8 +336,8 @@ export async function getScientificReport(timeframe = '7d') {
   
   const reportData = { mainDiscovery, highlights };
   
-  // Save to cache
-  REPORT_CACHE.set(tf, { data: reportData, timestamp: Date.now() });
+  // Update cache
+  REPORT_CACHE.set(cacheKey, { timestamp: Date.now(), data: reportData });
   
   return reportData;
 }

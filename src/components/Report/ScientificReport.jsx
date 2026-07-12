@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useFeed } from '../../context/FeedContext';
-import { getScientificReport } from '../../services/scientificReportService';
+import PaperCard from '../Feed/PaperCard';
+import CustomDateSelector from './CustomDateSelector';
 import { getCategoryGradient } from '../../data/categories';
 import { FileText, Calendar, Award, BookOpen, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink } from 'lucide-react';
 import './ScientificReport.css';
@@ -11,6 +12,9 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
+  
+  const [showCustomPicker, setShowCustomPicker] = useState(false);
+  const [customRange, setCustomRange] = useState(null);
 
   const {
     likedPaperIds,
@@ -60,6 +64,13 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   };
 
   const getTimeframeContextText = () => {
+    if (typeof timeframe === 'object' && timeframe.type === 'custom') {
+      if (timeframe.from === timeframe.to) {
+        return `Mostrando investigaciones publicadas exactamente el ${timeframe.from}.`;
+      }
+      return `Mostrando investigaciones publicadas entre ${timeframe.from} y ${timeframe.to}.`;
+    }
+
     switch (timeframe) {
       case '24h': return 'Mostrando los descubrimientos científicos más relevantes publicados durante las últimas 24 horas.';
       case '7d': return 'Mostrando los descubrimientos científicos más relevantes publicados durante la última semana.';
@@ -94,12 +105,20 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             { id: '7d', label: '7 días' },
             { id: '30d', label: '30 días' },
             { id: '1y', label: '1 año' },
-            { id: '10y', label: '10 años' }
+            { id: '10y', label: '10 años' },
+            { id: 'custom', label: 'Otro' }
           ].map((option) => (
             <button
               key={option.id}
-              className={`report-selector-tab ${timeframe === option.id ? 'active' : ''}`}
-              onClick={() => setTimeframe(option.id)}
+              className={`report-selector-tab ${timeframe === option.id || (option.id === 'custom' && customRange) ? 'active' : ''}`}
+              onClick={() => {
+                if (option.id === 'custom') {
+                  setShowCustomPicker(true);
+                } else {
+                  setTimeframe(option.id);
+                  setCustomRange(null);
+                }
+              }}
             >
               {option.label}
             </button>
@@ -107,6 +126,17 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
         </div>
         <p className="report-context-text">{getTimeframeContextText()}</p>
       </div>
+
+      {showCustomPicker && (
+        <CustomDateSelector 
+          onApply={(rangeObj) => {
+            setCustomRange(rangeObj);
+            setTimeframe(rangeObj);
+            setShowCustomPicker(false);
+          }} 
+          onCancel={() => setShowCustomPicker(false)} 
+        />
+      )}
 
       {loading ? (
         <div className="report-loading-container">
