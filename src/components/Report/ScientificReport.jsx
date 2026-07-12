@@ -2,8 +2,9 @@ import { useState, useEffect } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { getScientificReport } from '../../services/scientificReportService';
 import CustomDateSelector from './CustomDateSelector';
+import PaperCard from '../Feed/PaperCard';
 import { getCategoryGradient } from '../../data/categories';
-import { Calendar, Award, BookOpen, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, ArrowRight, BarChart3, TrendingUp, Layers } from 'lucide-react';
+import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, ArrowRight, BarChart3, TrendingUp, X } from 'lucide-react';
 import './ScientificReport.css';
 
 export default function ScientificReport({ onOpenPdf, onSaveToList }) {
@@ -14,6 +15,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [copied, setCopied] = useState(false);
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [customRange, setCustomRange] = useState(null);
+  const [selectedPaper, setSelectedPaper] = useState(null);
 
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
@@ -58,17 +60,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const totalPapers = allPapers.length;
   const totalCitations = allPapers.reduce((sum, p) => sum + (p.citationCount || 0), 0);
   const oaCount = allPapers.filter(p => p.openAccess).length;
-
-  // Extract top categories
-  const catCounts = {};
-  const catColors = {};
-  allPapers.forEach(p => {
-    const cat = (p.categories && p.categories[0]) || p.primaryCategory || 'General';
-    const short = cat.split('.')[0];
-    catCounts[short] = (catCounts[short] || 0) + 1;
-    if (!catColors[short]) catColors[short] = getCategoryGradient(cat);
-  });
-  const topCats = Object.entries(catCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
   const hero = report.mainDiscovery;
   const heroGradient = hero ? getCategoryGradient(hero.primaryCategory || '') : 'var(--gradient-brand)';
@@ -143,18 +134,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                 <span className="sr-stat-label">Open Access</span>
               </div>
             </div>
-            <div className="sr-stat-divider" />
-            <div className="sr-stat cats">
-              <Layers size={16} />
-              <div className="sr-stat-cats">
-                {topCats.map(([name, count]) => (
-                  <span key={name} className="sr-cat-dot-row">
-                    <span className="sr-cat-dot" style={{ background: catColors[name] }} />
-                    <span className="sr-cat-name">{name}</span>
-                  </span>
-                ))}
-              </div>
-            </div>
           </div>
 
           {/* Hero */}
@@ -189,9 +168,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                 </div>
                 <blockquote className="sr-hero-abstract">{hero.abstract}</blockquote>
                 <div className="sr-hero-actions">
-                  <button className="sr-btn primary" onClick={() => openPaper(hero)}>
-                    {(!hero.pdfUrl && !hero.arxivId) ? 'Abrir fuente' : 'Leer artículo'}
-                  </button>
+                  <button className="sr-btn primary" onClick={() => setSelectedPaper(hero)}>Ver detalle</button>
                   <button className="sr-btn ghost" onClick={() => handleShare(hero)}>
                     {copied ? <><Check size={15} /> Copiado</> : <><Share2 size={15} /> Compartir</>}
                   </button>
@@ -215,7 +192,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                     <article
                       key={paper.id}
                       className={`sr-bento-card ${isWide ? 'wide' : 'narrow'}`}
-                      onClick={() => openPaper(paper)}
+                      onClick={() => setSelectedPaper(paper)}
                     >
                       <div className="sr-bento-accent" style={{ background: accent }} />
                       <div className="sr-bento-body">
@@ -242,6 +219,32 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
               </div>
             </section>
           )}
+        </div>
+      )}
+
+      {/* Paper Detail Overlay */}
+      {selectedPaper && (
+        <div className="sr-paper-overlay" onClick={() => setSelectedPaper(null)}>
+          <div className="sr-paper-overlay-inner" onClick={(e) => e.stopPropagation()}>
+            <button className="sr-overlay-close" onClick={() => setSelectedPaper(null)}>
+              <X size={20} />
+            </button>
+            <div className="sr-paper-card-wrapper">
+              <PaperCard
+                paper={selectedPaper}
+                isLiked={likedPaperIds.has(selectedPaper.id)}
+                isSaved={savedPaperIds.has(selectedPaper.id)}
+                isRead={readPaperIds.has(selectedPaper.id)}
+                onLike={() => toggleLike(selectedPaper.id)}
+                onNotInterested={() => { markNotInterested(selectedPaper.id); setSelectedPaper(null); }}
+                onMarkAsRead={() => markAsRead(selectedPaper.id)}
+                trackViewTime={(t) => trackViewTime(selectedPaper.id, t)}
+                trackSkip={() => trackSkip(selectedPaper.id)}
+                onOpenPdf={onOpenPdf}
+                onSaveToList={onSaveToList}
+              />
+            </div>
+          </div>
         </div>
       )}
     </div>
