@@ -26,12 +26,14 @@
 .report-selector-pill {
   display: flex;
   align-items: center;
-  background: rgba(0, 0, 0, 0.25);
+  background: rgba(20, 20, 25, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border-radius: 30px;
   padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   margin-bottom: var(--space-4);
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.05);
   width: fit-content;
 }
 
@@ -74,7 +76,10 @@
   font-size: var(--fs-xl);
   font-weight: var(--fw-bold);
   margin-bottom: var(--space-4);
-  color: #fff;
+  color: transparent;
+  background: linear-gradient(90deg, #ffffff 0%, rgba(255, 255, 255, 0.7) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
   letter-spacing: -0.02em;
 }
 
@@ -184,6 +189,43 @@
   display: flex;
   gap: var(--space-2);
   flex-wrap: wrap;
+}
+
+/* ── Badges matching PaperCard ── */
+.report-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-decoration: none;
+}
+
+.report-badge-preprint {
+  color: #10b981;
+  background: rgba(16, 185, 129, 0.1);
+}
+
+.report-badge-verified {
+  color: #3b82f6;
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.report-badge-doi {
+  color: #8b5cf6;
+  background: rgba(139, 92, 246, 0.1);
+}
+
+.report-badge-oa {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+}
+
+.report-badge-sub {
+  color: #ef4444;
+  background: rgba(239, 68, 68, 0.1);
 }
 
 .report-hero-abstract {

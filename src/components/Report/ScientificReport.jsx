@@ -3,7 +3,7 @@ import { useFeed } from '../../context/FeedContext';
 import { getScientificReport } from '../../services/scientificReportService';
 import PaperCard from '../Feed/PaperCard';
 import { getCategoryGradient } from '../../data/categories';
-import { FileText, Calendar, Award, BookOpen, Share2, Check } from 'lucide-react';
+import { FileText, Calendar, Award, BookOpen, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink } from 'lucide-react';
 import './ScientificReport.css';
 
 export default function ScientificReport({ onOpenPdf, onSaveToList }) {
@@ -126,7 +126,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           {/* Main Discovery Section */}
           {mainPaper && (
             <div className="report-hero-section">
-              <h2 className="report-section-title">🚀 Descubrimiento {getTimeframeLabel()}</h2>
+              <h2 className="report-section-title">Descubrimiento {getTimeframeLabel()}</h2>
               <div 
                 className="report-hero-card glass-strong"
                 style={{ '--hero-gradient': gradient }}
@@ -178,15 +178,36 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   {/* Badges block */}
                   <div className="report-hero-badges-row">
                     {mainPaper.publicationType === 'preprint' || mainPaper.publicationStatus === 'preprint' ? (
-                      <span className="pc-badge pc-badge--preprint">🟢 Preprint</span>
-                    ) : null}
-                    {mainPaper.peerReviewed || mainPaper.publicationStatus === 'published' ? (
-                      <span className="pc-badge pc-badge--verified">🔵 Verified</span>
-                    ) : null}
-                    {mainPaper.openAccess ? (
-                      <span className="pc-badge pc-badge--oa">🟡 Open Access</span>
+                      <span className="report-badge report-badge-preprint">
+                        <FileText size={12} /> Preprint
+                      </span>
                     ) : (
-                      <span className="pc-badge pc-badge--sub">🔒 Subscription</span>
+                      <>
+                        <span className="report-badge report-badge-verified">
+                          <BadgeCheck size={12} /> Verified
+                        </span>
+                        {mainPaper.doi && (
+                          <a 
+                            href={`https://doi.org/${mainPaper.doi}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="report-badge report-badge-doi"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <ExternalLink size={12} /> DOI
+                          </a>
+                        )}
+                      </>
+                    )}
+
+                    {mainPaper.openAccess ? (
+                      <span className="report-badge report-badge-oa">
+                        <Unlock size={12} /> Open Access
+                      </span>
+                    ) : (
+                      <span className="report-badge report-badge-sub">
+                        <Lock size={12} /> Subscription
+                      </span>
                     )}
                   </div>
 
