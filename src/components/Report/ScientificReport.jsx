@@ -1,11 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { getScientificReport } from '../../services/scientificReportService';
 import CustomDateSelector from './CustomDateSelector';
 import PaperCard from '../Feed/PaperCard';
 import { getCategoryGradient } from '../../data/categories';
-import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, ArrowRight, BarChart3, TrendingUp, X } from 'lucide-react';
+import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X } from 'lucide-react';
 import './ScientificReport.css';
+
+/* Animated number component — counts up from 0 */
+function AnimatedNumber({ value, duration = 600 }) {
+  const [display, setDisplay] = useState(0);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    const target = typeof value === 'number' ? value : parseInt(value, 10) || 0;
+    if (target === 0) { setDisplay(0); return; }
+
+    let start = null;
+    const step = (ts) => {
+      if (!start) start = ts;
+      const progress = Math.min((ts - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+      setDisplay(Math.round(eased * target));
+      if (progress < 1) ref.current = requestAnimationFrame(step);
+    };
+    ref.current = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(ref.current);
+  }, [value, duration]);
+
+  return <>{display.toLocaleString()}</>;
+}
 
 export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [timeframe, setTimeframe] = useState('7d');
@@ -107,22 +131,22 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       ) : error ? (
         <div className="sr-state"><p>{error}</p><button className="sr-retry" onClick={() => setTimeframe(timeframe)}>Reintentar</button></div>
       ) : (
-        <div className="sr-body">
+        <div className="sr-body" key={typeof timeframe === 'string' ? timeframe : JSON.stringify(timeframe)}>
 
           {/* Stats Bar */}
           <div className="sr-stats-bar">
             <div className="sr-stat">
               <BarChart3 size={16} />
               <div className="sr-stat-info">
-                <span className="sr-stat-number">{totalPapers}</span>
-                <span className="sr-stat-label">Artículos seleccionados</span>
+                <span className="sr-stat-number"><AnimatedNumber value={totalPapers} /></span>
+                <span className="sr-stat-label">Artículos</span>
               </div>
             </div>
             <div className="sr-stat-divider" />
             <div className="sr-stat">
               <TrendingUp size={16} />
               <div className="sr-stat-info">
-                <span className="sr-stat-number">{totalCitations.toLocaleString()}</span>
+                <span className="sr-stat-number"><AnimatedNumber value={totalCitations} duration={800} /></span>
                 <span className="sr-stat-label">Citas totales</span>
               </div>
             </div>
@@ -193,7 +217,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                       key={paper.id}
                       className={`sr-bento-card ${isWide ? 'wide' : 'narrow'}`}
                       onClick={() => setSelectedPaper(paper)}
-                      style={{ animationDelay: `${0.3 + i * 0.1}s` }}
+                      style={{ animationDelay: `${0.3 + i * 0.08}s` }}
                     >
                       <div className="sr-bento-accent" style={{ background: accent }} />
                       <div className="sr-bento-body">
