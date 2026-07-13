@@ -258,8 +258,32 @@ function scorePaper(paper, timeframe, seenCategories, daysThreshold, seenSources
   
   // ── 3. Abstract Quality ──
   const abstract = (paper.abstract || '').trim();
-  if (abstract.length > 100 && !abstract.startsWith('Resumen no disponible') && !abstract.startsWith('No summary')) {
+  const abstractLen = abstract.length;
+  if (abstractLen > 100 && !abstract.startsWith('Resumen no disponible') && !abstract.startsWith('No summary')) {
     score += 2;
+  }
+  
+  // ── 3b. Anticipated Impact (For 24h & 7d) ──
+  // Proxy for impact when citations haven't had time to accrue.
+  if (typeof timeframe === 'string' && (timeframe === '24h' || timeframe === '7d')) {
+    // Collaboration Bonus: Proxy for large consortiums or important labs
+    const authorCount = paper.authors ? paper.authors.length : 0;
+    if (authorCount >= 10) score += 4;
+    else if (authorCount >= 5) score += 2;
+    else if (authorCount >= 2) score += 1;
+    
+    // Venue / Peer-review proxy: Boost if already in a peer-reviewed journal vs a preprint
+    const source = (paper.journal || paper.publisher || '').toLowerCase();
+    if (source && source !== 'arxiv' && source !== 'biorxiv' && source !== 'medrxiv') {
+      score += 3;
+    }
+    
+    // Content richness penalty
+    if (abstractLen < 150) {
+      score -= 5; // Penalize stub abstracts heavily in daily feed
+    } else if (abstractLen > 600) {
+      score += 1; // Good comprehensive abstract
+    }
   }
   
   // ── 4. Category Diversity Penalty ──
@@ -339,8 +363,8 @@ export async function getScientificReport(timeframe = '7d') {
   const seenCategories = new Map();
   const seenSources = new Map();
   
-  // Select up to 11 papers (1 Main Discovery + 10 Highlights)
-  const maxToSelect = Math.min(11, candidates.length);
+  // Select up to 11 papers for normal timeframes, or up to 26 for 24h (includes 15 rapid fire)
+  const maxToSelect = (tf === '24h') ? Math.min(26, candidates.length) : Math.min(11, candidates.length);
   while (selected.length < maxToSelect && candidates.length > 0) {
     // Re-score remaining candidates based on current diversity state
     candidates.forEach(paper => {
@@ -369,9 +393,38 @@ export async function getScientificReport(timeframe = '7d') {
   }
   
   const mainDiscovery = selected[0] || null;
-  const highlights = selected.slice(1);
+  const highlights = selected.slice(1, 11);
+  const rapidFire = tf === '24h' ? selected.slice(11) : [];
   
-  const reportData = { mainDiscovery, highlights };
+  // Extract Trending Concepts for 24h
+  let trendingConcepts = [];
+  if (tf === '24h') {
+    const conceptCounts = new Map();
+    // Count concepts in top valid candidates
+    allCandidates.slice(0, 50).forEach(p => {
+      if (p.concepts && Array.isArray(p.concepts)) {
+        p.concepts.forEach(c => {
+          if (c && c.length > 3) {
+            conceptCounts.set(c, (conceptCounts.get(c) || 0) + 1);
+          }
+        });
+      }
+    });
+    // Fallback to categories if no concepts
+    if (conceptCounts.size < 3) {
+      allCandidates.slice(0, 50).forEach(p => {
+        const cat = (p.categories && p.categories[0]) || p.primaryCategory;
+        if (cat) conceptCounts.set(cat, (conceptCounts.get(cat) || 0) + 1);
+      });
+    }
+    // Sort and take top 5
+    trendingConcepts = Array.from(conceptCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(entry => entry[0]);
+  }
+  
+  const reportData = { mainDiscovery, highlights, rapidFire, trendingConcepts };
   
   // Update cache
   REPORT_CACHE.set(cacheKey, { timestamp: Date.now(), data: reportData });

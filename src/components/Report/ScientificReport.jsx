@@ -4,7 +4,7 @@ import { getScientificReport } from '../../services/scientificReportService';
 import CustomDateSelector from './CustomDateSelector';
 import PaperCard from '../Feed/PaperCard';
 import { getCategoryGradient } from '../../data/categories';
-import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X } from 'lucide-react';
+import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Zap, Flame, ChevronRight } from 'lucide-react';
 import './ScientificReport.css';
 
 /* Animated number component — counts up from 0 */
@@ -169,6 +169,18 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </div>
           </div>
 
+          {/* Trending Topics (24h only) */}
+          {timeframe === '24h' && report.trendingConcepts?.length > 0 && (
+            <div className="sr-trending-topics">
+              <span className="sr-trending-label"><Flame size={14} className="sr-flame-icon" /> Tendencias hoy:</span>
+              <div className="sr-trending-pills">
+                {report.trendingConcepts.map((concept, idx) => (
+                  <span key={idx} className="sr-trending-pill">{concept}</span>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Hero */}
           {hero && (
             <section className="sr-hero" style={{ '--hero-glow': heroGradient }}>
@@ -246,6 +258,37 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                           </div>
                         </div>
                       </div>
+                    </article>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
+          {/* Rapid Fire (24h only) */}
+          {timeframe === '24h' && report.rapidFire?.length > 0 && (
+            <section className="sr-rapid-fire">
+              <h2 className="sr-section-label"><Zap size={16} /> Ráfaga Rápida</h2>
+              <div className="sr-rapid-list">
+                {report.rapidFire.map((paper, i) => {
+                  const cat = (paper.categories && paper.categories[0]) || paper.primaryCategory || 'General';
+                  const accent = getCategoryGradient(cat);
+                  return (
+                    <article 
+                      key={paper.id} 
+                      className="sr-rapid-item" 
+                      onClick={() => setSelectedPaper(paper)}
+                      style={{ animationDelay: `${0.8 + i * 0.05}s` }}
+                    >
+                      <div className="sr-rapid-indicator" style={{ background: accent }} />
+                      <div className="sr-rapid-content">
+                        <h4 className="sr-rapid-title">{paper.title}</h4>
+                        <div className="sr-rapid-meta">
+                          <span className="sr-rapid-cat" style={{ color: accent }}>{cat.split('.')[0]}</span>
+                          {paper.journal && <span className="sr-rapid-venue">• {paper.journal}</span>}
+                        </div>
+                      </div>
+                      <ChevronRight size={16} className="sr-rapid-arrow" />
                     </article>
                   );
                 })}
