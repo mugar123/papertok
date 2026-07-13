@@ -601,17 +601,18 @@
 }
 
 .sr-paper-overlay.closing {
-  animation: sr-overlay-out 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: sr-overlay-out 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  pointer-events: none;
 }
 
 @keyframes sr-overlay-in {
-  from { opacity: 0; backdrop-filter: blur(0); }
-  to { opacity: 1; backdrop-filter: blur(12px); }
+  from { opacity: 0; backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
+  to { opacity: 1; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
 }
 
 @keyframes sr-overlay-out {
-  from { opacity: 1; backdrop-filter: blur(12px); }
-  to { opacity: 0; backdrop-filter: blur(0); }
+  from { opacity: 1; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+  to { opacity: 0; backdrop-filter: blur(0); -webkit-backdrop-filter: blur(0); }
 }
 
 .sr-paper-overlay-inner {
@@ -623,7 +624,8 @@
 }
 
 .sr-paper-overlay-inner.closing {
-  animation: sr-card-out 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: sr-card-out 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+  pointer-events: none;
 }
 
 @keyframes sr-card-in {
