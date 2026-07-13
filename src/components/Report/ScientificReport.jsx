@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { useFeed } from '../../context/FeedContext';
 import { getScientificReport } from '../../services/scientificReportService';
 import CustomDateSelector from './CustomDateSelector';
@@ -104,11 +105,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   ];
 
   const closeOverlay = () => {
-    setOverlayClosing(true);
-    setTimeout(() => {
-      setSelectedPaper(null);
-      setOverlayClosing(false);
-    }, 280);
+    setSelectedPaper(null);
   };
 
   return (
@@ -278,31 +275,47 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       )}
 
       {/* Paper Detail Overlay */}
-      {selectedPaper && (
-        <div className={`sr-paper-overlay ${overlayClosing ? 'closing' : ''}`} onClick={closeOverlay}>
-          <div className={`sr-paper-overlay-inner ${overlayClosing ? 'closing' : ''}`} onClick={(e) => e.stopPropagation()}>
-            <button className="sr-overlay-close" onClick={closeOverlay}>
-              <X size={20} />
-            </button>
-            <div className="sr-paper-card-wrapper">
-              <PaperCard
-                paper={selectedPaper}
-                isLiked={likedPaperIds.has(selectedPaper.id)}
-                isSaved={savedPaperIds.has(selectedPaper.id)}
-                isRead={readPaperIds.has(selectedPaper.id)}
-                onLike={() => toggleLike(selectedPaper.id)}
-                onNotInterested={() => { markNotInterested(selectedPaper.id); closeOverlay(); }}
-                onMarkAsRead={() => markAsRead(selectedPaper.id)}
-                trackViewTime={(t) => trackViewTime(selectedPaper.id, t)}
-                trackSkip={() => trackSkip(selectedPaper.id)}
-                onOpenPdf={onOpenPdf}
-                onSaveToList={onSaveToList}
-                hideScrollHint
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {selectedPaper && (
+          <motion.div 
+            className="sr-paper-overlay" 
+            onClick={closeOverlay}
+            initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
+            animate={{ opacity: 1, backdropFilter: 'blur(12px)' }}
+            exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
+            transition={{ duration: 0.3 }}
+          >
+            <motion.div 
+              className="sr-paper-overlay-inner" 
+              onClick={(e) => e.stopPropagation()}
+              initial={{ opacity: 0, scale: 0.85, y: 40 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.85, y: 40 }}
+              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <button className="sr-overlay-close" onClick={closeOverlay}>
+                <X size={20} />
+              </button>
+              <div className="sr-paper-card-wrapper">
+                <PaperCard
+                  paper={selectedPaper}
+                  isLiked={likedPaperIds.has(selectedPaper.id)}
+                  isSaved={savedPaperIds.has(selectedPaper.id)}
+                  isRead={readPaperIds.has(selectedPaper.id)}
+                  onLike={() => toggleLike(selectedPaper.id)}
+                  onNotInterested={() => { markNotInterested(selectedPaper.id); closeOverlay(); }}
+                  onMarkAsRead={() => markAsRead(selectedPaper.id)}
+                  trackViewTime={(t) => trackViewTime(selectedPaper.id, t)}
+                  trackSkip={() => trackSkip(selectedPaper.id)}
+                  onOpenPdf={onOpenPdf}
+                  onSaveToList={onSaveToList}
+                  hideScrollHint
+                />
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
