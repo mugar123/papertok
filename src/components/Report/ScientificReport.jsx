@@ -98,6 +98,14 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     { id: 'custom', label: 'Otro' },
   ];
 
+  const closeOverlay = () => {
+    setOverlayClosing(true);
+    setTimeout(() => {
+      setSelectedPaper(null);
+      setOverlayClosing(false);
+    }, 280);
+  };
+
   return (
     <div className="sr">
       {/* Header */}
@@ -249,15 +257,9 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
       {/* Paper Detail Overlay */}
       {selectedPaper && (
-        <div className={`sr-paper-overlay ${overlayClosing ? 'closing' : ''}`} onClick={() => {
-          setOverlayClosing(true);
-          setTimeout(() => { setSelectedPaper(null); setOverlayClosing(false); }, 280);
-        }}>
+        <div className={`sr-paper-overlay ${overlayClosing ? 'closing' : ''}`} onClick={closeOverlay}>
           <div className={`sr-paper-overlay-inner ${overlayClosing ? 'closing' : ''}`} onClick={(e) => e.stopPropagation()}>
-            <button className="sr-overlay-close" onClick={() => {
-              setOverlayClosing(true);
-              setTimeout(() => { setSelectedPaper(null); setOverlayClosing(false); }, 280);
-            }}>
+            <button className="sr-overlay-close" onClick={closeOverlay}>
               <X size={20} />
             </button>
             <div className="sr-paper-card-wrapper">
@@ -267,7 +269,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                 isSaved={savedPaperIds.has(selectedPaper.id)}
                 isRead={readPaperIds.has(selectedPaper.id)}
                 onLike={() => toggleLike(selectedPaper.id)}
-                onNotInterested={() => { markNotInterested(selectedPaper.id); setSelectedPaper(null); }}
+                onNotInterested={() => { markNotInterested(selectedPaper.id); closeOverlay(); }}
                 onMarkAsRead={() => markAsRead(selectedPaper.id)}
                 trackViewTime={(t) => trackViewTime(selectedPaper.id, t)}
                 trackSkip={() => trackSkip(selectedPaper.id)}
