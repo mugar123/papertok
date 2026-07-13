@@ -4,7 +4,7 @@ import { getScientificReport } from '../../services/scientificReportService';
 import CustomDateSelector from './CustomDateSelector';
 import PaperCard from '../Feed/PaperCard';
 import { getCategoryGradient } from '../../data/categories';
-import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Zap, Flame, ChevronRight } from 'lucide-react';
+import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Zap, Flame, ChevronRight, RefreshCw } from 'lucide-react';
 import './ScientificReport.css';
 
 /* Animated number component — counts up from 0 */
@@ -47,17 +47,22 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip
   } = useFeed();
 
-  useEffect(() => {
-    let isMounted = true;
+  const fetchReport = async (tf, force = false) => {
     setLoading(true);
     setError(null);
-    getScientificReport(timeframe)
-      .then((data) => { if (isMounted) { setReport(data); setLoading(false); } })
-      .catch((err) => {
-        console.error('Error fetching report:', err);
-        if (isMounted) { setError('No se pudo cargar el reporte. Reinténtalo.'); setLoading(false); }
-      });
-    return () => { isMounted = false; };
+    try {
+      const data = await getScientificReport(tf, force);
+      setReport(data);
+    } catch (err) {
+      console.error('Error fetching report:', err);
+      setError('No se pudo cargar el reporte. Reinténtalo.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReport(timeframe);
   }, [timeframe]);
 
   const getContextText = () => {
@@ -112,7 +117,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       <header className="sr-header">
         <div className="sr-header-top">
           <h1 className="sr-masthead">Scientific Report</h1>
-          <span className="sr-edition">{getContextText()}</span>
+          <div className="sr-header-actions">
+            <span className="sr-edition">{getContextText()}</span>
+            <button className="sr-refresh-btn" onClick={() => fetchReport(timeframe, true)} disabled={loading} title="Actualizar">
+              <RefreshCw size={14} className={loading ? 'spinning' : ''} />
+            </button>
+          </div>
         </div>
         <nav className="sr-tabs">
           {timeOptions.map((o) => (

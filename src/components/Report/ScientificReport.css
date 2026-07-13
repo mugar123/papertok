@@ -41,6 +41,12 @@
   margin: 0;
 }
 
+.sr-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .sr-edition {
   font-size: 12px;
   font-weight: 600;
@@ -48,6 +54,44 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   animation: sr-fade-in 0.8s 0.3s both;
+}
+
+.sr-refresh-btn {
+  background: transparent;
+  border: none;
+  padding: 6px;
+  margin: -6px;
+  color: rgba(255, 255, 255, 0.3);
+  cursor: pointer;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  animation: sr-fade-in 0.8s 0.3s both;
+}
+
+.sr-refresh-btn:hover:not(:disabled) {
+  color: rgba(255, 255, 255, 0.8);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sr-refresh-btn:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+.sr-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sr-refresh-btn .spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* ── Tabs ── */

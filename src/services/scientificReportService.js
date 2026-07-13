@@ -315,7 +315,7 @@ function scorePaper(paper, timeframe, seenCategories, daysThreshold, seenSources
 /**
  * Core orchestrator function to build, deduplicate, score, and rank candidates
  */
-export async function getScientificReport(timeframe = '7d') {
+export async function getScientificReport(timeframe = '7d', forceRefresh = false) {
   let tf = '7d';
   let cacheKey = '7d';
   
@@ -330,7 +330,7 @@ export async function getScientificReport(timeframe = '7d') {
   
   // Check global cache
   const cached = REPORT_CACHE.get(cacheKey);
-  if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+  if (cached && !forceRefresh && (Date.now() - cached.timestamp < CACHE_TTL)) {
     console.log(`[ScientificReport] Returning cached stable edition for: ${cacheKey}`);
     return cached.data;
   }
