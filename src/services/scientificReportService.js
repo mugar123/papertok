@@ -116,7 +116,7 @@ function formatOpenAlexWork(work) {
 /**
  * Fetch candidates from OpenAlex across multiple concept domains
  */
-async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, forceRefresh = false) {
+async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, shouldRandomize = false) {
   // Concept mapping: Medicine (C14213010), CS (C41008148), Physics (C121332964), Bio (C86803240)
   const concepts = [
     'concepts.id:C14213010', // Medicine
@@ -126,8 +126,7 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, forceRefresh =
   ];
   
   const sort = 'cited_by_count:desc';
-  const isLongTerm = timeframe === '1y' || timeframe === '10y';
-  const page = (isLongTerm && forceRefresh) ? Math.floor(Math.random() * 3) + 1 : 1;
+  const page = shouldRandomize ? Math.floor(Math.random() * 3) + 1 : 1;
   
   const promises = concepts.map(async (conceptFilter) => {
     let filter = `from_publication_date:${fromStr},to_publication_date:${toStr},type:article,has_doi:true`;
@@ -166,14 +165,13 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, forceRefresh =
 /**
  * Fetch recent preprints from arXiv
  */
-async function fetchArxivCandidates(timeframe, forceRefresh = false) {
+async function fetchArxivCandidates(timeframe, shouldRandomize = false) {
   try {
     // Broad set of categories to query
     const categories = ['cs.AI', 'physics.quant-ph', 'q-bio.NC', 'stat.ML', 'math.PR', 'eess.SP'];
     // For 24h/7d/30d get recent papers. For 1y/10y we can get up to 100 papers
     const maxResults = (timeframe === '24h' || timeframe === '7d') ? 40 : 100;
-    const isLongTerm = timeframe === '1y' || timeframe === '10y';
-    const offset = (isLongTerm && forceRefresh) ? Math.floor(Math.random() * 100) : 0;
+    const offset = shouldRandomize ? Math.floor(Math.random() * 100) : 0;
     const papers = await fetchArxivPapers(categories, offset, maxResults, 'submittedDate');
     return papers || [];
   } catch (err) {
@@ -185,11 +183,10 @@ async function fetchArxivCandidates(timeframe, forceRefresh = false) {
 /**
  * Fetch candidates from PubMed
  */
-async function fetchPubmedCandidates(timeframe, forceRefresh = false) {
+async function fetchPubmedCandidates(timeframe, shouldRandomize = false) {
   try {
     const adapter = new PubmedAdapter();
-    const isLongTerm = timeframe === '1y' || timeframe === '10y';
-    const page = (isLongTerm && forceRefresh) ? Math.floor(Math.random() * 4) + 1 : 1;
+    const page = shouldRandomize ? Math.floor(Math.random() * 4) + 1 : 1;
     // Query medicine and health related terms
     const query = 'medicine[journal] OR biology[journal] OR science[journal] OR Nature[journal]';
     const response = await adapter.search(query, page);
@@ -346,11 +343,14 @@ export async function getScientificReport(timeframe = '7d', forceRefresh = false
   
   console.log(`[ScientificReport] Generating stable report for: ${cacheKey} (from ${fromStr} to ${toStr})`);
   
+  const isLongTerm = days >= 365;
+  const shouldRandomize = isLongTerm && forceRefresh;
+  
   // 1. Fetch Candidates from all sources in parallel
   const [arxivCandidates, openAlexCandidates, pubmedCandidates] = await Promise.all([
-    fetchArxivCandidates(tf, forceRefresh),
-    fetchOpenAlexCandidates(fromStr, toStr, tf, forceRefresh),
-    fetchPubmedCandidates(tf, forceRefresh)
+    fetchArxivCandidates(tf, shouldRandomize),
+    fetchOpenAlexCandidates(fromStr, toStr, tf, shouldRandomize),
+    fetchPubmedCandidates(tf, shouldRandomize)
   ]);
   
   // 2. Combine and Deduplicate
