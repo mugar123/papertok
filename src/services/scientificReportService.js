@@ -200,75 +200,88 @@ async function fetchPubmedCandidates(timeframe) {
  * in each time window, regardless of publisher, access model, or source.
  * 
  * Factors (in order of weight):
- *   1. Citation Impact (age-normalized)  — dominant signal
- *   2. Recency within the window         — tiebreaker / freshness
- *   3. Category Diversity penalty        — prevents monoculture
- *   4. Abstract quality                  — papers without abstracts are less useful
+ *   1. Citation Impact (log-scaled, NO cap)  — dominant signal
+ *   2. Recency within the window             — tiebreaker / freshness
+ *   3. Abstract quality                      — papers without abstracts are less useful
+ *   4. Category Diversity penalty            — prevents monoculture
+ *   5. Source Diversity penalty              — prevents one journal flooding results
  */
-function scorePaper(paper, timeframe, seenCategories, daysThreshold) {
+function scorePaper(paper, timeframe, seenCategories, daysThreshold, seenSources) {
   let score = 0;
   
   const now = new Date();
   const pubDate = new Date(paper.publishedDate || paper.published || now);
   const diffDays = Math.max(1, Math.ceil(Math.abs(now - pubDate) / (1000 * 60 * 60 * 24)));
   
-  // ── 1. Citation Impact (dominant factor) ──
-  // Age-normalize so a 1-month-old paper with 50 cites beats a 5-year-old paper with 200.
+  // ── 1. Citation Impact (dominant factor, NO hard cap) ──
+  // Use log scale so differences always matter: 293 cites >> 8 cites >> 0 cites.
+  // The log curve prevents a single mega-cited paper from completely dominating,
+  // while still preserving meaningful ranking differences at every level.
   const citations = paper.citationCount || 0;
-  const yearsOld = Math.max(0.05, diffDays / 365); // min 0.05 to avoid division explosion
+  const yearsOld = Math.max(0.05, diffDays / 365);
   const citationsPerYear = citations / yearsOld;
   
   if (typeof timeframe === 'string') {
     if (timeframe === '24h' || timeframe === '7d') {
-      // Very recent papers rarely have citations. Any citation at all is a strong signal.
-      // But raw count matters more than per-year here since the window is tiny.
-      score += Math.min(30, citations * 4);
+      // Very short window: raw citations are rare, so log(1 + c) * high multiplier.
+      // log10(1) = 0, log10(2) = 0.3, log10(9) = 0.95, log10(40) = 1.6, log10(300) = 2.5
+      score += Math.log10(citations + 1) * 20;
     } else if (timeframe === '30d') {
-      // Mix of raw citations and velocity
-      score += Math.min(30, Math.log10(citations + 1) * 8 + citations * 0.5);
+      // Mix: raw citations + velocity
+      score += Math.log10(citations + 1) * 15;
     } else if (timeframe === '1y') {
-      // Citation velocity becomes meaningful
-      score += Math.min(35, Math.log10(citationsPerYear + 1) * 14);
+      // Citation velocity (per year) becomes the main metric
+      score += Math.log10(citationsPerYear + 1) * 16;
     } else {
-      // 10y — total accumulated impact, but age-normalized to avoid ancient papers dominating
-      score += Math.min(40, Math.log10(citationsPerYear + 1) * 16);
+      // 10y — age-normalized impact
+      score += Math.log10(citationsPerYear + 1) * 18;
     }
   } else {
-    // Custom range — use a balanced approach
+    // Custom range
     const rangeDays = daysThreshold || 30;
     if (rangeDays <= 31) {
-      score += Math.min(30, Math.log10(citations + 1) * 8 + citations * 0.5);
+      score += Math.log10(citations + 1) * 15;
     } else {
-      score += Math.min(35, Math.log10(citationsPerYear + 1) * 14);
+      score += Math.log10(citationsPerYear + 1) * 16;
     }
   }
   
   // ── 2. Recency Score ──
   // Within the requested window, prefer more recent papers as a tiebreaker.
-  // Max 10 points, decaying proportionally to the window size.
+  // Max 8 points, decaying proportionally to the window size.
   const windowDays = typeof timeframe === 'string'
     ? { '24h': 1, '7d': 7, '30d': 30, '1y': 365, '10y': 3650 }[timeframe] || 30
     : (daysThreshold || 30);
   
   const recencyRatio = Math.max(0, 1 - (diffDays / windowDays));
-  score += recencyRatio * 10;
+  score += recencyRatio * 8;
   
   // ── 3. Abstract Quality ──
-  // Papers with a real abstract are more valuable to the user.
   const abstract = (paper.abstract || '').trim();
   if (abstract.length > 100 && !abstract.startsWith('Resumen no disponible') && !abstract.startsWith('No summary')) {
-    score += 3;
+    score += 2;
   }
   
   // ── 4. Category Diversity Penalty ──
-  // Dynamically penalize categories already represented in the selection.
   const cat = (paper.categories && paper.categories[0]) || paper.primaryCategory || '';
   const prefix = cat.split('.')[0].split('-')[0].toLowerCase();
   
   if (prefix) {
     const seenCount = seenCategories.get(prefix) || 0;
     if (seenCount > 0) {
-      score -= seenCount * 6; // grows with each paper of the same type
+      score -= seenCount * 6;
+    }
+  }
+  
+  // ── 5. Source Diversity Penalty ──
+  // Prevents a single journal/venue from filling all slots (e.g. 7 "Nuclear Fusion" papers).
+  if (seenSources) {
+    const source = (paper.journal || paper.publisher || '').toLowerCase().trim();
+    if (source) {
+      const sourceCount = seenSources.get(source) || 0;
+      if (sourceCount > 0) {
+        score -= sourceCount * 4;
+      }
     }
   }
   
@@ -324,13 +337,14 @@ export async function getScientificReport(timeframe = '7d') {
   const selected = [];
   const candidates = [...allCandidates];
   const seenCategories = new Map();
+  const seenSources = new Map();
   
   // Select up to 11 papers (1 Main Discovery + 10 Highlights)
   const maxToSelect = Math.min(11, candidates.length);
   while (selected.length < maxToSelect && candidates.length > 0) {
     // Re-score remaining candidates based on current diversity state
     candidates.forEach(paper => {
-      paper._tempScore = scorePaper(paper, tf, seenCategories, days);
+      paper._tempScore = scorePaper(paper, tf, seenCategories, days, seenSources);
     });
     
     // Sort by temporary score
@@ -345,6 +359,12 @@ export async function getScientificReport(timeframe = '7d') {
     const prefix = cat.split('.')[0].split('-')[0].toLowerCase();
     if (prefix) {
       seenCategories.set(prefix, (seenCategories.get(prefix) || 0) + 1);
+    }
+    
+    // Track its source/journal to prevent one venue from dominating
+    const source = (best.journal || best.publisher || '').toLowerCase().trim();
+    if (source) {
+      seenSources.set(source, (seenSources.get(source) || 0) + 1);
     }
   }
   
