@@ -194,64 +194,81 @@ async function fetchPubmedCandidates(timeframe) {
 }
 
 /**
- * Score a candidate paper using our editorial relevance metrics
+ * Score a candidate paper — pure scientific impact ranking.
+ * 
+ * Philosophy: The report should surface the most impactful papers
+ * in each time window, regardless of publisher, access model, or source.
+ * 
+ * Factors (in order of weight):
+ *   1. Citation Impact (age-normalized)  — dominant signal
+ *   2. Recency within the window         — tiebreaker / freshness
+ *   3. Category Diversity penalty        — prevents monoculture
+ *   4. Abstract quality                  — papers without abstracts are less useful
  */
 function scorePaper(paper, timeframe, seenCategories, daysThreshold) {
-  let score = 10; // Base score
+  let score = 0;
   
   const now = new Date();
   const pubDate = new Date(paper.publishedDate || paper.published || now);
-  const diffTime = Math.abs(now - pubDate);
-  const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  const diffDays = Math.max(1, Math.ceil(Math.abs(now - pubDate) / (1000 * 60 * 60 * 24)));
   
-  // 1. Recency Score (favoring papers closer to the target timeframe boundary)
-  if (timeframe === '24h') {
-    score += Math.max(0, 10 - diffDays * 5); // heavily prefer < 1 day
-  } else if (timeframe === '7d') {
-    score += Math.max(0, 10 - diffDays * 1.5);
-  } else if (timeframe === '30d') {
-    score += Math.max(0, 10 - diffDays * 0.3);
-  } else if (timeframe === '1y') {
-    score += Math.max(0, 10 - (diffDays / 30) * 0.8);
-  } else if (timeframe === '10y') {
-    score += Math.max(0, 10 - (diffDays / 365) * 1.0);
-  }
-  
-  // 2. Citation Score (Age-Normalized)
+  // ── 1. Citation Impact (dominant factor) ──
+  // Age-normalize so a 1-month-old paper with 50 cites beats a 5-year-old paper with 200.
   const citations = paper.citationCount || 0;
-  const yearsOld = Math.max(0.1, diffDays / 365);
+  const yearsOld = Math.max(0.05, diffDays / 365); // min 0.05 to avoid division explosion
   const citationsPerYear = citations / yearsOld;
   
-  if (timeframe === '10y') {
-    // In a 10 year span, total impact is crucial, but age normalization prevents 10-year-old works from winning automatically
-    score += Math.min(25, Math.log10(citationsPerYear + 1) * 10);
-  } else if (timeframe === '1y') {
-    score += Math.min(18, Math.log10(citationsPerYear + 1) * 8);
-  } else if (timeframe === '30d') {
-    score += Math.min(12, Math.log10(citations + 1) * 5);
+  if (typeof timeframe === 'string') {
+    if (timeframe === '24h' || timeframe === '7d') {
+      // Very recent papers rarely have citations. Any citation at all is a strong signal.
+      // But raw count matters more than per-year here since the window is tiny.
+      score += Math.min(30, citations * 4);
+    } else if (timeframe === '30d') {
+      // Mix of raw citations and velocity
+      score += Math.min(30, Math.log10(citations + 1) * 8 + citations * 0.5);
+    } else if (timeframe === '1y') {
+      // Citation velocity becomes meaningful
+      score += Math.min(35, Math.log10(citationsPerYear + 1) * 14);
+    } else {
+      // 10y — total accumulated impact, but age-normalized to avoid ancient papers dominating
+      score += Math.min(40, Math.log10(citationsPerYear + 1) * 16);
+    }
   } else {
-    // 24h & 7d: citations are extremely rare, so any citation is a powerful boost
-    score += Math.min(10, citations * 3);
+    // Custom range — use a balanced approach
+    const rangeDays = daysThreshold || 30;
+    if (rangeDays <= 31) {
+      score += Math.min(30, Math.log10(citations + 1) * 8 + citations * 0.5);
+    } else {
+      score += Math.min(35, Math.log10(citationsPerYear + 1) * 14);
+    }
   }
   
-  // 3. Open Access Bonus (aesthetics & immediate usability)
-  if (paper.openAccess) {
-    score += 4;
-  }
+  // ── 2. Recency Score ──
+  // Within the requested window, prefer more recent papers as a tiebreaker.
+  // Max 10 points, decaying proportionally to the window size.
+  const windowDays = typeof timeframe === 'string'
+    ? { '24h': 1, '7d': 7, '30d': 30, '1y': 365, '10y': 3650 }[timeframe] || 30
+    : (daysThreshold || 30);
   
-  // 4. Quality of Publication (Peer Reviewed / Journal publication)
-  if (paper.publicationType === 'article' || paper.publicationStatus === 'published' || paper.journal) {
+  const recencyRatio = Math.max(0, 1 - (diffDays / windowDays));
+  score += recencyRatio * 10;
+  
+  // ── 3. Abstract Quality ──
+  // Papers with a real abstract are more valuable to the user.
+  const abstract = (paper.abstract || '').trim();
+  if (abstract.length > 100 && !abstract.startsWith('Resumen no disponible') && !abstract.startsWith('No summary')) {
     score += 3;
   }
   
-  // 5. Diversity Penalty (Dynamic based on categories already seen in current ranking process)
+  // ── 4. Category Diversity Penalty ──
+  // Dynamically penalize categories already represented in the selection.
   const cat = (paper.categories && paper.categories[0]) || paper.primaryCategory || '';
   const prefix = cat.split('.')[0].split('-')[0].toLowerCase();
   
   if (prefix) {
     const seenCount = seenCategories.get(prefix) || 0;
     if (seenCount > 0) {
-      score -= seenCount * 5; // dynamic penalty grows with each selected paper of this type
+      score -= seenCount * 6; // grows with each paper of the same type
     }
   }
   
