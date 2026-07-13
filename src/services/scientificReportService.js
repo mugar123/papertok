@@ -363,8 +363,8 @@ export async function getScientificReport(timeframe = '7d') {
   const seenCategories = new Map();
   const seenSources = new Map();
   
-  // Select up to 11 papers for normal timeframes, or up to 26 for 24h (includes 15 rapid fire)
-  const maxToSelect = (tf === '24h') ? Math.min(26, candidates.length) : Math.min(11, candidates.length);
+  // Select up to 11 papers (1 Main Discovery + 10 Highlights)
+  const maxToSelect = Math.min(11, candidates.length);
   while (selected.length < maxToSelect && candidates.length > 0) {
     // Re-score remaining candidates based on current diversity state
     candidates.forEach(paper => {
@@ -394,7 +394,6 @@ export async function getScientificReport(timeframe = '7d') {
   
   const mainDiscovery = selected[0] || null;
   const highlights = selected.slice(1, 11);
-  const rapidFire = tf === '24h' ? selected.slice(11) : [];
   
   // Extract Trending Concepts for 24h
   let trendingConcepts = [];
@@ -424,7 +423,7 @@ export async function getScientificReport(timeframe = '7d') {
       .map(entry => entry[0]);
   }
   
-  const reportData = { mainDiscovery, highlights, rapidFire, trendingConcepts };
+  const reportData = { mainDiscovery, highlights, trendingConcepts };
   
   // Update cache
   REPORT_CACHE.set(cacheKey, { timestamp: Date.now(), data: reportData });

@@ -264,37 +264,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
               </div>
             </section>
           )}
-
-          {/* Rapid Fire (24h only) */}
-          {timeframe === '24h' && report.rapidFire?.length > 0 && (
-            <section className="sr-rapid-fire">
-              <h2 className="sr-section-label"><Zap size={16} /> Ráfaga Rápida</h2>
-              <div className="sr-rapid-list">
-                {report.rapidFire.map((paper, i) => {
-                  const cat = (paper.categories && paper.categories[0]) || paper.primaryCategory || 'General';
-                  const accent = getCategoryGradient(cat);
-                  return (
-                    <article 
-                      key={paper.id} 
-                      className="sr-rapid-item" 
-                      onClick={() => setSelectedPaper(paper)}
-                      style={{ animationDelay: `${0.8 + i * 0.05}s` }}
-                    >
-                      <div className="sr-rapid-indicator" style={{ background: accent }} />
-                      <div className="sr-rapid-content">
-                        <h4 className="sr-rapid-title">{paper.title}</h4>
-                        <div className="sr-rapid-meta">
-                          <span className="sr-rapid-cat" style={{ color: accent }}>{cat.split('.')[0]}</span>
-                          {paper.journal && <span className="sr-rapid-venue">• {paper.journal}</span>}
-                        </div>
-                      </div>
-                      <ChevronRight size={16} className="sr-rapid-arrow" />
-                    </article>
-                  );
-                })}
-              </div>
-            </section>
-          )}
         </div>
       )}
 
