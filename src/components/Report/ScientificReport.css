@@ -600,9 +600,18 @@
   animation: sr-overlay-in 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.sr-paper-overlay.closing {
+  animation: sr-overlay-out 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 @keyframes sr-overlay-in {
   from { opacity: 0; backdrop-filter: blur(0); }
   to { opacity: 1; backdrop-filter: blur(12px); }
+}
+
+@keyframes sr-overlay-out {
+  from { opacity: 1; backdrop-filter: blur(12px); }
+  to { opacity: 0; backdrop-filter: blur(0); }
 }
 
 .sr-paper-overlay-inner {
@@ -613,9 +622,18 @@
   animation: sr-card-in 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
+.sr-paper-overlay-inner.closing {
+  animation: sr-card-out 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
 @keyframes sr-card-in {
   from { opacity: 0; transform: scale(0.94) translateY(16px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+@keyframes sr-card-out {
+  from { opacity: 1; transform: scale(1) translateY(0); }
+  to { opacity: 0; transform: scale(0.94) translateY(16px); }
 }
 
 .sr-overlay-close {

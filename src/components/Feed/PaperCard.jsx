@@ -49,7 +49,8 @@ const PaperCard = memo(function PaperCard({
   trackViewTime = () => {},
   trackSkip = () => {},
   onOpenPdf = () => {},
-  onSaveToList = () => {}
+  onSaveToList = () => {},
+  hideScrollHint = false
 }) {
   const [expanded, setExpanded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
@@ -564,13 +565,15 @@ const PaperCard = memo(function PaperCard({
       )}
 
       {/* Scroll hint on first card */}
-      <div className="pc-scroll-hint">
-        <div className="pc-scroll-hint-arrow">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+      {!hideScrollHint && (
+        <div className="pc-scroll-hint">
+          <div className="pc-scroll-hint-arrow">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </div>
         </div>
-      </div>
+      )}
 
       <AnimatePresence>
         {showAuthorsModal && (

@@ -40,6 +40,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [customRange, setCustomRange] = useState(null);
   const [selectedPaper, setSelectedPaper] = useState(null);
+  const [overlayClosing, setOverlayClosing] = useState(false);
 
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
@@ -231,7 +232,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                         {isWide && <p className="sr-bento-abstract">{paper.abstract}</p>}
                         <div className="sr-bento-bottom">
                           <div className="sr-bento-tags">
-                            {paper.openAccess && <span className="sr-micro oa"><Unlock size={11} /> OA</span>}
+                            {paper.openAccess && <span className="sr-micro oa"><Unlock size={11} /> Open Access</span>}
                             {paper.citationCount > 0 && <span className="sr-micro">{paper.citationCount} citas</span>}
                             {paper.journal && <span className="sr-micro venue">{paper.journal}</span>}
                           </div>
@@ -248,9 +249,15 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
       {/* Paper Detail Overlay */}
       {selectedPaper && (
-        <div className="sr-paper-overlay" onClick={() => setSelectedPaper(null)}>
-          <div className="sr-paper-overlay-inner" onClick={(e) => e.stopPropagation()}>
-            <button className="sr-overlay-close" onClick={() => setSelectedPaper(null)}>
+        <div className={`sr-paper-overlay ${overlayClosing ? 'closing' : ''}`} onClick={() => {
+          setOverlayClosing(true);
+          setTimeout(() => { setSelectedPaper(null); setOverlayClosing(false); }, 280);
+        }}>
+          <div className={`sr-paper-overlay-inner ${overlayClosing ? 'closing' : ''}`} onClick={(e) => e.stopPropagation()}>
+            <button className="sr-overlay-close" onClick={() => {
+              setOverlayClosing(true);
+              setTimeout(() => { setSelectedPaper(null); setOverlayClosing(false); }, 280);
+            }}>
               <X size={20} />
             </button>
             <div className="sr-paper-card-wrapper">
@@ -266,6 +273,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                 trackSkip={() => trackSkip(selectedPaper.id)}
                 onOpenPdf={onOpenPdf}
                 onSaveToList={onSaveToList}
+                hideScrollHint
               />
             </div>
           </div>
