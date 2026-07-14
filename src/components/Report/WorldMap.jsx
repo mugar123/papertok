@@ -44,7 +44,15 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
         height={400}
         style={{ width: '100%', height: 'auto', display: 'block' }}
       >
-        <ZoomableGroup zoom={1} minZoom={1} maxZoom={4}>
+        <ZoomableGroup 
+          zoom={1} 
+          minZoom={1} 
+          maxZoom={4}
+          filterZoomEvent={(event) => {
+            // Prevent map from capturing scroll wheel event, allowing natural page scrolling
+            return event.type !== 'wheel' && event.type !== 'touchmove';
+          }}
+        >
           <Geographies geography={geoData}>
             {({ geographies }) =>
               geographies.map((geo) => {
