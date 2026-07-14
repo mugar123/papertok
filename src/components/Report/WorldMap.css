@@ -74,3 +74,18 @@
     transform: translate(-50%, -100%);
   }
 }
+
+@media (max-width: 768px) {
+  .wm {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .wm::-webkit-scrollbar {
+    display: none;
+  }
+  .wm svg {
+    min-width: 600px;
+  }
+}
