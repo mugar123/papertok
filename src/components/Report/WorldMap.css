@@ -1,5 +1,5 @@
 /* ============================================
-   World Map — Interactive SVG
+   World Map — react19-simple-maps
    ============================================ */
 
 .wm {
@@ -8,81 +8,44 @@
   overflow: hidden;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid rgba(255, 255, 255, 0.05);
+  position: relative; /* For tooltip positioning context if needed, but tooltip is fixed/absolute based on viewport if using clientX/Y */
 }
 
-.wm-svg {
-  width: 100%;
-  height: auto;
+/* We must make the map fill nicely */
+.wm svg {
   display: block;
 }
 
-/* Country regions */
-.wm-country {
-  fill: rgba(255, 255, 255, 0.06);
-  stroke: rgba(255, 255, 255, 0.08);
-  stroke-width: 0.5;
-  cursor: pointer;
-  transition: all 0.2s;
+/* Geography transition */
+.wm-geo {
+  transition: all 0.2s ease-out;
 }
 
-.wm-country:hover,
-.wm-country.hovered {
-  fill: rgba(255, 255, 255, 0.15);
-  stroke: rgba(255, 255, 255, 0.25);
-}
-
-.wm-country.selected {
-  fill: rgba(99, 102, 241, 0.4);
-  stroke: rgba(99, 102, 241, 0.7);
-  stroke-width: 1.5;
-}
-
-.wm-country.selected:hover,
-.wm-country.selected.hovered {
-  fill: rgba(99, 102, 241, 0.55);
-}
-
-/* Labels */
-.wm-label {
-  fill: rgba(255, 255, 255, 0.25);
-  font-size: 8px;
+/* Floating Tooltip */
+.wm-tooltip {
+  position: fixed;
+  background: rgba(0, 0, 0, 0.85);
+  color: #fff;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 12px;
   font-weight: 600;
-  text-anchor: middle;
-  dominant-baseline: middle;
   pointer-events: none;
-  user-select: none;
-  letter-spacing: 0.02em;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  transform: translate(-50%, -100%);
+  z-index: 9999;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  animation: wm-tooltip-fade 0.15s ease-out forwards;
 }
 
-.wm-label.selected {
-  fill: rgba(255, 255, 255, 0.9);
-}
-
-/* Tooltip */
-.wm-tooltip-group {
-  pointer-events: none;
-}
-
-.wm-tooltip-bg {
-  fill: rgba(0, 0, 0, 0.85);
-  stroke: rgba(255, 255, 255, 0.15);
-  stroke-width: 0.5;
-}
-
-.wm-tooltip-text {
-  fill: #fff;
-  font-size: 10px;
-  font-weight: 600;
-  text-anchor: middle;
-  dominant-baseline: middle;
-}
-
-/* Responsive */
-@media (max-width: 600px) {
-  .wm-label {
-    font-size: 6px;
+@keyframes wm-tooltip-fade {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -90%);
   }
-  .wm-tooltip-text {
-    font-size: 8px;
+  to {
+    opacity: 1;
+    transform: translate(-50%, -100%);
   }
 }
