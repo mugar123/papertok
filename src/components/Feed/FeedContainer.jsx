@@ -65,6 +65,86 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     return () => observer.disconnect();
   }, [hasMore, loading, loadMore]);
 
+  const isScrollingRef = useRef(false);
+
+  // Implement mouse wheel scroll snapping on desktop
+  useEffect(() => {
+    const container = feedRef.current;
+    if (!container) return;
+
+    const handleWheel = (e) => {
+      // If currently scrolling/transitioning, lock wheel
+      if (isScrollingRef.current) {
+        e.preventDefault();
+        return;
+      }
+
+      // Filter out small tracks/vibrations
+      if (Math.abs(e.deltaY) < 15) return;
+
+      e.preventDefault();
+
+      const direction = e.deltaY > 0 ? 1 : -1;
+      const cardHeight = container.clientHeight;
+      const currentScroll = container.scrollTop;
+      const currentIndex = Math.round(currentScroll / cardHeight);
+      const nextIndex = currentIndex + direction;
+
+      if (nextIndex >= 0 && nextIndex < papers.length + (loading ? 1 : 0)) {
+        isScrollingRef.current = true;
+        container.scrollTo({
+          top: nextIndex * cardHeight,
+          behavior: 'smooth'
+        });
+
+        setTimeout(() => {
+          isScrollingRef.current = false;
+        }, 700);
+      }
+    };
+
+    container.addEventListener('wheel', handleWheel, { passive: false });
+    return () => {
+      container.removeEventListener('wheel', handleWheel);
+    };
+  }, [papers.length, loading]);
+
+  // Implement keyboard arrow navigation on desktop
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      const container = feedRef.current;
+      if (!container) return;
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        if (isScrollingRef.current) return;
+
+        const direction = e.key === 'ArrowDown' ? 1 : -1;
+        const cardHeight = container.clientHeight;
+        const currentScroll = container.scrollTop;
+        const currentIndex = Math.round(currentScroll / cardHeight);
+        const nextIndex = currentIndex + direction;
+
+        if (nextIndex >= 0 && nextIndex < papers.length + (loading ? 1 : 0)) {
+          isScrollingRef.current = true;
+          container.scrollTo({
+            top: nextIndex * cardHeight,
+            behavior: 'smooth'
+          });
+
+          setTimeout(() => {
+            isScrollingRef.current = false;
+          }, 700);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [papers.length, loading]);
+
   const handleRefresh = useCallback(() => {
     refreshFeed();
   }, [refreshFeed]);
