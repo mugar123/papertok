@@ -12,8 +12,16 @@ import { CATEGORIES } from '../../data/categories';
 import { useAuth } from '../../context/AuthContext';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
+import Latex from 'react-latex-next';
+import 'katex/dist/katex.min.css';
 import './EntityExplorer.css';
 
+const processLatex = (text) => {
+  if (!text) return '';
+  let processed = text.replace(/\n+/g, ' ');
+  processed = processed.replace(/(^|[^\\])%/g, '$1\\%');
+  return processed;
+};
 export default function EntityExplorer() {
   const { type, id } = useParams();
   const navigate = useNavigate();
@@ -902,7 +910,7 @@ export default function EntityExplorer() {
                     <span className="eli-date">{paper.year}</span>
                   </div>
                   <h3 className="eli-title">
-                    {paper.title}
+                    <Latex>{processLatex(paper.title)}</Latex>
                     {paper.isPeerReviewed && (
                       <span className="pc-tooltip" data-tooltip="Publicado en revista (Peer-reviewed)" style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: '6px' }}>
                         <BadgeCheck size={16} style={{ color: '#1da1f2' }} />
@@ -911,7 +919,7 @@ export default function EntityExplorer() {
                   </h3>
                   <p className="eli-authors">{(paper.authors || []).map(a => a.name || a).join(', ')}</p>
                   <p className="eli-summary">
-                    {paper.abstract?.length > 200 ? paper.abstract.substring(0, 200) + '...' : paper.abstract}
+                    <Latex>{processLatex(paper.abstract?.length > 200 ? paper.abstract.substring(0, 200) + '...' : paper.abstract)}</Latex>
                   </p>
                 </div>
               ))}
