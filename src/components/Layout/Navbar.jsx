@@ -13,6 +13,7 @@ export default function Navbar() {
   const location = useLocation();
   const [showDropdown, setShowDropdown] = useState(false);
   const [isEditInterestsOpen, setIsEditInterestsOpen] = useState(false);
+  const [isReportRefreshing, setIsReportRefreshing] = useState(false);
   const dropdownRef = useRef(null);
 
   useEffect(() => {
@@ -23,6 +24,17 @@ export default function Navbar() {
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const onStart = () => setIsReportRefreshing(true);
+    const onEnd = () => setIsReportRefreshing(false);
+    window.addEventListener('reportLoadingStart', onStart);
+    window.addEventListener('reportLoadingEnd', onEnd);
+    return () => {
+      window.removeEventListener('reportLoadingStart', onStart);
+      window.removeEventListener('reportLoadingEnd', onEnd);
+    };
   }, []);
 
   const handleSignOut = async () => {
@@ -49,10 +61,13 @@ export default function Navbar() {
     <>
       <nav className="navbar glass-strong">
         <div className="navbar-left">
-          {isHomeActive && (
+          {(isHomeActive || isReportActive) && (
             <button 
-              className={`navbar-action-btn ${isRefreshing ? 'spinning' : ''}`}
-              onClick={handleRefresh}
+              className={`navbar-action-btn ${(isHomeActive && isRefreshing) || (isReportActive && isReportRefreshing) ? 'spinning' : ''}`}
+              onClick={() => {
+                if (isHomeActive) handleRefresh();
+                if (isReportActive) window.dispatchEvent(new Event('refreshScientificReport'));
+              }}
               title="Recargar"
             >
               <RotateCw size={20} />

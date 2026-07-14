@@ -54,6 +54,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
   const fetchReport = async (tf, currentFilters = filters, targetPage = 1) => {
     setLoading(true);
+    window.dispatchEvent(new Event('reportLoadingStart'));
     setError(null);
     try {
       const data = await getScientificReport(tf, targetPage, currentFilters);
@@ -63,6 +64,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       setError('No se pudo cargar el reporte. Reinténtalo.');
     } finally {
       setLoading(false);
+      window.dispatchEvent(new Event('reportLoadingEnd'));
     }
   };
 
@@ -70,6 +72,17 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     setPage(1);
     fetchReport(timeframe, filters, 1);
   }, [timeframe, filters]);
+
+  useEffect(() => {
+    const handleGlobalRefresh = () => {
+      const next = page + 1;
+      setPage(next);
+      fetchReport(timeframe, filters, next);
+    };
+    
+    window.addEventListener('refreshScientificReport', handleGlobalRefresh);
+    return () => window.removeEventListener('refreshScientificReport', handleGlobalRefresh);
+  }, [page, timeframe, filters]);
 
   const getContextText = () => {
     if (typeof timeframe === 'object' && timeframe.type === 'custom') {
@@ -121,13 +134,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           <h1 className="sr-masthead">Scientific Report</h1>
           <div className="sr-header-actions">
             <span className="sr-edition">{getContextText()}</span>
-            <button className="sr-refresh-btn" onClick={() => {
-              const next = page + 1;
-              setPage(next);
-              fetchReport(timeframe, filters, next);
-            }} disabled={loading} title="Ver más papers">
-              <RefreshCw size={14} className={loading ? 'spinning' : ''} />
-            </button>
           </div>
         </div>
         <nav className="sr-tabs">
