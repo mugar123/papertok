@@ -123,13 +123,33 @@ function formatOpenAlexWork(work) {
 }
 
 async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filters = {}) {
-  // Concept mapping: Medicine (C14213010), CS (C41008148), Physics (C121332964), Bio (C86803240)
-  const concepts = [
-    'concepts.id:C14213010', // Medicine
-    'concepts.id:C41008148|C121332964|C33923547', // CS / Physics / Math
-    'concepts.id:C86803240|C43617362', // Bio / Chem
-    '' // General (no concept filter)
-  ];
+  const AREA_TO_OPENALEX = {
+    med: 'C14213010',
+    bio: 'C86803240',
+    cs: 'C41008148',
+    physics: 'C121332964',
+    math: 'C33923547',
+    stat: 'C33923547', // Maps to Math/Stat in OpenAlex
+    econ: 'C162324750',
+    'q-fin': 'C162324750',
+    eess: 'C127413603', // Engineering
+    mech: 'C127413603',
+    civil: 'C127413603',
+    chemeng: 'C185592680' // Chemistry
+  };
+
+  let concepts = [];
+  if (filters.categories && filters.categories.length > 0) {
+     const mappedConcepts = [...new Set(filters.categories.map(c => AREA_TO_OPENALEX[c]).filter(Boolean))];
+     concepts = mappedConcepts.map(c => `concepts.id:${c}`);
+  } else {
+     concepts = [
+       'concepts.id:C14213010', // Medicine
+       'concepts.id:C41008148|C121332964|C33923547', // CS / Physics / Math
+       'concepts.id:C86803240|C43617362', // Bio / Chem
+       '' // General (no concept filter)
+     ];
+  }
   
   const sort = 'cited_by_count:desc';
   
@@ -175,10 +195,27 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filt
 /**
  * Fetch recent preprints from arXiv
  */
-async function fetchArxivCandidates(timeframe, page = 1) {
+async function fetchArxivCandidates(timeframe, page = 1, filters = {}) {
   try {
-    // Broad set of categories to query
-    const categories = ['cs.AI', 'physics.quant-ph', 'q-bio.NC', 'stat.ML', 'math.PR', 'eess.SP'];
+    const AREA_TO_ARXIV = {
+      cs: 'cs.AI',
+      physics: 'physics.quant-ph',
+      bio: 'q-bio.NC',
+      stat: 'stat.ML',
+      math: 'math.PR',
+      eess: 'eess.SP',
+      econ: 'econ.EM',
+      'q-fin': 'q-fin.ST'
+    };
+    
+    let categories = [];
+    if (filters.categories && filters.categories.length > 0) {
+      categories = filters.categories.map(c => AREA_TO_ARXIV[c]).filter(Boolean);
+      if (categories.length === 0) return []; // If selected categories don't map to arXiv, return empty
+    } else {
+      categories = ['cs.AI', 'physics.quant-ph', 'q-bio.NC', 'stat.ML', 'math.PR', 'eess.SP'];
+    }
+
     // For 24h/7d/30d get recent papers. For 1y/10y we can get up to 100 papers
     const maxResults = (timeframe === '24h' || timeframe === '7d') ? 40 : 100;
     const offset = (page - 1) * maxResults;
@@ -193,8 +230,13 @@ async function fetchArxivCandidates(timeframe, page = 1) {
 /**
  * Fetch candidates from PubMed
  */
-async function fetchPubmedCandidates(timeframe, page = 1) {
+async function fetchPubmedCandidates(timeframe, page = 1, filters = {}) {
   try {
+    if (filters.categories && filters.categories.length > 0) {
+      const isMedOrBio = filters.categories.some(c => ['med', 'bio'].includes(c));
+      if (!isMedOrBio) return []; // PubMed only makes sense for Medicine or Biology
+    }
+
     const adapter = new PubmedAdapter();
     // Query medicine and health related terms
     const query = 'medicine[journal] OR biology[journal] OR science[journal] OR Nature[journal]';
@@ -366,9 +408,9 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
   // 1. Fetch Candidates from all sources in parallel
   // When country filter is active, only use OpenAlex (only source with country data)
   const [arxivCandidates, openAlexCandidates, pubmedCandidates] = await Promise.all([
-    hasCountryFilter ? Promise.resolve([]) : fetchArxivCandidates(tf, page),
+    hasCountryFilter ? Promise.resolve([]) : fetchArxivCandidates(tf, page, filters),
     fetchOpenAlexCandidates(fromStr, toStr, tf, page, filters),
-    hasCountryFilter ? Promise.resolve([]) : fetchPubmedCandidates(tf, page)
+    hasCountryFilter ? Promise.resolve([]) : fetchPubmedCandidates(tf, page, filters)
   ]);
   
   // 2. Combine and Deduplicate
