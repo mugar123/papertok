@@ -402,33 +402,30 @@ export async function getScientificReport(timeframe = '7d', forceRefresh = false
   const mainDiscovery = selected[0] || null;
   const highlights = selected.slice(1, 11);
   
-  // Extract Trending Concepts for 24h
-  let trendingConcepts = [];
-  if (tf === '24h') {
-    const conceptCounts = new Map();
-    // Count concepts in top valid candidates
-    allCandidates.slice(0, 50).forEach(p => {
-      if (p.concepts && Array.isArray(p.concepts)) {
-        p.concepts.forEach(c => {
-          if (c && c.length > 3) {
-            conceptCounts.set(c, (conceptCounts.get(c) || 0) + 1);
-          }
-        });
-      }
-    });
-    // Fallback to categories if no concepts
-    if (conceptCounts.size < 3) {
-      allCandidates.slice(0, 50).forEach(p => {
-        const cat = (p.categories && p.categories[0]) || p.primaryCategory;
-        if (cat) conceptCounts.set(cat, (conceptCounts.get(cat) || 0) + 1);
+  // Extract Trending Concepts for all timeframes
+  const conceptCounts = new Map();
+  // Count concepts across top candidates
+  allCandidates.slice(0, 80).forEach(p => {
+    if (p.concepts && Array.isArray(p.concepts)) {
+      p.concepts.forEach(c => {
+        if (c && c.length > 3) {
+          conceptCounts.set(c, (conceptCounts.get(c) || 0) + 1);
+        }
       });
     }
-    // Sort and take top 5
-    trendingConcepts = Array.from(conceptCounts.entries())
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(entry => entry[0]);
+  });
+  // Fallback to categories if no concepts
+  if (conceptCounts.size < 3) {
+    allCandidates.slice(0, 80).forEach(p => {
+      const cat = (p.categories && p.categories[0]) || p.primaryCategory;
+      if (cat) conceptCounts.set(cat, (conceptCounts.get(cat) || 0) + 1);
+    });
   }
+  // Sort and take top 5
+  const trendingConcepts = Array.from(conceptCounts.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(entry => entry[0]);
   
   const reportData = { mainDiscovery, highlights, trendingConcepts };
   

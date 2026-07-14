@@ -176,10 +176,13 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </div>
           </div>
 
-          {/* Trending Topics (24h only) */}
-          {timeframe === '24h' && report.trendingConcepts?.length > 0 && (
+          {/* Trending Topics */}
+          {report.trendingConcepts?.length > 0 && (
             <div className="sr-trending-topics">
-              <span className="sr-trending-label"><Flame size={14} className="sr-flame-icon" /> Tendencias hoy:</span>
+              <span className="sr-trending-label">
+                <Flame size={14} className="sr-flame-icon" />
+                {typeof timeframe === 'object' ? 'Tendencias:' : { '24h': 'Tendencias hoy:', '7d': 'Tendencias de la semana:', '30d': 'Tendencias del mes:', '1y': 'Tendencias del año:', '10y': 'Tendencias de la década:' }[timeframe] || 'Tendencias:'}
+              </span>
               <div className="sr-trending-pills">
                 {report.trendingConcepts.map((concept, idx) => (
                   <span key={idx} className="sr-trending-pill">{concept}</span>
