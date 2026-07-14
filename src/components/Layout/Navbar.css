@@ -225,27 +225,32 @@
   }
   
   .navbar-left {
-    display: none; /* Hide empty left space to give more room */
+    flex: 0 0 auto;
   }
 
   .navbar-right {
     flex: 0 0 auto;
-    gap: 4px;
+    gap: 8px;
   }
   
+  .navbar-profile {
+    margin-left: 0;
+  }
+
   .navbar-center-pill {
-    width: 160px;
+    width: 210px;
   }
 
   .navbar-tab {
-    width: 50%;
+    width: 33.333%;
     min-width: unset;
-    font-size: 12px;
-    padding: 6px 4px;
+    font-size: 11px;
+    padding: 6px 0;
+    text-align: center;
   }
   
   .navbar-slider {
-    width: calc(50% - 4px); /* Account for pill padding */
+    width: calc(33.333% - 2.6px); /* Account for pill padding and 3 tabs */
   }
 
   .navbar-action-btn {
