@@ -91,6 +91,14 @@ function formatOpenAlexWork(work) {
   const concepts = (work.concepts || []).filter(c => c.score > 0.3).map(c => c.display_name);
   const openAlexId = work.id.split('/').pop();
   
+  // Extract unique country codes from all author institutions
+  const countrySet = new Set();
+  (work.authorships || []).forEach(a => {
+    (a.institutions || []).forEach(inst => {
+      if (inst.country_code) countrySet.add(inst.country_code);
+    });
+  });
+  
   return PaperBuilder.create({
     id: `openalex:${openAlexId}`,
     sources: { primary: 'openalex', enrichedBy: [] },
@@ -109,14 +117,15 @@ function formatOpenAlexWork(work) {
     citationCount: work.cited_by_count || 0,
     concepts: work.concepts || [],
     categories: concepts,
-    keywords: concepts
+    keywords: concepts,
+    countryCodes: Array.from(countrySet)
   });
 }
 
 /**
  * Fetch candidates from OpenAlex across multiple concept domains
  */
-async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, shouldRandomize = false) {
+async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, shouldRandomize = false, filters = {}) {
   // Concept mapping: Medicine (C14213010), CS (C41008148), Physics (C121332964), Bio (C86803240)
   const concepts = [
     'concepts.id:C14213010', // Medicine
@@ -128,8 +137,13 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, shouldRandomiz
   const sort = 'cited_by_count:desc';
   const page = shouldRandomize ? Math.floor(Math.random() * 3) + 1 : 1;
   
+  // Build country filter for OpenAlex API
+  const countryFilter = filters.countries?.length > 0
+    ? `,authorships.institutions.country_code:${filters.countries.join('|')}`
+    : '';
+  
   const promises = concepts.map(async (conceptFilter) => {
-    let filter = `from_publication_date:${fromStr},to_publication_date:${toStr},type:article,has_doi:true`;
+    let filter = `from_publication_date:${fromStr},to_publication_date:${toStr},type:article,has_doi:true${countryFilter}`;
     if (conceptFilter) {
       filter += `,${conceptFilter}`;
     }
@@ -319,7 +333,7 @@ function scorePaper(paper, timeframe, seenCategories, daysThreshold, seenSources
 /**
  * Core orchestrator function to build, deduplicate, score, and rank candidates
  */
-export async function getScientificReport(timeframe = '7d', forceRefresh = false) {
+export async function getScientificReport(timeframe = '7d', forceRefresh = false, filters = {}) {
   let tf = '7d';
   let cacheKey = '7d';
   
@@ -332,6 +346,13 @@ export async function getScientificReport(timeframe = '7d', forceRefresh = false
     cacheKey = tf;
   }
   
+  // Include filters in cache key
+  const filterKey = [
+    ...(filters.categories || []).sort(),
+    ...(filters.countries || []).sort()
+  ].join(',');
+  if (filterKey) cacheKey += `_f:${filterKey}`;
+  
   // Check global cache
   const cached = REPORT_CACHE.get(cacheKey);
   if (cached && !forceRefresh && (Date.now() - cached.timestamp < CACHE_TTL)) {
@@ -341,27 +362,53 @@ export async function getScientificReport(timeframe = '7d', forceRefresh = false
   
   const { fromStr, toStr, days } = getDateThresholds(tf);
   
-  console.log(`[ScientificReport] Generating stable report for: ${cacheKey} (from ${fromStr} to ${toStr})`);
+  console.log(`[ScientificReport] Generating report for: ${cacheKey} (from ${fromStr} to ${toStr})`);
   
   const isLongTerm = days >= 365;
   const shouldRandomize = isLongTerm && forceRefresh;
+  const hasCountryFilter = filters.countries?.length > 0;
   
   // 1. Fetch Candidates from all sources in parallel
+  // When country filter is active, only use OpenAlex (only source with country data)
   const [arxivCandidates, openAlexCandidates, pubmedCandidates] = await Promise.all([
-    fetchArxivCandidates(tf, shouldRandomize),
-    fetchOpenAlexCandidates(fromStr, toStr, tf, shouldRandomize),
-    fetchPubmedCandidates(tf, shouldRandomize)
+    hasCountryFilter ? Promise.resolve([]) : fetchArxivCandidates(tf, shouldRandomize),
+    fetchOpenAlexCandidates(fromStr, toStr, tf, shouldRandomize, filters),
+    hasCountryFilter ? Promise.resolve([]) : fetchPubmedCandidates(tf, shouldRandomize)
   ]);
   
   // 2. Combine and Deduplicate
-  const allCandidates = PaperBuilder.deduplicate([
+  let allCandidates = PaperBuilder.deduplicate([
     ...arxivCandidates,
     ...openAlexCandidates,
     ...pubmedCandidates
   ]);
   
+  // 2b. Client-side category filtering
+  if (filters.categories?.length > 0) {
+    const categoryPrefixes = new Set();
+    filters.categories.forEach(areaKey => {
+      const area = CATEGORIES[areaKey];
+      if (area?.subcategories) {
+        Object.keys(area.subcategories).forEach(subcat => categoryPrefixes.add(subcat));
+      }
+      // Also add the area key itself as a prefix (e.g. 'physics', 'cs')
+      categoryPrefixes.add(areaKey);
+    });
+    
+    allCandidates = allCandidates.filter(p => {
+      const cats = [...(p.categories || []), p.primaryCategory || '', ...(p.allCategories || [])];
+      return cats.some(cat => {
+        if (!cat) return false;
+        const catStr = typeof cat === 'string' ? cat : (cat.display_name || '');
+        // Check direct match or prefix match (e.g. 'cs.AI' starts with 'cs')
+        return categoryPrefixes.has(catStr) || 
+               [...categoryPrefixes].some(prefix => catStr.startsWith(prefix + '.') || catStr.startsWith(prefix + '-'));
+      });
+    });
+  }
+  
   if (allCandidates.length === 0) {
-    return { mainDiscovery: null, highlights: [] };
+    return { mainDiscovery: null, highlights: [], trendingConcepts: [] };
   }
   
   // 3. Dynamic Selection Loop with Diversity Penalties

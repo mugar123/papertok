@@ -44,6 +44,7 @@ export class PaperBuilder {
       categories: data.categories || [],
       allCategories: data.allCategories || data.categories || [],
       primaryCategory: data.primaryCategory || data.categories?.[0] || '',
+      countryCodes: data.countryCodes || [],
       published: data.published || data.publishedDate || '',
       sourceType: data.sourceType || undefined,
       summary: data.summary || data.abstract || '',

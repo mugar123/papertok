@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useFeed } from '../../context/FeedContext';
 import { getScientificReport } from '../../services/scientificReportService';
 import CustomDateSelector from './CustomDateSelector';
+import ReportFilters from './ReportFilters';
 import PaperCard from '../Feed/PaperCard';
 import { getCategoryGradient } from '../../data/categories';
 import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Zap, Flame, ChevronRight, RefreshCw } from 'lucide-react';
@@ -34,6 +35,7 @@ function AnimatedNumber({ value, duration = 600 }) {
 
 export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [timeframe, setTimeframe] = useState('7d');
+  const [filters, setFilters] = useState({ categories: [], countries: [] });
   const [report, setReport] = useState({ mainDiscovery: null, highlights: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -48,11 +50,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip
   } = useFeed();
 
-  const fetchReport = async (tf, force = false) => {
+  const fetchReport = async (tf, currentFilters = filters, force = false) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getScientificReport(tf, force);
+      const data = await getScientificReport(tf, force, currentFilters);
       setReport(data);
     } catch (err) {
       console.error('Error fetching report:', err);
@@ -63,8 +65,8 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   };
 
   useEffect(() => {
-    fetchReport(timeframe);
-  }, [timeframe]);
+    fetchReport(timeframe, filters);
+  }, [timeframe, filters]);
 
   const getContextText = () => {
     if (typeof timeframe === 'object' && timeframe.type === 'custom') {
@@ -141,6 +143,10 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           onCancel={() => setShowCustomPicker(false)}
         />
       )}
+
+      {/* Filters Panel */}
+      <ReportFilters filters={filters} onChange={setFilters} />
+
 
       {loading ? (
         <div className="sr-state"><div className="sr-spinner" /><p>Compilando edición estable...</p></div>

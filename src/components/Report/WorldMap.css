@@ -1,0 +1,88 @@
+/* ============================================
+   World Map — Interactive SVG
+   ============================================ */
+
+.wm {
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.wm-svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* Country regions */
+.wm-country {
+  fill: rgba(255, 255, 255, 0.06);
+  stroke: rgba(255, 255, 255, 0.08);
+  stroke-width: 0.5;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.wm-country:hover,
+.wm-country.hovered {
+  fill: rgba(255, 255, 255, 0.15);
+  stroke: rgba(255, 255, 255, 0.25);
+}
+
+.wm-country.selected {
+  fill: rgba(99, 102, 241, 0.4);
+  stroke: rgba(99, 102, 241, 0.7);
+  stroke-width: 1.5;
+}
+
+.wm-country.selected:hover,
+.wm-country.selected.hovered {
+  fill: rgba(99, 102, 241, 0.55);
+}
+
+/* Labels */
+.wm-label {
+  fill: rgba(255, 255, 255, 0.25);
+  font-size: 8px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  pointer-events: none;
+  user-select: none;
+  letter-spacing: 0.02em;
+}
+
+.wm-label.selected {
+  fill: rgba(255, 255, 255, 0.9);
+}
+
+/* Tooltip */
+.wm-tooltip-group {
+  pointer-events: none;
+}
+
+.wm-tooltip-bg {
+  fill: rgba(0, 0, 0, 0.85);
+  stroke: rgba(255, 255, 255, 0.15);
+  stroke-width: 0.5;
+}
+
+.wm-tooltip-text {
+  fill: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  text-anchor: middle;
+  dominant-baseline: middle;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .wm-label {
+    font-size: 6px;
+  }
+  .wm-tooltip-text {
+    font-size: 8px;
+  }
+}
