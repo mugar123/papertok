@@ -122,10 +122,7 @@ function formatOpenAlexWork(work) {
   });
 }
 
-/**
- * Fetch candidates from OpenAlex across multiple concept domains
- */
-async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, shouldRandomize = false, filters = {}) {
+async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filters = {}) {
   // Concept mapping: Medicine (C14213010), CS (C41008148), Physics (C121332964), Bio (C86803240)
   const concepts = [
     'concepts.id:C14213010', // Medicine
@@ -135,7 +132,6 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, shouldRandomiz
   ];
   
   const sort = 'cited_by_count:desc';
-  const page = shouldRandomize ? Math.floor(Math.random() * 3) + 1 : 1;
   
   // Build country filter for OpenAlex API
   const countryFilter = filters.countries?.length > 0
@@ -179,13 +175,13 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, shouldRandomiz
 /**
  * Fetch recent preprints from arXiv
  */
-async function fetchArxivCandidates(timeframe, shouldRandomize = false) {
+async function fetchArxivCandidates(timeframe, page = 1) {
   try {
     // Broad set of categories to query
     const categories = ['cs.AI', 'physics.quant-ph', 'q-bio.NC', 'stat.ML', 'math.PR', 'eess.SP'];
     // For 24h/7d/30d get recent papers. For 1y/10y we can get up to 100 papers
     const maxResults = (timeframe === '24h' || timeframe === '7d') ? 40 : 100;
-    const offset = shouldRandomize ? Math.floor(Math.random() * 100) : 0;
+    const offset = (page - 1) * maxResults;
     const papers = await fetchArxivPapers(categories, offset, maxResults, 'submittedDate');
     return papers || [];
   } catch (err) {
@@ -197,10 +193,9 @@ async function fetchArxivCandidates(timeframe, shouldRandomize = false) {
 /**
  * Fetch candidates from PubMed
  */
-async function fetchPubmedCandidates(timeframe, shouldRandomize = false) {
+async function fetchPubmedCandidates(timeframe, page = 1) {
   try {
     const adapter = new PubmedAdapter();
-    const page = shouldRandomize ? Math.floor(Math.random() * 4) + 1 : 1;
     // Query medicine and health related terms
     const query = 'medicine[journal] OR biology[journal] OR science[journal] OR Nature[journal]';
     const response = await adapter.search(query, page);
@@ -333,7 +328,7 @@ function scorePaper(paper, timeframe, seenCategories, daysThreshold, seenSources
 /**
  * Core orchestrator function to build, deduplicate, score, and rank candidates
  */
-export async function getScientificReport(timeframe = '7d', forceRefresh = false, filters = {}) {
+export async function getScientificReport(timeframe = '7d', page = 1, filters = {}) {
   let tf = '7d';
   let cacheKey = '7d';
   
@@ -346,7 +341,9 @@ export async function getScientificReport(timeframe = '7d', forceRefresh = false
     cacheKey = tf;
   }
   
-  // Include filters in cache key
+  // Include page and filters in cache key
+  cacheKey += `_p${page}`;
+  
   const filterKey = [
     ...(filters.categories || []).sort(),
     ...(filters.countries || []).sort()
@@ -355,7 +352,7 @@ export async function getScientificReport(timeframe = '7d', forceRefresh = false
   
   // Check global cache
   const cached = REPORT_CACHE.get(cacheKey);
-  if (cached && !forceRefresh && (Date.now() - cached.timestamp < CACHE_TTL)) {
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
     console.log(`[ScientificReport] Returning cached stable edition for: ${cacheKey}`);
     return cached.data;
   }
@@ -364,16 +361,14 @@ export async function getScientificReport(timeframe = '7d', forceRefresh = false
   
   console.log(`[ScientificReport] Generating report for: ${cacheKey} (from ${fromStr} to ${toStr})`);
   
-  const isLongTerm = days >= 365;
-  const shouldRandomize = forceRefresh;
   const hasCountryFilter = filters.countries?.length > 0;
   
   // 1. Fetch Candidates from all sources in parallel
   // When country filter is active, only use OpenAlex (only source with country data)
   const [arxivCandidates, openAlexCandidates, pubmedCandidates] = await Promise.all([
-    hasCountryFilter ? Promise.resolve([]) : fetchArxivCandidates(tf, shouldRandomize),
-    fetchOpenAlexCandidates(fromStr, toStr, tf, shouldRandomize, filters),
-    hasCountryFilter ? Promise.resolve([]) : fetchPubmedCandidates(tf, shouldRandomize)
+    hasCountryFilter ? Promise.resolve([]) : fetchArxivCandidates(tf, page),
+    fetchOpenAlexCandidates(fromStr, toStr, tf, page, filters),
+    hasCountryFilter ? Promise.resolve([]) : fetchPubmedCandidates(tf, page)
   ]);
   
   // 2. Combine and Deduplicate

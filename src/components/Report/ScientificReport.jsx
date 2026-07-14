@@ -45,16 +45,18 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [overlayClosing, setOverlayClosing] = useState(false);
 
+  const [page, setPage] = useState(1);
+
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
     toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip
   } = useFeed();
 
-  const fetchReport = async (tf, currentFilters = filters, force = false) => {
+  const fetchReport = async (tf, currentFilters = filters, targetPage = 1) => {
     setLoading(true);
     setError(null);
     try {
-      const data = await getScientificReport(tf, force, currentFilters);
+      const data = await getScientificReport(tf, targetPage, currentFilters);
       setReport(data);
     } catch (err) {
       console.error('Error fetching report:', err);
@@ -65,7 +67,8 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   };
 
   useEffect(() => {
-    fetchReport(timeframe, filters);
+    setPage(1);
+    fetchReport(timeframe, filters, 1);
   }, [timeframe, filters]);
 
   const getContextText = () => {
@@ -118,7 +121,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           <h1 className="sr-masthead">Scientific Report</h1>
           <div className="sr-header-actions">
             <span className="sr-edition">{getContextText()}</span>
-            <button className="sr-refresh-btn" onClick={() => fetchReport(timeframe, filters, true)} disabled={loading} title="Actualizar">
+            <button className="sr-refresh-btn" onClick={() => {
+              const next = page + 1;
+              setPage(next);
+              fetchReport(timeframe, filters, next);
+            }} disabled={loading} title="Ver más papers">
               <RefreshCw size={14} className={loading ? 'spinning' : ''} />
             </button>
           </div>
