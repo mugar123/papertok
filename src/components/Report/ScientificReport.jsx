@@ -7,7 +7,16 @@ import ReportFilters from './ReportFilters';
 import PaperCard from '../Feed/PaperCard';
 import { getCategoryGradient } from '../../data/categories';
 import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Zap, Flame, ChevronRight, RefreshCw } from 'lucide-react';
+import Latex from 'react-latex-next';
+import 'katex/dist/katex.min.css';
 import './ScientificReport.css';
+
+const processLatex = (text) => {
+  if (!text) return '';
+  let processed = text.replace(/\n+/g, ' ');
+  processed = processed.replace(/(^|[^\\])%/g, '$1\\%');
+  return processed;
+};
 
 /* Animated number component — counts up from 0 */
 function AnimatedNumber({ value, duration = 600 }) {
@@ -221,7 +230,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   {hero.journal && <span className="sr-kicker-venue">{hero.journal}</span>}
                   <span className="sr-kicker-year"><Calendar size={13} /> {hero.year}</span>
                 </div>
-                <h2 className="sr-hero-title">{hero.title}</h2>
+                <h2 className="sr-hero-title"><Latex>{processLatex(hero.title)}</Latex></h2>
                 <p className="sr-hero-authors">
                   {hero.authors?.slice(0, 4).map(a => a.name || a).join(', ')}
                   {hero.authors?.length > 4 && ' et al.'}
@@ -240,7 +249,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                     : <span className="sr-tag sub"><Lock size={12} /> Subscription</span>}
                   {hero.citationCount > 0 && <span className="sr-tag cites"><Award size={12} /> {hero.citationCount} citas</span>}
                 </div>
-                <blockquote className="sr-hero-abstract">{hero.abstract}</blockquote>
+                <blockquote className="sr-hero-abstract"><Latex>{processLatex(hero.abstract)}</Latex></blockquote>
                 <div className="sr-hero-actions">
                   <button className="sr-btn primary" onClick={() => setSelectedPaper(hero)}>Ver detalle</button>
                   <button className="sr-btn ghost" onClick={() => handleShare(hero)}>
@@ -277,8 +286,8 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                           </span>
                           <span className="sr-bento-year">{paper.year}</span>
                         </div>
-                        <h3 className="sr-bento-title">{paper.title}</h3>
-                        {isWide && <p className="sr-bento-abstract">{paper.abstract}</p>}
+                        <h3 className="sr-bento-title"><Latex>{processLatex(paper.title)}</Latex></h3>
+                        {isWide && <p className="sr-bento-abstract"><Latex>{processLatex(paper.abstract)}</Latex></p>}
                         <div className="sr-bento-bottom">
                           <div className="sr-bento-tags">
                             {paper.openAccess && <span className="sr-micro oa"><Unlock size={11} /> Open Access</span>}
