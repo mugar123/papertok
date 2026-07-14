@@ -186,44 +186,6 @@ export default function SearchPage() {
                   </div>
                 </div>
 
-                <div className="search-trending">
-                  <h3 className="search-suggestions-title" style={{ marginTop: '32px' }}><TrendingUp size={16} /> Papers Populares</h3>
-                  {isLoadingTrending ? (
-                    <div style={{ display: 'flex', justifyContent: 'center', padding: '20px' }}>
-                      <Loader2 className="spinning" size={24} style={{ opacity: 0.5 }} />
-                    </div>
-                  ) : trendingPapers.length > 0 ? (
-                    <div className="search-trending-grid">
-                      {trendingPapers.map((paper, idx) => (
-                        <motion.div 
-                          key={paper.id} 
-                          className="search-item paper-item" 
-                          onClick={() => setSelectedPaper(paper)}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.8, delay: 0.2 + (idx * 0.1), ease: [0.16, 1, 0.3, 1] }}
-                        >
-                          <div className="search-item-icon"><FileText size={22} /></div>
-                          <div className="search-item-info">
-                            <h4>{paper.title}</h4>
-                            <p className="search-item-authors">{paper.authors?.slice(0, 3).join(', ')}{paper.authors?.length > 3 ? ' et al.' : ''}</p>
-                            <div className="search-item-meta">
-                              <span>{paper.citationCount.toLocaleString()} citas</span>
-                              <span>•</span>
-                              <span>{new Date(paper.published).getFullYear()}</span>
-                              {paper.primaryCategory && paper.primaryCategory !== 'unknown' && (
-                                <>
-                                  <span>•</span>
-                                  <span>{paper.primaryCategory}</span>
-                                </>
-                              )}
-                            </div>
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                  ) : null}
-                </div>
               </div>
             )}
 
