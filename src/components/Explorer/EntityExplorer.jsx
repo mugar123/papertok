@@ -22,6 +22,17 @@ const processLatex = (text) => {
   processed = processed.replace(/(^|[^\\])%/g, '$1\\%');
   return processed;
 };
+
+const LATEX_DELIMITERS = [
+  { left: '$$', right: '$$', display: true },
+  { left: '\\(', right: '\\)', display: false },
+  { left: '$', right: '$', display: false },
+  { left: '\\[', right: '\\]', display: true },
+  { left: '\\begin{equation}', right: '\\end{equation}', display: true },
+  { left: '\\begin{align}', right: '\\end{align}', display: true },
+  { left: '\\begin{eqnarray}', right: '\\end{eqnarray}', display: true },
+  { left: '\\begin{math}', right: '\\end{math}', display: false },
+];
 export default function EntityExplorer() {
   const { type, id } = useParams();
   const navigate = useNavigate();
@@ -910,7 +921,7 @@ export default function EntityExplorer() {
                     <span className="eli-date">{paper.year}</span>
                   </div>
                   <h3 className="eli-title">
-                    <Latex>{processLatex(paper.title)}</Latex>
+                    <Latex strict={false} delimiters={LATEX_DELIMITERS}>{processLatex(paper.title)}</Latex>
                     {paper.isPeerReviewed && (
                       <span className="pc-tooltip" data-tooltip="Publicado en revista (Peer-reviewed)" style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: '6px' }}>
                         <BadgeCheck size={16} style={{ color: '#1da1f2' }} />
@@ -919,7 +930,7 @@ export default function EntityExplorer() {
                   </h3>
                   <p className="eli-authors">{(paper.authors || []).map(a => a.name || a).join(', ')}</p>
                   <p className="eli-summary">
-                    <Latex>{processLatex(paper.abstract?.length > 200 ? paper.abstract.substring(0, 200) + '...' : paper.abstract)}</Latex>
+                    <Latex strict={false} delimiters={LATEX_DELIMITERS}>{processLatex(paper.abstract?.length > 200 ? paper.abstract.substring(0, 200) + '...' : paper.abstract)}</Latex>
                   </p>
                 </div>
               ))}

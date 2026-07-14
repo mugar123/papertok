@@ -18,6 +18,17 @@ const processLatex = (text) => {
   return processed;
 };
 
+const LATEX_DELIMITERS = [
+  { left: '$$', right: '$$', display: true },
+  { left: '\\(', right: '\\)', display: false },
+  { left: '$', right: '$', display: false },
+  { left: '\\[', right: '\\]', display: true },
+  { left: '\\begin{equation}', right: '\\end{equation}', display: true },
+  { left: '\\begin{align}', right: '\\end{align}', display: true },
+  { left: '\\begin{eqnarray}', right: '\\end{eqnarray}', display: true },
+  { left: '\\begin{math}', right: '\\end{math}', display: false },
+];
+
 /* Animated number component — counts up from 0 */
 function AnimatedNumber({ value, duration = 600 }) {
   const [display, setDisplay] = useState(0);
@@ -230,7 +241,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   {hero.journal && <span className="sr-kicker-venue">{hero.journal}</span>}
                   <span className="sr-kicker-year"><Calendar size={13} /> {hero.year}</span>
                 </div>
-                <h2 className="sr-hero-title"><Latex>{processLatex(hero.title)}</Latex></h2>
+                <h2 className="sr-hero-title"><Latex strict={false} delimiters={LATEX_DELIMITERS}>{processLatex(hero.title)}</Latex></h2>
                 <p className="sr-hero-authors">
                   {hero.authors?.slice(0, 4).map(a => a.name || a).join(', ')}
                   {hero.authors?.length > 4 && ' et al.'}
@@ -249,7 +260,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                     : <span className="sr-tag sub"><Lock size={12} /> Subscription</span>}
                   {hero.citationCount > 0 && <span className="sr-tag cites"><Award size={12} /> {hero.citationCount} citas</span>}
                 </div>
-                <blockquote className="sr-hero-abstract"><Latex>{processLatex(hero.abstract)}</Latex></blockquote>
+                <blockquote className="sr-hero-abstract"><Latex strict={false} delimiters={LATEX_DELIMITERS}>{processLatex(hero.abstract)}</Latex></blockquote>
                 <div className="sr-hero-actions">
                   <button className="sr-btn primary" onClick={() => setSelectedPaper(hero)}>Ver detalle</button>
                   <button className="sr-btn ghost" onClick={() => handleShare(hero)}>
@@ -286,8 +297,8 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                           </span>
                           <span className="sr-bento-year">{paper.year}</span>
                         </div>
-                        <h3 className="sr-bento-title"><Latex>{processLatex(paper.title)}</Latex></h3>
-                        {isWide && <p className="sr-bento-abstract"><Latex>{processLatex(paper.abstract)}</Latex></p>}
+                        <h3 className="sr-bento-title"><Latex strict={false} delimiters={LATEX_DELIMITERS}>{processLatex(paper.title)}</Latex></h3>
+                        {isWide && <p className="sr-bento-abstract"><Latex strict={false} delimiters={LATEX_DELIMITERS}>{processLatex(paper.abstract)}</Latex></p>}
                         <div className="sr-bento-bottom">
                           <div className="sr-bento-tags">
                             {paper.openAccess && <span className="sr-micro oa"><Unlock size={11} /> Open Access</span>}

@@ -38,6 +38,17 @@ const processLatex = (text) => {
   return processed;
 };
 
+const LATEX_DELIMITERS = [
+  { left: '$$', right: '$$', display: true },
+  { left: '\\(', right: '\\)', display: false },
+  { left: '$', right: '$', display: false },
+  { left: '\\[', right: '\\]', display: true },
+  { left: '\\begin{equation}', right: '\\end{equation}', display: true },
+  { left: '\\begin{align}', right: '\\end{align}', display: true },
+  { left: '\\begin{eqnarray}', right: '\\end{eqnarray}', display: true },
+  { left: '\\begin{math}', right: '\\end{math}', display: false },
+];
+
 const PaperCard = memo(function PaperCard({ 
   paper, 
   isLiked = false, 
@@ -429,7 +440,7 @@ const PaperCard = memo(function PaperCard({
         )}
 
         <h2 className="pc-title">
-          <Latex>{processLatex(paper.title)}</Latex>
+          <Latex strict={false} delimiters={LATEX_DELIMITERS}>{processLatex(paper.title)}</Latex>
         </h2>
 
         <div 
@@ -472,7 +483,7 @@ const PaperCard = memo(function PaperCard({
           className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''}`}
           onClick={(e) => toggleExpanded(e, !expanded)}
         >
-          <p><Latex>{processLatex(paper.abstract)}</Latex></p>
+          <p><Latex strict={false} delimiters={LATEX_DELIMITERS}>{processLatex(paper.abstract)}</Latex></p>
         </div>
 
         <div className="pc-action-bar">
