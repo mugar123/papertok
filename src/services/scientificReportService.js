@@ -365,7 +365,7 @@ export async function getScientificReport(timeframe = '7d', forceRefresh = false
   console.log(`[ScientificReport] Generating report for: ${cacheKey} (from ${fromStr} to ${toStr})`);
   
   const isLongTerm = days >= 365;
-  const shouldRandomize = isLongTerm && forceRefresh;
+  const shouldRandomize = forceRefresh;
   const hasCountryFilter = filters.countries?.length > 0;
   
   // 1. Fetch Candidates from all sources in parallel
