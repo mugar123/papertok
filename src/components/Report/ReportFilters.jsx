@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
 import { COUNTRIES, searchCountries } from '../../data/countries';
 import { Filter, Search, X, MapPin, ChevronDown, ChevronUp } from 'lucide-react';
@@ -120,16 +121,23 @@ export default function ReportFilters({ filters, onChange }) {
             />
             
             {/* Selected countries pills */}
-            {(filters.countries || []).length > 0 && (
-              <div className="rf-selected-countries">
+            <div className="rf-selected-countries">
+              <AnimatePresence>
                 {(filters.countries || []).map(code => (
-                  <span key={code} className="rf-country-pill">
+                  <motion.span 
+                    key={code} 
+                    className="rf-country-pill"
+                    initial={{ opacity: 0, scale: 0.8, y: 5 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    exit={{ opacity: 0, scale: 0.8, y: 5 }}
+                    transition={{ duration: 0.2 }}
+                  >
                     {COUNTRIES[code] || code}
                     <button onClick={() => toggleCountry(code)}><X size={10} /></button>
-                  </span>
+                  </motion.span>
                 ))}
-              </div>
-            )}
+              </AnimatePresence>
+            </div>
           </div>
 
           {/* Clear all */}
