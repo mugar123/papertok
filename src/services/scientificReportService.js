@@ -420,29 +420,7 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
     ...pubmedCandidates
   ]);
   
-  // 2b. Client-side category filtering
-  if (filters.categories?.length > 0) {
-    const categoryPrefixes = new Set();
-    filters.categories.forEach(areaKey => {
-      const area = CATEGORIES[areaKey];
-      if (area?.subcategories) {
-        Object.keys(area.subcategories).forEach(subcat => categoryPrefixes.add(subcat));
-      }
-      // Also add the area key itself as a prefix (e.g. 'physics', 'cs')
-      categoryPrefixes.add(areaKey);
-    });
-    
-    allCandidates = allCandidates.filter(p => {
-      const cats = [...(p.categories || []), p.primaryCategory || '', ...(p.allCategories || [])];
-      return cats.some(cat => {
-        if (!cat) return false;
-        const catStr = typeof cat === 'string' ? cat : (cat.display_name || '');
-        // Check direct match or prefix match (e.g. 'cs.AI' starts with 'cs')
-        return categoryPrefixes.has(catStr) || 
-               [...categoryPrefixes].some(prefix => catStr.startsWith(prefix + '.') || catStr.startsWith(prefix + '-'));
-      });
-    });
-  }
+  // (Client-side category filtering removed: API queries now handle this natively)
   
   if (allCandidates.length === 0) {
     return { mainDiscovery: null, highlights: [], trendingConcepts: [] };
