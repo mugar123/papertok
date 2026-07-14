@@ -542,6 +542,23 @@ export async function findInstitution({ rorUrl, name }) {
     } catch { /* ROR lookup failed, try name search */ }
   }
 
+  if (name) {
+    const url = `https://api.openalex.org/institutions?search=${encodeURIComponent(name)}&select=id,display_name&per-page=1`;
+    try {
+      const res = await fetchWithTimeout(url, 4000);
+      if (res.ok) {
+        const data = await res.json();
+        const inst = data.results?.[0];
+        if (inst) {
+          return {
+            id: inst.id.split('/').pop(),
+            display_name: inst.display_name
+          };
+        }
+      }
+    } catch { /* Name lookup failed */ }
+  }
+
   return null;
 }
 
