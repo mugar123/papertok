@@ -7,7 +7,7 @@
 import { fetchPapers as fetchArxivPapers } from './arxivService';
 import { PubmedAdapter } from './adapters/PubmedAdapter';
 import { PaperBuilder } from './PaperBuilder';
-import { CATEGORIES, getCategoryLabel } from '../data/categories';
+import { CATEGORIES, getCategoryLabel, getCategoryArea } from '../data/categories';
 
 // Global cache for stable editions (TTL: 1 hour)
 const REPORT_CACHE = new Map();
@@ -75,6 +75,37 @@ function getDateThresholds(timeframe) {
 /**
  * Normalizes OpenAlex raw works to standard PaperTok Paper objects
  */
+/**
+ * Helper to check if a paper matches a selected category key
+ */
+function paperMatchesCategory(paper, categoryKey) {
+  const area = CATEGORIES[categoryKey];
+  if (!area) return false;
+  
+  const prim = (paper.primaryCategory || '').toLowerCase();
+  const key = categoryKey.toLowerCase();
+  if (prim === key) return true;
+  
+  if (prim.startsWith(key + '.') || prim.startsWith(key + '-')) return true;
+  
+  const areaFromArxiv = getCategoryArea(paper.primaryCategory);
+  if (areaFromArxiv === categoryKey) return true;
+  
+  const labelsToMatch = [
+    area.label.toLowerCase(),
+    area.labelEn.toLowerCase(),
+    ...Object.values(area.subcategories).flatMap(sub => [
+      sub.label.toLowerCase(),
+      sub.labelEn.toLowerCase()
+    ])
+  ];
+  
+  const paperCats = (paper.categories || []).map(c => c.toLowerCase());
+  if (paper.primaryCategory) paperCats.push(paper.primaryCategory.toLowerCase());
+  
+  return paperCats.some(cat => labelsToMatch.includes(cat));
+}
+
 function formatOpenAlexWork(work) {
   let summary = 'Resumen no disponible.';
   if (work.abstract_inverted_index) {
@@ -420,7 +451,12 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
     ...pubmedCandidates
   ]);
   
-  // (Client-side category filtering removed: API queries now handle this natively)
+  // Apply strict client-side category filtering to prevent false positives from OpenAlex API queries
+  if (filters.categories && filters.categories.length > 0) {
+    allCandidates = allCandidates.filter(paper => {
+      return filters.categories.some(catKey => paperMatchesCategory(paper, catKey));
+    });
+  }
   
   if (allCandidates.length === 0) {
     return { mainDiscovery: null, highlights: [], trendingConcepts: [] };
