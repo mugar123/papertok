@@ -7,7 +7,7 @@
 import { fetchPapers as fetchArxivPapers } from './arxivService';
 import { PubmedAdapter } from './adapters/PubmedAdapter';
 import { PaperBuilder } from './PaperBuilder';
-import { CATEGORIES } from '../data/categories';
+import { CATEGORIES, getCategoryLabel } from '../data/categories';
 
 // Global cache for stable editions (TTL: 1 hour)
 const REPORT_CACHE = new Map();
@@ -421,11 +421,11 @@ export async function getScientificReport(timeframe = '7d', forceRefresh = false
       if (cat) conceptCounts.set(cat, (conceptCounts.get(cat) || 0) + 1);
     });
   }
-  // Sort and take top 5
+  // Sort and take top 5, converting codes like "cs.AI" to "Inteligencia Artificial"
   const trendingConcepts = Array.from(conceptCounts.entries())
     .sort((a, b) => b[1] - a[1])
     .slice(0, 5)
-    .map(entry => entry[0]);
+    .map(entry => getCategoryLabel(entry[0]));
   
   const reportData = { mainDiscovery, highlights, trendingConcepts };
   
