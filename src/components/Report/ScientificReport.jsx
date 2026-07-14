@@ -118,7 +118,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           <h1 className="sr-masthead">Scientific Report</h1>
           <div className="sr-header-actions">
             <span className="sr-edition">{getContextText()}</span>
-            <button className="sr-refresh-btn" onClick={() => fetchReport(timeframe, true)} disabled={loading} title="Actualizar">
+            <button className="sr-refresh-btn" onClick={() => fetchReport(timeframe, filters, true)} disabled={loading} title="Actualizar">
               <RefreshCw size={14} className={loading ? 'spinning' : ''} />
             </button>
           </div>
@@ -151,7 +151,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       {loading ? (
         <div className="sr-state"><div className="sr-spinner" /><p>Compilando edición estable...</p></div>
       ) : error ? (
-        <div className="sr-state"><p>{error}</p><button className="sr-retry" onClick={() => setTimeframe(timeframe)}>Reintentar</button></div>
+        <div className="sr-state"><p>{error}</p><button className="sr-retry" onClick={() => fetchReport(timeframe, filters, true)}>Reintentar</button></div>
       ) : (
         <div className="sr-body" key={typeof timeframe === 'string' ? timeframe : JSON.stringify(timeframe)}>
 
