@@ -4,11 +4,16 @@
  */
 
 import { CATEGORIES } from '../data/categories';
-import { applyInstitutionWorksFallback } from '../utils/entityMetadata.js';
+import {
+  applyInstitutionWorksFallback,
+  calculateInstitutionRecentImpact,
+  getRecentImpactPeriod,
+} from '../utils/entityMetadata.js';
 import { PaperBuilder } from './PaperBuilder';
 
 const CACHE = new Map();
 const GRAPH_CACHE = new Map(); // caches W... to arxivId mappings
+const INSTITUTION_IMPACT_CACHE = new Map();
 
 async function fetchWithTimeout(url, timeoutMs = 8000) {
   const controller = new AbortController();
@@ -657,6 +662,45 @@ export async function getEntityById(type, id) {
     console.error(`OpenAlex getEntityById failed for ${type} ${id}`, err);
     throw err;
   }
+}
+
+export async function getInstitutionRecentImpact(id, now = new Date()) {
+  if (!id) return null;
+  const cleanId = id.includes('/') ? id.split('/').pop() : id;
+  if (!/^I\d+$/.test(cleanId)) return null;
+
+  const period = getRecentImpactPeriod(now);
+  const cacheKey = `${cleanId}:${period.from}:${period.to}`;
+  if (INSTITUTION_IMPACT_CACHE.has(cacheKey)) {
+    return INSTITUTION_IMPACT_CACHE.get(cacheKey);
+  }
+
+  const seed = cleanId.replace(/\D/g, '');
+  const filter = [
+    `institutions.id:${cleanId}`,
+    `from_publication_date:${period.from}`,
+    `to_publication_date:${period.to}`,
+  ].join(',');
+  const params = new URLSearchParams({
+    filter,
+    sample: '200',
+    seed,
+    'per-page': '200',
+    select: 'id,fwci,publication_date',
+  });
+
+  const response = await fetchWithTimeout(`https://api.openalex.org/works?${params}`, 12000);
+  if (!response.ok) throw new Error(`OpenAlex impact API error: ${response.status}`);
+  const data = await response.json();
+  const impact = {
+    ...calculateInstitutionRecentImpact(data.results || []),
+    period,
+    source: 'OpenAlex',
+    sampled: true,
+  };
+
+  INSTITUTION_IMPACT_CACHE.set(cacheKey, impact);
+  return impact;
 }
 
 /**

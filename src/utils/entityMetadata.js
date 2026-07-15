@@ -18,6 +18,71 @@ export function applyInstitutionWorksFallback(institution, worksCount) {
   };
 }
 
+const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+
+export function getRecentImpactPeriod(now = new Date()) {
+  const endDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 6, 0));
+  const startDate = new Date(Date.UTC(
+    endDate.getUTCFullYear() - 3,
+    endDate.getUTCMonth() + 1,
+    1,
+  ));
+
+  return {
+    from: startDate.toISOString().slice(0, 10),
+    to: endDate.toISOString().slice(0, 10),
+    label: `${startDate.getUTCFullYear()}–${endDate.getUTCFullYear()}`,
+  };
+}
+
+export function calculateInstitutionRecentImpact(works = [], minimumSampleSize = 50) {
+  const fwciValues = works
+    .map(work => work?.fwci)
+    .filter(value => Number.isFinite(value) && value >= 0)
+    .sort((a, b) => a - b);
+
+  if (fwciValues.length < minimumSampleSize) {
+    return {
+      available: false,
+      sampleSize: fwciValues.length,
+      minimumSampleSize,
+    };
+  }
+
+  const middle = Math.floor(fwciValues.length / 2);
+  const medianFwci = fwciValues.length % 2 === 0
+    ? (fwciValues[middle - 1] + fwciValues[middle]) / 2
+    : fwciValues[middle];
+  const highImpactShare = fwciValues.filter(value => value >= 2).length / fwciValues.length;
+
+  // FWCI 1 is the field/age expectation. A 20% share above 2x impact also maps to 5/10.
+  const fwciScore = clamp(5 + 2.5 * Math.log2(Math.max(medianFwci, 0.25)), 0, 10);
+  const highImpactScore = clamp(2.5 + 12.5 * highImpactShare, 0, 10);
+  const score = Math.round((fwciScore * 0.7 + highImpactScore * 0.3) * 10) / 10;
+
+  const level = score >= 8.5
+    ? 'Excepcional'
+    : score >= 7
+      ? 'Muy alto'
+      : score >= 5.5
+        ? 'Por encima de la media'
+        : score >= 4.5
+          ? 'En la media'
+          : score >= 3
+            ? 'Por debajo de la media'
+            : 'Bajo';
+
+  return {
+    available: true,
+    score,
+    level,
+    sampleSize: fwciValues.length,
+    medianFwci: Math.round(medianFwci * 100) / 100,
+    highImpactShare: Math.round(highImpactShare * 1000) / 1000,
+    minimumSampleSize,
+  };
+}
+
 export function deduplicateProjectParticipants(participants = []) {
   const uniqueParticipants = new Map();
 

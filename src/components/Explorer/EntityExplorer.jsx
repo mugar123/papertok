@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
-import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution } from '../../services/openAlexService';
+import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getInstitutionRecentImpact } from '../../services/openAlexService';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
 import { ElsevierAdapter, PubmedAdapter } from '../../services/adapters';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
@@ -58,6 +58,9 @@ export default function EntityExplorer() {
   const [expandedSummary, setExpandedSummary] = useState(false);
   const [resolvingParticipant, setResolvingParticipant] = useState(null);
   const [participantNavigationError, setParticipantNavigationError] = useState('');
+  const [recentImpact, setRecentImpact] = useState(null);
+  const [isLoadingRecentImpact, setIsLoadingRecentImpact] = useState(false);
+  const [recentImpactError, setRecentImpactError] = useState(false);
   
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
@@ -117,6 +120,9 @@ export default function EntityExplorer() {
       setExpandedSummary(false);
       setResolvingParticipant(null);
       setParticipantNavigationError('');
+      setRecentImpact(null);
+      setIsLoadingRecentImpact(false);
+      setRecentImpactError(false);
       setShowFilters(false);
       setPapersError(null);
       setAuthorsError(null);
@@ -192,6 +198,22 @@ export default function EntityExplorer() {
       
       setEntity(data);
       setIsLoadingEntity(false);
+
+      if (type === 'institution' && data?.id) {
+        setIsLoadingRecentImpact(true);
+        setRecentImpactError(false);
+        try {
+          const impact = await getInstitutionRecentImpact(data.id);
+          if (!isCancelled) setRecentImpact(impact);
+        } catch (error) {
+          if (!isCancelled) {
+            setRecentImpactError(true);
+            console.error('Failed to load recent institution impact', error);
+          }
+        } finally {
+          if (!isCancelled) setIsLoadingRecentImpact(false);
+        }
+      }
 
       if (data && data.display_name) {
         if (type === 'author' && data.orcid) {
@@ -727,7 +749,35 @@ export default function EntityExplorer() {
                 <span className="ehc-stat-label">{type === 'source' ? 'Tipo' : 'H-Index'}</span>
               </div>
             )}
-            {entity?.summary_stats?.['2yr_mean_citedness'] != null && (
+            {type === 'institution' && (
+              <div
+                className="ehc-stat-box ehc-stat-box--impact"
+                title={recentImpact?.available
+                  ? `Estimación PaperTok basada en ${recentImpact.sampleSize} publicaciones con FWCI. FWCI mediano: ${recentImpact.medianFwci}; ${Math.round(recentImpact.highImpactShare * 100)}% supera 2 veces el impacto esperado.`
+                  : recentImpactError
+                    ? 'No se pudo consultar el impacto reciente en OpenAlex.'
+                    : 'La nota requiere al menos 50 publicaciones recientes con datos FWCI.'}
+                aria-label={recentImpact?.available
+                  ? `Impacto reciente ${recentImpact.score} sobre 10, ${recentImpact.level}`
+                  : 'Impacto reciente no disponible'}
+              >
+                <span className="ehc-stat-value">
+                  {isLoadingRecentImpact ? '…' : recentImpact?.available ? recentImpact.score.toFixed(1) : '—'}
+                  <span className="ehc-stat-scale">/ 10</span>
+                </span>
+                <span className="ehc-stat-label">Impacto reciente</span>
+                <span className="ehc-stat-detail">
+                  {isLoadingRecentImpact
+                    ? 'Calculando…'
+                    : recentImpact?.available
+                      ? `${recentImpact.level} · ${recentImpact.period.label}`
+                      : recentImpactError
+                        ? 'No disponible'
+                        : 'Datos insuficientes'}
+                </span>
+              </div>
+            )}
+            {type !== 'institution' && entity?.summary_stats?.['2yr_mean_citedness'] != null && (
               <div className="ehc-stat-box">
                 <span className="ehc-stat-value">{Number(entity.summary_stats['2yr_mean_citedness']).toFixed(1)}</span>
                 <span className="ehc-stat-label">Impacto Reciente</span>

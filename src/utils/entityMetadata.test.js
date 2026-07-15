@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { applyInstitutionWorksFallback, deduplicateProjectParticipants } from './entityMetadata.js';
+import {
+  applyInstitutionWorksFallback,
+  calculateInstitutionRecentImpact,
+  deduplicateProjectParticipants,
+  getRecentImpactPeriod,
+} from './entityMetadata.js';
 
 test('replaces misleading zero institution metrics with a verified works count', () => {
   const institution = applyInstitutionWorksFallback({
@@ -26,6 +31,39 @@ test('does not overwrite institution metrics when OpenAlex provides them', () =>
   assert.equal(institution.works_count, 42);
   assert.equal(institution.cited_by_count, 100);
   assert.equal(institution.summary_stats.h_index, 8);
+});
+
+test('builds a three-year recent-impact window with a six-month citation delay', () => {
+  assert.deepEqual(getRecentImpactPeriod(new Date('2026-07-15T12:00:00Z')), {
+    from: '2023-01-01',
+    to: '2025-12-31',
+    label: '2023–2025',
+  });
+});
+
+test('scores field-normalized recent institutional impact on a ten-point scale', () => {
+  const works = [
+    ...Array.from({ length: 30 }, () => ({ fwci: 1 })),
+    ...Array.from({ length: 20 }, () => ({ fwci: 2 })),
+  ];
+  const impact = calculateInstitutionRecentImpact(works);
+
+  assert.equal(impact.available, true);
+  assert.equal(impact.score, 5.8);
+  assert.equal(impact.sampleSize, 50);
+  assert.equal(impact.medianFwci, 1);
+  assert.equal(impact.highImpactShare, 0.4);
+  assert.equal(impact.level, 'Por encima de la media');
+});
+
+test('does not publish an impact score from an undersized sample', () => {
+  assert.deepEqual(calculateInstitutionRecentImpact(
+    Array.from({ length: 49 }, () => ({ fwci: 3 })),
+  ), {
+    available: false,
+    sampleSize: 49,
+    minimumSampleSize: 50,
+  });
 });
 
 test('deduplicates project participants and keeps the richest metadata', () => {

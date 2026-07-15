@@ -240,6 +240,24 @@
   font-weight: 600;
 }
 
+.ehc-stat-box--impact {
+  border-color: rgba(139, 92, 246, 0.24);
+  background: rgba(124, 58, 237, 0.08);
+}
+
+.ehc-stat-scale {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.ehc-stat-detail {
+  color: rgba(167, 139, 250, 0.9);
+  font-size: 0.66rem;
+  line-height: 1.25;
+  margin-top: 2px;
+}
+
 /* Wikipedia excerpt */
 .ehc-wiki {
   padding: 14px 18px;
