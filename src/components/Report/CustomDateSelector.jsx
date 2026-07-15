@@ -38,14 +38,14 @@ export default function CustomDateSelector({ onApply, onCancel }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [popoverRef]);
 
-  // Reset state when slider moves
-  useEffect(() => {
-    if (!isSingleYear) {
+  const handleYearRangeChange = (nextRange) => {
+    setYearRange(nextRange);
+    if (nextRange[0] !== nextRange[1]) {
       setExactDateMode(false);
       setStartDateStr(null);
       setEndDateStr(null);
     }
-  }, [isSingleYear, yearRange]);
+  };
 
   const handleApply = () => {
     if (isSingleYear && exactDateMode && startDateStr) {
@@ -123,7 +123,7 @@ export default function CustomDateSelector({ onApply, onCancel }) {
             min={MIN_YEAR}
             max={currentYear}
             value={yearRange}
-            onChange={(val) => setYearRange(val)}
+            onChange={handleYearRangeChange}
             trackStyle={[{ background: 'linear-gradient(90deg, #9b87f5, #7E69AB)', height: 4 }]}
             handleStyle={[
               { backgroundColor: '#fff', borderColor: 'transparent', width: 16, height: 16, marginTop: -6, boxShadow: '0 0 10px rgba(155, 135, 245, 0.5)' },

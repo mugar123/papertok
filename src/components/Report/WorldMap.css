@@ -42,8 +42,11 @@
   stroke: rgba(99, 102, 241, 1);
 }
 
-.wm-geo:focus {
-  outline: none !important;
+.wm-geo:focus-visible {
+  outline: 2px solid #a5b4fc;
+  outline-offset: 2px;
+  stroke: #c7d2fe;
+  stroke-width: 1.5px;
 }
 
 /* Floating Tooltip */

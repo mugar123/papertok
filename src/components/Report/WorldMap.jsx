@@ -35,6 +35,12 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
     }
   };
 
+  const handleKeyDown = (event, geo) => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    handleClick(geo);
+  };
+
   return (
     <div className="wm" onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave}>
       <ComposableMap 
@@ -58,16 +64,21 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
               geographies.map((geo) => {
                 const alpha2 = isoMapping.numericToAlpha2[geo.id];
                 const isSelected = alpha2 && selectedCountries.includes(alpha2);
+                const countryName = alpha2 ? (COUNTRIES[alpha2] || geo.properties.name) : geo.properties.name;
                 
                 return (
                   <Geography
                     key={geo.rsmKey}
                     geography={geo}
                     onClick={() => handleClick(geo)}
+                    onKeyDown={(event) => handleKeyDown(event, geo)}
                     onMouseEnter={(e) => handleMouseEnter(geo, e)}
                     onMouseLeave={handleMouseLeave}
                     className={`wm-geo ${isSelected ? 'selected' : ''}`}
-                    tabIndex={-1}
+                    role={alpha2 ? 'button' : undefined}
+                    tabIndex={alpha2 ? 0 : -1}
+                    aria-label={alpha2 ? `Filtrar por ${countryName}` : undefined}
+                    aria-pressed={alpha2 ? isSelected : undefined}
                   />
                 );
               })
