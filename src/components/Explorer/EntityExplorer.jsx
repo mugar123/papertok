@@ -73,6 +73,8 @@ export default function EntityExplorer() {
 
   const [activeTab, setActiveTab] = useState('papers');
   const [expandedSummary, setExpandedSummary] = useState(false);
+  const [resolvingParticipant, setResolvingParticipant] = useState(null);
+  const [participantNavigationError, setParticipantNavigationError] = useState('');
   
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
@@ -130,6 +132,8 @@ export default function EntityExplorer() {
       setOrcidInfo(null);
       setIsLoadingOrcid(false);
       setExpandedSummary(false);
+      setResolvingParticipant(null);
+      setParticipantNavigationError('');
       setShowFilters(false);
       setPapersError(null);
       setAuthorsError(null);
@@ -507,6 +511,27 @@ export default function EntityExplorer() {
     setAuthorsReloadKey(key => key + 1);
   };
 
+  const openParticipantInstitution = async (participant) => {
+    setResolvingParticipant(participant.name);
+    setParticipantNavigationError('');
+    try {
+      const institution = await findInstitution({
+        name: participant.searchName || participant.name,
+        aliases: [participant.name],
+      });
+      if (institution) {
+        navigate(`/explorer/institution/${institution.id}`);
+      } else {
+        setParticipantNavigationError(`No encontramos el perfil institucional de ${participant.name}.`);
+      }
+    } catch (error) {
+      console.error('Failed to resolve project participant', error);
+      setParticipantNavigationError(`No pudimos abrir ${participant.name}. Inténtalo de nuevo.`);
+    } finally {
+      setResolvingParticipant(null);
+    }
+  };
+
   if (isLoadingEntity) return (
       <div className="explorer-container">
         <div className="explorer-hero">
@@ -825,12 +850,27 @@ export default function EntityExplorer() {
               <h4 className="project-section-title"><Building2 size={14} /> Organizaciones participantes</h4>
               <div className="project-participants-grid">
                 {entity.participants.slice(0, expandedSummary ? entity.participants.length : 6).map((p, i) => (
-                  <div key={i} className="project-participant-card">
-                    <span className="project-participant-name">{p.name}</span>
-                    {p.country && <span className="project-participant-country"><MapPin size={11} /> {p.country}</span>}
-                  </div>
+                  <button
+                    key={`${p.name}-${p.country || i}`}
+                    type="button"
+                    className="project-participant-card"
+                    onClick={() => openParticipantInstitution(p)}
+                    disabled={resolvingParticipant === p.name}
+                    aria-label={`Abrir perfil institucional de ${p.name}`}
+                  >
+                    <span className="project-participant-info">
+                      <span className="project-participant-name">{p.name}</span>
+                      {p.country && <span className="project-participant-country"><MapPin size={11} /> {p.country}</span>}
+                    </span>
+                    {resolvingParticipant === p.name
+                      ? <Loader2 size={15} className="ehc-spinner" aria-hidden="true" />
+                      : <ChevronRight size={15} className="project-participant-arrow" aria-hidden="true" />}
+                  </button>
                 ))}
               </div>
+              {participantNavigationError && (
+                <p className="project-participant-error" role="alert">{participantNavigationError}</p>
+              )}
               {entity.participants.length > 6 && !expandedSummary && (
                 <button className="project-show-more" onClick={() => setExpandedSummary(true)}>
                   +{entity.participants.length - 6} organizaciones más

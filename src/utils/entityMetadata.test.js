@@ -30,14 +30,15 @@ test('does not overwrite institution metrics when OpenAlex provides them', () =>
 
 test('deduplicates project participants and keeps the richest metadata', () => {
   const participants = deduplicateProjectParticipants([
-    { name: 'University of Strathclyde', country: null, website: 'https://strath.ac.uk' },
-    { name: ' University of Strathclyde ', country: 'United Kingdom', website: null },
-    { name: 'UNIVERSITY OF STRATHCLYDE', country: null, website: null },
+    { name: 'UOS', searchName: 'University of Strathclyde', country: null, website: 'https://strath.ac.uk' },
+    { name: ' University of Strathclyde ', searchName: 'University of Strathclyde', country: 'United Kingdom', website: null },
+    { name: 'UNIVERSITY OF STRATHCLYDE', searchName: 'University of Strathclyde', country: null, website: null },
     { name: 'Unknown' },
   ]);
 
   assert.deepEqual(participants, [{
-    name: 'University of Strathclyde',
+    name: 'UOS',
+    searchName: 'University of Strathclyde',
     country: 'United Kingdom',
     website: 'https://strath.ac.uk',
   }]);

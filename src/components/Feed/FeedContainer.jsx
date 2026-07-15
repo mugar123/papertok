@@ -4,9 +4,11 @@ import { useFeed } from '../../context/FeedContext';
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
 import AnimatedAtom from './AnimatedAtom';
+import { accumulateWheelGesture } from '../../utils/wheelNavigation';
 import './FeedContainer.css';
 
 let savedFeedScroll = 0;
+const WHEEL_GESTURE_RESET_MS = 180;
 
 export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const { 
@@ -66,6 +68,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   }, [hasMore, loading, loadMore]);
 
   const isScrollingRef = useRef(false);
+  const wheelDeltaRef = useRef(0);
+  const wheelResetTimerRef = useRef(null);
 
   // Implement mouse wheel scroll snapping on desktop
   useEffect(() => {
@@ -73,18 +77,39 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     if (!container) return;
 
     const handleWheel = (e) => {
-      // If currently scrolling/transitioning, lock wheel
-      if (isScrollingRef.current) {
-        e.preventDefault();
-        return;
-      }
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
 
-      // Filter out small tracks/vibrations
-      if (Math.abs(e.deltaY) < 15) return;
+      const nestedScroller = e.target instanceof Element ? e.target.closest('.pc-abstract--open') : null;
+      if (nestedScroller) {
+        const canScrollDown = e.deltaY > 0 && nestedScroller.scrollTop + nestedScroller.clientHeight < nestedScroller.scrollHeight - 1;
+        const canScrollUp = e.deltaY < 0 && nestedScroller.scrollTop > 1;
+        if (canScrollDown || canScrollUp) return;
+      }
 
       e.preventDefault();
 
-      const direction = e.deltaY > 0 ? 1 : -1;
+      // If currently scrolling/transitioning, lock wheel
+      if (isScrollingRef.current) {
+        return;
+      }
+
+      const deltaMultiplier = e.deltaMode === WheelEvent.DOM_DELTA_LINE
+        ? 16
+        : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
+          ? container.clientHeight
+          : 1;
+      const normalizedDelta = e.deltaY * deltaMultiplier;
+      const gesture = accumulateWheelGesture(wheelDeltaRef.current, normalizedDelta);
+      wheelDeltaRef.current = gesture.accumulatedDelta;
+
+      if (wheelResetTimerRef.current) clearTimeout(wheelResetTimerRef.current);
+      wheelResetTimerRef.current = setTimeout(() => {
+        wheelDeltaRef.current = 0;
+      }, WHEEL_GESTURE_RESET_MS);
+
+      if (!gesture.direction) return;
+
+      const direction = gesture.direction;
       const cardHeight = container.clientHeight;
       const currentScroll = container.scrollTop;
       const currentIndex = Math.round(currentScroll / cardHeight);
@@ -106,6 +131,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     container.addEventListener('wheel', handleWheel, { passive: false });
     return () => {
       container.removeEventListener('wheel', handleWheel);
+      if (wheelResetTimerRef.current) clearTimeout(wheelResetTimerRef.current);
     };
   }, [papers.length, loading]);
 

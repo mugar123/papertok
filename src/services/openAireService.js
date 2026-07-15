@@ -87,6 +87,7 @@ export async function getProjectDetails(projectId) {
         .filter(r => r.to?.["@class"] === "hasParticipant")
         .map(r => ({
           name: r.legalshortname?.["$"] || r.legalname?.["$"] || "Unknown",
+          searchName: r.legalname?.["$"] || r.legalshortname?.["$"] || null,
           country: r.country?.["@classname"] || null,
           website: r.websiteurl?.["$"] || null,
         })));

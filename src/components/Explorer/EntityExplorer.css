@@ -1286,18 +1286,52 @@
 
 .project-participant-card {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
   padding: 10px 12px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 8px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
   transition: background 0.2s, border-color 0.2s;
 }
 
 .project-participant-card:hover {
   background: rgba(255, 255, 255, 0.07);
   border-color: rgba(255, 255, 255, 0.12);
+}
+
+.project-participant-card:focus-visible {
+  outline: 2px solid var(--accent-primary, #7c3aed);
+  outline-offset: 2px;
+}
+
+.project-participant-card:disabled {
+  cursor: wait;
+  opacity: 0.75;
+}
+
+.project-participant-info {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.project-participant-arrow {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.2s, color 0.2s;
+}
+
+.project-participant-card:hover .project-participant-arrow {
+  color: var(--text-primary);
+  transform: translateX(2px);
 }
 
 .project-participant-name {
@@ -1313,6 +1347,12 @@
   gap: 3px;
   font-size: 0.68rem;
   color: var(--text-tertiary, #888);
+}
+
+.project-participant-error {
+  margin: 8px 0 0;
+  color: #fca5a5;
+  font-size: 0.72rem;
 }
 
 .project-show-more {

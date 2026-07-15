@@ -25,7 +25,7 @@ export function deduplicateProjectParticipants(participants = []) {
     const name = participant?.name?.trim();
     if (!name || name.toLowerCase() === 'unknown') continue;
 
-    const key = name
+    const key = (participant.searchName?.trim() || name)
       .normalize('NFKD')
       .replace(/[\u0300-\u036f]/g, '')
       .toLowerCase()
@@ -33,14 +33,18 @@ export function deduplicateProjectParticipants(participants = []) {
       .trim();
     const existing = uniqueParticipants.get(key);
 
-    uniqueParticipants.set(key, existing ? {
-      ...existing,
-      country: existing.country || participant.country || null,
-      website: existing.website || participant.website || null,
-    } : {
-      ...participant,
-      name,
-    });
+    if (existing) {
+      const mergedParticipant = {
+        ...existing,
+        country: existing.country || participant.country || null,
+        website: existing.website || participant.website || null,
+      };
+      const searchName = existing.searchName || participant.searchName;
+      if (searchName) mergedParticipant.searchName = searchName;
+      uniqueParticipants.set(key, mergedParticipant);
+    } else {
+      uniqueParticipants.set(key, { ...participant, name });
+    }
   }
 
   return [...uniqueParticipants.values()];

@@ -537,7 +537,7 @@ export async function searchSources() {
  * Look up an OpenAlex institution by its ROR identifier or name.
  * Returns { id, display_name } or null if not found.
  */
-export async function findInstitution({ rorUrl, name }) {
+export async function findInstitution({ rorUrl, name, aliases = [] }) {
   if (rorUrl) {
     const rorId = rorUrl.replace(/^https?:\/\/ror\.org\//, '');
     const url = `https://api.openalex.org/institutions?filter=ror:${rorId}&select=id,display_name`;
@@ -556,8 +556,9 @@ export async function findInstitution({ rorUrl, name }) {
     } catch { /* ROR lookup failed, try name search */ }
   }
 
-  if (name) {
-    const url = `https://api.openalex.org/institutions?search=${encodeURIComponent(name)}&select=id,display_name&per-page=1`;
+  const candidateNames = [...new Set([name, ...aliases].map(value => value?.trim()).filter(Boolean))];
+  for (const candidateName of candidateNames) {
+    const url = `https://api.openalex.org/institutions?search=${encodeURIComponent(candidateName)}&select=id,display_name&per-page=1`;
     try {
       const res = await fetchWithTimeout(url, 4000);
       if (res.ok) {
@@ -570,7 +571,7 @@ export async function findInstitution({ rorUrl, name }) {
           };
         }
       }
-    } catch { /* Name lookup failed */ }
+    } catch { /* Name lookup failed, try the next alias */ }
   }
 
   return null;
