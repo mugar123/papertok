@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  diversifiedWeightedShuffle,
   mergeRecommendationWeights,
   scorePaperForRecommendation,
   weightedShuffle,
@@ -98,4 +99,46 @@ test('weighted shuffle honors deterministic random selection', () => {
 
   assert.equal(shuffled[0].id, 'high');
   assert.deepEqual(new Set(shuffled.map((paper) => paper.id)), new Set(['low', 'high']));
+});
+
+test('diversified shuffle limits consecutive papers from the same category', () => {
+  const papers = [
+    { id: 'a1', primaryCategory: 'med.onco', _dynamicScore: 100 },
+    { id: 'a2', primaryCategory: 'med.onco', _dynamicScore: 100 },
+    { id: 'a3', primaryCategory: 'med.onco', _dynamicScore: 100 },
+    { id: 'a4', primaryCategory: 'med.onco', _dynamicScore: 100 },
+    { id: 'b1', primaryCategory: 'med.cardio', _dynamicScore: 1 },
+  ];
+
+  const shuffled = diversifiedWeightedShuffle(papers, { random: () => 0 });
+  assert.deepEqual(
+    shuffled.slice(0, 4).map(paper => paper.primaryCategory),
+    ['med.onco', 'med.onco', 'med.onco', 'med.cardio']
+  );
+});
+
+test('diversified shuffle recalculates scores from the evolving recent queue', () => {
+  const observedCounts = [];
+  const initialPapers = Array.from({ length: 4 }, (_, index) => ({
+    id: `published-${index}`,
+    primaryCategory: 'med.gen',
+    publicationStatus: 'published',
+  }));
+  const papers = [
+    { id: 'preprint', primaryCategory: 'med.onco', publicationStatus: 'preprint' },
+    { id: 'published', primaryCategory: 'med.cardio', publicationStatus: 'published' },
+  ];
+
+  diversifiedWeightedShuffle(papers, {
+    initialPapers,
+    random: () => 0,
+    scorePaper: (paper, recentPropsCount) => {
+      observedCounts.push({ ...recentPropsCount });
+      paper._dynamicScore = 1;
+      paper._debugScore = {};
+    },
+  });
+
+  assert.equal(observedCounts[0].published, 4);
+  assert.ok(observedCounts.some(counts => counts.preprint > 0));
 });

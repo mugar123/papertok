@@ -42,9 +42,8 @@ async function fetchWithTimeout(url, timeoutMs = 8000) {
  * @returns {Promise<Object>} Map of { arxivId: { concepts, cited_by_count, related_works } }
  */
 export async function enrichPapersBatch(arxivIds) {
-  const validIds = arxivIds
-    .map(String)
-    .filter(id => id && id.trim() !== '')
+  const validIds = (Array.isArray(arxivIds) ? arxivIds : [])
+    .filter(id => typeof id === 'string' && id.trim() !== '')
     .map(id => {
       const pure = id.startsWith('arxiv:') ? id.split(':')[1] : id;
       return pure.replace(/v\d+$/, '');
@@ -103,6 +102,8 @@ export async function enrichPapersBatch(arxivIds) {
         const data = await response.json();
         if (data && data.results) {
           data.results.forEach(work => {
+             if (!work || typeof work.id !== 'string' || work.id.trim() === '') return;
+
              let arxivId = null;
              if (work.ids && work.ids.arxiv) {
                arxivId = work.ids.arxiv.split('/').pop().replace(/^arxiv\./i, '').replace(/v\d+$/, '');
@@ -854,4 +855,3 @@ export async function getTrendingPapers() {
     return [];
   }
 }
-

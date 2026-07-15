@@ -5,7 +5,7 @@ import { getScientificReport } from '../../services/scientificReportService';
 import CustomDateSelector from './CustomDateSelector';
 import ReportFilters from './ReportFilters';
 import PaperCard from '../Feed/PaperCard';
-import { getCategoryGradient } from '../../data/categories';
+import { CATEGORIES, getCategoryGradient, getCategoryLabel } from '../../data/categories';
 import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Flame } from 'lucide-react';
 import Latex from 'react-latex-next';
 import 'katex/dist/katex.min.css';
@@ -28,6 +28,16 @@ const LATEX_DELIMITERS = [
   { left: '\\begin{eqnarray}', right: '\\end{eqnarray}', display: true },
   { left: '\\begin{math}', right: '\\end{math}', display: false },
 ];
+
+function getHeroCategoryLabel(paper) {
+  const category = typeof paper?.primaryCategory === 'string' ? paper.primaryCategory.trim() : '';
+  if (!category) return 'Investigación científica';
+
+  if (CATEGORIES[category]) return CATEGORIES[category].label;
+
+  const categoryLabel = getCategoryLabel(category);
+  return categoryLabel === category ? 'Investigación científica' : categoryLabel;
+}
 
 /* Animated number component — counts up from 0 */
 function AnimatedNumber({ value, duration = 600 }) {
@@ -156,7 +166,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       {/* Header */}
       <header className="sr-header">
         <div className="sr-header-top">
-          <h1 className="sr-masthead">Scientific Report</h1>
+          <h1 className="sr-masthead">Reporte científico</h1>
           <div className="sr-header-actions">
             <span className="sr-edition">{getContextText()}</span>
           </div>
@@ -241,7 +251,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
               <div className="sr-hero-glow" />
               <div className="sr-hero-inner">
                 <div className="sr-hero-kicker">
-                  <span className="sr-kicker-cat">{(hero.primaryCategory || 'Ciencia').toUpperCase()}</span>
+                  <span className="sr-kicker-cat">{getHeroCategoryLabel(hero).toUpperCase()}</span>
                   <span className="sr-kicker-sep" />
                   {hero.journal && <span className="sr-kicker-venue">{hero.journal}</span>}
                   <span className="sr-kicker-year"><Calendar size={13} /> {hero.year}</span>

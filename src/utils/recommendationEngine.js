@@ -205,6 +205,102 @@ export function weightedShuffle(papers, weights = DEFAULT_RECOMMENDATION_WEIGHTS
   return result;
 }
 
+function countRecentProperties(papers) {
+  const counts = { preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0 };
+
+  papers.forEach((paper) => {
+    if (paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint') counts.preprint += 1;
+    else if (paper.publicationStatus === 'published') counts.published += 1;
+
+    if (paper.openAccess) counts.openAccess += 1;
+    else counts.subscription += 1;
+
+    if (paper.sourceType === 'journal' || paper.journal) counts.journal += 1;
+    if (paper.sourceType === 'conference' || paper.conference) counts.conference += 1;
+  });
+
+  return counts;
+}
+
+function getTrailingCategoryRun(papers) {
+  const lastCategory = papers.at(-1)?.primaryCategory || '';
+  if (!lastCategory) return { lastCategory: '', count: 0 };
+
+  let count = 0;
+  for (let index = papers.length - 1; index >= 0; index -= 1) {
+    if (papers[index]?.primaryCategory !== lastCategory) break;
+    count += 1;
+  }
+  return { lastCategory, count };
+}
+
+export function diversifiedWeightedShuffle(papers, options = {}) {
+  const {
+    scorePaper,
+    weights = DEFAULT_RECOMMENDATION_WEIGHTS,
+    initialPapers = [],
+    random = Math.random,
+    maxConsecutiveCategory = 3,
+  } = options;
+
+  const config = mergeRecommendationWeights(weights);
+  const pool = [...papers];
+  const result = [];
+  const history = [...initialPapers];
+  let { lastCategory, count: consecutiveCategoryCount } = getTrailingCategoryRun(history);
+
+  while (pool.length > 0) {
+    const recentPropsCount = countRecentProperties(history.slice(-5));
+    if (typeof scorePaper === 'function') {
+      pool.forEach(paper => scorePaper(paper, recentPropsCount));
+    }
+
+    let candidateIndexes = pool.map((_, index) => index);
+    if (lastCategory && consecutiveCategoryCount >= maxConsecutiveCategory) {
+      const alternatives = candidateIndexes.filter(index => pool[index].primaryCategory !== lastCategory);
+      if (alternatives.length > 0) candidateIndexes = alternatives;
+    }
+
+    const candidateWeights = candidateIndexes.map((poolIndex) => {
+      const paper = pool[poolIndex];
+      const isExplore = paper._debugScore?.isExploration || paper._type === 'exploration';
+      const score = paper._dynamicScore || 0;
+      const baseWeight = isExplore ? config.explorationBaseWeight : config.exploitBaseWeight;
+      return Math.max(config.minShuffleWeight, score + baseWeight);
+    });
+    const totalWeight = candidateWeights.reduce((sum, weight) => sum + weight, 0);
+
+    let candidateIndex = 0;
+    if (totalWeight > 0) {
+      let cursor = random() * totalWeight;
+      for (let index = 0; index < candidateIndexes.length; index += 1) {
+        cursor -= candidateWeights[index];
+        if (cursor <= 0) {
+          candidateIndex = index;
+          break;
+        }
+      }
+    } else {
+      candidateIndex = Math.floor(random() * candidateIndexes.length);
+    }
+
+    const selectedPoolIndex = candidateIndexes[candidateIndex];
+    const [selectedPaper] = pool.splice(selectedPoolIndex, 1);
+    result.push(selectedPaper);
+    history.push(selectedPaper);
+
+    const category = selectedPaper.primaryCategory || '';
+    if (category && category === lastCategory) {
+      consecutiveCategoryCount += 1;
+    } else {
+      lastCategory = category;
+      consecutiveCategoryCount = category ? 1 : 0;
+    }
+  }
+
+  return result;
+}
+
 export function shouldLogRanking() {
   if (typeof window === 'undefined') return false;
   return window.localStorage?.getItem('DEBUG_RANKING') === 'true';

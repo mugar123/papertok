@@ -1,4 +1,115 @@
-import { BaseAdapter } from './BaseAdapter';
+import { CATEGORIES } from '../../data/categories.js';
+import { BaseAdapter } from './BaseAdapter.js';
+
+const PUBMED_CATEGORY_ALIASES = Object.freeze({
+  'med.gen': ['internal medicine', 'general medicine', 'primary care', 'family medicine', 'multimorbidity'],
+  'med.onco': ['oncology', 'cancer', 'tumor', 'tumour', 'carcinoma', 'neoplasm', 'chemotherapy'],
+  'med.cardio': ['cardiology', 'cardiovascular', 'cardiac', 'heart disease', 'myocardial', 'coronary', 'arrhythmia'],
+  'med.neuro': ['clinical neurology', 'neurological disorder', 'stroke', 'epilepsy', 'multiple sclerosis', 'parkinson disease'],
+  'med.psych': ['psychiatry', 'mental health', 'depression', 'anxiety disorder', 'schizophrenia', 'bipolar disorder'],
+  'med.pubh': ['public health', 'epidemiology', 'population health', 'disease burden', 'health policy', 'healthcare access'],
+  'med.pharma': ['pharmacology', 'drug development', 'drug discovery', 'pharmacokinetics', 'pharmacodynamics', 'clinical trial'],
+  'med.tox': ['toxicology', 'toxicity', 'toxic effect', 'poisoning', 'genotoxicity'],
+  'med.peds': ['pediatrics', 'paediatrics', 'pediatric', 'paediatric', 'child health', 'neonatal'],
+  'med.surg': ['surgery', 'surgical', 'postoperative', 'perioperative', 'operative treatment'],
+  'med.immuno': ['clinical immunology', 'allergy', 'autoimmune disease', 'immunodeficiency', 'transplant rejection'],
+  'med.endo': ['endocrinology', 'metabolic disease', 'diabetes', 'thyroid', 'hormone disorder'],
+  'med.path': ['pathology', 'histopathology', 'pathological diagnosis', 'biopsy'],
+  'med.radio': ['radiology', 'medical imaging', 'magnetic resonance imaging', 'computed tomography', 'ultrasound imaging'],
+  'med.infect': ['infectious disease', 'infection', 'viral disease', 'bacterial disease', 'antimicrobial resistance'],
+  'med.derma': ['dermatology', 'skin disease', 'cutaneous', 'melanoma', 'psoriasis'],
+  'bio.gen': ['genetics', 'genetic variation', 'genome', 'genomic', 'heredity', 'gene expression'],
+  'bio.mol': ['molecular biology', 'molecular mechanism', 'dna', 'rna', 'protein expression'],
+  'bio.cell': ['cell biology', 'cellular biology', 'cell signaling', 'cell cycle', 'organelle'],
+  'bio.neuro': ['neuroscience', 'neurobiology', 'neuron', 'neural circuit', 'synapse', 'brain function'],
+  'bio.eco': ['ecology', 'ecosystem', 'biodiversity', 'ecological community', 'habitat'],
+  'bio.evo': ['evolution', 'evolutionary biology', 'population dynamics', 'natural selection', 'phylogeny'],
+  'bio.zoo': ['zoology', 'animal biology', 'animal behavior', 'animal physiology'],
+  'bio.bot': ['botany', 'plant science', 'plant biology', 'plant physiology', 'photosynthesis'],
+  'bio.micro': ['microbiology', 'microbial', 'bacteriology', 'virology', 'fungal biology', 'microbiome'],
+  'bio.immuno': ['immunobiology', 'immune system', 'innate immunity', 'adaptive immunity', 't cell', 'b cell'],
+  'bio.comp': ['bioinformatics', 'computational biology', 'sequence analysis', 'systems biology', 'biological database'],
+  'bio.physio': ['physiology', 'physiological mechanism', 'homeostasis', 'organ function'],
+  'bio.biochem': ['biochemistry', 'biochemical', 'metabolism', 'enzyme', 'protein structure'],
+  'bio.marine': ['marine biology', 'marine ecosystem', 'ocean biology', 'marine organism'],
+  'bio.biotech': ['biotechnology', 'bioengineering', 'synthetic biology', 'bioprocess', 'genetic engineering'],
+});
+
+function normalizePubmedText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getCategoryDefinition(categoryId) {
+  for (const area of Object.values(CATEGORIES)) {
+    if (area.subcategories?.[categoryId]) return area.subcategories[categoryId];
+  }
+  return null;
+}
+
+function containsTerm(text, term) {
+  return text && term && ` ${text} `.includes(` ${term} `);
+}
+
+export function classifyPubmedCategory(paper, internalCategories = []) {
+  const candidates = [...new Set(internalCategories)]
+    .filter(categoryId => getCategoryDefinition(categoryId));
+
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+
+  const title = normalizePubmedText(paper?.title);
+  const abstract = normalizePubmedText(paper?.abstract || paper?.summary);
+  const subjects = normalizePubmedText([
+    ...(paper?.categories || []),
+    ...(paper?.keywords || []),
+  ].join(' '));
+
+  const ranked = candidates.map((categoryId, index) => {
+    const definition = getCategoryDefinition(categoryId);
+    const terms = [...new Set([
+      definition?.labelEn,
+      definition?.label,
+      ...(PUBMED_CATEGORY_ALIASES[categoryId] || []),
+    ].map(normalizePubmedText).filter(Boolean))];
+
+    const score = terms.reduce((total, term) => {
+      const specificity = Math.min(4, term.split(' ').length);
+      if (containsTerm(title, term)) total += 8 + specificity;
+      if (containsTerm(subjects, term)) total += 10 + specificity;
+      if (containsTerm(abstract, term)) total += 3 + specificity;
+      return total;
+    }, 0);
+
+    return { categoryId, score, index };
+  }).sort((a, b) => b.score - a.score || a.index - b.index);
+
+  if (ranked[0].score <= 0) return null;
+  if (ranked[1] && ranked[0].score === ranked[1].score) return null;
+  return ranked[0].categoryId;
+}
+
+function assignPubmedCategory(paper, internalCategories) {
+  const categoryId = classifyPubmedCategory(paper, internalCategories);
+  if (!categoryId) return null;
+
+  const providerCategories = [...new Set([
+    ...(paper.categories || []),
+    ...(paper.allCategories || []),
+  ].filter(Boolean))];
+
+  return {
+    ...paper,
+    primaryCategory: categoryId,
+    categories: [categoryId, ...providerCategories],
+    allCategories: [categoryId, ...providerCategories],
+  };
+}
 
 export class PubmedAdapter extends BaseAdapter {
   constructor() {
@@ -122,26 +233,17 @@ export class PubmedAdapter extends BaseAdapter {
                     p.keywords = enrichment.categories;
                   }
                 }
-                if (filters && filters.internalCategories && filters.internalCategories.length > 0) {
-                    // Try to find the most relevant internal category by matching words in title/abstract/categories
-                    const paperText = `${p.title} ${p.abstract || ''} ${(p.categories || []).join(' ')}`.toLowerCase();
-                    let bestMatch = null;
-                    for (const catId of filters.internalCategories) {
-                        const keywords = catId.split('.'); // e.g. 'med', 'onco'
-                        if (keywords.some(kw => kw.length > 2 && paperText.includes(kw))) {
-                            bestMatch = catId;
-                            break;
-                        }
-                    }
-                    
-                    const selectedCat = bestMatch || filters.internalCategories[Math.floor(Math.random() * filters.internalCategories.length)];
-                    p.categories = [selectedCat, ...(p.categories || [])];
-                }
                 return p;
               });
           }
       } catch (err) {
         console.warn("PubmedAdapter enrichment failed:", err);
+      }
+
+      if (filters.internalCategories?.length > 0) {
+        mappedPapers = mappedPapers
+          .map(paper => assignPubmedCategory(paper, filters.internalCategories))
+          .filter(Boolean);
       }
 
       return { papers: mappedPapers, total };

@@ -95,7 +95,7 @@ export default function SaveToListModal({ paper, onClose }) {
           allLists[idx].paperIds = (allLists[idx].paperIds || []).filter((id) => id !== paper.id);
         } else {
           allLists[idx].paperIds = [...(allLists[idx].paperIds || []), paper.id];
-          markSaved(paper.id);
+          markSaved(paper);
           savePaperMetadata();
         }
         demoSet('lists', allLists);
@@ -108,7 +108,7 @@ export default function SaveToListModal({ paper, onClose }) {
           await updateDoc(listRef, { paperIds: arrayRemove(paper.id) });
         } else {
           await updateDoc(listRef, { paperIds: arrayUnion(paper.id) });
-          markSaved(paper.id);
+          markSaved(paper);
           const savedRef = doc(db, 'users', user.uid, 'savedPapers', paper.id);
           await setDoc(savedRef, {
             title: paper.title, authors: paper.authors?.slice(0, 5),
@@ -147,7 +147,7 @@ export default function SaveToListModal({ paper, onClose }) {
 
     setLists((prev) => [...prev, newList]);
     setPaperLists((prev) => new Set([...prev, listId]));
-    markSaved(paper.id);
+    markSaved(paper);
     setNewListName('');
   };
 

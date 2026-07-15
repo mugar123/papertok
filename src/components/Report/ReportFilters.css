@@ -91,6 +91,40 @@
   gap: 6px;
 }
 
+.rf-country-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  font: inherit;
+}
+
+.rf-country-toggle > span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.rf-country-toggle:hover,
+.rf-country-toggle:focus-visible {
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.rf-country-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
 /* Discipline pills */
 .rf-pills {
   display: flex;

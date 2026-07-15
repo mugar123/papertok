@@ -13,9 +13,9 @@ import { getPaperRecommendations } from '../services/semanticScholarService';
 import { PaperBuilder } from '../services/PaperBuilder';
 import {
   applyRecommendationScore,
+  diversifiedWeightedShuffle,
   logRankingBatch,
   readRecommendationWeights,
-  weightedShuffle,
 } from '../utils/recommendationEngine';
 
 const FeedContext = createContext(null);
@@ -71,6 +71,8 @@ export function FeedProvider({ children }) {
   const [notInterestedIds, setNotInterestedIds] = useState(new Set());
   const [savedPaperIds, setSavedPaperIds] = useState(new Set());
   const [readPaperIds, setReadPaperIds] = useState(new Set());
+  const [recommendationProfileUserId, setRecommendationProfileUserId] = useState(null);
+  const recommendationProfileReady = Boolean(user?.uid && recommendationProfileUserId === user.uid);
 
   // Mirror refs to prevent stale closures in asynchronous recommendation processes
   const likedPaperIdsRef = useRef(likedPaperIds);
@@ -120,32 +122,23 @@ export function FeedProvider({ children }) {
        const safeSplit = Math.min(splitIndex + 3, prevPapers.length);
        const lockedPapers = prevPapers.slice(0, safeSplit);
        const queue = [...prevPapers.slice(safeSplit)];
-       const recentPapers = lockedPapers.slice(-5);
-        const recentPropsCount = { preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0 };
-        recentPapers.forEach(p => {
-            if (p.publicationStatus === 'preprint' || p.publicationType === 'preprint') recentPropsCount.preprint++;
-            else if (p.publicationStatus === 'published') recentPropsCount.published++;
-
-            if (p.openAccess) recentPropsCount.openAccess++;
-            else recentPropsCount.subscription++;
-
-            if (p.sourceType === 'journal' || p.journal) recentPropsCount.journal++;
-            if (p.sourceType === 'conference' || p.conference) recentPropsCount.conference++;
-        });
-
         if (queue.length === 0) return prevPapers;
-        
-        queue.forEach(paper => {
-          calculateAndAttachScore(paper, recentPropsCount);
-        });
-       
-       // Re-rank the unread queue using weighted shuffle to allow random mixing in smaller proportions
-       const newQueue = weightedShuffle(queue, recommendationWeights.current);
+
+       const newQueue = diversifiedWeightedShuffle(queue, {
+         scorePaper: calculateAndAttachScore,
+         weights: recommendationWeights.current,
+         initialPapers: lockedPapers,
+       });
        logRankingBatch('rerank queue', newQueue);
        
        return [...lockedPapers, ...newQueue];
     });
   }, [calculateAndAttachScore]);
+
+  const reRankFeedRef = useRef(reRankFeed);
+  useLayoutEffect(() => {
+    reRankFeedRef.current = reRankFeed;
+  }, [reRankFeed]);
 
   const traverseAndExpandNetwork = useCallback(async (paper) => {
     if (isTraversingNetwork.current) {
@@ -222,7 +215,11 @@ export function FeedProvider({ children }) {
             const combinedRest = [...newGraphPapers, ...restFiltered];
             
             // Re-rank the unread queue using weighted shuffle
-            const reRankedRest = weightedShuffle(combinedRest, recommendationWeights.current);
+            const reRankedRest = diversifiedWeightedShuffle(combinedRest, {
+              scorePaper: calculateAndAttachScore,
+              weights: recommendationWeights.current,
+              initialPapers: locked,
+            });
             logRankingBatch('graph expansion', reRankedRest);
             
             return [...locked, ...reRankedRest];
@@ -241,14 +238,21 @@ export function FeedProvider({ children }) {
   useEffect(() => {
     if (!user) return;
 
+    let cancelled = false;
+
     if (IS_DEMO) {
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
+        if (cancelled) return;
         setLikedPaperIds(new Set(demoGet('likedPaperIds', [])));
         setNotInterestedIds(new Set(demoGet('notInterestedIds', [])));
         setSavedPaperIds(new Set(demoGet('savedPaperIds', [])));
         setReadPaperIds(new Set(demoGet('readPaperIds', [])));
+        setRecommendationProfileUserId(user.uid);
       }, 0);
-      return;
+      return () => {
+        cancelled = true;
+        clearTimeout(timeoutId);
+      };
     }
 
     // Real Firebase mode
@@ -327,6 +331,18 @@ export function FeedProvider({ children }) {
         Object.keys(affinities).forEach(cat => {
           affinities[cat] = Math.max(-10, Math.min(100, affinities[cat]));
         });
+
+        if (cancelled) return;
+
+        setLikedPaperIds(liked);
+        setNotInterestedIds(notInterested);
+        setSavedPaperIds(saved);
+        setReadPaperIds(read);
+        categoryAffinities.current = affinities;
+        categoryCooldowns.current = cooldowns;
+        conceptAffinities.current = {};
+        relatedCandidates.current = [];
+        setRecommendationProfileUserId(user.uid);
         
         // --- OpenAlex Semantic Profile ---
         const positiveIds = [...liked, ...saved];
@@ -353,19 +369,22 @@ export function FeedProvider({ children }) {
         
         const relatedArxivIds = await getArxivIdsForOpenAlexWorks(relatedWorksPool);
         
-        setLikedPaperIds(liked);
-        setNotInterestedIds(notInterested);
-        setSavedPaperIds(saved);
-        setReadPaperIds(read);
-        categoryAffinities.current = affinities;
-        categoryCooldowns.current = cooldowns;
+        if (cancelled) return;
+
         conceptAffinities.current = conceptWeights;
         relatedCandidates.current = relatedArxivIds;
+        reRankFeedRef.current();
       } catch (err) {
-        console.error('Error loading interactions:', err);
+        if (!cancelled) console.error('Error loading interactions:', err);
+      } finally {
+        if (!cancelled) setRecommendationProfileUserId(user.uid);
       }
     };
     loadInteractions();
+
+    return () => {
+      cancelled = true;
+    };
   }, [user]);
 
   // --- BOREDOM DETECTION ---
@@ -377,6 +396,7 @@ export function FeedProvider({ children }) {
   // Load papers when preferences are available
   const loadPapers = useCallback(async (reset = false, mode, randomizeStart = false, pageOverride) => {
     if (!userPreferences || userPreferences.length === 0) return;
+    if (!recommendationProfileReady) return;
     if (!reset && loading) return;
 
     const activeMode = mode || feedMode;
@@ -653,14 +673,7 @@ export function FeedProvider({ children }) {
         });
         
         const corePapers = Array.from(uniqueMap.values());
-        
-        corePapers.forEach(paper => {
-          calculateAndAttachScore(paper);
-        });
-
-        // Use weighted shuffle to mix core and explore papers together proportionally!
-        newPapers = weightedShuffle(corePapers, recommendationWeights.current);
-        logRankingBatch('fresh feed', newPapers);
+        newPapers = corePapers;
       } else {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }
@@ -701,6 +714,15 @@ export function FeedProvider({ children }) {
         }
       }
 
+      if (activeMode === 'top' || activeMode === null) {
+        filtered = diversifiedWeightedShuffle(filtered, {
+          scorePaper: calculateAndAttachScore,
+          weights: recommendationWeights.current,
+          initialPapers: reset ? [] : papers,
+        });
+        logRankingBatch('fresh feed', filtered);
+      }
+
       // NOW we add the final papers we are going to show to sessionSeenPapers
       filtered.forEach(p => sessionSeenPapers.add(p.id));
       saveSessionSeen();
@@ -730,6 +752,7 @@ export function FeedProvider({ children }) {
       const arxivIdsToEnrich = nextPapers.map(p => p.id.startsWith('arxiv:') ? p.id.split(':')[1] : p.id);
       enrichPapersBatch(arxivIdsToEnrich).then(openAlexData => {
          if (requestId !== feedRequestId.current) return;
+         if (!openAlexData || Object.keys(openAlexData).length === 0) return;
          setPapers(current => {
             return current.map(p => {
                // Extract pure ID to match enrichment cache, removing any version suffix (e.g. v1)
@@ -741,6 +764,7 @@ export function FeedProvider({ children }) {
                return p;
             });
          });
+         reRankFeed();
       }).catch(err => console.error("Lazy enrichment failed", err));
     } catch (err) {
       if (requestId === feedRequestId.current) {
@@ -754,7 +778,7 @@ export function FeedProvider({ children }) {
   }, [
     userPreferences, page, papers, loading, feedMode, 
     categoryAffinities, relatedCandidates,
-    calculateAndAttachScore, followedAuthors
+    calculateAndAttachScore, followedAuthors, recommendationProfileReady, reRankFeed
   ]);
 
   const preferencesSignatureRef = useRef(null);
@@ -765,7 +789,7 @@ export function FeedProvider({ children }) {
       ? [...userPreferences].sort().join('|')
       : '';
 
-    if (!signature) {
+    if (!signature || !recommendationProfileReady) {
       preferencesSignatureRef.current = null;
       return;
     }
@@ -778,7 +802,7 @@ export function FeedProvider({ children }) {
     setPage(0);
     setHasMore(true);
     loadPapers(true, null, true);
-  }, [userPreferences, loadPapers]);
+  }, [userPreferences, recommendationProfileReady, loadPapers]);
 
   // Save current papers to cache before switching, then restore or fetch
   const handleSetFeedMode = useCallback((newMode) => {
@@ -1055,6 +1079,7 @@ export function FeedProvider({ children }) {
     if (paper.primaryCategory) {
       categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 1;
     }
+    reRankFeed(paper.id);
 
     if (user && !IS_DEMO) {
       try {
@@ -1070,7 +1095,7 @@ export function FeedProvider({ children }) {
         console.error('Error tracking skip:', err);
       }
     }
-  }, [user]);
+  }, [user, reRankFeed]);
 
   const trackPdfBounce = useCallback(async (paper) => {
     // Deduct category affinity for bounce (user opened PDF but closed it instantly)
@@ -1096,11 +1121,17 @@ export function FeedProvider({ children }) {
     }
   }, [user, reRankFeed]);
 
-  const markSaved = useCallback((paperId) => {
+  const markSaved = useCallback(async (paperOrId) => {
+    const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
+    if (!paperId || savedPaperIdsRef.current.has(paperId)) return;
+
+    const paper = typeof paperOrId === 'object'
+      ? paperOrId
+      : papers.find(p => p.id === paperId);
+
     // ─── BOREDOM RESET: saving = highly engaged ───
     boredomLevel.current = 0;
     // Attempt to update temporal preference
-    const paper = papers.find(p => p.id === paperId);
     if (paper) {
       if (paper.primaryCategory) categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) + 8;
       const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
@@ -1110,14 +1141,37 @@ export function FeedProvider({ children }) {
       // Expand network via OpenAlex
       traverseAndExpandNetwork(paper);
     }
-    
-    setSavedPaperIds((prev) => {
-      const next = new Set(prev);
-      next.add(paperId);
-      if (IS_DEMO) demoSet('savedPaperIds', Array.from(next));
-      return next;
-    });
-  }, [papers, traverseAndExpandNetwork]);
+
+    const nextSaved = new Set(savedPaperIdsRef.current);
+    nextSaved.add(paperId);
+    savedPaperIdsRef.current = nextSaved;
+    setSavedPaperIds(nextSaved);
+
+    if (IS_DEMO) {
+      demoSet('savedPaperIds', Array.from(nextSaved));
+      return;
+    }
+
+    if (user) {
+      try {
+        const ref = doc(db, 'users', user.uid, 'interactions', paperId);
+        const interactionData = {
+          saved: true,
+          timestamp: new Date().toISOString(),
+          deviceType: getDeviceInfo().type,
+        };
+
+        if (paper?.title) interactionData.paperTitle = paper.title;
+        if (paper?.authors?.length) interactionData.paperAuthors = paper.authors.slice(0, 3);
+        if (paper?.primaryCategory) interactionData.paperCategory = paper.primaryCategory;
+        if (paper?.summary) interactionData.paperAbstract = paper.summary.substring(0, 500);
+
+        await setDoc(ref, interactionData, { merge: true });
+      } catch (err) {
+        console.error('Error saving recommendation interaction:', err);
+      }
+    }
+  }, [papers, traverseAndExpandNetwork, user]);
 
   const unmarkAsRead = useCallback(async (paperId) => {
     if (!user) return;

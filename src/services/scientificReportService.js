@@ -527,11 +527,12 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
       if (cat) conceptCounts.set(cat, (conceptCounts.get(cat) || 0) + 1);
     });
   }
-  // Sort and take top 5, converting codes like "cs.AI" to "Inteligencia Artificial"
+  // Convert codes like "cs.AI" to labels, then remove aliases that resolve to the same label.
   const trendingConcepts = Array.from(conceptCounts.entries())
     .sort((a, b) => b[1] - a[1])
-    .slice(0, 5)
-    .map(entry => getCategoryLabel(entry[0]));
+    .map(entry => getCategoryLabel(entry[0]))
+    .filter((concept, index, concepts) => concept && concepts.indexOf(concept) === index)
+    .slice(0, 5);
   
   const reportData = { mainDiscovery, highlights, trendingConcepts };
   

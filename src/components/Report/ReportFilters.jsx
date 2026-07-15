@@ -8,6 +8,7 @@ import './ReportFilters.css';
 
 export default function ReportFilters({ filters, onChange }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [isCountryOpen, setIsCountryOpen] = useState(() => (filters.countries?.length || 0) > 0);
   const [countrySearch, setCountrySearch] = useState('');
 
   const areaKeys = Object.keys(CATEGORIES);
@@ -79,65 +80,78 @@ export default function ReportFilters({ filters, onChange }) {
 
           {/* Country filters */}
           <div className="rf-section">
-            <span className="rf-section-label"><MapPin size={13} /> País de origen</span>
-            
-            {/* Search */}
-            <div className="rf-search-wrap">
-              <Search size={14} className="rf-search-icon" />
-              <input
-                className="rf-search"
-                type="text"
-                placeholder="Buscar país..."
-                value={countrySearch}
-                onChange={(e) => setCountrySearch(e.target.value)}
-              />
-              {countrySearch && (
-                <button className="rf-search-clear" onClick={() => setCountrySearch('')}>
-                  <X size={12} />
-                </button>
-              )}
-            </div>
-            
-            {/* Search results dropdown */}
-            {searchResults.length > 0 && (
-              <div className="rf-search-results">
-                {searchResults.map(({ code, name }) => (
-                  <button
-                    key={code}
-                    className={`rf-search-result ${(filters.countries || []).includes(code) ? 'selected' : ''}`}
-                    onClick={() => toggleCountry(code)}
-                  >
-                    <span>{name}</span>
-                    <span className="rf-country-code">{code}</span>
-                  </button>
-                ))}
+            <button
+              className="rf-country-toggle"
+              type="button"
+              aria-expanded={isCountryOpen}
+              aria-controls="rf-country-controls"
+              onClick={() => setIsCountryOpen(open => !open)}
+            >
+              <span><MapPin size={13} /> País de origen{filters.countries?.length ? ` (${filters.countries.length})` : ''}</span>
+              {isCountryOpen ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+            </button>
+
+            {isCountryOpen && (
+              <div id="rf-country-controls" className="rf-country-controls">
+                {/* Search */}
+                <div className="rf-search-wrap">
+                  <Search size={14} className="rf-search-icon" />
+                  <input
+                    className="rf-search"
+                    type="text"
+                    placeholder="Buscar país..."
+                    value={countrySearch}
+                    onChange={(e) => setCountrySearch(e.target.value)}
+                  />
+                  {countrySearch && (
+                    <button className="rf-search-clear" onClick={() => setCountrySearch('')}>
+                      <X size={12} />
+                    </button>
+                  )}
+                </div>
+
+                {/* Search results dropdown */}
+                {searchResults.length > 0 && (
+                  <div className="rf-search-results">
+                    {searchResults.map(({ code, name }) => (
+                      <button
+                        key={code}
+                        className={`rf-search-result ${(filters.countries || []).includes(code) ? 'selected' : ''}`}
+                        onClick={() => toggleCountry(code)}
+                      >
+                        <span>{name}</span>
+                        <span className="rf-country-code">{code}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {/* World Map */}
+                <WorldMap
+                  selectedCountries={filters.countries || []}
+                  onToggleCountry={toggleCountry}
+                />
+
+                {/* Selected countries pills */}
+                <div className="rf-selected-countries">
+                  <AnimatePresence>
+                    {(filters.countries || []).map(code => (
+                      <motion.span
+                        key={code}
+                        className="rf-country-pill"
+                        initial={{ opacity: 0, scale: 0.8, y: 5 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        exit={{ opacity: 0, scale: 0.8, y: 5 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        {COUNTRIES[code] || code}
+                        <button onClick={() => toggleCountry(code)}><X size={10} /></button>
+                      </motion.span>
+                    ))}
+                  </AnimatePresence>
+                </div>
               </div>
             )}
-            
-            {/* World Map */}
-            <WorldMap
-              selectedCountries={filters.countries || []}
-              onToggleCountry={toggleCountry}
-            />
-            
-            {/* Selected countries pills */}
-            <div className="rf-selected-countries">
-              <AnimatePresence>
-                {(filters.countries || []).map(code => (
-                  <motion.span 
-                    key={code} 
-                    className="rf-country-pill"
-                    initial={{ opacity: 0, scale: 0.8, y: 5 }}
-                    animate={{ opacity: 1, scale: 1, y: 0 }}
-                    exit={{ opacity: 0, scale: 0.8, y: 5 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    {COUNTRIES[code] || code}
-                    <button onClick={() => toggleCountry(code)}><X size={10} /></button>
-                  </motion.span>
-                ))}
-              </AnimatePresence>
-            </div>
           </div>
 
           {/* Clear all */}
