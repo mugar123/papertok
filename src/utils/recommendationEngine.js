@@ -58,6 +58,23 @@ function topReasons(parts) {
     .map(([key, value]) => `${key}:${value.toFixed(1)}`);
 }
 
+export function getPaperCategorySignals(paper) {
+  const providerCategories = paper?.allCategories || paper?.categories || [];
+  return [...new Set([
+    paper?.primaryCategory,
+    ...(Array.isArray(providerCategories) ? providerCategories : []),
+  ].filter(category => typeof category === 'string' && category.trim()))].slice(0, 6);
+}
+
+export function applyCategoryAffinityDelta(affinities, paper, delta, secondaryMultiplier = 0.35) {
+  const categories = getPaperCategorySignals(paper);
+  categories.forEach((category, index) => {
+    const categoryDelta = index === 0 ? delta : delta * secondaryMultiplier;
+    affinities[category] = (affinities[category] || 0) + categoryDelta;
+  });
+  return affinities;
+}
+
 export function scorePaperForRecommendation(paper, context = {}) {
   const weights = mergeRecommendationWeights(context.weights);
   const now = context.now || Date.now();
@@ -68,12 +85,16 @@ export function scorePaperForRecommendation(paper, context = {}) {
   const conceptAffinities = context.conceptAffinities || {};
   const temporalPreference = context.temporalPreference || 0;
 
-  const primaryCategory = paper.primaryCategory || '';
-  const allCategories = paper.allCategories || paper.categories || [];
+  const categorySignals = getPaperCategorySignals(paper);
+  const primaryCategory = categorySignals[0] || '';
+  const allCategories = categorySignals;
   const isExploration = paper._debugScore?.isExploration || paper._type === 'exploration';
   const recentPropsCount = context.recentPropsCount || { preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0 };
 
-  const affinity = primaryCategory ? categoryAffinities[primaryCategory] || 0 : 0;
+  const affinity = categorySignals.reduce((sum, category, index) => {
+    const multiplier = index === 0 ? 1 : 0.35;
+    return sum + (categoryAffinities[category] || 0) * multiplier;
+  }, 0);
 
   let preference = 0;
   if (primaryCategory && userPreferences.includes(primaryCategory)) {

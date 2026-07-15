@@ -1,5 +1,6 @@
 import { BaseAdapter } from './BaseAdapter';
 import { assignRequestedCategories } from '../arxivService';
+import { openAlexFetch } from '../openAlexClient';
 
 export class OpenAlexAdapter extends BaseAdapter {
   constructor() {
@@ -20,7 +21,11 @@ export class OpenAlexAdapter extends BaseAdapter {
     let url = `${this.baseUrl}?filter=default.search:${searchParam},${typeFilter}&page=${page}&per-page=${perPage}&mailto=${this.mailto}`;
 
     try {
-      const response = await fetch(url);
+      const response = await openAlexFetch(url, {
+        timeoutMs: 10000,
+        cacheTtlMs: 10 * 60 * 1000,
+        staleIfError: true,
+      });
       if (!response.ok) {
         throw new Error(`OpenAlex API error: ${response.status}`);
       }
@@ -48,7 +53,11 @@ export class OpenAlexAdapter extends BaseAdapter {
     
     const url = `${this.baseUrl}/${cleanId}?mailto=${this.mailto}`;
     try {
-      const response = await fetch(url);
+      const response = await openAlexFetch(url, {
+        timeoutMs: 10000,
+        cacheTtlMs: 24 * 60 * 60 * 1000,
+        staleIfError: true,
+      });
       if (!response.ok) throw new Error(`OpenAlex API error: ${response.status}`);
       
       const data = await response.json();

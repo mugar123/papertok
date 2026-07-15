@@ -12,6 +12,7 @@ import { getArxivIdsForOpenAlexWorks, enrichPapersBatch } from '../services/open
 import { getPaperRecommendations } from '../services/semanticScholarService';
 import { PaperBuilder } from '../services/PaperBuilder';
 import {
+  applyCategoryAffinityDelta,
   applyRecommendationScore,
   diversifiedWeightedShuffle,
   logRankingBatch,
@@ -882,10 +883,10 @@ export function FeedProvider({ children }) {
     
     if (isCurrentlyLiked) {
       newLiked.delete(paper.id);
-      if (paper.primaryCategory) categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 5;
+      applyCategoryAffinityDelta(categoryAffinities.current, paper, -5);
     } else {
       newLiked.add(paper.id);
-      if (paper.primaryCategory) categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) + 5;
+      applyCategoryAffinityDelta(categoryAffinities.current, paper, 5);
       if (paper.openAlex?.concepts) {
         paper.openAlex.concepts.forEach(c => {
            conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + 1;
@@ -936,7 +937,7 @@ export function FeedProvider({ children }) {
     setPapers((prev) => prev.filter((p) => p.id !== paper.id));
 
     if (paper.primaryCategory) {
-       categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 10;
+       applyCategoryAffinityDelta(categoryAffinities.current, paper, -10);
        categoryCooldowns.current[paper.primaryCategory] = Date.now();
     }
     if (paper.openAlex?.concepts) {
@@ -1009,9 +1010,7 @@ export function FeedProvider({ children }) {
     }
     
     // Instantly update local weights for real-time re-ranking
-    if (paper.primaryCategory) {
-      categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) + (Math.min(timeInSeconds, 60) * 0.25);
-    }
+    applyCategoryAffinityDelta(categoryAffinities.current, paper, Math.min(timeInSeconds, 60) * 0.25);
     if (paper.openAlex?.concepts) {
       paper.openAlex.concepts.forEach(c => {
          conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + (Math.min(timeInSeconds, 60) * 0.05);
@@ -1050,9 +1049,7 @@ export function FeedProvider({ children }) {
     traverseAndExpandNetwork(paper);
     
     // Instantly update local weights for real-time re-ranking
-    if (paper.primaryCategory) {
-      categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) + 4;
-    }
+    applyCategoryAffinityDelta(categoryAffinities.current, paper, 4);
     if (paper.openAlex?.concepts) {
       paper.openAlex.concepts.forEach(c => {
          conceptAffinities.current[c.id] = (conceptAffinities.current[c.id] || 0) + 1;
@@ -1081,9 +1078,7 @@ export function FeedProvider({ children }) {
     boredomLevel.current = Math.min(20, boredomLevel.current + 1);
     
     // Instantly update local weights for real-time re-ranking
-    if (paper.primaryCategory) {
-      categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 1;
-    }
+    applyCategoryAffinityDelta(categoryAffinities.current, paper, -1);
     reRankFeed(paper.id);
 
     if (user && !IS_DEMO) {
@@ -1104,9 +1099,7 @@ export function FeedProvider({ children }) {
 
   const trackPdfBounce = useCallback(async (paper) => {
     // Deduct category affinity for bounce (user opened PDF but closed it instantly)
-    if (paper.primaryCategory) {
-      categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) - 3;
-    }
+    applyCategoryAffinityDelta(categoryAffinities.current, paper, -3);
     
     reRankFeed(paper.id);
     
@@ -1138,7 +1131,7 @@ export function FeedProvider({ children }) {
     boredomLevel.current = 0;
     // Attempt to update temporal preference
     if (paper) {
-      if (paper.primaryCategory) categoryAffinities.current[paper.primaryCategory] = (categoryAffinities.current[paper.primaryCategory] || 0) + 8;
+      applyCategoryAffinityDelta(categoryAffinities.current, paper, 8);
       const daysOld = (Date.now() - new Date(paper.published).getTime()) / (1000 * 60 * 60 * 24);
       if (daysOld <= 7) temporalPreference.current = Math.min(1, temporalPreference.current + 0.15);
       else if (daysOld >= 365) temporalPreference.current = Math.max(-1, temporalPreference.current - 0.15);

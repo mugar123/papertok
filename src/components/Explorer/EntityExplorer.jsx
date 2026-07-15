@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getInstitutionRecentImpact } from '../../services/openAlexService';
+import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
 import { ElsevierAdapter, PubmedAdapter } from '../../services/adapters';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
@@ -60,7 +61,7 @@ export default function EntityExplorer() {
   const [participantNavigationError, setParticipantNavigationError] = useState('');
   const [recentImpact, setRecentImpact] = useState(null);
   const [isLoadingRecentImpact, setIsLoadingRecentImpact] = useState(false);
-  const [recentImpactError, setRecentImpactError] = useState(false);
+  const [recentImpactError, setRecentImpactError] = useState(null);
   
   const [showFilters, setShowFilters] = useState(false);
   const [filters, setFilters] = useState({
@@ -122,7 +123,7 @@ export default function EntityExplorer() {
       setParticipantNavigationError('');
       setRecentImpact(null);
       setIsLoadingRecentImpact(false);
-      setRecentImpactError(false);
+      setRecentImpactError(null);
       setShowFilters(false);
       setPapersError(null);
       setAuthorsError(null);
@@ -201,13 +202,21 @@ export default function EntityExplorer() {
 
       if (type === 'institution' && data?.id) {
         setIsLoadingRecentImpact(true);
-        setRecentImpactError(false);
+        setRecentImpactError(null);
         try {
           const impact = await getInstitutionRecentImpact(data.id);
           if (!isCancelled) setRecentImpact(impact);
         } catch (error) {
           if (!isCancelled) {
-            setRecentImpactError(true);
+            setRecentImpactError(
+              isOpenAlexRateLimitError(error)
+                ? 'rate_limited'
+                : error?.code === 'timeout'
+                  ? 'timeout'
+                  : error?.code === 'network_error'
+                    ? 'network_error'
+                    : 'unavailable'
+            );
             console.error('Failed to load recent institution impact', error);
           }
         } finally {
@@ -751,12 +760,14 @@ export default function EntityExplorer() {
             )}
             {type === 'institution' && (
               <div
-                className="ehc-stat-box ehc-stat-box--impact"
+                className={`ehc-stat-box ehc-stat-box--impact${recentImpact?.stale ? ' ehc-stat-box--stale' : ''}`}
                 title={recentImpact?.available
-                  ? `Estimación PaperTok basada en ${recentImpact.sampleSize} publicaciones con FWCI. FWCI mediano: ${recentImpact.medianFwci}; ${Math.round(recentImpact.highImpactShare * 100)}% supera 2 veces el impacto esperado.`
-                  : recentImpactError
-                    ? 'No se pudo consultar el impacto reciente en OpenAlex.'
-                    : 'La nota requiere al menos 50 publicaciones recientes con datos FWCI.'}
+                  ? `${recentImpact.stale ? 'Último cálculo guardado. ' : ''}Estimación PaperTok basada en ${recentImpact.sampleSize} publicaciones con FWCI. FWCI mediano: ${recentImpact.medianFwci}; ${Math.round(recentImpact.highImpactShare * 100)}% supera 2 veces el impacto esperado.`
+                  : recentImpactError === 'rate_limited'
+                    ? 'OpenAlex ha limitado temporalmente las consultas. La nota se recuperará cuando vuelva a estar disponible.'
+                    : recentImpactError
+                      ? 'No se pudo consultar el impacto reciente en OpenAlex.'
+                      : 'La nota requiere al menos 50 publicaciones recientes con datos FWCI.'}
                 aria-label={recentImpact?.available
                   ? `Impacto reciente ${recentImpact.score} sobre 10, ${recentImpact.level}`
                   : 'Impacto reciente no disponible'}
@@ -770,10 +781,18 @@ export default function EntityExplorer() {
                   {isLoadingRecentImpact
                     ? 'Calculando…'
                     : recentImpact?.available
-                      ? `${recentImpact.level} · ${recentImpact.period.label}`
-                      : recentImpactError
-                        ? 'No disponible'
-                        : 'Datos insuficientes'}
+                      ? recentImpact.stale
+                        ? `Guardado · ${recentImpact.period.label}`
+                        : `${recentImpact.level} · ${recentImpact.period.label}`
+                      : recentImpactError === 'rate_limited'
+                        ? 'Límite temporal'
+                        : recentImpactError === 'timeout'
+                          ? 'Sin respuesta'
+                          : recentImpactError === 'network_error'
+                            ? 'Sin conexión'
+                            : recentImpactError
+                              ? 'No disponible'
+                              : 'Datos insuficientes'}
                 </span>
               </div>
             )}

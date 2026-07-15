@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  applyCategoryAffinityDelta,
   diversifiedWeightedShuffle,
   mergeRecommendationWeights,
   scorePaperForRecommendation,
@@ -83,6 +84,29 @@ test('semantic and citation signals contribute to score', () => {
   assert.ok(score.semantic > 0);
   assert.ok(score.citations > 0);
   assert.match(score.explanation, /semantic|citations/);
+});
+
+test('category signals preserve personalization without OpenAlex enrichment', () => {
+  const categoryAffinities = {};
+  const paper = {
+    id: 'paper-local',
+    primaryCategory: 'physics.optics',
+    allCategories: ['physics.optics', 'quant-ph'],
+    published: '2026-07-01T00:00:00Z',
+  };
+  applyCategoryAffinityDelta(categoryAffinities, paper, 10);
+
+  const score = scorePaperForRecommendation(paper, {
+    now: NOW,
+    userPreferences: ['quant-ph'],
+    categoryAffinities,
+  });
+
+  assert.equal(categoryAffinities['physics.optics'], 10);
+  assert.equal(categoryAffinities['quant-ph'], 3.5);
+  assert.equal(score.semantic, 0);
+  assert.equal(score.preference, 80);
+  assert.ok(score.affinity > 10);
 });
 
 test('weighted shuffle honors deterministic random selection', () => {

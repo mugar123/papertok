@@ -245,6 +245,15 @@
   background: rgba(124, 58, 237, 0.08);
 }
 
+.ehc-stat-box--impact.ehc-stat-box--stale {
+  border-color: rgba(245, 158, 11, 0.28);
+  background: rgba(245, 158, 11, 0.06);
+}
+
+.ehc-stat-box--impact.ehc-stat-box--stale .ehc-stat-detail {
+  color: rgba(251, 191, 36, 0.92);
+}
+
 .ehc-stat-scale {
   color: var(--text-muted);
   font-size: 0.72rem;

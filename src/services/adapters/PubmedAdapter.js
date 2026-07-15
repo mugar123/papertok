@@ -1,4 +1,5 @@
 import { CATEGORIES } from '../../data/categories.js';
+import { openAlexJson } from '../openAlexClient.js';
 import { BaseAdapter } from './BaseAdapter.js';
 
 const PUBMED_CATEGORY_ALIASES = Object.freeze({
@@ -168,7 +169,11 @@ export class PubmedAdapter extends BaseAdapter {
               const fetchProm = fetch(fetchUrl).then(r => r.text()).catch(() => '');
               
               const oaUrl = `https://api.openalex.org/works?filter=ids.pmid:${pmids.join('|')}&select=ids,abstract_inverted_index,concepts`;
-              const oaProm = fetch(oaUrl).then(r => r.json()).catch(() => null);
+              const oaProm = openAlexJson(oaUrl, {
+                  timeoutMs: 8000,
+                  cacheTtlMs: 24 * 60 * 60 * 1000,
+                  staleIfError: true,
+              }).catch(() => null);
               
               const [xmlText, oaData] = await Promise.all([fetchProm, oaProm]);
               

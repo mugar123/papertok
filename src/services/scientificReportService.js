@@ -8,26 +8,11 @@ import { fetchPapers as fetchArxivPapers } from './arxivService';
 import { PubmedAdapter } from './adapters/PubmedAdapter';
 import { PaperBuilder } from './PaperBuilder';
 import { CATEGORIES, getCategoryLabel, getCategoryArea } from '../data/categories';
+import { openAlexJson } from './openAlexClient';
 
 // Global cache for stable editions (TTL: 1 hour)
 const REPORT_CACHE = new Map();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour in ms
-
-/**
- * Fetch a URL with a timeout helper
- */
-async function fetchWithTimeout(url, timeoutMs = 8000) {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    clearTimeout(id);
-    return response;
-  } catch (err) {
-    clearTimeout(id);
-    throw err;
-  }
-}
 
 /**
  * Format date to YYYY-MM-DD
@@ -193,11 +178,12 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filt
     }
     const url = `https://api.openalex.org/works?filter=${filter}&sort=${sort}&per-page=60&page=${page}&mailto=app@papertok.io`;
     try {
-      const res = await fetchWithTimeout(url, 10000);
-      if (res.ok) {
-        const data = await res.json();
-        return data.results || [];
-      }
+      const data = await openAlexJson(url, {
+        timeoutMs: 10000,
+        cacheTtlMs: 60 * 60 * 1000,
+        staleIfError: true,
+      });
+      return data.results || [];
     } catch (e) {
       console.warn(`OpenAlex concept query failed: ${conceptFilter}`, e);
     }

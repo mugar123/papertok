@@ -10,36 +10,43 @@ import {
   getRecentImpactPeriod,
 } from '../utils/entityMetadata.js';
 import { PaperBuilder } from './PaperBuilder';
+import {
+  isOpenAlexRateLimitError,
+  openAlexFetch,
+  openAlexJson,
+  readOpenAlexPersistent,
+  writeOpenAlexPersistent,
+} from './openAlexClient.js';
 
 const CACHE = new Map();
 const GRAPH_CACHE = new Map(); // caches W... to arxivId mappings
 const INSTITUTION_IMPACT_CACHE = new Map();
+const ENTITY_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+const ENTITY_STALE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const IMPACT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+const IMPACT_INSUFFICIENT_TTL_MS = 6 * 60 * 60 * 1000;
+const IMPACT_STALE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
+const ENRICHMENT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 async function fetchWithTimeout(url, timeoutMs = 8000) {
-  const controller = new AbortController();
-  const timeoutId1 = setTimeout(() => controller.abort(), timeoutMs);
-  
-  let timeoutId2;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId2 = setTimeout(() => {
-       controller.abort();
-       reject(new Error('Timeout'));
-    }, timeoutMs + 100);
-  });
-
-  // Automatically append mailto parameter to enter Polite Pool and avoid budget limits
-  let finalUrl = url;
-  if (finalUrl.includes('api.openalex.org')) {
-    finalUrl += finalUrl.includes('?') ? '&mailto=app@papertok.io' : '?mailto=app@papertok.io';
+  let hostname = '';
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    // Let fetch report malformed URLs consistently.
   }
 
-  return Promise.race([
-    fetch(finalUrl, { signal: controller.signal }),
-    timeoutPromise
-  ]).finally(() => {
-    clearTimeout(timeoutId1);
-    clearTimeout(timeoutId2);
-  });
+  if (hostname === 'api.openalex.org') {
+    return openAlexFetch(url, { timeoutMs, cacheTtlMs: 5 * 60 * 1000 });
+  }
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
 }
 
 /**
@@ -55,13 +62,19 @@ export async function enrichPapersBatch(arxivIds) {
       return pure.replace(/v\d+$/, '');
     });
     
-  const toFetch = validIds.filter(id => !CACHE.has(id));
   const result = {};
   
-  // Populate from cache first
+  // Reuse semantic/citation signals across sessions so a temporary outage does
+  // not erase recommendation quality for papers the user has already encountered.
   validIds.forEach(id => {
+    if (!CACHE.has(id)) {
+      const persisted = readOpenAlexPersistent(`enrichment:${id}`, ENRICHMENT_CACHE_TTL_MS);
+      if (persisted && !persisted.stale) CACHE.set(id, persisted.data);
+    }
     if (CACHE.has(id)) result[id] = CACHE.get(id);
   });
+
+  const toFetch = validIds.filter(id => !CACHE.has(id));
   
   if (toFetch.length === 0) return result;
 
@@ -81,14 +94,19 @@ export async function enrichPapersBatch(arxivIds) {
     const url = `https://api.openalex.org/works?filter=${filterParam}&per-page=50&select=doi,ids,concepts,cited_by_count,related_works,locations,primary_location,type`;
     let response = null;
     let primaryFailed = false;
+    let directError = null;
     try {
-      response = await fetchWithTimeout(url, 10000).catch(() => null);
+      response = await fetchWithTimeout(url, 10000);
       if (!response || !response.ok) primaryFailed = true;
-    } catch {
+    } catch (error) {
+      directError = error;
       primaryFailed = true;
     }
     
     if (primaryFailed) {
+      if (isOpenAlexRateLimitError(directError) || response?.status === 429) {
+        return;
+      }
       console.warn('OpenAlex direct fetch failed, trying proxy cascade');
       const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
       response = await fetchWithTimeout(proxyUrl, 8000).catch(() => null);
@@ -146,9 +164,11 @@ export async function enrichPapersBatch(arxivIds) {
 
              if (arxivId) {
                CACHE.set(arxivId, enriched);
+               writeOpenAlexPersistent(`enrichment:${arxivId}`, enriched);
                result[arxivId] = enriched;
              }
              CACHE.set(`openalex:${openAlexIdOnly}`, enriched);
+             writeOpenAlexPersistent(`enrichment:openalex:${openAlexIdOnly}`, enriched);
              result[`openalex:${openAlexIdOnly}`] = enriched;
           });
         }
@@ -588,6 +608,20 @@ export async function findInstitution({ rorUrl, name, aliases = [] }) {
 export async function getEntityById(type, id) {
   if (!id) return null;
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
+  const persistentCacheKey = `entity:${type}:${cleanId}`;
+  const cachedEntity = readOpenAlexPersistent(persistentCacheKey, ENTITY_CACHE_TTL_MS);
+  if (cachedEntity && !cachedEntity.stale) return cachedEntity.data;
+
+  const persistEntity = (data) => {
+    if (data) writeOpenAlexPersistent(persistentCacheKey, data);
+    return data;
+  };
+  const readStaleEntity = () => {
+    const stale = readOpenAlexPersistent(persistentCacheKey, ENTITY_STALE_TTL_MS);
+    return stale && !stale.stale
+      ? { ...stale.data, _openAlexCacheStatus: 'stale', _openAlexCachedAt: stale.savedAt }
+      : null;
+  };
   
   // If it's an institution and the ID is a ROR ID, resolve via ROR filter
   if (type === 'institution' && (id.includes('ror.org') || !cleanId.startsWith('I'))) {
@@ -600,20 +634,22 @@ export async function getEntityById(type, id) {
       const data = await response.json();
       if (data.results && data.results.length > 0) {
         const institution = data.results[0];
-        if (institution.works_count > 0) return institution;
+        if (institution.works_count > 0) return persistEntity(institution);
 
         const worksUrl = `https://api.openalex.org/works?filter=institutions.ror:${encodeURIComponent(rorUrl)}&per-page=1&select=id`;
         try {
           const worksResponse = await fetchWithTimeout(worksUrl, 10000);
-          if (!worksResponse.ok) return institution;
+          if (!worksResponse.ok) return persistEntity(institution);
           const worksData = await worksResponse.json();
-          return applyInstitutionWorksFallback(institution, worksData.meta?.count);
+          return persistEntity(applyInstitutionWorksFallback(institution, worksData.meta?.count));
         } catch {
-          return institution;
+          return persistEntity(institution);
         }
       }
       return null;
     } catch (err) {
+      const staleEntity = readStaleEntity();
+      if (staleEntity) return staleEntity;
       console.error(`OpenAlex getEntityById by ROR filter failed for ${id}`, err);
       throw err;
     }
@@ -636,7 +672,7 @@ export async function getEntityById(type, id) {
         const worksResponse = await fetchWithTimeout(worksUrl, 10000);
         if (worksResponse.ok) {
           const worksData = await worksResponse.json();
-          return applyInstitutionWorksFallback(data, worksData.meta?.count);
+          return persistEntity(applyInstitutionWorksFallback(data, worksData.meta?.count));
         }
       } catch {
         // Preserve the institution profile even when the metrics fallback is unavailable.
@@ -657,8 +693,10 @@ export async function getEntityById(type, id) {
       data.display_name = translatedName;
     }
     
-    return data;
+    return persistEntity(data);
   } catch (err) {
+    const staleEntity = readStaleEntity();
+    if (staleEntity) return staleEntity;
     console.error(`OpenAlex getEntityById failed for ${type} ${id}`, err);
     throw err;
   }
@@ -675,6 +713,21 @@ export async function getInstitutionRecentImpact(id, now = new Date()) {
     return INSTITUTION_IMPACT_CACHE.get(cacheKey);
   }
 
+  const persistentCacheKey = `institution-impact:${cacheKey}`;
+  const cachedImpact = readOpenAlexPersistent(persistentCacheKey, Number.POSITIVE_INFINITY);
+  if (cachedImpact) {
+    const ttlMs = cachedImpact.data?.available ? IMPACT_CACHE_TTL_MS : IMPACT_INSUFFICIENT_TTL_MS;
+    if (cachedImpact.ageMs <= ttlMs) {
+      const impact = {
+        ...cachedImpact.data,
+        cacheStatus: 'fresh-cache',
+        cachedAt: cachedImpact.savedAt,
+      };
+      INSTITUTION_IMPACT_CACHE.set(cacheKey, impact);
+      return impact;
+    }
+  }
+
   const seed = cleanId.replace(/\D/g, '');
   const filter = [
     `institutions.id:${cleanId}`,
@@ -689,18 +742,36 @@ export async function getInstitutionRecentImpact(id, now = new Date()) {
     select: 'id,fwci,publication_date',
   });
 
-  const response = await fetchWithTimeout(`https://api.openalex.org/works?${params}`, 12000);
-  if (!response.ok) throw new Error(`OpenAlex impact API error: ${response.status}`);
-  const data = await response.json();
-  const impact = {
-    ...calculateInstitutionRecentImpact(data.results || []),
-    period,
-    source: 'OpenAlex',
-    sampled: true,
-  };
+  try {
+    const data = await openAlexJson(`https://api.openalex.org/works?${params}`, {
+      timeoutMs: 12000,
+      cacheTtlMs: 60 * 60 * 1000,
+      retries: 1,
+    });
+    const impact = {
+      ...calculateInstitutionRecentImpact(data.results || []),
+      period,
+      source: 'OpenAlex',
+      sampled: true,
+      cacheStatus: 'network',
+      cachedAt: Date.now(),
+    };
 
-  INSTITUTION_IMPACT_CACHE.set(cacheKey, impact);
-  return impact;
+    writeOpenAlexPersistent(persistentCacheKey, impact);
+    INSTITUTION_IMPACT_CACHE.set(cacheKey, impact);
+    return impact;
+  } catch (error) {
+    if (cachedImpact && cachedImpact.ageMs <= IMPACT_STALE_TTL_MS) {
+      return {
+        ...cachedImpact.data,
+        cacheStatus: 'stale-cache',
+        stale: true,
+        rateLimited: isOpenAlexRateLimitError(error),
+        cachedAt: cachedImpact.savedAt,
+      };
+    }
+    throw error;
+  }
 }
 
 /**
