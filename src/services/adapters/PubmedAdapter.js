@@ -191,6 +191,7 @@ export class PubmedAdapter extends BaseAdapter {
       doi,
       journal: raw.source || '',
       year: raw.pubdate ? parseInt(raw.pubdate.substring(0, 4)) : new Date().getFullYear(),
+      published: raw.pubdate || '',
       publicationStatus: 'published',
       isOpenAccess,
       pdfUrl,

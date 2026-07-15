@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useFeed } from '../../context/FeedContext';
 import { getScientificReport } from '../../services/scientificReportService';
@@ -6,7 +6,7 @@ import CustomDateSelector from './CustomDateSelector';
 import ReportFilters from './ReportFilters';
 import PaperCard from '../Feed/PaperCard';
 import { getCategoryGradient } from '../../data/categories';
-import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Zap, Flame, ChevronRight, RefreshCw } from 'lucide-react';
+import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Flame } from 'lucide-react';
 import Latex from 'react-latex-next';
 import 'katex/dist/katex.min.css';
 import './ScientificReport.css';
@@ -36,7 +36,7 @@ function AnimatedNumber({ value, duration = 600 }) {
 
   useEffect(() => {
     const target = typeof value === 'number' ? value : parseInt(value, 10) || 0;
-    if (target === 0) { setDisplay(0); return; }
+    if (target === 0) return undefined;
 
     let start = null;
     const step = (ts) => {
@@ -50,7 +50,7 @@ function AnimatedNumber({ value, duration = 600 }) {
     return () => cancelAnimationFrame(ref.current);
   }, [value, duration]);
 
-  return <>{display.toLocaleString()}</>;
+  return <>{(value === 0 ? 0 : display).toLocaleString()}</>;
 }
 
 export default function ScientificReport({ onOpenPdf, onSaveToList }) {
@@ -63,16 +63,14 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [customRange, setCustomRange] = useState(null);
   const [selectedPaper, setSelectedPaper] = useState(null);
-  const [overlayClosing, setOverlayClosing] = useState(false);
-
-  const [page, setPage] = useState(1);
+  const pageRef = useRef(1);
 
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
     toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip
   } = useFeed();
 
-  const fetchReport = async (tf, currentFilters = filters, targetPage = 1) => {
+  const fetchReport = useCallback(async (tf, currentFilters, targetPage = 1) => {
     setLoading(true);
     window.dispatchEvent(new Event('reportLoadingStart'));
     setError(null);
@@ -86,23 +84,24 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       setLoading(false);
       window.dispatchEvent(new Event('reportLoadingEnd'));
     }
-  };
+  }, []);
 
   useEffect(() => {
-    setPage(1);
-    fetchReport(timeframe, filters, 1);
-  }, [timeframe, filters]);
+    pageRef.current = 1;
+    const requestId = setTimeout(() => fetchReport(timeframe, filters, 1), 0);
+    return () => clearTimeout(requestId);
+  }, [timeframe, filters, fetchReport]);
 
   useEffect(() => {
     const handleGlobalRefresh = () => {
-      const next = page + 1;
-      setPage(next);
+      const next = pageRef.current + 1;
+      pageRef.current = next;
       fetchReport(timeframe, filters, next);
     };
     
     window.addEventListener('refreshScientificReport', handleGlobalRefresh);
     return () => window.removeEventListener('refreshScientificReport', handleGlobalRefresh);
-  }, [page, timeframe, filters]);
+  }, [timeframe, filters, fetchReport]);
 
   const getContextText = () => {
     if (typeof timeframe === 'object' && timeframe.type === 'custom') {
@@ -116,12 +115,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     const url = paper.pdfUrl || paper.landingPageUrl || (paper.arxivId ? `https://arxiv.org/abs/${paper.arxivId}` : '');
     if (navigator.share) { navigator.share({ title: paper.title, url }); }
     else { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
-  };
-
-  const openPaper = (paper) => {
-    const hasValidPdf = paper.pdfUrl && (paper.pdfUrl.includes('arxiv.org') || paper.pdfUrl.toLowerCase().endsWith('.pdf'));
-    if (paper.arxivId || hasValidPdf) onOpenPdf(paper);
-    else if (paper.pdfUrl || paper.landingPageUrl) window.open(paper.pdfUrl || paper.landingPageUrl, '_blank');
   };
 
   // Compute stats from report data
@@ -344,11 +337,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   isLiked={likedPaperIds.has(selectedPaper.id)}
                   isSaved={savedPaperIds.has(selectedPaper.id)}
                   isRead={readPaperIds.has(selectedPaper.id)}
-                  onLike={() => toggleLike(selectedPaper.id)}
-                  onNotInterested={() => { markNotInterested(selectedPaper.id); closeOverlay(); }}
-                  onMarkAsRead={() => markAsRead(selectedPaper.id)}
-                  trackViewTime={(t) => trackViewTime(selectedPaper.id, t)}
-                  trackSkip={() => trackSkip(selectedPaper.id)}
+                  onLike={() => toggleLike(selectedPaper)}
+                  onNotInterested={() => { markNotInterested(selectedPaper); closeOverlay(); }}
+                  onMarkAsRead={() => markAsRead(selectedPaper)}
+                  trackViewTime={(t) => trackViewTime(selectedPaper, t)}
+                  trackSkip={() => trackSkip(selectedPaper)}
                   onOpenPdf={onOpenPdf}
                   onSaveToList={onSaveToList}
                   hideScrollHint

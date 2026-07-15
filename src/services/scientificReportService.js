@@ -169,18 +169,15 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filt
     chemeng: 'C185592680' // Chemistry
   };
 
-  let concepts = [];
-  if (filters.categories && filters.categories.length > 0) {
-     const mappedConcepts = [...new Set(filters.categories.map(c => AREA_TO_OPENALEX[c]).filter(Boolean))];
-     concepts = mappedConcepts.map(c => `concepts.id:${c}`);
-  } else {
-     concepts = [
+  const concepts = filters.categories && filters.categories.length > 0
+    ? [...new Set(filters.categories.map(category => AREA_TO_OPENALEX[category]).filter(Boolean))]
+      .map(concept => `concepts.id:${concept}`)
+    : [
        'concepts.id:C14213010', // Medicine
        'concepts.id:C41008148|C121332964|C33923547', // CS / Physics / Math
        'concepts.id:C86803240|C43617362', // Bio / Chem
        '' // General (no concept filter)
-     ];
-  }
+      ];
   
   const sort = 'cited_by_count:desc';
   
@@ -230,7 +227,7 @@ async function fetchArxivCandidates(timeframe, page = 1, filters = {}) {
   try {
     const AREA_TO_ARXIV = {
       cs: 'cs.AI',
-      physics: 'physics.quant-ph',
+      physics: 'quant-ph',
       bio: 'q-bio.NC',
       stat: 'stat.ML',
       math: 'math.PR',
@@ -244,13 +241,20 @@ async function fetchArxivCandidates(timeframe, page = 1, filters = {}) {
       categories = filters.categories.map(c => AREA_TO_ARXIV[c]).filter(Boolean);
       if (categories.length === 0) return []; // If selected categories don't map to arXiv, return empty
     } else {
-      categories = ['cs.AI', 'physics.quant-ph', 'q-bio.NC', 'stat.ML', 'math.PR', 'eess.SP'];
+      categories = ['cs.AI', 'quant-ph', 'q-bio.NC', 'stat.ML', 'math.PR', 'eess.SP'];
     }
 
-    // For 24h/7d/30d get recent papers. For 1y/10y we can get up to 100 papers
-    const maxResults = (timeframe === '24h' || timeframe === '7d') ? 40 : 100;
+    const { fromStr, toStr } = getDateThresholds(timeframe);
+    const fromDate = fromStr.replaceAll('-', '');
+    const toDate = toStr.replaceAll('-', '');
+    const categoryQuery = categories.map(category => `cat:${category}`).join(' OR ');
+    const query = `(${categoryQuery}) AND submittedDate:[${fromDate}0000 TO ${toDate}2359]`;
+
+    // A date-range query is necessary for long and custom editions. Sorting alone
+    // only returns the newest records and does not guarantee the requested window.
+    const maxResults = (timeframe === '24h' || timeframe === '7d') ? 80 : 200;
     const offset = (page - 1) * maxResults;
-    const papers = await fetchArxivPapers(categories, offset, maxResults, 'submittedDate');
+    const papers = await fetchArxivPapers(query, offset, maxResults, 'submittedDate');
     return papers || [];
   } catch (err) {
     console.warn("Failed to fetch arXiv candidates for report", err);
@@ -269,8 +273,11 @@ async function fetchPubmedCandidates(timeframe, page = 1, filters = {}) {
     }
 
     const adapter = new PubmedAdapter();
-    // Query medicine and health related terms
-    const query = 'medicine[journal] OR biology[journal] OR science[journal] OR Nature[journal]';
+    const { fromStr, toStr } = getDateThresholds(timeframe);
+    // PubMed accepts publication-date ranges directly in the query. Without this,
+    // a daily or weekly edition can accidentally surface older articles.
+    const dateRange = `("${fromStr}"[Date - Publication] : "${toStr}"[Date - Publication])`;
+    const query = `(medicine[journal] OR biology[journal] OR science[journal] OR Nature[journal]) AND ${dateRange}`;
     const response = await adapter.search(query, page);
     return response.papers || [];
   } catch (err) {
@@ -403,7 +410,7 @@ function scorePaper(paper, timeframe, seenCategories, daysThreshold, seenSources
  */
 export async function getScientificReport(timeframe = '7d', page = 1, filters = {}) {
   let tf = '7d';
-  let cacheKey = '7d';
+  let cacheKey;
   
   if (typeof timeframe === 'object' && timeframe.type === 'custom') {
     tf = timeframe;
