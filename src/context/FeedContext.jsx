@@ -7,7 +7,6 @@ import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../s
 import { getDeviceInfo } from '../utils/device';
 import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data/categories';
 import { PubmedAdapter } from '../services/adapters/PubmedAdapter';
-import { ElsevierAdapter } from '../services/adapters/ElsevierAdapter';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter';
 import { getArxivIdsForOpenAlexWorks, enrichPapersBatch } from '../services/openAlexService';
 import { getPaperRecommendations } from '../services/semanticScholarService';
@@ -80,6 +79,7 @@ export function FeedProvider({ children }) {
   const loadPapersRef = useRef(null);
   const notInterestedIdsRef = useRef(notInterestedIds);
   const isTraversingNetwork = useRef(false);
+  const feedRequestId = useRef(0);
 
   useEffect(() => { likedPaperIdsRef.current = likedPaperIds; }, [likedPaperIds]);
   useEffect(() => { savedPaperIdsRef.current = savedPaperIds; }, [savedPaperIds]);
@@ -380,6 +380,7 @@ export function FeedProvider({ children }) {
     if (!reset && loading) return;
 
     const activeMode = mode || feedMode;
+    const requestId = ++feedRequestId.current;
 
     setLoading(true);
     setError(null);
@@ -452,7 +453,9 @@ export function FeedProvider({ children }) {
                 const cat = allCategories.find(x => x.id === c);
                 return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
              }).join(' OR ');
-             openAlexProm = openAlexAdapter.search(openAlexQuery, currentPage + 1).then(res => res.papers);
+             openAlexProm = openAlexAdapter
+               .search(openAlexQuery, currentPage + 1, { internalCategories: openAlexCats })
+               .then(res => res.papers);
           }
           
           const sourceResults = await Promise.allSettled([arxivProm, pubmedProm, openAlexProm]);
@@ -548,7 +551,10 @@ export function FeedProvider({ children }) {
                    const cat = allCategories.find(x => x.id === c);
                    return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
-                openAlexProm = openAlexAdapter.search(openAlexQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+                openAlexProm = openAlexAdapter
+                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexNearby })
+                  .then(res => res.papers)
+                  .catch(() => []);
             }
             
             const [arx, pub, oa] = await Promise.all([arxivProm, pubmedProm, openAlexProm]);
@@ -610,7 +616,10 @@ export function FeedProvider({ children }) {
                    const cat = allCategories.find(x => x.id === c);
                    return cat && cat.labelEn ? `"${cat.labelEn}"` : `"${c.replace(/\./g, ' ')}"`;
                 }).join(' OR ');
-                openAlexProm = openAlexAdapter.search(openAlexQuery, Math.floor(randomStart/25) + 1).then(res => res.papers).catch(() => []);
+                openAlexProm = openAlexAdapter
+                  .search(openAlexQuery, Math.floor(randomStart / 25) + 1, { internalCategories: openAlexRandom })
+                  .then(res => res.papers)
+                  .catch(() => []);
             }
             
             let randomPapers = [];
@@ -655,6 +664,8 @@ export function FeedProvider({ children }) {
       } else {
         newPapers = await fetchPapers(userPreferences, currentPage * PAGE_SIZE, PAGE_SIZE, activeMode);
       }
+      if (requestId !== feedRequestId.current) return;
+
       let filtered = newPapers.filter((p) => 
         !notInterestedIdsRef.current.has(p.id) && 
         !readPaperIdsRef.current.has(p.id) &&
@@ -683,7 +694,7 @@ export function FeedProvider({ children }) {
           setLoading(false);
           setPage(nextPageToFetch);
           
-          if (loadPapersRef.current) {
+          if (requestId === feedRequestId.current && loadPapersRef.current) {
             setTimeout(() => loadPapersRef.current(false, activeMode, false, nextPageToFetch), 0);
           }
           return;
@@ -718,6 +729,7 @@ export function FeedProvider({ children }) {
       // Asynchronous OpenAlex Enrichment (Lazy Loading to prevent UI blocking)
       const arxivIdsToEnrich = nextPapers.map(p => p.id.startsWith('arxiv:') ? p.id.split(':')[1] : p.id);
       enrichPapersBatch(arxivIdsToEnrich).then(openAlexData => {
+         if (requestId !== feedRequestId.current) return;
          setPapers(current => {
             return current.map(p => {
                // Extract pure ID to match enrichment cache, removing any version suffix (e.g. v1)
@@ -731,9 +743,13 @@ export function FeedProvider({ children }) {
          });
       }).catch(err => console.error("Lazy enrichment failed", err));
     } catch (err) {
-      setError(err.message);
+      if (requestId === feedRequestId.current) {
+        setError(err.message);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === feedRequestId.current) {
+        setLoading(false);
+      }
     }
   }, [
     userPreferences, page, papers, loading, feedMode, 
@@ -741,14 +757,28 @@ export function FeedProvider({ children }) {
     calculateAndAttachScore, followedAuthors
   ]);
 
-  const hasFetchedInitially = useRef(false);
-  // Initial load
+  const preferencesSignatureRef = useRef(null);
+
+  // A changed set of interests must invalidate the cached feed and replace it.
   useEffect(() => {
-    if (userPreferences && userPreferences.length > 0 && papers.length === 0 && !hasFetchedInitially.current) {
-      hasFetchedInitially.current = true;
-      loadPapers(true, null, true); // randomizeStart = true to ensure fresh feed
+    const signature = Array.isArray(userPreferences)
+      ? [...userPreferences].sort().join('|')
+      : '';
+
+    if (!signature) {
+      preferencesSignatureRef.current = null;
+      return;
     }
-  }, [userPreferences]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    if (preferencesSignatureRef.current === signature) return;
+
+    preferencesSignatureRef.current = signature;
+    feedCache.current = {};
+    setPapers([]);
+    setPage(0);
+    setHasMore(true);
+    loadPapers(true, null, true);
+  }, [userPreferences, loadPapers]);
 
   // Save current papers to cache before switching, then restore or fetch
   const handleSetFeedMode = useCallback((newMode) => {

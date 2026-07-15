@@ -1,4 +1,5 @@
 import { BaseAdapter } from './BaseAdapter';
+import { assignRequestedCategories } from '../arxivService';
 
 export class OpenAlexAdapter extends BaseAdapter {
   constructor() {
@@ -26,7 +27,10 @@ export class OpenAlexAdapter extends BaseAdapter {
 
       const data = await response.json();
       
-      const papers = data.results.map(work => this.mapToStandard(work)).filter(Boolean);
+      const papers = assignRequestedCategories(
+        data.results.map(work => this.mapToStandard(work)).filter(Boolean),
+        filters.internalCategories
+      );
 
       return {
         papers,
@@ -34,7 +38,7 @@ export class OpenAlexAdapter extends BaseAdapter {
       };
     } catch (error) {
       console.error('[OpenAlexAdapter] Error en búsqueda:', error);
-      return { papers: [], total: 0 };
+      throw new Error(`No se pudo conectar con OpenAlex: ${error.message}`, { cause: error });
     }
   }
 
