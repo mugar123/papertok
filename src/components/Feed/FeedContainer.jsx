@@ -4,7 +4,7 @@ import { useFeed } from '../../context/FeedContext';
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
 import AnimatedAtom from './AnimatedAtom';
-import { accumulateWheelGesture } from '../../utils/wheelNavigation';
+import { accumulateWheelGesture, shouldUseNativeWheelScroll } from '../../utils/wheelNavigation';
 import './FeedContainer.css';
 
 let savedFeedScroll = 0;
@@ -77,6 +77,14 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     if (!container) return;
 
     const handleWheel = (e) => {
+      // Trackpads emit pixel-precise deltas. Native scrolling preserves the
+      // finger-following motion and lets CSS scroll snap settle on each paper.
+      if (shouldUseNativeWheelScroll(e.deltaMode)) {
+        wheelDeltaRef.current = 0;
+        if (wheelResetTimerRef.current) clearTimeout(wheelResetTimerRef.current);
+        return;
+      }
+
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
 
       const nestedScroller = e.target instanceof Element ? e.target.closest('.pc-abstract--open') : null;

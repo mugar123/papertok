@@ -16,6 +16,7 @@
   scroll-snap-type: y mandatory;
   scroll-behavior: smooth;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
   scrollbar-width: none;
 }
 
@@ -104,5 +105,4 @@
   transform: translateY(-2px);
   box-shadow: 0 8px 25px rgba(255, 255, 255, 0.15);
 }
-
 

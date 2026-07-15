@@ -1,4 +1,9 @@
 export const WHEEL_NAVIGATION_THRESHOLD = 110;
+export const PIXEL_DELTA_MODE = 0;
+
+export function shouldUseNativeWheelScroll(deltaMode) {
+  return deltaMode === PIXEL_DELTA_MODE;
+}
 
 export function accumulateWheelGesture(currentDelta, nextDelta, threshold = WHEEL_NAVIGATION_THRESHOLD) {
   const continuingGesture = currentDelta === 0 || Math.sign(currentDelta) === Math.sign(nextDelta);
