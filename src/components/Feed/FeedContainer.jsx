@@ -6,14 +6,13 @@ import SkeletonCard from './SkeletonCard';
 import AnimatedAtom from './AnimatedAtom';
 import {
   accumulateWheelGesture,
-  shouldClampTrackpadMomentum,
   shouldUseNativeWheelScroll,
 } from '../../utils/wheelNavigation';
 import './FeedContainer.css';
 
 let savedFeedScroll = 0;
 const WHEEL_GESTURE_RESET_MS = 180;
-const TRACKPAD_GESTURE_RESET_MS = 180;
+const SCROLL_IDLE_DELAY_MS = 120;
 
 export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const { 
@@ -23,6 +22,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
   const [showLoader, setShowLoader] = useState(false);
+  const scrollIdleTimerRef = useRef(null);
 
   // Restore scroll position instantly before browser paints
   useLayoutEffect(() => {
@@ -55,6 +55,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     }
   }, [isRefreshing]);
 
+  useEffect(() => () => {
+    if (scrollIdleTimerRef.current) clearTimeout(scrollIdleTimerRef.current);
+  }, []);
+
   // Infinite scroll: observe sentinel element
   useEffect(() => {
     if (!sentinelRef.current) return;
@@ -75,8 +79,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const isScrollingRef = useRef(false);
   const wheelDeltaRef = useRef(0);
   const wheelResetTimerRef = useRef(null);
-  const trackpadGestureRef = useRef({ startIndex: null, clamped: false });
-  const trackpadResetTimerRef = useRef(null);
 
   // Implement mouse wheel scroll snapping on desktop
   useEffect(() => {
@@ -93,35 +95,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
         if (canScrollDown || canScrollUp) return;
       }
 
-      // Preserve direct, finger-following scrolling for normal trackpad movement.
-      // A very fast swipe can otherwise cross several snap points before settling.
+      // Trackpads provide pixel-precise, finger-following scrolling. Let the browser
+      // handle their momentum instead of competing with it through scrollTo().
       if (shouldUseNativeWheelScroll(e.deltaMode)) {
-        const cardHeight = container.clientHeight;
-        const gesture = trackpadGestureRef.current;
-        if (gesture.startIndex === null) {
-          gesture.startIndex = Math.round(container.scrollTop / cardHeight);
-        }
-
-        if (trackpadResetTimerRef.current) clearTimeout(trackpadResetTimerRef.current);
-        trackpadResetTimerRef.current = setTimeout(() => {
-          trackpadGestureRef.current = { startIndex: null, clamped: false };
-        }, TRACKPAD_GESTURE_RESET_MS);
-
-        if (!shouldClampTrackpadMomentum(e.deltaY) && !gesture.clamped) return;
-
-        e.preventDefault();
-        if (gesture.clamped) return;
-
-        gesture.clamped = true;
-        const direction = e.deltaY > 0 ? 1 : -1;
-        const nextIndex = gesture.startIndex + direction;
-        if (nextIndex >= 0 && nextIndex < papers.length + (loading ? 1 : 0)) {
-          isScrollingRef.current = true;
-          container.scrollTo({ top: nextIndex * cardHeight, behavior: 'smooth' });
-          setTimeout(() => {
-            isScrollingRef.current = false;
-          }, 450);
-        }
         return;
       }
 
@@ -171,7 +147,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     return () => {
       container.removeEventListener('wheel', handleWheel);
       if (wheelResetTimerRef.current) clearTimeout(wheelResetTimerRef.current);
-      if (trackpadResetTimerRef.current) clearTimeout(trackpadResetTimerRef.current);
     };
   }, [papers.length, loading]);
 
@@ -224,6 +199,17 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     onSaveToList(paper);
   }, [onSaveToList]);
 
+  const handleScroll = useCallback((event) => {
+    const container = event.currentTarget;
+    savedFeedScroll = container.scrollTop;
+    container.classList.add('feed-container--scrolling');
+
+    if (scrollIdleTimerRef.current) clearTimeout(scrollIdleTimerRef.current);
+    scrollIdleTimerRef.current = setTimeout(() => {
+      container.classList.remove('feed-container--scrolling');
+    }, SCROLL_IDLE_DELAY_MS);
+  }, []);
+
   if (error && papers.length === 0) {
     return (
       <div className="feed-empty">
@@ -265,7 +251,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
 
   return (
     <div className="feed-wrapper">
-      <div className="feed-container" ref={feedRef} onScroll={(e) => savedFeedScroll = e.target.scrollTop}>
+      <div className="feed-container" ref={feedRef} onScroll={handleScroll}>
         {papers.map((paper) => (
           <div key={paper.id} className="feed-snap-item">
             <PaperCard

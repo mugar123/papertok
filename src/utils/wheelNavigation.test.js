@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   accumulateWheelGesture,
-  shouldClampTrackpadMomentum,
   shouldUseNativeWheelScroll,
 } from './wheelNavigation.js';
 
@@ -10,13 +9,6 @@ test('uses native scrolling for pixel-precise trackpad gestures', () => {
   assert.equal(shouldUseNativeWheelScroll(0), true);
   assert.equal(shouldUseNativeWheelScroll(1), false);
   assert.equal(shouldUseNativeWheelScroll(2), false);
-});
-
-test('clamps only fast trackpad momentum bursts', () => {
-  assert.equal(shouldClampTrackpadMomentum(79), false);
-  assert.equal(shouldClampTrackpadMomentum(-79), false);
-  assert.equal(shouldClampTrackpadMomentum(80), true);
-  assert.equal(shouldClampTrackpadMomentum(-120), true);
 });
 
 test('does not navigate on small trackpad movements', () => {
