@@ -1099,7 +1099,7 @@ export default function EntityExplorer() {
                   </h3>
                   <p className="eli-authors">{(paper.authors || []).map(a => a.name || a).join(', ')}</p>
                   <p className="eli-summary">
-                    <Latex strict={false} delimiters={LATEX_DELIMITERS}>{normalizeLatexText(paper.abstract?.length > 200 ? paper.abstract.substring(0, 200) + '...' : paper.abstract)}</Latex>
+                    <Latex strict={false} delimiters={LATEX_DELIMITERS}>{normalizeLatexText(paper.abstract)}</Latex>
                   </p>
                 </div>
               ))}
