@@ -4,11 +4,16 @@ import { useFeed } from '../../context/FeedContext';
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
 import AnimatedAtom from './AnimatedAtom';
-import { accumulateWheelGesture, shouldUseNativeWheelScroll } from '../../utils/wheelNavigation';
+import {
+  accumulateWheelGesture,
+  shouldClampTrackpadMomentum,
+  shouldUseNativeWheelScroll,
+} from '../../utils/wheelNavigation';
 import './FeedContainer.css';
 
 let savedFeedScroll = 0;
 const WHEEL_GESTURE_RESET_MS = 180;
+const TRACKPAD_GESTURE_RESET_MS = 180;
 
 export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const { 
@@ -70,6 +75,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const isScrollingRef = useRef(false);
   const wheelDeltaRef = useRef(0);
   const wheelResetTimerRef = useRef(null);
+  const trackpadGestureRef = useRef({ startIndex: null, clamped: false });
+  const trackpadResetTimerRef = useRef(null);
 
   // Implement mouse wheel scroll snapping on desktop
   useEffect(() => {
@@ -77,14 +84,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     if (!container) return;
 
     const handleWheel = (e) => {
-      // Trackpads emit pixel-precise deltas. Native scrolling preserves the
-      // finger-following motion and lets CSS scroll snap settle on each paper.
-      if (shouldUseNativeWheelScroll(e.deltaMode)) {
-        wheelDeltaRef.current = 0;
-        if (wheelResetTimerRef.current) clearTimeout(wheelResetTimerRef.current);
-        return;
-      }
-
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
 
       const nestedScroller = e.target instanceof Element ? e.target.closest('.pc-abstract--open') : null;
@@ -92,6 +91,38 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
         const canScrollDown = e.deltaY > 0 && nestedScroller.scrollTop + nestedScroller.clientHeight < nestedScroller.scrollHeight - 1;
         const canScrollUp = e.deltaY < 0 && nestedScroller.scrollTop > 1;
         if (canScrollDown || canScrollUp) return;
+      }
+
+      // Preserve direct, finger-following scrolling for normal trackpad movement.
+      // A very fast swipe can otherwise cross several snap points before settling.
+      if (shouldUseNativeWheelScroll(e.deltaMode)) {
+        const cardHeight = container.clientHeight;
+        const gesture = trackpadGestureRef.current;
+        if (gesture.startIndex === null) {
+          gesture.startIndex = Math.round(container.scrollTop / cardHeight);
+        }
+
+        if (trackpadResetTimerRef.current) clearTimeout(trackpadResetTimerRef.current);
+        trackpadResetTimerRef.current = setTimeout(() => {
+          trackpadGestureRef.current = { startIndex: null, clamped: false };
+        }, TRACKPAD_GESTURE_RESET_MS);
+
+        if (!shouldClampTrackpadMomentum(e.deltaY) && !gesture.clamped) return;
+
+        e.preventDefault();
+        if (gesture.clamped) return;
+
+        gesture.clamped = true;
+        const direction = e.deltaY > 0 ? 1 : -1;
+        const nextIndex = gesture.startIndex + direction;
+        if (nextIndex >= 0 && nextIndex < papers.length + (loading ? 1 : 0)) {
+          isScrollingRef.current = true;
+          container.scrollTo({ top: nextIndex * cardHeight, behavior: 'smooth' });
+          setTimeout(() => {
+            isScrollingRef.current = false;
+          }, 450);
+        }
+        return;
       }
 
       e.preventDefault();
@@ -140,6 +171,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
     return () => {
       container.removeEventListener('wheel', handleWheel);
       if (wheelResetTimerRef.current) clearTimeout(wheelResetTimerRef.current);
+      if (trackpadResetTimerRef.current) clearTimeout(trackpadResetTimerRef.current);
     };
   }, [papers.length, loading]);
 
