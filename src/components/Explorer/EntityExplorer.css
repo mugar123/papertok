@@ -220,14 +220,16 @@
 }
 
 .ehc-stat-value {
-  font-size: 1.1rem;
+  font-size: 1rem;
   font-weight: 800;
   color: var(--text-primary);
   display: flex;
   align-items: center;
   gap: 6px;
-  overflow-wrap: break-word;
-  word-break: break-all;
+  overflow-wrap: normal;
+  word-break: normal;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .ehc-stat-label {
@@ -542,6 +544,15 @@
   transform: scale(0.99);
 }
 
+.explorer-list-item:focus-visible,
+.ee-author-card:focus-visible,
+.project-summary-box:focus-visible,
+.orcid-item-org--link:focus-visible,
+.ehc-meta [role="link"]:focus-visible {
+  outline: 2px solid var(--accent-primary, #7c3aed);
+  outline-offset: 3px;
+}
+
 /* ─── Skeleton Loading ─── */
 .skeleton-item {
   pointer-events: none;
@@ -669,6 +680,29 @@
   background: rgba(255,255,255,0.15);
   color: white;
   transform: translateY(-1px);
+}
+
+.explorer-inline-error {
+  max-width: 800px;
+  margin: 16px auto 0;
+  padding: 12px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.explorer-inline-error button {
+  border: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-weight: 700;
+  cursor: pointer;
 }
 
 /* ─── Overlay ─── */
@@ -1299,6 +1333,10 @@
 
 
 @media (max-width: 480px) {
+  .ehc-stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .project-participants-grid {
     grid-template-columns: 1fr;
   }

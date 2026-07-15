@@ -10,16 +10,22 @@ import { buildUserProfile, rankPapers } from '../utils/recommendation';
  */
 export function useRecommendation() {
   const { user } = useAuth();
-  const [interactions, setInteractions] = useState([]);
-  const [isProfileReady, setIsProfileReady] = useState(false);
+  const [profileState, setProfileState] = useState({
+    userId: null,
+    interactions: [],
+    ready: false,
+  });
 
   // Load interactions from Firestore
   useEffect(() => {
-    if (!user) return;
+    let cancelled = false;
+    const userId = user?.uid;
+
+    if (!userId) return undefined;
 
     const loadInteractions = async () => {
       try {
-        const interactionsRef = collection(db, 'users', user.uid, 'interactions');
+        const interactionsRef = collection(db, 'users', userId, 'interactions');
         const snapshot = await getDocs(interactionsRef);
 
         const loaded = [];
@@ -39,16 +45,27 @@ export function useRecommendation() {
           });
         });
 
-        setInteractions(loaded);
-        setIsProfileReady(true);
+        if (!cancelled) {
+          setProfileState({ userId, interactions: loaded, ready: true });
+        }
       } catch (err) {
-        console.error('Error loading interactions for recommendations:', err);
-        setIsProfileReady(true);
+        if (!cancelled) {
+          console.error('Error loading interactions for recommendations:', err);
+          setProfileState({ userId, interactions: [], ready: true });
+        }
       }
     };
 
     loadInteractions();
-  }, [user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.uid]);
+
+  const interactions = useMemo(() => (
+    profileState.userId === user?.uid ? profileState.interactions : []
+  ), [profileState, user?.uid]);
+  const isProfileReady = Boolean(user?.uid && profileState.userId === user.uid && profileState.ready);
 
   // Build user profile (memoized)
   const userProfile = useMemo(() => {

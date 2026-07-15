@@ -177,7 +177,9 @@ export class PaperBuilder {
         // We use merge to combine the two. existing is the base, paper is the "enrichment"
         // We might want to prefer arXiv's PDF, but Elsevier's publication status
         const merged = this.merge(existing, paper, paper.provider);
-        mergedMap.set(matchKey, merged);
+        for (const [key, value] of mergedMap.entries()) {
+          if (value === existing) mergedMap.set(key, merged);
+        }
         
         // Ensure both keys point to the same merged object to prevent future duplicates missing the link
         if (doiKey) mergedMap.set(doiKey, merged);
@@ -186,7 +188,7 @@ export class PaperBuilder {
         // Create base paper using the builder to normalize
         const basePaper = this.create(paper);
         if (doiKey) mergedMap.set(doiKey, basePaper);
-        if (heuristicKey && !doiKey) mergedMap.set(heuristicKey, basePaper);
+        if (heuristicKey) mergedMap.set(heuristicKey, basePaper);
         
         // If neither key exists (very rare, no title/author and no DOI), just use ID
         if (!doiKey && !heuristicKey) {

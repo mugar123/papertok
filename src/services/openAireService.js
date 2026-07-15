@@ -1,3 +1,5 @@
+import { deduplicateProjectParticipants } from '../utils/entityMetadata.js';
+
 export const CACHE = new Map();
 const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
 
@@ -81,13 +83,13 @@ export async function getProjectDetails(projectId) {
     let participants = [];
     if (p.rels?.rel) {
       const rels = Array.isArray(p.rels.rel) ? p.rels.rel : [p.rels.rel];
-      participants = rels
+      participants = deduplicateProjectParticipants(rels
         .filter(r => r.to?.["@class"] === "hasParticipant")
         .map(r => ({
           name: r.legalshortname?.["$"] || r.legalname?.["$"] || "Unknown",
           country: r.country?.["@classname"] || null,
           website: r.websiteurl?.["$"] || null,
-        }));
+        })));
     }
 
     // Extract impact measures
@@ -120,7 +122,7 @@ export async function getProjectDetails(projectId) {
       subjects,
       participants,
       measures,
-      openAccess: p.oamandatepublications?.["$"] === true,
+      openAccess: String(p.oamandatepublications?.["$"]).toLowerCase() === 'true',
     };
   } catch (e) {
     console.error("Error fetching project details:", e);
@@ -245,7 +247,7 @@ export async function getPapersByProject(projectCode, page = 1) {
     const paramName = projectCode.includes('::') ? 'openaireProjectID' : 'projectID';
     const url = `https://api.openaire.eu/search/publications?format=json&size=30&page=${page}&${paramName}=${encodeURIComponent(projectCode)}`;
     const response = await fetchWithTimeout(url);
-    if (!response.ok) return { arxivIds: [], dois: [], total: 0 };
+    if (!response.ok) throw new Error(`OpenAIRE API error: ${response.status}`);
 
     const data = await response.json();
     if (!data?.response?.results?.result) return { arxivIds: [], dois: [], total: 0 };
@@ -299,7 +301,7 @@ export async function getPapersByProject(projectCode, page = 1) {
 
   } catch (e) {
     console.error("Error fetching OpenAIRE papers for project:", e);
-    return { arxivIds: [], dois: [], total: 0 };
+    throw e;
   }
 }
 

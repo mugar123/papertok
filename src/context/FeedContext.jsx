@@ -17,32 +17,14 @@ import {
   logRankingBatch,
   readRecommendationWeights,
 } from '../utils/recommendationEngine';
+import {
+  readSeenPaperIds,
+  removeLegacySeenPaperIds,
+  saveSeenPaperIds,
+} from '../utils/userScopedStorage';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
-
-// Global session state to ensure fresh feed on reloads
-function readSessionSeen() {
-  if (typeof window === 'undefined') return new Set();
-  try {
-    const storedSeen = localStorage.getItem('papertok_seenIds');
-    const parsed = storedSeen ? JSON.parse(storedSeen) : [];
-    return new Set(Array.isArray(parsed) ? parsed : []);
-  } catch {
-    return new Set();
-  }
-}
-
-const sessionSeenPapers = readSessionSeen();
-
-function saveSessionSeen() {
-  const seenArray = Array.from(sessionSeenPapers).slice(-500); // Keep last 500
-  try {
-    localStorage.setItem('papertok_seenIds', JSON.stringify(seenArray));
-  } catch {
-    // Browsing can continue even when storage is unavailable or full.
-  }
-}
 
 // ── Demo mode storage helpers ──
 function demoGet(key, fallback) {
@@ -63,6 +45,7 @@ export function FeedProvider({ children }) {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [feedMode, setFeedMode] = useState('top'); // Default to TikTok algorithm
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Per-mode cache: { recent: { papers, page, hasMore }, top: { ... } }
   const feedCache = useRef({});
@@ -82,6 +65,9 @@ export function FeedProvider({ children }) {
   const notInterestedIdsRef = useRef(notInterestedIds);
   const isTraversingNetwork = useRef(false);
   const feedRequestId = useRef(0);
+  const feedSessionId = useRef(0);
+  const activeUserId = useRef(user?.uid || null);
+  const sessionSeenPapers = useRef(readSeenPaperIds(user?.uid));
 
   useEffect(() => { likedPaperIdsRef.current = likedPaperIds; }, [likedPaperIds]);
   useEffect(() => { savedPaperIdsRef.current = savedPaperIds; }, [savedPaperIds]);
@@ -93,6 +79,8 @@ export function FeedProvider({ children }) {
   const relatedCandidates = useRef([]);
   const temporalPreference = useRef(0); // -1 (classic) to +1 (recent)
   const recommendationWeights = useRef(readRecommendationWeights());
+  const boredomLevel = useRef(0); // 0 = happy, higher = more bored
+  const BOREDOM_THRESHOLD = 5; // After 5 consecutive fast skips, start exploring
 
   // --- TIKTOK-STYLE SCORING & RE-RANKING ---
   const calculateAndAttachScore = useCallback((paper, recentPropsCount = {}) => {
@@ -141,6 +129,8 @@ export function FeedProvider({ children }) {
   }, [reRankFeed]);
 
   const traverseAndExpandNetwork = useCallback(async (paper) => {
+    const sessionId = feedSessionId.current;
+    if (!activeUserId.current) return;
     if (isTraversingNetwork.current) {
       console.log("[Recomendador] Expansión en progreso. Petición ignorada para evitar saturación de API.");
       return;
@@ -151,6 +141,7 @@ export function FeedProvider({ children }) {
       let enriched = paper.openAlex;
       if (!enriched) {
         const res = await enrichPapersBatch([paper.id]);
+        if (sessionId !== feedSessionId.current) return;
         const pid = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1].replace(/v\d+$/, '') : paper.id.replace(/v\d+$/, '');
         enriched = res[pid];
         if (enriched) {
@@ -167,10 +158,12 @@ export function FeedProvider({ children }) {
       } catch (err) {
         console.warn("Semantic Scholar fetch failed", err);
       }
+      if (sessionId !== feedSessionId.current) return;
       
       if (enriched && enriched.related_works && enriched.related_works.length > 0) {
         console.log(`[Recomendador] Travesando red de citas de OpenAlex para: ${paper.title}`);
         const openAlexRecs = await getArxivIdsForOpenAlexWorks(enriched.related_works);
+        if (sessionId !== feedSessionId.current) return;
         relatedArxivIds = [...new Set([...relatedArxivIds, ...openAlexRecs])];
       }
         
@@ -180,23 +173,24 @@ export function FeedProvider({ children }) {
           !savedPaperIdsRef.current.has(id) &&
           !readPaperIdsRef.current.has(id) &&
           !notInterestedIdsRef.current.has(id) &&
-          !sessionSeenPapers.has(id)
+          !sessionSeenPapers.current.has(id)
         );
         
         if (filteredIds.length === 0) return;
         
         // Fetch the top 5 papers from this citation network
         const newGraphPapers = await fetchPapersByIds(filteredIds.slice(0, 5)).catch(() => []);
+        if (sessionId !== feedSessionId.current) return;
         
         if (newGraphPapers.length > 0) {
           newGraphPapers.forEach(p => {
             p._type = 'graph';
             p._isGraphCandidate = true;
             calculateAndAttachScore(p);
-            sessionSeenPapers.add(p.id); // Mark as seen to avoid duplicate fetches
+            sessionSeenPapers.current.add(p.id); // Mark as seen to avoid duplicate fetches
           });
           
-          saveSessionSeen();
+          saveSeenPaperIds(activeUserId.current, sessionSeenPapers.current);
           
           // Insert them in the papers queue ahead of the user
           setPapers(current => {
@@ -230,15 +224,25 @@ export function FeedProvider({ children }) {
     } catch (err) {
       console.error('[Recomendador] Error expandiendo la red del paper:', err);
     } finally {
-      isTraversingNetwork.current = false;
+      if (sessionId === feedSessionId.current) isTraversingNetwork.current = false;
     }
   }, [calculateAndAttachScore]);
 
   // Load user interactions
   useEffect(() => {
-    if (!user) return;
-
     let cancelled = false;
+    const userId = user?.uid || null;
+    const sessionId = ++feedSessionId.current;
+
+    activeUserId.current = userId;
+    sessionSeenPapers.current = readSeenPaperIds(userId);
+    removeLegacySeenPaperIds();
+    if (!userId) {
+      return () => {
+        if (feedSessionId.current === sessionId) feedSessionId.current += 1;
+        activeUserId.current = null;
+      };
+    }
 
     if (IS_DEMO) {
       const timeoutId = setTimeout(() => {
@@ -247,18 +251,21 @@ export function FeedProvider({ children }) {
         setNotInterestedIds(new Set(demoGet('notInterestedIds', [])));
         setSavedPaperIds(new Set(demoGet('savedPaperIds', [])));
         setReadPaperIds(new Set(demoGet('readPaperIds', [])));
-        setRecommendationProfileUserId(user.uid);
+        setRecommendationProfileUserId(userId);
       }, 0);
       return () => {
         cancelled = true;
         clearTimeout(timeoutId);
+        if (feedSessionId.current === sessionId) feedSessionId.current += 1;
+        feedRequestId.current += 1;
+        activeUserId.current = null;
       };
     }
 
     // Real Firebase mode
     const loadInteractions = async () => {
       try {
-        const interactionsRef = collection(db, 'users', user.uid, 'interactions');
+        const interactionsRef = collection(db, 'users', userId, 'interactions');
         const snapshot = await getDocs(interactionsRef);
         const liked = new Set();
         const notInterested = new Set();
@@ -342,7 +349,7 @@ export function FeedProvider({ children }) {
         categoryCooldowns.current = cooldowns;
         conceptAffinities.current = {};
         relatedCandidates.current = [];
-        setRecommendationProfileUserId(user.uid);
+        setRecommendationProfileUserId(userId);
         
         // --- OpenAlex Semantic Profile ---
         const positiveIds = [...liked, ...saved];
@@ -377,22 +384,22 @@ export function FeedProvider({ children }) {
       } catch (err) {
         if (!cancelled) console.error('Error loading interactions:', err);
       } finally {
-        if (!cancelled) setRecommendationProfileUserId(user.uid);
+        if (!cancelled) setRecommendationProfileUserId(userId);
       }
     };
     loadInteractions();
 
     return () => {
       cancelled = true;
+      if (feedSessionId.current === sessionId) feedSessionId.current += 1;
+      feedRequestId.current += 1;
+      activeUserId.current = null;
     };
-  }, [user]);
+  }, [user?.uid]);
 
   // --- BOREDOM DETECTION ---
   // Tracks consecutive fast skips in the current session to detect user disengagement.
   // When the user rapidly swipes past papers, boredomLevel rises and triggers exploration.
-  const boredomLevel = useRef(0); // 0 = happy, higher = more bored
-  const BOREDOM_THRESHOLD = 5; // After 5 consecutive fast skips, start exploring
-
   // Load papers when preferences are available
   const loadPapers = useCallback(async (reset = false, mode, randomizeStart = false, pageOverride) => {
     if (!userPreferences || userPreferences.length === 0) return;
@@ -684,7 +691,7 @@ export function FeedProvider({ children }) {
         !readPaperIdsRef.current.has(p.id) &&
         !likedPaperIdsRef.current.has(p.id) &&
         !savedPaperIdsRef.current.has(p.id) &&
-        !sessionSeenPapers.has(p.id)
+        !sessionSeenPapers.current.has(p.id)
       );
 
       // If everything was filtered out but we actually fetched papers, it means the user has seen them all.
@@ -724,8 +731,8 @@ export function FeedProvider({ children }) {
       }
 
       // NOW we add the final papers we are going to show to sessionSeenPapers
-      filtered.forEach(p => sessionSeenPapers.add(p.id));
-      saveSessionSeen();
+      filtered.forEach(p => sessionSeenPapers.current.add(p.id));
+      saveSeenPaperIds(activeUserId.current, sessionSeenPapers.current);
 
       let nextPapers;
       let nextPage;
@@ -844,8 +851,6 @@ export function FeedProvider({ children }) {
   useLayoutEffect(() => {
     loadPapersRef.current = loadPapers;
   }, [loadPapers]);
-
-  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const refreshFeed = useCallback(async () => {
     setIsRefreshing(true);

@@ -4,6 +4,7 @@
  */
 
 import { CATEGORIES } from '../data/categories';
+import { applyInstitutionWorksFallback } from '../utils/entityMetadata.js';
 import { PaperBuilder } from './PaperBuilder';
 
 const CACHE = new Map();
@@ -84,16 +85,12 @@ export async function enrichPapersBatch(arxivIds) {
     
     if (primaryFailed) {
       console.warn('OpenAlex direct fetch failed, trying proxy cascade');
-      try {
-        const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-        response = await fetchWithTimeout(proxyUrl, 8000).catch(() => null);
-      } catch { }
+      const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+      response = await fetchWithTimeout(proxyUrl, 8000).catch(() => null);
 
       if (!response || !response.ok) {
-        try {
-          const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-          response = await fetchWithTimeout(proxyUrl, 8000).catch(() => null);
-        } catch { }
+        const fallbackProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        response = await fetchWithTimeout(fallbackProxyUrl, 8000).catch(() => null);
       }
     }
 
@@ -299,6 +296,22 @@ export async function getAuthorProfile(authorName) {
     // Get author profile failed
   }
   return null;
+}
+
+export async function getAuthorProfileByOrcid(orcidId) {
+  const cleanOrcid = orcidId?.match(/\b\d{4}-\d{4}-\d{4}-\d{3}[\dX]\b/i)?.[0]?.toUpperCase();
+  if (!cleanOrcid) return null;
+
+  const url = `https://api.openalex.org/authors?filter=orcid:${encodeURIComponent(cleanOrcid)}&per-page=1`;
+  try {
+    const response = await fetchWithTimeout(url, 10000);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data.results?.[0] || null;
+  } catch (err) {
+    console.error(`OpenAlex ORCID lookup failed for ${cleanOrcid}`, err);
+    return null;
+  }
 }
 
 /**
@@ -515,7 +528,7 @@ export async function searchConcepts(query) {
 /**
  * Search journals/sources by name.
  */
-export async function searchSources(query) {
+export async function searchSources() {
   // Free openalex api is down. For now, we return empty so it doesn't crash.
   return [];
 }
@@ -576,15 +589,27 @@ export async function getEntityById(type, id) {
     const url = `https://api.openalex.org/institutions?filter=ror:${encodeURIComponent(rorUrl)}`;
     try {
       const response = await fetchWithTimeout(url, 10000);
-      if (!response.ok) return null;
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(`OpenAlex API error: ${response.status}`);
       const data = await response.json();
       if (data.results && data.results.length > 0) {
-        return data.results[0];
+        const institution = data.results[0];
+        if (institution.works_count > 0) return institution;
+
+        const worksUrl = `https://api.openalex.org/works?filter=institutions.ror:${encodeURIComponent(rorUrl)}&per-page=1&select=id`;
+        try {
+          const worksResponse = await fetchWithTimeout(worksUrl, 10000);
+          if (!worksResponse.ok) return institution;
+          const worksData = await worksResponse.json();
+          return applyInstitutionWorksFallback(institution, worksData.meta?.count);
+        } catch {
+          return institution;
+        }
       }
       return null;
     } catch (err) {
       console.error(`OpenAlex getEntityById by ROR filter failed for ${id}`, err);
-      return null;
+      throw err;
     }
   }
   
@@ -593,8 +618,24 @@ export async function getEntityById(type, id) {
   
   try {
     const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return null;
+    if (response.status === 404) return null;
+    if (!response.ok) throw new Error(`OpenAlex API error: ${response.status}`);
     const data = await response.json();
+
+    if (type === 'institution' && data?.works_count === 0) {
+      const filterKey = data.ror ? 'institutions.ror' : 'institutions.id';
+      const filterValue = data.ror || cleanId;
+      const worksUrl = `https://api.openalex.org/works?filter=${filterKey}:${encodeURIComponent(filterValue)}&per-page=1&select=id`;
+      try {
+        const worksResponse = await fetchWithTimeout(worksUrl, 10000);
+        if (worksResponse.ok) {
+          const worksData = await worksResponse.json();
+          return applyInstitutionWorksFallback(data, worksData.meta?.count);
+        }
+      } catch {
+        // Preserve the institution profile even when the metrics fallback is unavailable.
+      }
+    }
     
     // If it's a concept, translate back to Spanish
     if (type === 'concept' && data && data.display_name) {
@@ -611,9 +652,9 @@ export async function getEntityById(type, id) {
     }
     
     return data;
-  } catch {
-    // Get entity by id failed
-    return null;
+  } catch (err) {
+    console.error(`OpenAlex getEntityById failed for ${type} ${id}`, err);
+    throw err;
   }
 }
 
@@ -685,7 +726,7 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
   
   try {
     const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return { papers: [], total: 0 };
+    if (!response.ok) throw new Error(`OpenAlex API error: ${response.status}`);
     
     const data = await response.json();
     if (data && data.results) {
@@ -694,6 +735,7 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
     }
   } catch (err) {
     console.error(`OpenAlex getWorksByEntity failed for ${type} ${id}`, err);
+    throw err;
   }
   return { papers: [], total: 0 };
 }
@@ -722,7 +764,7 @@ export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '') {
   
   try {
     const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return { authors: [], total: 0 };
+    if (!response.ok) throw new Error(`OpenAlex API error: ${response.status}`);
     
     const data = await response.json();
     if (data && data.results) {
@@ -741,6 +783,7 @@ export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '') {
     }
   } catch (err) {
     console.error(`OpenAlex getAuthorsByEntity failed for ${type} ${id}`, err);
+    throw err;
   }
   return { authors: [], total: 0 };
 }
@@ -823,8 +866,6 @@ function formatOpenAlexWorkAsPaper(work) {
     keywords: categories
   });
 }
-
-import { fetchPapers } from './arxivService';
 
 export async function getTrendingPapers() {
   const cacheKey = 'trending_papers_v2';

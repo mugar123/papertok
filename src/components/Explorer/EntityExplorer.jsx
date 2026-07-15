@@ -1,12 +1,13 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
-import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, findInstitution } from '../../services/openAlexService';
+import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution } from '../../services/openAlexService';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
 import { ElsevierAdapter, PubmedAdapter } from '../../services/adapters';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { PaperBuilder } from '../../services/PaperBuilder';
-import { getOrcidRecord } from '../../services/orcidService';
+import { extractOrcid, getOrcidRecord } from '../../services/orcidService';
+import { filterAndSortEntityPapers, pinSourcePaper } from '../../utils/entityExplorer';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
 import { useAuth } from '../../context/AuthContext';
@@ -33,6 +34,13 @@ const LATEX_DELIMITERS = [
   { left: '\\begin{eqnarray}', right: '\\end{eqnarray}', display: true },
   { left: '\\begin{math}', right: '\\end{math}', display: false },
 ];
+
+const handleActivationKey = (event, action) => {
+  if (event.key !== 'Enter' && event.key !== ' ') return;
+  event.preventDefault();
+  action();
+};
+
 export default function EntityExplorer() {
   const { type, id } = useParams();
   const navigate = useNavigate();
@@ -40,9 +48,13 @@ export default function EntityExplorer() {
   const { followedAuthors, toggleFollowAuthor } = useAuth();
 
   const [entity, setEntity] = useState(null);
+  const [entityError, setEntityError] = useState(null);
+  const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState([]);
   const [isLoadingEntity, setIsLoadingEntity] = useState(true);
   const [isLoadingPapers, setIsLoadingPapers] = useState(false);
+  const [papersError, setPapersError] = useState(null);
+  const [papersReloadKey, setPapersReloadKey] = useState(0);
   const [sortBy, setSortBy] = useState('cited_by_count:desc');
   
   const [searchQuery, setSearchQuery] = useState('');
@@ -71,6 +83,8 @@ export default function EntityExplorer() {
 
   const [entityAuthors, setEntityAuthors] = useState([]);
   const [isLoadingAuthors, setIsLoadingAuthors] = useState(false);
+  const [authorsError, setAuthorsError] = useState(null);
+  const [authorsReloadKey, setAuthorsReloadKey] = useState(0);
   const [isFetchingMoreAuthors, setIsFetchingMoreAuthors] = useState(false);
   const [authorsPage, setAuthorsPage] = useState(1);
   const [hasMoreAuthors, setHasMoreAuthors] = useState(false);
@@ -103,23 +117,40 @@ export default function EntityExplorer() {
   }, [type, id, sortBy, filters]);
 
   useEffect(() => {
+    let isCancelled = false;
+
     async function loadEntity() {
       setIsLoadingEntity(true);
+      setEntityError(null);
+      setEntity(null);
+      setPapers([]);
+      setEntityAuthors([]);
+      setSearchQuery('');
+      setWikiInfo(null);
+      setOrcidInfo(null);
+      setIsLoadingOrcid(false);
+      setExpandedSummary(false);
+      setShowFilters(false);
+      setPapersError(null);
+      setAuthorsError(null);
+
       if (type === 'project') {
-        const urlParams = new URLSearchParams(window.location.search);
-        let name = urlParams.get('name') || id;
-        let funder = urlParams.get('funder') || '';
+        const name = searchParams.get('name') || id;
+        const funder = searchParams.get('funder') || '';
         
         // Optimistic display
         setEntity({ display_name: name, type: 'project', funder });
         
         // Fetch detailed info
         const details = await getProjectDetails(id);
+        if (isCancelled) return;
         if (details) {
            const displayName = details.acronym 
              ? `${details.acronym}: ${details.title}` 
              : details.title;
            setEntity({
+             id: details.id || id,
+             code: details.id || id,
              display_name: displayName,
              type: 'project',
              funder: details.funder,
@@ -136,25 +167,41 @@ export default function EntityExplorer() {
              participants: details.participants,
              measures: details.measures,
              openAccess: details.openAccess,
+             websiteUrl: details.websiteUrl,
            });
         }
-        setIsLoadingEntity(false);
+        if (!isCancelled) setIsLoadingEntity(false);
         return;
       }
-      setEntity(null);
-      setPapers([]);
-      setSearchQuery('');
-      setWikiInfo(null);
       
       let data;
-      const isOpenAlexId = /^A\d+$/.test(id) || id.startsWith('http');
+      let prefetchedOrcid = null;
+      const orcidId = type === 'author' ? extractOrcid(id) : null;
+      const isOpenAlexId = /^A\d+$/.test(id) || /openalex\.org\/A\d+/.test(id);
       
-      if (type === 'author' && !isOpenAlexId) {
+      if (orcidId) {
+        data = await getAuthorProfileByOrcid(orcidId);
+        if (!data) {
+          prefetchedOrcid = await getOrcidRecord(orcidId);
+          if (prefetchedOrcid?.displayName) {
+            data = {
+              id: `stub-${orcidId}`,
+              display_name: prefetchedOrcid.displayName,
+              orcid: `https://orcid.org/${orcidId}`,
+              works_count: null,
+              cited_by_count: null,
+              summary_stats: null,
+            };
+          }
+        }
+      } else if (type === 'author' && !isOpenAlexId) {
         const arxivId = searchParams.get('arxivId');
         data = await getAuthorProfileExact(id, arxivId);
       } else {
         data = await getEntityById(type, id);
       }
+
+      if (isCancelled) return;
       
       setEntity(data);
       setIsLoadingEntity(false);
@@ -162,18 +209,23 @@ export default function EntityExplorer() {
       if (data && data.display_name) {
         if (type === 'author' && data.orcid) {
           setIsLoadingOrcid(true);
-          getOrcidRecord(data.orcid)
-            .then(record => setOrcidInfo(record))
-            .catch(e => console.error("Error loading ORCID", e))
-            .finally(() => setIsLoadingOrcid(false));
+          try {
+            const record = prefetchedOrcid || await getOrcidRecord(data.orcid);
+            if (!isCancelled) setOrcidInfo(record);
+          } catch (e) {
+            if (!isCancelled) console.error("Error loading ORCID", e);
+          } finally {
+            if (!isCancelled) setIsLoadingOrcid(false);
+          }
         }
 
         if (type === 'institution' || type === 'concept' || type === 'source') {
           try {
             const res = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(data.display_name)}`);
+            if (isCancelled) return;
             if (res.ok) {
               const wikiData = await res.json();
-              if (wikiData.extract) {
+              if (!isCancelled && wikiData.extract) {
                 setWikiInfo({
                   extract: wikiData.extract,
                   thumbnail: wikiData.thumbnail?.source || null,
@@ -182,9 +234,10 @@ export default function EntityExplorer() {
               }
             } else {
               const resEn = await fetch(`https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(data.display_name)}`);
+              if (isCancelled) return;
               if (resEn.ok) {
                 const wikiDataEn = await resEn.json();
-                if (wikiDataEn.extract) {
+                if (!isCancelled && wikiDataEn.extract) {
                   setWikiInfo({
                     extract: wikiDataEn.extract,
                     thumbnail: wikiDataEn.thumbnail?.source || null,
@@ -199,14 +252,26 @@ export default function EntityExplorer() {
         }
       }
     }
-    loadEntity();
-  }, [type, id, searchParams]);
+    loadEntity().catch(error => {
+      if (isCancelled) return;
+      console.error('Failed to load entity', error);
+      setEntity(null);
+      setEntityError('No se pudo cargar esta entidad. Comprueba tu conexión e inténtalo de nuevo.');
+      setIsLoadingEntity(false);
+    });
+    return () => {
+      isCancelled = true;
+    };
+  }, [type, id, searchParams, entityReloadKey]);
 
   useEffect(() => {
     let isCancelled = false;
     async function loadPapers() {
       if (!entity || activeTab !== 'papers') return;
-      if (page === 1) setIsLoadingPapers(true);
+      if (page === 1) {
+        setIsLoadingPapers(true);
+        setPapersError(null);
+      }
       else setIsFetchingMore(true);
       
       try {
@@ -225,24 +290,35 @@ export default function EntityExplorer() {
         } else if (type === 'author') {
             let papersFromOA = [];
             let arxPapersFromNative = [];
+            let primaryError = null;
             
-            if (!resolvedId.startsWith('stub-')) {
+            try {
+              if (!resolvedId.startsWith('stub-')) {
                 const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
                 papersFromOA = res.papers || [];
                 total = res.total;
-            } else {
-                arxPapersFromNative = await getAuthorPapers(entity.display_name, 30).catch(() => []);
+              } else {
+                arxPapersFromNative = await getAuthorPapers(entity.display_name, 30);
+              }
+            } catch (error) {
+              primaryError = error;
             }
             
             const elsevierAdapter = new ElsevierAdapter();
-            const elsevierProm = elsevierAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }).then(res => res.papers).catch(() => []);
+            const elsevierProm = elsevierAdapter.search(`"${entity.display_name}"`, page, { type: 'author' });
             
             const pubmedAdapter = new PubmedAdapter();
-            const pubmedProm = pubmedAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }).then(res => res.papers).catch(() => []);
+            const pubmedProm = pubmedAdapter.search(`"${entity.display_name}"`, page, { type: 'author' });
             
-            const [els, pub] = await Promise.all([elsevierProm, pubmedProm]);
+            const supplementalResults = await Promise.allSettled([elsevierProm, pubmedProm]);
+            const [els, pub] = supplementalResults.map(result => result.status === 'fulfilled' ? result.value?.papers || [] : []);
             
             fetchedPapers.push(...papersFromOA, ...arxPapersFromNative, ...els, ...pub);
+
+            const supplementalError = supplementalResults.find(result => result.status === 'rejected')?.reason;
+            if (fetchedPapers.length === 0 && (primaryError || supplementalError)) {
+              throw primaryError || supplementalError;
+            }
             
             if (resolvedId.startsWith('stub-')) {
               total = fetchedPapers.length;
@@ -303,15 +379,25 @@ export default function EntityExplorer() {
            }
         }
 
+        if (type === 'project') {
+          fetchedPapers = filterAndSortEntityPapers(fetchedPapers, {
+            searchQuery: debouncedSearch,
+            filters,
+            sortBy,
+          });
+          fetchedPapers = pinSourcePaper(fetchedPapers, searchParams.get('arxivId'));
+        }
+
         if (isCancelled) return;
 
         if (page === 1) {
           setPapers(fetchedPapers);
         } else {
           setPapers(prev => {
-             const existingIds = new Set(prev.map(p => p.id));
-             const newPapers = fetchedPapers.filter(p => !existingIds.has(p.id));
-             return [...prev, ...newPapers];
+             const combined = PaperBuilder.deduplicate([...prev, ...fetchedPapers]);
+             if (type !== 'project') return combined;
+             const filtered = filterAndSortEntityPapers(combined, { searchQuery: debouncedSearch, filters, sortBy });
+             return pinSourcePaper(filtered, searchParams.get('arxivId'));
           });
         }
         setHasMore(page * 30 < total);
@@ -319,6 +405,7 @@ export default function EntityExplorer() {
         console.error("Failed to load papers for entity", err);
         if (isCancelled) return;
         if (page === 1) setPapers([]);
+        setPapersError('No se pudieron cargar las publicaciones. Comprueba tu conexión e inténtalo de nuevo.');
         setHasMore(false); // Stop infinite looping on errors
       }
       if (isCancelled) return;
@@ -327,13 +414,16 @@ export default function EntityExplorer() {
     }
     loadPapers();
     return () => { isCancelled = true; };
-  }, [type, id, entity, sortBy, page, debouncedSearch, filters, activeTab, searchParams]);
+  }, [type, id, entity, sortBy, page, debouncedSearch, filters, activeTab, searchParams, papersReloadKey]);
 
   useEffect(() => {
     let isCancelled = false;
     async function loadAuthors() {
       if (!entity || type === 'author' || activeTab !== 'authors') return;
-      if (authorsPage === 1) setIsLoadingAuthors(true);
+      if (authorsPage === 1) {
+        setIsLoadingAuthors(true);
+        setAuthorsError(null);
+      }
       else setIsFetchingMoreAuthors(true);
       
       try {
@@ -354,6 +444,8 @@ export default function EntityExplorer() {
       } catch (err) {
         console.error("Failed to load authors for entity", err);
         if (isCancelled) return;
+        if (authorsPage === 1) setEntityAuthors([]);
+        setAuthorsError('No se pudieron cargar los autores. Comprueba tu conexión e inténtalo de nuevo.');
         setHasMoreAuthors(false); // Stop infinite looping on errors
       }
       if (isCancelled) return;
@@ -362,7 +454,7 @@ export default function EntityExplorer() {
     }
     loadAuthors();
     return () => { isCancelled = true; };
-  }, [type, id, entity, authorsPage, debouncedSearch, activeTab]);
+  }, [type, id, entity, authorsPage, debouncedSearch, activeTab, authorsReloadKey]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -398,12 +490,29 @@ export default function EntityExplorer() {
     }
   };
 
+  const retryPapers = () => {
+    setPapersError(null);
+    setPage(1);
+    setPapersReloadKey(key => key + 1);
+  };
+
+  const retryEntity = () => {
+    setEntityError(null);
+    setEntityReloadKey(key => key + 1);
+  };
+
+  const retryAuthors = () => {
+    setAuthorsError(null);
+    setAuthorsPage(1);
+    setAuthorsReloadKey(key => key + 1);
+  };
+
   if (isLoadingEntity) return (
       <div className="explorer-container">
         <div className="explorer-hero">
           <div className="explorer-hero-top">
             <div className="eht-left">
-              <button className="explorer-back-btn" onClick={() => navigate(-1)}>
+              <button className="explorer-back-btn" onClick={() => navigate(-1)} aria-label="Volver" title="Volver">
                 <ArrowLeft size={20} />
               </button>
               <div className="skeleton-item" style={{ width: '80px', height: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}></div>
@@ -444,10 +553,16 @@ export default function EntityExplorer() {
   if (!entity) {
     return (
       <div className="explorer-error">
-        <button className="explorer-back-btn" onClick={() => navigate(-1)}>
+        <button className="explorer-back-btn" onClick={() => navigate(-1)} aria-label="Volver" title="Volver">
           <ArrowLeft size={24} />
         </button>
-        <h2>Entidad no encontrada</h2>
+        <h2>{entityError ? 'No se pudo cargar la entidad' : 'Entidad no encontrada'}</h2>
+        {entityError && (
+          <>
+            <p role="alert">{entityError}</p>
+            <button className="explorer-clear-btn" onClick={retryEntity}>Reintentar</button>
+          </>
+        )}
       </div>
     );
   }
@@ -482,13 +597,13 @@ export default function EntityExplorer() {
         
         <div className="explorer-hero-top">
           <div className="eht-left">
-            <button className="explorer-back-btn" onClick={() => navigate(-1)}>
+            <button className="explorer-back-btn" onClick={() => navigate(-1)} aria-label="Volver" title="Volver">
               <ArrowLeft size={20} />
             </button>
             <span className="ehc-type">{entityTypeLabel}</span>
           </div>
           <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="explorer-action-btn" onClick={handleShare} title="Compartir">
+            <button className="explorer-action-btn" onClick={handleShare} aria-label="Compartir" title="Compartir">
               <Share2 size={18} />
             </button>
           </div>
@@ -543,6 +658,9 @@ export default function EntityExplorer() {
                   {entity.last_known_institutions?.[0]?.id ? (
                     <span 
                       onClick={() => navigate(`/explorer/institution/${entity.last_known_institutions[0].id.split('/').pop()}`)}
+                      onKeyDown={(event) => handleActivationKey(event, () => navigate(`/explorer/institution/${entity.last_known_institutions[0].id.split('/').pop()}`))}
+                      role="link"
+                      tabIndex={0}
                       style={{ cursor: 'pointer', textDecoration: 'underline' }}
                     >
                       {entity.institution || entity.last_known_institutions[0].display_name}
@@ -671,13 +789,20 @@ export default function EntityExplorer() {
 
           {/* Project Summary - expandable */}
           {type === 'project' && entity?.summary && (
-            <div className="project-summary-box" onClick={() => setExpandedSummary(!expandedSummary)}>
+            <div
+              className="project-summary-box"
+              onClick={() => setExpandedSummary(!expandedSummary)}
+              onKeyDown={(event) => handleActivationKey(event, () => setExpandedSummary(!expandedSummary))}
+              role="button"
+              tabIndex={0}
+              aria-expanded={expandedSummary}
+            >
               <p className={expandedSummary ? 'expanded' : 'collapsed'}>
                 {entity.summary}
               </p>
-              <button className="project-summary-toggle">
+              <span className="project-summary-toggle">
                 {expandedSummary ? <><ChevronUp size={14} /> Mostrar menos</> : <><ChevronDown size={14} /> Leer más</>}
-              </button>
+              </span>
             </div>
           )}
 
@@ -808,6 +933,12 @@ export default function EntityExplorer() {
                             const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
                             if (inst) navigate(`/explorer/institution/${inst.id}`);
                           }}
+                          onKeyDown={(event) => handleActivationKey(event, async () => {
+                            const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
+                            if (inst) navigate(`/explorer/institution/${inst.id}`);
+                          })}
+                          role="link"
+                          tabIndex={0}
                           title={`Buscar y ver perfil de ${emp.organization}`}
                         >
                           {emp.organization}
@@ -842,6 +973,12 @@ export default function EntityExplorer() {
                             const inst = await findInstitution({ rorUrl: edu.ror, name: edu.organization });
                             if (inst) navigate(`/explorer/institution/${inst.id}`);
                           }}
+                          onKeyDown={(event) => handleActivationKey(event, async () => {
+                            const inst = await findInstitution({ rorUrl: edu.ror, name: edu.organization });
+                            if (inst) navigate(`/explorer/institution/${inst.id}`);
+                          })}
+                          role="link"
+                          tabIndex={0}
                           title={`Buscar y ver perfil de ${edu.organization}`}
                         >
                           {edu.organization}
@@ -882,12 +1019,13 @@ export default function EntityExplorer() {
             <Search size={16} className="es-icon" />
             <input 
               type="text" 
-              placeholder={`Buscar ${activeTab === 'papers' ? 'papers' : 'autores'} de esta ${type === 'institution' ? 'universidad' : type === 'concept' ? 'área' : 'persona'}...`}
+              placeholder={`Buscar ${activeTab === 'papers' ? 'papers' : 'autores'} de ${type === 'institution' ? 'esta universidad' : type === 'concept' ? 'esta área' : type === 'project' ? 'este proyecto' : 'esta persona'}...`}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
+              aria-label={`Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} en esta entidad`}
             />
             {searchQuery && (
-              <button className="es-clear" onClick={() => setSearchQuery('')}>
+              <button className="es-clear" onClick={() => setSearchQuery('')} aria-label="Limpiar búsqueda" title="Limpiar búsqueda">
                 <X size={14} />
               </button>
             )}
@@ -896,6 +1034,8 @@ export default function EntityExplorer() {
              <button 
                 className={`filter-btn ${filters?.category || filters?.peerReviewed || filters?.dateRange ? 'active' : ''}`} 
                 onClick={() => setShowFilters(true)}
+                aria-label="Abrir filtros"
+                title="Filtros"
               >
                 <Filter size={16} />
               </button>
@@ -914,6 +1054,9 @@ export default function EntityExplorer() {
                   key={`${paper.id}-${idx}`} 
                   className="explorer-list-item"
                   onClick={() => setSelectedPaper(paper)}
+                  onKeyDown={(event) => handleActivationKey(event, () => setSelectedPaper(paper))}
+                  role="button"
+                  tabIndex={0}
                   style={{ '--i': idx }}
                 >
                   <div className="eli-header">
@@ -966,7 +1109,20 @@ export default function EntityExplorer() {
             
             {!isLoadingPapers && filteredPapers.length === 0 && (
               <div className="explorer-empty">
-                <p>No se encontraron resultados que coincidan con tu búsqueda y filtros.</p>
+                {papersError ? (
+                  <>
+                    <p role="alert">{papersError}</p>
+                    <button className="explorer-clear-btn" onClick={retryPapers}>Reintentar</button>
+                  </>
+                ) : (
+                  <p>No se encontraron resultados que coincidan con tu búsqueda y filtros.</p>
+                )}
+              </div>
+            )}
+            {!isLoadingPapers && papersError && filteredPapers.length > 0 && (
+              <div className="explorer-inline-error" role="alert">
+                <span>{papersError}</span>
+                <button onClick={retryPapers}>Reintentar</button>
               </div>
             )}
           </>
@@ -978,6 +1134,9 @@ export default function EntityExplorer() {
                 className="ee-author-card staggerFadeUp" 
                 style={{ '--i': idx }}
                 onClick={() => navigate(`/explorer/author/${encodeURIComponent(author.id)}`)}
+                onKeyDown={(event) => handleActivationKey(event, () => navigate(`/explorer/author/${encodeURIComponent(author.id)}`))}
+                role="link"
+                tabIndex={0}
               >
                 <div className="ee-author-icon"><Users size={24} /></div>
                 <div className="ee-author-info">
@@ -1012,6 +1171,24 @@ export default function EntityExplorer() {
                 <span>Cargando más autores...</span>
               </div>
             )}
+            {!isLoadingAuthors && entityAuthors.length === 0 && (
+              <div className="explorer-empty">
+                {authorsError ? (
+                  <>
+                    <p role="alert">{authorsError}</p>
+                    <button className="explorer-clear-btn" onClick={retryAuthors}>Reintentar</button>
+                  </>
+                ) : (
+                  <p>No se encontraron autores que coincidan con tu búsqueda.</p>
+                )}
+              </div>
+            )}
+            {!isLoadingAuthors && authorsError && entityAuthors.length > 0 && (
+              <div className="explorer-inline-error" role="alert">
+                <span>{authorsError}</span>
+                <button onClick={retryAuthors}>Reintentar</button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -1033,10 +1210,13 @@ export default function EntityExplorer() {
               animate={{x:0}} 
               exit={{x:'100%'}} 
               transition={{type:'spring', damping:25, stiffness:200}}
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="entity-filter-title"
             >
               <div className="ee-filter-header">
-                <h3><SlidersHorizontal size={18}/> Filtros Avanzados</h3>
-                <button className="close-btn" onClick={() => setShowFilters(false)}><X size={20}/></button>
+                <h3 id="entity-filter-title"><SlidersHorizontal size={18}/> Filtros Avanzados</h3>
+                <button className="close-btn" onClick={() => setShowFilters(false)} aria-label="Cerrar filtros" title="Cerrar"><X size={20}/></button>
               </div>
               <div className="ee-filter-body">
                 <div className="ee-filter-section">
@@ -1124,6 +1304,8 @@ export default function EntityExplorer() {
             <button 
               className="explorer-overlay-close" 
               onClick={() => setSelectedPaper(null)}
+              aria-label="Cerrar publicación"
+              title="Volver"
             >
               <ArrowLeft size={22} />
             </button>

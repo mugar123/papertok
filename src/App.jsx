@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
-import { AuthProvider } from './context/AuthContext'
+import { AuthProvider, useAuth } from './context/AuthContext'
 import { FeedProvider } from './context/FeedContext'
 import LoginPage from './components/Auth/LoginPage'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
@@ -113,10 +113,15 @@ function AppContent() {
   )
 }
 
+function UserScopedAppContent() {
+  const { user } = useAuth()
+  return <AppContent key={user?.uid || 'signed-out'} />
+}
+
 function App() {
   return (
     <AuthProvider>
-      <AppContent />
+      <UserScopedAppContent />
     </AuthProvider>
   )
 }

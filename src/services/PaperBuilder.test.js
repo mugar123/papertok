@@ -42,3 +42,25 @@ test('OpenAlex enrichment remains available to the recommendation engine', () =>
   assert.ok(score.citations > 0);
   assert.ok(score.semantic > 0);
 });
+
+test('deduplicates the same title and author when only one source has a DOI', () => {
+  const deduplicated = PaperBuilder.deduplicate([
+    {
+      id: 'doi-source',
+      doi: '10.1000/example',
+      title: 'A Shared Research Result',
+      authors: [{ name: 'Ada Researcher' }],
+      provider: 'openalex',
+    },
+    {
+      id: 'metadata-source',
+      title: 'A Shared Research Result',
+      authors: [{ name: 'Ada Researcher' }],
+      summary: 'Abstract supplied by another source.',
+      provider: 'pubmed',
+    },
+  ]);
+
+  assert.equal(deduplicated.length, 1);
+  assert.equal(deduplicated[0].doi, '10.1000/example');
+});

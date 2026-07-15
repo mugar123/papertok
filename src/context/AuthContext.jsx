@@ -41,12 +41,20 @@ export function AuthProvider({ children }) {
       return;
     }
 
+    let authChangeId = 0;
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      const changeId = ++authChangeId;
+      setLoading(true);
       setUser(currentUser);
+      setOnboardingComplete(false);
+      setUserPreferences(null);
+      setFollowedAuthors([]);
+
       if (currentUser) {
         // Fetch user data from firestore
         try {
           const userDoc = await getDoc(doc(db, 'users', currentUser.uid));
+          if (changeId !== authChangeId) return;
           if (userDoc.exists()) {
             const data = userDoc.data();
             setOnboardingComplete(data.onboardingComplete || false);
@@ -56,14 +64,10 @@ export function AuthProvider({ children }) {
             setOnboardingComplete(false);
           }
         } catch (err) {
-          console.error("Error fetching user data", err);
+          if (changeId === authChangeId) console.error("Error fetching user data", err);
         }
-      } else {
-        setOnboardingComplete(false);
-        setUserPreferences(null);
-        setFollowedAuthors([]);
       }
-      setLoading(false);
+      if (changeId === authChangeId) setLoading(false);
     });
 
     return unsubscribe;
