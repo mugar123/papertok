@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import { getProjectForPaper } from '../../services/openAireService';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
+import { LATEX_DELIMITERS, normalizeLatexText } from '../../utils/latex';
 import './PaperCard.css';
 
 // Pool of icons for the background constellation per area
@@ -27,27 +28,6 @@ const AREA_BG_ICONS = {
   med: [HeartPulse, Activity, Stethoscope, Syringe, Pill, Microscope],
   bio: [Dna, Leaf, Microscope, Bug, Sprout, FlaskConical],
 };
-
-const processLatex = (text) => {
-  if (!text) return '';
-  // 1. Remove newlines that break latex parsing
-  let processed = text.replace(/\n+/g, ' ');
-  // 2. Escape unescaped % signs to prevent them from acting as LaTeX comments
-  // This uses a regex that matches % not preceded by \
-  processed = processed.replace(/(^|[^\\])%/g, '$1\\%');
-  return processed;
-};
-
-const LATEX_DELIMITERS = [
-  { left: '$$', right: '$$', display: true },
-  { left: '\\(', right: '\\)', display: false },
-  { left: '$', right: '$', display: false },
-  { left: '\\[', right: '\\]', display: true },
-  { left: '\\begin{equation}', right: '\\end{equation}', display: true },
-  { left: '\\begin{align}', right: '\\end{align}', display: true },
-  { left: '\\begin{eqnarray}', right: '\\end{eqnarray}', display: true },
-  { left: '\\begin{math}', right: '\\end{math}', display: false },
-];
 
 const PaperCard = memo(function PaperCard({ 
   paper, 
@@ -440,7 +420,7 @@ const PaperCard = memo(function PaperCard({
         )}
 
         <h2 className="pc-title">
-          <Latex strict={false} delimiters={LATEX_DELIMITERS}>{processLatex(paper.title)}</Latex>
+          <Latex strict={false} delimiters={LATEX_DELIMITERS}>{normalizeLatexText(paper.title)}</Latex>
         </h2>
 
         <div 
@@ -483,7 +463,7 @@ const PaperCard = memo(function PaperCard({
           className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''}`}
           onClick={(e) => toggleExpanded(e, !expanded)}
         >
-          <p><Latex strict={false} delimiters={LATEX_DELIMITERS}>{processLatex(paper.abstract)}</Latex></p>
+          <p><Latex strict={false} delimiters={LATEX_DELIMITERS}>{normalizeLatexText(paper.abstract)}</Latex></p>
         </div>
 
         <div className="pc-action-bar">
