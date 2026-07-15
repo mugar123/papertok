@@ -64,6 +64,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [customRange, setCustomRange] = useState(null);
   const [selectedPaper, setSelectedPaper] = useState(null);
   const pageRef = useRef(1);
+  const reportRequestId = useRef(0);
 
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
@@ -71,19 +72,30 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   } = useFeed();
 
   const fetchReport = useCallback(async (tf, currentFilters, targetPage = 1) => {
+    const requestId = ++reportRequestId.current;
     setLoading(true);
     window.dispatchEvent(new Event('reportLoadingStart'));
     setError(null);
     try {
       const data = await getScientificReport(tf, targetPage, currentFilters);
-      setReport(data);
+      if (requestId === reportRequestId.current) {
+        setReport(data);
+      }
     } catch (err) {
       console.error('Error fetching report:', err);
-      setError('No se pudo cargar el reporte. Reinténtalo.');
+      if (requestId === reportRequestId.current) {
+        setError('No se pudo cargar el reporte. Reinténtalo.');
+      }
     } finally {
-      setLoading(false);
-      window.dispatchEvent(new Event('reportLoadingEnd'));
+      if (requestId === reportRequestId.current) {
+        setLoading(false);
+        window.dispatchEvent(new Event('reportLoadingEnd'));
+      }
     }
+  }, []);
+
+  useEffect(() => () => {
+    reportRequestId.current += 1;
   }, []);
 
   useEffect(() => {
@@ -177,7 +189,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       {loading ? (
         <div className="sr-state"><div className="sr-spinner" /><p>Compilando edición estable...</p></div>
       ) : error ? (
-        <div className="sr-state"><p>{error}</p><button className="sr-retry" onClick={() => fetchReport(timeframe, filters, true)}>Reintentar</button></div>
+        <div className="sr-state"><p>{error}</p><button className="sr-retry" onClick={() => fetchReport(timeframe, filters, pageRef.current)}>Reintentar</button></div>
       ) : (
         <div className="sr-body" key={typeof timeframe === 'string' ? timeframe : JSON.stringify(timeframe)}>
 

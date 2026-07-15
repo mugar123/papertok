@@ -409,6 +409,7 @@ function scorePaper(paper, timeframe, seenCategories, daysThreshold, seenSources
  * Core orchestrator function to build, deduplicate, score, and rank candidates
  */
 export async function getScientificReport(timeframe = '7d', page = 1, filters = {}) {
+  const normalizedPage = Number.isInteger(page) && page > 0 ? page : 1;
   let tf = '7d';
   let cacheKey;
   
@@ -422,13 +423,13 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
   }
   
   // Include page and filters in cache key
-  cacheKey += `_p${page}`;
+  cacheKey += `_p${normalizedPage}`;
   
-  const filterKey = [
-    ...(filters.categories || []).sort(),
-    ...(filters.countries || []).sort()
-  ].join(',');
-  if (filterKey) cacheKey += `_f:${filterKey}`;
+  const filterKey = JSON.stringify({
+    categories: [...new Set(filters.categories || [])].sort(),
+    countries: [...new Set(filters.countries || [])].sort()
+  });
+  if (filterKey !== '{"categories":[],"countries":[]}') cacheKey += `_f:${filterKey}`;
   
   // Check global cache
   const cached = REPORT_CACHE.get(cacheKey);
@@ -446,9 +447,9 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
   // 1. Fetch Candidates from all sources in parallel
   // When country filter is active, only use OpenAlex (only source with country data)
   const [arxivCandidates, openAlexCandidates, pubmedCandidates] = await Promise.all([
-    hasCountryFilter ? Promise.resolve([]) : fetchArxivCandidates(tf, page, filters),
-    fetchOpenAlexCandidates(fromStr, toStr, tf, page, filters),
-    hasCountryFilter ? Promise.resolve([]) : fetchPubmedCandidates(tf, page, filters)
+    hasCountryFilter ? Promise.resolve([]) : fetchArxivCandidates(tf, normalizedPage, filters),
+    fetchOpenAlexCandidates(fromStr, toStr, tf, normalizedPage, filters),
+    hasCountryFilter ? Promise.resolve([]) : fetchPubmedCandidates(tf, normalizedPage, filters)
   ]);
   
   // 2. Combine and Deduplicate
