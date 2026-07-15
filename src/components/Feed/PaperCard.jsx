@@ -5,12 +5,11 @@ import {
   Rocket, Settings, Wrench, Cog, PenTool, Building, Map, Compass, Beaker, TestTube, Thermometer, HeartPulse, Stethoscope, Syringe, Pill, Leaf, Bug, Sprout, Landmark, Coins, Radio, Box
 } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
-import Latex from 'react-latex-next';
+import ScientificText from '../ScientificText';
 import { useAuth } from '../../context/AuthContext';
 import { getProjectForPaper } from '../../services/openAireService';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { LATEX_DELIMITERS, normalizeLatexText } from '../../utils/latex';
 import './PaperCard.css';
 
 // Pool of icons for the background constellation per area
@@ -420,7 +419,7 @@ const PaperCard = memo(function PaperCard({
         )}
 
         <h2 className="pc-title">
-          <Latex strict={false} delimiters={LATEX_DELIMITERS}>{normalizeLatexText(paper.title)}</Latex>
+          <ScientificText>{paper.title}</ScientificText>
         </h2>
 
         <div 
@@ -463,7 +462,7 @@ const PaperCard = memo(function PaperCard({
           className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''}`}
           onClick={(e) => toggleExpanded(e, !expanded)}
         >
-          <p><Latex strict={false} delimiters={LATEX_DELIMITERS}>{normalizeLatexText(paper.abstract)}</Latex></p>
+          <p><ScientificText>{paper.abstract}</ScientificText></p>
         </div>
 
         <div className="pc-action-bar">

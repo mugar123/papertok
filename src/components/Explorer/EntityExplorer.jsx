@@ -13,8 +13,7 @@ import { CATEGORIES } from '../../data/categories';
 import { useAuth } from '../../context/AuthContext';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
-import Latex from 'react-latex-next';
-import { LATEX_DELIMITERS, normalizeLatexText } from '../../utils/latex';
+import ScientificText from '../ScientificText';
 import 'katex/dist/katex.min.css';
 import './EntityExplorer.css';
 
@@ -1090,7 +1089,7 @@ export default function EntityExplorer() {
                     <span className="eli-date">{paper.year}</span>
                   </div>
                   <h3 className="eli-title">
-                    <Latex strict={false} delimiters={LATEX_DELIMITERS}>{normalizeLatexText(paper.title)}</Latex>
+                    <ScientificText>{paper.title}</ScientificText>
                     {paper.isPeerReviewed && (
                       <span className="pc-tooltip" data-tooltip="Publicado en revista (Peer-reviewed)" style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: '6px' }}>
                         <BadgeCheck size={16} style={{ color: '#1da1f2' }} />
@@ -1099,7 +1098,7 @@ export default function EntityExplorer() {
                   </h3>
                   <p className="eli-authors">{(paper.authors || []).map(a => a.name || a).join(', ')}</p>
                   <p className="eli-summary">
-                    <Latex strict={false} delimiters={LATEX_DELIMITERS}>{normalizeLatexText(paper.abstract)}</Latex>
+                    <ScientificText>{paper.abstract}</ScientificText>
                   </p>
                 </div>
               ))}
