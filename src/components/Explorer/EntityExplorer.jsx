@@ -518,7 +518,7 @@ export default function EntityExplorer() {
               <div className="skeleton-item" style={{ width: '80px', height: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}></div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="explorer-action-btn skeleton-item" style={{ border: 'none', background: 'rgba(255,255,255,0.05)' }}></button>
+              <button className="explorer-action-btn skeleton-item" style={{ border: 'none', background: 'rgba(255,255,255,0.05)' }} aria-hidden="true" tabIndex={-1} disabled></button>
             </div>
           </div>
           
@@ -796,6 +796,7 @@ export default function EntityExplorer() {
               role="button"
               tabIndex={0}
               aria-expanded={expandedSummary}
+              aria-label={expandedSummary ? 'Contraer resumen del proyecto' : 'Ampliar resumen del proyecto'}
             >
               <p className={expandedSummary ? 'expanded' : 'collapsed'}>
                 {entity.summary}
@@ -1057,6 +1058,7 @@ export default function EntityExplorer() {
                   onKeyDown={(event) => handleActivationKey(event, () => setSelectedPaper(paper))}
                   role="button"
                   tabIndex={0}
+                  aria-label={`Abrir publicación: ${paper.title || 'Sin título'}`}
                   style={{ '--i': idx }}
                 >
                   <div className="eli-header">
@@ -1137,6 +1139,7 @@ export default function EntityExplorer() {
                 onKeyDown={(event) => handleActivationKey(event, () => navigate(`/explorer/author/${encodeURIComponent(author.id)}`))}
                 role="link"
                 tabIndex={0}
+                aria-label={`Abrir perfil de ${author.display_name}`}
               >
                 <div className="ee-author-icon"><Users size={24} /></div>
                 <div className="ee-author-info">
