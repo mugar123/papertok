@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, Check, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
+import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, BadgeCheck, Check, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getInstitutionRecentImpact } from '../../services/openAlexService';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
 import { fetchPapers, fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
@@ -65,6 +65,8 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   const [expandedSummary, setExpandedSummary] = useState(false);
   const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(false);
   const [isProjectLinksMenuOpen, setIsProjectLinksMenuOpen] = useState(false);
+  const [projectSummaryExpandedHeight, setProjectSummaryExpandedHeight] = useState(0);
+  const [wikiDescriptionExpandedHeight, setWikiDescriptionExpandedHeight] = useState(0);
   const [resolvingParticipant, setResolvingParticipant] = useState(null);
   const [participantNavigationError, setParticipantNavigationError] = useState('');
   const [recentImpact, setRecentImpact] = useState(null);
@@ -87,11 +89,27 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   const [hasMoreAuthors, setHasMoreAuthors] = useState(false);
   const observerAuthorsRef = useRef(null);
   const projectLinksMenuRef = useRef(null);
+  const projectSummaryTextRef = useRef(null);
+  const wikiDescriptionTextRef = useRef(null);
   const getInteractionState = useCallback((paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
     isRead: readPaperIds.has(paper.id),
   }), [likedPaperIds, readPaperIds, savedPaperIds]);
+
+  const measureExpandableDescriptions = useCallback(() => {
+    if (projectSummaryTextRef.current) setProjectSummaryExpandedHeight(projectSummaryTextRef.current.scrollHeight);
+    if (wikiDescriptionTextRef.current) setWikiDescriptionExpandedHeight(wikiDescriptionTextRef.current.scrollHeight);
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(measureExpandableDescriptions);
+    window.addEventListener('resize', measureExpandableDescriptions);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', measureExpandableDescriptions);
+    };
+  }, [entity?.summary, measureExpandableDescriptions, wikiInfo?.extract]);
 
   useEffect(() => {
     if (!isProjectLinksMenuOpen) return undefined;
@@ -989,11 +1007,15 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
               aria-label={expandedSummary ? 'Contraer resumen del proyecto' : 'Ampliar resumen del proyecto'}
               transition={{ layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] } }}
             >
-              <p className={expandedSummary ? 'expanded' : 'collapsed'}>
+              <p
+                ref={projectSummaryTextRef}
+                className={expandedSummary ? 'expanded' : 'collapsed'}
+                style={projectSummaryExpandedHeight ? { '--project-summary-expanded-height': `${projectSummaryExpandedHeight}px` } : undefined}
+              >
                 {entity.summary}
               </p>
               <span className="project-summary-toggle">
-                {expandedSummary ? <><ChevronUp size={14} /> Mostrar menos</> : <><ChevronDown size={14} /> Leer más</>}
+                <ChevronDown size={14} /> {expandedSummary ? 'Mostrar menos' : 'Leer más'}
               </span>
             </motion.div>
           )}
@@ -1055,7 +1077,15 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.8, ease: "easeOut", layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] } }}
               >
-                {wikiInfo && <p className={isWikiDescriptionExpanded ? 'expanded' : 'collapsed'}>{wikiInfo.extract}</p>}
+                {wikiInfo && (
+                  <p
+                    ref={wikiDescriptionTextRef}
+                    className={isWikiDescriptionExpanded ? 'expanded' : 'collapsed'}
+                    style={wikiDescriptionExpandedHeight ? { '--wiki-description-expanded-height': `${wikiDescriptionExpandedHeight}px` } : undefined}
+                  >
+                    {wikiInfo.extract}
+                  </p>
+                )}
                 {wikiInfo?.extract?.length > 260 && (
                   <button
                     type="button"

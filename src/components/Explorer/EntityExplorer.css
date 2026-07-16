@@ -345,7 +345,7 @@
 }
 
 .ehc-wiki p.expanded {
-  max-height: 72rem;
+  max-height: var(--wiki-description-expanded-height, 72rem);
   opacity: 1;
 }
 
@@ -1458,7 +1458,7 @@
 }
 
 .project-summary-box p.expanded {
-  max-height: 72rem;
+  max-height: var(--project-summary-expanded-height, 72rem);
   opacity: 1;
 }
 
