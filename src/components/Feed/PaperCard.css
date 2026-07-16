@@ -485,7 +485,7 @@
   justify-content: center;
   background: rgba(0, 0, 0, 0.62);
   backdrop-filter: blur(5px);
-  animation: relatedBackdropIn 0.2s ease-out both;
+  animation: relatedBackdropIn 0.26s ease-out both;
 }
 
 .related-sheet {
@@ -498,7 +498,17 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px 8px 0 0;
   box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.45);
-  animation: relatedSheetIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: relatedSheetIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
+}
+
+.related-grabber {
+  width: 34px;
+  height: 4px;
+  flex: 0 0 auto;
+  margin: 9px auto 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.2);
 }
 
 .related-header {
@@ -513,7 +523,12 @@
 .related-header > div { display: flex; align-items: center; gap: 9px; }
 .related-header h3 { margin: 0; font-size: 1rem; }
 .related-header button { border: 0; background: transparent; color: #fff; cursor: pointer; padding: 8px; }
-.related-list { overflow-y: auto; padding: 8px; }
+.related-list {
+  overflow-y: auto;
+  padding: 8px;
+  scroll-behavior: smooth;
+  animation: relatedContentIn 0.25s ease-out both;
+}
 
 .related-item {
   width: 100%;
@@ -528,16 +543,98 @@
   color: #fff;
   text-align: left;
   cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.18s ease, border-color 0.18s ease, transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.18s ease;
   opacity: 0;
   animation: relatedItemIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: calc(80ms + var(--related-index, 0) * 35ms);
 }
 
-.related-item:hover { background: rgba(255, 255, 255, 0.06); }
+.related-item:hover {
+  background: rgba(139, 92, 246, 0.12);
+  border-color: rgba(139, 92, 246, 0.34);
+  transform: translateX(3px);
+}
+
+.related-item:active { transform: translateX(2px) scale(0.988); }
+
+.related-item > svg {
+  flex: 0 0 auto;
+  color: #a7a7b0;
+  transition: transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1), color 0.18s ease;
+}
+
+.related-item:hover > svg {
+  color: #b799ff;
+  transform: translateX(3px);
+}
+
+.related-item::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: #8b5cf6;
+  content: '';
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform 0.18s ease;
+}
+
+.related-item:hover::before,
+.related-item:focus-visible::before,
+.related-item.is-selected::before { transform: scaleY(1); }
+
+.related-item:focus-visible {
+  outline: 2px solid rgba(167, 139, 250, 0.7);
+  outline-offset: 2px;
+}
+
+.related-item.is-selected {
+  z-index: 1;
+  background: rgba(139, 92, 246, 0.18);
+  border-color: rgba(167, 139, 250, 0.65);
+  transform: translateX(7px) scale(1.012);
+  animation: relatedItemSelected 0.21s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.related-sheet.is-selecting-paper .related-item:not(.is-selected) {
+  opacity: 0.32;
+  transform: translateX(-5px);
+}
 .related-item-copy { min-width: 0; flex: 1; display: grid; gap: 6px; }
 .related-item-copy strong { font-size: 0.92rem; line-height: 1.3; }
 .related-item-copy small { color: rgba(255, 255, 255, 0.58); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .related-state { min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 24px; color: rgba(255, 255, 255, 0.62); text-align: center; }
+
+.related-loading {
+  align-items: stretch;
+  padding: 22px 18px 18px;
+  color: #b7b7c2;
+}
+
+.related-loading-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  margin-bottom: 17px;
+}
+
+.related-skeletons { display: grid; gap: 9px; }
+
+.related-skeleton {
+  display: block;
+  height: 56px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 7px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.035) 20%, rgba(167, 139, 250, 0.12) 48%, rgba(255, 255, 255, 0.035) 76%);
+  background-size: 240% 100%;
+  animation: relatedShimmer 1.45s ease-in-out infinite;
+  animation-delay: calc(var(--skeleton-index, 0) * 100ms);
+}
 
 .related-card-overlay {
   position: fixed;
@@ -545,7 +642,8 @@
   z-index: 12010;
   overflow: hidden;
   background: #08080d;
-  animation: relatedCardIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: relatedCardIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
+  will-change: transform, opacity;
 }
 
 .related-card-back {
@@ -566,7 +664,16 @@
   cursor: pointer;
 }
 
-.related-card-back:hover { background: rgba(255, 255, 255, 0.16); }
+.related-card-back {
+  transition: background 0.18s ease, transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.related-card-back:hover {
+  background: rgba(255, 255, 255, 0.16);
+  transform: scale(1.06);
+}
+
+.related-card-back:active { transform: scale(0.94); }
 
 .related-overlay.is-closing {
   animation: relatedBackdropOut 0.18s ease-in both;
@@ -574,6 +681,14 @@
 
 .related-overlay.is-closing .related-sheet {
   animation: relatedSheetOut 0.18s ease-in both;
+}
+
+.related-overlay.is-selecting-paper .related-sheet {
+  animation: relatedSheetToCard 0.21s cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.related-card-overlay.is-closing {
+  animation: relatedCardOut 0.22s cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 @keyframes relatedBackdropIn {
@@ -601,20 +716,51 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes relatedContentIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes relatedItemSelected {
+  from { filter: brightness(1); }
+  to { filter: brightness(1.12); }
+}
+
+@keyframes relatedShimmer {
+  from { background-position: 100% 0; }
+  to { background-position: -140% 0; }
+}
+
 @keyframes relatedCardIn {
-  from { opacity: 0; transform: scale(0.985); }
+  from { opacity: 0; transform: translateY(16px) scale(0.985); }
   to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes relatedCardOut {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(14px) scale(0.987); }
+}
+
+@keyframes relatedSheetToCard {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(10px) scale(0.985); }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .related-overlay,
   .related-sheet,
   .related-item,
-  .related-card-overlay {
-    animation: none;
+  .related-card-overlay,
+  .related-skeleton {
+    animation: none !important;
   }
 
   .related-item { opacity: 1; }
+
+  .related-item,
+  .related-item > svg,
+  .related-item::before,
+  .related-card-back { transition: none; }
 }
 
 .pc-read-btn--secondary:hover {

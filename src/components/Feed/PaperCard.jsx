@@ -53,6 +53,7 @@ const PaperCard = memo(function PaperCard({
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
   const [selectedRelatedPaper, setSelectedRelatedPaper] = useState(null);
+  const [isClosingRelatedCard, setIsClosingRelatedCard] = useState(false);
   const [isResolvingAccess, setIsResolvingAccess] = useState(false);
   const { followedByType, isFollowing } = useFollowing();
   const navigate = useNavigate();
@@ -71,6 +72,11 @@ const PaperCard = memo(function PaperCard({
   const cardRef = useRef(null);
   const viewStartTime = useRef(null);
   const totalViewTime = useRef(0);
+  const relatedCardCloseTimerRef = useRef(null);
+
+  useEffect(() => () => {
+    if (relatedCardCloseTimerRef.current) clearTimeout(relatedCardCloseTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!cardRef.current || showRelated || selectedRelatedPaper) return;
@@ -141,6 +147,15 @@ const PaperCard = memo(function PaperCard({
   const selectedRelatedState = selectedRelatedPaper
     ? getInteractionState(selectedRelatedPaper) || {}
     : {};
+
+  const closeRelatedCard = useCallback(() => {
+    if (isClosingRelatedCard) return;
+    setIsClosingRelatedCard(true);
+    relatedCardCloseTimerRef.current = setTimeout(() => {
+      setSelectedRelatedPaper(null);
+      setIsClosingRelatedCard(false);
+    }, 220);
+  }, [isClosingRelatedCard]);
 
   const handleMarkAsRead = (e) => {
     e.stopPropagation();
@@ -665,10 +680,10 @@ const PaperCard = memo(function PaperCard({
         document.body,
       )}
       {selectedRelatedPaper && createPortal(
-        <div className="related-card-overlay">
+        <div className={`related-card-overlay ${isClosingRelatedCard ? 'is-closing' : ''}`}>
           <button
             className="related-card-back"
-            onClick={() => setSelectedRelatedPaper(null)}
+            onClick={closeRelatedCard}
             aria-label="Volver al paper anterior"
             title="Volver"
           >
