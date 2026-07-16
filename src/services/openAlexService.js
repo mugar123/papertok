@@ -27,6 +27,49 @@ const IMPACT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const IMPACT_INSUFFICIENT_TTL_MS = 6 * 60 * 60 * 1000;
 const IMPACT_STALE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const ENRICHMENT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const ROR_ENTITY_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function normalizeRorInstitution(institution) {
+  if (!institution?.id) return null;
+  const rorId = institution.id.split('/').pop();
+  const location = institution.locations?.[0]?.geonames_details;
+  const displayName = institution.names?.find(name => name.types?.includes('ror_display'))?.value
+    || institution.names?.find(name => name.types?.includes('label'))?.value
+    || institution.name;
+
+  if (!displayName) return null;
+
+  return {
+    id: institution.id,
+    ror: institution.id,
+    display_name: displayName,
+    country_code: location?.country_code || institution.country?.country_code || '',
+    type: institution.types?.[0] || 'education',
+    geo: {
+      city: location?.name || '',
+      country: location?.country_name || '',
+      country_code: location?.country_code || '',
+    },
+    homepage_url: institution.links?.find(link => link.type === 'website')?.value || null,
+    works_count: null,
+    cited_by_count: null,
+    summary_stats: null,
+    _metadataSource: 'ror',
+    _rorId: rorId,
+  };
+}
+
+async function getRorInstitutionFallback(rorId) {
+  const cacheKey = `ror-entity:${rorId}`;
+  const cached = readOpenAlexPersistent(cacheKey, ROR_ENTITY_CACHE_TTL_MS);
+  if (cached && !cached.stale) return cached.data;
+
+  const response = await fetchWithTimeout(`https://api.ror.org/organizations/${encodeURIComponent(rorId)}`, 8000);
+  if (!response.ok) return null;
+  const institution = normalizeRorInstitution(await response.json());
+  if (institution) writeOpenAlexPersistent(cacheKey, institution);
+  return institution;
+}
 
 async function fetchWithTimeout(url, timeoutMs = 8000) {
   let hostname = '';
@@ -496,14 +539,20 @@ export async function searchInstitutions(query) {
     
     const data = await response.json();
     if (data && data.items) {
-      return data.items.slice(0, 5).map(inst => ({
-        id: inst.id,
-        display_name: inst.names?.find(n => n.types?.includes('ror_display'))?.value || inst.name,
-        country_code: inst.locations?.[0]?.geonames_details?.country_name || inst.country?.country_code || '',
-        works_count: 0,
-        cited_by_count: 0,
-        type: inst.types?.[0] || 'education'
-      }));
+      return data.items.slice(0, 5).map(inst => {
+        const normalized = normalizeRorInstitution(inst);
+        if (normalized?._rorId) {
+          writeOpenAlexPersistent(`ror-entity:${normalized._rorId}`, normalized);
+        }
+        return {
+          id: inst.id,
+          display_name: normalized?.display_name || inst.name,
+          country_code: normalized?.geo?.country || normalized?.country_code || '',
+          works_count: 0,
+          cited_by_count: 0,
+          type: normalized?.type || 'education'
+        };
+      });
     }
   } catch {
     // Search institutions failed
@@ -650,6 +699,12 @@ export async function getEntityById(type, id) {
     } catch (err) {
       const staleEntity = readStaleEntity();
       if (staleEntity) return staleEntity;
+      try {
+        const rorFallback = await getRorInstitutionFallback(cleanId);
+        if (rorFallback) return rorFallback;
+      } catch {
+        // Preserve the original OpenAlex error when both providers fail.
+      }
       console.error(`OpenAlex getEntityById by ROR filter failed for ${id}`, err);
       throw err;
     }

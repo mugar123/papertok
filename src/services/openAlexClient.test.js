@@ -22,6 +22,23 @@ test('adds the PaperTok identity once to OpenAlex URLs', () => {
   assert.equal(url.searchParams.getAll('mailto').length, 1);
 });
 
+test('keeps the native fetch receiver bound to the global object', async () => {
+  const originalFetch = globalThis.fetch;
+  let receiver = null;
+  globalThis.fetch = function nativeFetchStub() {
+    receiver = this;
+    return Promise.resolve(new Response('{}', { status: 200 }));
+  };
+
+  try {
+    const client = new OpenAlexClient();
+    await client.json('https://api.openalex.org/institutions/I1');
+    assert.equal(receiver, globalThis);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('parses Retry-After seconds and HTTP dates', () => {
   const now = Date.parse('2026-07-15T20:00:00Z');
   assert.equal(parseRetryAfter('12', now), 12000);

@@ -55,7 +55,10 @@ export function identifyOpenAlexUrl(rawUrl, mailto = DEFAULT_MAILTO) {
 
 export class OpenAlexClient {
   constructor(options = {}) {
-    this.fetchImpl = options.fetchImpl || globalThis.fetch;
+    // Safari/WebKit requires the native fetch receiver to remain the global
+    // object. Calling an unbound window.fetch as an instance method can throw
+    // "Illegal invocation" before any network request is made.
+    this.fetchImpl = options.fetchImpl || globalThis.fetch?.bind(globalThis);
     this.storage = options.storage === undefined ? getDefaultStorage() : options.storage;
     this.now = options.now || Date.now;
     this.sleep = options.sleep || defaultSleep;
