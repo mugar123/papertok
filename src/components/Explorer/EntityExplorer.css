@@ -1559,7 +1559,7 @@
 }
 
 .project-participant-card:disabled {
-  cursor: wait;
+  cursor: default;
   opacity: 0.75;
 }
 

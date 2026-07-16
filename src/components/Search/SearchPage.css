@@ -299,7 +299,7 @@
 
 .search-follow-btn.is-pending {
   opacity: 0.78;
-  cursor: wait;
+  cursor: default;
   pointer-events: none;
 }
 
