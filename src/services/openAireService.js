@@ -107,6 +107,7 @@ export async function getProjectDetails(projectId) {
 
     return {
       id: p.code?.["$"],
+      openaireId: res?.header?.["dri:objIdentifier"]?.["$"] || null,
       title: p.title?.["$"] || "Unknown Project",
       acronym: p.acronym?.["$"] || null,
       funder: funderName,

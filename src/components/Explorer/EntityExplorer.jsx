@@ -175,6 +175,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
            setEntity({
              id: details.id || id,
              code: details.id || id,
+             openaireId: details.openaireId,
              display_name: displayName,
              type: 'project',
              funder: details.funder,
@@ -763,10 +764,10 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                   {entity.funder}{entity.fundingStream ? ` — ${entity.fundingStream}` : ''}
                 </p>
               )}
-              {type === 'project' && entity.code && (
+              {type === 'project' && entity.openaireId && (
                 <a
                   className="project-external-link"
-                  href={`https://explore.openaire.eu/search/project?projectId=${entity.id}`}
+                  href={`https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}`}
                   target="_blank"
                   rel="noreferrer"
                   title="Abrir la ficha del proyecto en OpenAIRE"
