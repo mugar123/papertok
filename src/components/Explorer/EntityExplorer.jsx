@@ -63,6 +63,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
 
   const [activeTab, setActiveTab] = useState('papers');
   const [expandedSummary, setExpandedSummary] = useState(false);
+  const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(false);
   const [resolvingParticipant, setResolvingParticipant] = useState(null);
   const [participantNavigationError, setParticipantNavigationError] = useState('');
   const [recentImpact, setRecentImpact] = useState(null);
@@ -149,6 +150,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       setOrcidInfo(null);
       setIsLoadingOrcid(false);
       setExpandedSummary(false);
+      setIsWikiDescriptionExpanded(false);
       setResolvingParticipant(null);
       setParticipantNavigationError('');
       setRecentImpact(null);
@@ -916,14 +918,16 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
 
           {/* Project Summary - expandable */}
           {type === 'project' && entity?.summary && (
-            <div
-              className="project-summary-box"
+            <motion.div
+              layout
+              className={`project-summary-box ${expandedSummary ? 'is-expanded' : ''}`}
               onClick={() => setExpandedSummary(!expandedSummary)}
               onKeyDown={(event) => handleActivationKey(event, () => setExpandedSummary(!expandedSummary))}
               role="button"
               tabIndex={0}
               aria-expanded={expandedSummary}
               aria-label={expandedSummary ? 'Contraer resumen del proyecto' : 'Ampliar resumen del proyecto'}
+              transition={{ layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] } }}
             >
               <p className={expandedSummary ? 'expanded' : 'collapsed'}>
                 {entity.summary}
@@ -931,7 +935,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
               <span className="project-summary-toggle">
                 {expandedSummary ? <><ChevronUp size={14} /> Mostrar menos</> : <><ChevronDown size={14} /> Leer más</>}
               </span>
-            </div>
+            </motion.div>
           )}
 
           {/* Project subjects */}
@@ -985,12 +989,24 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
           <AnimatePresence>
             {(wikiInfo || entity?.homepage_url) && (
               <motion.div 
-                className="ehc-wiki"
+                layout
+                className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''}`}
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, ease: "easeOut" }}
+                transition={{ duration: 0.8, ease: "easeOut", layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] } }}
               >
-                {wikiInfo && <p>{wikiInfo.extract}</p>}
+                {wikiInfo && <p className={isWikiDescriptionExpanded ? 'expanded' : 'collapsed'}>{wikiInfo.extract}</p>}
+                {wikiInfo?.extract?.length > 260 && (
+                  <button
+                    type="button"
+                    className="ehc-wiki-toggle"
+                    onClick={() => setIsWikiDescriptionExpanded(!isWikiDescriptionExpanded)}
+                    aria-expanded={isWikiDescriptionExpanded}
+                  >
+                    <span>{isWikiDescriptionExpanded ? 'Mostrar menos' : 'Leer más'}</span>
+                    <ChevronDown size={15} aria-hidden="true" />
+                  </button>
+                )}
                 <div className="ehc-links">
                   {wikiInfo?.url && (
                     <a href={wikiInfo.url} target="_blank" rel="noopener noreferrer" className="ehc-link">

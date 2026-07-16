@@ -338,10 +338,45 @@
 
 .ehc-wiki p {
   margin: 0 0 8px 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  max-height: 4.5em;
   overflow: hidden;
+  opacity: 0.88;
+  transition: max-height 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s ease;
+}
+
+.ehc-wiki p.expanded {
+  max-height: 72rem;
+  opacity: 1;
+}
+
+.ehc-wiki-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: -1px 0 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-primary, #7c3aed);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ehc-wiki-toggle svg {
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.ehc-wiki.is-expanded .ehc-wiki-toggle svg {
+  transform: rotate(180deg);
+}
+
+.ehc-wiki-toggle:hover { color: #b799ff; }
+
+.ehc-wiki-toggle:focus-visible {
+  outline: 2px solid var(--accent-primary, #7c3aed);
+  outline-offset: 3px;
 }
 
 .ehc-links {
@@ -1333,7 +1368,7 @@
   padding: 14px 16px 10px;
   margin-top: 4px;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .project-summary-box:hover {
@@ -1345,18 +1380,19 @@
   line-height: 1.65;
   color: var(--text-secondary);
   margin: 0;
-  transition: max-height 0.4s ease, opacity 0.3s;
+  max-height: 4.95em;
+  overflow: hidden;
+  opacity: 0.88;
+  transition: max-height 0.38s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.24s ease;
 }
 
 .project-summary-box p.collapsed {
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  max-height: 4.95em;
 }
 
 .project-summary-box p.expanded {
-  display: block;
+  max-height: 72rem;
+  opacity: 1;
 }
 
 .project-summary-toggle {
@@ -1371,6 +1407,23 @@
   font-weight: 600;
   cursor: pointer;
   padding: 0;
+}
+
+.project-summary-toggle svg {
+  transition: transform 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.project-summary-box.is-expanded .project-summary-toggle svg {
+  transform: rotate(180deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ehc-wiki p,
+  .ehc-wiki-toggle svg,
+  .project-summary-box p,
+  .project-summary-toggle svg {
+    transition: none;
+  }
 }
 
 /* Section titles */
