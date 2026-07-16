@@ -4,11 +4,12 @@
  * runs custom ranking and diversity scoring, and caches stable editions.
  */
 
-import { fetchPapers as fetchArxivPapers } from './arxivService';
-import { PubmedAdapter } from './adapters/PubmedAdapter';
-import { PaperBuilder } from './PaperBuilder';
-import { CATEGORIES, getCategoryLabel, getCategoryArea } from '../data/categories';
-import { openAlexJson } from './openAlexClient';
+import { fetchPapers as fetchArxivPapers } from './arxivService.js';
+import { PubmedAdapter } from './adapters/PubmedAdapter.js';
+import { PaperBuilder } from './PaperBuilder.js';
+import { CATEGORIES, getCategoryLabel, getCategoryArea } from '../data/categories.js';
+import { openAlexJson } from './openAlexClient.js';
+import { normalizeScientificMarkup } from '../utils/latex.js';
 
 // Global cache for stable editions (TTL: 1 hour)
 const REPORT_CACHE = new Map();
@@ -18,42 +19,42 @@ const CACHE_TTL = 60 * 60 * 1000; // 1 hour in ms
  * Format date to YYYY-MM-DD
  */
 function formatDate(date) {
-  return date.toISOString().split('T')[0];
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 /**
  * Helper to get date thresholds based on timeframe
  */
-function getDateThresholds(timeframe) {
+export function getDateThresholds(timeframe, currentDate = new Date()) {
   if (typeof timeframe === 'object' && timeframe.type === 'custom') {
-    const fromDate = new Date(timeframe.from);
-    const toDate = new Date(timeframe.to);
+    const fromDate = new Date(`${timeframe.from}T00:00:00`);
+    const toDate = new Date(`${timeframe.to}T00:00:00`);
+    const difference = Math.floor((toDate - fromDate) / (1000 * 60 * 60 * 24));
     return {
       fromStr: timeframe.from,
       toStr: timeframe.to,
-      days: Math.ceil((toDate - fromDate) / (1000 * 60 * 60 * 24)) || 1
+      days: Number.isFinite(difference) ? Math.max(1, difference + 1) : 1
     };
   }
 
-  const today = new Date();
-  let fromDate = new Date();
-  
-  if (timeframe === '24h') {
-    fromDate.setDate(today.getDate() - 1);
-  } else if (timeframe === '7d') {
-    fromDate.setDate(today.getDate() - 7);
-  } else if (timeframe === '30d') {
-    fromDate.setDate(today.getDate() - 30);
-  } else if (timeframe === '1y') {
-    fromDate.setDate(today.getDate() - 365);
-  } else if (timeframe === '10y') {
-    fromDate.setDate(today.getDate() - 3650);
-  }
+  const today = currentDate instanceof Date ? new Date(currentDate) : new Date(currentDate);
+  const inclusiveDays = {
+    '24h': 2, // Provider dates have day precision, so this edition is today + yesterday.
+    '7d': 7,
+    '30d': 30,
+    '1y': 365,
+    '10y': 3650,
+  }[timeframe] || 7;
+  const fromDate = new Date(today);
+  fromDate.setDate(today.getDate() - (inclusiveDays - 1));
   
   return {
     fromStr: formatDate(fromDate),
     toStr: formatDate(today),
-    days: Math.ceil((today - fromDate) / (1000 * 60 * 60 * 24)) || 1
+    days: inclusiveDays
   };
 }
 
@@ -91,7 +92,7 @@ function paperMatchesCategory(paper, categoryKey) {
   return paperCats.some(cat => labelsToMatch.includes(cat));
 }
 
-function formatOpenAlexWork(work) {
+export function formatOpenAlexWork(work) {
   let summary = 'Resumen no disponible.';
   if (work.abstract_inverted_index) {
     const words = [];
@@ -118,8 +119,8 @@ function formatOpenAlexWork(work) {
   return PaperBuilder.create({
     id: `openalex:${openAlexId}`,
     sources: { primary: 'openalex', enrichedBy: [] },
-    title: work.title || 'No Title',
-    abstract: summary || 'No summary available.',
+    title: normalizeScientificMarkup(work.title || 'No Title'),
+    abstract: normalizeScientificMarkup(summary || 'No summary available.'),
     authors,
     year: work.publication_date ? new Date(work.publication_date).getFullYear() : new Date().getFullYear(),
     publicationType: work.primary_location?.source?.type || 'journal',
@@ -134,11 +135,12 @@ function formatOpenAlexWork(work) {
     concepts: work.concepts || [],
     categories: concepts,
     keywords: concepts,
-    countryCodes: Array.from(countrySet)
+    countryCodes: Array.from(countrySet),
+    published: work.publication_date || ''
   });
 }
 
-async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filters = {}) {
+async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filters = {}, options = {}) {
   const AREA_TO_OPENALEX = {
     med: 'C14213010',
     bio: 'C86803240',
@@ -180,18 +182,25 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filt
     try {
       const data = await openAlexJson(url, {
         timeoutMs: 10000,
-        cacheTtlMs: 60 * 60 * 1000,
+        cacheTtlMs: options.forceRefresh ? 0 : 60 * 60 * 1000,
         staleIfError: true,
       });
-      return data.results || [];
+      return { works: data.results || [], ok: true };
     } catch (e) {
       console.warn(`OpenAlex concept query failed: ${conceptFilter}`, e);
     }
-    return [];
+    return { works: [], ok: false };
   });
   
   const results = await Promise.allSettled(promises);
-  const rawWorks = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+  const queryResults = results.map(result => result.status === 'fulfilled'
+    ? result.value
+    : { works: [], ok: false });
+  const rawWorks = queryResults.flatMap(result => result.works);
+  const successfulQueries = queryResults.filter(result => result.ok).length;
+  const status = successfulQueries === queryResults.length
+    ? 'active'
+    : successfulQueries > 0 ? 'partial' : 'unavailable';
   
   // Deduplicate by work ID and map to standard
   const seen = new Set();
@@ -203,13 +212,13 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filt
     }
   });
   
-  return papers;
+  return { papers, status };
 }
 
 /**
  * Fetch recent preprints from arXiv
  */
-async function fetchArxivCandidates(timeframe, page = 1, filters = {}) {
+async function fetchArxivCandidates(timeframe, page = 1, filters = {}, options = {}) {
   try {
     const AREA_TO_ARXIV = {
       cs: 'cs.AI',
@@ -225,7 +234,7 @@ async function fetchArxivCandidates(timeframe, page = 1, filters = {}) {
     let categories = [];
     if (filters.categories && filters.categories.length > 0) {
       categories = filters.categories.map(c => AREA_TO_ARXIV[c]).filter(Boolean);
-      if (categories.length === 0) return []; // If selected categories don't map to arXiv, return empty
+      if (categories.length === 0) return { papers: [], status: 'not-applicable' };
     } else {
       categories = ['cs.AI', 'quant-ph', 'q-bio.NC', 'stat.ML', 'math.PR', 'eess.SP'];
     }
@@ -240,11 +249,18 @@ async function fetchArxivCandidates(timeframe, page = 1, filters = {}) {
     // only returns the newest records and does not guarantee the requested window.
     const maxResults = (timeframe === '24h' || timeframe === '7d') ? 80 : 200;
     const offset = (page - 1) * maxResults;
-    const papers = await fetchArxivPapers(query, offset, maxResults, 'submittedDate');
-    return papers || [];
+    const papers = await fetchArxivPapers(
+      query,
+      offset,
+      maxResults,
+      'submittedDate',
+      'submittedDate',
+      { forceRefresh: options.forceRefresh },
+    );
+    return { papers: papers || [], status: 'active' };
   } catch (err) {
     console.warn("Failed to fetch arXiv candidates for report", err);
-    return [];
+    return { papers: [], status: 'unavailable' };
   }
 }
 
@@ -255,7 +271,7 @@ async function fetchPubmedCandidates(timeframe, page = 1, filters = {}) {
   try {
     if (filters.categories && filters.categories.length > 0) {
       const isMedOrBio = filters.categories.some(c => ['med', 'bio'].includes(c));
-      if (!isMedOrBio) return []; // PubMed only makes sense for Medicine or Biology
+      if (!isMedOrBio) return { papers: [], status: 'not-applicable' };
     }
 
     const adapter = new PubmedAdapter();
@@ -265,10 +281,10 @@ async function fetchPubmedCandidates(timeframe, page = 1, filters = {}) {
     const dateRange = `("${fromStr}"[Date - Publication] : "${toStr}"[Date - Publication])`;
     const query = `(medicine[journal] OR biology[journal] OR science[journal] OR Nature[journal]) AND ${dateRange}`;
     const response = await adapter.search(query, page);
-    return response.papers || [];
+    return { papers: response.papers || [], status: 'active' };
   } catch (err) {
     console.warn("Failed to fetch PubMed candidates for report", err);
-    return [];
+    return { papers: [], status: 'unavailable' };
   }
 }
 
@@ -285,12 +301,14 @@ async function fetchPubmedCandidates(timeframe, page = 1, filters = {}) {
  *   4. Category Diversity penalty            — prevents monoculture
  *   5. Source Diversity penalty              — prevents one journal flooding results
  */
-function scorePaper(paper, timeframe, seenCategories, daysThreshold, seenSources) {
+export function scorePaper(paper, timeframe, seenCategories, daysThreshold, seenSources, currentDate = new Date()) {
   let score = 0;
   
-  const now = new Date();
-  const pubDate = new Date(paper.publishedDate || paper.published || now);
-  const diffDays = Math.max(1, Math.ceil(Math.abs(now - pubDate) / (1000 * 60 * 60 * 24)));
+  const now = currentDate instanceof Date ? currentDate : new Date(currentDate);
+  const rawPublicationDate = paper.publishedDate || paper.published;
+  const publicationTimestamp = rawPublicationDate ? Date.parse(rawPublicationDate) : Number.NaN;
+  const pubDate = Number.isFinite(publicationTimestamp) ? new Date(publicationTimestamp) : now;
+  const diffDays = Math.max(1, Math.ceil(Math.max(0, now - pubDate) / (1000 * 60 * 60 * 24)));
   
   // ── 1. Citation Impact (dominant factor, NO hard cap) ──
   // Use log scale so differences always matter: 293 cites >> 8 cites >> 0 cites.
@@ -391,11 +409,47 @@ function scorePaper(paper, timeframe, seenCategories, daysThreshold, seenSources
   return score;
 }
 
+export function extractFeaturedConcepts(papers, limit = 5) {
+  const conceptScores = new Map();
+
+  (papers || []).forEach((paper, paperIndex) => {
+    const concepts = Array.isArray(paper.concepts) && paper.concepts.length > 0
+      ? paper.concepts
+      : (paper.categories || []);
+    const seenInPaper = new Set();
+
+    concepts
+      .filter(concept => typeof concept !== 'object' || concept?.level !== 0)
+      .slice(0, 6)
+      .forEach((concept, conceptIndex) => {
+        const rawName = typeof concept === 'string' ? concept : concept?.display_name;
+        const name = rawName?.trim();
+        if (!name || name.length <= 3) return;
+
+        const label = getCategoryLabel(name);
+        const normalizedLabel = label.toLocaleLowerCase('es');
+        if (seenInPaper.has(normalizedLabel)) return;
+        seenInPaper.add(normalizedLabel);
+
+        const relevance = typeof concept?.score === 'number' ? Math.max(0.1, concept.score) : 1;
+        const positionWeight = 1 / (1 + conceptIndex * 0.2);
+        const selectionWeight = 1 / (1 + paperIndex * 0.05);
+        conceptScores.set(label, (conceptScores.get(label) || 0) + relevance * positionWeight * selectionWeight);
+      });
+  });
+
+  return Array.from(conceptScores.entries())
+    .sort(([labelA, scoreA], [labelB, scoreB]) => scoreB - scoreA || labelA.localeCompare(labelB, 'es'))
+    .map(([label]) => label)
+    .slice(0, limit);
+}
+
 /**
  * Core orchestrator function to build, deduplicate, score, and rank candidates
  */
-export async function getScientificReport(timeframe = '7d', page = 1, filters = {}) {
+export async function getScientificReport(timeframe = '7d', page = 1, filters = {}, options = {}) {
   const normalizedPage = Number.isInteger(page) && page > 0 ? page : 1;
+  const forceRefresh = Boolean(options.forceRefresh);
   let tf = '7d';
   let cacheKey;
   
@@ -419,7 +473,7 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
   
   // Check global cache
   const cached = REPORT_CACHE.get(cacheKey);
-  if (cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
+  if (!forceRefresh && cached && (Date.now() - cached.timestamp < CACHE_TTL)) {
     console.log(`[ScientificReport] Returning cached stable edition for: ${cacheKey}`);
     return cached.data;
   }
@@ -432,17 +486,27 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
   
   // 1. Fetch Candidates from all sources in parallel
   // When country filter is active, only use OpenAlex (only source with country data)
-  const [arxivCandidates, openAlexCandidates, pubmedCandidates] = await Promise.all([
-    hasCountryFilter ? Promise.resolve([]) : fetchArxivCandidates(tf, normalizedPage, filters),
-    fetchOpenAlexCandidates(fromStr, toStr, tf, normalizedPage, filters),
-    hasCountryFilter ? Promise.resolve([]) : fetchPubmedCandidates(tf, normalizedPage, filters)
+  const excludedSource = { papers: [], status: 'excluded' };
+  const [arxivResult, openAlexResult, pubmedResult] = await Promise.all([
+    hasCountryFilter ? Promise.resolve(excludedSource) : fetchArxivCandidates(tf, normalizedPage, filters, { forceRefresh }),
+    fetchOpenAlexCandidates(fromStr, toStr, tf, normalizedPage, filters, { forceRefresh }),
+    hasCountryFilter ? Promise.resolve(excludedSource) : fetchPubmedCandidates(tf, normalizedPage, filters)
   ]);
+
+  const coverage = {
+    countryLimited: hasCountryFilter,
+    sources: [
+      { id: 'openalex', label: 'OpenAlex', status: openAlexResult.status, candidates: openAlexResult.papers.length },
+      { id: 'arxiv', label: 'arXiv', status: arxivResult.status, candidates: arxivResult.papers.length },
+      { id: 'pubmed', label: 'PubMed', status: pubmedResult.status, candidates: pubmedResult.papers.length },
+    ],
+  };
   
   // 2. Combine and Deduplicate
   let allCandidates = PaperBuilder.deduplicate([
-    ...arxivCandidates,
-    ...openAlexCandidates,
-    ...pubmedCandidates
+    ...arxivResult.papers,
+    ...openAlexResult.papers,
+    ...pubmedResult.papers
   ]);
   
   // Apply strict client-side category filtering to prevent false positives from OpenAlex API queries
@@ -453,7 +517,9 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
   }
   
   if (allCandidates.length === 0) {
-    return { mainDiscovery: null, highlights: [], trendingConcepts: [] };
+    const emptyReport = { mainDiscovery: null, highlights: [], featuredConcepts: [], coverage };
+    REPORT_CACHE.set(cacheKey, { timestamp: Date.now(), data: emptyReport });
+    return emptyReport;
   }
   
   // 3. Dynamic Selection Loop with Diversity Penalties
@@ -494,33 +560,11 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
   const mainDiscovery = selected[0] || null;
   const highlights = selected.slice(1, 11);
   
-  // Extract Trending Concepts for all timeframes
-  const conceptCounts = new Map();
-  // Count concepts across top candidates
-  allCandidates.slice(0, 80).forEach(p => {
-    if (p.concepts && Array.isArray(p.concepts)) {
-      p.concepts.forEach(c => {
-        if (c && c.length > 3) {
-          conceptCounts.set(c, (conceptCounts.get(c) || 0) + 1);
-        }
-      });
-    }
-  });
-  // Fallback to categories if no concepts
-  if (conceptCounts.size < 3) {
-    allCandidates.slice(0, 80).forEach(p => {
-      const cat = (p.categories && p.categories[0]) || p.primaryCategory;
-      if (cat) conceptCounts.set(cat, (conceptCounts.get(cat) || 0) + 1);
-    });
-  }
-  // Convert codes like "cs.AI" to labels, then remove aliases that resolve to the same label.
-  const trendingConcepts = Array.from(conceptCounts.entries())
-    .sort((a, b) => b[1] - a[1])
-    .map(entry => getCategoryLabel(entry[0]))
-    .filter((concept, index, concepts) => concept && concepts.indexOf(concept) === index)
-    .slice(0, 5);
-  
-  const reportData = { mainDiscovery, highlights, trendingConcepts };
+  // These describe the final editorial selection. A real trend requires a
+  // comparison baseline, so the UI deliberately labels them as featured topics.
+  const featuredConcepts = extractFeaturedConcepts(selected);
+
+  const reportData = { mainDiscovery, highlights, featuredConcepts, coverage };
   
   // Update cache
   REPORT_CACHE.set(cacheKey, { timestamp: Date.now(), data: reportData });

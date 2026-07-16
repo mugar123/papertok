@@ -4,7 +4,7 @@ import katex from 'katex';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ScientificText from '../components/ScientificText.js';
-import { normalizeLatexText, splitLatexText } from './latex.js';
+import { normalizeLatexText, normalizeScientificMarkup, splitLatexText } from './latex.js';
 
 const PHOTINO_ABSTRACT = 'A lower bound for the photino mass ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}}$ as a function of the spin-0 fermion superpartner mass ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}$ is derived as an extension of the calculation of Lee and Weinberg. The Majorana nature of the photino induces a $p$-wave threshold for annihilation $\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}\\ensuremath{\\rightarrow}f\\overline{f}$ into light fermions, and leads to a rather unexpected form for the bound: for $25 \\mathrm{GeV}\\ensuremath{\\lesssim}{m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}\\ensuremath{\\lesssim}45 \\mathrm{GeV}$, ${({m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}})}_{min}\\ensuremath{\\simeq}{m}_{\\ensuremath{\\tau}}=1.8$ GeV; for ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}&gt;45$ GeV, ${({m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}})}_{min}$ increases approximately linearly with ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}$ to a value of 20 GeV when ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}=100$ GeV.';
 
@@ -27,6 +27,14 @@ test('normalizes legacy OpenAlex math macros into KaTeX-compatible LaTeX', () =>
 
 test('preserves ordinary text while escaping LaTeX comment characters', () => {
   assert.equal(normalizeLatexText('Accuracy improved by 5%\nNext line.'), 'Accuracy improved by 5\\% Next line.');
+});
+
+test('removes embedded HTML and MathML tags while preserving scientific content', () => {
+  const raw = '<i>Planck</i> output is <mml:math><mml:mrow><mml:mn>300</mml:mn><mml:mo>−</mml:mo><mml:mn>500</mml:mn><mml:mtext>MWe</mml:mtext></mml:mrow></mml:math> and x < 5.';
+  const normalized = normalizeScientificMarkup(raw);
+
+  assert.equal(normalized, 'Planck output is 300−500MWe and x < 5.');
+  assert.doesNotMatch(normalized, /<\/?(?:i|mml:)/);
 });
 
 test('renders every formula in the complete OpenAlex photino abstract', () => {

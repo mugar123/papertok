@@ -4,7 +4,41 @@ const HTML_ENTITIES = {
   '&lt;': '<',
   '&quot;': '"',
   '&#39;': "'",
+  '&apos;': "'",
+  '&nbsp;': ' ',
+  '&minus;': '−',
+  '&le;': '≤',
+  '&ge;': '≥',
+  '&times;': '×',
 };
+
+const SCIENTIFIC_MARKUP_TAG = /<\/?(?:[a-z][\w.-]*:)?[a-z][\w.-]*(?:\s[^<>]*?)?\s*\/?>/gi;
+
+function decodeHtmlEntity(entity) {
+  const normalizedEntity = entity.toLowerCase();
+  if (HTML_ENTITIES[normalizedEntity]) return HTML_ENTITIES[normalizedEntity];
+  const decimalMatch = entity.match(/^&#(\d+);$/);
+  const hexMatch = entity.match(/^&#x([\da-f]+);$/i);
+  const codePoint = decimalMatch ? Number(decimalMatch[1]) : hexMatch ? Number.parseInt(hexMatch[1], 16) : null;
+  if (!Number.isInteger(codePoint)) return entity;
+
+  try {
+    return String.fromCodePoint(codePoint);
+  } catch {
+    return entity;
+  }
+}
+
+export function normalizeScientificMarkup(text) {
+  if (!text) return '';
+
+  return String(text)
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(SCIENTIFIC_MARKUP_TAG, '')
+    .replace(/&(?:amp|gt|lt|quot|apos|nbsp|minus|le|ge|times|#39|#\d+|#x[\da-f]+);/gi, decodeHtmlEntity)
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 export const LATEX_DELIMITERS = [
   { left: '$$', right: '$$', display: true },
@@ -83,9 +117,7 @@ function unwrapEnsureMath(match, expression, offset, source) {
 export function normalizeLatexText(text) {
   if (!text) return '';
 
-  return text
-    .replace(/\n+/g, ' ')
-    .replace(/&(?:amp|gt|lt|quot|#39);/g, entity => HTML_ENTITIES[entity] || entity)
+  return normalizeScientificMarkup(text)
     .replace(/\\ensuremath\{((?:\\[a-zA-Z]+|[^{}])*)\}/g, unwrapEnsureMath)
     .replace(
       /\\stackrel\{\\ifmmode\s*\\tilde\{\}\s*\\else\s*\\~\{\}\s*\\fi\{\}\}\{((?:\\[a-zA-Z]+|[^{}])+)\}/g,

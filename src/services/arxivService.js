@@ -273,7 +273,7 @@ async function fetchArxivData(url) {
 /**
  * Fetch papers from arXiv by categories or raw query.
  */
-export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20, mode = 'recent', sortByOverride = 'submittedDate') {
+export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20, mode = 'recent', sortByOverride = 'submittedDate', options = {}) {
   if (!categoriesOrQuery || categoriesOrQuery.length === 0) return [];
 
   let searchQuery = categoriesOrQuery;
@@ -306,7 +306,7 @@ export async function fetchPapers(categoriesOrQuery, start = 0, maxResults = 20,
 
   const cacheKey = url;
   const cached = cache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
+  if (!options.forceRefresh && cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.data;
 
   try {
     const fetchedPapers = await fetchArxivData(url);
