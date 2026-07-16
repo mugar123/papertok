@@ -764,16 +764,16 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                 </p>
               )}
               {type === 'project' && entity.code && (
-                <p className="ehc-meta" style={{ marginTop: '4px' }}>
-                  <a 
-                    href={`https://explore.openaire.eu/search/project?projectId=${entity.id}`} 
-                    target="_blank" 
-                    rel="noreferrer"
-                    style={{ color: '#1da1f2', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '4px' }}
-                  >
-                    Ver web del proyecto ↗
-                  </a>
-                </p>
+                <a
+                  className="project-external-link"
+                  href={`https://explore.openaire.eu/search/project?projectId=${entity.id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="Abrir la ficha del proyecto en OpenAIRE"
+                >
+                  <span className="project-external-link-label"><Globe size={15} /> Ver web del proyecto</span>
+                  <span className="project-external-link-source">OpenAIRE <ExternalLink size={13} /></span>
+                </a>
               )}
               {topConcepts.length > 0 && (
                 <div className="ehc-tags">
