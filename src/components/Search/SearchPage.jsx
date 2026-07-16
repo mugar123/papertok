@@ -10,6 +10,7 @@ import { useFeed } from '../../context/FeedContext';
 import { motion } from 'framer-motion';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
+import ScientificText from '../ScientificText';
 
 import './SearchPage.css';
 
@@ -393,7 +394,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
                     <div key={paper.id} className="search-item paper-item" onClick={() => setSelectedPaper(paper)}>
                       <div className="search-item-icon"><FileText size={22} /></div>
                       <div className="search-item-info">
-                        <h4>{paper.title}</h4>
+                        <h4><ScientificText>{paper.title}</ScientificText></h4>
                         <p className="search-item-authors">{authors.slice(0, 3).join(', ')}{authors.length > 3 ? ` +${authors.length - 3}` : ''}</p>
                         <span className="search-item-meta">{formatPaperDate(paper)} • {paper.primaryCategory || paper.journal || 'Paper'}</span>
                       </div>
