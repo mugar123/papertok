@@ -404,7 +404,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
             
             try {
               if (!resolvedId.startsWith('stub-')) {
-                const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
+                const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity.display_name);
                 papersFromOA = res.papers || [];
                 total = res.total;
               } else {
@@ -448,7 +448,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
               : []));
             total = fetchedPapers.length < 30 ? (page - 1) * 30 + fetchedPapers.length : page * 30 + 1;
          } else {
-            const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
+            const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity.display_name);
             fetchedPapers.push(...(res.papers || []));
             total = res.total;
          }
@@ -807,11 +807,6 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                       <a href={entity.ror} target="_blank" rel="noopener noreferrer" title="Ver registro oficial en ROR">
                         <BadgeCheck size={13} /> ROR verificado
                       </a>
-                      {entity.domains?.[0] && entity.homepage_url && (
-                        <a href={entity.homepage_url} target="_blank" rel="noopener noreferrer" title="Abrir sitio oficial">
-                          <Globe size={13} /> {entity.domains[0]}
-                        </a>
-                      )}
                       {entity.established && <span>Desde {entity.established}</span>}
                     </div>
                   )}

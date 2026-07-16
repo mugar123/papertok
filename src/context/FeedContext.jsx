@@ -61,7 +61,7 @@ async function fetchFollowedEntityCandidates(followedEntities, queryMode) {
         candidates = await getAuthorPapers(follow.displayName, 3);
       }
     } else if (follow.type === 'institution') {
-      candidates = (await getWorksByEntity('institution', follow.canonicalId, 'publication_date:desc', 1)).papers;
+      candidates = (await getWorksByEntity('institution', follow.canonicalId, 'publication_date:desc', 1, '', {}, follow.displayName)).papers;
     } else if (follow.type === 'project') {
       const projectResult = await getPapersByProject(follow.canonicalId, 1);
       const [arxivPapers, doiPapers] = await Promise.all([

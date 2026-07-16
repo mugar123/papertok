@@ -72,10 +72,11 @@ test('maps direct version and software relations with safe links', () => {
   const resources = mapDataCiteDirectRelations({ attributes: { relatedIdentifiers: [
     { relatedIdentifier: '10.5281/zenodo.2', relatedIdentifierType: 'DOI', relationType: 'HasVersion' },
     { relatedIdentifier: 'https://github.com/example/tool', relatedIdentifierType: 'URL', relationType: 'IsDocumentedBy', resourceTypeGeneral: 'Software' },
+    { relatedIdentifier: 'https://github.com/example/compiled-tool', relatedIdentifierType: 'URL', relationType: 'IsCompiledBy', resourceTypeGeneral: 'Software' },
     { relatedIdentifier: 'javascript:alert(1)', relatedIdentifierType: 'URL', relationType: 'IsDocumentedBy', resourceTypeGeneral: 'Software' },
   ] } }, '10.5281/zenodo.1');
 
-  assert.equal(resources.length, 2);
-  assert.deepEqual(resources.map(resource => resource.kind), ['version', 'software']);
+  assert.equal(resources.length, 3);
+  assert.deepEqual(resources.map(resource => resource.kind), ['version', 'software', 'software']);
   assert.equal(resources[0].url, 'https://doi.org/10.5281/zenodo.2');
 });

@@ -16,6 +16,7 @@ import {
   resolveRorInstitution,
   searchRorInstitutions,
 } from './rorService.js';
+import { getInstitutionWorksFromCrossref } from './crossrefInstitutionService.js';
 import {
   isOpenAlexRateLimitError,
   openAlexFetch,
@@ -33,6 +34,7 @@ const IMPACT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const IMPACT_INSUFFICIENT_TTL_MS = 6 * 60 * 60 * 1000;
 const IMPACT_STALE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const ENRICHMENT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const ENTITY_WORKS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
 async function fetchWithTimeout(url, timeoutMs = 8000) {
   let hostname = '';
@@ -860,7 +862,7 @@ const OA_CONCEPT_MAP = {
  * sortBy: 'cited_by_count:desc' or 'publication_date:desc'
  * filters: { category: string, peerReviewed: boolean, dateRange: string }
  */
-export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc', page = 1, searchQuery = '', filters = {}) {
+export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc', page = 1, searchQuery = '', filters = {}, entityName = '') {
   if (!id) return { papers: [], total: 0 };
   
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
@@ -905,18 +907,35 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
   if (searchQuery) {
      url += `&search=${encodeURIComponent(searchQuery)}`;
   }
+  const worksCacheKey = `entity-works:${type}:${cleanId}:${sortBy}:${page}:${searchQuery}:${JSON.stringify(filters)}`;
   
   try {
-    const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) throw new Error(`OpenAlex API error: ${response.status}`);
-    
-    const data = await response.json();
+    const data = await openAlexJson(url, {
+      timeoutMs: 10000,
+      cacheTtlMs: 5 * 60 * 1000,
+      persistentKey: worksCacheKey,
+      persistentTtlMs: ENTITY_WORKS_CACHE_TTL_MS,
+      staleIfError: true,
+    });
     if (data && data.results) {
        const papers = data.results.map(formatOpenAlexWorkAsPaper).filter(Boolean);
        return { papers, total: data.meta ? data.meta.count : 0 };
     }
   } catch (err) {
     console.error(`OpenAlex getWorksByEntity failed for ${type} ${id}`, err);
+    if (type === 'institution') {
+      try {
+        return await getInstitutionWorksFromCrossref(
+          entityName,
+          page,
+          searchQuery,
+          filters,
+          crossrefUrl => fetchWithTimeout(crossrefUrl, 10000),
+        );
+      } catch (fallbackError) {
+        console.error(`Crossref institution fallback failed for ${entityName || id}`, fallbackError);
+      }
+    }
     throw err;
   }
   return { papers: [], total: 0 };

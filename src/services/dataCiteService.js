@@ -20,7 +20,7 @@ const VERSION_RELATIONS = new Set([
 const DIRECT_RELATIONS = new Set([
   ...VERSION_RELATIONS,
   'HasPart', 'IsPartOf', 'IsSupplementTo', 'IsSupplementedBy', 'IsDocumentedBy',
-  'Documents', 'IsSourceOf', 'IsDerivedFrom', 'IsMetadataFor', 'HasMetadata',
+  'Documents', 'IsCompiledBy', 'Compiles', 'IsSourceOf', 'IsDerivedFrom', 'IsMetadataFor', 'HasMetadata',
 ]);
 
 const TITLE_STOP_WORDS = new Set([
@@ -52,7 +52,11 @@ function getResourceUrl(identifier, identifierType) {
 }
 
 function getTitle(attributes, kind) {
-  return attributes?.titles?.find(title => title?.title)?.title
+  const title = attributes?.titles?.find(candidate => candidate?.title)?.title;
+  return String(title || '')
+    .replace(/<[^>]*>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
     || ({ dataset: 'Dataset asociado', software: 'Software asociado', material: 'Material asociado', version: 'Versión relacionada' }[kind]);
 }
 
@@ -196,7 +200,7 @@ export async function getRelatedResearchResources(rawDoi, { title = '' } = {}) {
   if (cached !== undefined) return cached;
 
   const reverseUrl = new URL(API_BASE);
-  reverseUrl.searchParams.set('query', `relatedIdentifiers.relatedIdentifier:"${doi}" AND relatedIdentifiers.relationType:(HasVersion OR IsVersionOf OR IsNewVersionOf OR IsPreviousVersionOf OR IsIdenticalTo OR HasPart OR IsPartOf OR IsSupplementTo OR IsSupplementedBy OR IsDocumentedBy OR Documents OR IsSourceOf OR IsDerivedFrom OR IsMetadataFor OR HasMetadata) AND types.resourceTypeGeneral:(Dataset OR Software OR Workflow OR ComputationalNotebook OR Collection OR PhysicalObject OR Image OR Audiovisual OR InteractiveResource OR Model OR Instrument)`);
+  reverseUrl.searchParams.set('query', `relatedIdentifiers.relatedIdentifier:"${doi}" AND relatedIdentifiers.relationType:(HasVersion OR IsVersionOf OR IsNewVersionOf OR IsPreviousVersionOf OR IsIdenticalTo OR HasPart OR IsPartOf OR IsSupplementTo OR IsSupplementedBy OR IsDocumentedBy OR Documents OR IsCompiledBy OR Compiles OR IsSourceOf OR IsDerivedFrom OR IsMetadataFor OR HasMetadata) AND types.resourceTypeGeneral:(Dataset OR Software OR Workflow OR ComputationalNotebook OR Collection OR PhysicalObject OR Image OR Audiovisual OR InteractiveResource OR Model OR Instrument)`);
   reverseUrl.searchParams.set('page[size]', '20');
 
   const [directResult, reverseResult] = await Promise.allSettled([
