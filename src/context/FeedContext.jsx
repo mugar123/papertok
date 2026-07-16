@@ -3,12 +3,14 @@ import { createContext, useContext, useState, useCallback, useEffect, useRef, us
 import { IS_DEMO, db } from '../services/firebase';
 import { collection, getDocs, doc, setDoc, updateDoc, deleteField, increment } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
+import { useFollowing } from './FollowingContext';
 import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
 import { getDeviceInfo } from '../utils/device';
 import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data/categories';
 import { PubmedAdapter } from '../services/adapters/PubmedAdapter';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter';
-import { getArxivIdsForOpenAlexWorks, enrichPapersBatch } from '../services/openAlexService';
+import { getArxivIdsForOpenAlexWorks, enrichPapersBatch, fetchPapersByDois, getWorksByEntity } from '../services/openAlexService';
+import { getPapersByProject } from '../services/openAireService';
 import { getPaperRecommendations } from '../services/semanticScholarService';
 import { PaperBuilder } from '../services/PaperBuilder';
 import {
@@ -38,8 +40,51 @@ function demoSet(key, value) {
   localStorage.setItem(`papertok_${key}`, JSON.stringify(value));
 }
 
+async function fetchFollowedEntityCandidates(followedEntities, queryMode) {
+  const selected = [...(followedEntities || [])]
+    .sort(() => 0.5 - Math.random())
+    .slice(0, 4);
+
+  const results = await Promise.allSettled(selected.map(async (follow) => {
+    let candidates = [];
+    if (follow.type === 'topic') {
+      const topicCategories = follow.metadata?.categoryIds?.length
+        ? follow.metadata.categoryIds
+        : CATEGORIES[follow.canonicalId]
+          ? Object.keys(CATEGORIES[follow.canonicalId].subcategories || {})
+          : [follow.canonicalId];
+      candidates = await fetchPapers([...topicCategories].sort(() => 0.5 - Math.random()).slice(0, 4), Math.floor(Math.random() * 20), 3, queryMode);
+    } else if (follow.type === 'author') {
+      if (/^A\d+$/i.test(follow.canonicalId)) {
+        candidates = (await getWorksByEntity('author', follow.canonicalId, 'publication_date:desc', 1)).papers;
+      } else {
+        candidates = await getAuthorPapers(follow.displayName, 3);
+      }
+    } else if (follow.type === 'institution') {
+      candidates = (await getWorksByEntity('institution', follow.canonicalId, 'publication_date:desc', 1)).papers;
+    } else if (follow.type === 'project') {
+      const projectResult = await getPapersByProject(follow.canonicalId, 1);
+      const [arxivPapers, doiPapers] = await Promise.all([
+        fetchPapersByIds(projectResult.arxivIds || []).catch(() => []),
+        fetchPapersByDois(projectResult.dois || []).catch(() => []),
+      ]);
+      candidates = [...arxivPapers, ...doiPapers];
+    }
+
+    return candidates.slice(0, 3).map((paper) => ({
+      ...paper,
+      _type: 'followed',
+      _followedEntityMatches: [...new Set([...(paper._followedEntityMatches || []), follow.canonicalId])],
+    }));
+  }));
+
+  return PaperBuilder.deduplicate(results.flatMap(result => result.status === 'fulfilled' ? result.value : []))
+    .slice(0, 6);
+}
+
 export function FeedProvider({ children }) {
   const { user, userPreferences, followedAuthors } = useAuth();
+  const { followedEntities } = useFollowing();
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -87,7 +132,7 @@ export function FeedProvider({ children }) {
   const calculateAndAttachScore = useCallback((paper, recentPropsCount = {}) => {
     return applyRecommendationScore(paper, {
       userPreferences,
-      followedAuthors,
+      followedEntities,
       categoryAffinities: categoryAffinities.current,
       categoryCooldowns: categoryCooldowns.current,
       conceptAffinities: conceptAffinities.current,
@@ -95,7 +140,7 @@ export function FeedProvider({ children }) {
       weights: recommendationWeights.current,
       recentPropsCount
     });
-  }, [userPreferences, followedAuthors]);
+  }, [userPreferences, followedEntities]);
 
   const reRankFeed = useCallback((sourcePaperId = null) => {
     setPapers(prevPapers => {
@@ -424,7 +469,14 @@ export function FeedProvider({ children }) {
         const allCategories = getAllLeafCategories();
         
         // ─── STEP 1: Rank user's selected categories by learned affinity ───
-        const rankedPreferences = [...userPreferences].sort((a, b) => {
+        const followedTopicIds = followedEntities
+          .filter(entity => entity.type === 'topic')
+          .flatMap(entity => entity.metadata?.categoryIds?.length
+            ? entity.metadata.categoryIds
+            : CATEGORIES[entity.canonicalId]
+              ? Object.keys(CATEGORIES[entity.canonicalId].subcategories || {})
+              : [entity.canonicalId]);
+        const rankedPreferences = [...new Set([...userPreferences, ...followedTopicIds])].sort((a, b) => {
           const affA = categoryAffinities.current[a] || 0;
           const affB = categoryAffinities.current[b] || 0;
           return affB - affA;
@@ -508,13 +560,10 @@ export function FeedProvider({ children }) {
           graphPapers.forEach(p => { p._type = 'graph'; p._isGraphCandidate = true; });
         }
 
-        // ─── STEP 5: Followed Authors ───
-        let authorPapers = [];
-        if (followedAuthors && followedAuthors.length > 0) {
-          const randAuthor = followedAuthors[Math.floor(Math.random() * followedAuthors.length)];
-          authorPapers = await getAuthorPapers(randAuthor, 2).catch(() => []);
-          authorPapers.forEach(p => { p._type = 'author'; });
-        }
+        // ─── STEP 5: Followed topics, authors, institutions and projects ───
+        const followedPapers = followedEntities.length > 0
+          ? await fetchFollowedEntityCandidates(followedEntities, queryMode).catch(() => [])
+          : [];
 
         // ─── STEP 6: ADAPTIVE EXPLORATION (always baseline, more if bored) ───
         let explorationPapers = [];
@@ -667,7 +716,7 @@ export function FeedProvider({ children }) {
         }
 
         // ─── STEP 7: Merge, deduplicate, score, and shuffle ───
-        const allFetched = [...mainPapers, ...graphPapers, ...authorPapers, ...explorationPapers];
+        const allFetched = [...mainPapers, ...graphPapers, ...followedPapers, ...explorationPapers];
         
         const uniqueMap = new Map();
         allFetched.forEach(p => {
@@ -786,7 +835,7 @@ export function FeedProvider({ children }) {
   }, [
     userPreferences, page, papers, loading, feedMode, 
     categoryAffinities, relatedCandidates,
-    calculateAndAttachScore, followedAuthors, recommendationProfileReady, reRankFeed
+    calculateAndAttachScore, followedEntities, recommendationProfileReady, reRankFeed
   ]);
 
   const preferencesSignatureRef = useRef(null);
@@ -811,6 +860,26 @@ export function FeedProvider({ children }) {
     setHasMore(true);
     loadPapers(true, null, true);
   }, [userPreferences, recommendationProfileReady, loadPapers]);
+
+  const followingSignatureRef = useRef('');
+
+  useEffect(() => {
+    const signature = followedEntities
+      .map(entity => `${entity.type}:${entity.canonicalId}`)
+      .sort()
+      .join('|');
+    if (followingSignatureRef.current === signature) return;
+    const hadPreviousValue = Boolean(followingSignatureRef.current);
+    followingSignatureRef.current = signature;
+    reRankFeed();
+    if (recommendationProfileReady && (signature || hadPreviousValue)) {
+      feedCache.current = {};
+      setPapers([]);
+      setPage(0);
+      setHasMore(true);
+      loadPapers(true, null, true);
+    }
+  }, [followedEntities, loadPapers, recommendationProfileReady, reRankFeed]);
 
   // Save current papers to cache before switching, then restore or fetch
   const handleSetFeedMode = useCallback((newMode) => {
@@ -1196,6 +1265,7 @@ export function FeedProvider({ children }) {
     ready: recommendationProfileReady,
     userPreferences: [...(userPreferences || [])],
     followedAuthors: [...(followedAuthors || [])],
+    followedEntities: followedEntities.map(entity => ({ ...entity })),
     categoryAffinities: { ...categoryAffinities.current },
     categoryCooldowns: { ...categoryCooldowns.current },
     conceptAffinities: { ...conceptAffinities.current },
@@ -1203,7 +1273,7 @@ export function FeedProvider({ children }) {
     weights: { ...recommendationWeights.current },
     notInterestedIds: Array.from(notInterestedIdsRef.current),
     readPaperIds: Array.from(readPaperIdsRef.current),
-  }), [followedAuthors, recommendationProfileReady, user?.uid, userPreferences]);
+  }), [followedAuthors, followedEntities, recommendationProfileReady, user?.uid, userPreferences]);
 
   const value = {
     papers, loading, error, hasMore, isRefreshing,

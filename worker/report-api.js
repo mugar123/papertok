@@ -6,6 +6,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'http://127.0.0.1:5173',
 ];
 const CACHE_SECONDS = 6 * 60 * 60;
+const RELATED_CACHE_SECONDS = 24 * 60 * 60;
+const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -89,6 +91,64 @@ async function handleTrends(request, env) {
   return response;
 }
 
+function getSafeLimit(value, fallback = 8, max = 10) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? Math.max(1, Math.min(max, parsed)) : fallback;
+}
+
+async function cacheResponse(request, origin, env, ttl, fetcher) {
+  const cacheUrl = new URL(request.url);
+  cacheUrl.searchParams.set('_origin', origin || 'no-origin');
+  const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
+  const cached = await caches.default.match(cacheKey);
+  if (cached) return cached;
+  const payload = await fetcher();
+  const response = json(payload, 200, {
+    ...corsHeaders(origin, env),
+    'cache-control': `public, max-age=300, s-maxage=${ttl}, stale-while-revalidate=86400`,
+  });
+  await caches.default.put(cacheKey, response.clone());
+  return response;
+}
+
+async function handleRelated(request, env) {
+  const requestUrl = new URL(request.url);
+  const origin = request.headers.get('origin') || '';
+  if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+  const paperId = requestUrl.searchParams.get('paper_id') || '';
+  if (!/^(?:DOI:10\.|ARXIV:|[a-f0-9]{40}$)/i.test(paperId) || paperId.length > 300) {
+    return json({ error: 'Invalid paper id' }, 400, corsHeaders(origin, env));
+  }
+  const limit = getSafeLimit(requestUrl.searchParams.get('limit'));
+  return cacheResponse(request, origin, env, RELATED_CACHE_SECONDS, async () => {
+    const fields = 'paperId,title,abstract,authors,year,externalIds,url,venue,publicationDate,citationCount,isOpenAccess,openAccessPdf,publicationTypes';
+    const url = `https://api.semanticscholar.org/recommendations/v1/papers/forpaper/${encodeURIComponent(paperId)}?fields=${encodeURIComponent(fields)}&limit=${limit}`;
+    const headers = { accept: 'application/json' };
+    if (env.SEMANTIC_SCHOLAR_API_KEY) headers['x-api-key'] = env.SEMANTIC_SCHOLAR_API_KEY;
+    const response = await fetch(url, { headers });
+    if (!response.ok) throw new Error(`Semantic Scholar error: ${response.status}`);
+    return response.json();
+  });
+}
+
+async function handleOpenAccess(request, env) {
+  const requestUrl = new URL(request.url);
+  const origin = request.headers.get('origin') || '';
+  if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+  const doi = (requestUrl.searchParams.get('doi') || '').trim().toLowerCase();
+  if (!/^10\.\d{4,9}\/.+/.test(doi) || doi.length > 300) {
+    return json({ error: 'Invalid DOI' }, 400, corsHeaders(origin, env));
+  }
+  return cacheResponse(request, origin, env, OA_CACHE_SECONDS, async () => {
+    const email = env.UNPAYWALL_EMAIL || 'app@papertok.io';
+    const response = await fetch(`https://api.unpaywall.org/v2/${encodeURIComponent(doi)}?email=${encodeURIComponent(email)}`, {
+      headers: { accept: 'application/json' },
+    });
+    if (!response.ok) throw new Error(`Unpaywall error: ${response.status}`);
+    return response.json();
+  });
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -111,6 +171,20 @@ export default {
         return await handleTrends(request, env);
       } catch (error) {
         return json({ error: 'Trend data unavailable', detail: error.message }, 502, corsHeaders(origin, env));
+      }
+    }
+    if (url.pathname === '/related') {
+      try {
+        return await handleRelated(request, env);
+      } catch {
+        return json({ error: 'Related papers unavailable' }, 502, corsHeaders(origin, env));
+      }
+    }
+    if (url.pathname === '/oa') {
+      try {
+        return await handleOpenAccess(request, env);
+      } catch {
+        return json({ error: 'Open-access lookup unavailable' }, 502, corsHeaders(origin, env));
       }
     }
     return json({ error: 'Not found' }, 404, corsHeaders(origin, env));

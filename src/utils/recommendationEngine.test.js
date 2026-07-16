@@ -109,6 +109,27 @@ test('category signals preserve personalization without OpenAlex enrichment', ()
   assert.ok(score.affinity > 10);
 });
 
+test('stable followed entities boost papers and cap the combined signal', () => {
+  const score = scorePaperForRecommendation({
+    id: 'paper-followed',
+    primaryCategory: 'physics.optics',
+    authors: [{ id: 'https://openalex.org/A1', name: 'Ada' }],
+    institutions: [{ id: 'https://openalex.org/I2', displayName: 'Institute' }],
+    _followedEntityMatches: ['project-3'],
+  }, {
+    now: NOW,
+    followedEntities: [
+      { type: 'author', canonicalId: 'A1', displayName: 'Ada' },
+      { type: 'topic', canonicalId: 'physics.optics', displayName: 'Optics' },
+      { type: 'institution', canonicalId: 'I2', displayName: 'Institute' },
+      { type: 'project', canonicalId: 'project-3', displayName: 'Project' },
+    ],
+  });
+
+  assert.equal(score.followBoost, 70);
+  assert.deepEqual(score.followedEntityMatches, { author: true, topic: true, institution: true, project: true });
+});
+
 test('weighted shuffle honors deterministic random selection', () => {
   const papers = [
     { id: 'low', _dynamicScore: 0, _type: 'exploration' },

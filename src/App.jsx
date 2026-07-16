@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { FeedProvider } from './context/FeedContext'
+import { FollowingProvider } from './context/FollowingContext'
 import LoginPage from './components/Auth/LoginPage'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import OnboardingFlow from './components/Onboarding/OnboardingFlow'
@@ -115,7 +116,11 @@ function AppContent() {
 
 function UserScopedAppContent() {
   const { user } = useAuth()
-  return <AppContent key={user?.uid || 'signed-out'} />
+  return (
+    <FollowingProvider key={user?.uid || 'signed-out'}>
+      <AppContent />
+    </FollowingProvider>
+  )
 }
 
 function App() {

@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { searchPapers } from '../../services/arxivService';
 import { searchAuthors, searchInstitutions, searchConcepts, searchSources } from '../../services/openAlexService';
 import { searchProjects } from '../../services/openAireService';
-import { useAuth } from '../../context/AuthContext';
+import { useFollowing } from '../../context/FollowingContext';
 import { motion } from 'framer-motion';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
@@ -13,7 +13,7 @@ import './SearchPage.css';
 
 export default function SearchPage() {
   const navigate = useNavigate();
-  const { followedAuthors, toggleFollowAuthor } = useAuth();
+  const { isFollowing, toggleFollow } = useFollowing();
   
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -91,10 +91,10 @@ export default function SearchPage() {
     return () => clearTimeout(timeoutRef.current);
   }, [query, performSearch]);
 
-  const handleToggleFollow = async (e, authorName) => {
+  const handleToggleFollow = async (e, entity) => {
     e.stopPropagation();
     try {
-      await toggleFollowAuthor(authorName);
+      await toggleFollow(entity);
     } catch (err) {
       console.error(err);
     }
@@ -206,6 +206,12 @@ export default function SearchPage() {
                       <h4>{inst.display_name}</h4>
                       <p>{inst.country_code || 'País desconocido'} • Institución académica</p>
                     </div>
+                    <button
+                      className={`search-follow-btn ${isFollowing({ type: 'institution', id: inst.id, name: inst.display_name }) ? 'following' : ''}`}
+                      onClick={(event) => handleToggleFollow(event, { type: 'institution', id: inst.id, displayName: inst.display_name, source: 'openalex', externalIds: { ror: inst.ror } })}
+                    >
+                      {isFollowing({ type: 'institution', id: inst.id, name: inst.display_name }) ? 'Siguiendo' : 'Seguir'}
+                    </button>
                   </div>
                 ))}
               </div>
@@ -222,6 +228,12 @@ export default function SearchPage() {
                       <h4>{project.acronym ? `${project.acronym}: ${project.title}` : project.title}</h4>
                       <p>{project.funder}{project.budget > 0 ? (() => { try { return ` • ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget)}`; } catch { return ` • ${project.budget.toLocaleString('es-ES')} €`; } })() : ''}</p>
                     </div>
+                    <button
+                      className={`search-follow-btn ${isFollowing({ type: 'project', id: project.id, name: project.acronym || project.title }) ? 'following' : ''}`}
+                      onClick={(event) => handleToggleFollow(event, { type: 'project', id: project.id, displayName: project.acronym || project.title, source: 'openaire', metadata: { funder: project.funder } })}
+                    >
+                      {isFollowing({ type: 'project', id: project.id, name: project.acronym || project.title }) ? 'Siguiendo' : 'Seguir'}
+                    </button>
                   </div>
                 ))}
               </div>
@@ -238,6 +250,12 @@ export default function SearchPage() {
                       <h4>{concept.display_name}</h4>
                       <p>Nivel {concept.level} • {concept.works_count?.toLocaleString()} obras relacionadas</p>
                     </div>
+                    <button
+                      className={`search-follow-btn ${isFollowing({ type: 'topic', id: concept.id, name: concept.display_name }) ? 'following' : ''}`}
+                      onClick={(event) => handleToggleFollow(event, { type: 'topic', id: concept.id, displayName: concept.display_name, source: 'papertok', metadata: { categoryIds: concept.categoryIds } })}
+                    >
+                      {isFollowing({ type: 'topic', id: concept.id, name: concept.display_name }) ? 'Siguiendo' : 'Seguir'}
+                    </button>
                   </div>
                 ))}
               </div>
@@ -264,7 +282,8 @@ export default function SearchPage() {
               <div className="search-section">
                 <h3 className="search-section-title">Autores</h3>
                 {authorResults.map(author => {
-                  const isFollowing = followedAuthors.includes(author.display_name);
+                  const authorFollow = { type: 'author', id: author.id, displayName: author.display_name, source: 'openalex', externalIds: { orcid: author.orcid } };
+                  const authorIsFollowing = isFollowing(authorFollow);
                   return (
                     <div key={author.id} className="search-item" onClick={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}>
                       <div className="search-item-avatar">
@@ -275,10 +294,10 @@ export default function SearchPage() {
                         <p>{author.institution || 'Institución desconocida'}</p>
                       </div>
                       <button 
-                        className={`search-follow-btn ${isFollowing ? 'following' : ''}`}
-                        onClick={(e) => handleToggleFollow(e, author.display_name)}
+                        className={`search-follow-btn ${authorIsFollowing ? 'following' : ''}`}
+                        onClick={(e) => handleToggleFollow(e, authorFollow)}
                       >
-                        {isFollowing ? 'Siguiendo' : 'Seguir'}
+                        {authorIsFollowing ? 'Siguiendo' : 'Seguir'}
                       </button>
                     </div>
                   );

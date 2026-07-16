@@ -578,7 +578,8 @@ export async function searchConcepts(query) {
         display_name: cat.labelEn,
         description: cat.label,
         works_count: 1000,
-        level: 0
+        level: 0,
+        categoryIds: Object.keys(cat.subcategories || {})
       });
     }
     if (cat.subcategories) {
@@ -589,7 +590,8 @@ export async function searchConcepts(query) {
              display_name: subCat.labelEn,
              description: subCat.label,
              works_count: 500,
-             level: 1
+             level: 1,
+             categoryIds: [subId]
            });
          }
       });
@@ -597,6 +599,36 @@ export async function searchConcepts(query) {
   });
 
   return matches.slice(0, 5);
+}
+
+export function getLocalTopicEntity(id) {
+  const area = CATEGORIES[id];
+  if (area) {
+    return {
+      id,
+      display_name: area.label,
+      labelEn: area.labelEn,
+      description: area.description,
+      level: 0,
+      categoryIds: Object.keys(area.subcategories || {}),
+      _localTopic: true,
+    };
+  }
+  for (const areaValue of Object.values(CATEGORIES)) {
+    const subcategory = areaValue.subcategories?.[id];
+    if (subcategory) {
+      return {
+        id,
+        display_name: subcategory.label,
+        labelEn: subcategory.labelEn,
+        description: areaValue.description,
+        level: 1,
+        categoryIds: [id],
+        _localTopic: true,
+      };
+    }
+  }
+  return null;
 }
 
 /**
@@ -656,6 +688,10 @@ export async function findInstitution({ rorUrl, name, aliases = [] }) {
  */
 export async function getEntityById(type, id) {
   if (!id) return null;
+  if (type === 'concept' || type === 'topic') {
+    const localTopic = getLocalTopicEntity(id);
+    if (localTopic) return localTopic;
+  }
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
   const persistentCacheKey = `entity:${type}:${cleanId}`;
   const cachedEntity = readOpenAlexPersistent(persistentCacheKey, ENTITY_CACHE_TTL_MS);
@@ -1013,6 +1049,14 @@ function formatOpenAlexWorkAsPaper(work) {
   }
   
   const authors = work.authorships?.map(a => ({ name: a.author?.display_name || 'Unknown Author', id: a.author?.id })) || [{ name: 'Unknown Author' }];
+  const institutions = [...new Map((work.authorships || [])
+    .flatMap(authorship => authorship.institutions || [])
+    .filter(Boolean)
+    .map(institution => [institution.id || institution.ror || institution.display_name, {
+      id: institution.id,
+      ror: institution.ror,
+      displayName: institution.display_name,
+    }])).values()];
   const categories = work.concepts?.map(c => c.display_name) || [];
   const openAlexId = work.id.split('/').pop();
   
@@ -1022,6 +1066,7 @@ function formatOpenAlexWorkAsPaper(work) {
     title: work.title || 'No Title',
     abstract: summary || 'No summary available.',
     authors,
+    institutions,
     year: work.publication_date ? new Date(work.publication_date).getFullYear() : new Date().getFullYear(),
     publicationType: work.primary_location?.source?.type || 'journal',
     publicationStatus: work.primary_location?.is_published ? 'published' : 'preprint',

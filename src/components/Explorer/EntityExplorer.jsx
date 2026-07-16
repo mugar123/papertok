@@ -3,15 +3,15 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getInstitutionRecentImpact } from '../../services/openAlexService';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
-import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
-import { ElsevierAdapter, PubmedAdapter } from '../../services/adapters';
+import { fetchPapers, fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
+import { ElsevierAdapter, OpenAlexAdapter, PubmedAdapter } from '../../services/adapters';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { PaperBuilder } from '../../services/PaperBuilder';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService';
 import { filterAndSortEntityPapers, pinSourcePaper } from '../../utils/entityExplorer';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
-import { useAuth } from '../../context/AuthContext';
+import { useFollowing } from '../../context/FollowingContext';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
@@ -29,7 +29,7 @@ export default function EntityExplorer() {
   const { type, id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { followedAuthors, toggleFollowAuthor } = useAuth();
+  const { isFollowing, toggleFollow } = useFollowing();
 
   const [entity, setEntity] = useState(null);
   const [entityError, setEntityError] = useState(null);
@@ -78,6 +78,25 @@ export default function EntityExplorer() {
   const [authorsPage, setAuthorsPage] = useState(1);
   const [hasMoreAuthors, setHasMoreAuthors] = useState(false);
   const observerAuthorsRef = useRef(null);
+
+  const followEntity = useMemo(() => {
+    if (!entity || !['author', 'institution', 'project', 'concept', 'topic'].includes(type)) return null;
+    const followType = type === 'concept' ? 'topic' : type;
+    return {
+      type: followType,
+      id: entity.id || entity.code || id,
+      displayName: entity.display_name,
+      source: type === 'project' ? 'openaire' : type === 'concept' || type === 'topic' ? 'papertok' : 'openalex',
+      externalIds: {
+        orcid: entity.orcid,
+        ror: entity.ror,
+      },
+      metadata: {
+        funder: entity.funder,
+        categoryIds: entity.categoryIds,
+      },
+    };
+  }, [entity, id, type]);
 
   // Reset overlays when navigating to a different entity
   useEffect(() => {
@@ -341,6 +360,20 @@ export default function EntityExplorer() {
             if (resolvedId.startsWith('stub-')) {
               total = fetchedPapers.length;
             }
+         } else if ((type === 'concept' || type === 'topic') && entity._localTopic) {
+            const topicCategories = entity.categoryIds || [resolvedId];
+            const topicQuery = debouncedSearch || entity.labelEn || entity.display_name;
+            const openAlexAdapter = new OpenAlexAdapter();
+            const pubmedAdapter = new PubmedAdapter();
+            const topicResults = await Promise.allSettled([
+              fetchPapers(topicCategories.slice(0, 6), (page - 1) * 30, 30, sortBy.includes('publication_date') ? 'recent' : 'relevance'),
+              openAlexAdapter.search(`"${topicQuery}"`, page, { internalCategories: topicCategories }),
+              pubmedAdapter.search(`"${topicQuery}"`, page, { internalCategories: topicCategories.slice(0, 3) }),
+            ]);
+            fetchedPapers.push(...topicResults.flatMap(result => result.status === 'fulfilled'
+              ? result.value?.papers || result.value || []
+              : []));
+            total = fetchedPapers.length < 30 ? (page - 1) * 30 + fetchedPapers.length : page * 30 + 1;
          } else {
             const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters);
             fetchedPapers.push(...(res.papers || []));
@@ -437,7 +470,7 @@ export default function EntityExplorer() {
   useEffect(() => {
     let isCancelled = false;
     async function loadAuthors() {
-      if (!entity || type === 'author' || activeTab !== 'authors') return;
+      if (!entity || type === 'author' || entity._localTopic || activeTab !== 'authors') return;
       if (authorsPage === 1) {
         setIsLoadingAuthors(true);
         setAuthorsError(null);
@@ -676,13 +709,13 @@ export default function EntityExplorer() {
             <div className="ehc-info">
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 <h1 className="ehc-name" style={{ margin: 0 }}>{entity.display_name}</h1>
-                {type === 'author' && entity?.display_name && (
+                {followEntity && (
                   <button 
-                    className={`search-follow-btn ${followedAuthors.includes(entity.display_name) ? 'following' : ''}`}
-                    onClick={(e) => { e.stopPropagation(); toggleFollowAuthor(entity.display_name); }}
+                    className={`search-follow-btn ${isFollowing(followEntity) ? 'following' : ''}`}
+                    onClick={(e) => { e.stopPropagation(); toggleFollow(followEntity).catch(console.error); }}
                     style={{ transform: 'scale(0.9)', transformOrigin: 'left center' }}
                   >
-                    {followedAuthors.includes(entity.display_name) ? 'Siguiendo' : 'Seguir'}
+                    {isFollowing(followEntity) ? 'Siguiendo' : 'Seguir'}
                   </button>
                 )}
               </div>
@@ -1097,7 +1130,7 @@ export default function EntityExplorer() {
           <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => setActiveTab('papers')}>
              Papers
           </button>
-          {(type !== 'author' && type !== 'project') && (
+          {(type !== 'author' && type !== 'project' && !entity._localTopic) && (
              <button className={`ee-tab ${activeTab === 'authors' ? 'active' : ''}`} onClick={() => setActiveTab('authors')}>
                Autores
              </button>

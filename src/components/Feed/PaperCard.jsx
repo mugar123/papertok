@@ -1,16 +1,19 @@
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
+import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
 import { 
-  Share2, FileText, Check, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, Unlock, Lock, ExternalLink,
+  Share2, FileText, Check, Loader2, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, Unlock, Lock, ExternalLink,
   Rocket, Settings, Wrench, Cog, PenTool, Building, Map, Compass, Beaker, TestTube, Thermometer, HeartPulse, Stethoscope, Syringe, Pill, Leaf, Bug, Sprout, Landmark, Coins, Radio, Box
 } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
 import ScientificText from '../ScientificText';
-import { useAuth } from '../../context/AuthContext';
+import { useFollowing } from '../../context/FollowingContext';
 import { getProjectForPaper } from '../../services/openAireService';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import './PaperCard.css';
+import RelatedPapersSheet from './RelatedPapersSheet';
+import { findOpenAccessCopy } from '../../services/unpaywallService';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -47,13 +50,19 @@ const PaperCard = memo(function PaperCard({
   const [copied, setCopied] = useState(false);
   const [isMarkingRead, setIsMarkingRead] = useState(false);
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
-  const { followedAuthors } = useAuth();
+  const [showRelated, setShowRelated] = useState(false);
+  const [isResolvingAccess, setIsResolvingAccess] = useState(false);
+  const { followedByType, isFollowing } = useFollowing();
   const navigate = useNavigate();
   
   const hasFollowedAuthor = useMemo(() => {
-    if (!paper || !paper.authors || !followedAuthors || followedAuthors.length === 0) return false;
-    return paper.authors.some(author => followedAuthors.includes(author?.name || author));
-  }, [paper, followedAuthors]);
+    if (!paper?.authors?.length || !followedByType.author?.length) return false;
+    return paper.authors.some(author => isFollowing({
+      type: 'author',
+      id: author?.id || author?.name || author,
+      name: author?.name || author,
+    }));
+  }, [followedByType.author, isFollowing, paper]);
 
   const lastTap = useRef(0);
   const abstractRef = useRef(null);
@@ -219,6 +228,32 @@ const PaperCard = memo(function PaperCard({
   const handleNotInterested = (e) => {
     e.stopPropagation();
     onNotInterested(paper);
+  };
+
+  const handleOpenPaper = async (event) => {
+    event.stopPropagation();
+    const hasValidPdf = paper.pdfUrl && (paper.pdfUrl.includes('arxiv.org') || /\.pdf(?:$|[?#])/i.test(paper.pdfUrl));
+    if (paper.arxivId || hasValidPdf) {
+      onOpenPdf(paper);
+      return;
+    }
+
+    if (paper.doi) {
+      setIsResolvingAccess(true);
+      const openCopy = await findOpenAccessCopy(paper.doi);
+      setIsResolvingAccess(false);
+      if (openCopy?.pdfUrl) {
+        onOpenPdf({ ...paper, ...openCopy, openAccess: true });
+        return;
+      }
+      if (openCopy?.landingPageUrl) {
+        window.open(openCopy.landingPageUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+    }
+
+    const fallbackUrl = paper.pdfUrl || paper.landingPageUrl || (paper.doi ? `https://doi.org/${paper.doi}` : '');
+    if (fallbackUrl) window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
   };
 
   const isPreprint = paper.publicationStatus === 'preprint';
@@ -468,21 +503,14 @@ const PaperCard = memo(function PaperCard({
         <div className="pc-action-bar">
           <button 
             className="pc-read-btn"
-            onClick={(e) => {
-              e.stopPropagation();
-              const hasValidPdf = paper.pdfUrl && (paper.pdfUrl.includes('arxiv.org') || paper.pdfUrl.toLowerCase().endsWith('.pdf'));
-              if (paper.arxivId || hasValidPdf) {
-                onOpenPdf(paper);
-              } else if (paper.pdfUrl || paper.landingPageUrl) {
-                window.open(paper.pdfUrl || paper.landingPageUrl, '_blank');
-              }
-            }}
+            onClick={handleOpenPaper}
+            disabled={isResolvingAccess}
           >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            {isResolvingAccess ? <Loader2 className="spinning" size={18} /> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <polyline points="14 2 14 8 20 8" />
-            </svg>
-            <span>{(!paper.pdfUrl && !paper.arxivId) ? 'Abrir fuente' : 'Leer artículo'}</span>
+            </svg>}
+            <span>{isResolvingAccess ? 'Buscando acceso...' : (!paper.pdfUrl && !paper.arxivId) ? 'Abrir fuente' : 'Leer artículo'}</span>
           </button>
           <button
             className="pc-read-btn pc-read-btn--secondary"
@@ -499,8 +527,18 @@ const PaperCard = memo(function PaperCard({
             }}
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
-            {copied ? <><Check size={16} /> Copiado</> : <><Share2 size={16} /> Compartir</>}
+            {copied ? <><Check size={16} /><span className="pc-share-label">Copiado</span></> : <><Share2 size={16} /><span className="pc-share-label">Compartir</span></>}
           </button>
+          {(paper.doi || paper.arxivId || paper.semanticScholarId) && (
+            <button
+              className="pc-related-btn"
+              onClick={(event) => { event.stopPropagation(); setShowRelated(true); }}
+              aria-label="Ver papers relacionados"
+              title="Papers relacionados"
+            >
+              <Network size={18} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -610,6 +648,14 @@ const PaperCard = memo(function PaperCard({
           </motion.div>
         )}
       </AnimatePresence>
+      {showRelated && createPortal(
+        <RelatedPapersSheet
+          paper={paper}
+          onClose={() => setShowRelated(false)}
+          onOpenPdf={(relatedPaper) => { setShowRelated(false); onOpenPdf(relatedPaper); }}
+        />,
+        document.body,
+      )}
     </div>
   );
 });

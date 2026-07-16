@@ -77,6 +77,14 @@ export class OpenAlexAdapter extends BaseAdapter {
       id: a.author?.id,
       affiliation: a.institutions?.[0]?.display_name || null
     }));
+    const institutions = [...new Map((work.authorships || [])
+      .flatMap(authorship => authorship.institutions || [])
+      .filter(Boolean)
+      .map(institution => [institution.id || institution.ror || institution.display_name, {
+        id: institution.id,
+        ror: institution.ror,
+        displayName: institution.display_name,
+      }])).values()];
 
     // Reconstruct abstract from inverted index
     let abstract = 'No abstract available.';
@@ -106,6 +114,7 @@ export class OpenAlexAdapter extends BaseAdapter {
       title: work.title || 'Untitled',
       abstract,
       authors,
+      institutions,
       publishedDate: work.publication_date,
       year: work.publication_year,
       sourceName,

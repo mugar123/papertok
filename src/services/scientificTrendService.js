@@ -6,7 +6,8 @@ import { computeScientificTrends } from '../utils/reportTrendMath.js';
 const TREND_CACHE = new Map();
 const ACTIVE_CACHE_TTL = 6 * 60 * 60 * 1000;
 const ERROR_CACHE_TTL = 5 * 60 * 1000;
-const REPORT_API_URL = import.meta.env?.VITE_REPORT_API_URL || '';
+const PAPER_API_BASE_URL = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
+const REPORT_API_URL = import.meta.env?.VITE_REPORT_API_URL || (PAPER_API_BASE_URL ? `${PAPER_API_BASE_URL}/report/trends` : '');
 
 function cacheKeyFor(timeframe, filters, periods) {
   const normalized = normalizeReportFilters(filters);

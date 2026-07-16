@@ -2,6 +2,10 @@ export const DEFAULT_RECOMMENDATION_WEIGHTS = Object.freeze({
   selectedCategory: 100,
   relatedSelectedCategory: 80,
   followedAuthor: 50,
+  followedTopic: 35,
+  followedInstitution: 30,
+  followedProject: 45,
+  maxFollowBoost: 70,
   maxRecency: 5,
   recencyHalfLifeDays: 7,
   classicCitationMultiplier: 5,
@@ -66,6 +70,62 @@ export function getPaperCategorySignals(paper) {
   ].filter(category => typeof category === 'string' && category.trim()))].slice(0, 6);
 }
 
+function normalizeSignal(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\/(?:api\.)?openalex\.org\//, '')
+    .replace(/^https?:\/\/(?:www\.)?ror\.org\//, '');
+}
+
+function signalMatches(follow, candidates) {
+  const followId = normalizeSignal(follow.canonicalId || follow.id);
+  const followName = normalizeSignal(follow.displayName || follow.name);
+  return candidates.some((candidate) => {
+    const candidateId = normalizeSignal(candidate?.id || candidate?.canonicalId || candidate);
+    const candidateName = normalizeSignal(candidate?.name || candidate?.displayName || candidate?.display_name || candidate);
+    return Boolean((followId && candidateId === followId) || (followName && candidateName === followName));
+  });
+}
+
+export function getFollowedEntitySignals(paper, followedEntities = [], weights = DEFAULT_RECOMMENDATION_WEIGHTS) {
+  const categories = getPaperCategorySignals(paper).map((id) => ({ id, name: id }));
+  const authors = paper.authors || [];
+  const institutions = paper.institutions || paper.openAlex?.institutions || [];
+  const projects = [
+    ...(paper.projectIds || []),
+    ...(paper._followedEntityMatches || []),
+  ];
+  const matches = { author: false, topic: false, institution: false, project: false };
+
+  followedEntities.forEach((follow) => {
+    if (follow.type === 'author') matches.author ||= signalMatches(follow, authors);
+    if (follow.type === 'topic') {
+      const topicSignals = follow.metadata?.categoryIds?.length
+        ? follow.metadata.categoryIds.map(id => ({ id, name: id }))
+        : [follow];
+      matches.topic ||= topicSignals.some(topicSignal => signalMatches(topicSignal, categories))
+        || signalMatches(follow, paper._followedEntityMatches || []);
+    }
+    if (follow.type === 'institution') matches.institution ||= signalMatches(follow, institutions);
+    if (follow.type === 'project') matches.project ||= signalMatches(follow, projects);
+  });
+
+  const raw = {
+    author: matches.author ? weights.followedAuthor : 0,
+    topic: matches.topic ? weights.followedTopic : 0,
+    institution: matches.institution ? weights.followedInstitution : 0,
+    project: matches.project ? weights.followedProject : 0,
+  };
+  return {
+    matches,
+    raw,
+    total: Math.min(weights.maxFollowBoost, Object.values(raw).reduce((sum, value) => sum + value, 0)),
+  };
+}
+
 export function applyCategoryAffinityDelta(affinities, paper, delta, secondaryMultiplier = 0.35) {
   const categories = getPaperCategorySignals(paper);
   categories.forEach((category, index) => {
@@ -80,6 +140,7 @@ export function scorePaperForRecommendation(paper, context = {}) {
   const now = context.now || Date.now();
   const userPreferences = context.userPreferences || [];
   const followedAuthors = context.followedAuthors || [];
+  const followedEntities = context.followedEntities || [];
   const categoryAffinities = context.categoryAffinities || {};
   const categoryCooldowns = context.categoryCooldowns || {};
   const conceptAffinities = context.conceptAffinities || {};
@@ -106,6 +167,8 @@ export function scorePaperForRecommendation(paper, context = {}) {
   const authorBoost = paper.authors?.some((author) => followedAuthors.includes(author?.name || author))
     ? weights.followedAuthor
     : 0;
+  const followedSignals = getFollowedEntitySignals(paper, followedEntities, weights);
+  const followBoost = Math.max(authorBoost, followedSignals.total);
 
   const ageDays = daysSince(paper.published, now);
   const recency = Math.max(0, weights.maxRecency * Math.exp(-ageDays / weights.recencyHalfLifeDays))
@@ -163,7 +226,7 @@ export function scorePaperForRecommendation(paper, context = {}) {
     semantic,
     citations,
     graphBoost,
-    authorBoost,
+    followBoost,
     diversityBoost,
   };
   const baseTotal = Object.values(parts).reduce((sum, value) => sum + value, 0);
@@ -173,6 +236,8 @@ export function scorePaperForRecommendation(paper, context = {}) {
     total,
     baseTotal,
     ...parts,
+    authorBoost: Math.max(authorBoost, followedSignals.raw.author),
+    followedEntityMatches: followedSignals.matches,
     cooldownMultiplier,
     isExploration,
     explanation: topReasons(parts).join(', ') || 'neutral',

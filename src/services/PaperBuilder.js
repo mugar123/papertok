@@ -48,6 +48,8 @@ export class PaperBuilder {
       primaryCategory: data.primaryCategory || data.categories?.[0] || '',
       countryCodes: data.countryCodes || [],
       institutionCount: data.institutionCount || 0,
+      institutions: data.institutions || [],
+      projectIds: data.projectIds || [],
       fwci: data.fwci ?? null,
       citationNormalizedPercentile: data.citationNormalizedPercentile || data.citation_normalized_percentile || null,
       citedByPercentileYear: data.citedByPercentileYear || data.cited_by_percentile_year || null,
@@ -55,6 +57,7 @@ export class PaperBuilder {
       published: data.published || data.publishedDate || '',
       sourceType: data.sourceType || undefined,
       summary: data.summary || data.abstract || '',
+      _followedEntityMatches: data._followedEntityMatches || [],
     };
   }
 
@@ -122,6 +125,16 @@ export class PaperBuilder {
     }
     if (Number.isFinite(enrichmentData.institutionCount)) {
       merged.institutionCount = Math.max(merged.institutionCount || 0, enrichmentData.institutionCount);
+    }
+    if (enrichmentData.institutions?.length) {
+      const institutions = [...(merged.institutions || []), ...enrichmentData.institutions];
+      merged.institutions = institutions.filter((institution, index) => {
+        const key = institution.id || institution.ror || institution.displayName || institution.display_name;
+        return institutions.findIndex(candidate => (candidate.id || candidate.ror || candidate.displayName || candidate.display_name) === key) === index;
+      });
+    }
+    if (enrichmentData.projectIds?.length) {
+      merged.projectIds = [...new Set([...(merged.projectIds || []), ...enrichmentData.projectIds])];
     }
 
     // Upgrade publication status/type if enrichment indicates it's peer-reviewed/published
