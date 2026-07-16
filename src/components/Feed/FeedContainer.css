@@ -37,19 +37,18 @@
   height: 1px;
 }
 
-/* Decorative SVGs are the heaviest painted part of a card. Pausing them while a
-   desktop trackpad is moving keeps the scroll thread responsive without changing
-   the card once it settles. */
+/* Keep decorative layers visible between cards while reducing their paint work
+   during desktop trackpad movement. Hiding these layers caused a noticeable
+   flash until scroll snapping had completely settled. */
 @media (hover: hover) and (pointer: fine) {
-  .feed-container--scrolling .pc-bg-constellation,
-  .feed-container--scrolling .pc-mesh {
-    visibility: hidden;
-  }
-
   .feed-container--scrolling .pc-bg-icon,
   .feed-container--scrolling .pc-mesh-line,
   .feed-container--scrolling .pc-mesh-dot {
     animation-play-state: paused;
+  }
+
+  .feed-container--scrolling .pc-bg-icon {
+    will-change: auto;
   }
 }
 
