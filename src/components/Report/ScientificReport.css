@@ -95,50 +95,6 @@
 }
 
 /* ── Tabs ── */
-.sr-report-controls {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-
-.sr-edition-switch {
-  display: inline-flex;
-  align-items: center;
-  gap: 3px;
-  padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
-}
-
-.sr-edition-switch button {
-  min-height: 32px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 6px 11px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.45);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-  transition: color 0.2s, background 0.2s, opacity 0.2s;
-}
-
-.sr-edition-switch button:hover { color: rgba(255, 255, 255, 0.8); }
-
-.sr-edition-switch button.active {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.sr-edition-switch.pending { opacity: 0.68; }
-
 .sr-tabs {
   display: flex;
   gap: 4px;
@@ -299,8 +255,6 @@
 }
 
 .sr-body.updating { opacity: 0.76; }
-.sr-body.edition-pending { opacity: 0.82; }
-
 .sr-update-line {
   position: absolute;
   z-index: 5;
@@ -618,7 +572,6 @@
 .sr-tag.oa       { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
 .sr-tag.sub      { color: #ef4444; background: rgba(239, 68, 68, 0.1); }
 .sr-tag.cites    { color: #60a5fa; background: rgba(96, 165, 250, 0.08); }
-.sr-tag.emerging { color: #6ee7b7; background: rgba(52, 211, 153, 0.09); }
 
 .sr-hero-abstract {
   font-size: 15px;
@@ -686,38 +639,6 @@
    BENTO GRID
    ============================================ */
 .sr-highlights { display: flex; flex-direction: column; }
-
-.sr-next-selection-wrap {
-  display: flex;
-  justify-content: center;
-  padding-top: 4px;
-}
-
-.sr-next-selection {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 11px 18px;
-  border: 1px solid rgba(255, 255, 255, 0.09);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.72);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 650;
-  cursor: pointer;
-  transition: background 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
-}
-
-.sr-next-selection:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.16);
-  color: #fff;
-  transform: translateY(-1px);
-}
-
-.sr-next-selection:active { transform: scale(0.97); }
 
 .sr-section-label {
   font-family: var(--font-title);
@@ -962,8 +883,6 @@
   max-width: 160px;
 }
 
-.sr-micro.emerging { color: rgba(110, 231, 183, 0.68); }
-
 /* ============================================
    PAPER DETAIL OVERLAY
    ============================================ */
@@ -1025,9 +944,6 @@
   .sr { padding: 85px 16px 100px; }
   .sr-masthead { font-size: 22px; }
   .sr-header-top { flex-direction: column; gap: 6px; align-items: flex-start; }
-  .sr-report-controls { flex-direction: column; align-items: stretch; gap: 10px; }
-  .sr-edition-switch { width: 100%; }
-  .sr-edition-switch button { flex: 1; }
   .sr-tabs { overflow-x: auto; width: 100%; -webkit-overflow-scrolling: touch; scrollbar-width: none; }
   .sr-tabs::-webkit-scrollbar { display: none; }
 
@@ -1044,8 +960,6 @@
   .sr-btn { width: 100%; justify-content: center; }
 
   .sr-coverage-content { flex-direction: column; }
-  .sr-next-selection { width: 100%; }
-
   .sr-trends-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
   .sr-trend-list { display: flex; overflow-x: auto; scrollbar-width: none; }
   .sr-trend-list::-webkit-scrollbar { display: none; }

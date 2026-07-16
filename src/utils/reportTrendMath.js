@@ -47,12 +47,12 @@ export function computeScientificTrends(currentData, previousData, options = {})
     .map(normalizeGroup)
     .filter(group => group.id && group.label && group.count >= MIN_CURRENT_COUNT)
     .map(group => {
-      const previous = previousGroups.get(group.id) || { count: 0 };
+      const previous = previousGroups.get(group.id);
+      if (!previous || previous.count < 3) return null;
       const currentShare = (group.count + SMOOTHING_COUNT) / (currentTotal + SMOOTHING_TOTAL);
       const previousShare = (previous.count + SMOOTHING_COUNT) / (previousTotal + SMOOTHING_TOTAL);
       const shareRatio = currentShare / previousShare;
       const changeRatio = shareRatio - 1;
-      const isNew = previous.count < 3 && group.count >= MIN_CURRENT_COUNT;
       const score = Math.log2(Math.max(shareRatio, 0.01)) * Math.log1p(group.count);
 
       return {
@@ -62,13 +62,13 @@ export function computeScientificTrends(currentData, previousData, options = {})
         previousCount: previous.count,
         currentShare,
         previousShare,
-        changePercent: isNew ? null : Math.round(changeRatio * 100),
-        state: isNew ? 'new' : 'rising',
+        changePercent: Math.round(changeRatio * 100),
+        state: 'rising',
         confidence: confidenceForVolume(group.count + previous.count),
         score,
       };
     })
-    .filter(item => item.state === 'new' || (item.changePercent >= 10 && item.score > 0))
+    .filter(item => item && item.changePercent >= 10 && item.score > 0)
     .sort((a, b) => b.score - a.score || b.currentCount - a.currentCount)
     .slice(0, limit)
     .map(item => {

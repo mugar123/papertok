@@ -33,12 +33,12 @@ test('does not manufacture huge percentages from tiny samples', () => {
   assert.deepEqual(result.items, []);
 });
 
-test('labels sufficiently supported topics with no baseline as new', () => {
+test('does not infer novelty when the previous grouped baseline is missing', () => {
   const result = computeScientificTrends(
     { total: 200, groups: [{ key: 'T1', key_display_name: 'New topic', count: 8 }] },
     { total: 200, groups: [] },
   );
 
-  assert.equal(result.items[0].state, 'new');
-  assert.equal(result.items[0].changePercent, null);
+  assert.equal(result.status, 'insufficient');
+  assert.deepEqual(result.items, []);
 });
