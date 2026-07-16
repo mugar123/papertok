@@ -64,6 +64,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   const [activeTab, setActiveTab] = useState('papers');
   const [expandedSummary, setExpandedSummary] = useState(false);
   const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(false);
+  const [isProjectLinksMenuOpen, setIsProjectLinksMenuOpen] = useState(false);
   const [resolvingParticipant, setResolvingParticipant] = useState(null);
   const [participantNavigationError, setParticipantNavigationError] = useState('');
   const [recentImpact, setRecentImpact] = useState(null);
@@ -85,11 +86,30 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   const [authorsPage, setAuthorsPage] = useState(1);
   const [hasMoreAuthors, setHasMoreAuthors] = useState(false);
   const observerAuthorsRef = useRef(null);
+  const projectLinksMenuRef = useRef(null);
   const getInteractionState = useCallback((paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
     isRead: readPaperIds.has(paper.id),
   }), [likedPaperIds, readPaperIds, savedPaperIds]);
+
+  useEffect(() => {
+    if (!isProjectLinksMenuOpen) return undefined;
+
+    const closeMenu = (event) => {
+      if (!projectLinksMenuRef.current?.contains(event.target)) setIsProjectLinksMenuOpen(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setIsProjectLinksMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', closeMenu);
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.removeEventListener('pointerdown', closeMenu);
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [isProjectLinksMenuOpen]);
 
   const followEntity = useMemo(() => {
     if (!entity || !['author', 'institution', 'project', 'concept', 'topic'].includes(type)) return null;
@@ -151,6 +171,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       setIsLoadingOrcid(false);
       setExpandedSummary(false);
       setIsWikiDescriptionExpanded(false);
+      setIsProjectLinksMenuOpen(false);
       setResolvingParticipant(null);
       setParticipantNavigationError('');
       setRecentImpact(null);
@@ -766,17 +787,61 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                   {entity.funder}{entity.fundingStream ? ` — ${entity.fundingStream}` : ''}
                 </p>
               )}
-              {type === 'project' && entity.openaireId && (
-                <a
-                  className="project-external-link"
-                  href={`https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}`}
-                  target="_blank"
-                  rel="noreferrer"
-                  title="Abrir la ficha del proyecto en OpenAIRE"
-                >
-                  <span className="project-external-link-label"><Globe size={15} /> Ver web del proyecto</span>
-                  <span className="project-external-link-source">OpenAIRE <ExternalLink size={13} /></span>
-                </a>
+              {type === 'project' && (entity.openaireId || entity.websiteUrl) && (
+                <div className="project-links-menu" ref={projectLinksMenuRef}>
+                  <button
+                    type="button"
+                    className={`project-links-trigger ${isProjectLinksMenuOpen ? 'is-open' : ''}`}
+                    onClick={() => setIsProjectLinksMenuOpen(!isProjectLinksMenuOpen)}
+                    aria-expanded={isProjectLinksMenuOpen}
+                    aria-haspopup="menu"
+                  >
+                    <Globe size={15} />
+                    <span>Ver proyecto</span>
+                    <ChevronDown size={15} aria-hidden="true" />
+                  </button>
+                  <AnimatePresence>
+                    {isProjectLinksMenuOpen && (
+                      <motion.div
+                        className="project-links-dropdown"
+                        initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -4, scale: 0.98 }}
+                        transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                        role="menu"
+                      >
+                        {entity.openaireId && (
+                          <a
+                            className="project-links-option"
+                            href={`https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}`}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={() => setIsProjectLinksMenuOpen(false)}
+                            role="menuitem"
+                          >
+                            <span className="project-links-option-icon"><Building2 size={16} /></span>
+                            <span><strong>Ficha en OpenAIRE</strong><small>Datos, publicaciones y participantes</small></span>
+                            <ExternalLink size={14} />
+                          </a>
+                        )}
+                        {entity.websiteUrl && (
+                          <a
+                            className="project-links-option"
+                            href={entity.websiteUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={() => setIsProjectLinksMenuOpen(false)}
+                            role="menuitem"
+                          >
+                            <span className="project-links-option-icon"><Globe size={16} /></span>
+                            <span><strong>Sitio oficial</strong><small>Web del propio proyecto</small></span>
+                            <ExternalLink size={14} />
+                          </a>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               )}
               {topConcepts.length > 0 && (
                 <div className="ehc-tags">
@@ -891,7 +956,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
           </div>
           
           {/* Project metadata chips */}
-          {type === 'project' && (entity.callIdentifier || entity.contractType || entity.openAccess || entity.websiteUrl) && (
+          {type === 'project' && (entity.callIdentifier || entity.contractType || entity.openAccess || entity.measures?.downloads > 0 || entity.measures?.views > 0) && (
             <div className="project-meta-chips">
               {entity.callIdentifier && (
                 <span className="project-chip"><BookOpen size={13} /> {entity.callIdentifier}</span>
@@ -901,11 +966,6 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
               )}
               {entity.openAccess && (
                 <span className="project-chip project-chip--oa"><BookOpen size={13} /> Open Access</span>
-              )}
-              {entity.websiteUrl && (
-                <a href={entity.websiteUrl} target="_blank" rel="noopener noreferrer" className="project-chip" style={{ textDecoration: 'none', cursor: 'pointer', color: 'inherit' }}>
-                  <ExternalLink size={13} /> Sitio Web
-                </a>
               )}
               {entity.measures?.downloads > 0 && (
                 <span className="project-chip"><Download size={13} /> {entity.measures.downloads.toLocaleString()} descargas</span>
