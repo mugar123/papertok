@@ -67,6 +67,8 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   const [isProjectLinksMenuOpen, setIsProjectLinksMenuOpen] = useState(false);
   const [projectSummaryExpandedHeight, setProjectSummaryExpandedHeight] = useState(0);
   const [wikiDescriptionExpandedHeight, setWikiDescriptionExpandedHeight] = useState(0);
+  const [isProjectSummaryExpandable, setIsProjectSummaryExpandable] = useState(false);
+  const [isWikiDescriptionExpandable, setIsWikiDescriptionExpandable] = useState(false);
   const [resolvingParticipant, setResolvingParticipant] = useState(null);
   const [participantNavigationError, setParticipantNavigationError] = useState('');
   const [recentImpact, setRecentImpact] = useState(null);
@@ -98,8 +100,16 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   }), [likedPaperIds, readPaperIds, savedPaperIds]);
 
   const measureExpandableDescriptions = useCallback(() => {
-    if (projectSummaryTextRef.current) setProjectSummaryExpandedHeight(projectSummaryTextRef.current.scrollHeight);
-    if (wikiDescriptionTextRef.current) setWikiDescriptionExpandedHeight(wikiDescriptionTextRef.current.scrollHeight);
+    const measure = (element, setHeight, setExpandable) => {
+      if (!element) return;
+      const lineHeight = Number.parseFloat(window.getComputedStyle(element).lineHeight);
+      const collapsedHeight = Number.isFinite(lineHeight) ? lineHeight * 3 : element.clientHeight;
+      setHeight(element.scrollHeight);
+      setExpandable(element.scrollHeight > collapsedHeight + 1);
+    };
+
+    measure(projectSummaryTextRef.current, setProjectSummaryExpandedHeight, setIsProjectSummaryExpandable);
+    measure(wikiDescriptionTextRef.current, setWikiDescriptionExpandedHeight, setIsWikiDescriptionExpandable);
   }, []);
 
   useEffect(() => {
@@ -190,6 +200,8 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       setExpandedSummary(false);
       setIsWikiDescriptionExpanded(false);
       setIsProjectLinksMenuOpen(false);
+      setIsProjectSummaryExpandable(false);
+      setIsWikiDescriptionExpandable(false);
       setResolvingParticipant(null);
       setParticipantNavigationError('');
       setRecentImpact(null);
@@ -998,13 +1010,13 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
           {type === 'project' && entity?.summary && (
             <motion.div
               layout
-              className={`project-summary-box ${expandedSummary ? 'is-expanded' : ''}`}
-              onClick={() => setExpandedSummary(!expandedSummary)}
-              onKeyDown={(event) => handleActivationKey(event, () => setExpandedSummary(!expandedSummary))}
-              role="button"
-              tabIndex={0}
-              aria-expanded={expandedSummary}
-              aria-label={expandedSummary ? 'Contraer resumen del proyecto' : 'Ampliar resumen del proyecto'}
+              className={`project-summary-box ${expandedSummary ? 'is-expanded' : ''} ${isProjectSummaryExpandable ? 'is-expandable' : ''}`}
+              onClick={isProjectSummaryExpandable ? () => setExpandedSummary(!expandedSummary) : undefined}
+              onKeyDown={isProjectSummaryExpandable ? (event) => handleActivationKey(event, () => setExpandedSummary(!expandedSummary)) : undefined}
+              role={isProjectSummaryExpandable ? 'button' : undefined}
+              tabIndex={isProjectSummaryExpandable ? 0 : undefined}
+              aria-expanded={isProjectSummaryExpandable ? expandedSummary : undefined}
+              aria-label={isProjectSummaryExpandable ? (expandedSummary ? 'Contraer resumen del proyecto' : 'Ampliar resumen del proyecto') : undefined}
               transition={{ layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] } }}
             >
               <p
@@ -1014,9 +1026,11 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
               >
                 {entity.summary}
               </p>
-              <span className="project-summary-toggle">
-                <ChevronDown size={14} /> {expandedSummary ? 'Mostrar menos' : 'Leer más'}
-              </span>
+              {isProjectSummaryExpandable && (
+                <span className="project-summary-toggle">
+                  <ChevronDown size={14} /> {expandedSummary ? 'Mostrar menos' : 'Leer más'}
+                </span>
+              )}
             </motion.div>
           )}
 
@@ -1086,7 +1100,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                     {wikiInfo.extract}
                   </p>
                 )}
-                {wikiInfo?.extract?.length > 260 && (
+                {isWikiDescriptionExpandable && (
                   <button
                     type="button"
                     className="ehc-wiki-toggle"

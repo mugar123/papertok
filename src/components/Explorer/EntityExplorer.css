@@ -1434,11 +1434,13 @@
   border-radius: 10px;
   padding: 14px 16px 10px;
   margin-top: 4px;
-  cursor: pointer;
+  cursor: default;
   transition: background 0.2s ease, border-color 0.2s ease;
 }
 
-.project-summary-box:hover {
+.project-summary-box.is-expandable { cursor: pointer; }
+
+.project-summary-box.is-expandable:hover {
   background: rgba(255, 255, 255, 0.05);
 }
 
