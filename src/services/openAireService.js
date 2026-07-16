@@ -323,7 +323,7 @@ export async function searchProjects(query, page = 1) {
     let results = data.response.results.result;
     if (!Array.isArray(results)) results = [results];
     
-    const projects = results.map(res => {
+    const mappedProjects = results.map(res => {
       const p = res?.metadata?.["oaf:entity"]?.["oaf:project"];
       if (!p) return null;
       
@@ -344,6 +344,17 @@ export async function searchProjects(query, page = 1) {
         currency: validCurrency(p.currency?.["$"]),
       };
     }).filter(Boolean);
+
+    const seenProjects = new Set();
+    const projects = mappedProjects.filter(project => {
+      const key = [project.code || '', project.title, project.funder, project.budget]
+        .filter(Boolean)
+        .map(value => String(value).trim().toLowerCase())
+        .join('|');
+      if (!key || seenProjects.has(key)) return false;
+      seenProjects.add(key);
+      return true;
+    });
 
     const total = data.response.header?.total?.["$"] ? parseInt(data.response.header.total["$"]) : 0;
     return { projects, total };

@@ -386,7 +386,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
             {/* Papers */}
             {paperResults.length > 0 && (
               <div className="search-section">
-                <h3 className="search-section-title">Papers Recientes</h3>
+                <h3 className="search-section-title">Publicaciones</h3>
                 {paperResults.map(paper => {
                   const authors = (paper.authors || []).map(author => author.name || author);
                   return (
