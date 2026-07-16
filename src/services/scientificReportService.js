@@ -20,6 +20,23 @@ import {
 
 const CORPUS_CACHE = new Map();
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour in ms
+const DEGRADED_CACHE_TTL = 5 * 60 * 1000;
+const REPORT_SOURCE_TIMEOUT_MS = 6500;
+
+function withSourceDeadline(promise, timeoutMs = REPORT_SOURCE_TIMEOUT_MS) {
+  const unavailable = { papers: [], status: 'unavailable' };
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(result || unavailable);
+    };
+    const timeoutId = setTimeout(() => finish(unavailable), timeoutMs);
+    Promise.resolve(promise).then(finish).catch(() => finish(unavailable));
+  });
+}
 
 export { getDateThresholds, extractFeaturedConcepts };
 export const scorePaper = scoreScientificPaper;
@@ -285,7 +302,7 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
   
   const { fromStr, toStr, days } = getDateThresholds(tf);
   const cached = CORPUS_CACHE.get(cacheKey);
-  let corpus = !forceRefresh && cached && (Date.now() - cached.timestamp < CACHE_TTL)
+  let corpus = !forceRefresh && cached && (Date.now() - cached.timestamp < (cached.ttlMs || CACHE_TTL))
     ? cached.data
     : null;
 
@@ -294,9 +311,13 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
     const hasCountryFilter = filters.countries?.length > 0;
     const excludedSource = { papers: [], status: 'excluded' };
     const [arxivResult, openAlexResult, pubmedResult] = await Promise.all([
-      hasCountryFilter ? Promise.resolve(excludedSource) : fetchArxivCandidates(tf, normalizedPage, filters, { forceRefresh }),
-      fetchOpenAlexCandidates(fromStr, toStr, tf, normalizedPage, filters, { forceRefresh }),
-      hasCountryFilter ? Promise.resolve(excludedSource) : fetchPubmedCandidates(tf, normalizedPage, filters),
+      hasCountryFilter
+        ? Promise.resolve(excludedSource)
+        : withSourceDeadline(fetchArxivCandidates(tf, normalizedPage, filters, { forceRefresh })),
+      withSourceDeadline(fetchOpenAlexCandidates(fromStr, toStr, tf, normalizedPage, filters, { forceRefresh })),
+      hasCountryFilter
+        ? Promise.resolve(excludedSource)
+        : withSourceDeadline(fetchPubmedCandidates(tf, normalizedPage, filters)),
     ]);
 
     const coverage = {
@@ -320,7 +341,12 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
     }
 
     corpus = { candidates, coverage };
-    CORPUS_CACHE.set(cacheKey, { timestamp: Date.now(), data: corpus });
+    const hasUnavailableSource = coverage.sources.some(source => source.status === 'unavailable');
+    CORPUS_CACHE.set(cacheKey, {
+      timestamp: Date.now(),
+      ttlMs: hasUnavailableSource ? DEGRADED_CACHE_TTL : CACHE_TTL,
+      data: corpus,
+    });
   } else {
     console.log(`[ScientificReport] Reusing cached corpus for: ${cacheKey}`);
   }

@@ -28,3 +28,14 @@ test('creates isolated storage keys and migrates unique legacy authors', () => {
   assert.deepEqual(createFollowEntity(migrated[0])?.type, 'author');
 });
 
+test('removes undefined provider fields before persisting a follow', () => {
+  const follow = createFollowEntity({
+    type: 'author',
+    id: 'A1',
+    displayName: 'Ada',
+    externalIds: { orcid: undefined, semanticScholar: 'S1' },
+    metadata: { categoryIds: [undefined, 'cs.AI'] },
+  });
+  assert.deepEqual(follow.externalIds, { semanticScholar: 'S1' });
+  assert.deepEqual(follow.metadata.categoryIds, ['cs.AI']);
+});

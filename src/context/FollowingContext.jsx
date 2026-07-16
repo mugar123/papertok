@@ -30,6 +30,7 @@ export function FollowingProvider({ children }) {
   const [followedEntities, setFollowedEntities] = useState([]);
   const [loading, setLoading] = useState(Boolean(user));
   const [error, setError] = useState(null);
+  const [pendingFollowKeys, setPendingFollowKeys] = useState(new Set());
   const legacyMigrationAttempted = useRef(false);
 
   useEffect(() => {
@@ -89,10 +90,16 @@ export function FollowingProvider({ children }) {
   }, [user?.uid, followedAuthors]);
 
   const isFollowing = useCallback((entity) => followsEntity(followedEntities, entity), [followedEntities]);
+  const isFollowPending = useCallback((input) => {
+    const entity = createFollowEntity(input);
+    return entity ? pendingFollowKeys.has(createFollowKey(entity.type, entity.canonicalId)) : false;
+  }, [pendingFollowKeys]);
 
   const toggleFollow = useCallback(async (input) => {
     const entity = createFollowEntity(input);
     if (!entity || !user?.uid) return false;
+    const pendingKey = createFollowKey(entity.type, entity.canonicalId);
+    if (pendingFollowKeys.has(pendingKey)) return followsEntity(followedEntities, entity);
 
     const existingFollow = followedEntities.find((follow) => followsEntity([follow], entity));
     const wasFollowing = Boolean(existingFollow);
@@ -102,6 +109,7 @@ export function FollowingProvider({ children }) {
       : [...previous, entity];
     setFollowedEntities(next);
     setError(null);
+    setPendingFollowKeys(current => new Set(current).add(pendingKey));
 
     try {
       if (IS_DEMO) {
@@ -119,8 +127,14 @@ export function FollowingProvider({ children }) {
       setFollowedEntities(previous);
       setError(toggleError);
       throw toggleError;
+    } finally {
+      setPendingFollowKeys(current => {
+        const updated = new Set(current);
+        updated.delete(pendingKey);
+        return updated;
+      });
     }
-  }, [followedEntities, user]);
+  }, [followedEntities, pendingFollowKeys, user]);
 
   const followedByType = useMemo(() => followedEntities.reduce((groups, entity) => {
     groups[entity.type] = [...(groups[entity.type] || []), entity];
@@ -133,8 +147,9 @@ export function FollowingProvider({ children }) {
     loading,
     error,
     isFollowing,
+    isFollowPending,
     toggleFollow,
-  }), [error, followedByType, followedEntities, isFollowing, loading, toggleFollow]);
+  }), [error, followedByType, followedEntities, isFollowPending, isFollowing, loading, toggleFollow]);
 
   return <FollowingContext.Provider value={value}>{children}</FollowingContext.Provider>;
 }

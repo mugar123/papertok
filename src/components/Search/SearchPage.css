@@ -113,6 +113,25 @@
   gap: 0.8rem;
 }
 
+.search-progress {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 999px;
+  background: rgba(17, 17, 24, 0.88);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  backdrop-filter: blur(14px);
+  animation: searchProgressIn 0.2s ease-out both;
+}
+
 .search-empty-icon {
   opacity: 0.3;
 }
@@ -127,6 +146,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  animation: searchSectionIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .search-section-title {
@@ -252,6 +272,9 @@
   flex-shrink: 0;
   transition: background 0.25s, box-shadow 0.25s, transform 0.15s, opacity 0.2s;
   white-space: nowrap;
+  min-width: 98px;
+  min-height: 31px;
+  gap: 6px;
 }
 
 .search-follow-btn:hover {
@@ -268,6 +291,32 @@
   background: rgba(255, 255, 255, 0.07);
   color: var(--text-secondary, #a0a0b0);
   border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.search-follow-btn.following:not(.is-pending) {
+  animation: followConfirmed 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.search-follow-btn.is-pending {
+  opacity: 0.78;
+  cursor: wait;
+  pointer-events: none;
+}
+
+@keyframes followConfirmed {
+  0% { transform: scale(0.88); }
+  55% { transform: scale(1.08); }
+  100% { transform: scale(1); }
+}
+
+@keyframes searchProgressIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes searchSectionIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .search-follow-btn.following:hover {
@@ -408,4 +457,24 @@
   flex-direction: column;
   gap: 16px;
   width: 100%;
+}
+
+@media (max-width: 520px) {
+  .search-item {
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .search-follow-btn {
+    min-width: 84px;
+    padding-inline: 12px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-section,
+  .search-progress,
+  .search-follow-btn.following:not(.is-pending) {
+    animation: none;
+  }
 }

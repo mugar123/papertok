@@ -24,6 +24,18 @@ export function createFollowKey(type, canonicalId) {
   return `${safeType}_${safeId}`.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 240);
 }
 
+export function compactFollowData(value) {
+  if (Array.isArray(value)) {
+    return value.map(compactFollowData).filter(item => item !== undefined);
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .map(([key, item]) => [key, compactFollowData(item)]));
+  }
+  return value;
+}
+
 export function createFollowEntity(input = {}) {
   const type = input.type === 'concept' ? 'topic' : input.type;
   if (!SUPPORTED_FOLLOW_TYPES.has(type)) return null;
@@ -32,14 +44,14 @@ export function createFollowEntity(input = {}) {
   const canonicalId = normalizeFollowId(input.canonicalId || input.id || displayName);
   if (!canonicalId || !displayName) return null;
 
-  return {
+  return compactFollowData({
     type,
     canonicalId,
     displayName,
     source: input.source || 'papertok',
     externalIds: input.externalIds || {},
     metadata: input.metadata || {},
-  };
+  });
 }
 
 export function followsEntity(followedEntities, entity) {
@@ -67,4 +79,3 @@ export function migrateLegacyAuthors(authorNames = []) {
     source: 'legacy',
   })).filter(Boolean);
 }
-

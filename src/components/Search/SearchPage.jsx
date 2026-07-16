@@ -1,19 +1,68 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, FileText, Users, Loader2, ArrowLeft, Building2, Lightbulb, Briefcase, Sparkles, Compass, TrendingUp } from 'lucide-react';
+import { Search, FileText, Users, Loader2, ArrowLeft, Building2, Lightbulb, Briefcase, Sparkles, Compass, TrendingUp, Check } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { searchPapers } from '../../services/arxivService';
 import { searchAuthors, searchInstitutions, searchConcepts, searchSources } from '../../services/openAlexService';
 import { searchProjects } from '../../services/openAireService';
+import { OpenAlexAdapter } from '../../services/adapters/OpenAlexAdapter';
+import { PaperBuilder } from '../../services/PaperBuilder';
 import { useFollowing } from '../../context/FollowingContext';
+import { useFeed } from '../../context/FeedContext';
 import { motion } from 'framer-motion';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 
 import './SearchPage.css';
 
-export default function SearchPage() {
+const paperSearchAdapter = new OpenAlexAdapter();
+
+function withTimeout(promise, fallback = [], timeoutMs = 8000) {
+  return new Promise((resolve) => {
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutId);
+      resolve(value);
+    };
+    const timeoutId = setTimeout(() => finish(fallback), timeoutMs);
+    Promise.resolve(promise).then(finish).catch(() => finish(fallback));
+  });
+}
+
+function FollowButton({ entity, isFollowing, isPending, onToggle }) {
+  const following = isFollowing(entity);
+  const pending = isPending(entity);
+
+  return (
+    <button
+      className={`search-follow-btn ${following ? 'following' : ''} ${pending ? 'is-pending' : ''}`}
+      onClick={(event) => onToggle(event, entity)}
+      disabled={pending}
+      aria-pressed={following}
+    >
+      {pending && <Loader2 className="spinning" size={14} />}
+      {!pending && following && <Check size={14} />}
+      <span>{pending ? 'Guardando...' : following ? 'Siguiendo' : 'Seguir'}</span>
+    </button>
+  );
+}
+
+function formatPaperDate(paper) {
+  const dateValue = paper.published || paper.publishedDate;
+  if (dateValue) {
+    const date = new Date(dateValue);
+    if (!Number.isNaN(date.getTime())) return date.toLocaleDateString('es-ES');
+  }
+  return paper.year ? String(paper.year) : 'Fecha desconocida';
+}
+
+export default function SearchPage({ onSaveToList = () => {} }) {
   const navigate = useNavigate();
-  const { isFollowing, toggleFollow } = useFollowing();
+  const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
+  const {
+    likedPaperIds, savedPaperIds, readPaperIds,
+    toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip,
+  } = useFeed();
   
   const [query, setQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
@@ -33,40 +82,50 @@ export default function SearchPage() {
   const timeoutRef = useRef(null);
 
   const searchIdRef = useRef(0);
+  const getInteractionState = useCallback((paper) => ({
+    isLiked: likedPaperIds.has(paper.id),
+    isSaved: savedPaperIds.has(paper.id),
+    isRead: readPaperIds.has(paper.id),
+  }), [likedPaperIds, readPaperIds, savedPaperIds]);
 
   const performSearch = useCallback(async (searchTerm) => {
     const searchId = ++searchIdRef.current;
     setIsSearching(true);
     setHasSearched(true);
-    try {
-      const [papers, authors, institutions, concepts, sources, projects] = await Promise.all([
-        searchPapers(searchTerm, 0, 10).catch(() => []),
-        searchAuthors(searchTerm).catch(() => []),
-        searchInstitutions(searchTerm).catch(() => []),
-        searchConcepts(searchTerm).catch(() => []),
-        searchSources(searchTerm).catch(() => []),
-        searchProjects(searchTerm).then(res => res.projects).catch(() => [])
-      ]);
-      
-      if (searchId === searchIdRef.current) {
-        setPaperResults(papers);
-        setAuthorResults(authors);
-        setInstitutionResults(institutions);
-        setConceptResults(concepts);
-        setSourceResults(sources);
-        setProjectResults(projects);
-        setIsSearching(false);
-      }
-    } catch (err) {
-      console.error(err);
-      if (searchId === searchIdRef.current) {
-        setIsSearching(false);
-      }
+    setPaperResults([]);
+    setAuthorResults([]);
+    setInstitutionResults([]);
+    setConceptResults([]);
+    setSourceResults([]);
+    setProjectResults([]);
+
+    const publish = (setter) => (results) => {
+      if (searchId === searchIdRef.current) setter(results);
+      return results;
+    };
+
+    const tasks = [
+      withTimeout(
+        paperSearchAdapter.search(searchTerm, 1)
+          .then(result => PaperBuilder.deduplicate(result.papers || []).slice(0, 10)),
+      ).then(publish(setPaperResults)),
+      withTimeout(searchAuthors(searchTerm)).then(publish(setAuthorResults)),
+      withTimeout(searchInstitutions(searchTerm)).then(publish(setInstitutionResults)),
+      withTimeout(searchConcepts(searchTerm)).then(publish(setConceptResults)),
+      withTimeout(searchSources(searchTerm)).then(publish(setSourceResults)),
+      withTimeout(searchProjects(searchTerm).then(result => result.projects || []))
+        .then(publish(setProjectResults)),
+    ];
+
+    await Promise.allSettled(tasks);
+    if (searchId === searchIdRef.current) {
+      setIsSearching(false);
     }
   }, []);
 
   useEffect(() => {
     if (!query.trim()) {
+      searchIdRef.current += 1;
       setTimeout(() => {
         setPaperResults([]);
         setAuthorResults([]);
@@ -74,19 +133,24 @@ export default function SearchPage() {
         setConceptResults([]);
         setSourceResults([]);
         setProjectResults([]);
+        setIsSearching(false);
         setIsDebouncing(false);
         setHasSearched(false);
       }, 0);
       return;
     }
 
-    setTimeout(() => setIsDebouncing(true), 0);
+    searchIdRef.current += 1;
+    setTimeout(() => {
+      setIsDebouncing(true);
+      setIsSearching(false);
+    }, 0);
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     
     timeoutRef.current = setTimeout(() => {
       setIsDebouncing(false);
-      performSearch(query);
-    }, 600);
+      performSearch(query.trim());
+    }, 350);
     
     return () => clearTimeout(timeoutRef.current);
   }, [query, performSearch]);
@@ -103,7 +167,13 @@ export default function SearchPage() {
   const orcidMatch = query.match(/\b(\d{4}-\d{4}-\d{4}-\d{3}[\dX])\b/i);
   const cleanOrcid = orcidMatch ? orcidMatch[1].toUpperCase() : null;
 
-  const hasResults = paperResults.length > 0 || authorResults.length > 0 || institutionResults.length > 0 || conceptResults.length > 0 || sourceResults.length > 0 || !!cleanOrcid;
+  const hasResults = paperResults.length > 0
+    || authorResults.length > 0
+    || institutionResults.length > 0
+    || conceptResults.length > 0
+    || sourceResults.length > 0
+    || projectResults.length > 0
+    || !!cleanOrcid;
 
   const suggestedQueries = [
     { label: 'MIT', icon: <Building2 size={14} />, query: 'Massachusetts Institute of Technology' },
@@ -136,12 +206,21 @@ export default function SearchPage() {
 
       {/* Results */}
       <div className="search-results custom-scrollbar">
-        {isSearching || isDebouncing ? (
-          <div className="search-loading">
-            <Loader2 className="spinning" size={36} />
-          </div>
-        ) : (
-          <div className="search-results-list animate-fade-in">
+        <div className="search-results-list animate-fade-in">
+            {(isSearching || isDebouncing) && !hasResults && (
+              <div className="search-loading" role="status">
+                <Loader2 className="spinning" size={36} />
+                <span>Buscando en PaperTok...</span>
+              </div>
+            )}
+
+            {(isSearching || isDebouncing) && hasResults && (
+              <div className="search-progress" role="status">
+                <Loader2 className="spinning" size={15} />
+                Actualizando resultados
+              </div>
+            )}
+
             {!query && !isSearching && (
               <div className="search-initial-state animate-fade-in">
                 <div className="search-initial-hero">
@@ -171,7 +250,7 @@ export default function SearchPage() {
               </div>
             )}
 
-            {!hasResults && query && hasSearched && (
+            {!hasResults && query && hasSearched && !isSearching && !isDebouncing && (
               <div className="search-empty">
                 <Search size={40} className="search-empty-icon" />
                 <p>No se encontraron resultados para "{query}"</p>
@@ -206,12 +285,12 @@ export default function SearchPage() {
                       <h4>{inst.display_name}</h4>
                       <p>{inst.country_code || 'País desconocido'} • Institución académica</p>
                     </div>
-                    <button
-                      className={`search-follow-btn ${isFollowing({ type: 'institution', id: inst.id, name: inst.display_name }) ? 'following' : ''}`}
-                      onClick={(event) => handleToggleFollow(event, { type: 'institution', id: inst.id, displayName: inst.display_name, source: 'openalex', externalIds: { ror: inst.ror } })}
-                    >
-                      {isFollowing({ type: 'institution', id: inst.id, name: inst.display_name }) ? 'Siguiendo' : 'Seguir'}
-                    </button>
+                    <FollowButton
+                      entity={{ type: 'institution', id: inst.id, displayName: inst.display_name, source: 'openalex', externalIds: { ror: inst.ror || inst.id } }}
+                      isFollowing={isFollowing}
+                      isPending={isFollowPending}
+                      onToggle={handleToggleFollow}
+                    />
                   </div>
                 ))}
               </div>
@@ -228,12 +307,12 @@ export default function SearchPage() {
                       <h4>{project.acronym ? `${project.acronym}: ${project.title}` : project.title}</h4>
                       <p>{project.funder}{project.budget > 0 ? (() => { try { return ` • ${new Intl.NumberFormat('es-ES', { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget)}`; } catch { return ` • ${project.budget.toLocaleString('es-ES')} €`; } })() : ''}</p>
                     </div>
-                    <button
-                      className={`search-follow-btn ${isFollowing({ type: 'project', id: project.id, name: project.acronym || project.title }) ? 'following' : ''}`}
-                      onClick={(event) => handleToggleFollow(event, { type: 'project', id: project.id, displayName: project.acronym || project.title, source: 'openaire', metadata: { funder: project.funder } })}
-                    >
-                      {isFollowing({ type: 'project', id: project.id, name: project.acronym || project.title }) ? 'Siguiendo' : 'Seguir'}
-                    </button>
+                    <FollowButton
+                      entity={{ type: 'project', id: project.id, displayName: project.acronym || project.title, source: 'openaire', metadata: { funder: project.funder } }}
+                      isFollowing={isFollowing}
+                      isPending={isFollowPending}
+                      onToggle={handleToggleFollow}
+                    />
                   </div>
                 ))}
               </div>
@@ -250,12 +329,12 @@ export default function SearchPage() {
                       <h4>{concept.display_name}</h4>
                       <p>Nivel {concept.level} • {concept.works_count?.toLocaleString()} obras relacionadas</p>
                     </div>
-                    <button
-                      className={`search-follow-btn ${isFollowing({ type: 'topic', id: concept.id, name: concept.display_name }) ? 'following' : ''}`}
-                      onClick={(event) => handleToggleFollow(event, { type: 'topic', id: concept.id, displayName: concept.display_name, source: 'papertok', metadata: { categoryIds: concept.categoryIds } })}
-                    >
-                      {isFollowing({ type: 'topic', id: concept.id, name: concept.display_name }) ? 'Siguiendo' : 'Seguir'}
-                    </button>
+                    <FollowButton
+                      entity={{ type: 'topic', id: concept.id, displayName: concept.display_name, source: 'papertok', metadata: { categoryIds: concept.categoryIds } }}
+                      isFollowing={isFollowing}
+                      isPending={isFollowPending}
+                      onToggle={handleToggleFollow}
+                    />
                   </div>
                 ))}
               </div>
@@ -283,7 +362,6 @@ export default function SearchPage() {
                 <h3 className="search-section-title">Autores</h3>
                 {authorResults.map(author => {
                   const authorFollow = { type: 'author', id: author.id, displayName: author.display_name, source: 'openalex', externalIds: { orcid: author.orcid } };
-                  const authorIsFollowing = isFollowing(authorFollow);
                   return (
                     <div key={author.id} className="search-item" onClick={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}>
                       <div className="search-item-avatar">
@@ -293,12 +371,12 @@ export default function SearchPage() {
                         <h4>{author.display_name}</h4>
                         <p>{author.institution || 'Institución desconocida'}</p>
                       </div>
-                      <button 
-                        className={`search-follow-btn ${authorIsFollowing ? 'following' : ''}`}
-                        onClick={(e) => handleToggleFollow(e, authorFollow)}
-                      >
-                        {authorIsFollowing ? 'Siguiendo' : 'Seguir'}
-                      </button>
+                      <FollowButton
+                        entity={authorFollow}
+                        isFollowing={isFollowing}
+                        isPending={isFollowPending}
+                        onToggle={handleToggleFollow}
+                      />
                     </div>
                   );
                 })}
@@ -309,20 +387,22 @@ export default function SearchPage() {
             {paperResults.length > 0 && (
               <div className="search-section">
                 <h3 className="search-section-title">Papers Recientes</h3>
-                {paperResults.map(paper => (
-                  <div key={paper.id} className="search-item paper-item" onClick={() => setSelectedPaper(paper)}>
-                    <div className="search-item-icon"><FileText size={22} /></div>
-                    <div className="search-item-info">
-                      <h4>{paper.title}</h4>
-                      <p className="search-item-authors">{paper.authors.slice(0, 3).join(', ')}{paper.authors.length > 3 ? ` +${paper.authors.length - 3}` : ''}</p>
-                      <span className="search-item-meta">{new Date(paper.published).toLocaleDateString()} • {paper.primaryCategory}</span>
+                {paperResults.map(paper => {
+                  const authors = (paper.authors || []).map(author => author.name || author);
+                  return (
+                    <div key={paper.id} className="search-item paper-item" onClick={() => setSelectedPaper(paper)}>
+                      <div className="search-item-icon"><FileText size={22} /></div>
+                      <div className="search-item-info">
+                        <h4>{paper.title}</h4>
+                        <p className="search-item-authors">{authors.slice(0, 3).join(', ')}{authors.length > 3 ? ` +${authors.length - 3}` : ''}</p>
+                        <span className="search-item-meta">{formatPaperDate(paper)} • {paper.primaryCategory || paper.journal || 'Paper'}</span>
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
-        )}
       </div>
 
       {/* Paper Card Overlay */}
@@ -338,10 +418,17 @@ export default function SearchPage() {
           <div style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
             <PaperCard 
               paper={selectedPaper} 
+              isLiked={likedPaperIds.has(selectedPaper.id)}
+              isSaved={savedPaperIds.has(selectedPaper.id)}
+              isRead={readPaperIds.has(selectedPaper.id)}
+              onLike={toggleLike}
+              onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
+              onMarkAsRead={markAsRead}
               onOpenPdf={(paper) => setPdfPaper(paper)}
-              onOpenAuthors={() => {}}
-              trackViewTime={() => {}}
-              trackSkip={() => {}}
+              onSaveToList={onSaveToList}
+              getInteractionState={getInteractionState}
+              trackViewTime={trackViewTime}
+              trackSkip={trackSkip}
             />
           </div>
         </div>

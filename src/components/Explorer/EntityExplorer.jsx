@@ -1,6 +1,6 @@
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
+import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, ChevronUp, BadgeCheck, Check, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getInstitutionRecentImpact } from '../../services/openAlexService';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
 import { fetchPapers, fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
@@ -12,9 +12,11 @@ import { filterAndSortEntityPapers, pinSourcePaper } from '../../utils/entityExp
 import { AnimatePresence, motion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
 import { useFollowing } from '../../context/FollowingContext';
+import { useFeed } from '../../context/FeedContext';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
+import { normalizeScientificMarkup } from '../../utils/latex';
 import 'katex/dist/katex.min.css';
 import './EntityExplorer.css';
 
@@ -25,11 +27,15 @@ const handleActivationKey = (event, action) => {
   action();
 };
 
-export default function EntityExplorer() {
+export default function EntityExplorer({ onSaveToList = () => {} }) {
   const { type, id } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { isFollowing, toggleFollow } = useFollowing();
+  const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
+  const {
+    likedPaperIds, savedPaperIds, readPaperIds,
+    toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip,
+  } = useFeed();
 
   const [entity, setEntity] = useState(null);
   const [entityError, setEntityError] = useState(null);
@@ -78,6 +84,11 @@ export default function EntityExplorer() {
   const [authorsPage, setAuthorsPage] = useState(1);
   const [hasMoreAuthors, setHasMoreAuthors] = useState(false);
   const observerAuthorsRef = useRef(null);
+  const getInteractionState = useCallback((paper) => ({
+    isLiked: likedPaperIds.has(paper.id),
+    isSaved: savedPaperIds.has(paper.id),
+    isRead: readPaperIds.has(paper.id),
+  }), [likedPaperIds, readPaperIds, savedPaperIds]);
 
   const followEntity = useMemo(() => {
     if (!entity || !['author', 'institution', 'project', 'concept', 'topic'].includes(type)) return null;
@@ -710,12 +721,17 @@ export default function EntityExplorer() {
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 <h1 className="ehc-name" style={{ margin: 0 }}>{entity.display_name}</h1>
                 {followEntity && (
-                  <button 
-                    className={`search-follow-btn ${isFollowing(followEntity) ? 'following' : ''}`}
+                  <button
+                    className={`entity-follow-btn ${isFollowing(followEntity) ? 'following' : ''} ${isFollowPending(followEntity) ? 'is-pending' : ''}`}
                     onClick={(e) => { e.stopPropagation(); toggleFollow(followEntity).catch(console.error); }}
-                    style={{ transform: 'scale(0.9)', transformOrigin: 'left center' }}
+                    disabled={isFollowPending(followEntity)}
+                    aria-pressed={isFollowing(followEntity)}
                   >
-                    {isFollowing(followEntity) ? 'Siguiendo' : 'Seguir'}
+                    {isFollowPending(followEntity)
+                      ? <><Loader2 className="spinning" size={14} /> <span>Guardando...</span></>
+                      : isFollowing(followEntity)
+                        ? <><Check size={14} /> <span>Siguiendo</span></>
+                        : <span>Seguir</span>}
                   </button>
                 )}
               </div>
@@ -1183,7 +1199,7 @@ export default function EntityExplorer() {
                   onKeyDown={(event) => handleActivationKey(event, () => setSelectedPaper(paper))}
                   role="button"
                   tabIndex={0}
-                  aria-label={`Abrir publicación: ${paper.title || 'Sin título'}`}
+                  aria-label={`Abrir publicación: ${normalizeScientificMarkup(paper.title) || 'Sin título'}`}
                   style={{ '--i': idx }}
                 >
                   <div className="eli-header">
@@ -1439,10 +1455,18 @@ export default function EntityExplorer() {
             </button>
             <div className="explorer-overlay-content hide-scroll-hint">
               <PaperCard 
-                paper={selectedPaper} 
+                paper={selectedPaper}
+                isLiked={likedPaperIds.has(selectedPaper.id)}
+                isSaved={savedPaperIds.has(selectedPaper.id)}
+                isRead={readPaperIds.has(selectedPaper.id)}
+                onLike={toggleLike}
+                onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
+                onMarkAsRead={markAsRead}
                 onOpenPdf={(paper) => setPdfPaperToView(paper)}
-                trackViewTime={() => {}}
-                trackSkip={() => {}}
+                onSaveToList={onSaveToList}
+                getInteractionState={getInteractionState}
+                trackViewTime={trackViewTime}
+                trackSkip={trackSkip}
               />
             </div>
           </motion.div>

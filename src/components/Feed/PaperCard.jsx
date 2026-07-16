@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
 import { 
-  Share2, FileText, Check, Loader2, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, Unlock, Lock, ExternalLink,
+  ArrowLeft, Share2, FileText, Check, Loader2, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, Unlock, Lock, ExternalLink,
   Rocket, Settings, Wrench, Cog, PenTool, Building, Map, Compass, Beaker, TestTube, Thermometer, HeartPulse, Stethoscope, Syringe, Pill, Leaf, Bug, Sprout, Landmark, Coins, Radio, Box
 } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
@@ -43,6 +43,7 @@ const PaperCard = memo(function PaperCard({
   trackSkip = () => {},
   onOpenPdf = () => {},
   onSaveToList = () => {},
+  getInteractionState = () => ({}),
   hideScrollHint = false
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -51,6 +52,7 @@ const PaperCard = memo(function PaperCard({
   const [isMarkingRead, setIsMarkingRead] = useState(false);
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
+  const [selectedRelatedPaper, setSelectedRelatedPaper] = useState(null);
   const [isResolvingAccess, setIsResolvingAccess] = useState(false);
   const { followedByType, isFollowing } = useFollowing();
   const navigate = useNavigate();
@@ -71,7 +73,7 @@ const PaperCard = memo(function PaperCard({
   const totalViewTime = useRef(0);
 
   useEffect(() => {
-    if (!cardRef.current) return;
+    if (!cardRef.current || showRelated || selectedRelatedPaper) return;
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries;
@@ -109,7 +111,7 @@ const PaperCard = memo(function PaperCard({
         }
       }
     };
-  }, [paper, trackViewTime, trackSkip]);
+  }, [paper, selectedRelatedPaper, showRelated, trackViewTime, trackSkip]);
 
   const [project, setProject] = useState(null);
 
@@ -136,6 +138,9 @@ const PaperCard = memo(function PaperCard({
   };
 
   const isReadActive = isRead || isMarkingRead;
+  const selectedRelatedState = selectedRelatedPaper
+    ? getInteractionState(selectedRelatedPaper) || {}
+    : {};
 
   const handleMarkAsRead = (e) => {
     e.stopPropagation();
@@ -449,7 +454,7 @@ const PaperCard = memo(function PaperCard({
             }}
           >
             <Briefcase size={12} />
-            <span>{project.funderLevel || project.funder}: {project.acronym}</span>
+            <span>{[project.funderLevel, project.funder].find(value => value && value !== 'Unknown Funder') || 'Proyecto'}: {project.acronym}</span>
           </div>
         )}
 
@@ -652,8 +657,39 @@ const PaperCard = memo(function PaperCard({
         <RelatedPapersSheet
           paper={paper}
           onClose={() => setShowRelated(false)}
-          onOpenPdf={(relatedPaper) => { setShowRelated(false); onOpenPdf(relatedPaper); }}
+          onSelectPaper={(relatedPaper) => {
+            setShowRelated(false);
+            setSelectedRelatedPaper(relatedPaper);
+          }}
         />,
+        document.body,
+      )}
+      {selectedRelatedPaper && createPortal(
+        <div className="related-card-overlay">
+          <button
+            className="related-card-back"
+            onClick={() => setSelectedRelatedPaper(null)}
+            aria-label="Volver al paper anterior"
+            title="Volver"
+          >
+            <ArrowLeft size={22} />
+          </button>
+          <PaperCard
+            paper={selectedRelatedPaper}
+            isLiked={Boolean(selectedRelatedState.isLiked)}
+            isSaved={Boolean(selectedRelatedState.isSaved)}
+            isRead={Boolean(selectedRelatedState.isRead)}
+            onLike={onLike}
+            onNotInterested={onNotInterested}
+            onMarkAsRead={onMarkAsRead}
+            trackViewTime={trackViewTime}
+            trackSkip={trackSkip}
+            onOpenPdf={onOpenPdf}
+            onSaveToList={onSaveToList}
+            getInteractionState={getInteractionState}
+            hideScrollHint
+          />
+        </div>,
         document.body,
       )}
     </div>

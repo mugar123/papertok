@@ -84,7 +84,7 @@ function AppContent() {
             path="/search"
             element={
               <ProtectedRoute>
-                <PageTransition><SearchPage /></PageTransition>
+                <PageTransition><SearchPage onSaveToList={setSaveModalPaper} /></PageTransition>
               </ProtectedRoute>
             }
           />
@@ -92,7 +92,7 @@ function AppContent() {
             path="/explorer/:type/:id"
             element={
               <ProtectedRoute>
-                <PageTransition><EntityExplorer /></PageTransition>
+                <PageTransition><EntityExplorer onSaveToList={setSaveModalPaper} /></PageTransition>
               </ProtectedRoute>
             }
           />

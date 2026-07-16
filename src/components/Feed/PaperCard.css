@@ -479,12 +479,13 @@
 .related-overlay {
   position: fixed;
   inset: 0;
-  z-index: 1600;
+  z-index: 12000;
   display: flex;
   align-items: flex-end;
   justify-content: center;
   background: rgba(0, 0, 0, 0.62);
   backdrop-filter: blur(5px);
+  animation: relatedBackdropIn 0.2s ease-out both;
 }
 
 .related-sheet {
@@ -497,6 +498,7 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px 8px 0 0;
   box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.45);
+  animation: relatedSheetIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .related-header {
@@ -526,6 +528,9 @@
   color: #fff;
   text-align: left;
   cursor: pointer;
+  opacity: 0;
+  animation: relatedItemIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(80ms + var(--related-index, 0) * 35ms);
 }
 
 .related-item:hover { background: rgba(255, 255, 255, 0.06); }
@@ -533,6 +538,84 @@
 .related-item-copy strong { font-size: 0.92rem; line-height: 1.3; }
 .related-item-copy small { color: rgba(255, 255, 255, 0.58); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .related-state { min-height: 180px; display: flex; align-items: center; justify-content: center; gap: 10px; padding: 24px; color: rgba(255, 255, 255, 0.62); text-align: center; }
+
+.related-card-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12010;
+  overflow: hidden;
+  background: #08080d;
+  animation: relatedCardIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.related-card-back {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: 16px;
+  z-index: 20;
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(15, 15, 22, 0.78);
+  color: #fff;
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+}
+
+.related-card-back:hover { background: rgba(255, 255, 255, 0.16); }
+
+.related-overlay.is-closing {
+  animation: relatedBackdropOut 0.18s ease-in both;
+}
+
+.related-overlay.is-closing .related-sheet {
+  animation: relatedSheetOut 0.18s ease-in both;
+}
+
+@keyframes relatedBackdropIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes relatedBackdropOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes relatedSheetIn {
+  from { opacity: 0; transform: translateY(44px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes relatedSheetOut {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(24px); }
+}
+
+@keyframes relatedItemIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes relatedCardIn {
+  from { opacity: 0; transform: scale(0.985); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .related-overlay,
+  .related-sheet,
+  .related-item,
+  .related-card-overlay {
+    animation: none;
+  }
+
+  .related-item { opacity: 1; }
+}
 
 .pc-read-btn--secondary:hover {
   background: rgba(255, 255, 255, 0.2);

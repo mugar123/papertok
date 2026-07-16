@@ -498,25 +498,29 @@ export async function getAuthorProfileExact(authorName, arxivId) {
  */
 export async function searchAuthors(query) {
   if (!query) return [];
-  const cleanName = encodeURIComponent(query.trim());
-  const url = `https://api.semanticscholar.org/graph/v1/author/search?query=${cleanName}&limit=10&fields=name,url,paperCount,citationCount,hIndex`;
+  const normalizedQuery = query.trim();
+  const cleanName = encodeURIComponent(normalizedQuery);
+  const url = `https://api.openalex.org/authors?search=${cleanName}&per-page=10`;
   
   try {
-    const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return [];
-    
-    const data = await response.json();
-    if (data && data.data) {
-      return data.data.map(author => ({
-        id: author.authorId,
-        display_name: author.name,
-        works_count: author.paperCount || 0,
-        cited_by_count: author.citationCount || 0,
-        h_index: author.hIndex || 0,
-        institution: null,
-        concepts: []
-      }));
-    }
+    const data = await openAlexJson(url, {
+      timeoutMs: 7000,
+      cacheTtlMs: 10 * 60 * 1000,
+      staleIfError: true,
+      persistentKey: `author-search:${normalizedQuery.toLowerCase()}`,
+      persistentTtlMs: 24 * 60 * 60 * 1000,
+    });
+
+    return (data?.results || []).map(author => ({
+      id: author.id,
+      display_name: author.display_name,
+      works_count: author.works_count || 0,
+      cited_by_count: author.cited_by_count || 0,
+      h_index: author.summary_stats?.h_index || 0,
+      orcid: author.orcid || null,
+      institution: author.last_known_institutions?.[0]?.display_name || null,
+      concepts: (author.x_concepts || []).slice(0, 5),
+    })).filter(author => author.id && author.display_name);
   } catch {
     // Search authors failed
   }

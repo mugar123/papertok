@@ -23,6 +23,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
   const sentinelRef = useRef(null);
   const [showLoader, setShowLoader] = useState(false);
   const scrollIdleTimerRef = useRef(null);
+  const getInteractionState = useCallback((paper) => ({
+    isLiked: likedPaperIds.has(paper.id),
+    isSaved: savedPaperIds.has(paper.id),
+    isRead: readPaperIds?.has(paper.id),
+  }), [likedPaperIds, readPaperIds, savedPaperIds]);
 
   // Restore scroll position instantly before browser paints
   useLayoutEffect(() => {
@@ -266,6 +271,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
               trackSkip={trackSkip}
               onOpenPdf={handleOpenPdf}
               onSaveToList={handleSaveToList}
+              getInteractionState={getInteractionState}
             />
           </div>
         ))}

@@ -1,11 +1,28 @@
-import { useEffect, useState } from 'react';
-import { ExternalLink, Loader2, Network, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronRight, Loader2, Network, X } from 'lucide-react';
 import { getRelatedPapers } from '../../services/relatedPapersService';
 import ScientificText from '../ScientificText';
 
-export default function RelatedPapersSheet({ paper, onClose, onOpenPdf }) {
+export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
   const [papers, setPapers] = useState([]);
   const [status, setStatus] = useState('loading');
+  const [isClosing, setIsClosing] = useState(false);
+  const closeTimerRef = useRef(null);
+  const closingRef = useRef(false);
+
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setIsClosing(true);
+    closeTimerRef.current = setTimeout(onClose, 180);
+  }, [onClose]);
+
+  const requestPaper = useCallback((relatedPaper) => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setIsClosing(true);
+    closeTimerRef.current = setTimeout(() => onSelectPaper(relatedPaper), 150);
+  }, [onSelectPaper]);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,17 +38,29 @@ export default function RelatedPapersSheet({ paper, onClose, onOpenPdf }) {
     return () => { cancelled = true; };
   }, [paper]);
 
-  const openPaper = (related) => {
-    if (related.arxivId || related.pdfUrl) onOpenPdf(related);
-    else window.open(related.landingPageUrl || (related.doi ? `https://doi.org/${related.doi}` : ''), '_blank', 'noopener,noreferrer');
-  };
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') requestClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, [requestClose]);
 
   return (
-    <div className="related-overlay" onClick={onClose} role="presentation">
-      <section className="related-sheet" onClick={(event) => event.stopPropagation()} aria-label="Papers relacionados">
+    <div className={`related-overlay ${isClosing ? 'is-closing' : ''}`} onClick={requestClose} role="presentation">
+      <section
+        className="related-sheet"
+        onClick={(event) => event.stopPropagation()}
+        aria-label="Papers relacionados"
+        aria-modal="true"
+        role="dialog"
+      >
         <header className="related-header">
           <div><Network size={18} /><h3>Papers relacionados</h3></div>
-          <button onClick={onClose} aria-label="Cerrar" title="Cerrar"><X size={20} /></button>
+          <button onClick={requestClose} aria-label="Cerrar" title="Cerrar" autoFocus><X size={20} /></button>
         </header>
 
         {status === 'loading' && <div className="related-state"><Loader2 className="spinning" size={28} />Buscando conexiones...</div>}
@@ -40,13 +69,18 @@ export default function RelatedPapersSheet({ paper, onClose, onOpenPdf }) {
 
         {status === 'ready' && (
           <div className="related-list">
-            {papers.map((related) => (
-              <button key={related.id} className="related-item" onClick={() => openPaper(related)}>
+            {papers.map((related, index) => (
+              <button
+                key={related.id}
+                className="related-item"
+                style={{ '--related-index': index }}
+                onClick={() => requestPaper(related)}
+              >
                 <span className="related-item-copy">
                   <strong><ScientificText>{related.title}</ScientificText></strong>
                   <small>{related.authors.slice(0, 2).map(author => author.name || author).join(', ')}{related.year ? ` · ${related.year}` : ''}</small>
                 </span>
-                <ExternalLink size={17} />
+                <ChevronRight size={18} />
               </button>
             ))}
           </div>

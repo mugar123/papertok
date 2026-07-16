@@ -108,6 +108,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     likedPaperIds, savedPaperIds, readPaperIds,
     toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip,
   } = useFeed();
+  const getInteractionState = useCallback((paper) => ({
+    isLiked: likedPaperIds.has(paper.id),
+    isSaved: savedPaperIds.has(paper.id),
+    isRead: readPaperIds.has(paper.id),
+  }), [likedPaperIds, readPaperIds, savedPaperIds]);
 
   const fetchReport = useCallback(async (tf, currentFilters, targetPage = 1, options = {}) => {
     const requestId = ++reportRequestId.current;
@@ -501,13 +506,14 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   isLiked={likedPaperIds.has(selectedPaper.id)}
                   isSaved={savedPaperIds.has(selectedPaper.id)}
                   isRead={readPaperIds.has(selectedPaper.id)}
-                  onLike={() => toggleLike(selectedPaper)}
-                  onNotInterested={() => { markNotInterested(selectedPaper); closeOverlay(); }}
-                  onMarkAsRead={() => markAsRead(selectedPaper)}
+                  onLike={toggleLike}
+                  onNotInterested={(paper) => { markNotInterested(paper); closeOverlay(); }}
+                  onMarkAsRead={markAsRead}
                   trackViewTime={trackViewTime}
                   trackSkip={trackSkip}
                   onOpenPdf={onOpenPdf}
                   onSaveToList={onSaveToList}
+                  getInteractionState={getInteractionState}
                   hideScrollHint
                 />
               </div>
