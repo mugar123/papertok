@@ -65,6 +65,7 @@ const PaperCard = memo(function PaperCard({
   const [isResolvingAccess, setIsResolvingAccess] = useState(false);
   const [resolvedAccess, setResolvedAccess] = useState({ paperId: null, copy: null });
   const [linkedResources, setLinkedResources] = useState({ paperId: null, items: [] });
+  const [isCardVisible, setIsCardVisible] = useState(false);
   const { followedByType, isFollowing } = useFollowing();
   const navigate = useNavigate();
   
@@ -90,7 +91,7 @@ const PaperCard = memo(function PaperCard({
 
   useEffect(() => {
     let active = true;
-    if (!paper?.doi || paper.openAccess || paper.pdfUrl || paper.openAccessPdfUrl) {
+    if (!isCardVisible || !paper?.doi || paper.openAccess || paper.pdfUrl || paper.openAccessPdfUrl) {
       return () => { active = false; };
     }
 
@@ -99,22 +100,23 @@ const PaperCard = memo(function PaperCard({
     });
 
     return () => { active = false; };
-  }, [paper?.doi, paper?.id, paper?.openAccess, paper?.openAccessPdfUrl, paper?.pdfUrl]);
+  }, [isCardVisible, paper?.doi, paper?.id, paper?.openAccess, paper?.openAccessPdfUrl, paper?.pdfUrl]);
 
   useEffect(() => {
     let active = true;
-    if (!paper?.doi) return () => { active = false; };
+    if (!isCardVisible || !paper?.doi) return () => { active = false; };
     getRelatedResearchResources(paper.doi, { title: paper.title }).then(items => {
       if (active) setLinkedResources({ paperId: paper.id, items });
     });
     return () => { active = false; };
-  }, [paper?.doi, paper?.id, paper?.title]);
+  }, [isCardVisible, paper?.doi, paper?.id, paper?.title]);
 
   useEffect(() => {
     if (!cardRef.current || showRelated || selectedRelatedPaper) return;
     const observer = new IntersectionObserver(
       (entries) => {
         const [entry] = entries;
+        setIsCardVisible(entry.isIntersecting && entry.intersectionRatio >= 0.15);
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
           if (!viewStartTime.current) viewStartTime.current = Date.now();
         } else {
@@ -134,7 +136,7 @@ const PaperCard = memo(function PaperCard({
           }
         }
       },
-      { threshold: [0.5] }
+      { threshold: [0, 0.15, 0.5] }
     );
     observer.observe(cardRef.current);
 
@@ -155,14 +157,14 @@ const PaperCard = memo(function PaperCard({
 
   useEffect(() => {
     let isMounted = true;
-    if (!paper) return;
+    if (!isCardVisible || !paper) return;
     getProjectForPaper(paper.arxivId, paper.doi).then(proj => {
       if (isMounted && proj) {
         setProject(proj);
       }
     });
     return () => { isMounted = false; };
-  }, [paper]);
+  }, [isCardVisible, paper]);
 
   const toggleExpanded = (e, newState) => {
     e.stopPropagation();
