@@ -40,11 +40,18 @@ export class PaperBuilder {
       citationCount: data.citationCount ?? data.citationsCount ?? 0,
       referenceCount: data.referenceCount || 0,
       concepts: data.concepts || [],
+      topics: data.topics || [],
+      primaryTopic: data.primaryTopic || data.primary_topic || null,
       keywords: data.keywords || [],
       categories: data.categories || [],
       allCategories: data.allCategories || data.categories || [],
       primaryCategory: data.primaryCategory || data.categories?.[0] || '',
       countryCodes: data.countryCodes || [],
+      institutionCount: data.institutionCount || 0,
+      fwci: data.fwci ?? null,
+      citationNormalizedPercentile: data.citationNormalizedPercentile || data.citation_normalized_percentile || null,
+      citedByPercentileYear: data.citedByPercentileYear || data.cited_by_percentile_year || null,
+      countsByYear: data.countsByYear || data.counts_by_year || [],
       published: data.published || data.publishedDate || '',
       sourceType: data.sourceType || undefined,
       summary: data.summary || data.abstract || '',
@@ -100,6 +107,21 @@ export class PaperBuilder {
       const existingConceptIds = new Set((merged.concepts || []).map(c => c.id));
       const newConcepts = enrichmentData.concepts.filter(c => !existingConceptIds.has(c.id));
       merged.concepts = [...(merged.concepts || []), ...newConcepts];
+    }
+    if (enrichmentData.topics?.length > 0) merged.topics = enrichmentData.topics;
+    if (enrichmentData.primaryTopic || enrichmentData.primary_topic) {
+      merged.primaryTopic = enrichmentData.primaryTopic || enrichmentData.primary_topic;
+    }
+    if (Number.isFinite(enrichmentData.fwci)) merged.fwci = enrichmentData.fwci;
+    if (enrichmentData.citationNormalizedPercentile || enrichmentData.citation_normalized_percentile) {
+      merged.citationNormalizedPercentile = enrichmentData.citationNormalizedPercentile
+        || enrichmentData.citation_normalized_percentile;
+    }
+    if (enrichmentData.countsByYear?.length || enrichmentData.counts_by_year?.length) {
+      merged.countsByYear = enrichmentData.countsByYear || enrichmentData.counts_by_year;
+    }
+    if (Number.isFinite(enrichmentData.institutionCount)) {
+      merged.institutionCount = Math.max(merged.institutionCount || 0, enrichmentData.institutionCount);
     }
 
     // Upgrade publication status/type if enrichment indicates it's peer-reviewed/published

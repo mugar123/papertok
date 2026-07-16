@@ -1191,11 +1191,26 @@ export function FeedProvider({ children }) {
     }
   }, [user]);
 
+  const getRecommendationProfileSnapshot = useCallback(() => ({
+    userId: user?.uid || null,
+    ready: recommendationProfileReady,
+    userPreferences: [...(userPreferences || [])],
+    followedAuthors: [...(followedAuthors || [])],
+    categoryAffinities: { ...categoryAffinities.current },
+    categoryCooldowns: { ...categoryCooldowns.current },
+    conceptAffinities: { ...conceptAffinities.current },
+    temporalPreference: temporalPreference.current,
+    weights: { ...recommendationWeights.current },
+    notInterestedIds: Array.from(notInterestedIdsRef.current),
+    readPaperIds: Array.from(readPaperIdsRef.current),
+  }), [followedAuthors, recommendationProfileReady, user?.uid, userPreferences]);
+
   const value = {
     papers, loading, error, hasMore, isRefreshing,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
+    getRecommendationProfileSnapshot,
     toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
     trackViewTime, trackPdfOpened, trackSkip, trackPdfBounce
   };

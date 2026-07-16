@@ -1,12 +1,14 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useTransition } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useFeed } from '../../context/FeedContext';
+import { useAuth } from '../../context/AuthContext';
 import { getScientificReport } from '../../services/scientificReportService';
+import { getScientificTrends } from '../../services/scientificTrendService';
 import CustomDateSelector from './CustomDateSelector';
 import ReportFilters from './ReportFilters';
 import PaperCard from '../Feed/PaperCard';
 import { CATEGORIES, getCategoryGradient, getCategoryLabel } from '../../data/categories';
-import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Flame, Database, Shuffle } from 'lucide-react';
+import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Flame, Database, Shuffle, Globe2, UserRound } from 'lucide-react';
 import ScientificText from '../ScientificText';
 import 'katex/dist/katex.min.css';
 import './ScientificReport.css';
@@ -54,6 +56,20 @@ const SOURCE_STATUS_LABELS = {
   excluded: 'fuera por filtro',
 };
 
+function formatTrendPeriod(period) {
+  if (!period?.fromStr || !period?.toStr) return '';
+  const formatter = new Intl.DateTimeFormat('es-ES', { day: 'numeric', month: 'short' });
+  const from = formatter.format(new Date(`${period.fromStr}T12:00:00`));
+  const to = formatter.format(new Date(`${period.toStr}T12:00:00`));
+  return from === to ? from : `${from} - ${to}`;
+}
+
+function getEarlySignalLabel(paper) {
+  const score = Number(paper?.reportSignals?.score);
+  if (!Number.isFinite(score) || paper?.reportSignals?.confidence === 'low') return null;
+  return `${Math.min(10, Math.max(0, score / 2)).toFixed(1)}/10`;
+}
+
 function ReportCoverage({ coverage }) {
   if (!coverage?.sources?.length) return null;
 
@@ -82,9 +98,13 @@ function ReportCoverage({ coverage }) {
 }
 
 export default function ScientificReport({ onOpenPdf, onSaveToList }) {
+  const { user } = useAuth();
   const [timeframe, setTimeframe] = useState('7d');
   const [filters, setFilters] = useState({ categories: [], countries: [] });
   const [report, setReport] = useState({ mainDiscovery: null, highlights: [] });
+  const [trends, setTrends] = useState({ status: 'loading', items: [] });
+  const [edition, setEdition] = useState('panorama');
+  const [isEditionPending, startEditionTransition] = useTransition();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [copied, setCopied] = useState(false);
@@ -93,10 +113,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [selectedPaper, setSelectedPaper] = useState(null);
   const pageRef = useRef(1);
   const reportRequestId = useRef(0);
+  const trendsRef = useRef(null);
 
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
-    toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip
+    toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip,
+    getRecommendationProfileSnapshot,
   } = useFeed();
 
   const fetchReport = useCallback(async (tf, currentFilters, targetPage = 1, options = {}) => {
@@ -104,12 +126,43 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     setLoading(true);
     window.dispatchEvent(new Event('reportLoadingStart'));
     setError(null);
+    let reportFinished = false;
     try {
-      const data = await getScientificReport(tf, targetPage, currentFilters, options);
+      const profile = getRecommendationProfileSnapshot?.() || {};
+      const trendPromise = options.refreshTrends
+        ? getScientificTrends(tf, currentFilters, { forceRefresh: options.forceRefresh })
+        : null;
+      if (trendPromise) setTrends(current => ({ ...current, loading: true }));
+
+      const data = await getScientificReport(tf, targetPage, currentFilters, {
+        forceRefresh: options.forceRefresh,
+        profile,
+        trends: trendsRef.current,
+      });
       if (requestId === reportRequestId.current) {
         setReport(data);
-        return true;
+        setLoading(false);
+        window.dispatchEvent(new Event('reportLoadingEnd'));
+        reportFinished = true;
       }
+
+      if (trendPromise) {
+        const nextTrends = await trendPromise;
+        if (requestId === reportRequestId.current) {
+          trendsRef.current = nextTrends;
+          setTrends({ ...nextTrends, loading: false });
+          try {
+            const reranked = await getScientificReport(tf, targetPage, currentFilters, {
+              profile: getRecommendationProfileSnapshot?.() || profile,
+              trends: nextTrends,
+            });
+            if (requestId === reportRequestId.current) setReport(reranked);
+          } catch (rerankError) {
+            console.warn('Could not apply trend momentum to the loaded report:', rerankError);
+          }
+        }
+      }
+      return requestId === reportRequestId.current;
     } catch (err) {
       console.error('Error fetching report:', err);
       if (requestId === reportRequestId.current) {
@@ -117,12 +170,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       }
       return false;
     } finally {
-      if (requestId === reportRequestId.current) {
+      if (!reportFinished && requestId === reportRequestId.current) {
         setLoading(false);
         window.dispatchEvent(new Event('reportLoadingEnd'));
       }
     }
-  }, []);
+  }, [getRecommendationProfileSnapshot]);
 
   useEffect(() => () => {
     reportRequestId.current += 1;
@@ -130,19 +183,45 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
   useEffect(() => {
     pageRef.current = 1;
-    const requestId = setTimeout(() => fetchReport(timeframe, filters, 1), 0);
+    trendsRef.current = null;
+    const requestId = setTimeout(() => {
+      setTrends({ status: 'loading', items: [], loading: true });
+      fetchReport(timeframe, filters, 1, { refreshTrends: true });
+    }, 0);
     return () => clearTimeout(requestId);
   }, [timeframe, filters, fetchReport]);
 
   useEffect(() => {
     const handleGlobalRefresh = () => {
       pageRef.current = 1;
-      fetchReport(timeframe, filters, 1, { forceRefresh: true });
+      fetchReport(timeframe, filters, 1, { forceRefresh: true, refreshTrends: true });
     };
     
     window.addEventListener('refreshScientificReport', handleGlobalRefresh);
     return () => window.removeEventListener('refreshScientificReport', handleGlobalRefresh);
   }, [timeframe, filters, fetchReport]);
+
+  useEffect(() => {
+    const storageKey = `papertok_report_edition_${user?.uid || 'guest'}`;
+    const requestId = setTimeout(() => {
+      try {
+        const storedEdition = localStorage.getItem(storageKey);
+        setEdition(storedEdition === 'personal' ? 'personal' : 'panorama');
+      } catch {
+        setEdition('panorama');
+      }
+    }, 0);
+    return () => clearTimeout(requestId);
+  }, [user?.uid]);
+
+  const handleEditionChange = (nextEdition) => {
+    startEditionTransition(() => setEdition(nextEdition));
+    try {
+      localStorage.setItem(`papertok_report_edition_${user?.uid || 'guest'}`, nextEdition);
+    } catch {
+      // Edition persistence is optional when storage is unavailable.
+    }
+  };
 
   const getContextText = () => {
     if (typeof timeframe === 'object' && timeframe.type === 'custom') {
@@ -164,15 +243,16 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     else { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
   };
 
-  // Compute stats from report data
-  const allPapers = [report.mainDiscovery, ...(report.highlights || [])].filter(Boolean);
+  const activeReport = report.editions?.[edition] || report;
+  const allPapers = [activeReport.mainDiscovery, ...(activeReport.highlights || [])].filter(Boolean);
   const totalPapers = allPapers.length;
   const totalCitations = allPapers.reduce((sum, p) => sum + (p.citationCount || 0), 0);
   const oaCount = allPapers.filter(p => p.openAccess).length;
   const hasActiveFilters = (filters.categories?.length || 0) + (filters.countries?.length || 0) > 0;
 
-  const hero = report.mainDiscovery;
+  const hero = activeReport.mainDiscovery;
   const heroGradient = hero ? getCategoryGradient(hero.primaryCategory || '') : 'var(--gradient-brand)';
+  const heroEarlySignal = getEarlySignalLabel(hero);
 
   const timeOptions = [
     { id: '24h', label: 'Hoy y ayer' },
@@ -187,6 +267,18 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     setSelectedPaper(null);
   };
 
+  const profileSnapshot = getRecommendationProfileSnapshot?.() || {};
+  const trendItems = [...(trends.items || [])].sort((a, b) => {
+    if (edition !== 'personal') return 0;
+    const affinity = trend => profileSnapshot.conceptAffinities?.[trend.id]
+      || profileSnapshot.conceptAffinities?.[trend.label]
+      || 0;
+    return affinity(b) - affinity(a);
+  });
+  const personalEditionActive = edition === 'personal' && activeReport.personalized;
+  const currentTrendPeriod = formatTrendPeriod(trends.periods?.current);
+  const previousTrendPeriod = formatTrendPeriod(trends.periods?.previous);
+
   return (
     <div className="sr">
       {/* Header */}
@@ -197,18 +289,38 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             <span className="sr-edition">{getContextText()}</span>
           </div>
         </div>
-        <nav className="sr-tabs">
-          {timeOptions.map((o) => (
+        <div className="sr-report-controls">
+          <div className={`sr-edition-switch ${isEditionPending ? 'pending' : ''}`} role="group" aria-label="Edición del reporte">
             <button
-              key={o.id}
-              className={`sr-tab ${timeframe === o.id || (o.id === 'custom' && customRange) ? 'active' : ''}`}
-              onClick={() => {
-                if (o.id === 'custom') setShowCustomPicker(p => !p);
-                else { setTimeframe(o.id); setCustomRange(null); setShowCustomPicker(false); }
-              }}
-            >{o.label}</button>
-          ))}
-        </nav>
+              type="button"
+              className={edition === 'panorama' ? 'active' : ''}
+              aria-pressed={edition === 'panorama'}
+              onClick={() => handleEditionChange('panorama')}
+            >
+              <Globe2 size={14} /> Panorama
+            </button>
+            <button
+              type="button"
+              className={edition === 'personal' ? 'active' : ''}
+              aria-pressed={edition === 'personal'}
+              onClick={() => handleEditionChange('personal')}
+            >
+              <UserRound size={14} /> Para ti
+            </button>
+          </div>
+          <nav className="sr-tabs" aria-label="Periodo del reporte">
+            {timeOptions.map((o) => (
+              <button
+                key={o.id}
+                className={`sr-tab ${timeframe === o.id || (o.id === 'custom' && customRange) ? 'active' : ''}`}
+                onClick={() => {
+                  if (o.id === 'custom') setShowCustomPicker(p => !p);
+                  else { setTimeframe(o.id); setCustomRange(null); setShowCustomPicker(false); }
+                }}
+              >{o.label}</button>
+            ))}
+          </nav>
+        </div>
       </header>
 
       {showCustomPicker && (
@@ -222,10 +334,10 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       <ReportFilters filters={filters} onChange={setFilters} />
 
 
-      {loading ? (
+      {loading && totalPapers === 0 ? (
         <div className="sr-state"><div className="sr-spinner" /><p>Compilando edición estable...</p></div>
-      ) : error ? (
-        <div className="sr-state"><p>{error}</p><button className="sr-retry" onClick={() => fetchReport(timeframe, filters, pageRef.current)}>Reintentar</button></div>
+      ) : error && totalPapers === 0 ? (
+        <div className="sr-state"><p>{error}</p><button className="sr-retry" onClick={() => fetchReport(timeframe, filters, pageRef.current, { refreshTrends: true })}>Reintentar</button></div>
       ) : totalPapers === 0 ? (
         <div className="sr-empty-wrap">
           <ReportCoverage coverage={report.coverage} />
@@ -256,7 +368,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                 </button>
               )}
               {timeframe === '10y' && !hasActiveFilters && (
-                <button className="sr-retry" onClick={() => fetchReport(timeframe, filters, pageRef.current, { forceRefresh: true })}>
+                <button className="sr-retry" onClick={() => fetchReport(timeframe, filters, pageRef.current, { forceRefresh: true, refreshTrends: true })}>
                   Reintentar
                 </button>
               )}
@@ -264,7 +376,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           </div>
         </div>
       ) : (
-        <div className="sr-body" key={typeof timeframe === 'string' ? timeframe : JSON.stringify(timeframe)}>
+        <div
+          className={`sr-body ${loading ? 'updating' : ''} ${isEditionPending ? 'edition-pending' : ''}`}
+          key={`${edition}:${typeof timeframe === 'string' ? timeframe : JSON.stringify(timeframe)}`}
+        >
+
+          {loading && <div className="sr-update-line" aria-label="Actualizando reporte" />}
 
           <ReportCoverage coverage={report.coverage} />
 
@@ -295,15 +412,49 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </div>
           </div>
 
-          {/* Featured topics from the final editorial selection */}
-          {report.featuredConcepts?.length > 0 && (
+          <section className={`sr-real-trends ${trends.loading ? 'updating' : ''}`} aria-label="Tendencias científicas">
+            <div className="sr-trends-heading">
+              <span><TrendingUp size={15} /> {personalEditionActive ? 'Tendencias relevantes para ti' : 'Tendencias del periodo'}</span>
+              {currentTrendPeriod && previousTrendPeriod && (
+                <small>
+                  {trends.provisional ? 'Datos provisionales · ' : ''}{currentTrendPeriod} frente a {previousTrendPeriod}
+                </small>
+              )}
+            </div>
+            {trendItems.length > 0 ? (
+              <div className="sr-trend-list">
+                {trendItems.map(item => (
+                  <div
+                    className="sr-trend-item"
+                    key={item.id}
+                    title={`${item.currentCount} trabajos en el periodo actual y ${item.previousCount} en el anterior. Confianza ${item.confidence}.`}
+                  >
+                    <span className="sr-trend-name">{item.label}</span>
+                    <strong>{item.state === 'new' ? 'Nuevo' : `+${item.changePercent}%`}</strong>
+                    <small>{item.currentCount} vs {item.previousCount}</small>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="sr-trends-state">
+                {trends.loading || trends.status === 'loading'
+                  ? 'Calculando cambios frente al periodo anterior...'
+                  : trends.status === 'unavailable'
+                    ? 'Las tendencias no están disponibles ahora; la selección de papers sigue activa.'
+                    : 'Aún no hay volumen suficiente para detectar una tendencia fiable.'}
+              </p>
+            )}
+          </section>
+
+          {/* These describe the selected edition; they are not presented as measured trends. */}
+          {trends.status !== 'active' && activeReport.featuredConcepts?.length > 0 && (
             <div className="sr-trending-topics">
               <span className="sr-trending-label">
                 <Flame size={14} className="sr-flame-icon" />
-                {typeof timeframe === 'object' ? 'Temas destacados:' : { '24h': 'Temas destacados hoy:', '7d': 'Temas de la semana:', '30d': 'Temas del mes:', '1y': 'Temas del año:', '10y': 'Temas de la década:' }[timeframe] || 'Temas destacados:'}
+                Temas de esta selección:
               </span>
               <div className="sr-trending-pills">
-                {report.featuredConcepts.map((concept) => (
+                {activeReport.featuredConcepts.map((concept) => (
                   <span key={concept} className="sr-trending-pill">{concept}</span>
                 ))}
               </div>
@@ -339,6 +490,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                     ? <span className="sr-tag oa"><Unlock size={12} /> Open Access</span>
                     : <span className="sr-tag sub"><Lock size={12} /> Subscription</span>}
                   {hero.citationCount > 0 && <span className="sr-tag cites"><Award size={12} /> {hero.citationCount} citas</span>}
+                  {heroEarlySignal && (
+                    <span className="sr-tag emerging" title="Señal combinada de impacto normalizado, velocidad, actualidad, colaboración y tendencia temática.">
+                      <TrendingUp size={12} /> Señal emergente {heroEarlySignal}
+                    </span>
+                  )}
                 </div>
                 <blockquote className="sr-hero-abstract"><ScientificText>{hero.abstract}</ScientificText></blockquote>
                 <div className="sr-hero-actions">
@@ -352,11 +508,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           )}
 
           {/* Bento Highlights */}
-          {report.highlights?.length > 0 && (
+          {activeReport.highlights?.length > 0 && (
             <section className="sr-highlights">
               <h2 className="sr-section-label">Otras Investigaciones Destacadas</h2>
               <div className="sr-bento">
-                {report.highlights.map((paper, i) => {
+                {activeReport.highlights.map((paper, i) => {
                   const cat = (paper.categories && paper.categories[0]) || paper.primaryCategory || 'General';
                   const accent = getCategoryGradient(cat);
                   // Pattern: wide, narrow, narrow, wide, narrow, narrow...
@@ -383,6 +539,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                           <div className="sr-bento-tags">
                             {paper.openAccess && <span className="sr-micro oa"><Unlock size={11} /> Open Access</span>}
                             {paper.citationCount > 0 && <span className="sr-micro">{paper.citationCount} citas</span>}
+                            {getEarlySignalLabel(paper) && <span className="sr-micro emerging">Señal {getEarlySignalLabel(paper)}</span>}
                             {paper.journal && <span className="sr-micro venue">{paper.journal}</span>}
                           </div>
                         </div>

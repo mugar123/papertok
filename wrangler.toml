@@ -1,0 +1,6 @@
+name = "papertok-report-api"
+main = "worker/report-api.js"
+compatibility_date = "2026-07-16"
+
+[vars]
+ALLOWED_ORIGINS = "https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173"
