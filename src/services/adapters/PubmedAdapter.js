@@ -1,5 +1,6 @@
 import { CATEGORIES } from '../../data/categories.js';
 import { openAlexJson } from '../openAlexClient.js';
+import { enrichPubmedIds } from '../europePmcService.js';
 import { BaseAdapter } from './BaseAdapter.js';
 
 const PUBMED_CATEGORY_ALIASES = Object.freeze({
@@ -161,7 +162,7 @@ export class PubmedAdapter extends BaseAdapter {
       const results = pmids.map(pmid => summaryData.result[pmid]).filter(Boolean);
       let mappedPapers = results.map(item => this.mapToStandard(item));
 
-      // 3. Enrich with efetch AND OpenAlex
+      // 3. Enrich with EFetch, OpenAlex, and Europe PMC. Every source is optional.
       try {
           const enrichmentMap = {};
           if (pmids.length > 0) {
@@ -174,8 +175,10 @@ export class PubmedAdapter extends BaseAdapter {
                   cacheTtlMs: 24 * 60 * 60 * 1000,
                   staleIfError: true,
               }).catch(() => null);
+
+              const europePmcProm = enrichPubmedIds(pmids).catch(() => new Map());
               
-              const [xmlText, oaData] = await Promise.all([fetchProm, oaProm]);
+              const [xmlText, oaData, europePmcData] = await Promise.all([fetchProm, oaProm, europePmcProm]);
               
               // Parse XML (EFetch)
               if (xmlText) {
@@ -238,6 +241,35 @@ export class PubmedAdapter extends BaseAdapter {
                     p.keywords = enrichment.categories;
                   }
                 }
+
+                const pmid = p.id.replace(/^pmid:/, '');
+                const europePmc = europePmcData.get(pmid);
+                if (europePmc) {
+                  if (!p.abstract && europePmc.abstract) p.abstract = europePmc.abstract;
+                  if (europePmc.biomedicalTerms.length > 0) {
+                    p.categories = [...new Set([...(p.categories || []), ...europePmc.biomedicalTerms])];
+                    p.keywords = [...new Set([...(p.keywords || []), ...europePmc.biomedicalTerms])];
+                    p.biomedicalTerms = europePmc.biomedicalTerms;
+                    p.concepts = europePmc.concepts;
+                  }
+                  p.citationsCount = Math.max(p.citationsCount || 0, europePmc.citationCount || 0);
+                  p.pmcid = europePmc.pmcid;
+                  p.europePmcUrl = europePmc.europePmcUrl;
+                  p.openAccessPdfUrl = europePmc.openAccessPdfUrl;
+                  p.license = europePmc.license;
+                  p.hasReferences = europePmc.hasReferences;
+                  p.hasData = europePmc.hasData;
+                  p.hasSupplement = europePmc.hasSupplement;
+                  if (europePmc.openAccess) {
+                    p.openAccess = true;
+                    p.accessSource = 'europepmc';
+                    if (europePmc.landingPageUrl) p.landingPageUrl = europePmc.landingPageUrl;
+                  }
+                  p.sources = {
+                    ...p.sources,
+                    enrichedBy: [...new Set([...(p.sources?.enrichedBy || []), 'europepmc'])],
+                  };
+                }
                 return p;
               });
           }
@@ -291,6 +323,8 @@ export class PubmedAdapter extends BaseAdapter {
 
     return {
       id: `pmid:${id}`,
+      pmid: id,
+      pmcid: pmc || undefined,
       sources: { primary: this.name, enrichedBy: [] },
       title: raw.title || 'Untitled',
       abstract: '', // E-utilities esummary doesn't return full abstract, EFetch is needed for that. We leave it empty and let OpenAlex enrich it if possible.
@@ -300,7 +334,7 @@ export class PubmedAdapter extends BaseAdapter {
       year: raw.pubdate ? parseInt(raw.pubdate.substring(0, 4)) : new Date().getFullYear(),
       published: raw.pubdate || '',
       publicationStatus: 'published',
-      isOpenAccess,
+      openAccess: isOpenAccess,
       pdfUrl,
       landingPageUrl,
       citationsCount: 0,

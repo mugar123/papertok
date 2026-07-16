@@ -287,7 +287,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
                       <p>{inst.country_code || 'País desconocido'} • Institución académica</p>
                     </div>
                     <FollowButton
-                      entity={{ type: 'institution', id: inst.id, displayName: inst.display_name, source: 'openalex', externalIds: { ror: inst.ror || inst.id } }}
+                      entity={{ type: 'institution', id: inst.id, displayName: inst.display_name, source: inst._metadataSource || 'ror', externalIds: { ror: inst.ror || inst.id } }}
                       isFollowing={isFollowing}
                       isPending={isFollowPending}
                       onToggle={handleToggleFollow}

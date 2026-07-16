@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { useFeed } from '../../context/FeedContext';
 import { getScientificReport } from '../../services/scientificReportService';
 import { getScientificTrends } from '../../services/scientificTrendService';
+import { findOpenAccessCopy } from '../../services/unpaywallService';
 import CustomDateSelector from './CustomDateSelector';
 import ReportFilters from './ReportFilters';
 import PaperCard from '../Feed/PaperCard';
@@ -101,6 +102,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [showCustomPicker, setShowCustomPicker] = useState(false);
   const [customRange, setCustomRange] = useState(null);
   const [selectedPaper, setSelectedPaper] = useState(null);
+  const [heroAccess, setHeroAccess] = useState({ paperId: null, copy: null });
   const reportRequestId = useRef(0);
   const trendsRef = useRef(null);
 
@@ -206,11 +208,22 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const allPapers = [report.mainDiscovery, ...(report.highlights || [])].filter(Boolean);
   const totalPapers = allPapers.length;
   const totalCitations = allPapers.reduce((sum, p) => sum + (p.citationCount || 0), 0);
-  const oaCount = allPapers.filter(p => p.openAccess).length;
+  const heroOpenCopy = heroAccess.paperId === report.mainDiscovery?.id ? heroAccess.copy : null;
+  const oaCount = allPapers.filter(p => p.openAccess || (p.id === report.mainDiscovery?.id && heroOpenCopy)).length;
   const hasActiveFilters = (filters.categories?.length || 0) + (filters.countries?.length || 0) > 0;
 
   const hero = report.mainDiscovery;
+  const accessibleHero = heroOpenCopy ? { ...hero, ...heroOpenCopy, openAccess: true } : hero;
   const heroGradient = hero ? getCategoryGradient(hero.primaryCategory || '') : 'var(--gradient-brand)';
+
+  useEffect(() => {
+    let active = true;
+    if (!hero?.doi || hero.openAccess || hero.pdfUrl) return () => { active = false; };
+    findOpenAccessCopy(hero.doi).then(openCopy => {
+      if (active && openCopy) setHeroAccess({ paperId: hero.id, copy: openCopy });
+    });
+    return () => { active = false; };
+  }, [hero?.doi, hero?.id, hero?.openAccess, hero?.pdfUrl]);
 
   const timeOptions = [
     { id: '24h', label: 'Hoy y ayer' },
@@ -416,15 +429,15 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                       {hero.doi && <a href={`https://doi.org/${hero.doi}`} target="_blank" rel="noopener noreferrer" className="sr-tag doi" onClick={e => e.stopPropagation()}><ExternalLink size={12} /> DOI</a>}
                     </>
                   )}
-                  {hero.openAccess
-                    ? <span className="sr-tag oa"><Unlock size={12} /> Open Access</span>
+                  {accessibleHero.openAccess
+                    ? <span className="sr-tag oa"><Unlock size={12} /> {heroOpenCopy ? 'Versión abierta disponible' : 'Open Access'}</span>
                     : <span className="sr-tag sub"><Lock size={12} /> Subscription</span>}
                   {hero.citationCount > 0 && <span className="sr-tag cites"><Award size={12} /> {hero.citationCount} citas</span>}
                 </div>
                 <blockquote className="sr-hero-abstract"><ScientificText>{hero.abstract}</ScientificText></blockquote>
                 <div className="sr-hero-actions">
-                  <button className="sr-btn primary" onClick={() => setSelectedPaper(hero)}>Ver detalle</button>
-                  <button className="sr-btn ghost" onClick={() => handleShare(hero)}>
+                  <button className="sr-btn primary" onClick={() => setSelectedPaper(accessibleHero)}>Ver detalle</button>
+                  <button className="sr-btn ghost" onClick={() => handleShare(accessibleHero)}>
                     {copied ? <><Check size={15} /> Copiado</> : <><Share2 size={15} /> Compartir</>}
                   </button>
                 </div>

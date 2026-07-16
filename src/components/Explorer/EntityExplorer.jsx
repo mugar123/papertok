@@ -27,6 +27,14 @@ const handleActivationKey = (event, action) => {
   action();
 };
 
+const ROR_RELATION_LABELS = {
+  parent: 'Parte de',
+  child: 'Incluye',
+  related: 'Relacionada',
+  predecessor: 'Predecesora',
+  successor: 'Sucesora',
+};
+
 export default function EntityExplorer({ onSaveToList = () => {} }) {
   const { type, id } = useParams();
   const navigate = useNavigate();
@@ -790,9 +798,40 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                 )}
               </div>
               {type === 'institution' && (
-                <p className="ehc-meta">
-                  {entity.geo?.city}, {entity.geo?.country}
-                </p>
+                <>
+                  <p className="ehc-meta">
+                    {[entity.geo?.city, entity.geo?.country].filter(Boolean).join(', ')}
+                  </p>
+                  {entity.rorVerified && (
+                    <div className="ehc-institution-identity">
+                      <a href={entity.ror} target="_blank" rel="noopener noreferrer" title="Ver registro oficial en ROR">
+                        <BadgeCheck size={13} /> ROR verificado
+                      </a>
+                      {entity.domains?.[0] && entity.homepage_url && (
+                        <a href={entity.homepage_url} target="_blank" rel="noopener noreferrer" title="Abrir sitio oficial">
+                          <Globe size={13} /> {entity.domains[0]}
+                        </a>
+                      )}
+                      {entity.established && <span>Desde {entity.established}</span>}
+                    </div>
+                  )}
+                  {entity.relationships?.length > 0 && (
+                    <div className="ehc-ror-relations" aria-label="Relaciones institucionales verificadas por ROR">
+                      {entity.relationships.slice(0, 4).map(relationship => (
+                        <button
+                          key={`${relationship.type}-${relationship.rorId}`}
+                          type="button"
+                          onClick={() => navigate(`/explorer/institution/${relationship.rorId}`)}
+                          title={`${ROR_RELATION_LABELS[relationship.type] || 'Relacionada'}: ${relationship.label}`}
+                        >
+                          <span>{ROR_RELATION_LABELS[relationship.type] || 'Relacionada'}</span>
+                          <strong>{relationship.label}</strong>
+                          <ChevronRight size={13} />
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
               )}
               {type === 'author' && (entity.institution || entity.last_known_institutions?.[0]?.display_name) && (
                 <p className="ehc-meta" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>

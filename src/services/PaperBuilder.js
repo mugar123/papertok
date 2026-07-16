@@ -26,6 +26,8 @@ export class PaperBuilder {
       abstract: data.abstract || 'No abstract available.',
       authors: Array.isArray(data.authors) ? data.authors : [],
       arxivId: data.arxivId || undefined,
+      pmid: data.pmid || undefined,
+      pmcid: data.pmcid || undefined,
       doi: doi || undefined,
       journal: data.journal || undefined,
       conference: data.conference || undefined,
@@ -36,13 +38,18 @@ export class PaperBuilder {
       peerReviewed: !isPreprint,
       openAccess: data.openAccess !== undefined ? data.openAccess : true,
       pdfUrl: data.pdfUrl || undefined,
+      openAccessPdfUrl: data.openAccessPdfUrl || undefined,
       landingPageUrl: data.landingPageUrl || '',
+      europePmcUrl: data.europePmcUrl || undefined,
+      accessSource: data.accessSource || undefined,
+      license: data.license || undefined,
       citationCount: data.citationCount ?? data.citationsCount ?? 0,
       referenceCount: data.referenceCount || 0,
       concepts: data.concepts || [],
       topics: data.topics || [],
       primaryTopic: data.primaryTopic || data.primary_topic || null,
       keywords: data.keywords || [],
+      biomedicalTerms: data.biomedicalTerms || [],
       categories: data.categories || [],
       allCategories: data.allCategories || data.categories || [],
       primaryCategory: data.primaryCategory || data.categories?.[0] || '',
@@ -50,6 +57,9 @@ export class PaperBuilder {
       institutionCount: data.institutionCount || 0,
       institutions: data.institutions || [],
       projectIds: data.projectIds || [],
+      hasReferences: Boolean(data.hasReferences),
+      hasData: Boolean(data.hasData),
+      hasSupplement: Boolean(data.hasSupplement),
       fwci: data.fwci ?? null,
       citationNormalizedPercentile: data.citationNormalizedPercentile || data.citation_normalized_percentile || null,
       citedByPercentileYear: data.citedByPercentileYear || data.cited_by_percentile_year || null,
@@ -95,6 +105,12 @@ export class PaperBuilder {
     if (!merged.journal && enrichmentData.journal) merged.journal = enrichmentData.journal;
     if (!merged.publisher && enrichmentData.publisher) merged.publisher = enrichmentData.publisher;
     if (!merged.conference && enrichmentData.conference) merged.conference = enrichmentData.conference;
+    if (!merged.pmid && enrichmentData.pmid) merged.pmid = enrichmentData.pmid;
+    if (!merged.pmcid && enrichmentData.pmcid) merged.pmcid = enrichmentData.pmcid;
+    if (!merged.europePmcUrl && enrichmentData.europePmcUrl) merged.europePmcUrl = enrichmentData.europePmcUrl;
+    if (!merged.openAccessPdfUrl && enrichmentData.openAccessPdfUrl) merged.openAccessPdfUrl = enrichmentData.openAccessPdfUrl;
+    if (!merged.license && enrichmentData.license) merged.license = enrichmentData.license;
+    if (!merged.accessSource && enrichmentData.accessSource) merged.accessSource = enrichmentData.accessSource;
     
     // Merge numbers
     if (enrichmentData.citationCount !== undefined) {
@@ -136,6 +152,12 @@ export class PaperBuilder {
     if (enrichmentData.projectIds?.length) {
       merged.projectIds = [...new Set([...(merged.projectIds || []), ...enrichmentData.projectIds])];
     }
+    if (enrichmentData.biomedicalTerms?.length) {
+      merged.biomedicalTerms = [...new Set([...(merged.biomedicalTerms || []), ...enrichmentData.biomedicalTerms])];
+    }
+    merged.hasReferences = Boolean(merged.hasReferences || enrichmentData.hasReferences);
+    merged.hasData = Boolean(merged.hasData || enrichmentData.hasData);
+    merged.hasSupplement = Boolean(merged.hasSupplement || enrichmentData.hasSupplement);
 
     // Upgrade publication status/type if enrichment indicates it's peer-reviewed/published
     if (

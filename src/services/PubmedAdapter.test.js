@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyPubmedCategory } from './adapters/PubmedAdapter.js';
+import { PubmedAdapter, classifyPubmedCategory } from './adapters/PubmedAdapter.js';
 
 test('classifies PubMed papers using title, abstract, and MeSH-style subjects', () => {
   const category = classifyPubmedCategory({
@@ -25,4 +25,18 @@ test('does not invent a random PubMed category for ambiguous papers', () => {
 test('trusts the query category when PubMed was searched for one subcategory', () => {
   const category = classifyPubmedCategory({ title: 'Sparse metadata record' }, ['bio.micro']);
   assert.equal(category, 'bio.micro');
+});
+
+test('maps PubMed access using the canonical openAccess field', () => {
+  const adapter = new PubmedAdapter();
+  const closedPaper = adapter.mapToStandard({ uid: '1', title: 'Closed', articleids: [] });
+  const pmcPaper = adapter.mapToStandard({
+    uid: '2',
+    title: 'Open',
+    articleids: [{ idtype: 'pmc', value: 'PMC2' }],
+  });
+
+  assert.equal(closedPaper.openAccess, false);
+  assert.equal(pmcPaper.openAccess, true);
+  assert.equal(closedPaper.isOpenAccess, undefined);
 });

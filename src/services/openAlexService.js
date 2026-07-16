@@ -11,6 +11,12 @@ import {
 } from '../utils/entityMetadata.js';
 import { PaperBuilder } from './PaperBuilder';
 import {
+  getRorInstitution,
+  mergeInstitutionWithRor,
+  resolveRorInstitution,
+  searchRorInstitutions,
+} from './rorService.js';
+import {
   isOpenAlexRateLimitError,
   openAlexFetch,
   openAlexJson,
@@ -27,49 +33,6 @@ const IMPACT_CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const IMPACT_INSUFFICIENT_TTL_MS = 6 * 60 * 60 * 1000;
 const IMPACT_STALE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const ENRICHMENT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-const ROR_ENTITY_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
-
-function normalizeRorInstitution(institution) {
-  if (!institution?.id) return null;
-  const rorId = institution.id.split('/').pop();
-  const location = institution.locations?.[0]?.geonames_details;
-  const displayName = institution.names?.find(name => name.types?.includes('ror_display'))?.value
-    || institution.names?.find(name => name.types?.includes('label'))?.value
-    || institution.name;
-
-  if (!displayName) return null;
-
-  return {
-    id: institution.id,
-    ror: institution.id,
-    display_name: displayName,
-    country_code: location?.country_code || institution.country?.country_code || '',
-    type: institution.types?.[0] || 'education',
-    geo: {
-      city: location?.name || '',
-      country: location?.country_name || '',
-      country_code: location?.country_code || '',
-    },
-    homepage_url: institution.links?.find(link => link.type === 'website')?.value || null,
-    works_count: null,
-    cited_by_count: null,
-    summary_stats: null,
-    _metadataSource: 'ror',
-    _rorId: rorId,
-  };
-}
-
-async function getRorInstitutionFallback(rorId) {
-  const cacheKey = `ror-entity:${rorId}`;
-  const cached = readOpenAlexPersistent(cacheKey, ROR_ENTITY_CACHE_TTL_MS);
-  if (cached && !cached.stale) return cached.data;
-
-  const response = await fetchWithTimeout(`https://api.ror.org/organizations/${encodeURIComponent(rorId)}`, 8000);
-  if (!response.ok) return null;
-  const institution = normalizeRorInstitution(await response.json());
-  if (institution) writeOpenAlexPersistent(cacheKey, institution);
-  return institution;
-}
 
 async function fetchWithTimeout(url, timeoutMs = 8000) {
   let hostname = '';
@@ -90,6 +53,14 @@ async function fetchWithTimeout(url, timeoutMs = 8000) {
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+async function enrichInstitutionWithRor(institution, prefetchedRor = null) {
+  if (!institution) return prefetchedRor;
+  const rorInstitution = prefetchedRor || (institution.ror
+    ? await getRorInstitution(institution.ror).catch(() => null)
+    : null);
+  return mergeInstitutionWithRor(institution, rorInstitution);
 }
 
 /**
@@ -534,30 +505,12 @@ export async function searchAuthors(query) {
  */
 export async function searchInstitutions(query) {
   if (!query) return [];
-  const cleanQuery = encodeURIComponent(query.trim());
-  const url = `https://api.ror.org/organizations?query=${cleanQuery}`;
-  
   try {
-    const response = await fetchWithTimeout(url, 10000);
-    if (!response.ok) return [];
-    
-    const data = await response.json();
-    if (data && data.items) {
-      return data.items.slice(0, 5).map(inst => {
-        const normalized = normalizeRorInstitution(inst);
-        if (normalized?._rorId) {
-          writeOpenAlexPersistent(`ror-entity:${normalized._rorId}`, normalized);
-        }
-        return {
-          id: inst.id,
-          display_name: normalized?.display_name || inst.name,
-          country_code: normalized?.geo?.country || normalized?.country_code || '',
-          works_count: 0,
-          cited_by_count: 0,
-          type: normalized?.type || 'education'
-        };
-      });
-    }
+    const institutions = await searchRorInstitutions(query, 5);
+    return institutions.map(institution => ({
+      ...institution,
+      country_code: institution.geo?.country || institution.country_code || '',
+    }));
   } catch {
     // Search institutions failed
   }
@@ -648,8 +601,14 @@ export async function searchSources() {
  * Returns { id, display_name } or null if not found.
  */
 export async function findInstitution({ rorUrl, name, aliases = [] }) {
-  if (rorUrl) {
-    const rorId = rorUrl.replace(/^https?:\/\/ror\.org\//, '');
+  let resolvedRorUrl = rorUrl;
+  if (!resolvedRorUrl && name) {
+    const rorInstitution = await resolveRorInstitution({ name }).catch(() => null);
+    resolvedRorUrl = rorInstitution?.ror || null;
+  }
+
+  if (resolvedRorUrl) {
+    const rorId = resolvedRorUrl.replace(/^https?:\/\/ror\.org\//, '');
     const url = `https://api.openalex.org/institutions?filter=ror:${rorId}&select=id,display_name`;
     try {
       const res = await fetchWithTimeout(url, 4000);
@@ -699,7 +658,11 @@ export async function getEntityById(type, id) {
   const cleanId = id.includes('/') ? id.split('/').pop() : id;
   const persistentCacheKey = `entity:${type}:${cleanId}`;
   const cachedEntity = readOpenAlexPersistent(persistentCacheKey, ENTITY_CACHE_TTL_MS);
-  if (cachedEntity && !cachedEntity.stale) return cachedEntity.data;
+  if (cachedEntity && !cachedEntity.stale) {
+    return type === 'institution'
+      ? enrichInstitutionWithRor(cachedEntity.data)
+      : cachedEntity.data;
+  }
 
   const persistEntity = (data) => {
     if (data) writeOpenAlexPersistent(persistentCacheKey, data);
@@ -716,35 +679,35 @@ export async function getEntityById(type, id) {
   if (type === 'institution' && (id.includes('ror.org') || !cleanId.startsWith('I'))) {
     const rorUrl = id.startsWith('http') ? id : `https://ror.org/${cleanId}`;
     const url = `https://api.openalex.org/institutions?filter=ror:${encodeURIComponent(rorUrl)}`;
+    const rorPromise = getRorInstitution(rorUrl).catch(() => null);
     try {
       const response = await fetchWithTimeout(url, 10000);
-      if (response.status === 404) return null;
+      if (response.status === 404) return persistEntity(await rorPromise);
       if (!response.ok) throw new Error(`OpenAlex API error: ${response.status}`);
       const data = await response.json();
       if (data.results && data.results.length > 0) {
         const institution = data.results[0];
-        if (institution.works_count > 0) return persistEntity(institution);
+        if (institution.works_count > 0) {
+          return persistEntity(await enrichInstitutionWithRor(institution, await rorPromise));
+        }
 
         const worksUrl = `https://api.openalex.org/works?filter=institutions.ror:${encodeURIComponent(rorUrl)}&per-page=1&select=id`;
         try {
           const worksResponse = await fetchWithTimeout(worksUrl, 10000);
-          if (!worksResponse.ok) return persistEntity(institution);
+          if (!worksResponse.ok) return persistEntity(await enrichInstitutionWithRor(institution, await rorPromise));
           const worksData = await worksResponse.json();
-          return persistEntity(applyInstitutionWorksFallback(institution, worksData.meta?.count));
+          const withWorks = applyInstitutionWorksFallback(institution, worksData.meta?.count);
+          return persistEntity(await enrichInstitutionWithRor(withWorks, await rorPromise));
         } catch {
-          return persistEntity(institution);
+          return persistEntity(await enrichInstitutionWithRor(institution, await rorPromise));
         }
       }
-      return null;
+      return persistEntity(await rorPromise);
     } catch (err) {
       const staleEntity = readStaleEntity();
-      if (staleEntity) return staleEntity;
-      try {
-        const rorFallback = await getRorInstitutionFallback(cleanId);
-        if (rorFallback) return rorFallback;
-      } catch {
-        // Preserve the original OpenAlex error when both providers fail.
-      }
+      if (staleEntity) return enrichInstitutionWithRor(staleEntity, await rorPromise);
+      const rorFallback = await rorPromise;
+      if (rorFallback) return persistEntity(rorFallback);
       console.error(`OpenAlex getEntityById by ROR filter failed for ${id}`, err);
       throw err;
     }
@@ -757,7 +720,7 @@ export async function getEntityById(type, id) {
     const response = await fetchWithTimeout(url, 10000);
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`OpenAlex API error: ${response.status}`);
-    const data = await response.json();
+    let data = await response.json();
 
     if (type === 'institution' && data?.works_count === 0) {
       const filterKey = data.ror ? 'institutions.ror' : 'institutions.id';
@@ -767,11 +730,15 @@ export async function getEntityById(type, id) {
         const worksResponse = await fetchWithTimeout(worksUrl, 10000);
         if (worksResponse.ok) {
           const worksData = await worksResponse.json();
-          return persistEntity(applyInstitutionWorksFallback(data, worksData.meta?.count));
+          data = applyInstitutionWorksFallback(data, worksData.meta?.count);
         }
       } catch {
         // Preserve the institution profile even when the metrics fallback is unavailable.
       }
+    }
+
+    if (type === 'institution') {
+      data = await enrichInstitutionWithRor(data);
     }
     
     // If it's a concept, translate back to Spanish
@@ -791,7 +758,11 @@ export async function getEntityById(type, id) {
     return persistEntity(data);
   } catch (err) {
     const staleEntity = readStaleEntity();
-    if (staleEntity) return staleEntity;
+    if (staleEntity) {
+      return type === 'institution'
+        ? enrichInstitutionWithRor(staleEntity)
+        : staleEntity;
+    }
     console.error(`OpenAlex getEntityById failed for ${type} ${id}`, err);
     throw err;
   }

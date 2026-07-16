@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
 import { 
   ArrowLeft, Share2, FileText, Check, Loader2, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, Unlock, Lock, ExternalLink,
-  Rocket, Settings, Wrench, Cog, PenTool, Building, Map, Compass, Beaker, TestTube, Thermometer, HeartPulse, Stethoscope, Syringe, Pill, Leaf, Bug, Sprout, Landmark, Coins, Radio, Box
+  Rocket, Settings, Wrench, Cog, PenTool, Building, Map, Compass, Beaker, TestTube, Thermometer, HeartPulse, Stethoscope, Syringe, Pill, Leaf, Bug, Sprout, Landmark, Coins, Radio, Box, Code2, PackageOpen, History
 } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
 import ScientificText from '../ScientificText';
@@ -14,6 +14,7 @@ import { AnimatePresence, motion } from 'framer-motion';
 import './PaperCard.css';
 import RelatedPapersSheet from './RelatedPapersSheet';
 import { findOpenAccessCopy } from '../../services/unpaywallService';
+import { getRelatedResearchResources } from '../../services/dataCiteService';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -29,6 +30,13 @@ const AREA_BG_ICONS = {
   chemeng: [Beaker, FlaskConical, TestTube, Thermometer, AnimatedAtom, Activity],
   med: [HeartPulse, Activity, Stethoscope, Syringe, Pill, Microscope],
   bio: [Dna, Leaf, Microscope, Bug, Sprout, FlaskConical],
+};
+
+const RESOURCE_KIND_CONFIG = {
+  dataset: { label: 'Datos', Icon: Database },
+  software: { label: 'Código', Icon: Code2 },
+  material: { label: 'Material', Icon: PackageOpen },
+  version: { label: 'Versión', Icon: History },
 };
 
 const PaperCard = memo(function PaperCard({ 
@@ -55,6 +63,8 @@ const PaperCard = memo(function PaperCard({
   const [selectedRelatedPaper, setSelectedRelatedPaper] = useState(null);
   const [isClosingRelatedCard, setIsClosingRelatedCard] = useState(false);
   const [isResolvingAccess, setIsResolvingAccess] = useState(false);
+  const [resolvedAccess, setResolvedAccess] = useState({ paperId: null, copy: null });
+  const [linkedResources, setLinkedResources] = useState({ paperId: null, items: [] });
   const { followedByType, isFollowing } = useFollowing();
   const navigate = useNavigate();
   
@@ -77,6 +87,28 @@ const PaperCard = memo(function PaperCard({
   useEffect(() => () => {
     if (relatedCardCloseTimerRef.current) clearTimeout(relatedCardCloseTimerRef.current);
   }, []);
+
+  useEffect(() => {
+    let active = true;
+    if (!paper?.doi || paper.openAccess || paper.pdfUrl || paper.openAccessPdfUrl) {
+      return () => { active = false; };
+    }
+
+    findOpenAccessCopy(paper.doi).then(openCopy => {
+      if (active && openCopy) setResolvedAccess({ paperId: paper.id, copy: openCopy });
+    });
+
+    return () => { active = false; };
+  }, [paper?.doi, paper?.id, paper?.openAccess, paper?.openAccessPdfUrl, paper?.pdfUrl]);
+
+  useEffect(() => {
+    let active = true;
+    if (!paper?.doi) return () => { active = false; };
+    getRelatedResearchResources(paper.doi, { title: paper.title }).then(items => {
+      if (active) setLinkedResources({ paperId: paper.id, items });
+    });
+    return () => { active = false; };
+  }, [paper?.doi, paper?.id, paper?.title]);
 
   useEffect(() => {
     if (!cardRef.current || showRelated || selectedRelatedPaper) return;
@@ -252,6 +284,18 @@ const PaperCard = memo(function PaperCard({
 
   const handleOpenPaper = async (event) => {
     event.stopPropagation();
+    if (resolvedOpenCopy?.pdfUrl) {
+      onOpenPdf({ ...paper, ...resolvedOpenCopy, openAccess: true });
+      return;
+    }
+    if (resolvedOpenCopy?.landingPageUrl) {
+      window.open(resolvedOpenCopy.landingPageUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    if (paper.openAccessPdfUrl) {
+      window.open(paper.openAccessPdfUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
     const hasValidPdf = paper.pdfUrl && (paper.pdfUrl.includes('arxiv.org') || /\.pdf(?:$|[?#])/i.test(paper.pdfUrl));
     if (paper.arxivId || hasValidPdf) {
       onOpenPdf(paper);
@@ -263,10 +307,12 @@ const PaperCard = memo(function PaperCard({
       const openCopy = await findOpenAccessCopy(paper.doi);
       setIsResolvingAccess(false);
       if (openCopy?.pdfUrl) {
+        setResolvedAccess({ paperId: paper.id, copy: openCopy });
         onOpenPdf({ ...paper, ...openCopy, openAccess: true });
         return;
       }
       if (openCopy?.landingPageUrl) {
+        setResolvedAccess({ paperId: paper.id, copy: openCopy });
         window.open(openCopy.landingPageUrl, '_blank', 'noopener,noreferrer');
         return;
       }
@@ -277,7 +323,29 @@ const PaperCard = memo(function PaperCard({
   };
 
   const isPreprint = paper.publicationStatus === 'preprint';
-  const isOpenAccess = paper.openAccess;
+  const resolvedOpenCopy = resolvedAccess.paperId === paper.id ? resolvedAccess.copy : null;
+  const researchResources = linkedResources.paperId === paper.id ? linkedResources.items : [];
+  const isOpenAccess = Boolean(paper.openAccess || resolvedOpenCopy);
+  const openAccessLabel = resolvedOpenCopy
+    ? 'Versión abierta disponible'
+    : paper.accessSource === 'europepmc'
+      ? 'Texto completo abierto'
+      : 'Open Access';
+  const bestAvailableUrl = resolvedOpenCopy?.pdfUrl
+    || resolvedOpenCopy?.landingPageUrl
+    || paper.openAccessPdfUrl
+    || paper.pdfUrl
+    || paper.landingPageUrl
+    || (paper.doi ? `https://doi.org/${paper.doi}` : '');
+  const primaryActionLabel = isResolvingAccess
+    ? 'Buscando acceso...'
+    : resolvedOpenCopy
+      ? 'Leer versión abierta'
+      : paper.openAccessPdfUrl
+        ? 'Leer texto completo'
+        : (!paper.pdfUrl && !paper.arxivId)
+          ? 'Abrir fuente'
+          : 'Leer artículo';
   const showRankingDebug = typeof window !== 'undefined' && window.localStorage?.getItem('DEBUG_RANKING') === 'true';
 
   return (
@@ -393,7 +461,7 @@ const PaperCard = memo(function PaperCard({
 
           {isOpenAccess ? (
              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
-               <Unlock size={12} /> Open Access
+               <Unlock size={12} /> {openAccessLabel}
              </span>
           ) : (
              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
@@ -520,6 +588,34 @@ const PaperCard = memo(function PaperCard({
           <p><ScientificText>{paper.abstract}</ScientificText></p>
         </div>
 
+        {researchResources.length > 0 && (
+          <div className="pc-linked-resources" aria-label="Recursos de investigación asociados">
+            <span className="pc-linked-resources-label"><Database size={14} /> Recursos</span>
+            <div className="pc-linked-resources-list">
+              {researchResources.map(resource => {
+                const config = RESOURCE_KIND_CONFIG[resource.kind] || RESOURCE_KIND_CONFIG.material;
+                const ResourceIcon = config.Icon;
+                return (
+                  <a
+                    key={resource.id}
+                    className={`pc-linked-resource pc-linked-resource--${resource.kind}`}
+                    href={resource.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={(event) => event.stopPropagation()}
+                    title={resource.title}
+                    aria-label={`${config.label}: ${resource.title}`}
+                  >
+                    <ResourceIcon size={13} />
+                    <span>{config.label}</span>
+                    <ExternalLink size={11} />
+                  </a>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         <div className="pc-action-bar">
           <button 
             className="pc-read-btn"
@@ -530,13 +626,13 @@ const PaperCard = memo(function PaperCard({
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
               <polyline points="14 2 14 8 20 8" />
             </svg>}
-            <span>{isResolvingAccess ? 'Buscando acceso...' : (!paper.pdfUrl && !paper.arxivId) ? 'Abrir fuente' : 'Leer artículo'}</span>
+            <span>{primaryActionLabel}</span>
           </button>
           <button
             className="pc-read-btn pc-read-btn--secondary"
             onClick={(e) => { 
               e.stopPropagation(); 
-              const url = paper.pdfUrl || paper.landingPageUrl || (paper.arxivId ? `https://arxiv.org/abs/${paper.arxivId}` : '');
+              const url = bestAvailableUrl || (paper.arxivId ? `https://arxiv.org/abs/${paper.arxivId}` : '');
               if (navigator.share) {
                 navigator.share({ title: paper.title, url });
               } else {
@@ -587,7 +683,7 @@ const PaperCard = memo(function PaperCard({
             {isReadActive ? <CheckCircle2 size={24} color="#10b981" /> : <Eye size={24} />}
           </div>
           <span style={{ fontSize: '10px', textAlign: 'center', lineHeight: '1.2' }}>
-            {paper.pdfUrl ? 'Leer artículo' : (paper.landingPageUrl || paper.doi ? 'Abrir fuente' : 'Leer')}
+            {resolvedOpenCopy || paper.openAccessPdfUrl ? 'Versión abierta' : paper.pdfUrl ? 'Leer artículo' : (paper.landingPageUrl || paper.doi ? 'Abrir fuente' : 'Leer')}
           </span>
         </button>
 

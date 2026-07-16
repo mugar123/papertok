@@ -10,15 +10,17 @@ test('normalizes DOI values', () => {
 test('maps only safe Unpaywall locations', () => {
   assert.deepEqual(mapUnpaywallResult({ best_oa_location: {
     url_for_pdf: 'https://repository.example/paper.pdf',
-    url: 'https://repository.example/paper',
+    url_for_landing_page: 'https://repository.example/paper',
     license: 'cc-by',
+    repository_institution: 'Example University',
   } }), {
     pdfUrl: 'https://repository.example/paper.pdf',
     landingPageUrl: 'https://repository.example/paper',
     license: 'cc-by',
     version: undefined,
     hostType: undefined,
+    repositoryInstitution: 'Example University',
+    accessSource: 'unpaywall',
   });
   assert.equal(mapUnpaywallResult({ best_oa_location: { url: 'javascript:alert(1)' } }), null);
 });
-

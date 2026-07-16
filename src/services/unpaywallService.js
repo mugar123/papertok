@@ -23,7 +23,7 @@ export function mapUnpaywallResult(payload) {
   const location = payload?.best_oa_location;
   if (!location) return null;
   const pdfUrl = safeHttpUrl(location.url_for_pdf);
-  const landingPageUrl = safeHttpUrl(location.url || payload.doi_url);
+  const landingPageUrl = safeHttpUrl(location.url_for_landing_page || location.url || payload.doi_url);
   if (!pdfUrl && !landingPageUrl) return null;
   return {
     pdfUrl: pdfUrl || undefined,
@@ -31,6 +31,8 @@ export function mapUnpaywallResult(payload) {
     license: location.license || undefined,
     version: location.version || undefined,
     hostType: location.host_type || undefined,
+    repositoryInstitution: location.repository_institution || undefined,
+    accessSource: 'unpaywall',
   };
 }
 
@@ -85,4 +87,3 @@ export async function findOpenAccessCopy(rawDoi) {
     clearTimeout(timeout);
   }
 }
-

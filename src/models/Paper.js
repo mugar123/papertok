@@ -20,6 +20,8 @@
  * @property {Author[]} authors
  * 
  * @property {string} [doi]
+ * @property {string} [pmid]
+ * @property {string} [pmcid]
  * @property {string} [journal]
  * @property {string} [conference]
  * @property {number} year
@@ -31,6 +33,7 @@
  * @property {boolean} openAccess
  * 
  * @property {string} [pdfUrl] - Enlace directo al PDF si existe y es Open Access
+ * @property {string} [openAccessPdfUrl] - PDF abierto que debe abrirse externamente
  * @property {string} landingPageUrl - URL oficial de la editorial/fuente
  * 
  * // Metadatos aplanados

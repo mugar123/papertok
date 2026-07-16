@@ -180,6 +180,90 @@
   line-height: 1.3;
 }
 
+.ehc-institution-identity {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.ehc-institution-identity a,
+.ehc-institution-identity span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 4px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-decoration: none;
+}
+
+.ehc-institution-identity a:first-child {
+  border-color: rgba(59, 130, 246, 0.25);
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.09);
+}
+
+.ehc-institution-identity a:hover {
+  border-color: rgba(255, 255, 255, 0.22);
+  color: var(--text-primary);
+}
+
+.ehc-ror-relations {
+  display: flex;
+  gap: 6px;
+  max-width: min(720px, 100%);
+  margin-top: 5px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.ehc-ror-relations::-webkit-scrollbar { display: none; }
+
+.ehc-ror-relations button {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  max-width: 250px;
+  min-height: 30px;
+  padding: 5px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.045);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.ehc-ror-relations button:hover {
+  border-color: rgba(139, 92, 246, 0.32);
+  background: rgba(139, 92, 246, 0.1);
+  transform: translateY(-1px);
+}
+
+.ehc-ror-relations button span {
+  color: #a78bfa;
+  font-size: 0.62rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.ehc-ror-relations button strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.7rem;
+  font-weight: 650;
+}
+
 .entity-follow-btn {
   min-width: 98px;
   min-height: 32px;
@@ -1229,6 +1313,8 @@
     width: 60px;
     height: 60px;
   }
+
+  .ehc-ror-relations { max-width: calc(100vw - 108px); }
   
   .explorer-toolbar {
     padding: 10px 16px;
