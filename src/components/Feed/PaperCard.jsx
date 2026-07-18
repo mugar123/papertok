@@ -15,6 +15,7 @@ import './PaperCard.css';
 import RelatedPapersSheet from './RelatedPapersSheet';
 import { findOpenAccessCopy } from '../../services/unpaywallService';
 import { getRelatedResearchResources } from '../../services/dataCiteService';
+import { resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -227,6 +228,16 @@ const PaperCard = memo(function PaperCard({
 
   const areaInfo = getAreaInfo();
   const categoryLabel = getCategoryLabelText();
+  const primaryTopic = useMemo(
+    () => resolvePaperTopic(paper.primaryCategory || paper.categories?.[0]),
+    [paper.categories, paper.primaryCategory]
+  );
+
+  const openTopic = useCallback((event, topic) => {
+    event.stopPropagation();
+    const path = topicExplorerPath(topic);
+    if (path) navigate(path);
+  }, [navigate]);
 
   // Generate scattered background icons (stable per paper id)
   const bgIcons = useMemo(() => {
@@ -415,7 +426,18 @@ const PaperCard = memo(function PaperCard({
 
       <div className="pc-body">
         <div className="pc-meta">
-          <span className="pc-category-pill">{categoryLabel}</span>
+          {primaryTopic ? (
+            <button
+              type="button"
+              className="pc-category-pill pc-topic-link"
+              onClick={(event) => openTopic(event, primaryTopic)}
+              title={`Explorar ${primaryTopic.label}`}
+            >
+              {categoryLabel}
+            </button>
+          ) : (
+            <span className="pc-category-pill">{categoryLabel}</span>
+          )}
           {hasFollowedAuthor && (
             <>
               <span className="pc-meta-dot">·</span>
@@ -474,20 +496,21 @@ const PaperCard = memo(function PaperCard({
         
         {(paper.concepts && paper.concepts.length > 0) ? (
           <div className="pc-semantic-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-            {paper.concepts.slice(0, 4).map((concept, idx) => (
-              <span key={idx} className="pc-semantic-tag" style={{
-                background: 'rgba(255,255,255,0.1)',
-                padding: '2px 8px',
-                borderRadius: '12px',
-                fontSize: '11px',
-                fontWeight: '600',
-                color: 'rgba(255,255,255,0.9)',
-                border: '1px solid rgba(255,255,255,0.2)',
-                boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-              }}>
-                {concept.display_name}
-              </span>
-            ))}
+            {paper.concepts.slice(0, 4).map((concept, idx) => {
+              const topic = resolvePaperTopic(concept);
+              const TagElement = topic ? 'button' : 'span';
+              return (
+                <TagElement
+                  key={concept.id || concept.display_name || idx}
+                  type={topic ? 'button' : undefined}
+                  className={`pc-semantic-tag ${topic ? 'pc-topic-link' : ''} ${topic && !topic.reliable ? 'pc-topic-link--external' : ''}`}
+                  onClick={topic ? (event) => openTopic(event, topic) : undefined}
+                  title={topic ? `Explorar ${topic.label}` : undefined}
+                >
+                  {concept.display_name}
+                </TagElement>
+              );
+            })}
           </div>
         ) : (paper.categories && paper.categories.length > 1) ? (
           <div className="pc-semantic-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
@@ -495,19 +518,18 @@ const PaperCard = memo(function PaperCard({
               let label = cat;
               const area = Object.values(CATEGORIES).find(a => a.subcategories && a.subcategories[cat]);
               if (area) label = area.subcategories[cat].label;
+              const topic = resolvePaperTopic(cat);
+              const TagElement = topic ? 'button' : 'span';
               return (
-                <span key={idx} className="pc-semantic-tag" style={{
-                  background: 'rgba(255,255,255,0.1)',
-                  padding: '2px 8px',
-                  borderRadius: '12px',
-                  fontSize: '11px',
-                  fontWeight: '600',
-                  color: 'rgba(255,255,255,0.9)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
-                }}>
+                <TagElement
+                  key={`${cat}-${idx}`}
+                  type={topic ? 'button' : undefined}
+                  className={`pc-semantic-tag ${topic ? 'pc-topic-link' : ''}`}
+                  onClick={topic ? (event) => openTopic(event, topic) : undefined}
+                  title={topic ? `Explorar ${topic.label}` : undefined}
+                >
                   {label}
-                </span>
+                </TagElement>
               );
             })}
           </div>

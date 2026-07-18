@@ -25,6 +25,7 @@ import {
   removeLegacySeenPaperIds,
   saveSeenPaperIds,
 } from '../utils/userScopedStorage';
+import { serializeLibraryPaper } from '../utils/readingLibrary';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
@@ -100,6 +101,7 @@ export function FeedProvider({ children }) {
   const [notInterestedIds, setNotInterestedIds] = useState(new Set());
   const [savedPaperIds, setSavedPaperIds] = useState(new Set());
   const [readPaperIds, setReadPaperIds] = useState(new Set());
+  const [personalLibrary, setPersonalLibrary] = useState({});
   const [recommendationProfileUserId, setRecommendationProfileUserId] = useState(null);
   const recommendationProfileReady = Boolean(user?.uid && recommendationProfileUserId === user.uid);
 
@@ -297,6 +299,7 @@ export function FeedProvider({ children }) {
         setNotInterestedIds(new Set(demoGet('notInterestedIds', [])));
         setSavedPaperIds(new Set(demoGet('savedPaperIds', [])));
         setReadPaperIds(new Set(demoGet('readPaperIds', [])));
+        setPersonalLibrary(demoGet(`readingLibrary_${userId}`, {}));
         setRecommendationProfileUserId(userId);
       }, 0);
       return () => {
@@ -317,6 +320,7 @@ export function FeedProvider({ children }) {
         const notInterested = new Set();
         const saved = new Set();
         const read = new Set();
+        const library = {};
         const affinities = {};
         const cooldowns = {};
 
@@ -326,6 +330,23 @@ export function FeedProvider({ children }) {
           if (data.notInterested) notInterested.add(doc.id);
           if (data.saved) saved.add(doc.id);
           if (data.read) read.add(doc.id);
+          if (data.read || data.readLater || data.note || data.tags?.length) {
+            library[doc.id] = {
+              paperId: doc.id,
+              paper: data.paper || serializeLibraryPaper({
+                id: doc.id,
+                title: data.paperTitle || doc.id,
+                authors: data.paperAuthors || [],
+                primaryCategory: data.paperCategory || '',
+                published: data.timestamp || '',
+              }),
+              readLater: Boolean(data.readLater),
+              readAt: data.readAt || (data.read ? data.timestamp : null),
+              note: data.note || '',
+              tags: Array.isArray(data.tags) ? data.tags : [],
+              updatedAt: data.libraryUpdatedAt || data.timestamp || null,
+            };
+          }
 
           const cat = data.paperCategory;
           if (cat) {
@@ -391,6 +412,7 @@ export function FeedProvider({ children }) {
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
         setReadPaperIds(read);
+        setPersonalLibrary(library);
         categoryAffinities.current = affinities;
         categoryCooldowns.current = cooldowns;
         conceptAffinities.current = {};
@@ -1039,6 +1061,16 @@ export function FeedProvider({ children }) {
     const newRead = new Set(readPaperIdsRef.current);
     newRead.add(paper.id);
     setReadPaperIds(newRead);
+    const readAt = new Date().toISOString();
+    const storedPaper = serializeLibraryPaper(paper);
+    setPersonalLibrary((current) => {
+      const next = {
+        ...current,
+        [paper.id]: { ...current[paper.id], paperId: paper.id, paper: storedPaper, readAt },
+      };
+      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      return next;
+    });
     
     // Instantly remove it from the visual feed
     setPapers((prev) => prev.filter((p) => p.id !== paper.id));
@@ -1061,7 +1093,9 @@ export function FeedProvider({ children }) {
           read: true,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
           paperCategory: paper.primaryCategory, 
-          timestamp: new Date().toISOString(),
+          timestamp: readAt,
+          readAt,
+          paper: storedPaper,
           deviceType: getDeviceInfo().type,
         }, { merge: true });
       } catch (err) {
@@ -1245,6 +1279,12 @@ export function FeedProvider({ children }) {
     const newRead = new Set(readPaperIdsRef.current);
     newRead.delete(paperId);
     setReadPaperIds(newRead);
+    setPersonalLibrary((current) => {
+      if (!current[paperId]) return current;
+      const next = { ...current, [paperId]: { ...current[paperId], readAt: null } };
+      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      return next;
+    });
 
     if (IS_DEMO) {
       demoSet('readPaperIds', Array.from(newRead));
@@ -1252,10 +1292,88 @@ export function FeedProvider({ children }) {
       try {
         const ref = doc(db, 'users', user.uid, 'interactions', paperId);
         await updateDoc(ref, {
-          read: deleteField()
+          read: deleteField(),
+          readAt: deleteField(),
         });
       } catch (err) {
         console.error('Error unmarking read status:', err);
+      }
+    }
+  }, [user]);
+
+  const toggleReadLater = useCallback(async (paper) => {
+    if (!user || !paper?.id) return false;
+    const nextValue = !personalLibrary[paper.id]?.readLater;
+    const updatedAt = new Date().toISOString();
+    const storedPaper = serializeLibraryPaper(paper);
+
+    setPersonalLibrary((current) => {
+      const next = {
+        ...current,
+        [paper.id]: {
+          ...current[paper.id],
+          paperId: paper.id,
+          paper: storedPaper,
+          readLater: nextValue,
+          updatedAt,
+        },
+      };
+      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      return next;
+    });
+
+    if (!IS_DEMO) {
+      try {
+        await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), {
+          readLater: nextValue,
+          paper: storedPaper,
+          paperTitle: paper.title,
+          paperAuthors: paper.authors?.slice(0, 3) || [],
+          paperCategory: paper.primaryCategory || '',
+          libraryUpdatedAt: updatedAt,
+        }, { merge: true });
+      } catch (err) {
+        console.error('Error updating read later:', err);
+      }
+    }
+    return nextValue;
+  }, [personalLibrary, user]);
+
+  const saveReadingMetadata = useCallback(async (paper, { note = '', tags = [] }) => {
+    if (!user || !paper?.id) return;
+    const normalizedTags = [...new Set(tags.map(tag => tag.trim()).filter(Boolean))].slice(0, 12);
+    const updatedAt = new Date().toISOString();
+    const storedPaper = serializeLibraryPaper(paper);
+
+    setPersonalLibrary((current) => {
+      const next = {
+        ...current,
+        [paper.id]: {
+          ...current[paper.id],
+          paperId: paper.id,
+          paper: storedPaper,
+          note: note.trim(),
+          tags: normalizedTags,
+          updatedAt,
+        },
+      };
+      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      return next;
+    });
+
+    if (!IS_DEMO) {
+      try {
+        await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), {
+          note: note.trim(),
+          tags: normalizedTags,
+          paper: storedPaper,
+          paperTitle: paper.title,
+          paperAuthors: paper.authors?.slice(0, 3) || [],
+          paperCategory: paper.primaryCategory || '',
+          libraryUpdatedAt: updatedAt,
+        }, { merge: true });
+      } catch (err) {
+        console.error('Error saving reading metadata:', err);
       }
     }
   }, [user]);
@@ -1277,11 +1395,12 @@ export function FeedProvider({ children }) {
 
   const value = {
     papers, loading, error, hasMore, isRefreshing,
-    likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds,
+    likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
     toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
+    toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackPdfBounce
   };
 

@@ -61,7 +61,7 @@ function AppContent() {
               <ProtectedRoute>
                 <>
                   <Navbar />
-                  <ListsPage onOpenPdf={setPdfPaper} />
+                  <ListsPage onOpenPdf={setPdfPaper} onEditPaper={setSaveModalPaper} />
                 </>
               </ProtectedRoute>
             }

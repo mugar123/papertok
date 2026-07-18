@@ -181,6 +181,43 @@
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
+.pc-semantic-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.pc-semantic-tag {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  color: rgba(255, 255, 255, 0.9);
+  font-size: 11px;
+  font-weight: var(--fw-semibold);
+}
+
+.pc-topic-link {
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast), transform var(--transition-fast);
+}
+
+.pc-topic-link:hover,
+.pc-topic-link:focus-visible {
+  background: rgba(139, 92, 246, 0.24);
+  border-color: rgba(167, 139, 250, 0.65);
+  color: #fff;
+  outline: none;
+}
+
+.pc-topic-link:active { transform: scale(0.96); }
+.pc-topic-link--external { border-style: dashed; }
+
 .pc-meta-dot {
   color: rgba(255, 255, 255, 0.4);
   font-size: 10px;

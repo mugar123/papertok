@@ -329,7 +329,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
           }
         }
 
-        if (type === 'institution' || type === 'concept' || type === 'source') {
+        if (type === 'institution' || type === 'concept' || type === 'topic' || type === 'source') {
           try {
             const res = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(data.display_name)}`);
             if (isCancelled) return;
@@ -714,7 +714,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
 
   const renderIcon = () => {
     if (type === 'institution') return <Building2 size={36} />;
-    if (type === 'concept') return <Lightbulb size={36} />;
+    if (type === 'concept' || type === 'topic') return <Lightbulb size={36} />;
     if (type === 'source') return <FileText size={36} />;
     if (type === 'project') return <Briefcase size={36} />;
     return <Users size={36} />;
@@ -1316,7 +1316,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
             <Search size={16} className="es-icon" />
             <input 
               type="text" 
-              placeholder={`Buscar ${activeTab === 'papers' ? 'papers' : 'autores'} de ${type === 'institution' ? 'esta universidad' : type === 'concept' ? 'esta área' : type === 'project' ? 'este proyecto' : 'esta persona'}...`}
+              placeholder={`Buscar ${activeTab === 'papers' ? 'papers' : 'autores'} de ${type === 'institution' ? 'esta universidad' : type === 'concept' || type === 'topic' ? 'este tema' : type === 'project' ? 'este proyecto' : 'esta persona'}...`}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               aria-label={`Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} en esta entidad`}

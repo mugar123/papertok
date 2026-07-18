@@ -4,6 +4,8 @@ import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, setDoc } 
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { getIcon, AVAILABLE_ICONS } from '../../utils/icons';
+import { BookOpen, Download, StickyNote, Tags } from 'lucide-react';
+import { downloadCitationFile } from '../../utils/readingLibrary';
 import './SaveToListModal.css';
 
 // Demo storage helpers
@@ -19,13 +21,18 @@ function demoSet(key, value) {
 
 export default function SaveToListModal({ paper, onClose }) {
   const { user } = useAuth();
-  const { markSaved } = useFeed();
+  const { markSaved, personalLibrary, toggleReadLater, saveReadingMetadata } = useFeed();
   const [lists, setLists] = useState([]);
   const [paperLists, setPaperLists] = useState(new Set());
   const [newListName, setNewListName] = useState('');
   const [newListIcon, setNewListIcon] = useState('Folder');
   const [loading, setLoading] = useState(true);
+  const initialRecord = personalLibrary[paper.id] || {};
+  const [note, setNote] = useState(initialRecord.note || '');
+  const [tags, setTags] = useState((initialRecord.tags || []).join(', '));
+  const [metadataSaved, setMetadataSaved] = useState(false);
   const dialogRef = useRef(null);
+  const libraryRecord = personalLibrary[paper.id] || {};
 
   useEffect(() => {
     if (!user) return;
@@ -151,6 +158,15 @@ export default function SaveToListModal({ paper, onClose }) {
     setNewListName('');
   };
 
+  const handleSaveMetadata = async () => {
+    await saveReadingMetadata(paper, {
+      note,
+      tags: tags.split(',').map((tag) => tag.trim()).filter(Boolean),
+    });
+    setMetadataSaved(true);
+    setTimeout(() => setMetadataSaved(false), 1800);
+  };
+
   const handleClose = () => { dialogRef.current?.close(); onClose(); };
 
   return (
@@ -158,15 +174,62 @@ export default function SaveToListModal({ paper, onClose }) {
       onClick={(e) => { if (e.target === dialogRef.current) handleClose(); }}>
       <div className="save-modal glass-strong">
         <div className="save-modal-header">
-          <h2>Guardar en lista</h2>
+          <h2>Guardar y organizar</h2>
           <button className="save-modal-close" onClick={handleClose}>✕</button>
         </div>
         <p className="save-modal-paper-title">{paper.title}</p>
+
+        <section className="save-modal-personal" aria-label="Herramientas personales de lectura">
+          <button
+            className={`save-modal-read-later ${libraryRecord.readLater ? 'active' : ''}`}
+            onClick={() => toggleReadLater(paper)}
+            aria-pressed={Boolean(libraryRecord.readLater)}
+          >
+            <BookOpen size={19} />
+            <span>
+              <strong>{libraryRecord.readLater ? 'En Leer después' : 'Añadir a Leer después'}</strong>
+              <small>{libraryRecord.readLater ? 'Guardado en tu cola personal' : 'Reserva este paper para otro momento'}</small>
+            </span>
+          </button>
+
+          <label className="save-modal-field">
+            <span><StickyNote size={16} /> Nota privada</span>
+            <textarea
+              value={note}
+              onChange={(event) => setNote(event.target.value)}
+              placeholder="Ideas, dudas o conclusiones..."
+              maxLength={3000}
+            />
+          </label>
+          <label className="save-modal-field">
+            <span><Tags size={16} /> Etiquetas</span>
+            <input
+              value={tags}
+              onChange={(event) => setTags(event.target.value)}
+              placeholder="tesis, revisar, metodología"
+            />
+            <small>Sepáralas con comas</small>
+          </label>
+          <div className="save-modal-personal-actions">
+            <button className="save-modal-metadata-btn" onClick={handleSaveMetadata}>
+              {metadataSaved ? 'Guardado' : 'Guardar nota y etiquetas'}
+            </button>
+            <div className="save-modal-export" aria-label="Exportar cita">
+              <button onClick={() => downloadCitationFile([paper], 'bibtex', 'papertok-paper')} title="Exportar BibTeX">
+                <Download size={15} /> BibTeX
+              </button>
+              <button onClick={() => downloadCitationFile([paper], 'ris', 'papertok-paper')} title="Exportar RIS">
+                <Download size={15} /> RIS
+              </button>
+            </div>
+          </div>
+        </section>
 
         {loading ? (
           <div className="save-modal-loading">Cargando listas...</div>
         ) : (
           <div className="save-modal-lists">
+            <p className="save-modal-section-title">Listas personalizadas</p>
             {lists.map((list) => (
               <label key={list.id} className="save-modal-list-item">
                 <input type="checkbox" checked={paperLists.has(list.id)}
