@@ -24,5 +24,6 @@ test('keeps exact category papers and rejects unrelated supplemental results', (
   const topic = { categoryIds: ['cond-mat.str-el'], display_name: 'Electrones Correlacionados', labelEn: 'Strongly Correlated Electrons' };
   assert.equal(paperMatchesLocalTopic({ categories: ['cond-mat.str-el'], title: 'A lattice model' }, topic), true);
   assert.equal(paperMatchesLocalTopic({ categories: ['physics.chem-ph'], title: 'Water dehydrogenation by scandium' }, topic), false);
+  assert.equal(paperMatchesLocalTopic({ primaryCategory: 'cond-mat.str-el', categories: ['physics.chem-ph'], title: 'Water dehydrogenation by scandium' }, topic), false);
   assert.equal(paperMatchesLocalTopic({ categories: ['physics.general'], title: 'Strongly correlated electrons in a cavity' }, topic), true);
 });

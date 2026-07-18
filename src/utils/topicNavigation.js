@@ -29,6 +29,12 @@ function findLocalTopic(value) {
   return null;
 }
 
+function isKnownCategoryId(value) {
+  if (!value) return false;
+  if (CATEGORIES[value]) return true;
+  return Object.values(CATEGORIES).some(area => Boolean(area.subcategories?.[value]));
+}
+
 export function resolvePaperTopic(value) {
   const concept = typeof value === 'object' && value !== null ? value : null;
   const label = concept?.display_name || concept?.displayName || concept?.name || String(value || '');
@@ -49,8 +55,11 @@ export function topicExplorerPath(topic) {
 
 export function paperMatchesLocalTopic(paper, topic) {
   const categoryIds = topic?.categoryIds || [];
+  const explicitCategories = (paper?.categories || []).filter(isKnownCategoryId);
+  if (explicitCategories.some(category => categoryIds.includes(category))) return true;
+  if (explicitCategories.length === 0 && categoryIds.includes(paper?.primaryCategory)) return true;
+
   const paperCategories = [paper?.primaryCategory, ...(paper?.categories || [])].filter(Boolean);
-  if (paperCategories.some(category => categoryIds.includes(category))) return true;
 
   const topicLabels = [topic?.display_name, topic?.labelEn]
     .map(normalizeLabel)
