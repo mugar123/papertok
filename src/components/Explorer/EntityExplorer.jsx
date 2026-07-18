@@ -17,6 +17,7 @@ import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
 import { normalizeScientificMarkup } from '../../utils/latex';
+import { paperMatchesLocalTopic } from '../../utils/topicNavigation';
 import 'katex/dist/katex.min.css';
 import './EntityExplorer.css';
 
@@ -446,6 +447,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
             fetchedPapers.push(...topicResults.flatMap(result => result.status === 'fulfilled'
               ? result.value?.papers || result.value || []
               : []));
+            fetchedPapers = fetchedPapers.filter(paper => paperMatchesLocalTopic(paper, entity));
             total = fetchedPapers.length < 30 ? (page - 1) * 30 + fetchedPapers.length : page * 30 + 1;
          } else {
             const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity.display_name);

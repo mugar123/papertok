@@ -229,7 +229,7 @@ const PaperCard = memo(function PaperCard({
   const areaInfo = getAreaInfo();
   const categoryLabel = getCategoryLabelText();
   const primaryTopic = useMemo(
-    () => resolvePaperTopic(paper.primaryCategory || paper.categories?.[0]),
+    () => resolvePaperTopic(paper.categories?.[0] || paper.primaryCategory),
     [paper.categories, paper.primaryCategory]
   );
 
