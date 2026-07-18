@@ -57,7 +57,7 @@ export function topicExplorerPath(topic) {
 export function paperMatchesLocalTopic(paper, topic) {
   const categoryIds = topic?.categoryIds || [];
   const explicitCategories = (paper?.categories || []).filter(isExplicitCategoryId);
-  if (explicitCategories.some(category => categoryIds.includes(category))) return true;
+  if (explicitCategories.length > 0 && categoryIds.includes(explicitCategories[0])) return true;
   if (explicitCategories.length === 0 && categoryIds.includes(paper?.primaryCategory)) return true;
 
   const paperCategories = [paper?.primaryCategory, ...(paper?.categories || [])].filter(Boolean);
