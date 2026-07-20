@@ -10,7 +10,7 @@ import ScientificText from '../ScientificText';
 import { useFollowing } from '../../context/FollowingContext';
 import { getProjectForPaper } from '../../services/openAireService';
 import { useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import './PaperCard.css';
 import RelatedPapersSheet from './RelatedPapersSheet';
 import { findOpenAccessCopy } from '../../services/unpaywallService';
@@ -158,6 +158,7 @@ const PaperCard = memo(function PaperCard({
   }, [paper, selectedRelatedPaper, showRelated, trackViewTime, trackSkip]);
 
   const [project, setProject] = useState(null);
+  const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
     let isMounted = true;
@@ -540,8 +541,11 @@ const PaperCard = memo(function PaperCard({
         ) : null}
 
         {project && (
-          <div 
+          <motion.div
             className="pc-project-badge"
+            initial={prefersReducedMotion ? { opacity: 0, marginBottom: 0 } : { opacity: 0, y: -7, height: 0, marginBottom: 0 }}
+            animate={prefersReducedMotion ? { opacity: 1, marginBottom: 10 } : { opacity: 1, y: 0, height: 'auto', marginBottom: 10 }}
+            transition={{ duration: prefersReducedMotion ? 0.15 : 0.34, ease: [0.16, 1, 0.3, 1] }}
             style={{
               display: 'inline-flex',
               alignItems: 'center',
@@ -553,8 +557,8 @@ const PaperCard = memo(function PaperCard({
               fontWeight: '600',
               color: '#1da1f2',
               border: '1px solid rgba(29, 161, 242, 0.3)',
-              marginBottom: '10px',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              overflow: 'hidden',
             }}
             onClick={(e) => {
               e.stopPropagation();
@@ -566,7 +570,7 @@ const PaperCard = memo(function PaperCard({
           >
             <Briefcase size={12} />
             <span>{[project.funderLevel, project.funder].find(value => value && value !== 'Unknown Funder') || 'Proyecto'}: {project.acronym}</span>
-          </div>
+          </motion.div>
         )}
 
         <h2 className="pc-title">
