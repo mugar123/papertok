@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
 import {
   AlertCircle,
@@ -123,19 +123,32 @@ export default function AIExplanationSheet({ paper, onClose }) {
   const [results, setResults] = useState({});
   const [loadingLevel, setLoadingLevel] = useState(null);
   const [error, setError] = useState(null);
+  const [isClosing, setIsClosing] = useState(false);
+  const closeTimerRef = useRef(null);
+  const closingRef = useRef(false);
   const result = results[level];
   const levelLabel = useMemo(
     () => AI_EXPLANATION_LEVELS.find(item => item.id === level)?.label || '',
     [level],
   );
 
+  const requestClose = useCallback(() => {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setIsClosing(true);
+    closeTimerRef.current = setTimeout(onClose, 240);
+  }, [onClose]);
+
   useEffect(() => {
     const handleKeyDown = event => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') requestClose();
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    };
+  }, [requestClose]);
 
   const handleExplain = async () => {
     if (loadingLevel) return;
@@ -154,10 +167,10 @@ export default function AIExplanationSheet({ paper, onClose }) {
   return (
     <motion.div
       className="ai-explanation-overlay"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      onClick={onClose}
+      initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
+      animate={isClosing ? { opacity: 0, backdropFilter: 'blur(0px)' } : { opacity: 1, backdropFilter: 'blur(8px)' }}
+      transition={{ duration: isClosing ? 0.2 : 0.24, ease: isClosing ? 'easeIn' : 'easeOut' }}
+      onClick={requestClose}
     >
       <motion.div
         className="ai-explanation-sheet"
@@ -165,9 +178,10 @@ export default function AIExplanationSheet({ paper, onClose }) {
         aria-modal="true"
         aria-labelledby="ai-explanation-title"
         initial={{ opacity: 0, y: 32, scale: 0.98 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 24, scale: 0.98 }}
-        transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+        animate={isClosing ? { opacity: 0, y: 28, scale: 0.985 } : { opacity: 1, y: 0, scale: 1 }}
+        transition={isClosing
+          ? { duration: 0.22, ease: [0.4, 0, 1, 1] }
+          : { type: 'spring', damping: 28, stiffness: 300 }}
         onClick={event => event.stopPropagation()}
       >
         <div className="ai-explanation-grabber" aria-hidden="true" />
@@ -179,7 +193,7 @@ export default function AIExplanationSheet({ paper, onClose }) {
               <p>{paper.title}</p>
             </div>
           </div>
-          <button className="ai-explanation-close" onClick={onClose} aria-label="Cerrar explicación" title="Cerrar">
+          <button className="ai-explanation-close" onClick={requestClose} aria-label="Cerrar explicación" title="Cerrar">
             <X size={20} />
           </button>
         </header>
