@@ -742,20 +742,6 @@
   color: #b7b7c2;
 }
 
-.related-loading-orbit {
-  width: 44px;
-  height: 44px;
-  display: grid;
-  place-items: center;
-  align-self: center;
-  margin: 0 0 10px;
-  color: #c4b5fd;
-  background: rgba(124, 58, 237, 0.14);
-  border: 1px solid rgba(167, 139, 250, 0.28);
-  border-radius: 50%;
-  animation: relatedOrbit 1.8s ease-in-out infinite;
-}
-
 .related-loading-label {
   display: flex;
   align-items: center;
@@ -884,11 +870,6 @@
   to { background-position: -140% 0; }
 }
 
-@keyframes relatedOrbit {
-  0%, 100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(124, 58, 237, 0.28); }
-  50% { transform: scale(1.06); box-shadow: 0 0 0 10px rgba(124, 58, 237, 0); }
-}
-
 @keyframes relatedLoadingDot {
   0%, 100% { opacity: 0.34; transform: translateY(0); }
   50% { opacity: 1; transform: translateY(-3px); }
@@ -915,7 +896,6 @@
   .related-item,
   .related-card-overlay,
   .related-skeleton,
-  .related-loading-orbit,
   .related-loading-dots i {
     animation: none !important;
   }
