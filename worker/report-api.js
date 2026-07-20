@@ -9,6 +9,8 @@ const DEFAULT_ALLOWED_ORIGINS = [
 const CACHE_SECONDS = 6 * 60 * 60;
 const RELATED_CACHE_SECONDS = 24 * 60 * 60;
 const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
+const ARXIV_CACHE_SECONDS = 10 * 60;
+const ARXIV_PARAMS = ['search_query', 'id_list', 'start', 'max_results', 'sortBy', 'sortOrder'];
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -150,6 +152,61 @@ async function handleOpenAccess(request, env) {
   });
 }
 
+function safeArxivParam(name, value) {
+  if (!value) return '';
+  if (value.length > 2_000) return '';
+  if (name === 'start') return /^\d{1,6}$/.test(value) ? value : '';
+  if (name === 'max_results') {
+    const parsed = Number.parseInt(value, 10);
+    return Number.isInteger(parsed) && parsed >= 1 && parsed <= 50 ? String(parsed) : '';
+  }
+  if (name === 'sortBy') return ['relevance', 'lastUpdatedDate', 'submittedDate'].includes(value) ? value : '';
+  if (name === 'sortOrder') return ['ascending', 'descending'].includes(value) ? value : '';
+  return value;
+}
+
+async function handleArxiv(request, env) {
+  const requestUrl = new URL(request.url);
+  const origin = request.headers.get('origin') || '';
+  if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+
+  const upstreamUrl = new URL('https://export.arxiv.org/api/query');
+  for (const name of ARXIV_PARAMS) {
+    const value = safeArxivParam(name, requestUrl.searchParams.get(name) || '');
+    if (value) upstreamUrl.searchParams.set(name, value);
+  }
+  if (!upstreamUrl.searchParams.get('search_query') && !upstreamUrl.searchParams.get('id_list')) {
+    return json({ error: 'Missing arXiv query' }, 400, corsHeaders(origin, env));
+  }
+
+  const cacheUrl = new URL(request.url);
+  cacheUrl.searchParams.set('_origin', origin || 'no-origin');
+  const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
+  const cached = await caches.default.match(cacheKey);
+  if (cached) return cached;
+
+  const response = await fetch(upstreamUrl.toString(), {
+    headers: {
+      accept: 'application/atom+xml, application/xml, text/xml;q=0.9',
+      'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
+    },
+  });
+  if (!response.ok) throw new Error(`arXiv error: ${response.status}`);
+  const xml = await response.text();
+  if (!xml.includes('<feed')) throw new Error('Invalid arXiv response');
+
+  const workerResponse = new Response(xml, {
+    status: 200,
+    headers: {
+      ...corsHeaders(origin, env),
+      'content-type': 'application/atom+xml; charset=utf-8',
+      'cache-control': `public, max-age=120, s-maxage=${ARXIV_CACHE_SECONDS}, stale-while-revalidate=3600`,
+    },
+  });
+  await caches.default.put(cacheKey, workerResponse.clone());
+  return workerResponse;
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -204,6 +261,13 @@ export default {
         return await handleOpenAccess(request, env);
       } catch {
         return json({ error: 'Open-access lookup unavailable' }, 502, corsHeaders(origin, env));
+      }
+    }
+    if (url.pathname === '/arxiv') {
+      try {
+        return await handleArxiv(request, env);
+      } catch {
+        return json({ error: 'arXiv unavailable' }, 502, corsHeaders(origin, env));
       }
     }
     return json({ error: 'Not found' }, 404, corsHeaders(origin, env));

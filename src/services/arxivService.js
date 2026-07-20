@@ -9,6 +9,7 @@ import CATEGORIES from '../data/categories.js';
 
 const ARXIV_DEV = '/api/arxiv';
 const ARXIV_PROD = 'https://export.arxiv.org/api/query';
+const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
 const cache = new Map();
 const CACHE_TTL = 5 * 60 * 1000;
 const ARXIV_PREFIXES = ['cs', 'math', 'physics', 'eess', 'q-bio', 'q-fin', 'stat', 'econ', 'astro-ph', 'cond-mat', 'gr-qc', 'hep-ex', 'hep-lat', 'hep-ph', 'hep-th', 'nlin', 'nucl-ex', 'nucl-th', 'quant-ph', 'math-ph'];
@@ -208,6 +209,19 @@ function parseRss2Json(data) {
  * Helper to fetch and parse arXiv XML or JSON using cascading proxies in production
  */
 async function fetchArxivData(url) {
+  // The PaperTok Worker avoids depending on unreliable public CORS proxies in production.
+  if (PAPER_API_BASE) {
+    try {
+      const query = new URL(url).search;
+      const response = await fetchWithTimeout(`${PAPER_API_BASE}/arxiv${query}`, 10_000);
+      if (!response.ok) throw new Error(`PaperTok arXiv API error: ${response.status}`);
+      const parsed = parseArxivXml(await response.text());
+      if (parsed.length > 0) return parsed;
+    } catch (error) {
+      console.warn('PaperTok arXiv API failed, using fallback', error);
+    }
+  }
+
   if (isDev) {
     try {
       const response = await fetchWithTimeout(url, 10000);

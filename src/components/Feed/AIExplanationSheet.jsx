@@ -20,6 +20,7 @@ import {
   explainPaper,
 } from '../../services/aiExplanationService.js';
 import ScientificText from '../ScientificText';
+import { normalizeAIExplanationMath } from '../../utils/aiExplanationMath.js';
 import './AIExplanationSheet.css';
 
 const ERROR_COPY = {
@@ -55,7 +56,7 @@ function ExplanationSkeleton() {
 
 function TextBlock({ children }) {
   if (!children) return null;
-  return <ScientificText>{children}</ScientificText>;
+  return <ScientificText>{normalizeAIExplanationMath(children)}</ScientificText>;
 }
 
 function ExplanationContent({ result }) {

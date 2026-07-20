@@ -18,6 +18,7 @@ test('builds a source-aware prompt without silently claiming full-text access', 
   assert.match(prompt, /Known facts/);
   assert.match(prompt, /LaTeX/);
   assert.match(prompt, /\$\.\.\.\$/);
+  assert.match(prompt, /nunca escribas ω_b/);
   assert.match(prompt, /keyPoints/);
 });
 
