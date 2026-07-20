@@ -17,6 +17,7 @@ import { findOpenAccessCopy } from '../../services/unpaywallService';
 import { getRelatedResearchResources } from '../../services/dataCiteService';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation';
 import AIExplanationSheet from './AIExplanationSheet';
+import { canExplainPaper } from '../../services/aiExplanationService';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -341,6 +342,7 @@ const PaperCard = memo(function PaperCard({
   const resolvedOpenCopy = resolvedAccess.paperId === paper.id ? resolvedAccess.copy : null;
   const researchResources = linkedResources.paperId === paper.id ? linkedResources.items : [];
   const isOpenAccess = Boolean(paper.openAccess || resolvedOpenCopy);
+  const canRequestAIExplanation = canExplainPaper(paper, { hasOpenAccessCopy: Boolean(resolvedOpenCopy) });
   const openAccessLabel = resolvedOpenCopy
     ? 'Versión abierta disponible'
     : paper.accessSource === 'europepmc'
@@ -671,16 +673,18 @@ const PaperCard = memo(function PaperCard({
           >
             {copied ? <><Check size={16} /><span className="pc-share-label">Copiado</span></> : <><Share2 size={16} /><span className="pc-share-label">Compartir</span></>}
           </button>
-          <button
-            className="pc-ai-btn"
-            onClick={(event) => { event.stopPropagation(); setShowAIExplanation(true); }}
-            aria-label="Explicar este paper con IA"
-            title="Explicar con IA"
-          >
-            <Sparkles size={17} />
-            <span className="pc-ai-label pc-ai-label--full">Explicar con IA</span>
-            <span className="pc-ai-label pc-ai-label--short">Explicar</span>
-          </button>
+          {canRequestAIExplanation && (
+            <button
+              className="pc-ai-btn"
+              onClick={(event) => { event.stopPropagation(); setShowAIExplanation(true); }}
+              aria-label="Explicar este paper con IA"
+              title="Explicar con IA"
+            >
+              <Sparkles size={17} />
+              <span className="pc-ai-label pc-ai-label--full">Explicar con IA</span>
+              <span className="pc-ai-label pc-ai-label--short">Explicar</span>
+            </button>
+          )}
           {(paper.doi || paper.arxivId || paper.semanticScholarId) && (
             <button
               className="pc-related-btn"

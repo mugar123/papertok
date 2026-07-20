@@ -80,7 +80,7 @@ function ExplanationContent({ result }) {
       ))}
 
       {explanation.keyPoints?.length > 0 && (
-        <section className="ai-explanation-section">
+        <section className="ai-explanation-section ai-explanation-section--key-points">
           <h3><ListChecks size={17} /> Puntos clave</h3>
           <ul>{explanation.keyPoints.map((point, index) => <li key={`${index}-${point}`}><TextBlock>{point}</TextBlock></li>)}</ul>
         </section>
@@ -92,7 +92,7 @@ function ExplanationContent({ result }) {
           <div className="ai-explanation-concepts">
             {explanation.concepts.map(concept => (
               <div className="ai-explanation-concept" key={concept.term}>
-                <strong>{concept.term}</strong>
+                <strong><TextBlock>{concept.term}</TextBlock></strong>
                 <div><TextBlock>{concept.explanation}</TextBlock></div>
               </div>
             ))}

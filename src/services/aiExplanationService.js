@@ -2,6 +2,13 @@ import { auth } from './firebase.js';
 
 const explanationCache = new Map();
 
+const UNAVAILABLE_ABSTRACTS = new Set([
+  'no abstract available.',
+  'no summary available.',
+  'resumen no disponible.',
+  'el resumen no esta disponible en crossref.',
+]);
+
 export const AI_EXPLANATION_LEVELS = Object.freeze([
   { id: 'beginner', label: 'Principiante' },
   { id: 'university', label: 'Universitario' },
@@ -33,6 +40,24 @@ function getOpenPdfUrl(paper) {
   if (paper?.openAccess && paper?.pdfUrl) return paper.pdfUrl;
   if (paper?.pmcid) return `https://pmc.ncbi.nlm.nih.gov/articles/${encodeURIComponent(paper.pmcid)}/pdf/`;
   return '';
+}
+
+export function hasUsableAbstract(paper) {
+  const abstract = cleanText(paper?.abstract || paper?.summary, 30_000);
+  if (!abstract) return false;
+
+  const normalized = abstract
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  return !UNAVAILABLE_ABSTRACTS.has(normalized);
+}
+
+export function canExplainPaper(paper, { hasOpenAccessCopy = false } = {}) {
+  return hasUsableAbstract(paper) || hasOpenAccessCopy || Boolean(getOpenPdfUrl(paper));
 }
 
 export function serializePaperForExplanation(paper) {

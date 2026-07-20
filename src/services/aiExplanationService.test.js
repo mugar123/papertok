@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { serializePaperForExplanation } from './aiExplanationService.js';
+import { canExplainPaper, hasUsableAbstract, serializePaperForExplanation } from './aiExplanationService.js';
 
 test('serializes only the scientific fields required by the AI backend', () => {
   const result = serializePaperForExplanation({
@@ -30,4 +30,16 @@ test('does not send a subscription-only PDF to the backend', () => {
   });
 
   assert.equal(result.pdfUrl, '');
+});
+
+test('hides AI explanations for a closed paper without an abstract', () => {
+  const paper = { openAccess: false, abstract: 'No abstract available.' };
+
+  assert.equal(hasUsableAbstract(paper), false);
+  assert.equal(canExplainPaper(paper), false);
+});
+
+test('keeps AI explanations for papers with an abstract or open full text', () => {
+  assert.equal(canExplainPaper({ openAccess: false, abstract: 'A real abstract.' }), true);
+  assert.equal(canExplainPaper({ openAccess: true, abstract: 'Resumen no disponible.', pdfUrl: 'https://example.org/open.pdf' }), true);
 });

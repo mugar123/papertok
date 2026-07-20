@@ -16,6 +16,9 @@ test('builds a source-aware prompt without silently claiming full-text access', 
   const prompt = buildPaperExplanationPrompt(paper, 'university', 'abstract');
   assert.match(prompt, /Solo dispones del abstract/);
   assert.match(prompt, /Known facts/);
+  assert.match(prompt, /LaTeX/);
+  assert.match(prompt, /\$\.\.\.\$/);
+  assert.match(prompt, /keyPoints/);
 });
 
 test('rejects an explanation request without usable paper content', () => {
