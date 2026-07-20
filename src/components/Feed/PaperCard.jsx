@@ -205,7 +205,7 @@ const PaperCard = memo(function PaperCard({
 
   // Get area info for the gradient background
   const getAreaInfo = () => {
-    const cat = (paper.categories && paper.categories[0]) || '';
+    const cat = paper.primaryCategory || paper.categories?.[0] || '';
     const prefix = cat.split('.')[0].split('-')[0];
     for (const [, area] of Object.entries(CATEGORIES)) {
       if (area.subcategories && area.subcategories[cat]) {
@@ -221,7 +221,7 @@ const PaperCard = memo(function PaperCard({
   };
 
   const getCategoryLabelText = () => {
-    const cat = (paper.categories && paper.categories[0]) || '';
+    const cat = paper.primaryCategory || paper.categories?.[0] || '';
     const area = Object.values(CATEGORIES).find(a => a.subcategories && a.subcategories[cat]);
     if (area) return area.subcategories[cat].label;
     if (cat) return cat;
@@ -232,7 +232,7 @@ const PaperCard = memo(function PaperCard({
   const areaInfo = getAreaInfo();
   const categoryLabel = getCategoryLabelText();
   const primaryTopic = useMemo(
-    () => resolvePaperTopic(paper.categories?.[0] || paper.primaryCategory),
+    () => resolvePaperTopic(paper.primaryCategory || paper.categories?.[0]),
     [paper.categories, paper.primaryCategory]
   );
 
@@ -244,7 +244,7 @@ const PaperCard = memo(function PaperCard({
 
   // Generate scattered background icons (stable per paper id)
   const bgIcons = useMemo(() => {
-    const cat = (paper.categories && paper.categories[0]) || '';
+    const cat = paper.primaryCategory || paper.categories?.[0] || '';
     let areaKey = 'physics';
     for (const [key, area] of Object.entries(CATEGORIES)) {
       if (area.subcategories && area.subcategories[cat]) {
