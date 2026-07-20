@@ -27,6 +27,11 @@ import {
 } from '../utils/userScopedStorage';
 import { serializeLibraryPaper } from '../utils/readingLibrary';
 import { fetchDomainPapers } from '../services/domainSourceService';
+import {
+  getOpenAlexEnrichmentId,
+  mergeOpenAlexEnrichment,
+  waitForInitialEnrichment,
+} from '../utils/feedEnrichment';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
@@ -115,6 +120,8 @@ export function FeedProvider({ children }) {
   const isTraversingNetwork = useRef(false);
   const feedRequestId = useRef(0);
   const feedSessionId = useRef(0);
+  const openAlexEnrichmentAttempts = useRef(new Set());
+  const openAlexEnrichmentRequests = useRef(new Map());
   const activeUserId = useRef(user?.uid || null);
   const sessionSeenPapers = useRef(readSeenPaperIds(user?.uid));
 
@@ -189,9 +196,25 @@ export function FeedProvider({ children }) {
     try {
       let enriched = paper.openAlex;
       if (!enriched) {
-        const res = await enrichPapersBatch([paper.id]);
+        const pid = getOpenAlexEnrichmentId(paper);
+        let enrichmentRequest = openAlexEnrichmentRequests.current.get(pid);
+
+        if (!enrichmentRequest && !openAlexEnrichmentAttempts.current.has(pid)) {
+          openAlexEnrichmentAttempts.current.add(pid);
+          enrichmentRequest = enrichPapersBatch([paper.id]).catch((error) => {
+            console.error('OpenAlex interaction enrichment failed', error);
+            return {};
+          });
+          openAlexEnrichmentRequests.current.set(pid, enrichmentRequest);
+          enrichmentRequest.finally(() => {
+            if (openAlexEnrichmentRequests.current.get(pid) === enrichmentRequest) {
+              openAlexEnrichmentRequests.current.delete(pid);
+            }
+          });
+        }
+
+        const res = enrichmentRequest ? await enrichmentRequest : {};
         if (sessionId !== feedSessionId.current) return;
-        const pid = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1].replace(/v\d+$/, '') : paper.id.replace(/v\d+$/, '');
         enriched = res[pid];
         if (enriched) {
           setPapers(current => current.map(p => p.id === paper.id ? PaperBuilder.merge(p, enriched, 'openalex') : p));
@@ -477,6 +500,11 @@ export function FeedProvider({ children }) {
 
     const activeMode = mode || feedMode;
     const requestId = ++feedRequestId.current;
+
+    if (reset) {
+      openAlexEnrichmentAttempts.current.clear();
+      openAlexEnrichmentRequests.current.clear();
+    }
 
     setLoading(true);
     setError(null);
@@ -814,6 +842,30 @@ export function FeedProvider({ children }) {
         }
       }
 
+      const enrichmentIds = [...new Set(filtered.map(getOpenAlexEnrichmentId).filter(Boolean))];
+      const enrichmentPromise = enrichPapersBatch(enrichmentIds).catch((err) => {
+        console.error('OpenAlex feed enrichment failed', err);
+        return {};
+      });
+
+      enrichmentIds.forEach((id) => {
+        openAlexEnrichmentAttempts.current.add(id);
+        openAlexEnrichmentRequests.current.set(id, enrichmentPromise);
+      });
+      enrichmentPromise.finally(() => {
+        enrichmentIds.forEach((id) => {
+          if (openAlexEnrichmentRequests.current.get(id) === enrichmentPromise) {
+            openAlexEnrichmentRequests.current.delete(id);
+          }
+        });
+      });
+
+      const initialOpenAlexData = await waitForInitialEnrichment(enrichmentPromise);
+      if (requestId !== feedRequestId.current) return;
+      if (initialOpenAlexData) {
+        filtered = mergeOpenAlexEnrichment(filtered, initialOpenAlexData);
+      }
+
       if (activeMode === 'top' || activeMode === null) {
         filtered = diversifiedWeightedShuffle(filtered, {
           scorePaper: calculateAndAttachScore,
@@ -848,21 +900,15 @@ export function FeedProvider({ children }) {
       // Save to cache
       feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
 
-      // Asynchronous OpenAlex Enrichment (Lazy Loading to prevent UI blocking)
-      const arxivIdsToEnrich = nextPapers.map(p => p.id.startsWith('arxiv:') ? p.id.split(':')[1] : p.id);
-      enrichPapersBatch(arxivIdsToEnrich).then(openAlexData => {
+      // Finish the same batch request if it exceeded the initial wait budget.
+      enrichmentPromise.then(openAlexData => {
          if (requestId !== feedRequestId.current) return;
          if (!openAlexData || Object.keys(openAlexData).length === 0) return;
          setPapers(current => {
-            return current.map(p => {
-               // Extract pure ID to match enrichment cache, removing any version suffix (e.g. v1)
-               const rawId = p.id.startsWith('arxiv:') ? p.id.split(':')[1] : p.id;
-               const pid = rawId.replace(/v\d+$/, '');
-               if (openAlexData[pid]) {
-                  return PaperBuilder.merge(p, openAlexData[pid], 'openalex');
-               }
-               return p;
-            });
+            const enrichedPapers = mergeOpenAlexEnrichment(current, openAlexData);
+            const cached = feedCache.current[activeMode];
+            if (cached) feedCache.current[activeMode] = { ...cached, papers: enrichedPapers };
+            return enrichedPapers;
          });
          reRankFeed();
       }).catch(err => console.error("Lazy enrichment failed", err));

@@ -31,6 +31,7 @@ test('maps real-shaped OpenAlex arXiv enrichment without a top-level id', () => 
   assert.equal(mapped.openAlexId, 'W2626778328');
   assert.equal(mapped.arxivId, '1706.03762');
   assert.equal(mapped.enrichment.citationCount, 6590);
+  assert.equal(mapped.enrichment.citationCountKnown, true);
   assert.equal(mapped.enrichment.openAccess, true);
   assert.equal(mapped.enrichment.pdfUrl, 'https://arxiv.org/pdf/1706.03762');
   assert.equal(mapped.enrichment.doi, undefined);

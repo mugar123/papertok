@@ -44,6 +44,8 @@ export class PaperBuilder {
       accessSource: data.accessSource || undefined,
       license: data.license || undefined,
       citationCount: data.citationCount ?? data.citationsCount ?? 0,
+      citationCountKnown: data.citationCountKnown
+        ?? (data.citationCount !== undefined || data.citationsCount !== undefined),
       referenceCount: data.referenceCount || 0,
       concepts: data.concepts || [],
       topics: data.topics || [],
@@ -115,6 +117,7 @@ export class PaperBuilder {
     // Merge numbers
     if (enrichmentData.citationCount !== undefined) {
       merged.citationCount = Math.max(merged.citationCount || 0, enrichmentData.citationCount);
+      merged.citationCountKnown = enrichmentData.citationCountKnown ?? true;
     }
     if (enrichmentData.referenceCount !== undefined) {
       merged.referenceCount = Math.max(merged.referenceCount || 0, enrichmentData.referenceCount);

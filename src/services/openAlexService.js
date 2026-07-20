@@ -93,6 +93,7 @@ export function mapOpenAlexEnrichmentWork(work) {
     enrichment: {
       concepts: work.concepts || [],
       citationCount: Number.isFinite(work.cited_by_count) ? work.cited_by_count : 0,
+      citationCountKnown: Number.isFinite(work.cited_by_count),
       related_works: work.related_works || [],
       publicationType: (work.type && work.type !== 'preprint')
         ? work.type
@@ -1121,6 +1122,7 @@ function formatOpenAlexWorkAsPaper(work) {
     journal: work.primary_location?.source?.display_name,
     publisher: work.primary_location?.source?.host_organization_name,
     citationCount: work.cited_by_count || 0,
+    citationCountKnown: Number.isFinite(work.cited_by_count),
     concepts: work.concepts || [],
     categories: categories,
     keywords: categories

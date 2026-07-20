@@ -31,6 +31,7 @@ test('OpenAlex enrichment remains available to the recommendation engine', () =>
   const paper = PaperBuilder.create({ id: 'arxiv:1', title: 'Paper', publicationType: 'preprint' });
   const enriched = PaperBuilder.merge(paper, {
     citationCount: 42,
+    citationCountKnown: true,
     concepts: [{ id: 'concept-1', score: 0.5 }],
   }, 'openalex');
 
@@ -39,8 +40,20 @@ test('OpenAlex enrichment remains available to the recommendation engine', () =>
   });
 
   assert.equal(enriched.openAlex.citationCount, 42);
+  assert.equal(enriched.citationCountKnown, true);
   assert.ok(score.citations > 0);
   assert.ok(score.semantic > 0);
+});
+
+test('keeps a confirmed zero citation count distinct from missing metadata', () => {
+  const paper = PaperBuilder.create({ id: 'arxiv:2', title: 'New paper' });
+  const enriched = PaperBuilder.merge(paper, {
+    citationCount: 0,
+    citationCountKnown: true,
+  }, 'openalex');
+
+  assert.equal(enriched.citationCount, 0);
+  assert.equal(enriched.citationCountKnown, true);
 });
 
 test('deduplicates the same title and author when only one source has a DOI', () => {

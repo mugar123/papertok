@@ -463,7 +463,7 @@ const PaperCard = memo(function PaperCard({
           <span className="pc-meta-dot">·</span>
           <span className="pc-date">{paper.year}</span>
 
-          {paper.citationCount > 0 && (
+          {(paper.citationCountKnown || paper.citationCount > 0) && (
             <>
               <span className="pc-meta-dot">·</span>
               <span className="pc-citations" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
