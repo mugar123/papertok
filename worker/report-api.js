@@ -10,6 +10,13 @@ const CACHE_SECONDS = 6 * 60 * 60;
 const RELATED_CACHE_SECONDS = 24 * 60 * 60;
 const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const ARXIV_CACHE_SECONDS = 10 * 60;
+const SOURCE_CACHE_SECONDS = {
+  biorxiv: 10 * 60,
+  europepmc: 30 * 60,
+  core: 6 * 60 * 60,
+  osti: 60 * 60,
+  nasa: 60 * 60,
+};
 const ARXIV_PARAMS = ['search_query', 'id_list', 'start', 'max_results', 'sortBy', 'sortOrder'];
 
 function json(data, status = 200, headers = {}) {
@@ -207,6 +214,149 @@ async function handleArxiv(request, env) {
   return workerResponse;
 }
 
+function safeSourceQuery(value) {
+  const query = [...String(value || '')]
+    .map(character => {
+      const code = character.charCodeAt(0);
+      return code <= 31 || code === 127 ? ' ' : character;
+    })
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return query.length <= 500 ? query : '';
+}
+
+function sourceRequestContext(request, env) {
+  const requestUrl = new URL(request.url);
+  const origin = request.headers.get('origin') || '';
+  if (origin && !allowedOrigins(env).has(origin)) {
+    return { error: json({ error: 'Origin not allowed' }, 403) };
+  }
+  return {
+    requestUrl,
+    origin,
+    page: getSafeLimit(requestUrl.searchParams.get('page'), 1, 100),
+    limit: getSafeLimit(requestUrl.searchParams.get('limit'), 8, 10),
+    sort: requestUrl.searchParams.get('sort') === 'recent' ? 'recent' : 'relevance',
+  };
+}
+
+function utcDateOffset(days) {
+  const date = new Date();
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
+}
+
+async function fetchJsonUpstream(url, headers = {}) {
+  const response = await fetch(url, {
+    headers: {
+      accept: 'application/json',
+      'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
+      ...headers,
+    },
+  });
+  if (!response.ok) throw new Error(`Upstream error: ${response.status}`);
+  return response.json();
+}
+
+async function handleBioRxiv(request, env) {
+  const context = sourceRequestContext(request, env);
+  if (context.error) return context.error;
+  const category = String(context.requestUrl.searchParams.get('category') || '').trim().toLowerCase();
+  if (!/^[a-z][a-z &-]{1,80}$/.test(category)) {
+    return json({ error: 'Invalid bioRxiv category' }, 400, corsHeaders(context.origin, env));
+  }
+
+  return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.biorxiv, async () => {
+    // bioRxiv pages in fixed groups of 30, so request the matching cursor and trim client-side.
+    const cursor = (context.page - 1) * 30;
+    const encodedCategory = encodeURIComponent(category.replace(/\s+/g, '_'));
+    const url = `https://api.biorxiv.org/details/biorxiv/${utcDateOffset(-180)}/${utcDateOffset(0)}/${cursor}/json?category=${encodedCategory}`;
+    const data = await fetchJsonUpstream(url);
+    return { ...data, collection: (data?.collection || []).slice(0, context.limit) };
+  });
+}
+
+async function handleEuropePmc(request, env) {
+  const context = sourceRequestContext(request, env);
+  if (context.error) return context.error;
+  const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
+  if (!query) return json({ error: 'Missing Europe PMC query' }, 400, corsHeaders(context.origin, env));
+
+  return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.europepmc, async () => {
+    const url = new URL('https://www.ebi.ac.uk/europepmc/webservices/rest/search');
+    url.searchParams.set('query', context.sort === 'recent' ? `(${query}) sort_date:y` : query);
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('resultType', 'core');
+    url.searchParams.set('pageSize', String(context.limit));
+    url.searchParams.set('page', String(context.page));
+    return fetchJsonUpstream(url);
+  });
+}
+
+async function handleCore(request, env) {
+  const context = sourceRequestContext(request, env);
+  if (context.error) return context.error;
+  const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
+  if (!query) return json({ error: 'Missing CORE query' }, 400, corsHeaders(context.origin, env));
+
+  return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.core, async () => {
+    const url = new URL('https://api.core.ac.uk/v3/search/works/');
+    url.searchParams.set('q', query);
+    url.searchParams.set('limit', String(context.limit));
+    url.searchParams.set('offset', String((context.page - 1) * context.limit));
+    const headers = env.CORE_API_KEY ? { authorization: `Bearer ${env.CORE_API_KEY}` } : {};
+    return fetchJsonUpstream(url, headers);
+  });
+}
+
+async function handleOsti(request, env) {
+  const context = sourceRequestContext(request, env);
+  if (context.error) return context.error;
+  const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
+  if (!query) return json({ error: 'Missing OSTI query' }, 400, corsHeaders(context.origin, env));
+
+  return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.osti, async () => {
+    const url = new URL('https://www.osti.gov/api/v1/records');
+    url.searchParams.set('q', query);
+    url.searchParams.set('rows', String(context.limit));
+    url.searchParams.set('page', String(context.page));
+    if (context.sort === 'recent') {
+      url.searchParams.set('sort', 'publication_date');
+      url.searchParams.set('order', 'desc');
+    }
+    return fetchJsonUpstream(url);
+  });
+}
+
+async function handleNasa(request, env) {
+  const context = sourceRequestContext(request, env);
+  if (context.error) return context.error;
+  const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
+  if (!query) return json({ error: 'Missing NASA query' }, 400, corsHeaders(context.origin, env));
+
+  return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.nasa, async () => {
+    const url = new URL('https://ntrs.nasa.gov/api/citations/search');
+    url.searchParams.set('q', query);
+    url.searchParams.set('page.size', String(context.limit));
+    url.searchParams.set('page.from', String((context.page - 1) * context.limit));
+    if (context.sort === 'recent') {
+      url.searchParams.set('published.gte', `${new Date().getUTCFullYear() - 3}-01-01`);
+      url.searchParams.set('sort.field', 'id');
+      url.searchParams.set('sort.order', 'desc');
+    }
+    return fetchJsonUpstream(url);
+  });
+}
+
+const DOMAIN_SOURCE_HANDLERS = {
+  '/sources/biorxiv': handleBioRxiv,
+  '/sources/europepmc': handleEuropePmc,
+  '/sources/core': handleCore,
+  '/sources/osti': handleOsti,
+  '/sources/nasa': handleNasa,
+};
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -268,6 +418,14 @@ export default {
         return await handleArxiv(request, env);
       } catch {
         return json({ error: 'arXiv unavailable' }, 502, corsHeaders(origin, env));
+      }
+    }
+    if (DOMAIN_SOURCE_HANDLERS[url.pathname]) {
+      try {
+        return await DOMAIN_SOURCE_HANDLERS[url.pathname](request, env);
+      } catch (error) {
+        console.error(`Specialist source failed: ${url.pathname}`, error);
+        return json({ error: 'Specialist source unavailable' }, 502, corsHeaders(origin, env));
       }
     }
     return json({ error: 'Not found' }, 404, corsHeaders(origin, env));

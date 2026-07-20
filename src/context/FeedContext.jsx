@@ -26,6 +26,7 @@ import {
   saveSeenPaperIds,
 } from '../utils/userScopedStorage';
 import { serializeLibraryPaper } from '../utils/readingLibrary';
+import { fetchDomainPapers } from '../services/domainSourceService';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
@@ -560,7 +561,14 @@ export function FeedProvider({ children }) {
                .then(res => res.papers);
           }
           
-          const sourceResults = await Promise.allSettled([arxivProm, pubmedProm, openAlexProm]);
+          const domainProm = fetchDomainPapers(
+            rankedPreferences.slice(0, 5),
+            currentPage + 1,
+            8,
+            queryMode,
+          );
+
+          const sourceResults = await Promise.allSettled([arxivProm, pubmedProm, openAlexProm, domainProm]);
           mainPapers = PaperBuilder.deduplicate(
             sourceResults.flatMap(result => result.status === 'fulfilled' ? result.value : [])
           );
@@ -656,9 +664,16 @@ export function FeedProvider({ children }) {
                   .catch(() => []);
             }
             
-            const [arx, pub, oa] = await Promise.all([arxivProm, pubmedProm, openAlexProm]);
+            const domainProm = fetchDomainPapers(
+              nearbyCats.slice(0, 3),
+              Math.floor(randomStart / 25) + 1,
+              exploreCount,
+              queryMode,
+            ).catch(() => []);
+
+            const [arx, pub, oa, domain] = await Promise.all([arxivProm, pubmedProm, openAlexProm, domainProm]);
             // Limit to exploreCount
-            fetchedExplore = PaperBuilder.deduplicate([...arx, ...pub, ...oa]).slice(0, exploreCount * 2);
+            fetchedExplore = PaperBuilder.deduplicate([...arx, ...pub, ...oa, ...domain]).slice(0, exploreCount * 2);
           } catch (e) {
             console.error("Error fetching explore papers:", e);
           }
@@ -723,8 +738,14 @@ export function FeedProvider({ children }) {
             
             let randomPapers = [];
             try {
-                const [arx, pub, oa] = await Promise.all([arxivProm, pubmedProm, openAlexProm]);
-                randomPapers = PaperBuilder.deduplicate([...arx, ...pub, ...oa]).slice(0, 2);
+                const domainProm = fetchDomainPapers(
+                  randomCats,
+                  Math.floor(randomStart / 25) + 1,
+                  2,
+                  queryMode,
+                ).catch(() => []);
+                const [arx, pub, oa, domain] = await Promise.all([arxivProm, pubmedProm, openAlexProm, domainProm]);
+                randomPapers = PaperBuilder.deduplicate([...arx, ...pub, ...oa, ...domain]).slice(0, 2);
             } catch (e) {
                 console.error("Error fetching random bored papers:", e);
             }
