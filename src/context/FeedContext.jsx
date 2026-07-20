@@ -35,6 +35,8 @@ import {
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
+const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 14000;
+const OPENALEX_FEED_WAIT_BUDGET_MS = 15000;
 
 // ── Demo mode storage helpers ──
 function demoGet(key, fallback) {
@@ -842,7 +844,7 @@ export function FeedProvider({ children }) {
       const enrichmentIds = [...new Set(filtered.map(getOpenAlexEnrichmentId).filter(Boolean))];
       const enrichmentPromise = enrichPapersBatch(enrichmentIds, {
         allowProxy: false,
-        timeoutMs: 6000,
+        timeoutMs: OPENALEX_FEED_REQUEST_TIMEOUT_MS,
       }).catch((err) => {
         console.error('OpenAlex feed enrichment failed', err);
         return {};
@@ -860,7 +862,10 @@ export function FeedProvider({ children }) {
         });
       });
 
-      const initialOpenAlexData = await waitForInitialEnrichment(enrichmentPromise, 7000);
+      const initialOpenAlexData = await waitForInitialEnrichment(
+        enrichmentPromise,
+        OPENALEX_FEED_WAIT_BUDGET_MS,
+      );
       if (requestId !== feedRequestId.current) return;
       if (initialOpenAlexData) {
         filtered = mergeOpenAlexEnrichment(filtered, initialOpenAlexData);
