@@ -1,4 +1,5 @@
 import { buildOpenAlexTrendFilter, normalizeReportFilters } from '../src/services/openAlexReportQuery.js';
+import { AIExplanationError, handleAIExplanation } from './ai-explanation.js';
 
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://mugar123.github.io',
@@ -158,13 +159,31 @@ export default {
         status: 204,
         headers: {
           ...corsHeaders(origin, env),
-          'access-control-allow-methods': 'GET, OPTIONS',
-          'access-control-allow-headers': 'content-type',
+          'access-control-allow-methods': 'GET, POST, OPTIONS',
+          'access-control-allow-headers': 'authorization, content-type',
           'access-control-max-age': '86400',
         },
       });
     }
-    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405);
+    if (url.pathname === '/ai/explain') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      try {
+        const payload = await handleAIExplanation(request, env);
+        return json(payload, 200, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'private, no-store',
+        });
+      } catch (error) {
+        const knownError = error instanceof AIExplanationError;
+        return json(
+          { code: knownError ? error.code : 'AI_UNAVAILABLE' },
+          knownError ? error.status : 502,
+          { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+        );
+      }
+    }
+    if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (url.pathname === '/health') return json({ ok: true }, 200, corsHeaders(origin, env));
     if (url.pathname === '/report/trends') {
       try {

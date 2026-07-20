@@ -3,4 +3,9 @@ main = "worker/report-api.js"
 compatibility_date = "2026-07-16"
 
 [vars]
-ALLOWED_ORIGINS = "https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173"
+ALLOWED_ORIGINS = "https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4175,http://127.0.0.1:4175"
+AI_PROVIDER = "gemini"
+AI_MODEL = "gemini-3.5-flash"
+AI_DAILY_USER_LIMIT = "5"
+AI_DAILY_GLOBAL_LIMIT = "100"
+FIREBASE_WEB_API_KEY = "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0"

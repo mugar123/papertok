@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
 import { 
   ArrowLeft, Share2, FileText, Check, Loader2, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, Unlock, Lock, ExternalLink,
-  Rocket, Settings, Wrench, Cog, PenTool, Building, Map, Compass, Beaker, TestTube, Thermometer, HeartPulse, Stethoscope, Syringe, Pill, Leaf, Bug, Sprout, Landmark, Coins, Radio, Box, Code2, PackageOpen, History
+  Rocket, Settings, Wrench, Cog, PenTool, Building, Map, Compass, Beaker, TestTube, Thermometer, HeartPulse, Stethoscope, Syringe, Pill, Leaf, Bug, Sprout, Landmark, Coins, Radio, Box, Code2, PackageOpen, History, Sparkles
 } from 'lucide-react';
 import AnimatedAtom from './AnimatedAtom';
 import ScientificText from '../ScientificText';
@@ -16,6 +16,7 @@ import RelatedPapersSheet from './RelatedPapersSheet';
 import { findOpenAccessCopy } from '../../services/unpaywallService';
 import { getRelatedResearchResources } from '../../services/dataCiteService';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation';
+import AIExplanationSheet from './AIExplanationSheet';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -61,6 +62,7 @@ const PaperCard = memo(function PaperCard({
   const [isMarkingRead, setIsMarkingRead] = useState(false);
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
+  const [showAIExplanation, setShowAIExplanation] = useState(false);
   const [selectedRelatedPaper, setSelectedRelatedPaper] = useState(null);
   const [isClosingRelatedCard, setIsClosingRelatedCard] = useState(false);
   const [isResolvingAccess, setIsResolvingAccess] = useState(false);
@@ -669,6 +671,16 @@ const PaperCard = memo(function PaperCard({
           >
             {copied ? <><Check size={16} /><span className="pc-share-label">Copiado</span></> : <><Share2 size={16} /><span className="pc-share-label">Compartir</span></>}
           </button>
+          <button
+            className="pc-ai-btn"
+            onClick={(event) => { event.stopPropagation(); setShowAIExplanation(true); }}
+            aria-label="Explicar este paper con IA"
+            title="Explicar con IA"
+          >
+            <Sparkles size={17} />
+            <span className="pc-ai-label pc-ai-label--full">Explicar con IA</span>
+            <span className="pc-ai-label pc-ai-label--short">Explicar</span>
+          </button>
           {(paper.doi || paper.arxivId || paper.semanticScholarId) && (
             <button
               className="pc-related-btn"
@@ -797,6 +809,10 @@ const PaperCard = memo(function PaperCard({
             setSelectedRelatedPaper(relatedPaper);
           }}
         />,
+        document.body,
+      )}
+      {showAIExplanation && createPortal(
+        <AIExplanationSheet paper={paper} onClose={() => setShowAIExplanation(false)} />,
         document.body,
       )}
       {selectedRelatedPaper && createPortal(
