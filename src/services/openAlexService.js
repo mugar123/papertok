@@ -3,13 +3,13 @@
  * Handles semantic enrichment, concept extraction, and citation graphs.
  */
 
-import { CATEGORIES } from '../data/categories';
+import { CATEGORIES } from '../data/categories.js';
 import {
   applyInstitutionWorksFallback,
   calculateInstitutionRecentImpact,
   getRecentImpactPeriod,
 } from '../utils/entityMetadata.js';
-import { PaperBuilder } from './PaperBuilder';
+import { PaperBuilder } from './PaperBuilder.js';
 import {
   getRorInstitution,
   mergeInstitutionWithRor,
@@ -35,6 +35,84 @@ const IMPACT_INSUFFICIENT_TTL_MS = 6 * 60 * 60 * 1000;
 const IMPACT_STALE_TTL_MS = 90 * 24 * 60 * 60 * 1000;
 const ENRICHMENT_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const ENTITY_WORKS_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const OPENALEX_ENRICHMENT_SELECT = [
+  'id',
+  'doi',
+  'ids',
+  'concepts',
+  'cited_by_count',
+  'related_works',
+  'locations',
+  'primary_location',
+  'type',
+  'open_access',
+].join(',');
+
+function normalizeDoi(value) {
+  return String(value || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '');
+}
+
+function extractArxivId(value) {
+  const text = String(value || '');
+  const match = text.match(/(?:arxiv\.org\/(?:abs|pdf)\/|10\.48550\/arxiv\.|arxiv:)(\d{4}\.\d{4,5}|[a-z-]+(?:\.[A-Z]{2})?\/\d{7})(?:v\d+)?/i);
+  return match?.[1] || '';
+}
+
+function getArxivIdFromWork(work) {
+  const direct = extractArxivId(work?.ids?.arxiv);
+  if (direct) return direct;
+
+  const candidates = [work?.doi, work?.ids?.doi];
+  for (const location of work?.locations || []) {
+    candidates.push(location?.landing_page_url, location?.pdf_url, location?.id);
+  }
+  return candidates.map(extractArxivId).find(Boolean) || '';
+}
+
+function getReliableEnrichmentDoi(work, arxivId) {
+  const doi = normalizeDoi(work?.doi || work?.ids?.doi);
+  if (!doi) return undefined;
+
+  const canonicalArxivId = extractArxivId(doi);
+  if (canonicalArxivId) return canonicalArxivId === arxivId ? doi : undefined;
+
+  const hasPublishedLocation = (work?.locations || []).some(location => location?.is_published && location?.source);
+  return work?.type !== 'preprint' || hasPublishedLocation ? doi : undefined;
+}
+
+export function mapOpenAlexEnrichmentWork(work) {
+  if (!work || typeof work !== 'object') return null;
+  const openAlexUrl = work.id || work.ids?.openalex || '';
+  const openAlexId = String(openAlexUrl).split('/').pop();
+  const arxivId = getArxivIdFromWork(work);
+  if (!openAlexId) return null;
+
+  return {
+    openAlexId,
+    arxivId,
+    enrichment: {
+      concepts: work.concepts || [],
+      citationCount: Number.isFinite(work.cited_by_count) ? work.cited_by_count : 0,
+      related_works: work.related_works || [],
+      publicationType: (work.type && work.type !== 'preprint')
+        ? work.type
+        : (work.primary_location?.source?.type || 'preprint'),
+      publicationStatus: (
+        work.primary_location?.is_published
+        || (work.locations || []).some(location => location?.is_published)
+        || (work.type && work.type !== 'preprint')
+      ) ? 'published' : 'preprint',
+      doi: arxivId
+        ? getReliableEnrichmentDoi(work, arxivId)
+        : (normalizeDoi(work.doi || work.ids?.doi) || undefined),
+      journal: work.primary_location?.source?.display_name,
+      publisher: work.primary_location?.source?.host_organization_name,
+      openAccess: work.open_access?.is_oa,
+      pdfUrl: work.open_access?.oa_url,
+      landingPageUrl: work.primary_location?.landing_page_url,
+    },
+  };
+}
 
 async function fetchWithTimeout(url, timeoutMs = 8000) {
   let hostname = '';
@@ -107,7 +185,7 @@ export async function enrichPapersBatch(arxivIds) {
   });
 
   const fetchChunk = async (filterParam) => {
-    const url = `https://api.openalex.org/works?filter=${filterParam}&per-page=50&select=doi,ids,concepts,cited_by_count,related_works,locations,primary_location,type`;
+    const url = `https://api.openalex.org/works?filter=${filterParam}&per-page=50&select=${OPENALEX_ENRICHMENT_SELECT}`;
     let response = null;
     let primaryFailed = false;
     let directError = null;
@@ -138,54 +216,18 @@ export async function enrichPapersBatch(arxivIds) {
         const data = await response.json();
         if (data && data.results) {
           data.results.forEach(work => {
-             if (!work || typeof work.id !== 'string' || work.id.trim() === '') return;
-
-             let arxivId = null;
-             if (work.ids && work.ids.arxiv) {
-               arxivId = work.ids.arxiv.split('/').pop().replace(/^arxiv\./i, '').replace(/v\d+$/, '');
-             }
-             if (!arxivId && work.locations) {
-               const arxivLoc = work.locations.find(loc => loc.source && loc.source.id === 'https://openalex.org/S4306400194');
-               if (arxivLoc && arxivLoc.landing_page_url) {
-                 const url = arxivLoc.landing_page_url;
-                 let rawId;
-                 if (url.includes('/abs/')) {
-                     rawId = url.split('/abs/')[1];
-                 } else if (url.includes('arxiv.')) {
-                     rawId = url.split('arxiv.')[1];
-                 } else {
-                     rawId = url.split('/').pop();
-                 }
-                 if (rawId) {
-                     arxivId = rawId.split('?')[0].replace(/v\d+$/, '');
-                 }
-               }
-             }
-
-             const openAlexIdOnly = work.id.split('/').pop();
-             
-             const enriched = {
-               concepts: work.concepts || [],
-               citationCount: work.cited_by_count || 0,
-               related_works: work.related_works || [],
-               publicationType: (work.type && work.type !== 'preprint') ? work.type : (work.primary_location?.source?.type || 'preprint'),
-               publicationStatus: (work.primary_location?.is_published || (work.locations && work.locations.some(l => l.is_published)) || (work.type && work.type !== 'preprint')) ? 'published' : 'preprint',
-               doi: work.doi,
-               journal: work.primary_location?.source?.display_name,
-               publisher: work.primary_location?.source?.host_organization_name,
-               openAccess: work.open_access?.is_oa,
-               pdfUrl: work.open_access?.oa_url,
-               landingPageUrl: work.primary_location?.landing_page_url
-             };
+             const mapped = mapOpenAlexEnrichmentWork(work);
+             if (!mapped) return;
+             const { arxivId, openAlexId, enrichment } = mapped;
 
              if (arxivId) {
-               CACHE.set(arxivId, enriched);
-               writeOpenAlexPersistent(`enrichment:${arxivId}`, enriched);
-               result[arxivId] = enriched;
+               CACHE.set(arxivId, enrichment);
+               writeOpenAlexPersistent(`enrichment:${arxivId}`, enrichment);
+               result[arxivId] = enrichment;
              }
-             CACHE.set(`openalex:${openAlexIdOnly}`, enriched);
-             writeOpenAlexPersistent(`enrichment:openalex:${openAlexIdOnly}`, enriched);
-             result[`openalex:${openAlexIdOnly}`] = enriched;
+             CACHE.set(`openalex:${openAlexId}`, enrichment);
+             writeOpenAlexPersistent(`enrichment:openalex:${openAlexId}`, enrichment);
+             result[`openalex:${openAlexId}`] = enrichment;
           });
         }
       }

@@ -1,6 +1,65 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.js';
+import { mapOpenAlexEnrichmentWork } from './openAlexService.js';
+
+test('maps real-shaped OpenAlex arXiv enrichment without a top-level id', () => {
+  const mapped = mapOpenAlexEnrichmentWork({
+    doi: 'https://doi.org/10.65215/unrelated-preprint-doi',
+    ids: { openalex: 'https://openalex.org/W2626778328' },
+    cited_by_count: 6590,
+    concepts: [{ id: 'https://openalex.org/C41008148', display_name: 'Computer science' }],
+    type: 'preprint',
+    open_access: { is_oa: true, oa_url: 'https://arxiv.org/pdf/1706.03762' },
+    primary_location: { is_published: false, source: null },
+    locations: [{
+      landing_page_url: 'http://arxiv.org/abs/1706.03762',
+      pdf_url: 'https://arxiv.org/pdf/1706.03762',
+      is_published: false,
+      source: { id: 'https://openalex.org/S4306400194' },
+    }],
+  });
+
+  assert.equal(mapped.openAlexId, 'W2626778328');
+  assert.equal(mapped.arxivId, '1706.03762');
+  assert.equal(mapped.enrichment.citationCount, 6590);
+  assert.equal(mapped.enrichment.openAccess, true);
+  assert.equal(mapped.enrichment.pdfUrl, 'https://arxiv.org/pdf/1706.03762');
+  assert.equal(mapped.enrichment.doi, undefined);
+});
+
+test('keeps a published DOI while enriching an arXiv paper', () => {
+  const mapped = mapOpenAlexEnrichmentWork({
+    id: 'https://openalex.org/W123',
+    doi: 'https://doi.org/10.1000/published-paper',
+    cited_by_count: 12,
+    type: 'article',
+    locations: [{
+      landing_page_url: 'https://arxiv.org/abs/2401.12345v2',
+      is_published: true,
+      source: { display_name: 'Example Journal' },
+    }],
+  });
+
+  assert.equal(mapped.arxivId, '2401.12345');
+  assert.equal(mapped.enrichment.doi, '10.1000/published-paper');
+  assert.equal(mapped.enrichment.publicationStatus, 'published');
+});
+
+test('keeps enrichment for a native OpenAlex work without an arXiv copy', () => {
+  const mapped = mapOpenAlexEnrichmentWork({
+    id: 'https://openalex.org/W456',
+    doi: 'https://doi.org/10.1000/openalex-only',
+    cited_by_count: 24,
+    type: 'article',
+    locations: [],
+  });
+
+  assert.equal(mapped.openAlexId, 'W456');
+  assert.equal(mapped.arxivId, '');
+  assert.equal(mapped.enrichment.citationCount, 24);
+  assert.equal(mapped.enrichment.doi, '10.1000/openalex-only');
+});
 
 test('maps Crossref institution fallback records into PaperTok papers', () => {
   const paper = mapCrossrefInstitutionWork({
