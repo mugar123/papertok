@@ -18,6 +18,7 @@ import { getRelatedResearchResources } from '../../services/dataCiteService';
 import { resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation';
 import AIExplanationSheet from './AIExplanationSheet';
 import { canExplainPaper } from '../../services/aiExplanationService';
+import { buildPaperTopicTags } from '../../utils/paperTopicTags.js';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -235,6 +236,14 @@ const PaperCard = memo(function PaperCard({
   const primaryTopic = useMemo(
     () => resolvePaperTopic(paper.primaryCategory || paper.categories?.[0]),
     [paper.categories, paper.primaryCategory]
+  );
+  const paperTopicTags = useMemo(
+    () => buildPaperTopicTags({
+      categories: paper.categories,
+      concepts: paper.concepts,
+      primaryCategory: paper.primaryCategory,
+    }),
+    [paper.categories, paper.concepts, paper.primaryCategory]
   );
 
   const openTopic = useCallback((event, topic) => {
@@ -499,46 +508,28 @@ const PaperCard = memo(function PaperCard({
           )}
         </div>
         
-        {(paper.concepts && paper.concepts.length > 0) ? (
+        {paperTopicTags.length > 0 && (
           <div className="pc-semantic-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-            {paper.concepts.slice(0, 4).map((concept, idx) => {
-              const topic = resolvePaperTopic(concept);
-              const TagElement = topic ? 'button' : 'span';
+            {paperTopicTags.map((tag) => {
+              const topic = resolvePaperTopic(tag.value);
+              const TagElement = topic ? motion.button : motion.span;
               return (
                 <TagElement
-                  key={concept.id || concept.display_name || idx}
+                  key={tag.key}
                   type={topic ? 'button' : undefined}
-                  className={`pc-semantic-tag ${topic ? 'pc-topic-link' : ''} ${topic && !topic.reliable ? 'pc-topic-link--external' : ''}`}
+                  className={`pc-semantic-tag ${topic ? 'pc-topic-link' : ''} ${tag.source === 'concept' && topic && !topic.reliable ? 'pc-topic-link--external' : ''}`}
                   onClick={topic ? (event) => openTopic(event, topic) : undefined}
                   title={topic ? `Explorar ${topic.label}` : undefined}
+                  initial={{ opacity: 0, y: 4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
                 >
-                  {concept.display_name}
+                  {tag.label}
                 </TagElement>
               );
             })}
           </div>
-        ) : (paper.categories && paper.categories.length > 1) ? (
-          <div className="pc-semantic-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
-            {paper.categories.slice(1, 4).map((cat, idx) => {
-              let label = cat;
-              const area = Object.values(CATEGORIES).find(a => a.subcategories && a.subcategories[cat]);
-              if (area) label = area.subcategories[cat].label;
-              const topic = resolvePaperTopic(cat);
-              const TagElement = topic ? 'button' : 'span';
-              return (
-                <TagElement
-                  key={`${cat}-${idx}`}
-                  type={topic ? 'button' : undefined}
-                  className={`pc-semantic-tag ${topic ? 'pc-topic-link' : ''}`}
-                  onClick={topic ? (event) => openTopic(event, topic) : undefined}
-                  title={topic ? `Explorar ${topic.label}` : undefined}
-                >
-                  {label}
-                </TagElement>
-              );
-            })}
-          </div>
-        ) : null}
+        )}
 
         {project && (
           <motion.div
