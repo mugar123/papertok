@@ -270,7 +270,7 @@ const PaperCard = memo(function PaperCard({
       duration: 10 + seededRandom(i * 6) * 8,
       rotate: seededRandom(i * 7) * 360,
     }));
-  }, [paper.id, paper.categories]);
+  }, [paper.id, paper.categories, paper.primaryCategory]);
 
   const handleDoubleTap = useCallback(() => {
     const now = Date.now();

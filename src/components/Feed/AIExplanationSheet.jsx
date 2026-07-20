@@ -21,6 +21,7 @@ import {
 } from '../../services/aiExplanationService.js';
 import ScientificText from '../ScientificText';
 import { normalizeAIExplanationMath } from '../../utils/aiExplanationMath.js';
+import { formatQuotaCountdown, formatQuotaResetTime } from '../../utils/aiQuota.js';
 import './AIExplanationSheet.css';
 
 const ERROR_COPY = {
@@ -123,6 +124,7 @@ export default function AIExplanationSheet({ paper, onClose }) {
   const [results, setResults] = useState({});
   const [loadingLevel, setLoadingLevel] = useState(null);
   const [error, setError] = useState(null);
+  const [quotaNow, setQuotaNow] = useState(() => Date.now());
   const [isClosing, setIsClosing] = useState(false);
   const closeTimerRef = useRef(null);
   const closingRef = useRef(false);
@@ -150,6 +152,12 @@ export default function AIExplanationSheet({ paper, onClose }) {
     };
   }, [requestClose]);
 
+  useEffect(() => {
+    if (!error?.quota?.resetAt) return undefined;
+    const interval = window.setInterval(() => setQuotaNow(Date.now()), 1_000);
+    return () => window.clearInterval(interval);
+  }, [error?.quota?.resetAt]);
+
   const handleExplain = async () => {
     if (loadingLevel) return;
     setError(null);
@@ -158,7 +166,11 @@ export default function AIExplanationSheet({ paper, onClose }) {
       const response = await explainPaper(paper, level);
       setResults(previous => ({ ...previous, [level]: response }));
     } catch (requestError) {
-      setError(ERROR_COPY[requestError?.code] || ERROR_COPY.AI_UNAVAILABLE);
+      setError({
+        message: ERROR_COPY[requestError?.code] || ERROR_COPY.AI_UNAVAILABLE,
+        code: requestError?.code,
+        quota: requestError?.quota || null,
+      });
     } finally {
       setLoadingLevel(null);
     }
@@ -231,8 +243,15 @@ export default function AIExplanationSheet({ paper, onClose }) {
           {error && (
             <motion.div className="ai-explanation-error" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="alert">
               <AlertCircle size={18} />
-              <span>{error}</span>
-              {!/agotado|todavía no|Inicia sesión/.test(error) && (
+              <span>
+                {error.message}
+                {error.quota?.resetAt && (
+                  <small>
+                    Vuelve a intentarlo en <strong>{formatQuotaCountdown(error.quota.resetAt, quotaNow)}</strong>. El cupo se renueva a las {formatQuotaResetTime(error.quota.resetAt)} (hora local).
+                  </small>
+                )}
+              </span>
+              {!/agotado|todavía no|Inicia sesión/.test(error.message) && (
                 <button onClick={handleExplain}>Reintentar</button>
               )}
             </motion.div>

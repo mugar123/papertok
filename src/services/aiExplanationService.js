@@ -16,10 +16,11 @@ export const AI_EXPLANATION_LEVELS = Object.freeze([
 ]);
 
 export class AIExplanationServiceError extends Error {
-  constructor(code, message = code) {
+  constructor(code, message = code, quota = null) {
     super(message);
     this.name = 'AIExplanationServiceError';
     this.code = code;
+    this.quota = quota;
   }
 }
 
@@ -115,7 +116,7 @@ export async function explainPaper(paper, level = 'university', { force = false 
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      throw new AIExplanationServiceError(payload.code || 'AI_UNAVAILABLE');
+      throw new AIExplanationServiceError(payload.code || 'AI_UNAVAILABLE', payload.code || 'AI_UNAVAILABLE', payload.quota || null);
     }
     explanationCache.set(cacheKey, payload);
     return payload;

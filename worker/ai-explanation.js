@@ -69,11 +69,12 @@ const RESPONSE_SCHEMA = {
 };
 
 export class AIExplanationError extends Error {
-  constructor(code, status = 500, message = code) {
+  constructor(code, status = 500, message = code, quota = null) {
     super(message);
     this.name = 'AIExplanationError';
     this.code = code;
     this.status = status;
+    this.quota = quota;
   }
 }
 
@@ -291,7 +292,15 @@ async function explainWithGemini({ paper, level, pdfBase64, env }) {
       }),
     });
     const payload = await response.json().catch(() => ({}));
-    if (response.status === 429) throw new AIExplanationError(providerQuotaCode(payload), 429);
+    if (response.status === 429) {
+      const code = providerQuotaCode(payload);
+      throw new AIExplanationError(
+        code,
+        429,
+        code,
+        code === 'AI_QUOTA_EXHAUSTED' ? { ...getDailyQuotaReset(), scope: 'provider' } : null,
+      );
+    }
     if (!response.ok) throw new AIExplanationError('AI_UNAVAILABLE', 502);
     return { explanation: parseGeminiPayload(payload), model, sourceBasis };
   } catch (error) {
@@ -326,6 +335,19 @@ function todayKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
+export function getDailyQuotaReset(now = Date.now()) {
+  const current = new Date(now);
+  const resetAt = Date.UTC(
+    current.getUTCFullYear(),
+    current.getUTCMonth(),
+    current.getUTCDate() + 1,
+  );
+  return {
+    resetAt: new Date(resetAt).toISOString(),
+    retryAfterSeconds: Math.max(1, Math.ceil((resetAt - current.getTime()) / 1_000)),
+  };
+}
+
 async function getUsage(env, key) {
   if (env.AI_USAGE?.get) return Number(await env.AI_USAGE.get(key)) || 0;
   const cached = await caches.default.match(new Request(`https://papertok.internal/usage/${encodeURIComponent(key)}`));
@@ -350,8 +372,18 @@ async function assertWithinQuota(env, uid) {
   const userLimit = safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100);
   const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
   const [userUsage, globalUsage] = await Promise.all([getUsage(env, userKey), getUsage(env, globalKey)]);
-  if (userUsage >= userLimit || globalUsage >= globalLimit) {
-    throw new AIExplanationError('AI_QUOTA_EXHAUSTED', 429);
+  if (userUsage >= userLimit) {
+    throw new AIExplanationError('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', {
+      ...getDailyQuotaReset(),
+      scope: 'user',
+      remainingUses: 0,
+    });
+  }
+  if (globalUsage >= globalLimit) {
+    throw new AIExplanationError('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', {
+      ...getDailyQuotaReset(),
+      scope: 'global',
+    });
   }
   return { userKey, globalKey, userUsage, globalUsage, userLimit };
 }

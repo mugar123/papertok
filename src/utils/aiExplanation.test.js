@@ -4,6 +4,7 @@ import {
   AI_EXPLANATION_LEVELS,
   AIExplanationError,
   buildPaperExplanationPrompt,
+  getDailyQuotaReset,
   normalizePaperForExplanation,
 } from '../../worker/ai-explanation.js';
 
@@ -27,4 +28,11 @@ test('rejects an explanation request without usable paper content', () => {
     () => normalizePaperForExplanation({ title: 'No content' }),
     error => error instanceof AIExplanationError && error.code === 'AI_INVALID_PAPER',
   );
+});
+
+test('reports the next UTC quota reset without relying on browser time', () => {
+  assert.deepEqual(getDailyQuotaReset(Date.parse('2026-07-20T22:15:30.000Z')), {
+    resetAt: '2026-07-21T00:00:00.000Z',
+    retryAfterSeconds: 6_270,
+  });
 });

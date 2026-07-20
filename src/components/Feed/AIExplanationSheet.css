@@ -285,6 +285,8 @@
   font-size: 0.76rem;
 }
 .ai-explanation-error button { color: #fff; background: transparent; border: 0; font-weight: 750; cursor: pointer; }
+.ai-explanation-error small { display: block; margin-top: 5px; color: rgba(254, 202, 202, 0.78); font-size: 0.72rem; line-height: 1.45; }
+.ai-explanation-error strong { color: #fff; font-variant-numeric: tabular-nums; }
 
 .ai-explanation-footer {
   display: flex;

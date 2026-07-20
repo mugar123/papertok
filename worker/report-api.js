@@ -384,7 +384,10 @@ export default {
       } catch (error) {
         const knownError = error instanceof AIExplanationError;
         return json(
-          { code: knownError ? error.code : 'AI_UNAVAILABLE' },
+          {
+            code: knownError ? error.code : 'AI_UNAVAILABLE',
+            ...(knownError && error.quota ? { quota: error.quota } : {}),
+          },
           knownError ? error.status : 502,
           { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
         );
