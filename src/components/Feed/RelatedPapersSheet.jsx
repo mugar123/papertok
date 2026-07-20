@@ -73,9 +73,9 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
 
         {status === 'loading' && (
           <div className="related-state related-loading">
-            <div className="related-loading-label"><Loader2 className="spinning" size={20} />Buscando conexiones<span className="related-loading-dots"><i /><i /><i /></span></div>
+            <div className="related-loading-label"><Loader2 className="spinning" size={20} />Buscando conexiones...</div>
             <div className="related-skeletons" aria-hidden="true">
-              {[0, 1, 2].map((index) => <span className="related-skeleton" key={index} style={{ '--skeleton-index': index }} />)}
+              {[0, 1].map((index) => <span className="related-skeleton" key={index} style={{ '--skeleton-index': index }} />)}
             </div>
           </div>
         )}
