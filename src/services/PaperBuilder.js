@@ -9,7 +9,9 @@ export class PaperBuilder {
    * @returns {Paper}
    */
   static create(data) {
-    const isPreprint = data.publicationType === 'preprint' || !data.publicationType;
+    const isPreprint = data.publicationStatus === 'preprint'
+      || data.publicationType === 'preprint'
+      || !data.publicationType;
     
     // Normalize DOI
     let doi = data.doi;
@@ -35,7 +37,7 @@ export class PaperBuilder {
       publisher: data.publisher || undefined,
       publicationType: data.publicationType || 'preprint',
       publicationStatus: data.publicationStatus || (isPreprint ? 'preprint' : 'published'),
-      peerReviewed: !isPreprint,
+      peerReviewed: data.peerReviewed ?? !isPreprint,
       openAccess: data.openAccess !== undefined ? data.openAccess : true,
       pdfUrl: data.pdfUrl || undefined,
       openAccessPdfUrl: data.openAccessPdfUrl || undefined,
@@ -163,16 +165,19 @@ export class PaperBuilder {
     merged.hasSupplement = Boolean(merged.hasSupplement || enrichmentData.hasSupplement);
 
     // Upgrade publication status/type if enrichment indicates it's peer-reviewed/published
-    if (
-      (enrichmentData.publicationType && enrichmentData.publicationType !== 'preprint') || 
-      (enrichmentData.publicationStatus && enrichmentData.publicationStatus === 'published')
-    ) {
+    const hasExplicitPublicationStatus = enrichmentData.publicationStatus !== undefined;
+    const shouldUpgradePublication = enrichmentData.publicationStatus === 'published'
+      || (!hasExplicitPublicationStatus
+        && enrichmentData.publicationType
+        && !['preprint', 'repository'].includes(enrichmentData.publicationType));
+    if (shouldUpgradePublication) {
       merged.publicationType = enrichmentData.publicationType || merged.publicationType;
       merged.publicationStatus = 'published';
     }
 
     // Re-calculate deterministic fields
-    merged.peerReviewed = merged.publicationType !== 'preprint';
+    merged.peerReviewed = merged.publicationStatus === 'published'
+      && merged.publicationType !== 'preprint';
 
     // Open Access logic
     if (enrichmentData.openAccess !== undefined) {

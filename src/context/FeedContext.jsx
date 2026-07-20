@@ -216,9 +216,6 @@ export function FeedProvider({ children }) {
         const res = enrichmentRequest ? await enrichmentRequest : {};
         if (sessionId !== feedSessionId.current) return;
         enriched = res[pid];
-        if (enriched) {
-          setPapers(current => current.map(p => p.id === paper.id ? PaperBuilder.merge(p, enriched, 'openalex') : p));
-        }
       }
       
       let relatedArxivIds = [];
@@ -843,7 +840,10 @@ export function FeedProvider({ children }) {
       }
 
       const enrichmentIds = [...new Set(filtered.map(getOpenAlexEnrichmentId).filter(Boolean))];
-      const enrichmentPromise = enrichPapersBatch(enrichmentIds).catch((err) => {
+      const enrichmentPromise = enrichPapersBatch(enrichmentIds, {
+        allowProxy: false,
+        timeoutMs: 6000,
+      }).catch((err) => {
         console.error('OpenAlex feed enrichment failed', err);
         return {};
       });
@@ -860,7 +860,7 @@ export function FeedProvider({ children }) {
         });
       });
 
-      const initialOpenAlexData = await waitForInitialEnrichment(enrichmentPromise);
+      const initialOpenAlexData = await waitForInitialEnrichment(enrichmentPromise, 7000);
       if (requestId !== feedRequestId.current) return;
       if (initialOpenAlexData) {
         filtered = mergeOpenAlexEnrichment(filtered, initialOpenAlexData);
@@ -900,18 +900,6 @@ export function FeedProvider({ children }) {
       // Save to cache
       feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
 
-      // Finish the same batch request if it exceeded the initial wait budget.
-      enrichmentPromise.then(openAlexData => {
-         if (requestId !== feedRequestId.current) return;
-         if (!openAlexData || Object.keys(openAlexData).length === 0) return;
-         setPapers(current => {
-            const enrichedPapers = mergeOpenAlexEnrichment(current, openAlexData);
-            const cached = feedCache.current[activeMode];
-            if (cached) feedCache.current[activeMode] = { ...cached, papers: enrichedPapers };
-            return enrichedPapers;
-         });
-         reRankFeed();
-      }).catch(err => console.error("Lazy enrichment failed", err));
     } catch (err) {
       if (requestId === feedRequestId.current) {
         setError(err.message);
@@ -924,7 +912,7 @@ export function FeedProvider({ children }) {
   }, [
     userPreferences, page, papers, loading, feedMode, 
     categoryAffinities, relatedCandidates,
-    calculateAndAttachScore, followedEntities, recommendationProfileReady, reRankFeed
+    calculateAndAttachScore, followedEntities, recommendationProfileReady
   ]);
 
   const preferencesSignatureRef = useRef(null);

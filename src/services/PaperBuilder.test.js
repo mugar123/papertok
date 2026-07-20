@@ -56,6 +56,34 @@ test('keeps a confirmed zero citation count distinct from missing metadata', () 
   assert.equal(enriched.citationCountKnown, true);
 });
 
+test('does not treat an OpenAlex repository as a verified publication', () => {
+  const paper = PaperBuilder.create({
+    id: 'arxiv:2607.08264',
+    title: 'New arXiv paper',
+    publicationType: 'preprint',
+    publicationStatus: 'preprint',
+  });
+  const enriched = PaperBuilder.merge(paper, {
+    publicationType: 'repository',
+    publicationStatus: 'preprint',
+  }, 'openalex');
+
+  assert.equal(enriched.publicationType, 'preprint');
+  assert.equal(enriched.publicationStatus, 'preprint');
+  assert.equal(enriched.peerReviewed, false);
+});
+
+test('does not mark a repository-hosted preprint as peer reviewed', () => {
+  const paper = PaperBuilder.create({
+    id: 'openalex:W7168054384',
+    title: 'Repository preprint',
+    publicationType: 'repository',
+    publicationStatus: 'preprint',
+  });
+
+  assert.equal(paper.peerReviewed, false);
+});
+
 test('deduplicates the same title and author when only one source has a DOI', () => {
   const deduplicated = PaperBuilder.deduplicate([
     {

@@ -95,9 +95,7 @@ export function mapOpenAlexEnrichmentWork(work) {
       citationCount: Number.isFinite(work.cited_by_count) ? work.cited_by_count : 0,
       citationCountKnown: Number.isFinite(work.cited_by_count),
       related_works: work.related_works || [],
-      publicationType: (work.type && work.type !== 'preprint')
-        ? work.type
-        : (work.primary_location?.source?.type || 'preprint'),
+      publicationType: work.type || work.primary_location?.source?.type || 'preprint',
       publicationStatus: (
         work.primary_location?.is_published
         || (work.locations || []).some(location => location?.is_published)
@@ -147,6 +145,7 @@ async function enrichInstitutionWithRor(institution, prefetchedRor = null) {
 /**
  * Fetch OpenAlex enrichment data for a batch of arXiv IDs.
  * @param {string[]} arxivIds 
+ * @param {{ allowProxy?: boolean, timeoutMs?: number }} options
  * @returns {Promise<Object>} Map of { arxivId: { concepts, cited_by_count, related_works } }
  */
 export function isOpenAlexEnrichmentId(id) {
@@ -156,7 +155,7 @@ export function isOpenAlexEnrichmentId(id) {
     || /^(?:openalex:|https:\/\/openalex\.org\/)?W\d+$/i.test(value);
 }
 
-export async function enrichPapersBatch(arxivIds) {
+export async function enrichPapersBatch(arxivIds, options = {}) {
   const validIds = (Array.isArray(arxivIds) ? arxivIds : [])
     .filter(id => typeof id === 'string' && id.trim() !== '')
     .map(id => {
@@ -199,7 +198,7 @@ export async function enrichPapersBatch(arxivIds) {
     let primaryFailed = false;
     let directError = null;
     try {
-      response = await fetchWithTimeout(url, 10000);
+      response = await fetchWithTimeout(url, options.timeoutMs ?? 10000);
       if (!response || !response.ok) primaryFailed = true;
     } catch (error) {
       directError = error;
@@ -207,6 +206,7 @@ export async function enrichPapersBatch(arxivIds) {
     }
     
     if (primaryFailed) {
+      if (options.allowProxy === false) return;
       if (isOpenAlexRateLimitError(directError) || response?.status === 429) {
         return;
       }
