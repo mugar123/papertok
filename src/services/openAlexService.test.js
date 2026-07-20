@@ -19,7 +19,10 @@ test('maps real-shaped OpenAlex arXiv enrichment without a top-level id', () => 
     concepts: [{ id: 'https://openalex.org/C41008148', display_name: 'Computer science' }],
     type: 'preprint',
     open_access: { is_oa: true, oa_url: 'https://arxiv.org/pdf/1706.03762' },
-    primary_location: { is_published: false, source: null },
+    primary_location: {
+      is_published: false,
+      source: { type: 'repository', display_name: 'arXiv (Cornell University)' },
+    },
     locations: [{
       landing_page_url: 'http://arxiv.org/abs/1706.03762',
       pdf_url: 'https://arxiv.org/pdf/1706.03762',
