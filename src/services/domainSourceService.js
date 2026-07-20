@@ -110,7 +110,7 @@ export function mapBioRxivPaper(raw, requestedCategories = []) {
   const category = normalizeText(raw.category);
   const landingPageUrl = `https://www.biorxiv.org/content/${doi}v${version}`;
   const paper = PaperBuilder.create({
-    id: `biorxiv:${doi}:v${version}`,
+    id: `biorxiv:${encodeURIComponent(doi)}:v${version}`,
     doi,
     sources: { primary: 'biorxiv', enrichedBy: [] },
     title: normalizeText(raw.title),

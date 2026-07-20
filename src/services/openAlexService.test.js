@@ -1,7 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.js';
-import { mapOpenAlexEnrichmentWork } from './openAlexService.js';
+import { isOpenAlexEnrichmentId, mapOpenAlexEnrichmentWork } from './openAlexService.js';
+
+test('only sends arXiv and OpenAlex identifiers to batch enrichment', () => {
+  assert.equal(isOpenAlexEnrichmentId('2503.10761v2'), true);
+  assert.equal(isOpenAlexEnrichmentId('hep-th/9901001'), true);
+  assert.equal(isOpenAlexEnrichmentId('openalex:W123'), true);
+  assert.equal(isOpenAlexEnrichmentId('biorxiv:10.1101%2F2026.01.01.123456:v1'), false);
+  assert.equal(isOpenAlexEnrichmentId('pmid:123456'), false);
+});
 
 test('maps real-shaped OpenAlex arXiv enrichment without a top-level id', () => {
   const mapped = mapOpenAlexEnrichmentWork({

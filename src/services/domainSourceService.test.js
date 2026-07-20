@@ -32,6 +32,8 @@ test('maps a bioRxiv preprint without losing its selected PaperTok category', ()
   assert.equal(paper.primaryCategory, 'bio.cell');
   assert.equal(paper.publicationStatus, 'preprint');
   assert.equal(paper.openAccess, true);
+  assert.equal(paper.id.includes('/'), false);
+  assert.equal(paper.doi, '10.1101/2026.01.01.123456');
   assert.match(paper.pdfUrl, /\.full\.pdf$/);
   assert.match(paper.landingPageUrl, /10\.1101\/2026/);
   assert.equal(paper.authors.length, 2);

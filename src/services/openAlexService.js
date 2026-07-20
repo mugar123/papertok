@@ -148,13 +148,21 @@ async function enrichInstitutionWithRor(institution, prefetchedRor = null) {
  * @param {string[]} arxivIds 
  * @returns {Promise<Object>} Map of { arxivId: { concepts, cited_by_count, related_works } }
  */
+export function isOpenAlexEnrichmentId(id) {
+  const value = String(id || '').trim().replace(/v\d+$/, '');
+  return /^\d{4}\.\d{4,5}$/.test(value)
+    || /^[a-z][a-z.-]+\/\d{7}$/i.test(value)
+    || /^(?:openalex:|https:\/\/openalex\.org\/)?W\d+$/i.test(value);
+}
+
 export async function enrichPapersBatch(arxivIds) {
   const validIds = (Array.isArray(arxivIds) ? arxivIds : [])
     .filter(id => typeof id === 'string' && id.trim() !== '')
     .map(id => {
       const pure = id.startsWith('arxiv:') ? id.split(':')[1] : id;
       return pure.replace(/v\d+$/, '');
-    });
+    })
+    .filter(isOpenAlexEnrichmentId);
     
   const result = {};
   
