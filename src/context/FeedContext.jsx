@@ -34,11 +34,55 @@ import {
   takeFeedPage,
   waitForInitialEnrichment,
 } from '../utils/feedEnrichment';
+import { resolveWithin, settleWithin } from '../utils/asyncTiming';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
-const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 14000;
-const OPENALEX_FEED_WAIT_BUDGET_MS = 15000;
+const FEED_SOURCE_RENDER_BUDGET_MS = 3500;
+const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
+const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
+const OPENALEX_FEED_WAIT_BUDGET_MS = 4500;
+const FEED_SNAPSHOT_TTL_MS = 15 * 60 * 1000;
+const FEED_SNAPSHOT_MAX_PAPERS = PAGE_SIZE * 2;
+
+function feedPreferenceSignature(preferences) {
+  return [...(preferences || [])].sort().join('|');
+}
+
+function feedSnapshotKey(userId, signature) {
+  return `papertok_feed_snapshot_${encodeURIComponent(userId || 'guest')}_${encodeURIComponent(signature)}`;
+}
+
+function readFeedSnapshot(userId, signature) {
+  if (!userId || !signature) return null;
+  try {
+    const snapshot = JSON.parse(localStorage.getItem(feedSnapshotKey(userId, signature)) || 'null');
+    if (!snapshot || Date.now() - snapshot.savedAt > FEED_SNAPSHOT_TTL_MS || !Array.isArray(snapshot.papers)) {
+      return null;
+    }
+    return snapshot;
+  } catch {
+    return null;
+  }
+}
+
+function writeFeedSnapshot(userId, signature, snapshot) {
+  if (!userId || !signature || !snapshot?.papers?.length) return;
+  try {
+    const papers = snapshot.papers.slice(0, FEED_SNAPSHOT_MAX_PAPERS).map(paper => {
+      const snapshotPaper = { ...paper };
+      delete snapshotPaper.raw;
+      return snapshotPaper;
+    });
+    localStorage.setItem(feedSnapshotKey(userId, signature), JSON.stringify({
+      ...snapshot,
+      papers,
+      savedAt: Date.now(),
+    }));
+  } catch {
+    // A full browser storage quota must never block the feed.
+  }
+}
 
 // ── Demo mode storage helpers ──
 function demoGet(key, fallback) {
@@ -95,7 +139,7 @@ async function fetchFollowedEntityCandidates(followedEntities, queryMode) {
 
 export function FeedProvider({ children }) {
   const { user, userPreferences, followedAuthors } = useAuth();
-  const { followedEntities } = useFollowing();
+  const { followedEntities, loading: followingLoading } = useFollowing();
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -501,6 +545,7 @@ export function FeedProvider({ children }) {
 
     const activeMode = mode || feedMode;
     const requestId = ++feedRequestId.current;
+    const activeSessionId = feedSessionId.current;
 
     if (reset) {
       openAlexEnrichmentAttempts.current.clear();
@@ -544,6 +589,23 @@ export function FeedProvider({ children }) {
         } else {
           queryMode = Math.random() > 0.5 ? 'recent' : 'relevance';
         }
+
+        // Optional recommendation signals run alongside the primary sources.
+        // They enrich the mix when available without extending first paint.
+        const graphCandidatesPromise = relatedCandidates.current?.length > 0
+          ? resolveWithin(
+              fetchPapersByIds([...relatedCandidates.current].sort(() => 0.5 - Math.random()).slice(0, 5)),
+              OPTIONAL_SOURCE_RENDER_BUDGET_MS,
+              [],
+            )
+          : Promise.resolve([]);
+        const followedCandidatesPromise = followedEntities.length > 0
+          ? resolveWithin(
+              fetchFollowedEntityCandidates(followedEntities, queryMode),
+              OPTIONAL_SOURCE_RENDER_BUDGET_MS,
+              [],
+            )
+          : Promise.resolve([]);
 
         // ─── STEP 3: Fetch from USER'S CATEGORIES ONLY ───
         let mainPapers = [];
@@ -597,11 +659,14 @@ export function FeedProvider({ children }) {
             queryMode,
           );
 
-          const sourceResults = await Promise.allSettled([arxivProm, pubmedProm, openAlexProm, domainProm]);
+          const sourceResults = await Promise.all(
+            [arxivProm, pubmedProm, openAlexProm, domainProm]
+              .map(sourcePromise => settleWithin(sourcePromise, FEED_SOURCE_RENDER_BUDGET_MS))
+          );
           mainPapers = PaperBuilder.deduplicate(
             sourceResults.flatMap(result => result.status === 'fulfilled' ? result.value : [])
           );
-          if (mainPapers.length === 0 && sourceResults.some(result => result.status === 'rejected')) {
+          if (mainPapers.length === 0 && sourceResults.some(result => result.status !== 'fulfilled')) {
             throw new Error('No se pudieron cargar papers de tus fuentes. Reinténtalo en unos segundos.');
           }
         } catch (e) {
@@ -612,17 +677,11 @@ export function FeedProvider({ children }) {
         mainPapers.forEach(p => { p._type = 'exploit'; });
 
         // ─── STEP 4: Graph/Related papers (semantically similar to liked) ───
-        let graphPapers = [];
-        if (relatedCandidates.current && relatedCandidates.current.length > 0) {
-          const candidatesToFetch = [...relatedCandidates.current].sort(() => 0.5 - Math.random()).slice(0, 5);
-          graphPapers = await fetchPapersByIds(candidatesToFetch).catch(() => []);
-          graphPapers.forEach(p => { p._type = 'graph'; p._isGraphCandidate = true; });
-        }
+        const graphPapers = await graphCandidatesPromise;
+        graphPapers.forEach(p => { p._type = 'graph'; p._isGraphCandidate = true; });
 
         // ─── STEP 5: Followed topics, authors, institutions and projects ───
-        const followedPapers = followedEntities.length > 0
-          ? await fetchFollowedEntityCandidates(followedEntities, queryMode).catch(() => [])
-          : [];
+        const followedPapers = await followedCandidatesPromise;
 
         // ─── STEP 6: ADAPTIVE EXPLORATION (always baseline, more if bored) ───
         let explorationPapers = [];
@@ -647,7 +706,9 @@ export function FeedProvider({ children }) {
           ? Math.min(6, Math.floor((currentBoredom - BOREDOM_THRESHOLD) / 2) + 4)
           : 2; // Baseline of 2 exploration papers
 
-          if (nearbyCats.length > 0) {
+        // The first screen already has a broad multi-source candidate pool. Defer
+        // extra exploration network calls to prefetched pages so initial entry is fast.
+        if (!reset && nearbyCats.length > 0) {
           const randomStart = Math.floor(Math.random() * 30);
           
           let fetchedExplore = [];
@@ -700,7 +761,10 @@ export function FeedProvider({ children }) {
               queryMode,
             ).catch(() => []);
 
-            const [arx, pub, oa, domain] = await Promise.all([arxivProm, pubmedProm, openAlexProm, domainProm]);
+            const [arx, pub, oa, domain] = await Promise.all(
+              [arxivProm, pubmedProm, openAlexProm, domainProm]
+                .map(sourcePromise => resolveWithin(sourcePromise, FEED_SOURCE_RENDER_BUDGET_MS, []))
+            );
             // Limit to exploreCount
             fetchedExplore = PaperBuilder.deduplicate([...arx, ...pub, ...oa, ...domain]).slice(0, exploreCount * 2);
           } catch (e) {
@@ -715,7 +779,7 @@ export function FeedProvider({ children }) {
         }
 
         // If highly bored, pull from completely random categories outside user areas
-        if (currentBoredom >= BOREDOM_THRESHOLD * 1.5) {
+        if (!reset && currentBoredom >= BOREDOM_THRESHOLD * 1.5) {
           const randomCats = allCategories
             .filter(c => !userPreferences.includes(c.id) && !nearbyCats.includes(c.id))
             .map(c => c.id)
@@ -773,7 +837,10 @@ export function FeedProvider({ children }) {
                   2,
                   queryMode,
                 ).catch(() => []);
-                const [arx, pub, oa, domain] = await Promise.all([arxivProm, pubmedProm, openAlexProm, domainProm]);
+                const [arx, pub, oa, domain] = await Promise.all(
+                  [arxivProm, pubmedProm, openAlexProm, domainProm]
+                    .map(sourcePromise => resolveWithin(sourcePromise, FEED_SOURCE_RENDER_BUDGET_MS, []))
+                );
                 randomPapers = PaperBuilder.deduplicate([...arx, ...pub, ...oa, ...domain]).slice(0, 2);
             } catch (e) {
                 console.error("Error fetching random bored papers:", e);
@@ -929,6 +996,23 @@ export function FeedProvider({ children }) {
 
       // Save to cache
       feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
+      const preferenceSignature = feedPreferenceSignature(userPreferences);
+      writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+
+      if (!initialOpenAlexData && enrichmentIds.length > 0) {
+        enrichmentPromise.then((lateEnrichment) => {
+          if (feedSessionId.current !== activeSessionId || !lateEnrichment || Object.keys(lateEnrichment).length === 0) return;
+          setPapers(current => {
+            const enriched = mergeOpenAlexEnrichment(current, lateEnrichment);
+            const cachedMode = feedCache.current[activeMode];
+            if (cachedMode) {
+              feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
+              writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+            }
+            return enriched;
+          });
+        });
+      }
 
     } catch (err) {
       if (requestId === feedRequestId.current) {
@@ -946,12 +1030,33 @@ export function FeedProvider({ children }) {
   ]);
 
   const preferencesSignatureRef = useRef(null);
+  const restoredSnapshotKeyRef = useRef('');
+
+  useEffect(() => {
+    const signature = feedPreferenceSignature(userPreferences);
+    const restoreKey = user?.uid && signature ? `${user.uid}:${signature}` : '';
+    if (restoredSnapshotKeyRef.current === restoreKey) return;
+    restoredSnapshotKeyRef.current = restoreKey;
+
+    const snapshot = readFeedSnapshot(user?.uid, signature);
+    const restoreTimer = setTimeout(() => {
+      if (snapshot?.papers?.length) {
+        feedCache.current[feedMode] = snapshot;
+        setPapers(snapshot.papers);
+        setPage(snapshot.page || 0);
+        setHasMore(snapshot.hasMore !== false);
+      } else if (restoreKey) {
+        setPapers([]);
+        setPage(0);
+        setHasMore(true);
+      }
+    }, 0);
+    return () => clearTimeout(restoreTimer);
+  }, [feedMode, user?.uid, userPreferences]);
 
   // A changed set of interests must invalidate the cached feed and replace it.
   useEffect(() => {
-    const signature = Array.isArray(userPreferences)
-      ? [...userPreferences].sort().join('|')
-      : '';
+    const signature = feedPreferenceSignature(userPreferences);
 
     if (!signature || !recommendationProfileReady) {
       preferencesSignatureRef.current = null;
@@ -962,31 +1067,45 @@ export function FeedProvider({ children }) {
 
     preferencesSignatureRef.current = signature;
     feedCache.current = {};
-    setPapers([]);
-    setPage(0);
-    setHasMore(true);
-    loadPapers(true, null, true);
-  }, [userPreferences, recommendationProfileReady, loadPapers]);
+    const snapshot = readFeedSnapshot(user?.uid, signature);
+    const refreshTimer = setTimeout(() => {
+      if (snapshot?.papers?.length) {
+        feedCache.current[feedMode] = snapshot;
+        setPapers(snapshot.papers);
+        setPage(snapshot.page || 0);
+        setHasMore(snapshot.hasMore !== false);
+      } else {
+        setPapers([]);
+        setPage(0);
+        setHasMore(true);
+      }
+      loadPapers(true, null, true);
+    }, 0);
+    return () => clearTimeout(refreshTimer);
+  }, [user?.uid, userPreferences, recommendationProfileReady, loadPapers, feedMode]);
 
-  const followingSignatureRef = useRef('');
+  const followingSignatureRef = useRef(null);
 
   useEffect(() => {
+    if (followingLoading) return;
     const signature = followedEntities
       .map(entity => `${entity.type}:${entity.canonicalId}`)
       .sort()
       .join('|');
     if (followingSignatureRef.current === signature) return;
-    const hadPreviousValue = Boolean(followingSignatureRef.current);
+    if (followingSignatureRef.current === null) {
+      followingSignatureRef.current = signature;
+      return;
+    }
     followingSignatureRef.current = signature;
     reRankFeed();
-    if (recommendationProfileReady && (signature || hadPreviousValue)) {
+    if (recommendationProfileReady) {
       feedCache.current = {};
-      setPapers([]);
-      setPage(0);
-      setHasMore(true);
-      loadPapers(true, null, true);
+      // Keep the existing cards visible while a follow change refreshes ranking.
+      const refreshTimer = setTimeout(() => loadPapers(true, null, true), 0);
+      return () => clearTimeout(refreshTimer);
     }
-  }, [followedEntities, loadPapers, recommendationProfileReady, reRankFeed]);
+  }, [followedEntities, followingLoading, loadPapers, recommendationProfileReady, reRankFeed]);
 
   // Save current papers to cache before switching, then restore or fetch
   const handleSetFeedMode = useCallback((newMode) => {

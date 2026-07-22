@@ -982,7 +982,8 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
   
   try {
     const data = await openAlexJson(url, {
-      timeoutMs: 10000,
+      timeoutMs: 7000,
+      retries: 0,
       cacheTtlMs: 5 * 60 * 1000,
       persistentKey: worksCacheKey,
       persistentTtlMs: ENTITY_WORKS_CACHE_TTL_MS,

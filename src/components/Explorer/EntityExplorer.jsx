@@ -24,9 +24,12 @@ import ScientificText from '../ScientificText';
 import { normalizeScientificMarkup } from '../../utils/latex';
 import { paperMatchesLocalTopic } from '../../utils/topicNavigation';
 import { fetchDomainPapers } from '../../services/domainSourceService';
+import { settleWithin } from '../../utils/asyncTiming';
 import 'katex/dist/katex.min.css';
 import './EntityExplorer.css';
 
+const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
+const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
 
 const handleActivationKey = (event, action) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -408,29 +411,36 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
             let papersFromOA = [];
             let arxPapersFromNative = [];
             let primaryError = null;
-            
-            try {
-              if (!resolvedId.startsWith('stub-')) {
-                const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity.display_name);
-                papersFromOA = res.papers || [];
-                total = res.total;
-              } else {
-                arxPapersFromNative = await getAuthorPapers(entity.display_name, 30);
-              }
-            } catch (error) {
-              primaryError = error;
-            }
-            
             const elsevierAdapter = new ElsevierAdapter();
-            const elsevierProm = elsevierAdapter.search(`"${entity.display_name}"`, page, { type: 'author' });
-            
             const pubmedAdapter = new PubmedAdapter();
-            const pubmedProm = pubmedAdapter.search(`"${entity.display_name}"`, page, { type: 'author' });
-            const scopusProm = isScopusEnabled()
-              ? new ScopusAdapter().search(entity.display_name, page, { type: 'author', limit: 8 })
-              : Promise.resolve({ papers: [] });
-            
-            const supplementalResults = await Promise.allSettled([elsevierProm, pubmedProm, scopusProm]);
+            const supplementalPromises = [
+              elsevierAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }),
+              pubmedAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }),
+              isScopusEnabled()
+                ? new ScopusAdapter().search(entity.display_name, page, { type: 'author', limit: 8 })
+                : Promise.resolve({ papers: [] }),
+            ];
+            const primaryPromise = !resolvedId.startsWith('stub-')
+              ? getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity.display_name)
+              : getAuthorPapers(entity.display_name, 30);
+            const [primaryResult, supplementalResults] = await Promise.all([
+              settleWithin(primaryPromise, ENTITY_PRIMARY_RENDER_BUDGET_MS),
+              Promise.all(supplementalPromises.map(sourcePromise => (
+                settleWithin(sourcePromise, ENTITY_SUPPLEMENT_RENDER_BUDGET_MS)
+              ))),
+            ]);
+
+            if (primaryResult.status === 'fulfilled') {
+              if (!resolvedId.startsWith('stub-')) {
+                papersFromOA = primaryResult.value?.papers || [];
+                total = primaryResult.value?.total || 0;
+              } else {
+                arxPapersFromNative = primaryResult.value || [];
+              }
+            } else {
+              primaryError = primaryResult.reason || new Error('La fuente principal tardó demasiado en responder.');
+            }
+
             const [els, pub, scopus] = supplementalResults.map(result => result.status === 'fulfilled' ? result.value?.papers || [] : []);
             
             fetchedPapers.push(...papersFromOA, ...arxPapersFromNative, ...els, ...pub, ...scopus);
@@ -448,42 +458,51 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
             const topicQuery = debouncedSearch || entity.labelEn || entity.display_name;
             const openAlexAdapter = new OpenAlexAdapter();
             const pubmedAdapter = new PubmedAdapter();
-            const topicResults = await Promise.allSettled([
+            const topicResults = await Promise.all([
               fetchPapers(topicCategories.slice(0, 6), (page - 1) * 30, 30, sortBy.includes('publication_date') ? 'recent' : 'relevance'),
               openAlexAdapter.search(`"${topicQuery}"`, page, { internalCategories: topicCategories }),
               pubmedAdapter.search(`"${topicQuery}"`, page, { internalCategories: topicCategories.slice(0, 3) }),
               fetchDomainPapers(topicCategories, page, 8, sortBy.includes('publication_date') ? 'recent' : 'relevance'),
-            ]);
+            ].map(sourcePromise => settleWithin(sourcePromise, ENTITY_SUPPLEMENT_RENDER_BUDGET_MS)));
             fetchedPapers.push(...topicResults.flatMap(result => result.status === 'fulfilled'
               ? result.value?.papers || result.value || []
               : []));
             fetchedPapers = fetchedPapers.filter(paper => paperMatchesLocalTopic(paper, entity));
             total = fetchedPapers.length < 30 ? (page - 1) * 30 + fetchedPapers.length : page * 30 + 1;
          } else {
-            const res = await getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity.display_name);
+            const primaryResult = await settleWithin(
+              getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity.display_name),
+              ENTITY_PRIMARY_RENDER_BUDGET_MS,
+            );
+            if (primaryResult.status !== 'fulfilled') {
+              throw primaryResult.reason || new Error('La fuente principal tardó demasiado en responder.');
+            }
+            const res = primaryResult.value;
             fetchedPapers.push(...(res.papers || []));
             total = res.total;
          }
         
-        // 1. Fetch arXiv papers
-        if (arxivIds.length > 0) {
-          const rawPapers = await fetchPapersByIds(arxivIds);
-          const enrichmentMap = await enrichPapersBatch(arxivIds);
-          const enrichedArxiv = rawPapers.map(paper => {
-            const enriched = enrichmentMap[paper.id];
-            if (!enriched) return paper;
-            const merged = PaperBuilder.merge(paper, enriched, 'openalex');
-            merged._isOpenAlexEnriched = true;
-            return merged;
-          });
-          fetchedPapers.push(...enrichedArxiv);
-        }
-        
-        // 2. Fetch non-arXiv DOIs directly from OpenAlex
-        if (dois.length > 0) {
-          const doiPapers = await fetchPapersByDois(dois);
-          fetchedPapers.push(...doiPapers);
-        }
+        // Resolve project identifiers concurrently; arXiv availability must not
+        // postpone DOI-backed papers that OpenAlex has already returned.
+        const arxivPapersPromise = arxivIds.length > 0
+          ? Promise.all([
+              fetchPapersByIds(arxivIds),
+              enrichPapersBatch(arxivIds, { allowProxy: false, timeoutMs: ENTITY_PRIMARY_RENDER_BUDGET_MS }),
+            ]).then(([rawPapers, enrichmentMap]) => rawPapers.map(paper => {
+              const enriched = enrichmentMap[paper.id];
+              if (!enriched) return paper;
+              const merged = PaperBuilder.merge(paper, enriched, 'openalex');
+              merged._isOpenAlexEnriched = true;
+              return merged;
+            }))
+          : Promise.resolve([]);
+        const doiPapersPromise = dois.length > 0 ? fetchPapersByDois(dois) : Promise.resolve([]);
+        const [arxivResult, doiResult] = await Promise.all([
+          settleWithin(arxivPapersPromise, ENTITY_PRIMARY_RENDER_BUDGET_MS),
+          settleWithin(doiPapersPromise, ENTITY_PRIMARY_RENDER_BUDGET_MS),
+        ]);
+        if (arxivResult.status === 'fulfilled') fetchedPapers.push(...arxivResult.value);
+        if (doiResult.status === 'fulfilled') fetchedPapers.push(...doiResult.value);
         
         fetchedPapers = PaperBuilder.deduplicate(fetchedPapers);
         // 3. Guarantee source paper is ALWAYS first in the list

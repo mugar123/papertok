@@ -194,12 +194,20 @@ async function handleArxiv(request, env) {
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
 
-  const response = await fetch(upstreamUrl.toString(), {
-    headers: {
-      accept: 'application/atom+xml, application/xml, text/xml;q=0.9',
-      'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
-    },
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 5000);
+  let response;
+  try {
+    response = await fetch(upstreamUrl.toString(), {
+      signal: controller.signal,
+      headers: {
+        accept: 'application/atom+xml, application/xml, text/xml;q=0.9',
+        'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
+      },
+    });
+  } finally {
+    clearTimeout(timeoutId);
+  }
   if (!response.ok) throw new Error(`arXiv error: ${response.status}`);
   const xml = await response.text();
   if (!xml.includes('<feed')) throw new Error('Invalid arXiv response');

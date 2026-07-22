@@ -66,7 +66,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
 
   // Infinite scroll: observe sentinel element
   useEffect(() => {
-    if (!sentinelRef.current) return;
+    const root = feedRef.current;
+    if (!sentinelRef.current || !root) return;
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -74,7 +75,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList }) {
           loadMore();
         }
       },
-      { rootMargin: '200px' }
+      {
+        root,
+        rootMargin: '0px 0px 500% 0px',
+        threshold: 0,
+      }
     );
 
     observer.observe(sentinelRef.current);

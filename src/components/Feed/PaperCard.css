@@ -90,6 +90,12 @@
   filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.15));
 }
 
+.pc:not(.pc--visible) .pc-bg-icon,
+.pc:not(.pc--visible) .pc-mesh-line,
+.pc:not(.pc--visible) .pc-mesh-dot {
+  animation-play-state: paused;
+}
+
 @keyframes bgIconDrift {
   0%, 100% {
     transform: rotate(var(--bg-rotate, 0deg)) translateY(0) scale(1);

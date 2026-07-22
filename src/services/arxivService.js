@@ -146,9 +146,6 @@ function parseArxivXml(xmlText) {
   return papers;
 }
 
-/**
- * Helper to parse the rss2json format in production
- */
 function safeDateISO(dateStr) {
   if (!dateStr) return new Date().toISOString();
   let cleanStr = dateStr.trim();
@@ -168,42 +165,6 @@ function safeDateISO(dateStr) {
   return isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 }
 
-function parseRss2Json(data) {
-  if (data.status !== 'ok' || !data.items) return [];
-  
-  return data.items
-    .map(item => {
-      const idUrl = item.guid || item.link;
-      const id = idUrl ? idUrl.split('/').pop() : '';
-      if (!id || id.toLowerCase() === 'unknown') return null;
-      
-      const authors = item.author ? item.author.split(',').map(a => a.trim()) : ['Unknown Author'];
-      const categories = item.categories || [];
-      const primaryCategory = categories.length > 0 ? categories[0] : 'unknown';
-      
-      const published = safeDateISO(item.pubDate);
-      
-      return PaperBuilder.create({
-        id,
-        arxivId: id,
-        sources: { primary: 'arxiv', enrichedBy: [] },
-        title: item.title ? item.title.replace(/\n/g, ' ').trim() : 'No Title',
-        abstract: item.description ? item.description.replace(/\n/g, ' ').trim() : 'No summary available.',
-        authors: authors.map(name => ({ name })),
-        year: new Date(published).getFullYear(),
-        publicationType: 'preprint',
-        openAccess: true,
-        pdfUrl: idUrl ? idUrl.replace('abs', 'pdf') : '',
-        landingPageUrl: idUrl || `https://arxiv.org/abs/${id}`,
-        categories: categories,
-        keywords: categories,
-        primaryCategory,
-        published,
-      });
-    })
-    .filter(Boolean);
-}
-
 
 /**
  * Helper to fetch and parse arXiv XML or JSON using cascading proxies in production
@@ -213,7 +174,7 @@ async function fetchArxivData(url) {
   if (PAPER_API_BASE) {
     try {
       const query = new URL(url).search;
-      const response = await fetchWithTimeout(`${PAPER_API_BASE}/arxiv${query}`, 10_000);
+      const response = await fetchWithTimeout(`${PAPER_API_BASE}/arxiv${query}`, 5_500);
       if (!response.ok) throw new Error(`PaperTok arXiv API error: ${response.status}`);
       const parsed = parseArxivXml(await response.text());
       if (parsed.length > 0) return parsed;
@@ -233,55 +194,39 @@ async function fetchArxivData(url) {
     }
   }
 
-  // Without fetchQueue, requests run in parallel.
-  // This prevents one slow proxy (like allorigins) from delaying the entire feed by 30+ seconds.
-  try {
-    // 1. Try corsproxy.io (fast, raw XML, keeps all authors)
+  const fallbackRequests = [
+    (async () => {
     const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-    const response = await fetchWithTimeout(proxyUrl, 6000);
-    
-    if (response.ok) {
-       const xmlText = await response.text();
-       const parsed = parseArxivXml(xmlText);
-       if (parsed.length > 0) {
-         return parsed;
-       }
-    }
-  } catch (e) {
-    console.warn('corsproxy failed', e);
-  }
+      const response = await fetchWithTimeout(proxyUrl, 4_500);
+      if (!response.ok) throw new Error(`corsproxy error: ${response.status}`);
+      const parsed = parseArxivXml(await response.text());
+      if (parsed.length === 0) throw new Error('corsproxy returned no arXiv entries');
+      return parsed;
+    })(),
+    (async () => {
+      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
+      const response = await fetchWithTimeout(proxyUrl, 4_500);
+      if (!response.ok) throw new Error(`allorigins error: ${response.status}`);
+      const data = await response.json();
+      if (!data.contents) throw new Error('allorigins returned no content');
+      let xmlText = data.contents;
+      if (xmlText.startsWith('data:')) {
+        const base64Data = xmlText.split(',')[1];
+        xmlText = atob(base64Data);
+      }
+      const parsed = parseArxivXml(xmlText);
+      if (parsed.length === 0) throw new Error('allorigins returned no arXiv entries');
+      return parsed;
+    })(),
+  ];
 
-  try {
-    // 2. Try allorigins (keeps all authors)
-    const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`;
-    const response = await fetchWithTimeout(proxyUrl, 6000);
-        if (response.ok) {
-           const data = await response.json();
-           if (data.contents) {
-             let xmlText = data.contents;
-             if (xmlText.startsWith('data:')) {
-               const base64Data = xmlText.split(',')[1];
-               xmlText = atob(base64Data);
-             }
-             const parsed = parseArxivXml(xmlText);
-             if (parsed.length > 0) return parsed;
-           }
-        }
-      } catch (e) {
-        console.warn('allorigins failed, trying rss2json', e);
-      }
-      
-      // 3. Fallback to rss2json (fast, but drops co-authors)
-      try {
-        const proxyUrl = `https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(url)}`;
-        const response = await fetchWithTimeout(proxyUrl, 8000);
-        if (!response.ok) throw new Error(`arXiv API error via rss2json: ${response.status}`);
-        const data = await response.json();
-        return parseRss2Json(data);
-      } catch (e) {
-        console.error('All proxies failed', e);
-        throw new Error('No se pudo conectar con arXiv. Inténtalo de nuevo en unos segundos.', { cause: e });
-      }
+  const fallbackResults = await Promise.allSettled(fallbackRequests);
+  const successfulFallback = fallbackResults.find(result => result.status === 'fulfilled');
+  if (successfulFallback) return successfulFallback.value;
+
+  const cause = fallbackResults.find(result => result.status === 'rejected')?.reason;
+  console.error('All arXiv routes failed', cause);
+  throw new Error('No se pudo conectar con arXiv. Inténtalo de nuevo en unos segundos.', { cause });
 }
 
 /**
