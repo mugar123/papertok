@@ -2,6 +2,7 @@ import { hasUsableAIAbstract, isAIReadablePdfUrl } from '../src/utils/aiExplanat
 
 const PROMPT_VERSION = 'paper-explainer-v2';
 const DEFAULT_MODEL = 'gemini-3.5-flash';
+const DEFAULT_FALLBACK_MODEL = 'gemini-3.5-flash-lite';
 const DEFAULT_USER_DAILY_LIMIT = 5;
 const DEFAULT_GLOBAL_DAILY_LIMIT = 100;
 const MAX_REQUEST_BYTES = 100_000;
@@ -249,6 +250,25 @@ function providerQuotaCode(payload) {
     : 'AI_BUSY';
 }
 
+function parseRetryDelay(value) {
+  const match = String(value || '').trim().match(/^(\d+(?:\.\d+)?)s$/i);
+  return match ? Math.max(1, Math.ceil(Number(match[1]))) : 0;
+}
+
+export function getProviderRetry(payload, retryAfterHeader = '', now = Date.now()) {
+  const details = Array.isArray(payload?.error?.details) ? payload.error.details : [];
+  const detailDelay = details
+    .map(detail => parseRetryDelay(detail?.retryDelay))
+    .find(Boolean);
+  const headerSeconds = Number.parseInt(retryAfterHeader, 10);
+  const retryAfterSeconds = detailDelay || (Number.isFinite(headerSeconds) && headerSeconds > 0 ? headerSeconds : 60);
+  return {
+    resetAt: new Date(now + retryAfterSeconds * 1_000).toISOString(),
+    retryAfterSeconds,
+    scope: 'provider-rate',
+  };
+}
+
 export function classifyGeminiError(status, payload) {
   if (status === 429) return providerQuotaCode(payload);
   const detail = JSON.stringify(payload || {}).toLowerCase();
@@ -259,15 +279,13 @@ export function classifyGeminiError(status, payload) {
   return 'AI_UNAVAILABLE';
 }
 
-async function explainWithGemini({ paper, level, pdfBase64, env }) {
-  if (!env.GEMINI_API_KEY) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+async function requestGeminiExplanation({ paper, level, pdfBase64, env, model, timeoutMs }) {
   const sourceBasis = pdfBase64 ? 'full_text' : 'abstract';
   const parts = [{ text: buildPaperExplanationPrompt(paper, level, sourceBasis) }];
   if (pdfBase64) parts.push({ inlineData: { mimeType: 'application/pdf', data: pdfBase64 } });
 
-  const model = cleanText(env.AI_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 55_000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`, {
       method: 'POST',
@@ -283,7 +301,7 @@ async function explainWithGemini({ paper, level, pdfBase64, env }) {
           thinkingConfig: { thinkingLevel: LEVELS[level].thinkingLevel },
           responseMimeType: 'application/json',
           responseSchema: RESPONSE_SCHEMA,
-          maxOutputTokens: level === 'researcher' ? 12_000 : 8_000,
+          maxOutputTokens: level === 'researcher' ? 7_000 : 5_000,
         },
       }),
     });
@@ -294,7 +312,11 @@ async function explainWithGemini({ paper, level, pdfBase64, env }) {
         code,
         code === 'AI_NOT_CONFIGURED' ? 503 : response.status === 429 ? 429 : 502,
         code,
-        code === 'AI_QUOTA_EXHAUSTED' ? { ...getDailyQuotaReset(), scope: 'provider' } : null,
+        code === 'AI_QUOTA_EXHAUSTED'
+          ? { ...getDailyQuotaReset(), scope: 'provider' }
+          : code === 'AI_BUSY'
+            ? getProviderRetry(payload, response.headers.get('retry-after'))
+            : null,
       );
     }
     return { explanation: parseGeminiPayload(payload), model, sourceBasis };
@@ -304,6 +326,64 @@ async function explainWithGemini({ paper, level, pdfBase64, env }) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function modelCooldownKey(model) {
+  return new Request(`https://papertok.internal/ai-provider-cooldown/${encodeURIComponent(model)}`);
+}
+
+async function isModelCoolingDown(model) {
+  try {
+    return Boolean(await caches.default.match(modelCooldownKey(model)));
+  } catch {
+    return false;
+  }
+}
+
+async function rememberModelCooldown(model, error) {
+  const retryAfterSeconds = safeInteger(error?.quota?.retryAfterSeconds, 60, 5, 300);
+  try {
+    await caches.default.put(modelCooldownKey(model), new Response('busy', {
+      headers: { 'cache-control': `public, max-age=${retryAfterSeconds}` },
+    }));
+  } catch {
+    // A missed cooldown only affects latency; the fallback remains available.
+  }
+}
+
+async function explainWithGemini({ paper, level, pdfBase64, env }) {
+  if (!env.GEMINI_API_KEY) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+  const primaryModel = cleanText(env.AI_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
+  const fallbackModel = cleanText(env.AI_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL, 100);
+  const canUseFallback = Boolean(fallbackModel && fallbackModel !== primaryModel);
+
+  if (!canUseFallback || !await isModelCoolingDown(primaryModel)) {
+    try {
+      return await requestGeminiExplanation({
+        paper,
+        level,
+        pdfBase64,
+        env,
+        model: primaryModel,
+        timeoutMs: 22_000,
+      });
+    } catch (error) {
+      const canFallback = canUseFallback
+        && error instanceof AIExplanationError
+        && ['AI_BUSY', 'AI_UNAVAILABLE'].includes(error.code);
+      if (!canFallback) throw error;
+      await rememberModelCooldown(primaryModel, error);
+    }
+  }
+
+  return requestGeminiExplanation({
+    paper,
+    level,
+    pdfBase64,
+    env,
+    model: fallbackModel,
+    timeoutMs: 28_000,
+  });
 }
 
 const PROVIDERS = {

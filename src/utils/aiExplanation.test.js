@@ -6,6 +6,7 @@ import {
   buildPaperExplanationPrompt,
   classifyGeminiError,
   getDailyQuotaReset,
+  getProviderRetry,
   normalizePaperForExplanation,
 } from '../../worker/ai-explanation.js';
 
@@ -46,6 +47,18 @@ test('distinguishes Gemini configuration errors from temporary failures', () => 
   assert.equal(classifyGeminiError(403, { error: { message: 'API key not valid' } }), 'AI_NOT_CONFIGURED');
   assert.equal(classifyGeminiError(503, { error: { message: 'Service unavailable' } }), 'AI_BUSY');
   assert.equal(classifyGeminiError(500, {}), 'AI_UNAVAILABLE');
+  assert.equal(classifyGeminiError(429, { error: { message: 'Requests per minute exceeded' } }), 'AI_BUSY');
+  assert.equal(classifyGeminiError(429, { error: { message: 'Requests per day exceeded' } }), 'AI_QUOTA_EXHAUSTED');
+});
+
+test('preserves Gemini retry timing for temporary rate limits', () => {
+  assert.deepEqual(getProviderRetry({
+    error: { details: [{ '@type': 'type.googleapis.com/google.rpc.RetryInfo', retryDelay: '12.5s' }] },
+  }, '', Date.parse('2026-07-22T12:00:00.000Z')), {
+    resetAt: '2026-07-22T12:00:13.000Z',
+    retryAfterSeconds: 13,
+    scope: 'provider-rate',
+  });
 });
 
 test('reports the next UTC quota reset without relying on browser time', () => {

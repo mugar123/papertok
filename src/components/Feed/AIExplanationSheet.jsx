@@ -262,7 +262,11 @@ export default function AIExplanationSheet({ paper, onClose }) {
                 {error.message}
                 {error.quota?.resetAt && (
                   <small>
-                    Vuelve a intentarlo en <strong>{formatQuotaCountdown(error.quota.resetAt, quotaNow)}</strong>. El cupo se renueva a las {formatQuotaResetTime(error.quota.resetAt)} (hora local).
+                    {error.quota.scope === 'provider-rate' ? (
+                      <>Prueba de nuevo en <strong>{formatQuotaCountdown(error.quota.resetAt, quotaNow)}</strong>.</>
+                    ) : (
+                      <>Vuelve a intentarlo en <strong>{formatQuotaCountdown(error.quota.resetAt, quotaNow)}</strong>. El cupo se renueva a las {formatQuotaResetTime(error.quota.resetAt)} (hora local).</>
+                    )}
                   </small>
                 )}
               </span>
