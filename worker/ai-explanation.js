@@ -1,3 +1,5 @@
+import { hasUsableAIAbstract, isAIReadablePdfUrl } from '../src/utils/aiExplanationAccess.js';
+
 const PROMPT_VERSION = 'paper-explainer-v2';
 const DEFAULT_MODEL = 'gemini-3.5-flash';
 const DEFAULT_USER_DAILY_LIMIT = 5;
@@ -108,10 +110,12 @@ export function normalizePaperForExplanation(input = {}) {
     ? input.categories.map(category => cleanText(category, 100)).filter(Boolean).slice(0, 20)
     : [];
 
+  const abstract = cleanText(input.abstract, 30_000);
+  const pdfUrl = normalizeUrl(input.pdfUrl);
   const paper = {
     id: cleanText(input.id, 400),
     title: cleanText(input.title, 1_000),
-    abstract: cleanText(input.abstract, 30_000),
+    abstract: hasUsableAIAbstract(abstract) ? abstract : '',
     authors,
     year: Number.isFinite(Number(input.year)) ? Number(input.year) : null,
     doi: normalizeDoi(input.doi),
@@ -119,7 +123,7 @@ export function normalizePaperForExplanation(input = {}) {
     journal: cleanText(input.journal, 300),
     categories,
     concepts,
-    pdfUrl: normalizeUrl(input.pdfUrl),
+    pdfUrl: isAIReadablePdfUrl(pdfUrl) ? pdfUrl : '',
   };
 
   if (!paper.title || (!paper.abstract && !paper.pdfUrl)) {
@@ -162,24 +166,6 @@ function safeInteger(value, fallback, minimum, maximum) {
   return Number.isFinite(parsed) ? Math.max(minimum, Math.min(maximum, parsed)) : fallback;
 }
 
-function isAllowedPdfUrl(value) {
-  if (!value) return false;
-  try {
-    const url = new URL(value);
-    const host = url.hostname.toLowerCase();
-    return url.protocol === 'https:' && (
-      host === 'arxiv.org'
-      || host === 'export.arxiv.org'
-      || host === 'europepmc.org'
-      || host === 'www.ebi.ac.uk'
-      || host === 'pmc.ncbi.nlm.nih.gov'
-      || host.endsWith('.ncbi.nlm.nih.gov')
-    );
-  } catch {
-    return false;
-  }
-}
-
 function bytesToBase64(bytes) {
   let binary = '';
   const chunkSize = 0x8000;
@@ -190,7 +176,7 @@ function bytesToBase64(bytes) {
 }
 
 async function fetchPaperPdf(pdfUrl) {
-  if (!isAllowedPdfUrl(pdfUrl)) return null;
+  if (!isAIReadablePdfUrl(pdfUrl)) return null;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10_000);
   try {
@@ -199,7 +185,7 @@ async function fetchPaperPdf(pdfUrl) {
       redirect: 'follow',
       headers: { accept: 'application/pdf' },
     });
-    if (!response.ok || !isAllowedPdfUrl(response.url)) return null;
+    if (!response.ok || !isAIReadablePdfUrl(response.url)) return null;
     const contentType = response.headers.get('content-type') || '';
     const contentLength = Number(response.headers.get('content-length') || 0);
     if (!contentType.toLowerCase().includes('pdf') || contentLength > MAX_PDF_BYTES) return null;
@@ -263,6 +249,16 @@ function providerQuotaCode(payload) {
     : 'AI_BUSY';
 }
 
+export function classifyGeminiError(status, payload) {
+  if (status === 429) return providerQuotaCode(payload);
+  const detail = JSON.stringify(payload || {}).toLowerCase();
+  if ([400, 401, 403, 404].includes(status) && /api.?key|permission|model.+not found|not found.+model|unsupported model/.test(detail)) {
+    return 'AI_NOT_CONFIGURED';
+  }
+  if (status === 503 || status === 529) return 'AI_BUSY';
+  return 'AI_UNAVAILABLE';
+}
+
 async function explainWithGemini({ paper, level, pdfBase64, env }) {
   if (!env.GEMINI_API_KEY) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   const sourceBasis = pdfBase64 ? 'full_text' : 'abstract';
@@ -292,16 +288,15 @@ async function explainWithGemini({ paper, level, pdfBase64, env }) {
       }),
     });
     const payload = await response.json().catch(() => ({}));
-    if (response.status === 429) {
-      const code = providerQuotaCode(payload);
+    if (!response.ok) {
+      const code = classifyGeminiError(response.status, payload);
       throw new AIExplanationError(
         code,
-        429,
+        code === 'AI_NOT_CONFIGURED' ? 503 : response.status === 429 ? 429 : 502,
         code,
         code === 'AI_QUOTA_EXHAUSTED' ? { ...getDailyQuotaReset(), scope: 'provider' } : null,
       );
     }
-    if (!response.ok) throw new AIExplanationError('AI_UNAVAILABLE', 502);
     return { explanation: parseGeminiPayload(payload), model, sourceBasis };
   } catch (error) {
     if (error instanceof AIExplanationError) throw error;
@@ -314,6 +309,35 @@ async function explainWithGemini({ paper, level, pdfBase64, env }) {
 const PROVIDERS = {
   gemini: explainWithGemini,
 };
+
+export async function checkAIProviderHealth(env) {
+  const provider = cleanText(env.AI_PROVIDER || 'gemini', 40).toLowerCase();
+  const model = cleanText(env.AI_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
+  if (provider !== 'gemini' || !env.GEMINI_API_KEY) {
+    return { provider, model, configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}`, {
+      signal: controller.signal,
+      headers: { 'x-goog-api-key': env.GEMINI_API_KEY },
+    });
+    const payload = response.ok ? null : await response.json().catch(() => ({}));
+    return {
+      provider,
+      model,
+      configured: true,
+      available: response.ok,
+      code: response.ok ? null : classifyGeminiError(response.status, payload),
+    };
+  } catch {
+    return { provider, model, configured: true, available: false, code: 'AI_UNAVAILABLE' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 async function verifyFirebaseUser(request, env) {
   const authorization = request.headers.get('authorization') || '';
@@ -432,6 +456,7 @@ export async function handleAIExplanation(request, env) {
 
   const quota = await assertWithinQuota(env, uid);
   const pdfBase64 = await fetchPaperPdf(paper.pdfUrl);
+  if (!pdfBase64 && !paper.abstract) throw new AIExplanationError('AI_INVALID_PAPER', 400);
   const result = await provider({ paper, level, pdfBase64, env });
   await recordUsage(env, quota);
 

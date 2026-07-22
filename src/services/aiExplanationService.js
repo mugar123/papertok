@@ -1,13 +1,7 @@
 import { auth } from './firebase.js';
+import { hasUsableAIAbstract, isAIReadablePdfUrl } from '../utils/aiExplanationAccess.js';
 
 const explanationCache = new Map();
-
-const UNAVAILABLE_ABSTRACTS = new Set([
-  'no abstract available.',
-  'no summary available.',
-  'resumen no disponible.',
-  'el resumen no esta disponible en crossref.',
-]);
 
 export const AI_EXPLANATION_LEVELS = Object.freeze([
   { id: 'beginner', label: 'Principiante' },
@@ -33,32 +27,23 @@ function paperCacheId(paper) {
 }
 
 function getOpenPdfUrl(paper) {
-  if (paper?.openAccessPdfUrl) return paper.openAccessPdfUrl;
+  const candidates = [paper?.openAccessPdfUrl];
   if (paper?.arxivId) {
     const arxivId = String(paper.arxivId).replace(/^arxiv:/i, '').replace(/v\d+$/i, '');
-    return `https://arxiv.org/pdf/${arxivId}.pdf`;
+    candidates.push(`https://arxiv.org/pdf/${arxivId}.pdf`);
   }
-  if (paper?.openAccess && paper?.pdfUrl) return paper.pdfUrl;
-  if (paper?.pmcid) return `https://pmc.ncbi.nlm.nih.gov/articles/${encodeURIComponent(paper.pmcid)}/pdf/`;
-  return '';
+  if (paper?.openAccess && paper?.pdfUrl) candidates.push(paper.pdfUrl);
+  if (paper?.pmcid) candidates.push(`https://pmc.ncbi.nlm.nih.gov/articles/${encodeURIComponent(paper.pmcid)}/pdf/`);
+  return candidates.find(isAIReadablePdfUrl) || '';
 }
 
 export function hasUsableAbstract(paper) {
   const abstract = cleanText(paper?.abstract || paper?.summary, 30_000);
-  if (!abstract) return false;
-
-  const normalized = abstract
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  return !UNAVAILABLE_ABSTRACTS.has(normalized);
+  return hasUsableAIAbstract(abstract);
 }
 
-export function canExplainPaper(paper, { hasOpenAccessCopy = false } = {}) {
-  return hasUsableAbstract(paper) || hasOpenAccessCopy || Boolean(getOpenPdfUrl(paper));
+export function canExplainPaper(paper) {
+  return hasUsableAbstract(paper) || Boolean(getOpenPdfUrl(paper));
 }
 
 export function serializePaperForExplanation(paper) {

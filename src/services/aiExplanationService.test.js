@@ -41,5 +41,6 @@ test('hides AI explanations for a closed paper without an abstract', () => {
 
 test('keeps AI explanations for papers with an abstract or open full text', () => {
   assert.equal(canExplainPaper({ openAccess: false, abstract: 'A real abstract.' }), true);
-  assert.equal(canExplainPaper({ openAccess: true, abstract: 'Resumen no disponible.', pdfUrl: 'https://example.org/open.pdf' }), true);
+  assert.equal(canExplainPaper({ openAccess: true, abstract: 'Resumen no disponible.', pdfUrl: 'https://arxiv.org/pdf/2607.12345' }), true);
+  assert.equal(canExplainPaper({ openAccess: true, abstract: 'Resumen no disponible.', pdfUrl: 'https://example.org/open.pdf' }), false);
 });

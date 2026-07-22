@@ -1,5 +1,5 @@
 import { buildOpenAlexTrendFilter, normalizeReportFilters } from '../src/services/openAlexReportQuery.js';
-import { AIExplanationError, handleAIExplanation } from './ai-explanation.js';
+import { AIExplanationError, checkAIProviderHealth, handleAIExplanation } from './ai-explanation.js';
 
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://mugar123.github.io',
@@ -394,7 +394,21 @@ export default {
       }
     }
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
-    if (url.pathname === '/health') return json({ ok: true }, 200, corsHeaders(origin, env));
+    if (url.pathname === '/health') {
+      return json({
+        ok: true,
+        aiConfigured: Boolean(env.GEMINI_API_KEY),
+        openAlexConfigured: Boolean(env.OPENALEX_API_KEY),
+      }, 200, corsHeaders(origin, env));
+    }
+    if (url.pathname === '/health/ai') {
+      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      const health = await checkAIProviderHealth(env);
+      return json(health, health.available ? 200 : 503, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+      });
+    }
     if (url.pathname === '/report/trends') {
       try {
         return await handleTrends(request, env);

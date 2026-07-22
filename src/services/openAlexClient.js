@@ -45,6 +45,22 @@ export function parseRetryAfter(value, now = Date.now()) {
   return Number.isFinite(timestamp) ? Math.max(0, timestamp - now) : 0;
 }
 
+export function getOpenAlexRateLimitDelay(response, now = Date.now()) {
+  if (!response) return 0;
+  const remainingHeader = response.headers.get('x-ratelimit-remaining');
+  const remaining = remainingHeader === null ? null : Number(remainingHeader);
+  const isLimited = response.status === 429
+    || (response.status === 403 && remaining !== null && remaining === 0);
+  if (!isLimited) return 0;
+
+  const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'), now);
+  if (retryAfterMs > 0) return retryAfterMs;
+
+  const resetSeconds = Number(response.headers.get('x-ratelimit-reset'));
+  if (Number.isFinite(resetSeconds) && resetSeconds > 0) return resetSeconds * 1000;
+  return 60000;
+}
+
 export function identifyOpenAlexUrl(rawUrl, mailto = DEFAULT_MAILTO) {
   const url = new URL(rawUrl);
   if (url.hostname === OPENALEX_HOST && !url.searchParams.has('mailto')) {
@@ -254,8 +270,8 @@ export class OpenAlexClient {
         const response = await this.fetchOnce(url, { ...options, timeoutMs });
         lastResponse = response;
 
-        if (response.status === 429) {
-          const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'), this.now()) || 60000;
+        const retryAfterMs = getOpenAlexRateLimitDelay(response, this.now());
+        if (retryAfterMs > 0) {
           this.rateLimitedUntil = Math.max(this.rateLimitedUntil, this.now() + retryAfterMs);
 
           if (attempt < retries && retryAfterMs <= MAX_AUTO_RETRY_DELAY_MS) {

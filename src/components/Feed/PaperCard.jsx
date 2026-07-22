@@ -352,7 +352,12 @@ const PaperCard = memo(function PaperCard({
   const resolvedOpenCopy = resolvedAccess.paperId === paper.id ? resolvedAccess.copy : null;
   const researchResources = linkedResources.paperId === paper.id ? linkedResources.items : [];
   const isOpenAccess = Boolean(paper.openAccess || resolvedOpenCopy);
-  const canRequestAIExplanation = canExplainPaper(paper, { hasOpenAccessCopy: Boolean(resolvedOpenCopy) });
+  const aiExplanationPaper = useMemo(() => resolvedOpenCopy ? {
+    ...paper,
+    openAccess: true,
+    openAccessPdfUrl: resolvedOpenCopy.pdfUrl || paper.openAccessPdfUrl,
+  } : paper, [paper, resolvedOpenCopy]);
+  const canRequestAIExplanation = canExplainPaper(aiExplanationPaper);
   const openAccessLabel = resolvedOpenCopy
     ? 'Versión abierta disponible'
     : paper.accessSource === 'europepmc'
@@ -811,7 +816,7 @@ const PaperCard = memo(function PaperCard({
         document.body,
       )}
       {showAIExplanation && createPortal(
-        <AIExplanationSheet paper={paper} onClose={() => setShowAIExplanation(false)} />,
+        <AIExplanationSheet paper={aiExplanationPaper} onClose={() => setShowAIExplanation(false)} />,
         document.body,
       )}
       {selectedRelatedPaper && createPortal(

@@ -20,6 +20,12 @@ test('keeps a stable external concept navigable and rejects loose labels', () =>
   assert.equal(resolvePaperTopic('unverified free text'), null);
 });
 
+test('keeps a current OpenAlex topic navigable', () => {
+  const topic = resolvePaperTopic({ id: 'https://openalex.org/T123', display_name: 'Emergent topic' });
+  assert.deepEqual(topic, { id: 'T123', label: 'Emergent topic', type: 'topic', reliable: false });
+  assert.equal(topicExplorerPath(topic), '/explorer/topic/T123');
+});
+
 test('keeps exact category papers and rejects unrelated supplemental results', () => {
   const topic = { categoryIds: ['cond-mat.str-el'], display_name: 'Electrones Correlacionados', labelEn: 'Strongly Correlated Electrons' };
   assert.equal(paperMatchesLocalTopic({ categories: ['cond-mat.str-el'], title: 'A lattice model' }, topic), true);

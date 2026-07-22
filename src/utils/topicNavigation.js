@@ -47,6 +47,9 @@ export function resolvePaperTopic(value) {
   if (/^C\d+$/i.test(externalId) && label) {
     return { id: externalId, label, type: 'concept', reliable: false };
   }
+  if (/^T\d+$/i.test(externalId) && label) {
+    return { id: externalId, label, type: 'topic', reliable: false };
+  }
   return null;
 }
 

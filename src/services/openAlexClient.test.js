@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   OpenAlexClient,
+  getOpenAlexRateLimitDelay,
   identifyOpenAlexUrl,
   isOpenAlexRateLimitError,
   parseRetryAfter,
@@ -43,6 +44,19 @@ test('parses Retry-After seconds and HTTP dates', () => {
   const now = Date.parse('2026-07-15T20:00:00Z');
   assert.equal(parseRetryAfter('12', now), 12000);
   assert.equal(parseRetryAfter('Wed, 15 Jul 2026 20:01:00 GMT', now), 60000);
+});
+
+test('recognizes the exhausted OpenAlex allowance returned as HTTP 403', () => {
+  const response = new Response('{}', {
+    status: 403,
+    headers: {
+      'X-RateLimit-Remaining': '0',
+      'X-RateLimit-Reset': '120',
+    },
+  });
+
+  assert.equal(getOpenAlexRateLimitDelay(response, 0), 120_000);
+  assert.equal(getOpenAlexRateLimitDelay(new Response('{}', { status: 403 }), 0), 0);
 });
 
 test('retries a short 429 using Retry-After', async () => {

@@ -40,6 +40,8 @@ const OPENALEX_ENRICHMENT_SELECT = [
   'doi',
   'ids',
   'concepts',
+  'topics',
+  'primary_topic',
   'cited_by_count',
   'related_works',
   'locations',
@@ -86,12 +88,17 @@ export function mapOpenAlexEnrichmentWork(work) {
   const openAlexId = String(openAlexUrl).split('/').pop();
   const arxivId = getArxivIdFromWork(work);
   if (!openAlexId) return null;
+  const semanticTopics = Array.isArray(work.concepts) && work.concepts.length > 0
+    ? work.concepts
+    : (work.topics || []);
 
   return {
     openAlexId,
     arxivId,
     enrichment: {
-      concepts: work.concepts || [],
+      concepts: semanticTopics,
+      topics: work.topics || [],
+      primaryTopic: work.primary_topic || null,
       citationCount: Number.isFinite(work.cited_by_count) ? work.cited_by_count : 0,
       citationCountKnown: Number.isFinite(work.cited_by_count),
       related_works: work.related_works || [],
@@ -156,13 +163,13 @@ export function isOpenAlexEnrichmentId(id) {
 }
 
 export async function enrichPapersBatch(arxivIds, options = {}) {
-  const validIds = (Array.isArray(arxivIds) ? arxivIds : [])
+  const validIds = [...new Set((Array.isArray(arxivIds) ? arxivIds : [])
     .filter(id => typeof id === 'string' && id.trim() !== '')
     .map(id => {
       const pure = id.startsWith('arxiv:') ? id.split(':')[1] : id;
       return pure.replace(/v\d+$/, '');
     })
-    .filter(isOpenAlexEnrichmentId);
+    .filter(isOpenAlexEnrichmentId))];
     
   const result = {};
   
@@ -193,7 +200,7 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
   });
 
   const fetchChunk = async (filterParam) => {
-    const url = `https://api.openalex.org/works?filter=${filterParam}&per-page=50&select=${OPENALEX_ENRICHMENT_SELECT}`;
+    const url = `https://api.openalex.org/works?filter=${filterParam}&per_page=50&select=${OPENALEX_ENRICHMENT_SELECT}`;
     let response = null;
     let primaryFailed = false;
     let directError = null;
@@ -245,23 +252,26 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
     }
   };
 
-  // Fetch ArXiv IDs
+  // Run independent chunks concurrently. The shared OpenAlex client still caps
+  // concurrency, while a slow chunk no longer consumes the whole feed budget.
   const CHUNK_SIZE = 20;
+  const chunkRequests = [];
   for (let i = 0; i < arxivIdsOnly.length; i += CHUNK_SIZE) {
     const chunk = arxivIdsOnly.slice(i, i + CHUNK_SIZE);
     const filterIds = chunk.flatMap(id => {
        const cleanId = id.replace(/v\d+$/, '');
        return [`http://arxiv.org/abs/${cleanId}`, `https://arxiv.org/abs/${cleanId}`];
     }).join('|');
-    await fetchChunk(`locations.landing_page_url:${encodeURIComponent(filterIds)}`);
+    chunkRequests.push(fetchChunk(`locations.landing_page_url:${encodeURIComponent(filterIds)}`));
   }
 
-  // Fetch OpenAlex IDs
   for (let i = 0; i < openAlexIds.length; i += CHUNK_SIZE) {
     const chunk = openAlexIds.slice(i, i + CHUNK_SIZE);
     const filterIds = chunk.join('|');
-    await fetchChunk(`openalex:${encodeURIComponent(filterIds)}`);
+    chunkRequests.push(fetchChunk(`openalex:${encodeURIComponent(filterIds)}`));
   }
+
+  await Promise.all(chunkRequests);
 
   return result;
 }
@@ -766,7 +776,15 @@ export async function getEntityById(type, id) {
     }
   }
   
-  const endpoint = type === 'institution' ? 'institutions' : type === 'concept' ? 'concepts' : type === 'source' ? 'sources' : 'authors';
+  const endpoint = type === 'institution'
+    ? 'institutions'
+    : type === 'concept'
+      ? 'concepts'
+      : type === 'topic'
+        ? 'topics'
+        : type === 'source'
+          ? 'sources'
+          : 'authors';
   const url = `https://api.openalex.org/${endpoint}/${cleanId}`;
   
   try {
@@ -795,7 +813,7 @@ export async function getEntityById(type, id) {
     }
     
     // If it's a concept, translate back to Spanish
-    if (type === 'concept' && data && data.display_name) {
+    if ((type === 'concept' || type === 'topic') && data && data.display_name) {
       let translatedName = data.display_name;
       Object.values(CATEGORIES).forEach(cat => {
         if (cat.labelEn.toLowerCase() === data.display_name.toLowerCase()) translatedName = cat.label;
@@ -924,6 +942,8 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
     filterKey = isRor ? 'institutions.ror' : 'institutions.id';
   } else if (type === 'concept') {
     filterKey = 'concepts.id';
+  } else if (type === 'topic') {
+    filterKey = 'topics.id';
   } else if (type === 'source') {
     filterKey = 'locations.source.id';
   } else {

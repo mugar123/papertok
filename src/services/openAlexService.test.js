@@ -75,6 +75,19 @@ test('keeps enrichment for a native OpenAlex work without an arXiv copy', () => 
   assert.equal(mapped.enrichment.doi, '10.1000/openalex-only');
 });
 
+test('falls back to current OpenAlex topics when legacy concepts are absent', () => {
+  const mapped = mapOpenAlexEnrichmentWork({
+    id: 'https://openalex.org/W789',
+    cited_by_count: 3,
+    topics: [{ id: 'https://openalex.org/T123', display_name: 'Quantum sensing', score: 0.87 }],
+    primary_topic: { id: 'https://openalex.org/T123', display_name: 'Quantum sensing' },
+    locations: [],
+  });
+
+  assert.equal(mapped.enrichment.concepts[0].display_name, 'Quantum sensing');
+  assert.equal(mapped.enrichment.primaryTopic.id, 'https://openalex.org/T123');
+});
+
 test('maps Crossref institution fallback records into PaperTok papers', () => {
   const paper = mapCrossrefInstitutionWork({
     DOI: '10.1000/example-work',

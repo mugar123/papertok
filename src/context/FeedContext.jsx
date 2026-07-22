@@ -30,6 +30,8 @@ import { fetchDomainPapers } from '../services/domainSourceService';
 import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
+  needsOpenAlexEnrichment,
+  takeFeedPage,
   waitForInitialEnrichment,
 } from '../utils/feedEnrichment';
 
@@ -203,7 +205,7 @@ export function FeedProvider({ children }) {
 
         if (!enrichmentRequest && !openAlexEnrichmentAttempts.current.has(pid)) {
           openAlexEnrichmentAttempts.current.add(pid);
-          enrichmentRequest = enrichPapersBatch([paper.id]).catch((error) => {
+          enrichmentRequest = enrichPapersBatch([pid]).catch((error) => {
             console.error('OpenAlex interaction enrichment failed', error);
             return {};
           });
@@ -841,7 +843,25 @@ export function FeedProvider({ children }) {
         }
       }
 
-      const enrichmentIds = [...new Set(filtered.map(getOpenAlexEnrichmentId).filter(Boolean))];
+      // Source adapters intentionally return a wider candidate pool. Select the
+      // visible page before enrichment so every page fits in one OpenAlex batch.
+      // Otherwise later pages could exceed the wait budget and lose all metadata,
+      // even when the first chunk had already succeeded.
+      if (activeMode === 'top' || activeMode === null) {
+        filtered = diversifiedWeightedShuffle(filtered, {
+          scorePaper: calculateAndAttachScore,
+          weights: recommendationWeights.current,
+          initialPapers: reset ? [] : papers,
+        });
+      }
+      filtered = takeFeedPage(filtered, PAGE_SIZE);
+
+      const enrichmentIds = [...new Set(
+        filtered
+          .filter(needsOpenAlexEnrichment)
+          .map(getOpenAlexEnrichmentId)
+          .filter(Boolean)
+      )];
       const enrichmentPromise = enrichPapersBatch(enrichmentIds, {
         allowProxy: false,
         timeoutMs: OPENALEX_FEED_REQUEST_TIMEOUT_MS,
@@ -853,6 +873,11 @@ export function FeedProvider({ children }) {
       enrichmentIds.forEach((id) => {
         openAlexEnrichmentAttempts.current.add(id);
         openAlexEnrichmentRequests.current.set(id, enrichmentPromise);
+      });
+      enrichmentPromise.then((enrichmentById) => {
+        enrichmentIds.forEach((id) => {
+          if (!enrichmentById[id]) openAlexEnrichmentAttempts.current.delete(id);
+        });
       });
       enrichmentPromise.finally(() => {
         enrichmentIds.forEach((id) => {

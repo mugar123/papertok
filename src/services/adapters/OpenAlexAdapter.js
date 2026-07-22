@@ -1,6 +1,6 @@
-import { BaseAdapter } from './BaseAdapter';
-import { assignRequestedCategories } from '../arxivService';
-import { openAlexFetch } from '../openAlexClient';
+import { BaseAdapter } from './BaseAdapter.js';
+import { assignRequestedCategories } from '../arxivService.js';
+import { openAlexFetch } from '../openAlexClient.js';
 
 export class OpenAlexAdapter extends BaseAdapter {
   constructor() {
@@ -106,10 +106,17 @@ export class OpenAlexAdapter extends BaseAdapter {
     
     const sourceName = work.primary_location?.source?.display_name || 'Unknown Journal';
     
-    const concepts = (work.concepts || []).filter(c => c.score > 0.3).map(c => c.display_name);
+    const semanticEntries = work.concepts?.length ? work.concepts : (work.topics || []);
+    const conceptObjects = semanticEntries.filter(concept => concept.score === undefined || concept.score > 0.3);
+    const concepts = conceptObjects.map(concept => concept.display_name);
+    const publicationType = work.type || work.primary_location?.source?.type || 'article';
+    const publicationStatus = publicationType === 'preprint' || work.primary_location?.source?.type === 'repository'
+      ? 'preprint'
+      : 'published';
 
     return {
       id: work.id.replace('https://openalex.org/', 'openalex:'),
+      sources: { primary: 'openalex', enrichedBy: [] },
       doi,
       title: work.title || 'Untitled',
       abstract,
@@ -119,11 +126,16 @@ export class OpenAlexAdapter extends BaseAdapter {
       year: work.publication_year,
       sourceName,
       sourceType: work.type === 'proceedings-article' ? 'conference' : 'journal',
-      publicationStatus: 'published',
+      publicationType,
+      publicationStatus,
       openAccess: isOpenAccess,
       pdfUrl,
       landingPageUrl,
       citationsCount: work.cited_by_count || 0,
+      citationCountKnown: Number.isFinite(work.cited_by_count),
+      concepts: conceptObjects,
+      topics: work.topics || [],
+      primaryTopic: work.primary_topic || null,
       provider: this.name,
       categories: concepts,
       keywords: concepts,

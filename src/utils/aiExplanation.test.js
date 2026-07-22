@@ -4,6 +4,7 @@ import {
   AI_EXPLANATION_LEVELS,
   AIExplanationError,
   buildPaperExplanationPrompt,
+  classifyGeminiError,
   getDailyQuotaReset,
   normalizePaperForExplanation,
 } from '../../worker/ai-explanation.js';
@@ -28,6 +29,23 @@ test('rejects an explanation request without usable paper content', () => {
     () => normalizePaperForExplanation({ title: 'No content' }),
     error => error instanceof AIExplanationError && error.code === 'AI_INVALID_PAPER',
   );
+});
+
+test('rejects placeholder abstracts and unsupported PDF hosts', () => {
+  assert.throws(
+    () => normalizePaperForExplanation({
+      title: 'No usable content',
+      abstract: 'No abstract available.',
+      pdfUrl: 'https://example.org/paper.pdf',
+    }),
+    error => error instanceof AIExplanationError && error.code === 'AI_INVALID_PAPER',
+  );
+});
+
+test('distinguishes Gemini configuration errors from temporary failures', () => {
+  assert.equal(classifyGeminiError(403, { error: { message: 'API key not valid' } }), 'AI_NOT_CONFIGURED');
+  assert.equal(classifyGeminiError(503, { error: { message: 'Service unavailable' } }), 'AI_BUSY');
+  assert.equal(classifyGeminiError(500, {}), 'AI_UNAVAILABLE');
 });
 
 test('reports the next UTC quota reset without relying on browser time', () => {
