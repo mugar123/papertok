@@ -31,6 +31,10 @@ export class PaperBuilder {
       pmid: data.pmid || undefined,
       pmcid: data.pmcid || undefined,
       doi: doi || undefined,
+      scopusId: data.scopusId || undefined,
+      scopusUrl: data.scopusUrl || undefined,
+      scopusCitedByUrl: data.scopusCitedByUrl || undefined,
+      scopusCitationCount: data.scopusCitationCount ?? undefined,
       journal: data.journal || undefined,
       conference: data.conference || undefined,
       year: data.year || new Date().getFullYear(),
@@ -103,6 +107,15 @@ export class PaperBuilder {
       merged.doi = newDoi;
       // NOTE: Do NOT overwrite merged.id here. The id must remain stable (arXiv ID)
       // so that all subsequent state updates can find the paper by its original ID.
+    }
+
+    if (sourceName === 'scopus') {
+      if (!merged.scopusId && enrichmentData.scopusId) merged.scopusId = enrichmentData.scopusId;
+      if (!merged.scopusUrl && enrichmentData.scopusUrl) merged.scopusUrl = enrichmentData.scopusUrl;
+      if (!merged.scopusCitedByUrl && enrichmentData.scopusCitedByUrl) merged.scopusCitedByUrl = enrichmentData.scopusCitedByUrl;
+      if (merged.scopusCitationCount === undefined && enrichmentData.scopusCitationCount !== undefined) {
+        merged.scopusCitationCount = enrichmentData.scopusCitationCount;
+      }
     }
 
     // Merge string fields (prefer existing if they are solid, but enrichment might have better data like journal name)

@@ -4,7 +4,7 @@ import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, Ext
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getInstitutionRecentImpact } from '../../services/openAlexService';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
 import { fetchPapers, fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
-import { ElsevierAdapter, OpenAlexAdapter, PubmedAdapter } from '../../services/adapters';
+import { ElsevierAdapter, isScopusEnabled, OpenAlexAdapter, PubmedAdapter, ScopusAdapter } from '../../services/adapters';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { PaperBuilder } from '../../services/PaperBuilder';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService';
@@ -23,6 +23,7 @@ import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
 import { normalizeScientificMarkup } from '../../utils/latex';
 import { paperMatchesLocalTopic } from '../../utils/topicNavigation';
+import { fetchDomainPapers } from '../../services/domainSourceService';
 import 'katex/dist/katex.min.css';
 import './EntityExplorer.css';
 
@@ -425,11 +426,14 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
             
             const pubmedAdapter = new PubmedAdapter();
             const pubmedProm = pubmedAdapter.search(`"${entity.display_name}"`, page, { type: 'author' });
+            const scopusProm = isScopusEnabled()
+              ? new ScopusAdapter().search(entity.display_name, page, { type: 'author', limit: 8 })
+              : Promise.resolve({ papers: [] });
             
-            const supplementalResults = await Promise.allSettled([elsevierProm, pubmedProm]);
-            const [els, pub] = supplementalResults.map(result => result.status === 'fulfilled' ? result.value?.papers || [] : []);
+            const supplementalResults = await Promise.allSettled([elsevierProm, pubmedProm, scopusProm]);
+            const [els, pub, scopus] = supplementalResults.map(result => result.status === 'fulfilled' ? result.value?.papers || [] : []);
             
-            fetchedPapers.push(...papersFromOA, ...arxPapersFromNative, ...els, ...pub);
+            fetchedPapers.push(...papersFromOA, ...arxPapersFromNative, ...els, ...pub, ...scopus);
 
             const supplementalError = supplementalResults.find(result => result.status === 'rejected')?.reason;
             if (fetchedPapers.length === 0 && (primaryError || supplementalError)) {
@@ -448,6 +452,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
               fetchPapers(topicCategories.slice(0, 6), (page - 1) * 30, 30, sortBy.includes('publication_date') ? 'recent' : 'relevance'),
               openAlexAdapter.search(`"${topicQuery}"`, page, { internalCategories: topicCategories }),
               pubmedAdapter.search(`"${topicQuery}"`, page, { internalCategories: topicCategories.slice(0, 3) }),
+              fetchDomainPapers(topicCategories, page, 8, sortBy.includes('publication_date') ? 'recent' : 'relevance'),
             ]);
             fetchedPapers.push(...topicResults.flatMap(result => result.status === 'fulfilled'
               ? result.value?.papers || result.value || []
@@ -1368,10 +1373,24 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                     <span className="eli-cat">{paper.categories && paper.categories.length > 0 ? paper.categories[0] : 'Paper'}</span>
                     <div className="eli-metrics">
                       {hasKnownPaperCitationCount(paper) && (
-                        <span className="eli-citations">
-                          <Award size={13} />
-                          {getPaperCitationCount(paper).toLocaleString()} citas
-                        </span>
+                        paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
+                          <a
+                            className="eli-citations eli-citations--link"
+                            href={paper.scopusCitedByUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(event) => event.stopPropagation()}
+                            aria-label={`${getPaperCitationCount(paper).toLocaleString()} citas en Scopus`}
+                          >
+                            <Award size={13} />
+                            {getPaperCitationCount(paper).toLocaleString()} citas en Scopus
+                          </a>
+                        ) : (
+                          <span className="eli-citations">
+                            <Award size={13} />
+                            {getPaperCitationCount(paper).toLocaleString()} citas
+                          </span>
+                        )
                       )}
                       <span className="eli-date">{paper.year}</span>
                     </div>

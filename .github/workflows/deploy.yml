@@ -38,6 +38,7 @@ jobs:
           NODE_ENV: production
           VITE_REPORT_API_URL: ${{ vars.VITE_REPORT_API_URL }}
           VITE_PAPER_API_BASE_URL: ${{ vars.VITE_PAPER_API_BASE_URL }}
+          VITE_SCOPUS_ENABLED: ${{ vars.VITE_SCOPUS_ENABLED }}
           VITE_UNPAYWALL_EMAIL: ${{ vars.VITE_UNPAYWALL_EMAIL }}
 
       - name: Setup Pages

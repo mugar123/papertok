@@ -471,9 +471,23 @@ const PaperCard = memo(function PaperCard({
           {(paper.citationCountKnown || paper.citationCount > 0) && (
             <>
               <span className="pc-meta-dot">·</span>
-              <span className="pc-citations" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                {paper.citationCount} Citas
-              </span>
+              {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
+                <a
+                  className="pc-citations"
+                  style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
+                  href={paper.scopusCitedByUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(event) => event.stopPropagation()}
+                  aria-label={`${paper.citationCount} citas en Scopus`}
+                >
+                  {paper.citationCount} Citas en Scopus
+                </a>
+              ) : (
+                <span className="pc-citations" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  {paper.citationCount} Citas
+                </span>
+              )}
             </>
           )}
         </div>

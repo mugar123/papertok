@@ -826,6 +826,15 @@
   font-weight: 700;
 }
 
+.eli-citations--link {
+  text-decoration: none;
+}
+
+.eli-citations--link:hover {
+  color: #ddd6fe;
+  text-decoration: underline;
+}
+
 .eli-title {
   margin: 0 0 8px 0;
   font-size: 1.15rem;

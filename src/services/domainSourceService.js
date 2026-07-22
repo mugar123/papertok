@@ -1,5 +1,6 @@
 import { CATEGORIES } from '../data/categories.js';
 import { PaperBuilder } from './PaperBuilder.js';
+import { isScopusEnabled, ScopusAdapter } from './adapters/ScopusAdapter.js';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -304,6 +305,7 @@ export function getDomainSourcePlan(categories = []) {
   return {
     biology,
     engineering,
+    scopus: [...new Set([...biology, ...engineering])],
     biorxivCategory: biology.map(category => BIORXIV_CATEGORIES[category]).find(Boolean) || '',
     osti: engineering.filter(category => OSTI_CATEGORIES.has(category)),
     nasa: engineering.filter(category => NASA_CATEGORIES.has(category)),
@@ -315,6 +317,15 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
   const safePage = Math.max(1, Number(page) || 1);
   const safeLimit = Math.max(1, Math.min(10, Number(limit) || 8));
   const requests = [];
+
+  if (plan.scopus.length > 0 && isScopusEnabled()) {
+    const scopusAdapter = new ScopusAdapter();
+    requests.push(scopusAdapter.search(sourceQuery(plan.scopus.slice(0, 4)), safePage, {
+      internalCategories: plan.scopus,
+      limit: safeLimit,
+      sort: queryMode,
+    }).then(result => result.papers || []));
+  }
 
   if (plan.biorxivCategory) {
     requests.push(fetchJson('/sources/biorxiv', {

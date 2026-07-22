@@ -1,4 +1,5 @@
 import { buildOpenAlexTrendFilter, normalizeReportFilters } from '../src/services/openAlexReportQuery.js';
+import { buildScopusSearchQuery } from '../src/services/scopusQuery.js';
 import { AIExplanationError, checkAIProviderHealth, handleAIExplanation } from './ai-explanation.js';
 
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -16,6 +17,7 @@ const SOURCE_CACHE_SECONDS = {
   core: 6 * 60 * 60,
   osti: 60 * 60,
   nasa: 60 * 60,
+  scopus: 6 * 60 * 60,
 };
 const ARXIV_PARAMS = ['search_query', 'id_list', 'start', 'max_results', 'sortBy', 'sortOrder'];
 
@@ -349,12 +351,73 @@ async function handleNasa(request, env) {
   });
 }
 
+async function handleScopus(request, env) {
+  const context = sourceRequestContext(request, env);
+  if (context.error) return context.error;
+  if (!env.ELSEVIER_API_KEY) {
+    return json({ error: 'Scopus is not configured', code: 'SCOPUS_NOT_CONFIGURED' }, 503, corsHeaders(context.origin, env));
+  }
+
+  const author = safeSourceQuery(context.requestUrl.searchParams.get('author'));
+  const terms = String(context.requestUrl.searchParams.get('terms') || '')
+    .split('|')
+    .map(safeSourceQuery)
+    .filter(Boolean)
+    .slice(0, 4);
+  const query = buildScopusSearchQuery({ terms, author });
+  if (!query) return json({ error: 'Missing Scopus query' }, 400, corsHeaders(context.origin, env));
+
+  return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.scopus, async () => {
+    const url = new URL('https://api.elsevier.com/content/search/scopus');
+    url.searchParams.set('query', query);
+    url.searchParams.set('start', String((context.page - 1) * context.limit));
+    url.searchParams.set('count', String(context.limit));
+    url.searchParams.set('view', 'COMPLETE');
+
+    const headers = {
+      accept: 'application/json',
+      'X-ELS-APIKey': env.ELSEVIER_API_KEY,
+      'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
+    };
+    if (env.ELSEVIER_INST_TOKEN) headers['X-ELS-Insttoken'] = env.ELSEVIER_INST_TOKEN;
+
+    let response = await fetch(url, { headers });
+    let selectedView = 'COMPLETE';
+    if (!response.ok && [400, 403, 406, 500].includes(response.status)) {
+      url.searchParams.set('view', 'STANDARD');
+      response = await fetch(url, { headers });
+      selectedView = 'STANDARD';
+    }
+    if (!response.ok) {
+      const error = new Error(`Scopus error: ${response.status}`);
+      error.status = response.status;
+      error.resetAt = response.headers.get('X-RateLimit-Reset') || null;
+      throw error;
+    }
+
+    const data = await response.json();
+    return {
+      ...data,
+      _papertok: {
+        source: 'scopus',
+        view: selectedView,
+        quota: {
+          limit: Number(response.headers.get('X-RateLimit-Limit')) || null,
+          remaining: Number(response.headers.get('X-RateLimit-Remaining')) || null,
+          resetAt: response.headers.get('X-RateLimit-Reset') || null,
+        },
+      },
+    };
+  });
+}
+
 const DOMAIN_SOURCE_HANDLERS = {
   '/sources/biorxiv': handleBioRxiv,
   '/sources/europepmc': handleEuropePmc,
   '/sources/core': handleCore,
   '/sources/osti': handleOsti,
   '/sources/nasa': handleNasa,
+  '/sources/scopus': handleScopus,
 };
 
 export default {
@@ -399,6 +462,7 @@ export default {
         ok: true,
         aiConfigured: Boolean(env.GEMINI_API_KEY),
         openAlexConfigured: Boolean(env.OPENALEX_API_KEY),
+        scopusConfigured: Boolean(env.ELSEVIER_API_KEY),
       }, 200, corsHeaders(origin, env));
     }
     if (url.pathname === '/health/ai') {
@@ -442,7 +506,13 @@ export default {
         return await DOMAIN_SOURCE_HANDLERS[url.pathname](request, env);
       } catch (error) {
         console.error(`Specialist source failed: ${url.pathname}`, error);
-        return json({ error: 'Specialist source unavailable' }, 502, corsHeaders(origin, env));
+        const isScopus = url.pathname === '/sources/scopus';
+        const status = isScopus && error.status === 429 ? 429 : 502;
+        return json({
+          error: isScopus ? 'Scopus unavailable' : 'Specialist source unavailable',
+          ...(isScopus && error.status ? { upstreamStatus: error.status } : {}),
+          ...(isScopus && error.resetAt ? { resetAt: error.resetAt } : {}),
+        }, status, corsHeaders(origin, env));
       }
     }
     return json({ error: 'Not found' }, 404, corsHeaders(origin, env));

@@ -13,6 +13,7 @@ test('routes biology and engineering categories only to relevant specialist sour
   const plan = getDomainSourcePlan(['bio.cell', 'mech.aero', 'chemeng.energy', 'physics.optics']);
   assert.deepEqual(plan.biology, ['bio.cell']);
   assert.deepEqual(plan.engineering, ['mech.aero', 'chemeng.energy']);
+  assert.deepEqual(plan.scopus, ['bio.cell', 'mech.aero', 'chemeng.energy']);
   assert.equal(plan.biorxivCategory, 'cell biology');
   assert.deepEqual(plan.osti, ['chemeng.energy']);
   assert.deepEqual(plan.nasa, ['mech.aero']);
