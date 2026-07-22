@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { canExplainPaper, hasUsableAbstract, serializePaperForExplanation } from './aiExplanationService.js';
+import {
+  canExplainPaper,
+  formatAIModelLabel,
+  hasUsableAbstract,
+  serializePaperForExplanation,
+} from './aiExplanationService.js';
 
 test('serializes only the scientific fields required by the AI backend', () => {
   const result = serializePaperForExplanation({
@@ -43,4 +48,9 @@ test('keeps AI explanations for papers with an abstract or open full text', () =
   assert.equal(canExplainPaper({ openAccess: false, abstract: 'A real abstract.' }), true);
   assert.equal(canExplainPaper({ openAccess: true, abstract: 'Resumen no disponible.', pdfUrl: 'https://arxiv.org/pdf/2607.12345' }), true);
   assert.equal(canExplainPaper({ openAccess: true, abstract: 'Resumen no disponible.', pdfUrl: 'https://example.org/open.pdf' }), false);
+});
+
+test('formats the configured AI model for the explanation metadata', () => {
+  assert.equal(formatAIModelLabel('gemini-3.5-flash'), 'Gemini 3.5 Flash');
+  assert.equal(formatAIModelLabel(''), 'Modelo de IA');
 });

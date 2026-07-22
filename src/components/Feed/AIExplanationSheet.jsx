@@ -5,6 +5,7 @@ import {
   BookOpen,
   BrainCircuit,
   CheckCircle2,
+  Cpu,
   FileCheck2,
   FileText,
   FlaskConical,
@@ -18,6 +19,7 @@ import {
 import {
   AI_EXPLANATION_LEVELS,
   explainPaper,
+  formatAIModelLabel,
 } from '../../services/aiExplanationService.js';
 import ScientificText from '../ScientificText';
 import { normalizeAIExplanationMath } from '../../utils/aiExplanationMath.js';
@@ -62,6 +64,9 @@ function TextBlock({ children }) {
 
 function ExplanationContent({ result }) {
   const explanation = result.explanation || {};
+  const remainingUses = Number.isFinite(Number(result.remainingUses))
+    ? Math.max(0, Number(result.remainingUses))
+    : null;
   return (
     <motion.div
       className="ai-explanation-result"
@@ -69,9 +74,19 @@ function ExplanationContent({ result }) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
     >
-      <div className={`ai-explanation-source ai-explanation-source--${result.sourceBasis}`}>
-        {result.sourceBasis === 'full_text' ? <FileCheck2 size={15} /> : <FileText size={15} />}
-        <span>{result.sourceBasis === 'full_text' ? 'Basado en el paper completo' : 'Basado en el abstract'}</span>
+      <div className="ai-explanation-context">
+        <div className={`ai-explanation-source ai-explanation-source--${result.sourceBasis}`}>
+          {result.sourceBasis === 'full_text' ? <FileCheck2 size={15} /> : <FileText size={15} />}
+          <span>{result.sourceBasis === 'full_text' ? 'Basado en el paper completo' : 'Basado en el abstract'}</span>
+        </div>
+        <div className="ai-explanation-model" title={result.model || undefined}>
+          <Cpu size={14} />
+          <span>{formatAIModelLabel(result.model)}</span>
+          <span className="ai-explanation-model-separator" aria-hidden="true">·</span>
+          <span>{remainingUses === null
+            ? result.cached ? 'Resultado guardado' : 'Cupo no disponible'
+            : `${remainingUses} ${remainingUses === 1 ? 'uso hoy' : 'usos hoy'}`}</span>
+        </div>
       </div>
 
       {SECTIONS.map(({ key, label, Icon }) => explanation[key] && (

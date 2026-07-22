@@ -46,6 +46,22 @@ export function canExplainPaper(paper) {
   return hasUsableAbstract(paper) || Boolean(getOpenPdfUrl(paper));
 }
 
+export function formatAIModelLabel(model) {
+  const value = cleanText(model, 100);
+  if (!value) return 'Modelo de IA';
+
+  if (!/^gemini[-\s]/i.test(value)) return value;
+
+  const version = value
+    .replace(/^gemini[-\s]*/i, '')
+    .split(/[-\s]+/)
+    .filter(Boolean)
+    .map(part => /^[a-z]+$/i.test(part) ? `${part.charAt(0).toUpperCase()}${part.slice(1).toLowerCase()}` : part)
+    .join(' ');
+
+  return version ? `Gemini ${version}` : 'Gemini';
+}
+
 export function serializePaperForExplanation(paper) {
   return {
     id: cleanText(paper?.id, 400),

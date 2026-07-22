@@ -208,21 +208,31 @@
 .ai-explanation-skeleton-lines span:nth-child(3) { width: 72%; }
 .ai-explanation-skeleton-lines span:nth-child(4) { width: 94%; }
 
-.ai-explanation-source {
+.ai-explanation-context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 18px;
+}
+
+.ai-explanation-source,
+.ai-explanation-model {
   width: fit-content;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 18px;
   padding: 6px 9px;
-  color: #c4b5fd;
-  background: rgba(124, 58, 237, 0.12);
   border: 1px solid rgba(167, 139, 250, 0.23);
   border-radius: 6px;
   font-size: 0.7rem;
   font-weight: 750;
 }
+.ai-explanation-source { color: #c4b5fd; background: rgba(124, 58, 237, 0.12); }
 .ai-explanation-source--full_text { color: #6ee7b7; background: rgba(16, 185, 129, 0.1); border-color: rgba(52, 211, 153, 0.22); }
+.ai-explanation-model { color: rgba(255, 255, 255, 0.72); background: rgba(255, 255, 255, 0.045); border-color: rgba(255, 255, 255, 0.11); }
+.ai-explanation-model svg { color: #a78bfa; }
+.ai-explanation-model-separator { color: rgba(255, 255, 255, 0.32); }
 
 .ai-explanation-result { display: grid; gap: 12px; }
 .ai-explanation-section {
