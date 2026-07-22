@@ -18,6 +18,23 @@ function matchesCategory(paper, areaId) {
   return categories.includes(areaId) || categories.some(category => areaCategories.includes(category));
 }
 
+export function getPaperCitationCount(paper) {
+  const candidates = [
+    paper?.citationCount,
+    paper?.citationsCount,
+    paper?.openAlex?.citationCount,
+    paper?.openAlex?.cited_by_count,
+  ];
+  const citationCount = candidates.find(value => Number.isFinite(Number(value)));
+  return Math.max(0, Number(citationCount) || 0);
+}
+
+export function hasKnownPaperCitationCount(paper) {
+  return paper?.citationCountKnown === true
+    || paper?.openAlex?.citationCountKnown === true
+    || getPaperCitationCount(paper) > 0;
+}
+
 export function filterAndSortEntityPapers(papers, { searchQuery = '', filters = {}, sortBy = '' } = {}) {
   const query = searchQuery.trim().toLowerCase();
   const now = new Date();
@@ -46,8 +63,8 @@ export function filterAndSortEntityPapers(papers, { searchQuery = '', filters = 
   return [...filtered].sort((a, b) => {
     if (sortBy === 'publication_date:desc') return getPaperTimestamp(b) - getPaperTimestamp(a);
     if (sortBy === 'cited_by_count:desc') {
-      const citationsA = a.citationCount ?? a.citationsCount ?? a.openAlex?.cited_by_count ?? 0;
-      const citationsB = b.citationCount ?? b.citationsCount ?? b.openAlex?.cited_by_count ?? 0;
+      const citationsA = getPaperCitationCount(a);
+      const citationsB = getPaperCitationCount(b);
       return citationsB - citationsA;
     }
     return 0;

@@ -8,7 +8,12 @@ import { ElsevierAdapter, OpenAlexAdapter, PubmedAdapter } from '../../services/
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { PaperBuilder } from '../../services/PaperBuilder';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService';
-import { filterAndSortEntityPapers, pinSourcePaper } from '../../utils/entityExplorer';
+import {
+  filterAndSortEntityPapers,
+  getPaperCitationCount,
+  hasKnownPaperCitationCount,
+  pinSourcePaper,
+} from '../../utils/entityExplorer';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
 import { useFollowing } from '../../context/FollowingContext';
@@ -601,8 +606,8 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab]);
 
   const filteredPapers = useMemo(() => {
-    return papers;
-  }, [papers]);
+    return filterAndSortEntityPapers(papers, { sortBy });
+  }, [papers, sortBy]);
 
   const handleShare = () => {
     if (navigator.share) {
@@ -1361,7 +1366,15 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                 >
                   <div className="eli-header">
                     <span className="eli-cat">{paper.categories && paper.categories.length > 0 ? paper.categories[0] : 'Paper'}</span>
-                    <span className="eli-date">{paper.year}</span>
+                    <div className="eli-metrics">
+                      {hasKnownPaperCitationCount(paper) && (
+                        <span className="eli-citations">
+                          <Award size={13} />
+                          {getPaperCitationCount(paper).toLocaleString()} citas
+                        </span>
+                      )}
+                      <span className="eli-date">{paper.year}</span>
+                    </div>
                   </div>
                   <h3 className="eli-title">
                     <ScientificText>{paper.title}</ScientificText>

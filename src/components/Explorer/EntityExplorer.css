@@ -809,6 +809,23 @@
   gap: 4px;
 }
 
+.eli-metrics {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.eli-citations {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #c4b5fd;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .eli-title {
   margin: 0 0 8px 0;
   font-size: 1.15rem;

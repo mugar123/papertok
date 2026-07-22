@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { filterAndSortEntityPapers, pinSourcePaper } from './entityExplorer.js';
+import {
+  filterAndSortEntityPapers,
+  getPaperCitationCount,
+  hasKnownPaperCitationCount,
+  pinSourcePaper,
+} from './entityExplorer.js';
 
 const papers = [
   {
@@ -47,6 +52,22 @@ test('sorts accumulated project papers by citations or publication date', () => 
     filterAndSortEntityPapers(papers, { sortBy: 'publication_date:desc' }).map(p => p.id),
     ['recent-cs', 'older-physics']
   );
+});
+
+test('sorts and displays citations from every supported metadata shape', () => {
+  const mixedPapers = [
+    { id: 'nested', openAlex: { citationCount: 120, citationCountKnown: true } },
+    { id: 'legacy', citationsCount: 40 },
+    { id: 'unknown', citationCount: 0, citationCountKnown: false },
+  ];
+
+  assert.deepEqual(
+    filterAndSortEntityPapers(mixedPapers, { sortBy: 'cited_by_count:desc' }).map(paper => paper.id),
+    ['nested', 'legacy', 'unknown'],
+  );
+  assert.equal(getPaperCitationCount(mixedPapers[0]), 120);
+  assert.equal(hasKnownPaperCitationCount(mixedPapers[0]), true);
+  assert.equal(hasKnownPaperCitationCount(mixedPapers[2]), false);
 });
 
 test('keeps the source paper first after project sorting and pagination', () => {
