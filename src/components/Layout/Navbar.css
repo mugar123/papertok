@@ -104,6 +104,33 @@
   color: #fff;
 }
 
+.navbar-action-btn.active {
+  color: #fff;
+  background: rgba(139, 92, 246, 0.18);
+}
+
+.navbar-inbox-btn {
+  position: relative;
+}
+
+.navbar-inbox-count {
+  position: absolute;
+  top: -2px;
+  right: -4px;
+  display: grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 2px solid #17171c;
+  border-radius: 9px;
+  background: var(--accent-primary);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+
 .navbar-action-btn.spinning svg {
   animation: spin 1s linear infinite;
 }

@@ -2,13 +2,15 @@ import { useState, useRef, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
-import { LogOut, Settings2, RotateCw, Search } from 'lucide-react';
+import { useFollowingUpdates } from '../../context/FollowingUpdatesContext';
+import { Inbox, LogOut, Settings2, RotateCw, Search } from 'lucide-react';
 import EditInterestsModal from '../Settings/EditInterestsModal';
 import './Navbar.css';
 
 export default function Navbar() {
   const { user, signOut } = useAuth();
   const { feedMode, setFeedMode, refreshFeed, isRefreshing } = useFeed();
+  const { unreadCount } = useFollowingUpdates();
   const navigate = useNavigate();
   const location = useLocation();
   const [showDropdown, setShowDropdown] = useState(false);
@@ -49,6 +51,7 @@ export default function Navbar() {
   const isReportActive = location.pathname === '/report';
   const isListsActive = location.pathname === '/lists';
   const isHomeActive = location.pathname === '/';
+  const isFollowingActive = location.pathname === '/following';
 
   let sliderTransform = 'translateX(0)';
   if (isReportActive) {
@@ -110,6 +113,15 @@ export default function Navbar() {
         </div>
 
         <div className="navbar-right">
+          <button
+            className={`navbar-action-btn navbar-inbox-btn ${isFollowingActive ? 'active' : ''}`}
+            onClick={() => navigate('/following')}
+            title="Novedades seguidas"
+            aria-label={unreadCount ? `Novedades seguidas, ${unreadCount} sin ver` : 'Novedades seguidas'}
+          >
+            <Inbox size={20} />
+            {unreadCount > 0 && <span className="navbar-inbox-count">{unreadCount > 99 ? '99+' : unreadCount}</span>}
+          </button>
           <button 
             className="navbar-action-btn"
             onClick={() => navigate('/search')}

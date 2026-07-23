@@ -5,6 +5,7 @@ import PageTransition from './components/Layout/PageTransition'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { FeedProvider } from './context/FeedContext'
 import { FollowingProvider } from './context/FollowingContext'
+import { FollowingUpdatesProvider } from './context/FollowingUpdatesContext'
 import LoginPage from './components/Auth/LoginPage'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import OnboardingFlow from './components/Onboarding/OnboardingFlow'
@@ -16,6 +17,7 @@ import SaveToListModal from './components/Lists/SaveToListModal'
 import SearchPage from './components/Search/SearchPage'
 import EntityExplorer from './components/Explorer/EntityExplorer'
 import ScientificReport from './components/Report/ScientificReport'
+import FollowingUpdatesPage from './components/Following/FollowingUpdatesPage'
 import './App.css'
 
 function AppContent() {
@@ -81,6 +83,17 @@ function AppContent() {
             }
           />
           <Route
+            path="/following"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <Navbar />
+                  <FollowingUpdatesPage onOpenPdf={setPdfPaper} />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/search"
             element={
               <ProtectedRoute>
@@ -118,7 +131,9 @@ function UserScopedAppContent() {
   const { user } = useAuth()
   return (
     <FollowingProvider key={user?.uid || 'signed-out'}>
-      <AppContent />
+      <FollowingUpdatesProvider>
+        <AppContent />
+      </FollowingUpdatesProvider>
     </FollowingProvider>
   )
 }
