@@ -45,6 +45,21 @@ const NASA_CATEGORIES = new Set([
   'mech.acoustics',
 ]);
 
+const INSPIRE_PHYSICS_CATEGORIES = new Set([
+  'hep-th',
+  'hep-ph',
+  'hep-ex',
+  'hep-lat',
+  'gr-qc',
+  'nucl-th',
+  'nucl-ex',
+  'astro-ph.HE',
+]);
+
+function isPhysicsCategory(categoryId) {
+  return /^(?:astro-ph(?:\.|$)|cond-mat(?:\.|$)|gr-qc$|hep-|math-ph$|nucl-|physics\.|quant-ph$|nlin\.)/i.test(categoryId);
+}
+
 function normalizeText(value) {
   return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
 }
@@ -277,6 +292,117 @@ export function mapNasaRecord(raw, requestedCategories = []) {
   return withRequestedCategory(paper, requestedCategories, terms.join(' '));
 }
 
+function extractAdsArxivId(raw) {
+  const identifiers = Array.isArray(raw?.identifier) ? raw.identifier : [raw?.identifier];
+  for (const value of identifiers) {
+    const match = String(value || '').match(/(?:arxiv:|arxiv\.org\/(?:abs|pdf)\/)(\d{4}\.\d{4,5}|[a-z][a-z.-]+\/\d{7})(?:v\d+)?/i);
+    if (match) return match[1];
+  }
+  return '';
+}
+
+export function mapAdsPaper(raw, requestedCategories = []) {
+  const bibcode = normalizeText(raw?.bibcode);
+  const title = normalizeText(Array.isArray(raw?.title) ? raw.title[0] : raw?.title);
+  if (!bibcode || !title) return null;
+  const doi = normalizeDoi(Array.isArray(raw.doi) ? raw.doi[0] : raw.doi);
+  const arxivId = extractAdsArxivId(raw);
+  const properties = (raw.property || []).map(value => String(value).toUpperCase());
+  const terms = [...new Set([
+    ...(raw.keyword || []),
+    ...(raw.arxiv_class || []),
+  ].map(normalizeText).filter(Boolean))].slice(0, 12);
+  const refereed = properties.includes('REFEREED');
+  const isPreprint = String(raw.doctype || '').toLowerCase() === 'eprint' && !refereed;
+  const openAccess = Boolean(arxivId)
+    || properties.some(value => value.includes('OPENACCESS'))
+    || (raw.esources || []).some(value => /eprint_pdf|openaccess/i.test(value));
+  const citationCount = Number(raw.citation_count);
+  const published = normalizeText(raw.pubdate) || `${Number(raw.year) || new Date().getUTCFullYear()}-01-01`;
+  const paper = PaperBuilder.create({
+    id: `ads:${bibcode}`,
+    doi: doi || undefined,
+    arxivId: arxivId || undefined,
+    adsBibcode: bibcode,
+    adsUrl: `https://ui.adsabs.harvard.edu/abs/${encodeURIComponent(bibcode)}/abstract`,
+    sources: { primary: 'nasa-ads', enrichedBy: [] },
+    title,
+    abstract: normalizeText(raw.abstract),
+    authors: authorObjects(raw.author),
+    year: Number(raw.year) || safeYear(published),
+    published,
+    journal: normalizeText(raw.pub),
+    publicationType: isPreprint ? 'preprint' : normalizeText(raw.doctype) || 'article',
+    publicationStatus: isPreprint ? 'preprint' : 'published',
+    peerReviewed: refereed,
+    openAccess,
+    pdfUrl: arxivId ? `https://arxiv.org/pdf/${arxivId}` : undefined,
+    landingPageUrl: `https://ui.adsabs.harvard.edu/abs/${encodeURIComponent(bibcode)}/abstract`,
+    citationCount: Number.isFinite(citationCount) ? citationCount : 0,
+    citationCountKnown: Number.isFinite(citationCount),
+    referenceCount: Number(raw.reference_count) || (Array.isArray(raw.reference) ? raw.reference.length : 0),
+    concepts: terms.map((term, index) => ({ id: `ads:${bibcode}:term:${index}`, display_name: term, level: 2 })),
+    categories: terms,
+    keywords: terms,
+    hasReferences: (Number(raw.reference_count) || raw.reference?.length || 0) > 0,
+    hasData: Boolean(raw.has_data || (Array.isArray(raw.data) && raw.data.length > 0)),
+    provider: 'nasa-ads',
+  });
+  return withRequestedCategory(paper, requestedCategories, terms.join(' '));
+}
+
+export function mapInspirePaper(hit, requestedCategories = []) {
+  const raw = hit?.metadata || hit;
+  const controlNumber = String(raw?.control_number || hit?.id || '').trim();
+  const title = normalizeText(raw?.titles?.[0]?.title || raw?.title);
+  if (!controlNumber || !title) return null;
+  const doi = normalizeDoi(raw.dois?.[0]?.value || raw.doi);
+  const arxivId = normalizeText(raw.arxiv_eprints?.[0]?.value).replace(/v\d+$/i, '');
+  const documentTypes = (raw.document_type || []).map(value => String(value).toLowerCase());
+  const journal = normalizeText(raw.publication_info?.[0]?.journal_title);
+  const isPublished = Boolean(journal || doi) && !documentTypes.includes('thesis');
+  const documents = Array.isArray(raw.documents) ? raw.documents : [];
+  const pdfUrl = safeUrl(documents.find(document => /pdf/i.test(document?.key || document?.url || ''))?.url);
+  const terms = [...new Set([
+    ...(raw.keywords || []).map(keyword => keyword?.value || keyword),
+    ...(raw.inspire_categories || []).map(category => category?.term || category),
+    ...(Array.isArray(raw.primary_arxiv_category)
+      ? raw.primary_arxiv_category
+      : [raw.primary_arxiv_category?.value]),
+  ].map(normalizeText).filter(Boolean))].slice(0, 12);
+  const citationCount = Number(raw.citation_count);
+  const published = normalizeText(raw.earliest_date || raw.imprints?.[0]?.date || raw.publication_info?.[0]?.year);
+  const paper = PaperBuilder.create({
+    id: `inspire:${controlNumber}`,
+    doi: doi || undefined,
+    arxivId: arxivId || undefined,
+    inspireId: controlNumber,
+    inspireUrl: `https://inspirehep.net/literature/${encodeURIComponent(controlNumber)}`,
+    sources: { primary: 'inspire', enrichedBy: [] },
+    title,
+    abstract: normalizeText(raw.abstracts?.[0]?.value),
+    authors: authorObjects(raw.authors?.map(author => author?.full_name || author?.raw_name)),
+    year: Number(String(published).slice(0, 4)) || new Date().getUTCFullYear(),
+    published,
+    journal,
+    publicationType: documentTypes[0] || (isPublished ? 'article' : 'preprint'),
+    publicationStatus: isPublished ? 'published' : 'preprint',
+    peerReviewed: isPublished,
+    openAccess: Boolean(pdfUrl || arxivId),
+    pdfUrl: pdfUrl || (arxivId ? `https://arxiv.org/pdf/${arxivId}` : undefined),
+    landingPageUrl: `https://inspirehep.net/literature/${encodeURIComponent(controlNumber)}`,
+    citationCount: Number.isFinite(citationCount) ? citationCount : 0,
+    citationCountKnown: Number.isFinite(citationCount),
+    referenceCount: Number(raw.reference_count) || (Array.isArray(raw.references) ? raw.references.length : 0),
+    concepts: terms.map((term, index) => ({ id: `inspire:${controlNumber}:term:${index}`, display_name: term, level: 2 })),
+    categories: terms,
+    keywords: terms,
+    hasReferences: (Number(raw.reference_count) || raw.references?.length || 0) > 0,
+    provider: 'inspire',
+  });
+  return withRequestedCategory(paper, requestedCategories, terms.join(' '));
+}
+
 async function fetchJson(path, params) {
   if (!PAPER_API_BASE) return null;
   const controller = new AbortController();
@@ -302,9 +428,12 @@ export function getDomainSourcePlan(categories = []) {
   const unique = [...new Set(categories)].filter(Boolean);
   const biology = unique.filter(category => category.startsWith('bio.'));
   const engineering = unique.filter(category => /^(?:eess|mech|civil|chemeng)\./.test(category));
+  const physics = unique.filter(isPhysicsCategory);
   return {
     biology,
     engineering,
+    physics,
+    inspirePhysics: physics.filter(category => INSPIRE_PHYSICS_CATEGORIES.has(category)),
     scopus: [...new Set([...biology, ...engineering])],
     biorxivCategory: biology.map(category => BIORXIV_CATEGORIES[category]).find(Boolean) || '',
     osti: engineering.filter(category => OSTI_CATEGORIES.has(category)),
@@ -368,6 +497,23 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
       limit: Math.min(6, safeLimit),
       sort: queryMode,
     }).then(data => (data?.results || []).map(item => mapNasaRecord(item, plan.nasa))));
+  }
+
+  if (plan.physics.length > 0) {
+    requests.push(fetchJson('/sources/physics', {
+      q: sourceQuery(plan.physics.slice(0, 4)),
+      fallback_q: plan.inspirePhysics.length > 0 ? sourceQuery(plan.inspirePhysics.slice(0, 4)) : '',
+      schema: 3,
+      page: safePage,
+      limit: safeLimit,
+      sort: queryMode,
+    }).then(data => {
+      const source = data?._papertok?.source;
+      if (source === 'nasa-ads') {
+        return (data?.response?.docs || []).map(item => mapAdsPaper(item, plan.physics));
+      }
+      return (data?.hits?.hits || []).map(item => mapInspirePaper(item, plan.physics));
+    }));
   }
 
   if (requests.length === 0) return [];

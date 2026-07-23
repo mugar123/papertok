@@ -9,6 +9,7 @@ npx wrangler secret put OPENCITATIONS_ACCESS_TOKEN # optional, recommended for p
 npx wrangler secret put UNPAYWALL_EMAIL
 npx wrangler secret put GEMINI_API_KEY
 npx wrangler secret put CORE_API_KEY # optional, raises CORE rate limits
+npx wrangler secret put NASA_ADS_API_TOKEN # optional; INSPIRE is used until configured
 npx wrangler deploy
 ```
 
@@ -18,7 +19,7 @@ After deployment, set the GitHub Actions repository variable `VITE_PAPER_API_BAS
 https://papertok-report-api.<account>.workers.dev
 ```
 
-Available routes are `/report/trends`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/ai/explain`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. The specialist-source routes validate, cache and proxy biology and engineering searches so the browser never depends on public CORS proxies. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback.
+Available routes are `/report/trends`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/ai/explain`, and `/health`. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. The specialist-source routes validate, cache and proxy biology, engineering and physics searches so the browser never depends on public CORS proxies. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback.
 
 The AI route requires a valid PaperTok Firebase ID token and keeps `GEMINI_API_KEY` exclusively in the Worker. It defaults to Gemini 3.5 Flash and can later switch provider through `AI_PROVIDER` without changing the frontend.
 

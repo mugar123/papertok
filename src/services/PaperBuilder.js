@@ -35,6 +35,10 @@ export class PaperBuilder {
       scopusUrl: data.scopusUrl || undefined,
       scopusCitedByUrl: data.scopusCitedByUrl || undefined,
       scopusCitationCount: data.scopusCitationCount ?? undefined,
+      adsBibcode: data.adsBibcode || undefined,
+      adsUrl: data.adsUrl || undefined,
+      inspireId: data.inspireId || undefined,
+      inspireUrl: data.inspireUrl || undefined,
       journal: data.journal || undefined,
       conference: data.conference || undefined,
       year: data.year || new Date().getFullYear(),
@@ -76,6 +80,7 @@ export class PaperBuilder {
       sourceType: data.sourceType || undefined,
       summary: data.summary || data.abstract || '',
       _followedEntityMatches: data._followedEntityMatches || [],
+      provider: data.provider || undefined,
     };
   }
 
@@ -117,6 +122,10 @@ export class PaperBuilder {
         merged.scopusCitationCount = enrichmentData.scopusCitationCount;
       }
     }
+    if (!merged.adsBibcode && enrichmentData.adsBibcode) merged.adsBibcode = enrichmentData.adsBibcode;
+    if (!merged.adsUrl && enrichmentData.adsUrl) merged.adsUrl = enrichmentData.adsUrl;
+    if (!merged.inspireId && enrichmentData.inspireId) merged.inspireId = enrichmentData.inspireId;
+    if (!merged.inspireUrl && enrichmentData.inspireUrl) merged.inspireUrl = enrichmentData.inspireUrl;
 
     // Merge string fields (prefer existing if they are solid, but enrichment might have better data like journal name)
     if (!merged.journal && enrichmentData.journal) merged.journal = enrichmentData.journal;
@@ -254,7 +263,7 @@ export class PaperBuilder {
         const existing = mergedMap.get(matchKey);
         // We use merge to combine the two. existing is the base, paper is the "enrichment"
         // We might want to prefer arXiv's PDF, but Elsevier's publication status
-        const merged = this.merge(existing, paper, paper.provider);
+        const merged = this.merge(existing, paper, paper.provider || paper.sources?.primary);
         for (const [key, value] of mergedMap.entries()) {
           if (value === existing) mergedMap.set(key, merged);
         }

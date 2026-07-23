@@ -5,6 +5,8 @@ import {
   mapBioRxivPaper,
   mapCoreWork,
   mapEuropePmcSearchResult,
+  mapAdsPaper,
+  mapInspirePaper,
   mapNasaRecord,
   mapOstiRecord,
 } from './domainSourceService.js';
@@ -13,10 +15,18 @@ test('routes biology and engineering categories only to relevant specialist sour
   const plan = getDomainSourcePlan(['bio.cell', 'mech.aero', 'chemeng.energy', 'physics.optics']);
   assert.deepEqual(plan.biology, ['bio.cell']);
   assert.deepEqual(plan.engineering, ['mech.aero', 'chemeng.energy']);
+  assert.deepEqual(plan.physics, ['physics.optics']);
+  assert.deepEqual(plan.inspirePhysics, []);
   assert.deepEqual(plan.scopus, ['bio.cell', 'mech.aero', 'chemeng.energy']);
   assert.equal(plan.biorxivCategory, 'cell biology');
   assert.deepEqual(plan.osti, ['chemeng.energy']);
   assert.deepEqual(plan.nasa, ['mech.aero']);
+});
+
+test('routes high-energy physics to the INSPIRE fallback while keeping all physics eligible for ADS', () => {
+  const plan = getDomainSourcePlan(['hep-ph', 'astro-ph.CO', 'cs.AI']);
+  assert.deepEqual(plan.physics, ['hep-ph', 'astro-ph.CO']);
+  assert.deepEqual(plan.inspirePhysics, ['hep-ph']);
 });
 
 test('maps a bioRxiv preprint without losing its selected PaperTok category', () => {
@@ -74,4 +84,62 @@ test('maps CORE, OSTI and NASA records to stable open paper records', () => {
   assert.equal(osti.openAccess, true);
   assert.equal(nasa.primaryCategory, 'mech.aero');
   assert.equal(nasa.pdfUrl, 'https://ntrs.nasa.gov/api/citations/3/downloads/paper.pdf');
+});
+
+test('maps NASA ADS records with citations, references and physics concepts', () => {
+  const paper = mapAdsPaper({
+    bibcode: '2026ApJ...123..456R',
+    title: ['A cosmology result'],
+    author: ['Researcher, Ada'],
+    abstract: 'A useful result.',
+    year: 2026,
+    pubdate: '2026-03-00',
+    doi: ['10.1000/ADS'],
+    identifier: ['arXiv:2601.12345'],
+    keyword: ['Cosmology'],
+    arxiv_class: ['astro-ph.CO'],
+    citation_count: 17,
+    reference: ['2020ApJ...111..222A'],
+    property: ['REFEREED', 'EPRINT_OPENACCESS'],
+    pub: 'The Astrophysical Journal',
+    doctype: 'article',
+  }, ['astro-ph.CO']);
+
+  assert.equal(paper.sources.primary, 'nasa-ads');
+  assert.equal(paper.primaryCategory, 'astro-ph.CO');
+  assert.equal(paper.arxivId, '2601.12345');
+  assert.equal(paper.doi, '10.1000/ads');
+  assert.equal(paper.citationCount, 17);
+  assert.equal(paper.referenceCount, 1);
+  assert.equal(paper.peerReviewed, true);
+  assert.equal(paper.openAccess, true);
+  assert.match(paper.adsUrl, /ui\.adsabs\.harvard\.edu/);
+});
+
+test('maps INSPIRE papers as a keyless high-energy physics fallback', () => {
+  const paper = mapInspirePaper({
+    id: '12345',
+    metadata: {
+      control_number: 12345,
+      titles: [{ title: 'A collider result' }],
+      abstracts: [{ value: 'A useful HEP result.' }],
+      authors: [{ full_name: 'Researcher, Ada' }],
+      arxiv_eprints: [{ value: '2602.12345' }],
+      dois: [{ value: '10.1000/HEP' }],
+      document_type: ['article'],
+      publication_info: [{ journal_title: 'Physical Review D', year: 2026 }],
+      keywords: [{ value: 'new physics' }],
+      inspire_categories: [{ term: 'Phenomenology-HEP' }],
+      primary_arxiv_category: ['hep-ph'],
+      citation_count: 8,
+      reference_count: 1,
+    },
+  }, ['hep-ph']);
+
+  assert.equal(paper.sources.primary, 'inspire');
+  assert.equal(paper.primaryCategory, 'hep-ph');
+  assert.equal(paper.citationCount, 8);
+  assert.equal(paper.citationCountKnown, true);
+  assert.equal(paper.publicationStatus, 'published');
+  assert.match(paper.inspireUrl, /inspirehep\.net\/literature\/12345/);
 });
