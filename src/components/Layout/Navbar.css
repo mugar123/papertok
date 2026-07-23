@@ -291,6 +291,20 @@
   }
 }
 
+@media (max-width: 420px) {
+  .navbar-center-pill {
+    width: 180px;
+  }
+
+  .navbar-tab {
+    font-size: 10px;
+  }
+
+  .navbar-right {
+    gap: 4px;
+  }
+}
+
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
