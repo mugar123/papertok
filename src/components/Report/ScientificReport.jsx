@@ -366,23 +366,18 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </div>
             {trendItems.length > 0 ? (
               <div className="sr-trend-list">
-                <AnimatePresence initial={false}>
-                  {trendItems.map((item, index) => (
-                    <motion.div
-                      className="sr-trend-item"
-                      key={`${trends.periods?.current?.fromStr || 'current'}-${item.id}`}
-                      title={`${item.currentCount} trabajos en el periodo actual y ${item.previousCount} en el anterior. Confianza ${item.confidence}.`}
-                      initial={{ opacity: 0, y: 12, scale: 0.985 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: -6, scale: 0.99 }}
-                      transition={{ duration: 0.32, delay: index * 0.055, ease: [0.16, 1, 0.3, 1] }}
-                    >
-                      <span className="sr-trend-name">{item.label}</span>
-                      <strong>+{item.changePercent}% de presencia</strong>
-                      <small>{item.currentCount} trabajos; antes {item.previousCount}</small>
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
+                {trendItems.map((item, index) => (
+                  <div
+                    className="sr-trend-item sr-trend-item--enter"
+                    key={`${trends.periods?.current?.fromStr || 'current'}-${item.id}`}
+                    style={{ '--trend-order': index }}
+                    title={`${item.currentCount} trabajos en el periodo actual y ${item.previousCount} en el anterior. Confianza ${item.confidence}.`}
+                  >
+                    <span className="sr-trend-name">{item.label}</span>
+                    <strong>+{item.changePercent}% de presencia</strong>
+                    <small>{item.currentCount} trabajos; antes {item.previousCount}</small>
+                  </div>
+                ))}
               </div>
             ) : (
               <p className="sr-trends-state">
