@@ -1,6 +1,13 @@
 import { buildOpenAlexTrendFilter, normalizeReportFilters } from '../src/services/openAlexReportQuery.js';
 import { buildScopusSearchQuery } from '../src/services/scopusQuery.js';
 import { AIExplanationError, checkAIProviderHealth, handleAIExplanation } from './ai-explanation.js';
+import {
+  deduplicateCitationGraphPapers,
+  extractCitationDoi,
+  extractCitationOpenAlexId,
+  normalizeCitationDoi,
+  normalizeCitationRows,
+} from '../src/utils/citationGraph.js';
 
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://mugar123.github.io',
@@ -9,6 +16,7 @@ const DEFAULT_ALLOWED_ORIGINS = [
 ];
 const CACHE_SECONDS = 6 * 60 * 60;
 const RELATED_CACHE_SECONDS = 24 * 60 * 60;
+const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const ARXIV_CACHE_SECONDS = 10 * 60;
 const SOURCE_CACHE_SECONDS = {
@@ -140,6 +148,288 @@ async function handleRelated(request, env) {
     const response = await fetch(url, { headers });
     if (!response.ok) throw new Error(`Semantic Scholar error: ${response.status}`);
     return response.json();
+  });
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, { ...options, signal: controller.signal });
+    if (!response.ok) throw new Error(`Upstream error: ${response.status}`);
+    return response.json();
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function addOpenAlexCredentials(url, env) {
+  url.searchParams.set('mailto', 'app@papertok.io');
+  if (env.OPENALEX_API_KEY) url.searchParams.set('api_key', env.OPENALEX_API_KEY);
+  return url;
+}
+
+async function fetchOpenAlexJsonWithFallback(url, env, timeoutMs) {
+  try {
+    return await fetchJsonWithTimeout(url, { headers: { accept: 'application/json' } }, timeoutMs);
+  } catch (error) {
+    if (!env.OPENALEX_API_KEY || !url.searchParams.has('api_key')) throw error;
+    const anonymousUrl = new URL(url);
+    anonymousUrl.searchParams.delete('api_key');
+    return fetchJsonWithTimeout(anonymousUrl, { headers: { accept: 'application/json' } }, timeoutMs);
+  }
+}
+
+function reconstructOpenAlexAbstract(invertedIndex) {
+  if (!invertedIndex || typeof invertedIndex !== 'object') return '';
+  return Object.entries(invertedIndex)
+    .flatMap(([word, positions]) => (Array.isArray(positions) ? positions : []).map(position => [position, word]))
+    .sort(([positionA], [positionB]) => positionA - positionB)
+    .map(([, word]) => word)
+    .join(' ');
+}
+
+function mapCitationGraphWork(work) {
+  if (!work?.id || !work?.title) return null;
+  const doi = normalizeCitationDoi(work.doi || work.ids?.doi);
+  const openAlexId = String(work.id).split('/').pop();
+  const bestLocation = work.best_oa_location || work.primary_location || {};
+  const publicationType = work.type || 'article';
+  const isPreprint = publicationType === 'preprint';
+  const abstract = reconstructOpenAlexAbstract(work.abstract_inverted_index);
+  return {
+    id: doi || `openalex:${openAlexId}`,
+    openAlexId,
+    sources: { primary: 'openalex', enrichedBy: ['opencitations'] },
+    title: work.title,
+    abstract: abstract ? abstract.slice(0, 4000) : 'Resumen no disponible.',
+    authors: (work.authorships || []).slice(0, 20).map(authorship => ({
+      id: String(authorship.author?.id || '').split('/').pop() || undefined,
+      name: authorship.author?.display_name || '',
+    })).filter(author => author.name),
+    doi: doi || undefined,
+    year: work.publication_year,
+    published: work.publication_date || (work.publication_year ? `${work.publication_year}-01-01` : ''),
+    journal: work.primary_location?.source?.display_name,
+    publicationType,
+    publicationStatus: isPreprint ? 'preprint' : 'published',
+    peerReviewed: !isPreprint,
+    openAccess: Boolean(work.open_access?.is_oa || bestLocation.pdf_url),
+    pdfUrl: bestLocation.pdf_url || undefined,
+    landingPageUrl: bestLocation.landing_page_url || (doi ? `https://doi.org/${doi}` : work.id),
+    citationCount: Number.isFinite(work.cited_by_count) ? work.cited_by_count : 0,
+    citationCountKnown: Number.isFinite(work.cited_by_count),
+    concepts: (work.concepts || []).filter(concept => (concept.score ?? 1) > 0).slice(0, 8),
+    topics: (work.topics || []).slice(0, 3),
+    primaryTopic: work.primary_topic || null,
+  };
+}
+
+function mapOpenCitationsMetaWork(work) {
+  const doi = extractCitationDoi(work?.id);
+  if (!doi || !work?.title) return null;
+  const openAlexId = extractCitationOpenAlexId(work.id);
+  const publicationType = String(work.type || 'article').toLowerCase().replace(/\s+/g, '-');
+  const authorNames = String(work.author || '').split(';').map(author => author
+    .replace(/\s*\[[^\]]*\]\s*$/, '')
+    .trim()).filter(Boolean);
+  const venue = String(work.venue || '').replace(/\s*\[[^\]]*\]\s*$/, '').trim();
+  const year = Number.parseInt(String(work.pub_date || '').slice(0, 4), 10);
+  return {
+    id: doi,
+    openAlexId: openAlexId || undefined,
+    sources: { primary: 'opencitations', enrichedBy: [] },
+    title: work.title,
+    abstract: 'Resumen no disponible.',
+    authors: authorNames.slice(0, 20).map(name => ({ name })),
+    doi,
+    year: Number.isFinite(year) ? year : undefined,
+    published: work.pub_date || '',
+    journal: venue || undefined,
+    publisher: String(work.publisher || '').replace(/\s*\[[^\]]*\]\s*$/, '').trim() || undefined,
+    publicationType,
+    publicationStatus: publicationType === 'preprint' ? 'preprint' : 'published',
+    peerReviewed: publicationType !== 'preprint',
+    openAccess: false,
+    landingPageUrl: `https://doi.org/${doi}`,
+    citationCount: 0,
+    citationCountKnown: false,
+  };
+}
+
+const CITATION_GRAPH_OPENALEX_SELECT = [
+  'id',
+  'doi',
+  'ids',
+  'title',
+  'abstract_inverted_index',
+  'authorships',
+  'publication_year',
+  'publication_date',
+  'type',
+  'primary_location',
+  'best_oa_location',
+  'open_access',
+  'cited_by_count',
+  'concepts',
+  'topics',
+  'primary_topic',
+].join(',');
+
+async function fetchOpenAlexCurrentWork(doi, env) {
+  const url = addOpenAlexCredentials(
+    new URL(`https://api.openalex.org/works/doi:${encodeURIComponent(doi)}`),
+    env,
+  );
+  url.searchParams.set('select', 'id,referenced_works,cited_by_count');
+  try {
+    return await fetchOpenAlexJsonWithFallback(url, env, 6500);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchOpenAlexWorksByFilter(filterName, values, env) {
+  const uniqueValues = [...new Set(values.filter(Boolean))].slice(0, 40);
+  const chunks = [];
+  for (let index = 0; index < uniqueValues.length; index += 20) {
+    chunks.push(uniqueValues.slice(index, index + 20));
+  }
+  const batches = await Promise.allSettled(chunks.map(async chunk => {
+    const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
+    url.searchParams.set('filter', `${filterName}:${chunk.join('|')}`);
+    url.searchParams.set('per-page', String(chunk.length));
+    url.searchParams.set('select', CITATION_GRAPH_OPENALEX_SELECT);
+    const payload = await fetchOpenAlexJsonWithFallback(url, env, 7500);
+    return payload?.results || [];
+  }));
+  return batches.flatMap(batch => batch.status === 'fulfilled' ? batch.value : []);
+}
+
+async function fetchOpenCitationsMetadata(connections, env) {
+  const dois = [...new Set(connections.map(item => item.doi).filter(Boolean))].slice(0, 16);
+  const chunks = [];
+  for (let index = 0; index < dois.length; index += 5) chunks.push(dois.slice(index, index + 5));
+  const headers = { accept: 'application/json' };
+  if (env.OPENCITATIONS_ACCESS_TOKEN) headers.authorization = env.OPENCITATIONS_ACCESS_TOKEN;
+  const batches = await Promise.allSettled(chunks.map(chunk => {
+    const ids = chunk.map(doi => `doi:${encodeURIComponent(doi)}`).join('__');
+    return fetchJsonWithTimeout(`https://api.opencitations.net/meta/v1/metadata/${ids}`, { headers }, 9000);
+  }));
+  return batches
+    .flatMap(batch => batch.status === 'fulfilled' ? batch.value : [])
+    .map(mapOpenCitationsMetaWork)
+    .filter(Boolean);
+}
+
+async function resolveCitationConnections(connections, env, limit, relation) {
+  const candidates = connections.slice(0, Math.min(40, limit * 5));
+  const openAlexIds = candidates.map(item => item.openAlexId).filter(Boolean);
+  const doisWithoutOpenAlexId = candidates.filter(item => !item.openAlexId).map(item => item.doi).filter(Boolean);
+  const [byId, byDoi] = await Promise.all([
+    fetchOpenAlexWorksByFilter('openalex_id', openAlexIds, env),
+    fetchOpenAlexWorksByFilter('doi', doisWithoutOpenAlexId, env),
+  ]);
+  let mapped = deduplicateCitationGraphPapers([...byId, ...byDoi].map(mapCitationGraphWork).filter(Boolean), 40);
+  if (mapped.length < limit) {
+    const metaFallback = await fetchOpenCitationsMetadata(candidates, env).catch(() => []);
+    mapped = deduplicateCitationGraphPapers([...mapped, ...metaFallback], 40);
+  }
+  mapped.sort((paperA, paperB) => {
+    if (relation === 'citation') {
+      return (paperB.year || 0) - (paperA.year || 0)
+        || (paperB.citationCount || 0) - (paperA.citationCount || 0);
+    }
+    return (paperB.citationCount || 0) - (paperA.citationCount || 0)
+      || (paperB.year || 0) - (paperA.year || 0);
+  });
+  return mapped.slice(0, limit);
+}
+
+async function fetchOpenAlexCitingWorks(openAlexId, env, limit) {
+  if (!openAlexId) return [];
+  const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
+  url.searchParams.set('filter', `cites:${openAlexId}`);
+  url.searchParams.set('sort', 'publication_date:desc');
+  url.searchParams.set('per-page', String(Math.min(40, limit * 4)));
+  url.searchParams.set('select', CITATION_GRAPH_OPENALEX_SELECT);
+  const payload = await fetchOpenAlexJsonWithFallback(url, env, 7500);
+  return deduplicateCitationGraphPapers(
+    (payload?.results || []).map(mapCitationGraphWork).filter(Boolean),
+    limit,
+  );
+}
+
+async function fetchOpenCitationsRows(doi, relation, env) {
+  const url = new URL(`https://api.opencitations.net/index/v2/${relation}/doi:${encodeURIComponent(doi)}`);
+  url.searchParams.set('format', 'json');
+  if (relation === 'citations') url.searchParams.set('sort', 'desc(creation)');
+  const headers = { accept: 'application/json' };
+  if (env.OPENCITATIONS_ACCESS_TOKEN) headers.authorization = env.OPENCITATIONS_ACCESS_TOKEN;
+  return fetchJsonWithTimeout(url, { headers }, 7500);
+}
+
+async function handleCitationGraph(request, env) {
+  const requestUrl = new URL(request.url);
+  const origin = request.headers.get('origin') || '';
+  if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+  const doi = normalizeCitationDoi(requestUrl.searchParams.get('doi'));
+  if (!/^10\.\d{4,9}\/.+/.test(doi) || doi.length > 300) {
+    return json({ error: 'Invalid DOI' }, 400, corsHeaders(origin, env));
+  }
+  const limit = getSafeLimit(requestUrl.searchParams.get('limit'), 8, 10);
+
+  return cacheResponse(request, origin, env, CITATION_GRAPH_CACHE_SECONDS, async () => {
+    const currentWork = await fetchOpenAlexCurrentWork(doi, env);
+    const currentOpenAlexId = String(currentWork?.id || '').split('/').pop();
+    const shouldUseOpenAlexForCitations = (currentWork?.cited_by_count || 0) > 300;
+    const [referenceResult, citationResult] = await Promise.allSettled([
+      fetchOpenCitationsRows(doi, 'references', env),
+      shouldUseOpenAlexForCitations
+        ? Promise.resolve([])
+        : fetchOpenCitationsRows(doi, 'citations', env),
+    ]);
+
+    let partial = referenceResult.status === 'rejected' || citationResult.status === 'rejected';
+    let referenceConnections = normalizeCitationRows(
+      referenceResult.status === 'fulfilled' ? referenceResult.value : [],
+      'reference',
+      doi,
+    );
+    let citationConnections = normalizeCitationRows(
+      citationResult.status === 'fulfilled' ? citationResult.value : [],
+      'citation',
+      doi,
+    );
+
+    if (!referenceConnections.length && currentWork?.referenced_works?.length) {
+      referenceConnections = currentWork.referenced_works.map(id => ({
+        openAlexId: String(id).split('/').pop(),
+        doi: '',
+        relation: 'reference',
+      }));
+      partial = true;
+    }
+
+    const references = await resolveCitationConnections(referenceConnections, env, limit, 'reference');
+    let citations;
+    if (shouldUseOpenAlexForCitations || !citationConnections.length) {
+      citations = await fetchOpenAlexCitingWorks(currentOpenAlexId, env, limit).catch(() => []);
+      if (shouldUseOpenAlexForCitations || citations.length) partial = true;
+    } else {
+      citations = await resolveCitationConnections(citationConnections, env, limit, 'citation');
+    }
+
+    return {
+      references,
+      citations,
+      counts: {
+        references: referenceConnections.length,
+        citations: Math.max(citationConnections.length, Number(currentWork?.cited_by_count) || 0),
+      },
+      source: partial ? 'opencitations+openalex' : 'opencitations',
+      partial,
+    };
   });
 }
 
@@ -493,6 +783,14 @@ export default {
         return await handleRelated(request, env);
       } catch {
         return json({ error: 'Related papers unavailable' }, 502, corsHeaders(origin, env));
+      }
+    }
+    if (url.pathname === '/citation-graph') {
+      try {
+        return await handleCitationGraph(request, env);
+      } catch (error) {
+        console.error('Citation graph failed', error);
+        return json({ error: 'Citation graph unavailable' }, 502, corsHeaders(origin, env));
       }
     }
     if (url.pathname === '/oa') {

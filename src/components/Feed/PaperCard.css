@@ -656,6 +656,130 @@
 .related-header > div { display: flex; align-items: center; gap: 9px; }
 .related-header h3 { margin: 0; font-size: 1rem; }
 .related-header button { border: 0; background: transparent; color: #fff; cursor: pointer; padding: 8px; }
+
+.related-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  margin: 10px 12px 0;
+  padding: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.related-mode-tabs button {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.58);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.related-mode-tabs button:hover:not(:disabled) { color: #fff; }
+.related-mode-tabs button:active:not(:disabled) { transform: scale(0.985); }
+.related-mode-tabs button.is-active {
+  background: rgba(139, 92, 246, 0.18);
+  color: #d9c9ff;
+  box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.24);
+}
+.related-mode-tabs button:disabled { cursor: default; opacity: 0.35; }
+
+.knowledge-path {
+  min-height: 104px;
+  display: grid;
+  grid-template-columns: minmax(92px, 1fr) minmax(16px, 0.28fr) minmax(126px, 1.3fr) minmax(16px, 0.28fr) minmax(92px, 1fr);
+  align-items: center;
+  padding: 12px 16px 10px;
+}
+
+.knowledge-path button,
+.knowledge-path-current {
+  min-width: 0;
+  min-height: 62px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  color: rgba(255, 255, 255, 0.72);
+  text-align: left;
+}
+
+.knowledge-path button {
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.knowledge-path button:hover,
+.knowledge-path button.is-active {
+  border-color: rgba(167, 139, 250, 0.5);
+  background: rgba(139, 92, 246, 0.14);
+  color: #fff;
+}
+
+.knowledge-path button:active { transform: scale(0.98); }
+.knowledge-path button > svg,
+.knowledge-path-current > svg { flex: 0 0 auto; color: #a78bfa; }
+.knowledge-path button > span,
+.knowledge-path-current > span { min-width: 0; display: grid; gap: 2px; }
+.knowledge-path strong { font-size: 0.83rem; line-height: 1.15; }
+.knowledge-path small {
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.48);
+  font-size: 0.68rem;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.knowledge-path-current {
+  border-color: rgba(96, 165, 250, 0.3);
+  background: rgba(59, 130, 246, 0.08);
+}
+
+.knowledge-path-line {
+  position: relative;
+  height: 1px;
+  background: rgba(167, 139, 250, 0.38);
+}
+
+.knowledge-path-line::after {
+  position: absolute;
+  top: 50%;
+  right: -1px;
+  width: 6px;
+  height: 6px;
+  border-top: 1px solid rgba(167, 139, 250, 0.58);
+  border-right: 1px solid rgba(167, 139, 250, 0.58);
+  content: '';
+  transform: translateY(-50%) rotate(45deg);
+}
+
+.knowledge-source {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 16px 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.36);
+  font-size: 0.66rem;
+}
+
 .related-list {
   overflow-y: auto;
   padding: 8px;
@@ -894,7 +1018,30 @@
   .related-item,
   .related-item > svg,
   .related-item::before,
-  .related-card-back { transition: none; }
+  .related-card-back,
+  .related-mode-tabs button,
+  .knowledge-path button { transition: none; }
+}
+
+@media (max-width: 520px) {
+  .related-sheet--graph { max-height: min(84vh, 720px); }
+  .knowledge-path {
+    grid-template-columns: minmax(76px, 1fr) 12px minmax(92px, 1.15fr) 12px minmax(76px, 1fr);
+    min-height: 94px;
+    padding: 10px 9px 8px;
+  }
+  .knowledge-path button,
+  .knowledge-path-current {
+    min-height: 58px;
+    gap: 6px;
+    padding: 7px;
+  }
+  .knowledge-path button > svg,
+  .knowledge-path-current > svg { width: 15px; height: 15px; }
+  .knowledge-path strong { font-size: 0.75rem; }
+  .knowledge-path small { font-size: 0.61rem; }
+  .knowledge-path-current small { display: none; }
+  .knowledge-source { padding-inline: 11px; }
 }
 
 .pc-read-btn--secondary:hover {
