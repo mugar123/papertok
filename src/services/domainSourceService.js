@@ -503,7 +503,7 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
     requests.push(fetchJson('/sources/physics', {
       q: sourceQuery(plan.physics.slice(0, 4)),
       fallback_q: plan.inspirePhysics.length > 0 ? sourceQuery(plan.inspirePhysics.slice(0, 4)) : '',
-      schema: 3,
+      schema: 4,
       page: safePage,
       limit: safeLimit,
       sort: queryMode,
