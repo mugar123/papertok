@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapWikipediaSearchResponse } from './wikiService.js';
+import { getEntityWikiInfo, mapWikipediaSearchResponse } from './wikiService.js';
 
 test('maps a Wikipedia search result in the requested language', () => {
   const result = mapWikipediaSearchResponse({
@@ -84,4 +84,45 @@ test('keeps an exact Wikipedia result for a free-text topic', () => {
   });
 
   assert.equal(result?.title, 'Theory of computation');
+});
+
+test('uses a localized canonical title for a major plural topic', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => { globalThis.fetch = originalFetch; });
+  const requestedSearches = [];
+  globalThis.fetch = async (url) => {
+    const requestUrl = new URL(url);
+    requestedSearches.push(requestUrl.searchParams.get('gsrsearch'));
+    const search = requestUrl.searchParams.get('gsrsearch');
+    return {
+      ok: true,
+      async json() {
+        return search === 'Black hole'
+          ? {
+              query: {
+                pages: {
+                  11: {
+                    index: 1,
+                    title: 'Black hole',
+                    extract: 'A black hole is a region of spacetime where gravity is extremely strong.',
+                    fullurl: 'https://en.wikipedia.org/wiki/Black_hole',
+                    thumbnail: { source: 'https://upload.wikimedia.org/black-hole.jpg' },
+                  },
+                },
+              },
+            }
+          : { query: { pages: {} } };
+      },
+    };
+  };
+
+  const result = await getEntityWikiInfo({
+    title: 'Black holes',
+    language: 'en',
+    strictTitleMatch: true,
+  });
+
+  assert.deepEqual(requestedSearches, ['Black holes', 'Black hole']);
+  assert.equal(result?.title, 'Black hole');
+  assert.equal(result?.thumbnail, 'https://upload.wikimedia.org/black-hole.jpg');
 });

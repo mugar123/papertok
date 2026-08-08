@@ -126,6 +126,21 @@
   gap: 18px;
 }
 
+.ehc-visual-slot {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex: 0 0 72px;
+}
+
+.ehc-visual-slot > .ehc-icon,
+.ehc-visual-slot > .ehc-wiki-image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
 .ehc-icon {
   width: 72px;
   height: 72px;
@@ -504,6 +519,45 @@
 .ehc-wiki p.expanded {
   max-height: var(--wiki-description-expanded-height, 72rem);
   opacity: 1;
+}
+
+.ehc-wiki.is-loading {
+  min-height: 92px;
+  display: flex;
+  align-items: center;
+}
+
+.ehc-wiki-skeleton {
+  width: 100%;
+  display: grid;
+  gap: 9px;
+  padding: 3px 0;
+}
+
+.ehc-wiki-skeleton span {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 9px;
+  overflow: hidden;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.ehc-wiki-skeleton span:nth-child(2) { width: 88%; }
+.ehc-wiki-skeleton span:nth-child(3) { width: 62%; }
+
+.ehc-wiki-skeleton span::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-105%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+  animation: entityWikiShimmer 1.25s ease-in-out infinite;
+}
+
+@keyframes entityWikiShimmer {
+  to { transform: translateX(105%); }
 }
 
 .ehc-wiki-toggle {
@@ -1453,10 +1507,12 @@
     font-size: 1.3rem;
   }
   
-  .ehc-icon, .ehc-wiki-image {
+  .ehc-icon, .ehc-wiki-image, .ehc-visual-slot {
     width: 60px;
     height: 60px;
   }
+
+  .ehc-visual-slot { flex-basis: 60px; }
 
   .ehc-ror-relations { max-width: calc(100vw - 108px); }
   
@@ -1730,6 +1786,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .ehc-wiki p,
+  .ehc-wiki-skeleton span::after,
   .ehc-wiki-toggle svg,
   .project-summary-box p,
   .project-summary-toggle svg,

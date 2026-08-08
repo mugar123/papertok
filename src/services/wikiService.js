@@ -1,5 +1,27 @@
 const entityWikiCache = new Map();
 
+const TOPIC_WIKI_ALIASES = new Map([
+  ['black hole', { en: 'Black hole', es: 'Agujero negro' }],
+  ['black holes', { en: 'Black hole', es: 'Agujero negro' }],
+  ['agujero negro', { en: 'Black hole', es: 'Agujero negro' }],
+  ['agujeros negros', { en: 'Black hole', es: 'Agujero negro' }],
+  ['neural networks', { en: 'Neural network', es: 'Red neuronal' }],
+  ['redes neuronales', { en: 'Neural network', es: 'Red neuronal' }],
+  ['gravitational waves', { en: 'Gravitational wave', es: 'Onda gravitacional' }],
+  ['ondas gravitacionales', { en: 'Gravitational wave', es: 'Onda gravitacional' }],
+  ['exoplanets', { en: 'Exoplanet', es: 'Exoplaneta' }],
+  ['exoplanetas', { en: 'Exoplanet', es: 'Exoplaneta' }],
+  ['superconductors', { en: 'Superconductivity', es: 'Superconductividad' }],
+  ['superconductores', { en: 'Superconductivity', es: 'Superconductividad' }],
+  ['large language models', { en: 'Large language model', es: 'Modelo de lenguaje de gran tamaño' }],
+  ['modelos de lenguaje grandes', { en: 'Large language model', es: 'Modelo de lenguaje de gran tamaño' }],
+  ['particle accelerators', { en: 'Particle accelerator', es: 'Acelerador de partículas' }],
+  ['aceleradores de particulas', { en: 'Particle accelerator', es: 'Acelerador de partículas' }],
+  ['quantum computers', { en: 'Quantum computing', es: 'Computación cuántica' }],
+  ['ordenadores cuanticos', { en: 'Quantum computing', es: 'Computación cuántica' }],
+  ['computadoras cuanticas', { en: 'Quantum computing', es: 'Computación cuántica' }],
+]);
+
 function normalizeWikiTitle(value = '') {
   return String(value).replace(/\s+/g, ' ').trim();
 }
@@ -11,6 +33,11 @@ function normalizeComparableWikiTitle(value = '') {
     .replace(/[^a-z0-9]+/gi, ' ')
     .trim()
     .toLowerCase();
+}
+
+function getTopicWikiAlias(value, language) {
+  const comparable = normalizeComparableWikiTitle(value);
+  return TOPIC_WIKI_ALIASES.get(comparable)?.[language === 'en' ? 'en' : 'es'] || '';
 }
 
 export function mapWikipediaSearchResponse(data, language = 'en', {
@@ -79,9 +106,14 @@ export async function getEntityWikiInfo({
   signal,
   strictTitleMatch = false,
 } = {}) {
-  const candidates = [...new Set([title, alternateTitle].map(normalizeWikiTitle).filter(Boolean))];
+  const requestedLanguage = language === 'en' ? 'en' : 'es';
+  const rawCandidates = [title, alternateTitle].map(normalizeWikiTitle).filter(Boolean);
+  const candidates = [...new Set([
+    ...rawCandidates,
+    ...rawCandidates.map(candidate => getTopicWikiAlias(candidate, requestedLanguage)).filter(Boolean),
+  ])];
   for (const candidate of candidates) {
-    const result = await searchWikipedia(candidate, language, signal, { strictTitleMatch });
+    const result = await searchWikipedia(candidate, requestedLanguage, signal, { strictTitleMatch });
     if (result) return result;
   }
   return null;

@@ -5,18 +5,18 @@ import { getUiErrorMessage } from '../../utils/errorMessages';
 import AnimatedAtom from '../Feed/AnimatedAtom';
 import '../Feed/FeedContainer.css';
 
-function InitialFeedLoading({ isEnglish }) {
+function InitialFeedLoading() {
   return (
-    <div className="feed-empty feed-empty--initial-loading" role="status" aria-live="polite" aria-busy="true">
+    <div
+      className="feed-empty feed-empty--initial-loading"
+      role="status"
+      aria-label="PaperTok"
+      aria-busy="true"
+    >
       <div className="atom-loader" aria-hidden="true">
         <AnimatedAtom size={80} strokeWidth={1} className="atom-loader-icon" />
       </div>
-      <h2>{isEnglish ? 'Searching for discoveries...' : 'Buscando descubrimientos...'}</h2>
-      <p>
-        {isEnglish
-          ? 'Connecting to scientific sources to bring you the latest research'
-          : 'Conectando con las fuentes para traer lo último en ciencia'}
-      </p>
+      <h2>PaperTok</h2>
     </div>
   );
 }
@@ -34,13 +34,13 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
 
   if (loading) {
     if (location.pathname === '/') {
-      return <InitialFeedLoading isEnglish={isEnglish} />;
+      return <InitialFeedLoading />;
     }
 
     return (
       <div className="loading-screen">
         <AnimatedAtom size={80} strokeWidth={1} className="loading-atom" />
-        <p className="loading-text">{isEnglish ? 'Loading...' : 'Cargando...'}</p>
+        <p className="loading-text" aria-hidden="true">PaperTok</p>
         <style>{`
           .loading-screen {
             display: flex;

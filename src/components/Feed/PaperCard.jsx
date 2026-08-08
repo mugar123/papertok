@@ -30,6 +30,7 @@ import {
   getRelatedTransitionDuration,
   RELATED_CARD_CLOSE_MS,
 } from '../../utils/relatedPaperTransition.js';
+import { hydrateCitationGraphPaper } from '../../services/citationGraphService.js';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -90,6 +91,7 @@ const PaperCard = memo(function PaperCard({
   const [showRelated, setShowRelated] = useState(false);
   const [showAIExplanation, setShowAIExplanation] = useState(false);
   const [selectedRelatedPaper, setSelectedRelatedPaper] = useState(null);
+  const [isHydratingRelatedPaper, setIsHydratingRelatedPaper] = useState(false);
   const [isClosingRelatedCard, setIsClosingRelatedCard] = useState(false);
   const [isResolvingAccess, setIsResolvingAccess] = useState(false);
   const [resolvedAccess, setResolvedAccess] = useState({ paperId: null, copy: null });
@@ -115,6 +117,7 @@ const PaperCard = memo(function PaperCard({
   const viewStartTime = useRef(null);
   const totalViewTime = useRef(0);
   const relatedCardClosingRef = useRef(false);
+  const relatedHydrationRef = useRef(0);
 
   useEffect(() => {
     if (!isCardVisible) {
@@ -128,7 +131,7 @@ const PaperCard = memo(function PaperCard({
 
   useEffect(() => {
     let active = true;
-    if (!isCardSettled || !paper?.doi || paper.openAccess || paper.pdfUrl || paper.openAccessPdfUrl) {
+    if (!isCardSettled || !paper?.doi || paper.openAccess || paper.pdfUrl || paper.openAccessPdfUrl || paper.citationMetadataResolved) {
       return () => { active = false; };
     }
 
@@ -137,7 +140,7 @@ const PaperCard = memo(function PaperCard({
     });
 
     return () => { active = false; };
-  }, [isCardSettled, paper?.doi, paper?.id, paper?.openAccess, paper?.openAccessPdfUrl, paper?.pdfUrl]);
+  }, [isCardSettled, paper?.citationMetadataResolved, paper?.doi, paper?.id, paper?.openAccess, paper?.openAccessPdfUrl, paper?.pdfUrl]);
 
   useEffect(() => {
     let active = true;
@@ -266,11 +269,19 @@ const PaperCard = memo(function PaperCard({
     setShowRelated(false);
   }, []);
 
-  const selectRelatedPaper = useCallback((relatedPaper) => {
+  const selectRelatedPaper = useCallback(async (relatedPaper) => {
+    const hydrationId = relatedHydrationRef.current + 1;
+    relatedHydrationRef.current = hydrationId;
     relatedCardClosingRef.current = false;
     setIsClosingRelatedCard(false);
     setShowRelated(false);
-    setSelectedRelatedPaper(relatedPaper);
+    setIsHydratingRelatedPaper(true);
+    try {
+      const hydratedPaper = await hydrateCitationGraphPaper(relatedPaper);
+      if (relatedHydrationRef.current === hydrationId) setSelectedRelatedPaper(hydratedPaper);
+    } finally {
+      if (relatedHydrationRef.current === hydrationId) setIsHydratingRelatedPaper(false);
+    }
   }, []);
 
   const handleMarkAsRead = (e) => {
@@ -974,6 +985,14 @@ const PaperCard = memo(function PaperCard({
         <AIExplanationSheet paper={aiExplanationPaper} onClose={() => setShowAIExplanation(false)} />,
         document.body,
         'papertok-ai-explanation',
+      )}
+      {isHydratingRelatedPaper && createPortal(
+        <div className="related-card-overlay related-card-overlay--loading" role="status" aria-live="polite" aria-busy="true">
+          <AnimatedAtom size={62} strokeWidth={1} className="related-card-loading-atom" />
+          <p>{isEnglish ? 'Preparing the paper…' : 'Preparando el paper…'}</p>
+        </div>,
+        document.body,
+        'papertok-related-card-loading',
       )}
       {selectedRelatedPaper && createPortal(
         <div

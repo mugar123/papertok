@@ -228,6 +228,12 @@ export default function AIExplanationSheet({ paper, onClose }) {
   const layoutTransition = prefersReducedMotion
     ? { duration: 0 }
     : { duration: 0.38, ease: [0.16, 1, 0.3, 1] };
+  const overlayTransition = prefersReducedMotion
+    ? { duration: 0 }
+    : { duration: isClosing ? 0.22 : 0.3, ease: isClosing ? [0.4, 0, 1, 1] : [0.16, 1, 0.3, 1] };
+  const sheetTransition = prefersReducedMotion
+    ? { duration: 0 }
+    : { duration: isClosing ? 0.24 : 0.44, ease: isClosing ? [0.4, 0, 1, 1] : [0.16, 1, 0.3, 1] };
   const levelLabel = useMemo(
     () => LEVEL_LABELS[level]?.[language] || '',
     [language, level],
@@ -237,8 +243,8 @@ export default function AIExplanationSheet({ paper, onClose }) {
     if (closingRef.current) return;
     closingRef.current = true;
     setIsClosing(true);
-    closeTimerRef.current = setTimeout(onClose, 240);
-  }, [onClose]);
+    closeTimerRef.current = setTimeout(onClose, prefersReducedMotion ? 0 : 250);
+  }, [onClose, prefersReducedMotion]);
 
   useEffect(() => {
     const handleKeyDown = event => {
@@ -278,9 +284,9 @@ export default function AIExplanationSheet({ paper, onClose }) {
   return (
     <motion.div
       className="ai-explanation-overlay"
-      initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-      animate={isClosing ? { opacity: 0, backdropFilter: 'blur(0px)' } : { opacity: 1, backdropFilter: 'blur(8px)' }}
-      transition={{ duration: isClosing ? 0.2 : 0.24, ease: isClosing ? 'easeIn' : 'easeOut' }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: isClosing ? 0 : 1 }}
+      transition={overlayTransition}
       onClick={requestClose}
     >
       <motion.div
@@ -288,11 +294,11 @@ export default function AIExplanationSheet({ paper, onClose }) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="ai-explanation-title"
-        initial={{ opacity: 0, y: 32, scale: 0.98 }}
-        animate={isClosing ? { opacity: 0, y: 28, scale: 0.985 } : { opacity: 1, y: 0, scale: 1 }}
-        transition={isClosing
-          ? { duration: 0.22, ease: [0.4, 0, 1, 1] }
-          : { type: 'spring', damping: 28, stiffness: 300 }}
+        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 46, scale: 0.972 }}
+        animate={isClosing
+          ? prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 26, scale: 0.986 }
+          : { opacity: 1, y: 0, scale: 1 }}
+        transition={sheetTransition}
         onClick={event => event.stopPropagation()}
       >
         <div className="ai-explanation-grabber" aria-hidden="true" />

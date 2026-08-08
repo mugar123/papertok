@@ -1065,6 +1065,32 @@
   will-change: transform, opacity;
 }
 
+.related-card-overlay--loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.related-card-overlay--loading p {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.related-card-loading-atom {
+  color: var(--accent-primary, #8b5cf6);
+  filter: drop-shadow(0 0 18px rgba(139, 92, 246, 0.45));
+  animation: relatedCardLoadingPulse 1.6s ease-in-out infinite alternate;
+}
+
+@keyframes relatedCardLoadingPulse {
+  from { opacity: 0.72; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1.04); }
+}
+
 .related-card-back {
   position: absolute;
   top: max(16px, env(safe-area-inset-top));
@@ -1172,6 +1198,7 @@
   .related-sheet,
   .related-item,
   .related-card-overlay,
+  .related-card-loading-atom,
   .related-skeleton {
     animation: none !important;
   }

@@ -88,6 +88,8 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
   const [wikiInfo, setWikiInfo] = useState(null);
+  const [settledWikiRequestKey, setSettledWikiRequestKey] = useState('');
+  const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState('');
   const [orcidInfo, setOrcidInfo] = useState(null);
   const [isLoadingOrcid, setIsLoadingOrcid] = useState(false);
 
@@ -143,8 +145,20 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
     ? entity?.institutionData || entity?.last_known_institutions?.[0] || (entity?.institution ? { display_name: entity.institution } : null)
     : null;
   const authorInstitutionDisplayName = getLocalizedInstitutionName(authorInstitution, language);
-  const wikiRequestKey = `${language}:${type}:${entityDisplayName}`;
+  const wikiRequestKey = `${entityReloadKey}:${language}:${type}:${entityDisplayName}`;
   const visibleWikiInfo = wikiInfo?._requestKey === wikiRequestKey ? wikiInfo : null;
+  const canLoadWikiInfo = Boolean(
+    entityDisplayName && ['institution', 'concept', 'topic', 'source'].includes(type),
+  );
+  const isWikiRequestPending = canLoadWikiInfo && settledWikiRequestKey !== wikiRequestKey;
+  const topicFallbackDescription = ['concept', 'topic'].includes(type)
+    ? localizedTopicEntity?.description
+      || (typeof entity?.description === 'string' ? entity.description : '')
+    : '';
+  const wikiDescription = visibleWikiInfo?.extract || topicFallbackDescription;
+  const hasLoadedWikiImage = Boolean(
+    visibleWikiInfo?.thumbnail && loadedWikiImageUrl === visibleWikiInfo.thumbnail,
+  );
   const getInteractionState = useCallback((paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
@@ -171,7 +185,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       window.cancelAnimationFrame(frame);
       window.removeEventListener('resize', measureExpandableDescriptions);
     };
-  }, [entity?.summary, measureExpandableDescriptions, visibleWikiInfo?.extract]);
+  }, [entity?.summary, measureExpandableDescriptions, wikiDescription]);
 
   useEffect(() => {
     if (!isProjectLinksMenuOpen) return undefined;
@@ -407,10 +421,11 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   }, [type, id, searchParams, entityReloadKey]);
 
   useEffect(() => {
-    if (!entityDisplayName || !['institution', 'concept', 'topic', 'source'].includes(type)) {
+    if (!canLoadWikiInfo) {
       return undefined;
     }
 
+    let isActive = true;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 5_000);
     const alternateTitle = language === 'en'
@@ -424,20 +439,23 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       signal: controller.signal,
       strictTitleMatch: Boolean(entity?._queryTopic),
     }).then(info => {
-      if (!controller.signal.aborted) {
+      if (isActive && !controller.signal.aborted) {
         setWikiInfo(info ? { ...info, _requestKey: wikiRequestKey } : null);
       }
     }).catch(error => {
       if (error?.name !== 'AbortError') console.error('Failed to fetch Wikipedia info', error);
     }).finally(() => {
       window.clearTimeout(timeout);
+      if (isActive) setSettledWikiRequestKey(wikiRequestKey);
     });
 
     return () => {
+      isActive = false;
       window.clearTimeout(timeout);
       controller.abort();
     };
   }, [
+    canLoadWikiInfo,
     entityDisplayName,
     entity?._queryTopic,
     language,
@@ -893,7 +911,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       {/* Immersive Hero */}
       <div className="explorer-hero">
         <AnimatePresence>
-          {visibleWikiInfo?.thumbnail && (
+          {hasLoadedWikiImage && (
             <motion.div 
               key="bg-blur"
               initial={{ opacity: 0 }}
@@ -921,29 +939,36 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
         
         <div className="explorer-hero-content">
           <div className="ehc-main">
-            <AnimatePresence mode="wait">
-              {visibleWikiInfo?.thumbnail ? (
-                <motion.div 
-                  key="wiki-image"
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.6 }}
-                  className="ehc-wiki-image"
-                >
-                  <img src={visibleWikiInfo.thumbnail} alt={entityDisplayName} />
-                </motion.div>
-              ) : (
-                <motion.div 
-                  key="icon"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0, scale: 0.9 }}
-                  className="ehc-icon"
-                >
-                  {renderIcon()}
-                </motion.div>
-              )}
-            </AnimatePresence>
+            <div className="ehc-visual-slot">
+              <motion.div
+                className="ehc-icon"
+                initial={false}
+                animate={{ opacity: hasLoadedWikiImage ? 0 : 1, scale: hasLoadedWikiImage ? 0.96 : 1 }}
+                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+                aria-hidden={hasLoadedWikiImage}
+              >
+                {renderIcon()}
+              </motion.div>
+              <AnimatePresence>
+                {visibleWikiInfo?.thumbnail && (
+                  <motion.div
+                    key={visibleWikiInfo.thumbnail}
+                    initial={{ opacity: 0, scale: 0.96 }}
+                    animate={{ opacity: hasLoadedWikiImage ? 1 : 0, scale: hasLoadedWikiImage ? 1 : 0.96 }}
+                    exit={{ opacity: 0, scale: 0.97 }}
+                    transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+                    className="ehc-wiki-image"
+                  >
+                    <img
+                      src={visibleWikiInfo.thumbnail}
+                      alt={entityDisplayName}
+                      onLoad={() => setLoadedWikiImageUrl(visibleWikiInfo.thumbnail)}
+                      onError={() => setLoadedWikiImageUrl('')}
+                    />
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
             <div className="ehc-info">
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                 <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName}</h1>
@@ -1254,24 +1279,39 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
           )}
           
           {/* Wikipedia or external info */}
-          <AnimatePresence>
-            {(visibleWikiInfo || entity?.homepage_url) && (
+          <AnimatePresence initial={false}>
+            {(wikiDescription || entity?.homepage_url || (isWikiRequestPending && ['concept', 'topic'].includes(type))) && (
               <motion.div 
                 layout
-                className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''}`}
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.8, ease: "easeOut", layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] } }}
+                className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''} ${isWikiRequestPending && !wikiDescription ? 'is-loading' : ''}`}
+                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -8 }}
+                animate={{ opacity: 1, height: 'auto', y: 0 }}
+                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6 }}
+                transition={prefersReducedMotion
+                  ? { duration: 0 }
+                  : {
+                    opacity: { duration: 0.3 },
+                    height: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
+                    y: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
+                    layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
+                  }}
+                aria-busy={isWikiRequestPending && !wikiDescription}
               >
-                {visibleWikiInfo && (
+                {isWikiRequestPending && !wikiDescription ? (
+                  <div className="ehc-wiki-skeleton" role="status" aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}>
+                    <span />
+                    <span />
+                    <span />
+                  </div>
+                ) : wikiDescription ? (
                   <p
                     ref={wikiDescriptionTextRef}
                     className={isWikiDescriptionExpanded ? 'expanded' : 'collapsed'}
                     style={wikiDescriptionExpandedHeight ? { '--wiki-description-expanded-height': `${wikiDescriptionExpandedHeight}px` } : undefined}
                   >
-                    {visibleWikiInfo.extract}
+                    {wikiDescription}
                   </p>
-                )}
+                ) : null}
                 {isWikiDescriptionExpandable && (
                   <button
                     type="button"
