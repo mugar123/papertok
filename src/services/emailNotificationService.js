@@ -1,6 +1,12 @@
 import { auth } from './firebase.js';
 import { getLocalizedInstitutionName } from '../utils/institutionLocalization.js';
-import { resolvePaperTopic } from '../utils/topicNavigation.js';
+import {
+  isOpaqueQueryTopicText,
+  MAX_QUERY_TOPIC_CATEGORY_IDS,
+  MAX_QUERY_TOPIC_LENGTH,
+  MAX_QUERY_TOPIC_SOURCE_LENGTH,
+  resolvePaperTopic,
+} from '../utils/topicNavigation.js';
 
 export class EmailNotificationServiceError extends Error {
   constructor(code, status = 0) {
@@ -37,6 +43,26 @@ function localizedFollowName(follow, language) {
   return follow.displayName;
 }
 
+function cleanMetadataText(value, maxLength) {
+  return String(value || '').replace(/\p{Cc}/gu, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+function notificationFollowMetadata(follow) {
+  const rawQuery = cleanMetadataText(follow.metadata?.query, MAX_QUERY_TOPIC_LENGTH);
+  const query = rawQuery && !isOpaqueQueryTopicText(rawQuery) ? rawQuery : '';
+  const source = cleanMetadataText(follow.metadata?.source, MAX_QUERY_TOPIC_SOURCE_LENGTH);
+  const categoryIds = [...new Set((Array.isArray(follow.metadata?.categoryIds)
+    ? follow.metadata.categoryIds
+    : [])
+    .map(categoryId => cleanMetadataText(categoryId, 80))
+    .filter(Boolean))].slice(0, MAX_QUERY_TOPIC_CATEGORY_IDS);
+  return {
+    ...(query ? { query } : {}),
+    ...(source ? { source } : {}),
+    categoryIds,
+  };
+}
+
 export function serializeFollowForNotifications(follow = {}, language = 'es') {
   return {
     type: follow.type,
@@ -46,9 +72,7 @@ export function serializeFollowForNotifications(follow = {}, language = 'es') {
       ...(follow.externalIds?.ror ? { ror: follow.externalIds.ror } : {}),
       ...(follow.externalIds?.orcid ? { orcid: follow.externalIds.orcid } : {}),
     },
-    metadata: {
-      categoryIds: Array.isArray(follow.metadata?.categoryIds) ? follow.metadata.categoryIds.slice(0, 12) : [],
-    },
+    metadata: notificationFollowMetadata(follow),
   };
 }
 

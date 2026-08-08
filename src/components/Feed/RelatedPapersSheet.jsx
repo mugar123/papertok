@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, ChevronRight, GitBranch, Loader2, Network, Sparkles, X } from 'lucide-react';
+import { useReducedMotion } from 'framer-motion';
 import { getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService';
 import { getRelatedPapers } from '../../services/relatedPapersService';
+import {
+  buildRelatedPaperEntries,
+  getRelatedTransitionAction,
+  getRelatedTransitionDuration,
+  RELATED_PAPER_HANDOFF_MS,
+  RELATED_SHEET_CLOSE_MS,
+} from '../../utils/relatedPaperTransition.js';
 import ScientificText from '../ScientificText';
 import { useLanguage } from '../../context/LanguageContext';
 
@@ -39,25 +47,69 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
   const [papers, setPapers] = useState([]);
   const [relatedStatus, setRelatedStatus] = useState(hasGraphIdentifier ? 'idle' : 'loading');
   const [isClosing, setIsClosing] = useState(false);
-  const [selectedPaperId, setSelectedPaperId] = useState(null);
-  const closeTimerRef = useRef(null);
+  const [selectedPaperKey, setSelectedPaperKey] = useState(null);
   const closingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const pendingSelectionRef = useRef(null);
+  const onCloseRef = useRef(onClose);
+  const onSelectPaperRef = useRef(onSelectPaper);
   const relatedRequestedRef = useRef(!hasGraphIdentifier);
+  const prefersReducedMotion = useReducedMotion();
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    onSelectPaperRef.current = onSelectPaper;
+  }, [onSelectPaper]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      pendingSelectionRef.current = null;
+    };
+  }, []);
+
+  const finishClose = useCallback(() => {
+    if (!mountedRef.current || !closingRef.current) return;
+    closingRef.current = false;
+    onCloseRef.current();
+  }, []);
+
+  const finishSelection = useCallback(() => {
+    if (!mountedRef.current) return;
+    const pendingSelection = pendingSelectionRef.current;
+    if (!pendingSelection) return;
+    pendingSelectionRef.current = null;
+    closingRef.current = false;
+    onSelectPaperRef.current(pendingSelection.paper);
+  }, []);
 
   const requestClose = useCallback(() => {
     if (closingRef.current) return;
     closingRef.current = true;
+    pendingSelectionRef.current = null;
     setIsClosing(true);
-    closeTimerRef.current = setTimeout(onClose, 180);
-  }, [onClose]);
+    if (getRelatedTransitionDuration(RELATED_SHEET_CLOSE_MS, prefersReducedMotion) === 0) finishClose();
+  }, [finishClose, prefersReducedMotion]);
 
-  const requestPaper = useCallback((relatedPaper) => {
+  const requestPaper = useCallback((relatedPaper, paperKey) => {
     if (closingRef.current) return;
     closingRef.current = true;
-    setSelectedPaperId(relatedPaper.id);
+    pendingSelectionRef.current = { paper: relatedPaper, key: paperKey };
+    setSelectedPaperKey(paperKey);
     setIsClosing(true);
-    closeTimerRef.current = setTimeout(() => onSelectPaper(relatedPaper), 210);
-  }, [onSelectPaper]);
+    if (getRelatedTransitionDuration(RELATED_PAPER_HANDOFF_MS, prefersReducedMotion) === 0) finishSelection();
+  }, [finishSelection, prefersReducedMotion]);
+
+  const handleSheetAnimationEnd = useCallback((event) => {
+    if (event.target !== event.currentTarget) return;
+    const action = getRelatedTransitionAction(event.animationName);
+    if (action === 'close') finishClose();
+    if (action === 'select') finishSelection();
+  }, [finishClose, finishSelection]);
 
   useEffect(() => {
     if (!hasGraphIdentifier) return undefined;
@@ -115,7 +167,6 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
     window.addEventListener('keydown', handleKeyDown);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
-      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     };
   }, [requestClose]);
 
@@ -124,6 +175,7 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
     ? (isEnglish ? 'No linked references were found for this paper.' : 'No se encontraron referencias enlazadas para este paper.')
     : (isEnglish ? 'No linked later works have been found yet.' : 'Todavía no se encontraron trabajos posteriores enlazados.');
   const visiblePapers = mode === 'graph' ? graphPapers : papers;
+  const visibleEntries = useMemo(() => buildRelatedPaperEntries(visiblePapers), [visiblePapers]);
   const visibleStatus = mode === 'graph' ? graphStatus : relatedStatus;
   const sourceLabel = graph.source === 'opencitations'
     ? 'OpenCitations'
@@ -136,13 +188,15 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
 
   return (
     <div
-      className={`related-overlay ${isClosing ? 'is-closing' : ''} ${selectedPaperId ? 'is-selecting-paper' : ''}`}
+      className={`related-overlay ${isClosing ? 'is-closing' : ''} ${selectedPaperKey ? 'is-selecting-paper' : ''}`}
       onClick={requestClose}
       role="presentation"
     >
       <section
-        className={`related-sheet related-sheet--graph ${selectedPaperId ? 'is-selecting-paper' : ''}`}
+        className={`related-sheet related-sheet--graph ${selectedPaperKey ? 'is-selecting-paper' : ''}`}
         onClick={event => event.stopPropagation()}
+        onAnimationEnd={handleSheetAnimationEnd}
+        onAnimationCancel={handleSheetAnimationEnd}
         aria-label={isEnglish ? 'Paper connections' : 'Conexiones del paper'}
         aria-modal="true"
         aria-busy={visibleStatus === 'loading'}
@@ -228,13 +282,13 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
 
         {visibleStatus === 'ready' && (
           <div className="related-list" key={`${mode}-${graphSide}`}>
-            {visiblePapers.length ? visiblePapers.map((related, index) => (
+            {visibleEntries.length ? visibleEntries.map(({ paper: related, key }, index) => (
               <button
-                key={related.id}
-                className={`related-item ${selectedPaperId === related.id ? 'is-selected' : ''}`}
+                key={key}
+                className={`related-item ${selectedPaperKey === key ? 'is-selected' : ''}`}
                 style={{ '--related-index': index }}
-                onClick={() => requestPaper(related)}
-                disabled={Boolean(selectedPaperId)}
+                onClick={() => requestPaper(related, key)}
+                disabled={Boolean(selectedPaperKey)}
               >
                 <span className="related-item-copy">
                   <strong><ScientificText>{related.title}</ScientificText></strong>

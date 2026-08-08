@@ -11,6 +11,7 @@ import {
   shouldUseNativeWheelScroll,
   WHEEL_LISTENER_OPTIONS,
 } from '../../utils/wheelNavigation';
+import { FEED_DISPLAY_STATES, getFeedDisplayState } from '../../utils/feedLoadingState';
 import './FeedContainer.css';
 
 // Per-surface scroll memory: the Siguiendo feed shares this container with
@@ -55,6 +56,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
   const [showLoader, setShowLoader] = useState(false);
+  const [initialFeedReady, setInitialFeedReady] = useState(false);
+  const initialLoadStartedRef = useRef(false);
   const scrollIdleTimerRef = useRef(null);
   const skipFlushTimerRef = useRef(null);
   const pendingSkippedPapersRef = useRef(new Map());
@@ -106,6 +109,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       });
     }
   }, [papers.length, scrollKey]);
+
+  useEffect(() => {
+    if (loading) initialLoadStartedRef.current = true;
+    if (papers.length > 0 || error || (initialLoadStartedRef.current && !loading)) {
+      setInitialFeedReady(true);
+    }
+  }, [error, loading, papers.length]);
 
   // Only show the atom loader if loading takes more than 1.5s
   useEffect(() => {
@@ -290,7 +300,17 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     }
   }, [schedulePendingSkipFlush, scrollKey]);
 
-  if (error && papers.length === 0) {
+  const displayState = getFeedDisplayState({
+    hasPapers: papers.length > 0,
+    loading,
+    error,
+    isRefreshing,
+    showLoader,
+    initialLoadPending: !source && !initialFeedReady && !error,
+    hasSourceEmptyState: Boolean(source?.emptyState),
+  });
+
+  if (displayState === FEED_DISPLAY_STATES.ERROR) {
     return (
       <div className="feed-empty">
         <div className="feed-empty-icon">⚠️</div>
@@ -303,23 +323,45 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     );
   }
 
-  if (papers.length === 0 && !error) {
-    if (loading && !showLoader && !isRefreshing) {
-      return (
-        <div className="feed-wrapper">
-          <div className="feed-container">
-            <div className="feed-snap-item"><SkeletonCard /></div>
-          </div>
+  if (displayState === FEED_DISPLAY_STATES.INITIAL_DISCOVERY) {
+    return (
+      <div className="feed-empty feed-empty--initial-loading" role="status" aria-live="polite" aria-busy="true">
+        <div className="atom-loader" aria-hidden="true">
+          <AnimatedAtom size={80} strokeWidth={1} className="atom-loader-icon" />
         </div>
-      );
-    }
+        <h2>{isEnglish ? 'Searching for discoveries...' : 'Buscando descubrimientos...'}</h2>
+        <p>
+          {isEnglish
+            ? 'Connecting to scientific sources to bring you the latest research'
+            : 'Conectando con las fuentes para traer lo último en ciencia'}
+        </p>
+      </div>
+    );
+  }
+
+  if (displayState === FEED_DISPLAY_STATES.SKELETON) {
+    return (
+      <div className="feed-wrapper">
+        <div className="feed-container">
+          <div className="feed-snap-item"><SkeletonCard /></div>
+        </div>
+      </div>
+    );
+  }
+
+  if (displayState !== FEED_DISPLAY_STATES.FEED) {
     // Alternative sources bring their own empty state; Siguiendo must never
     // fall back to the generic For You copy that asks users to broaden their interests.
-    if (source?.emptyState && !loading && !isRefreshing) {
+    if (displayState === FEED_DISPLAY_STATES.SOURCE_EMPTY) {
       return <div className="feed-empty">{source.emptyState}</div>;
     }
     return (
-      <div className="feed-empty">
+      <div
+        className="feed-empty"
+        role={loading || isRefreshing ? 'status' : undefined}
+        aria-live={loading || isRefreshing ? 'polite' : undefined}
+        aria-busy={loading || isRefreshing ? 'true' : undefined}
+      >
         <div className="atom-loader">
           <AnimatedAtom size={80} strokeWidth={1} className="atom-loader-icon" />
         </div>

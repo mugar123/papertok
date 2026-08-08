@@ -1,10 +1,11 @@
-import { fetchPapers, fetchPapersByIds, getAuthorPapers } from './arxivService';
-import { fetchPapersByDois, getWorksByEntity } from './openAlexService';
-import { getPapersByProject } from './openAireService';
+import { fetchPapersByIds, getAuthorPapers } from './arxivService.js';
+import { fetchPapersByDois, getWorksByEntity } from './openAlexService.js';
+import { getPapersByProject } from './openAireService.js';
+import { fetchTopicPapers } from './topicRetrievalService.js';
 import {
   isRecentFollowingUpdate,
   mergeFollowingUpdatePapers,
-} from '../utils/followingUpdates';
+} from '../utils/followingUpdates.js';
 
 const PAPERS_PER_ENTITY = 5;
 const MAX_FOLLOWS_PER_REFRESH = 40;
@@ -14,9 +15,9 @@ function createMatch(follow) {
     type: follow.type,
     canonicalId: follow.canonicalId,
     displayName: follow.displayName,
-    metadata: {
-      localizedNames: follow.metadata?.localizedNames,
-    },
+    source: follow.source,
+    externalIds: { ...(follow.externalIds || {}) },
+    metadata: { ...(follow.metadata || {}) },
   };
 }
 
@@ -32,19 +33,17 @@ function cleanOpenAlexId(value) {
   return String(value || '').split('/').pop();
 }
 
-async function fetchTopicUpdates(follow) {
-  const categoryIds = follow.metadata?.categoryIds || [];
-  const candidates = [follow.canonicalId, ...categoryIds].filter(Boolean);
-  const openAlexId = candidates.map(cleanOpenAlexId).find(id => /^[TC]\d+$/i.test(id));
-
-  if (openAlexId) {
-    const entityType = openAlexId.toUpperCase().startsWith('T') ? 'topic' : 'concept';
-    const result = await getWorksByEntity(entityType, openAlexId, 'publication_date:desc', 1);
-    return result.papers || [];
-  }
-
-  const arxivCategory = candidates.find(value => /^[a-z-]+(?:\.[A-Z-]+)?$/i.test(String(value)));
-  return fetchPapers([arxivCategory || follow.displayName], 0, PAPERS_PER_ENTITY, 'recent');
+async function fetchTopicUpdates(follow, topicRetriever = fetchTopicPapers) {
+  const result = await topicRetriever(follow, {
+    allowLegacyDisplayName: true,
+    maxPapers: PAPERS_PER_ENTITY,
+    mode: 'recent',
+    page: 1,
+    pageSize: PAPERS_PER_ENTITY,
+    sortBy: 'publication_date:desc',
+  });
+  if (result.allFailed) throw new Error('All topic providers failed.');
+  return result.papers;
 }
 
 async function fetchAuthorUpdates(follow) {
@@ -82,8 +81,8 @@ async function fetchProjectUpdates(follow) {
   ];
 }
 
-async function fetchUpdatesForFollow(follow) {
-  if (follow.type === 'topic') return fetchTopicUpdates(follow);
+async function fetchUpdatesForFollow(follow, options = {}) {
+  if (follow.type === 'topic') return fetchTopicUpdates(follow, options.topicRetriever);
   if (follow.type === 'author') return fetchAuthorUpdates(follow);
   if (follow.type === 'institution') return fetchInstitutionUpdates(follow);
   if (follow.type === 'project') return fetchProjectUpdates(follow);
@@ -113,7 +112,7 @@ async function mapWithConcurrency(items, concurrency, mapper) {
 export async function fetchFollowingUpdates(followedEntities = [], options = {}) {
   const follows = followedEntities.slice(0, MAX_FOLLOWS_PER_REFRESH);
   const settled = await mapWithConcurrency(follows, 4, async (follow) => (
-    withMatch(await fetchUpdatesForFollow(follow), follow)
+    withMatch(await fetchUpdatesForFollow(follow, options), follow)
   ));
 
   const papers = settled

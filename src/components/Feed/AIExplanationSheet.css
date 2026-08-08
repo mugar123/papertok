@@ -132,6 +132,16 @@
   scrollbar-color: rgba(167, 139, 250, 0.35) transparent;
 }
 
+.ai-explanation-stage {
+  width: 100%;
+  min-height: 300px;
+}
+
+.ai-explanation-stage-state {
+  width: 100%;
+  min-width: 0;
+}
+
 .ai-explanation-empty,
 .ai-explanation-loading {
   min-height: 300px;

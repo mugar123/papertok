@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   AlertCircle,
   BookOpen,
@@ -147,12 +147,7 @@ function ExplanationContent({ result, language }) {
     ? Math.max(0, Number(result.remainingUses))
     : null;
   return (
-    <motion.div
-      className="ai-explanation-result"
-      initial={{ opacity: 0, y: 14 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
-    >
+    <div className="ai-explanation-result">
       <div className="ai-explanation-context">
         <div className={`ai-explanation-source ai-explanation-source--${result.sourceBasis}`}>
           {result.sourceBasis === 'full_text' ? <FileCheck2 size={15} /> : <FileText size={15} />}
@@ -209,13 +204,14 @@ function ExplanationContent({ result, language }) {
           <ul>{explanation.limitations.map((item, index) => <li key={`${index}-${item}`}><TextBlock>{item}</TextBlock></li>)}</ul>
         </section>
       )}
-    </motion.div>
+    </div>
   );
 }
 
 export default function AIExplanationSheet({ paper, onClose }) {
   const { readingPreferences } = useAuth();
   const { language } = useLanguage();
+  const prefersReducedMotion = useReducedMotion();
   const copy = SHEET_COPY[language];
   const [level, setLevel] = useState(readingPreferences.aiExplanationLevel);
   const [results, setResults] = useState({});
@@ -226,6 +222,12 @@ export default function AIExplanationSheet({ paper, onClose }) {
   const closeTimerRef = useRef(null);
   const closingRef = useRef(false);
   const result = results[level];
+  const stateTransition = prefersReducedMotion
+    ? { duration: 0 }
+    : { duration: 0.24, ease: [0.16, 1, 0.3, 1] };
+  const layoutTransition = prefersReducedMotion
+    ? { duration: 0 }
+    : { duration: 0.38, ease: [0.16, 1, 0.3, 1] };
   const levelLabel = useMemo(
     () => LEVEL_LABELS[level]?.[language] || '',
     [language, level],
@@ -322,23 +324,65 @@ export default function AIExplanationSheet({ paper, onClose }) {
           ))}
         </div>
 
-        <div className="ai-explanation-body">
-          {loadingLevel === level ? (
-            <ExplanationSkeleton language={language} />
-          ) : result ? (
-            <ExplanationContent result={result} language={language} />
-          ) : (
-            <div className="ai-explanation-empty">
-              <span><BrainCircuit size={30} /></span>
-              <h3>{copy.explanationFor} {levelLabel.toLowerCase()}</h3>
-              <button className="ai-explanation-generate" onClick={handleExplain}>
-                <Sparkles size={17} /> {copy.explainPaper}
-              </button>
-            </div>
-          )}
+        <motion.div
+          className="ai-explanation-body"
+          layout="size"
+          transition={{ layout: layoutTransition }}
+          aria-busy={Boolean(loadingLevel)}
+        >
+          <div className="ai-explanation-stage">
+            <AnimatePresence initial={false} mode="wait">
+              {loadingLevel === level ? (
+                <motion.div
+                  key="loading"
+                  className="ai-explanation-stage-state"
+                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
+                  transition={stateTransition}
+                >
+                  <ExplanationSkeleton language={language} />
+                </motion.div>
+              ) : result ? (
+                <motion.div
+                  key="result"
+                  className="ai-explanation-stage-state"
+                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
+                  transition={stateTransition}
+                >
+                  <ExplanationContent result={result} language={language} />
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="empty"
+                  className="ai-explanation-stage-state"
+                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 }}
+                  transition={stateTransition}
+                >
+                  <div className="ai-explanation-empty">
+                    <span><BrainCircuit size={30} /></span>
+                    <h3>{copy.explanationFor} {levelLabel.toLowerCase()}</h3>
+                    <button className="ai-explanation-generate" onClick={handleExplain}>
+                      <Sparkles size={17} /> {copy.explainPaper}
+                    </button>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
           {error && (
-            <motion.div className="ai-explanation-error" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} role="alert">
+            <motion.div
+              className="ai-explanation-error"
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+              role="alert"
+            >
               <AlertCircle size={18} />
               <span>
                 {error.message}
@@ -359,13 +403,29 @@ export default function AIExplanationSheet({ paper, onClose }) {
               )}
             </motion.div>
           )}
-        </div>
+        </motion.div>
 
-        {result && loadingLevel !== level && (
-          <footer className="ai-explanation-footer">
-            <span>{copy.disclaimer}</span>
-          </footer>
-        )}
+        <AnimatePresence initial={false}>
+          {result && loadingLevel !== level && (
+            <motion.footer
+              key="disclaimer"
+              className="ai-explanation-footer"
+              initial={prefersReducedMotion ? false : { opacity: 0, height: 0, y: 6 }}
+              animate={{ opacity: 1, height: 'auto', y: 0 }}
+              exit={prefersReducedMotion ? { opacity: 0, height: 0 } : { opacity: 0, height: 0, y: 6 }}
+              transition={prefersReducedMotion
+                ? { duration: 0 }
+                : {
+                  height: { duration: 0.28, ease: [0.16, 1, 0.3, 1] },
+                  opacity: { duration: 0.18 },
+                  y: { duration: 0.22, ease: [0.16, 1, 0.3, 1] },
+                }}
+              style={{ overflow: 'hidden' }}
+            >
+              <span>{copy.disclaimer}</span>
+            </motion.footer>
+          )}
+        </AnimatePresence>
       </motion.div>
     </motion.div>
   );

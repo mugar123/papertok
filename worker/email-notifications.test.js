@@ -12,6 +12,8 @@ const {
   configuredEmailProvider,
   sanitizeFollow,
   sanitizePreferences,
+  topicSearchQuery,
+  fetchOpenAlexUpdates,
   mergePapers,
   arxivCategoriesForFollow,
   parseArxivDigestFeed,
@@ -94,6 +96,98 @@ test('sanitizes notification preferences and followed entities', () => {
     externalIds: { ror: '02f40zc51' },
     metadata: { categoryIds: [] },
   });
+});
+
+test('round-trips bounded query-topic metadata and rejects malformed query ids', () => {
+  assert.deepEqual(sanitizeFollow({
+    type: 'topic',
+    canonicalId: 'query-1234abcd',
+    displayName: 'Spatial transcriptomics',
+    metadata: {
+      query: 'Spatial transcriptomics',
+      source: 'pubmed',
+      categoryIds: ['bio.gen'],
+      ignored: 'not persisted',
+    },
+  }), {
+    type: 'topic',
+    canonicalId: 'query-1234abcd',
+    displayName: 'Spatial transcriptomics',
+    externalIds: {},
+    metadata: {
+      query: 'Spatial transcriptomics',
+      source: 'pubmed',
+      categoryIds: ['bio.gen'],
+    },
+  });
+  assert.equal(sanitizeFollow({
+    type: 'topic',
+    canonicalId: 'query-not-valid',
+    displayName: 'query-not-valid',
+  }), null);
+});
+
+test('uses stored query metadata before legacy display names and never uses a query id', () => {
+  assert.equal(topicSearchQuery({
+    canonicalId: 'query-1234abcd',
+    displayName: 'Legacy display',
+    metadata: { query: 'Stored scientific query' },
+  }), 'Stored scientific query');
+  assert.equal(topicSearchQuery({
+    canonicalId: 'legacy-topic',
+    displayName: 'Legacy display',
+    metadata: {},
+  }), 'Legacy display');
+  assert.equal(topicSearchQuery({
+    canonicalId: 'query-1234abcd',
+    displayName: 'query-1234abcd',
+    metadata: {},
+  }), '');
+});
+
+test('relevance-filters query-topic OpenAlex results before attaching a match', async () => {
+  const follow = {
+    type: 'topic',
+    canonicalId: 'query-1234abcd',
+    displayName: 'Legacy display',
+    externalIds: {},
+    metadata: { query: 'Spatial transcriptomics', source: 'pubmed', categoryIds: [] },
+  };
+  const originalFetch = globalThis.fetch;
+  let requestedSearch = '';
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    requestedSearch = url.searchParams.get('search') || '';
+    return jsonResponse(200, {
+      results: [
+        {
+          id: 'https://openalex.org/W1',
+          display_name: 'A tissue atlas',
+          publication_date: '2026-08-01',
+          authorships: [{ author: { display_name: 'Ada Lovelace' } }],
+          primary_location: { landing_page_url: 'https://example.com/relevant' },
+          concepts: [{ display_name: 'Spatial transcriptomics' }],
+        },
+        {
+          id: 'https://openalex.org/W2',
+          display_name: 'Spatial statistics for urban mobility',
+          publication_date: '2026-08-01',
+          authorships: [{ author: { display_name: 'Grace Hopper' } }],
+          primary_location: { landing_page_url: 'https://example.com/unrelated' },
+          concepts: [{ display_name: 'Urban planning' }],
+        },
+      ],
+    });
+  };
+
+  try {
+    const papers = await fetchOpenAlexUpdates(follow, {}, Date.parse('2026-08-03T07:00:00Z'));
+    assert.equal(requestedSearch, 'Spatial transcriptomics');
+    assert.deepEqual(papers.map(paper => paper.id), ['W1']);
+    assert.equal(papers[0].matches[0].canonicalId, 'query-1234abcd');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test('deduplicates digest papers while preserving every follow reason', () => {

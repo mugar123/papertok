@@ -173,6 +173,46 @@ test('stable followed entities boost papers and cap the combined signal', () => 
   assert.deepEqual(score.followedEntityMatches, { author: true, topic: true, institution: true, project: true });
 });
 
+test('matches followed topics directly across categories, concepts, topics, and keywords', () => {
+  const queryFollow = {
+    type: 'topic',
+    canonicalId: 'query-1234abcd',
+    displayName: 'Transcriptómica espacial',
+    metadata: {
+      query: 'Spatial transcriptomics',
+      source: 'pubmed',
+      categoryIds: [],
+    },
+  };
+  const categoryFollow = {
+    type: 'topic',
+    canonicalId: 'query-8765abcd',
+    displayName: 'Optics',
+    metadata: { query: 'Photonics', categoryIds: ['physics.optics'] },
+  };
+  const semanticPapers = [
+    { categories: ['physics.optics'], follow: categoryFollow },
+    { concepts: [{ displayName: 'Spatial transcriptomics' }], follow: queryFollow },
+    { topics: [{ label: 'Spatial transcriptomics' }], follow: queryFollow },
+    { keywords: ['Spatial transcriptomics'], follow: queryFollow },
+  ];
+
+  semanticPapers.forEach((paper, index) => {
+    const score = scorePaperForRecommendation({ id: `semantic-${index}`, ...paper }, {
+      now: NOW,
+      followedEntities: [paper.follow],
+    });
+    assert.equal(score.followedEntityMatches.topic, true);
+    assert.equal(score.followBoost, 35);
+  });
+
+  const titleOnly = scorePaperForRecommendation({
+    id: 'title-only',
+    title: 'Spatial transcriptomics maps tissue',
+  }, { now: NOW, followedEntities: [queryFollow] });
+  assert.equal(titleOnly.followedEntityMatches.topic, false);
+});
+
 test('weighted shuffle honors deterministic random selection', () => {
   const papers = [
     { id: 'low', _dynamicScore: 0, _type: 'exploration' },

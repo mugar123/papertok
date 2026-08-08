@@ -3,8 +3,8 @@ import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, BadgeCheck, Check, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
-import { fetchPapers, fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
-import { ElsevierAdapter, isScopusEnabled, OpenAlexAdapter, PubmedAdapter, ScopusAdapter } from '../../services/adapters';
+import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
+import { ElsevierAdapter, isScopusEnabled, PubmedAdapter, ScopusAdapter } from '../../services/adapters';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { PaperBuilder } from '../../services/PaperBuilder';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService';
@@ -24,10 +24,11 @@ import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
 import RecentImpactStat from './RecentImpactStat';
 import { normalizeScientificMarkup } from '../../utils/latex';
-import { paperMatchesLocalTopic } from '../../utils/topicNavigation';
+import { isOpaqueQueryTopicText, resolveQueryTopicRoute } from '../../utils/topicNavigation';
+import { scoreQueryTopicPaper } from '../../utils/queryTopicSearch.js';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
-import { fetchDomainPapers } from '../../services/domainSourceService';
 import { settleWithin } from '../../utils/asyncTiming';
+import { fetchTopicPapers } from '../../services/topicRetrievalService.js';
 import { getEntityWikiInfo } from '../../services/wikiService';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import { getUiErrorMessage } from '../../utils/errorMessages';
@@ -193,6 +194,17 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   const followEntity = useMemo(() => {
     if (!entity || !['author', 'institution', 'project', 'concept', 'topic'].includes(type)) return null;
     const followType = type === 'concept' ? 'topic' : type;
+    const metadata = entity._queryTopic
+      ? {
+          query: entity.metadata?.query || entity.query,
+          source: entity.metadata?.source || 'free-text',
+          categoryIds: entity.metadata?.categoryIds || entity.categoryIds || [],
+        }
+      : {
+          funder: entity.funder,
+          categoryIds: entity.categoryIds,
+          localizedNames: type === 'institution' ? entity.localized_names : undefined,
+        };
     return {
       type: followType,
       id: entity.id || entity.code || id,
@@ -202,11 +214,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
         orcid: entity.orcid,
         ror: entity.ror,
       },
-      metadata: {
-        funder: entity.funder,
-        categoryIds: entity.categoryIds,
-        localizedNames: type === 'institution' ? entity.localized_names : undefined,
-      },
+      metadata,
     };
   }, [entity, entityDisplayName, entityOfficialName, id, type]);
 
@@ -262,6 +270,12 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       setShowFilters(false);
       setPapersError(null);
       setAuthorsError(null);
+
+      if (type === 'topic' && isOpaqueQueryTopicText(id)) {
+        setEntity(resolveQueryTopicRoute(id, searchParams));
+        setIsLoadingEntity(false);
+        return;
+      }
 
       if (type === 'project') {
         const name = searchParams.get('name') || id;
@@ -408,6 +422,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       alternateTitle,
       language,
       signal: controller.signal,
+      strictTitleMatch: Boolean(entity?._queryTopic),
     }).then(info => {
       if (!controller.signal.aborted) {
         setWikiInfo(info ? { ...info, _requestKey: wikiRequestKey } : null);
@@ -424,6 +439,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
     };
   }, [
     entityDisplayName,
+    entity?._queryTopic,
     language,
     localizedTopicEntity?.labelEn,
     localizedTopicEntity?.labelEs,
@@ -446,6 +462,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
         let dois = [];
         let total = 0;
         let fetchedPapers = [];
+        let topicProviderFailure = false;
         
         const resolvedId = entity.id || id;
         
@@ -500,22 +517,26 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
             if (resolvedId.startsWith('stub-')) {
               total = fetchedPapers.length;
             }
-         } else if ((type === 'concept' || type === 'topic') && entity._localTopic) {
-            const topicCategories = entity.categoryIds || [resolvedId];
-            const topicQuery = debouncedSearch || entity.labelEn || entity.display_name;
-            const openAlexAdapter = new OpenAlexAdapter();
-            const pubmedAdapter = new PubmedAdapter();
-            const topicResults = await Promise.all([
-              fetchPapers(topicCategories.slice(0, 6), (page - 1) * 30, 30, sortBy.includes('publication_date') ? 'recent' : 'relevance'),
-              openAlexAdapter.search(`"${topicQuery}"`, page, { internalCategories: topicCategories }),
-              pubmedAdapter.search(`"${topicQuery}"`, page, { internalCategories: topicCategories.slice(0, 3) }),
-              fetchDomainPapers(topicCategories, page, 8, sortBy.includes('publication_date') ? 'recent' : 'relevance'),
-            ].map(sourcePromise => settleWithin(sourcePromise, ENTITY_SUPPLEMENT_RENDER_BUDGET_MS)));
-            fetchedPapers.push(...topicResults.flatMap(result => result.status === 'fulfilled'
-              ? result.value?.papers || result.value || []
-              : []));
-            fetchedPapers = fetchedPapers.filter(paper => paperMatchesLocalTopic(paper, entity));
-            total = fetchedPapers.length < 30 ? (page - 1) * 30 + fetchedPapers.length : page * 30 + 1;
+         } else if ((type === 'concept' || type === 'topic') && (entity._localTopic || entity._queryTopic)) {
+            const topicResult = await fetchTopicPapers({
+              ...entity,
+              canonicalId: resolvedId,
+              displayName: entityDisplayName,
+            }, {
+              filters,
+              mode: sortBy.includes('publication_date') ? 'recent' : 'relevance',
+              page,
+              pageSize: 30,
+              searchQuery: debouncedSearch,
+              sortBy,
+              timeoutMs: ENTITY_SUPPLEMENT_RENDER_BUDGET_MS,
+            });
+            if (topicResult.allFailed) throw new Error('All topic providers timed out.');
+            topicProviderFailure = topicResult.partial;
+            fetchedPapers.push(...topicResult.papers);
+            total = topicResult.hasMore
+              ? page * 30 + 1
+              : (page - 1) * 30 + fetchedPapers.length;
          } else {
             const primaryResult = await settleWithin(
               getWorksByEntity(type, resolvedId, sortBy, page, debouncedSearch, filters, entity.display_name),
@@ -592,6 +613,10 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
 
         if (isCancelled) return;
 
+        if (topicProviderFailure && fetchedPapers.length > 0) {
+          setPapersError('PARTIAL_PUBLICATIONS_LOAD_FAILED');
+        }
+
         if (page === 1) {
           setPapers(fetchedPapers);
         } else {
@@ -616,12 +641,12 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
     }
     loadPapers();
     return () => { isCancelled = true; };
-  }, [type, id, entity, sortBy, page, debouncedSearch, filters, activeTab, searchParams, papersReloadKey]);
+  }, [type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, activeTab, searchParams, papersReloadKey]);
 
   useEffect(() => {
     let isCancelled = false;
     async function loadAuthors() {
-      if (!entity || type === 'author' || entity._localTopic || activeTab !== 'authors') return;
+      if (!entity || type === 'author' || entity._localTopic || entity._queryTopic || activeTab !== 'authors') return;
       if (authorsPage === 1) {
         setIsLoadingAuthors(true);
         setAuthorsError(null);
@@ -683,8 +708,12 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab]);
 
   const filteredPapers = useMemo(() => {
-    return filterAndSortEntityPapers(papers, { sortBy });
-  }, [papers, sortBy]);
+    const sortedPapers = filterAndSortEntityPapers(papers, { sortBy });
+    if (!entity?._queryTopic) return sortedPapers;
+    return [...sortedPapers].sort((left, right) => (
+      scoreQueryTopicPaper(right, entity) - scoreQueryTopicPaper(left, entity)
+    ));
+  }, [entity, papers, sortBy]);
 
   const handleShare = () => {
     if (navigator.share) {
@@ -1410,9 +1439,9 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
         
         <div className="ee-tabs">
           <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => setActiveTab('papers')}>
-             Papers
+             {isEnglish ? 'Papers' : 'Artículos'}
           </button>
-          {(type !== 'author' && type !== 'project' && !entity._localTopic) && (
+          {(type !== 'author' && type !== 'project' && !entity._localTopic && !entity._queryTopic) && (
              <button className={`ee-tab ${activeTab === 'authors' ? 'active' : ''}`} onClick={() => setActiveTab('authors')}>
                {isEnglish ? 'Authors' : 'Autores'}
              </button>
@@ -1429,7 +1458,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
               type="text" 
               placeholder={isEnglish
                 ? `Search ${activeTab === 'papers' ? 'papers' : 'authors'} from ${type === 'institution' ? 'this institution' : type === 'concept' || type === 'topic' ? 'this topic' : type === 'project' ? 'this project' : 'this person'}...`
-                : `Buscar ${activeTab === 'papers' ? 'papers' : 'autores'} de ${type === 'institution' ? 'esta universidad' : type === 'concept' || type === 'topic' ? 'este tema' : type === 'project' ? 'este proyecto' : 'esta persona'}...`}
+                : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} de ${type === 'institution' ? 'esta universidad' : type === 'concept' || type === 'topic' ? 'este tema' : type === 'project' ? 'este proyecto' : 'esta persona'}...`}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               aria-label={isEnglish

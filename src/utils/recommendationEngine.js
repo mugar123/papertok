@@ -90,14 +90,44 @@ function signalMatches(follow, candidates) {
   const followId = normalizeSignal(follow.canonicalId || follow.id);
   const followName = normalizeSignal(follow.displayName || follow.name);
   return candidates.some((candidate) => {
-    const candidateId = normalizeSignal(candidate?.id || candidate?.canonicalId || candidate);
-    const candidateName = normalizeSignal(candidate?.name || candidate?.displayName || candidate?.display_name || candidate);
+    const candidateId = normalizeSignal(candidate?.id || candidate?.openAlexId || candidate?.canonicalId || candidate);
+    const candidateName = normalizeSignal(
+      candidate?.display_name || candidate?.displayName || candidate?.name || candidate?.label || candidate,
+    );
     return Boolean((followId && candidateId === followId) || (followName && candidateName === followName));
   });
 }
 
+function followedTopicAliases(follow) {
+  const canonicalId = String(follow.canonicalId || follow.id || '');
+  const stableIds = [
+    ...(/^query-/i.test(canonicalId) ? [] : [canonicalId]),
+    ...(Array.isArray(follow.metadata?.categoryIds) ? follow.metadata.categoryIds : []),
+  ];
+  const names = [follow.metadata?.query, follow.displayName || follow.name];
+  return [
+    ...stableIds.map(id => ({ id })),
+    ...names.map(name => ({ name })),
+  ].filter(alias => alias.id || alias.name);
+}
+
+function paperTopicSignals(paper) {
+  return [
+    ...getPaperCategorySignals(paper),
+    ...(paper.concepts || []),
+    ...(paper.openAlex?.concepts || []),
+    ...(paper.topics || []),
+    ...(paper.openAlex?.topics || []),
+    paper.primaryTopic,
+    paper.primary_topic,
+    paper.openAlex?.primaryTopic,
+    paper.openAlex?.primary_topic,
+    ...(paper.keywords || []),
+  ].filter(Boolean);
+}
+
 export function getFollowedEntitySignals(paper, followedEntities = [], weights = DEFAULT_RECOMMENDATION_WEIGHTS) {
-  const categories = getPaperCategorySignals(paper).map((id) => ({ id, name: id }));
+  const topicCandidates = paperTopicSignals(paper);
   const authors = paper.authors || [];
   const institutions = paper.institutions || paper.openAlex?.institutions || [];
   const projects = [
@@ -109,10 +139,8 @@ export function getFollowedEntitySignals(paper, followedEntities = [], weights =
   followedEntities.forEach((follow) => {
     if (follow.type === 'author') matches.author ||= signalMatches(follow, authors);
     if (follow.type === 'topic') {
-      const topicSignals = follow.metadata?.categoryIds?.length
-        ? follow.metadata.categoryIds.map(id => ({ id, name: id }))
-        : [follow];
-      matches.topic ||= topicSignals.some(topicSignal => signalMatches(topicSignal, categories))
+      matches.topic ||= followedTopicAliases(follow)
+        .some(topicAlias => signalMatches(topicAlias, topicCandidates))
         || signalMatches(follow, paper._followedEntityMatches || []);
     }
     if (follow.type === 'institution') matches.institution ||= signalMatches(follow, institutions);

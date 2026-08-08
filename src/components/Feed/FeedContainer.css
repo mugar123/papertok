@@ -70,6 +70,10 @@
   animation: fadeIn 0.5s ease-out;
 }
 
+.feed-empty--initial-loading {
+  animation: none;
+}
+
 /* ── Atom Loader ── */
 .atom-loader {
   position: relative;
@@ -90,6 +94,13 @@
 @keyframes pulseNucleus {
   0% { transform: scale(0.95); filter: drop-shadow(0 0 10px var(--accent-primary)); }
   100% { transform: scale(1.05); filter: drop-shadow(0 0 25px var(--accent-primary)); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feed-empty,
+  .atom-loader-icon {
+    animation: none;
+  }
 }
 
 .feed-empty h2 {

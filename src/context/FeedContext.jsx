@@ -38,6 +38,10 @@ import { resolveWithin, settleWithin } from '../utils/asyncTiming';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard';
 import { dedupeInteractionPapers } from '../utils/feedInteractions';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
+import {
+  fetchTopicPapers,
+  getFollowedTopicCategoryIds,
+} from '../services/topicRetrievalService.js';
 
 const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
@@ -112,12 +116,15 @@ async function fetchFollowedEntityCandidates(followedEntities, queryMode) {
   const results = await Promise.allSettled(selected.map(async (follow) => {
     let candidates = [];
     if (follow.type === 'topic') {
-      const topicCategories = follow.metadata?.categoryIds?.length
-        ? follow.metadata.categoryIds
-        : CATEGORIES[follow.canonicalId]
-          ? Object.keys(CATEGORIES[follow.canonicalId].subcategories || {})
-          : [follow.canonicalId];
-      candidates = await fetchPapers([...topicCategories].sort(() => 0.5 - Math.random()).slice(0, 4), Math.floor(Math.random() * 20), 3, queryMode);
+      const result = await fetchTopicPapers(follow, {
+        allowLegacyDisplayName: true,
+        maxPapers: 3,
+        mode: queryMode,
+        page: Math.floor(Math.random() * 5) + 1,
+        pageSize: 5,
+        timeoutMs: OPTIONAL_SOURCE_RENDER_BUDGET_MS,
+      });
+      candidates = result.papers;
     } else if (follow.type === 'author') {
       if (/^A\d+$/i.test(follow.canonicalId)) {
         candidates = (await getWorksByEntity('author', follow.canonicalId, 'publication_date:desc', 1)).papers;
@@ -138,12 +145,19 @@ async function fetchFollowedEntityCandidates(followedEntities, queryMode) {
     return candidates.slice(0, 3).map((paper) => ({
       ...paper,
       _type: 'followed',
-      _followedEntityMatches: [...new Set([...(paper._followedEntityMatches || []), follow.canonicalId])],
+      _followedEntityMatches: mergeFollowEntityMatches(paper._followedEntityMatches, [follow]),
     }));
   }));
 
   return PaperBuilder.deduplicate(results.flatMap(result => result.status === 'fulfilled' ? result.value : []))
     .slice(0, 6);
+}
+
+function mergeFollowEntityMatches(...groups) {
+  const matches = groups.flat().filter(match => match && typeof match === 'object');
+  return matches.filter((match, index) => matches.findIndex(candidate => (
+    candidate.type === match.type && candidate.canonicalId === match.canonicalId
+  )) === index);
 }
 
 // Same clamp range as category affinities: without it, concept affinities grow
@@ -616,13 +630,7 @@ export function FeedProvider({ children }) {
         const allCategories = getAllLeafCategories();
         
         // ─── STEP 1: Rank user's selected categories by learned affinity ───
-        const followedTopicIds = followedEntities
-          .filter(entity => entity.type === 'topic')
-          .flatMap(entity => entity.metadata?.categoryIds?.length
-            ? entity.metadata.categoryIds
-            : CATEGORIES[entity.canonicalId]
-              ? Object.keys(CATEGORIES[entity.canonicalId].subcategories || {})
-              : [entity.canonicalId]);
+        const followedTopicIds = getFollowedTopicCategoryIds(followedEntities);
         const rankedPreferences = [...new Set([...userPreferences, ...followedTopicIds])].sort((a, b) => {
           const affA = categoryAffinities.current[a] || 0;
           const affB = categoryAffinities.current[b] || 0;
@@ -916,8 +924,13 @@ export function FeedProvider({ children }) {
         
         const uniqueMap = new Map();
         allFetched.forEach(p => {
-          if (!uniqueMap.has(p.id) &&
-              !likedPaperIdsRef.current.has(p.id) &&
+          const existing = uniqueMap.get(p.id);
+          if (existing) {
+            existing._followedEntityMatches = mergeFollowEntityMatches(
+              existing._followedEntityMatches,
+              p._followedEntityMatches,
+            );
+          } else if (!likedPaperIdsRef.current.has(p.id) &&
               !savedPaperIdsRef.current.has(p.id) &&
               !readPaperIdsRef.current.has(p.id) &&
               !notInterestedIdsRef.current.has(p.id)) {

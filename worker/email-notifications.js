@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser';
+import { filterRelevantQueryTopicPapers } from '../src/utils/queryTopicSearch.js';
 
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
 const UNSUBSCRIBE_PREFIX = 'notification:unsubscribe:';
@@ -249,6 +250,21 @@ function normalizeId(value) {
     .replace(/^\/+|\/+$/g, '');
 }
 
+function isOpaqueQueryText(value) {
+  return /^query(?:-|$)/i.test(cleanText(value, 300));
+}
+
+function isQueryTopicId(value) {
+  return /^query-[a-f0-9]{8}$/i.test(normalizeId(value));
+}
+
+function topicSearchQuery(follow = {}) {
+  const storedQuery = cleanText(follow.metadata?.query, 180);
+  if (storedQuery && !isOpaqueQueryText(storedQuery)) return storedQuery;
+  const displayName = cleanText(follow.displayName, 200);
+  return displayName && !isOpaqueQueryText(displayName) ? displayName : '';
+}
+
 function normalizePaperTitle(value) {
   return cleanText(value, 500)
     .normalize('NFD')
@@ -271,7 +287,15 @@ function sanitizeFollow(input = {}) {
   const type = input.type === 'concept' ? 'topic' : cleanText(input.type, 20);
   if (!['author', 'topic', 'institution', 'project'].includes(type)) return null;
   const canonicalId = normalizeId(input.canonicalId || input.id);
-  const displayName = cleanText(input.displayName || input.name, 200);
+  if (isOpaqueQueryText(canonicalId) && !isQueryTopicId(canonicalId)) return null;
+  const metadataQuery = cleanText(input.metadata?.query, 180);
+  const query = metadataQuery && !isOpaqueQueryText(metadataQuery) ? metadataQuery : '';
+  const metadataSource = cleanText(input.metadata?.source, 48);
+  let displayName = cleanText(
+    input.displayName || input.display_name || input.name || input.label,
+    200,
+  );
+  if (isOpaqueQueryText(displayName)) displayName = query;
   if (!canonicalId || !displayName) return null;
   return {
     type,
@@ -282,8 +306,12 @@ function sanitizeFollow(input = {}) {
       ...(input.externalIds?.orcid ? { orcid: cleanText(input.externalIds.orcid, 50) } : {}),
     },
     metadata: {
+      ...(query ? { query } : {}),
+      ...(metadataSource ? { source: metadataSource } : {}),
       categoryIds: Array.isArray(input.metadata?.categoryIds)
-        ? input.metadata.categoryIds.map(normalizeId).filter(Boolean).slice(0, 12)
+        ? [...new Set(input.metadata.categoryIds
+          .map(categoryId => cleanText(normalizeId(categoryId), 80))
+          .filter(Boolean))].slice(0, 12)
         : [],
     },
   };
@@ -559,6 +587,26 @@ function mapOpenAlexPaper(work, follow) {
   });
 }
 
+function reconstructOpenAlexAbstract(index = {}) {
+  const words = [];
+  Object.entries(index || {}).forEach(([word, positions]) => {
+    (positions || []).forEach(position => { words[position] = word; });
+  });
+  return words.filter(Boolean).join(' ');
+}
+
+function openAlexWorkForTopicRelevance(work = {}) {
+  return {
+    title: work.display_name || work.title,
+    abstract: reconstructOpenAlexAbstract(work.abstract_inverted_index),
+    concepts: work.concepts || [],
+    topics: work.topics || [],
+    primaryTopic: work.primary_topic || null,
+    keywords: work.keywords || [],
+    categories: work.categories || [],
+  };
+}
+
 async function fetchOpenAlexUpdates(follow, env, now = Date.now()) {
   const id = normalizeId(follow.canonicalId);
   const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
@@ -574,7 +622,11 @@ async function fetchOpenAlexUpdates(follow, env, now = Date.now()) {
       : `,institutions.ror:https://ror.org/${institutionId}`;
   } else if (follow.type === 'topic' && /^T\d+$/i.test(id)) filter += `,topics.id:${id}`;
   else if (follow.type === 'topic' && /^C\d+$/i.test(id)) filter += `,concepts.id:${id}`;
-  else url.searchParams.set('search', follow.displayName);
+  else {
+    const searchQuery = follow.type === 'topic' ? topicSearchQuery(follow) : cleanText(follow.displayName, 200);
+    if (!searchQuery) return [];
+    url.searchParams.set('search', searchQuery);
+  }
 
   url.searchParams.set('filter', filter);
   url.searchParams.set('sort', 'publication_date:desc');
@@ -582,7 +634,15 @@ async function fetchOpenAlexUpdates(follow, env, now = Date.now()) {
   const response = await fetch(url, { headers: { accept: 'application/json' } });
   if (!response.ok) throw new Error(`OpenAlex digest error: ${response.status}`);
   const payload = await response.json();
-  return (payload?.results || []).map(work => mapOpenAlexPaper(work, follow)).filter(Boolean);
+  let works = payload?.results || [];
+  if (follow.type === 'topic' && isQueryTopicId(id)) {
+    const query = topicSearchQuery(follow);
+    works = works.filter(work => filterRelevantQueryTopicPapers(
+      [openAlexWorkForTopicRelevance(work)],
+      { query, categoryIds: follow.metadata?.categoryIds || [] },
+    ).length > 0);
+  }
+  return works.map(work => mapOpenAlexPaper(work, follow)).filter(Boolean);
 }
 
 async function fetchExplorationUpdates(env, now = Date.now()) {
@@ -1344,6 +1404,8 @@ export const emailNotificationInternals = {
   sanitizeFollow,
   sanitizePaper,
   sanitizePreferences,
+  topicSearchQuery,
+  fetchOpenAlexUpdates,
   saveSubscription,
   mergePapers,
   arxivCategoriesForFollow,

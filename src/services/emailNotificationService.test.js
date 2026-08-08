@@ -21,6 +21,38 @@ test('serializes only the follow metadata required by notification digests', () 
   });
 });
 
+test('round-trips bounded query-topic metadata without unrelated fields', () => {
+  const serialized = serializeFollowForNotifications({
+    type: 'topic',
+    canonicalId: 'query-1234abcd',
+    displayName: 'Spatial transcriptomics',
+    metadata: {
+      query: 'Spatial transcriptomics',
+      source: 'pubmed',
+      categoryIds: ['bio.gen'],
+      ignored: 'not part of the contract',
+    },
+  }, 'en');
+
+  assert.deepEqual(serialized.metadata, {
+    query: 'Spatial transcriptomics',
+    source: 'pubmed',
+    categoryIds: ['bio.gen'],
+  });
+  assert.deepEqual(Object.keys(serialized.metadata), ['query', 'source', 'categoryIds']);
+});
+
+test('never serializes an opaque query id as notification search metadata', () => {
+  const serialized = serializeFollowForNotifications({
+    type: 'topic',
+    canonicalId: 'query-1234abcd',
+    displayName: 'Spatial transcriptomics',
+    metadata: { query: 'query-1234abcd', source: 'provider', categoryIds: [] },
+  });
+
+  assert.deepEqual(serialized.metadata, { source: 'provider', categoryIds: [] });
+});
+
 test('serializes a compact paper preview with follow reasons', () => {
   const preview = serializeUpdateForNotifications({
     id: 'paper-1',

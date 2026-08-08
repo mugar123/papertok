@@ -4,11 +4,28 @@ function normalizeWikiTitle(value = '') {
   return String(value).replace(/\s+/g, ' ').trim();
 }
 
-export function mapWikipediaSearchResponse(data, language = 'en') {
+function normalizeComparableWikiTitle(value = '') {
+  return normalizeWikiTitle(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+export function mapWikipediaSearchResponse(data, language = 'en', {
+  expectedTitle = '',
+  strictTitleMatch = false,
+} = {}) {
   const pages = Object.values(data?.query?.pages || {})
     .filter(page => page && !Object.hasOwn(page.pageprops || {}, 'disambiguation'))
     .sort((left, right) => (left.index ?? Number.MAX_SAFE_INTEGER) - (right.index ?? Number.MAX_SAFE_INTEGER));
-  const page = pages.find(candidate => normalizeWikiTitle(candidate.extract));
+  const expected = normalizeComparableWikiTitle(expectedTitle);
+  const page = pages.find(candidate => {
+    if (!normalizeWikiTitle(candidate.extract)) return false;
+    if (!strictTitleMatch || !expected) return true;
+    return normalizeComparableWikiTitle(candidate.title) === expected;
+  });
   if (!page) return null;
 
   return {
@@ -20,12 +37,12 @@ export function mapWikipediaSearchResponse(data, language = 'en') {
   };
 }
 
-async function searchWikipedia(title, language, signal) {
+async function searchWikipedia(title, language, signal, { strictTitleMatch = false } = {}) {
   const normalizedTitle = normalizeWikiTitle(title);
   if (!normalizedTitle) return null;
 
   const normalizedLanguage = language === 'en' ? 'en' : 'es';
-  const cacheKey = `${normalizedLanguage}:${normalizedTitle.toLocaleLowerCase('en-US')}`;
+  const cacheKey = `${normalizedLanguage}:${strictTitleMatch ? 'strict' : 'fuzzy'}:${normalizedTitle.toLocaleLowerCase('en-US')}`;
   if (entityWikiCache.has(cacheKey)) return entityWikiCache.get(cacheKey);
 
   const url = new URL(`https://${normalizedLanguage}.wikipedia.org/w/api.php`);
@@ -47,7 +64,10 @@ async function searchWikipedia(title, language, signal) {
   const response = await fetch(url, { signal });
   if (!response.ok) return null;
 
-  const result = mapWikipediaSearchResponse(await response.json(), normalizedLanguage);
+  const result = mapWikipediaSearchResponse(await response.json(), normalizedLanguage, {
+    expectedTitle: normalizedTitle,
+    strictTitleMatch,
+  });
   if (result) entityWikiCache.set(cacheKey, result);
   return result;
 }
@@ -57,10 +77,11 @@ export async function getEntityWikiInfo({
   alternateTitle = '',
   language = 'es',
   signal,
+  strictTitleMatch = false,
 } = {}) {
   const candidates = [...new Set([title, alternateTitle].map(normalizeWikiTitle).filter(Boolean))];
   for (const candidate of candidates) {
-    const result = await searchWikipedia(candidate, language, signal);
+    const result = await searchWikipedia(candidate, language, signal, { strictTitleMatch });
     if (result) return result;
   }
   return null;

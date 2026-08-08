@@ -17,13 +17,19 @@ import RelatedPapersSheet from './RelatedPapersSheet';
 import { findOpenAccessCopy } from '../../services/unpaywallService';
 import { getRelatedResearchResources } from '../../services/dataCiteService';
 import { getHuggingFaceResearchResources } from '../../services/huggingFaceService';
-import { resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation';
+import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation';
 import AIExplanationSheet from './AIExplanationSheet';
 import { canExplainPaper } from '../../services/aiExplanationService';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
 import { buildPaperTopicTags } from '../../utils/paperTopicTags.js';
 import { buildFollowReasonLabel } from '../../utils/followingFeed.js';
 import { isTechnicalClassification } from '../../utils/scientificClassification.js';
+import {
+  getRelatedPaperIdentity,
+  getRelatedTransitionAction,
+  getRelatedTransitionDuration,
+  RELATED_CARD_CLOSE_MS,
+} from '../../utils/relatedPaperTransition.js';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -108,11 +114,7 @@ const PaperCard = memo(function PaperCard({
   const cardRef = useRef(null);
   const viewStartTime = useRef(null);
   const totalViewTime = useRef(0);
-  const relatedCardCloseTimerRef = useRef(null);
-
-  useEffect(() => () => {
-    if (relatedCardCloseTimerRef.current) clearTimeout(relatedCardCloseTimerRef.current);
-  }, []);
+  const relatedCardClosingRef = useRef(false);
 
   useEffect(() => {
     if (!isCardVisible) {
@@ -235,18 +237,41 @@ const PaperCard = memo(function PaperCard({
     : {};
   const visiblePrimaryCategory = useMemo(
     () => [paper.primaryCategory, ...(paper.categories || [])]
-      .find(category => category && !isTechnicalClassification(category)) || '',
+      .find(category => category
+        && !isTechnicalClassification(category)
+        && !isOpaqueQueryTopicText(category)) || '',
     [paper.categories, paper.primaryCategory]
   );
 
   const closeRelatedCard = useCallback(() => {
-    if (isClosingRelatedCard) return;
+    if (relatedCardClosingRef.current) return;
+    relatedCardClosingRef.current = true;
     setIsClosingRelatedCard(true);
-    relatedCardCloseTimerRef.current = setTimeout(() => {
+    if (getRelatedTransitionDuration(RELATED_CARD_CLOSE_MS, prefersReducedMotion) === 0) {
+      relatedCardClosingRef.current = false;
       setSelectedRelatedPaper(null);
       setIsClosingRelatedCard(false);
-    }, 220);
-  }, [isClosingRelatedCard]);
+    }
+  }, [prefersReducedMotion]);
+
+  const handleRelatedCardAnimationEnd = useCallback((event) => {
+    if (event.target !== event.currentTarget || getRelatedTransitionAction(event.animationName) !== 'close') return;
+    if (!relatedCardClosingRef.current) return;
+    relatedCardClosingRef.current = false;
+    setSelectedRelatedPaper(null);
+    setIsClosingRelatedCard(false);
+  }, []);
+
+  const closeRelatedSheet = useCallback(() => {
+    setShowRelated(false);
+  }, []);
+
+  const selectRelatedPaper = useCallback((relatedPaper) => {
+    relatedCardClosingRef.current = false;
+    setIsClosingRelatedCard(false);
+    setShowRelated(false);
+    setSelectedRelatedPaper(relatedPaper);
+  }, []);
 
   const handleMarkAsRead = (e) => {
     e.stopPropagation();
@@ -289,8 +314,14 @@ const PaperCard = memo(function PaperCard({
   const areaInfo = getAreaInfo();
   const categoryLabel = getCategoryLabelText();
   const primaryTopic = useMemo(
-    () => resolvePaperTopic(visiblePrimaryCategory, language),
-    [language, visiblePrimaryCategory]
+    () => visiblePrimaryCategory ? resolvePaperTopic({
+      categoryId: visiblePrimaryCategory,
+      categoryIds: [visiblePrimaryCategory],
+      display_name: categoryLabel,
+      query: visiblePrimaryCategory,
+      source: 'category',
+    }, language) : null,
+    [categoryLabel, language, visiblePrimaryCategory]
   );
   const paperTopicTags = useMemo(
     () => buildPaperTopicTags({
@@ -604,20 +635,20 @@ const PaperCard = memo(function PaperCard({
           <div className="pc-semantic-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
             {paperTopicTags.map((tag) => {
               const topic = resolvePaperTopic(tag.value, language);
-              const TagElement = topic ? motion.button : motion.span;
+              if (!topic) return null;
               return (
-                <TagElement
+                <motion.button
                   key={tag.key}
-                  type={topic ? 'button' : undefined}
-                  className={`pc-semantic-tag ${topic ? 'pc-topic-link' : ''} ${tag.source === 'concept' && topic && !topic.reliable ? 'pc-topic-link--external' : ''}`}
-                  onClick={topic ? (event) => openTopic(event, topic) : undefined}
-                  title={topic ? `${isEnglish ? 'Explore' : 'Explorar'} ${topic.label}` : undefined}
-                  initial={{ opacity: 0, y: 4 }}
+                  type="button"
+                  className={`pc-semantic-tag pc-topic-link ${tag.source === 'concept' && !topic.reliable ? 'pc-topic-link--external' : ''}`}
+                  onClick={(event) => openTopic(event, topic)}
+                  title={`${isEnglish ? 'Explore' : 'Explorar'} ${topic.label}`}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                  transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
                 >
                   {tag.label}
-                </TagElement>
+                </motion.button>
               );
             })}
           </div>
@@ -933,20 +964,23 @@ const PaperCard = memo(function PaperCard({
       {showRelated && createPortal(
         <RelatedPapersSheet
           paper={paper}
-          onClose={() => setShowRelated(false)}
-          onSelectPaper={(relatedPaper) => {
-            setShowRelated(false);
-            setSelectedRelatedPaper(relatedPaper);
-          }}
+          onClose={closeRelatedSheet}
+          onSelectPaper={selectRelatedPaper}
         />,
         document.body,
+        `papertok-related-sheet:${getRelatedPaperIdentity(paper) || 'current'}`,
       )}
       {showAIExplanation && createPortal(
         <AIExplanationSheet paper={aiExplanationPaper} onClose={() => setShowAIExplanation(false)} />,
         document.body,
+        'papertok-ai-explanation',
       )}
       {selectedRelatedPaper && createPortal(
-        <div className={`related-card-overlay ${isClosingRelatedCard ? 'is-closing' : ''}`}>
+        <div
+          className={`related-card-overlay ${isClosingRelatedCard ? 'is-closing' : ''}`}
+          onAnimationEnd={handleRelatedCardAnimationEnd}
+          onAnimationCancel={handleRelatedCardAnimationEnd}
+        >
           <button
             className="related-card-back"
             onClick={closeRelatedCard}
@@ -972,6 +1006,7 @@ const PaperCard = memo(function PaperCard({
           />
         </div>,
         document.body,
+        `papertok-related-card:${getRelatedPaperIdentity(selectedRelatedPaper) || 'selected'}`,
       )}
     </div>
   );

@@ -45,3 +45,43 @@ test('skips disambiguation and empty Wikipedia results', () => {
     },
   }, 'en'), null);
 });
+
+test('rejects an approximate Wikipedia result for a free-text topic', () => {
+  const data = {
+    query: {
+      pages: {
+        7: {
+          index: 1,
+          title: 'Journal of Chemical Theory and Computation',
+          extract: 'A scientific journal about theoretical chemistry.',
+          fullurl: 'https://en.wikipedia.org/wiki/Journal_of_Chemical_Theory_and_Computation',
+        },
+      },
+    },
+  };
+
+  assert.equal(mapWikipediaSearchResponse(data, 'en', {
+    expectedTitle: 'Theory of computation',
+    strictTitleMatch: true,
+  }), null);
+});
+
+test('keeps an exact Wikipedia result for a free-text topic', () => {
+  const result = mapWikipediaSearchResponse({
+    query: {
+      pages: {
+        9: {
+          index: 1,
+          title: 'Theory of computation',
+          extract: 'Theoretical computer science and mathematical logic.',
+          fullurl: 'https://en.wikipedia.org/wiki/Theory_of_computation',
+        },
+      },
+    },
+  }, 'en', {
+    expectedTitle: 'Theory of computation',
+    strictTitleMatch: true,
+  });
+
+  assert.equal(result?.title, 'Theory of computation');
+});

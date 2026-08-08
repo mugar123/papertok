@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildPaperTopicTags } from './paperTopicTags.js';
+import { resolvePaperTopic, topicExplorerPath } from './topicNavigation.js';
 
 test('keeps original arXiv categories ahead of later OpenAlex concepts', () => {
   const basePaper = {
@@ -62,5 +63,52 @@ test('uses readable area labels for valid arXiv codes outside the preference tax
     'Physics',
     'Computer Science',
     'Quantum chaos',
+  ]);
+
+  const fallbackTopic = resolvePaperTopic(tags[0].value, 'en');
+  const fallbackUrl = new URL(topicExplorerPath(fallbackTopic), 'https://papertok.test');
+  assert.equal(fallbackTopic.display_name, 'Physics');
+  assert.equal(fallbackTopic.query, 'nlin.CD');
+  assert.deepEqual(fallbackTopic.categoryIds, ['nlin.CD']);
+  assert.equal(fallbackUrl.searchParams.get('name'), 'Physics');
+  assert.equal(fallbackUrl.searchParams.get('q'), 'nlin.CD');
+});
+
+test('only emits semantic tags that resolve to navigable topics', () => {
+  const tags = buildPaperTopicTags({
+    primaryCategory: 'astro-ph.CO',
+    categories: ['astro-ph.CO', 'gr-qc'],
+    concepts: [
+      { id: 'mesh:D000077216', display_name: 'Spatial transcriptomics', source: 'pubmed' },
+      'Quantum sensing',
+      { id: 'provider:generic', display_name: 'Research Paper' },
+      { id: 'provider:url', display_name: 'https://example.com/topic' },
+      { id: 'provider:pacs', display_name: '04.70.Dy' },
+    ],
+  }, 10, 'en');
+
+  assert.deepEqual(tags.map(tag => tag.label), [
+    'General Relativity and Quantum Cosmology',
+    'Spatial transcriptomics',
+    'Quantum sensing',
+  ]);
+  assert.equal(tags.every(tag => Boolean(topicExplorerPath(resolvePaperTopic(tag.value, 'en')))), true);
+});
+
+test('recognizes every supported semantic label field', () => {
+  const tags = buildPaperTopicTags({
+    concepts: [
+      { id: 'provider:one', display_name: 'Spatial transcriptomics' },
+      { id: 'provider:two', displayName: 'Single-cell proteomics' },
+      { id: 'provider:three', name: 'Quantum sensing' },
+      { id: 'provider:four', label: 'Gene regulation' },
+    ],
+  }, 10, 'en');
+
+  assert.deepEqual(tags.map(tag => tag.label), [
+    'Spatial transcriptomics',
+    'Single-cell proteomics',
+    'Quantum sensing',
+    'Gene regulation',
   ]);
 });
