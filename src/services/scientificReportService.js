@@ -19,6 +19,7 @@ import {
 } from '../utils/scientificReportRanking.js';
 
 const CORPUS_CACHE = new Map();
+const MAX_CORPUS_CACHE_ENTRIES = 24;
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour in ms
 const DEGRADED_CACHE_TTL = 5 * 60 * 1000;
 // Must exceed the arXiv fallback cascade's worst case (worker 4s + proxy 4.5s in
@@ -26,6 +27,22 @@ const DEGRADED_CACHE_TTL = 5 * 60 * 1000;
 // "unavailable" while a later fallback layer was about to succeed and the
 // degraded status then gets pinned in the corpus cache.
 const REPORT_SOURCE_TIMEOUT_MS = 10_000;
+
+const DEFAULT_ARXIV_REPORT_CATEGORIES = ['cs.AI', 'quant-ph', 'q-bio.NC', 'stat.ML', 'math.PR', 'eess.SP'];
+const REPORT_ARXIV_CATEGORIES = Object.freeze({
+  physics: Object.keys(CATEGORIES.physics.subcategories),
+  cs: Object.keys(CATEGORIES.cs.subcategories),
+  math: Object.keys(CATEGORIES.math.subcategories),
+  stat: Object.keys(CATEGORIES.stat.subcategories),
+  econ: Object.keys(CATEGORIES.econ.subcategories),
+  'q-fin': Object.keys(CATEGORIES['q-fin'].subcategories),
+  eess: Object.keys(CATEGORIES.eess.subcategories).filter(category => category.startsWith('eess.')),
+  mech: ['physics.flu-dyn', 'cs.RO'],
+  civil: ['physics.geo-ph', 'eess.SY'],
+  chemeng: ['cond-mat.mtrl-sci', 'physics.chem-ph'],
+  med: [],
+  bio: ['q-bio.BM', 'q-bio.CB', 'q-bio.GN', 'q-bio.MN', 'q-bio.NC', 'q-bio.OT', 'q-bio.PE', 'q-bio.QM', 'q-bio.SC', 'q-bio.TO'],
+});
 
 function withSourceDeadline(promise, timeoutMs = REPORT_SOURCE_TIMEOUT_MS) {
   const unavailable = { papers: [], status: 'unavailable' };
@@ -51,12 +68,19 @@ export const scorePaper = scoreScientificPaper;
 /**
  * Helper to check if a paper matches a selected category key
  */
-function paperMatchesCategory(paper, categoryKey) {
+function normalizeCategoryText(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export function paperMatchesCategory(paper, categoryKey) {
   const area = CATEGORIES[categoryKey];
   if (!area) return false;
-
-  const primaryFieldId = String(paper.primaryTopic?.field?.id || '').split('/').pop();
-  if (primaryFieldId && REPORT_OPENALEX_FIELDS[categoryKey]?.includes(primaryFieldId)) return true;
   
   const prim = (paper.primaryCategory || '').toLowerCase();
   const key = categoryKey.toLowerCase();
@@ -66,20 +90,67 @@ function paperMatchesCategory(paper, categoryKey) {
   
   const areaFromArxiv = getCategoryArea(paper.primaryCategory);
   if (areaFromArxiv === categoryKey) return true;
-  
-  const labelsToMatch = [
-    area.label.toLowerCase(),
-    area.labelEn.toLowerCase(),
+
+  const rawPaperCategories = [
+    ...(paper.categories || []),
+    ...(paper.allCategories || []),
+  ].filter(category => typeof category === 'string');
+  if (rawPaperCategories.some(category => getCategoryArea(category) === categoryKey)) return true;
+
+  const labelsToMatch = new Set([
+    normalizeCategoryText(area.label),
+    normalizeCategoryText(area.labelEn),
     ...Object.values(area.subcategories).flatMap(sub => [
-      sub.label.toLowerCase(),
-      sub.labelEn.toLowerCase()
-    ])
-  ];
-  
-  const paperCats = (paper.categories || []).map(c => c.toLowerCase());
-  if (paper.primaryCategory) paperCats.push(paper.primaryCategory.toLowerCase());
-  
-  return paperCats.some(cat => labelsToMatch.includes(cat));
+      normalizeCategoryText(sub.label),
+      normalizeCategoryText(sub.labelEn),
+    ]),
+  ]);
+  const paperCats = rawPaperCategories.map(normalizeCategoryText).filter(Boolean);
+  if (paperCats.some(category => labelsToMatch.has(category))) return true;
+
+  const primaryFieldId = String(paper.primaryTopic?.field?.id || '').split('/').pop();
+  if (!primaryFieldId || !REPORT_OPENALEX_FIELDS[categoryKey]?.includes(primaryFieldId)) return false;
+
+  const fieldOwners = Object.entries(REPORT_OPENALEX_FIELDS)
+    .filter(([, fields]) => fields.includes(primaryFieldId))
+    .map(([owner]) => owner);
+  return fieldOwners.length === 1 && fieldOwners[0] === categoryKey;
+}
+
+export function buildOpenAlexTopicFilters(categories = []) {
+  const selected = [...new Set(categories)].filter(category => REPORT_OPENALEX_FIELDS[category]);
+  if (selected.length === 0) {
+    return [
+      'primary_topic.field.id:27|24|28|29|30|35|36',
+      'primary_topic.field.id:17|31|26|18',
+      'primary_topic.field.id:11|13|16',
+      '',
+    ];
+  }
+
+  return [...new Set(selected.map(category => (
+    `primary_topic.field.id:${[...new Set(REPORT_OPENALEX_FIELDS[category])].join('|')}`
+  )))];
+}
+
+export function getArxivCategoriesForReport(categories = []) {
+  const selected = [...new Set(categories)].filter(category => CATEGORIES[category]);
+  if (selected.length === 0) return DEFAULT_ARXIV_REPORT_CATEGORIES;
+  return [...new Set(selected.flatMap(category => REPORT_ARXIV_CATEGORIES[category] || []))];
+}
+
+export function getPubmedCategoriesForReport(categories = []) {
+  return [...new Set(categories
+    .filter(category => category === 'med' || category === 'bio')
+    .flatMap(category => Object.keys(CATEGORIES[category]?.subcategories || {})))];
+}
+
+function cacheCorpus(cacheKey, entry) {
+  CORPUS_CACHE.delete(cacheKey);
+  while (CORPUS_CACHE.size >= MAX_CORPUS_CACHE_ENTRIES) {
+    CORPUS_CACHE.delete(CORPUS_CACHE.keys().next().value);
+  }
+  CORPUS_CACHE.set(cacheKey, entry);
 }
 
 export function formatOpenAlexWork(work) {
@@ -145,15 +216,7 @@ export function formatOpenAlexWork(work) {
 }
 
 async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filters = {}, options = {}) {
-  const topicFilters = filters.categories && filters.categories.length > 0
-    ? [...new Set(filters.categories.flatMap(category => REPORT_OPENALEX_FIELDS[category] || []))]
-      .map(field => `primary_topic.field.id:${field}`)
-    : [
-       'primary_topic.field.id:27|24|28|29|30|35|36',
-       'primary_topic.field.id:17|31|26|18',
-       'primary_topic.field.id:11|13|16',
-       '',
-      ];
+  const topicFilters = buildOpenAlexTopicFilters(filters.categories);
   
   const sort = 'cited_by_count:desc';
   
@@ -209,26 +272,10 @@ async function fetchOpenAlexCandidates(fromStr, toStr, timeframe, page = 1, filt
  */
 async function fetchArxivCandidates(timeframe, page = 1, filters = {}, options = {}) {
   try {
-    const AREA_TO_ARXIV = {
-      cs: 'cs.AI',
-      physics: 'quant-ph',
-      bio: 'q-bio.NC',
-      stat: 'stat.ML',
-      math: 'math.PR',
-      eess: 'eess.SP',
-      econ: 'econ.EM',
-      'q-fin': 'q-fin.ST'
-    };
-    
-    let categories = [];
-    if (filters.categories && filters.categories.length > 0) {
-      categories = filters.categories.map(c => AREA_TO_ARXIV[c]).filter(Boolean);
-      if (categories.length === 0) return { papers: [], status: 'not-applicable' };
-    } else {
-      categories = ['cs.AI', 'quant-ph', 'q-bio.NC', 'stat.ML', 'math.PR', 'eess.SP'];
-    }
+    const categories = getArxivCategoriesForReport(filters.categories);
+    if (categories.length === 0) return { papers: [], status: 'not-applicable' };
 
-    const { fromStr, toStr } = getDateThresholds(timeframe);
+    const { fromStr, toStr } = options.period || getDateThresholds(timeframe);
     const categoryQuery = categories.map(category => `cat:${category}`).join(' OR ');
 
     // arXiv answers newest-first queries in well under a second, but a
@@ -271,7 +318,7 @@ async function fetchArxivCandidates(timeframe, page = 1, filters = {}, options =
 /**
  * Fetch candidates from PubMed
  */
-async function fetchPubmedCandidates(timeframe, page = 1, filters = {}) {
+async function fetchPubmedCandidates(timeframe, page = 1, filters = {}, options = {}) {
   try {
     if (filters.categories && filters.categories.length > 0) {
       const isMedOrBio = filters.categories.some(c => ['med', 'bio'].includes(c));
@@ -279,12 +326,13 @@ async function fetchPubmedCandidates(timeframe, page = 1, filters = {}) {
     }
 
     const adapter = new PubmedAdapter();
-    const { fromStr, toStr } = getDateThresholds(timeframe);
+    const { fromStr, toStr } = options.period || getDateThresholds(timeframe);
     // PubMed accepts publication-date ranges directly in the query. Without this,
     // a daily or weekly edition can accidentally surface older articles.
     const dateRange = `("${fromStr}"[Date - Publication] : "${toStr}"[Date - Publication])`;
     const query = `(medicine[journal] OR biology[journal] OR science[journal] OR Nature[journal]) AND ${dateRange}`;
-    const response = await adapter.search(query, page);
+    const internalCategories = getPubmedCategoriesForReport(filters.categories);
+    const response = await adapter.search(query, page, { internalCategories });
     return { papers: response.papers || [], status: 'active' };
   } catch (err) {
     console.warn("Failed to fetch PubMed candidates for report", err);
@@ -310,8 +358,11 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
     cacheKey = tf;
   }
   
-  // Include page and filters in cache key
-  cacheKey += `_p${normalizedPage}`;
+  const period = getDateThresholds(tf);
+  const { fromStr, toStr, days } = period;
+
+  // Concrete dates prevent a preset edition from reusing yesterday's corpus.
+  cacheKey += `_${fromStr}_${toStr}_p${normalizedPage}`;
   
   const filterKey = JSON.stringify({
     categories: [...new Set(filters.categories || [])].sort(),
@@ -319,7 +370,6 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
   });
   if (filterKey !== '{"categories":[],"countries":[]}') cacheKey += `_f:${filterKey}`;
   
-  const { fromStr, toStr, days } = getDateThresholds(tf);
   const cached = CORPUS_CACHE.get(cacheKey);
   let corpus = !forceRefresh && cached && (Date.now() - cached.timestamp < (cached.ttlMs || CACHE_TTL))
     ? cached.data
@@ -332,11 +382,11 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
     const [arxivResult, openAlexResult, pubmedResult] = await Promise.all([
       hasCountryFilter
         ? Promise.resolve(excludedSource)
-        : withSourceDeadline(fetchArxivCandidates(tf, normalizedPage, filters, { forceRefresh })),
+        : withSourceDeadline(fetchArxivCandidates(tf, normalizedPage, filters, { forceRefresh, period })),
       withSourceDeadline(fetchOpenAlexCandidates(fromStr, toStr, tf, normalizedPage, filters, { forceRefresh })),
       hasCountryFilter
         ? Promise.resolve(excludedSource)
-        : withSourceDeadline(fetchPubmedCandidates(tf, normalizedPage, filters)),
+        : withSourceDeadline(fetchPubmedCandidates(tf, normalizedPage, filters, { period })),
     ]);
 
     const coverage = {
@@ -361,7 +411,7 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
 
     corpus = { candidates, coverage };
     const hasUnavailableSource = coverage.sources.some(source => source.status === 'unavailable');
-    CORPUS_CACHE.set(cacheKey, {
+    cacheCorpus(cacheKey, {
       timestamp: Date.now(),
       ttlMs: hasUnavailableSource ? DEGRADED_CACHE_TTL : CACHE_TTL,
       data: corpus,

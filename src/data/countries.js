@@ -109,6 +109,16 @@ export const COUNTRIES_EN = {
   HK: 'Hong Kong',
 };
 
+export const SUPPORTED_COUNTRY_CODES = Object.freeze(Object.keys(COUNTRIES));
+
+function normalizeCountrySearch(value) {
+  return String(value || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
 /**
  * Get the localized name for a country code.
  */
@@ -121,11 +131,24 @@ export function getCountryName(code, language = 'es') {
  * Search countries by localized name. Returns array of { code, name }.
  */
 export function searchCountries(query, language = 'es') {
-  if (!query || query.length < 1) return [];
-  const q = query.toLowerCase();
+  const q = normalizeCountrySearch(query);
+  if (!q) return [];
   const names = language === 'en' ? COUNTRIES_EN : COUNTRIES;
   return Object.entries(names)
-    .filter(([, name]) => name.toLowerCase().includes(q))
-    .map(([code, name]) => ({ code, name }))
+    .map(([code, name]) => ({
+      code,
+      name,
+      normalizedCode: code.toLowerCase(),
+      normalizedName: normalizeCountrySearch(name),
+    }))
+    .filter(({ normalizedCode, normalizedName }) => (
+      normalizedName.includes(q) || normalizedCode.startsWith(q)
+    ))
+    .sort((a, b) => {
+      const aStarts = a.normalizedCode.startsWith(q) ? 0 : a.normalizedName.startsWith(q) ? 1 : 2;
+      const bStarts = b.normalizedCode.startsWith(q) ? 0 : b.normalizedName.startsWith(q) ? 1 : 2;
+      return aStarts - bStarts || a.name.localeCompare(b.name, language);
+    })
+    .map(({ code, name }) => ({ code, name }))
     .slice(0, 10);
 }

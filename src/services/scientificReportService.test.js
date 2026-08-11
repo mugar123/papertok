@@ -1,9 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  buildOpenAlexTopicFilters,
   extractFeaturedConcepts,
   formatOpenAlexWork,
+  getArxivCategoriesForReport,
   getDateThresholds,
+  getPubmedCategoriesForReport,
+  paperMatchesCategory,
   scorePaper,
 } from './scientificReportService.js';
 
@@ -73,4 +77,38 @@ test('extracts featured topics from string and OpenAlex object concepts', () => 
   assert.ok(concepts.includes('Machine Learning'));
   assert.ok(concepts.includes('Inteligencia Artificial'));
   assert.ok(!concepts.includes('Physics'));
+});
+
+test('groups OpenAlex fields by selected discipline instead of querying every field', () => {
+  assert.deepEqual(buildOpenAlexTopicFilters(['med']), [
+    'primary_topic.field.id:24|27|28|29|30|35|36',
+  ]);
+  assert.deepEqual(buildOpenAlexTopicFilters(['civil', 'mech']), [
+    'primary_topic.field.id:22',
+  ]);
+});
+
+test('expands broad report disciplines for arXiv and PubMed', () => {
+  const physics = getArxivCategoriesForReport(['physics']);
+  assert.ok(physics.includes('quant-ph'));
+  assert.ok(physics.includes('astro-ph.CO'));
+  assert.ok(physics.length > 10);
+
+  const biomedical = getPubmedCategoriesForReport(['bio', 'med']);
+  assert.ok(biomedical.includes('bio.gen'));
+  assert.ok(biomedical.includes('med.cardio'));
+});
+
+test('does not treat a shared OpenAlex field as proof of a narrower discipline', () => {
+  const electricalPaper = {
+    primaryTopic: { field: { id: 'https://openalex.org/fields/22' } },
+    categories: ['Electrical engineering'],
+  };
+  const civilPaper = {
+    primaryTopic: { field: { id: 'https://openalex.org/fields/22' } },
+    categories: ['Structural Engineering'],
+  };
+
+  assert.equal(paperMatchesCategory(electricalPaper, 'civil'), false);
+  assert.equal(paperMatchesCategory(civilPaper, 'civil'), true);
 });

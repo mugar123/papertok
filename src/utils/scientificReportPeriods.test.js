@@ -19,3 +19,15 @@ test('builds a non-overlapping comparison period of equal length', () => {
     days: 7,
   });
 });
+
+test('counts custom calendar days correctly across daylight-saving changes', () => {
+  assert.deepEqual(getDateThresholds({
+    type: 'custom',
+    from: '2026-03-25',
+    to: '2026-03-31',
+  }), {
+    fromStr: '2026-03-25',
+    toStr: '2026-03-31',
+    days: 7,
+  });
+});

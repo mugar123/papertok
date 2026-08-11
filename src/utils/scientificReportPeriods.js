@@ -7,15 +7,30 @@ export function formatReportDate(date) {
   return `${year}-${month}-${day}`;
 }
 
-function parseLocalDate(value) {
-  return new Date(`${value}T00:00:00`);
+function parseDateParts(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ''));
+  if (!match) return null;
+  return { year: Number(match[1]), month: Number(match[2]), day: Number(match[3]) };
+}
+
+function toUtcDay(value) {
+  const parts = parseDateParts(value);
+  if (!parts) return NaN;
+  return Date.UTC(parts.year, parts.month - 1, parts.day);
+}
+
+function parseUtcDate(value) {
+  const timestamp = toUtcDay(value);
+  return Number.isFinite(timestamp) ? new Date(timestamp) : new Date(NaN);
+}
+
+function formatUtcDate(date) {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
 }
 
 export function getDateThresholds(timeframe, currentDate = new Date()) {
   if (typeof timeframe === 'object' && timeframe?.type === 'custom') {
-    const fromDate = parseLocalDate(timeframe.from);
-    const toDate = parseLocalDate(timeframe.to);
-    const difference = Math.floor((toDate - fromDate) / DAY_MS);
+    const difference = Math.floor((toUtcDay(timeframe.to) - toUtcDay(timeframe.from)) / DAY_MS);
     return {
       fromStr: timeframe.from,
       toStr: timeframe.to,
@@ -43,17 +58,17 @@ export function getDateThresholds(timeframe, currentDate = new Date()) {
 
 export function getComparisonPeriods(timeframe, currentDate = new Date()) {
   const current = getDateThresholds(timeframe, currentDate);
-  const currentFrom = parseLocalDate(current.fromStr);
+  const currentFrom = parseUtcDate(current.fromStr);
   const previousTo = new Date(currentFrom);
-  previousTo.setDate(currentFrom.getDate() - 1);
+  previousTo.setUTCDate(currentFrom.getUTCDate() - 1);
   const previousFrom = new Date(previousTo);
-  previousFrom.setDate(previousTo.getDate() - (current.days - 1));
+  previousFrom.setUTCDate(previousTo.getUTCDate() - (current.days - 1));
 
   return {
     current,
     previous: {
-      fromStr: formatReportDate(previousFrom),
-      toStr: formatReportDate(previousTo),
+      fromStr: formatUtcDate(previousFrom),
+      toStr: formatUtcDate(previousTo),
       days: current.days,
     },
   };

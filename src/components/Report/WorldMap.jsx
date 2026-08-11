@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from '@vnedyalk0v/react19-simple-maps';
-import { getCountryName } from '../../data/countries';
+import { getCountryName, SUPPORTED_COUNTRY_CODES } from '../../data/countries';
 import isoMapping from '../../data/isoMapping.json';
 import geoData from '../../data/world-110m.json';
 import { useLanguage } from '../../context/LanguageContext';
 import './WorldMap.css';
+
+const SUPPORTED_COUNTRIES = new Set(SUPPORTED_COUNTRY_CODES);
 
 export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
   const { language, isEnglish } = useLanguage();
@@ -14,6 +16,7 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
 
   const handleMouseEnter = (geo, e) => {
     const alpha2 = isoMapping.numericToAlpha2[geo.id];
+    if (!SUPPORTED_COUNTRIES.has(alpha2)) return;
     const name = alpha2 ? getCountryName(alpha2, language) : geo.properties.name;
     
     setTooltipContent(name);
@@ -32,7 +35,7 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
 
   const handleClick = (geo) => {
     const alpha2 = isoMapping.numericToAlpha2[geo.id];
-    if (alpha2) {
+    if (SUPPORTED_COUNTRIES.has(alpha2)) {
       onToggleCountry(alpha2);
     }
   };
@@ -65,7 +68,8 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
             {({ geographies }) =>
               geographies.map((geo) => {
                 const alpha2 = isoMapping.numericToAlpha2[geo.id];
-                const isSelected = alpha2 && selectedCountries.includes(alpha2);
+                const isSupported = SUPPORTED_COUNTRIES.has(alpha2);
+                const isSelected = isSupported && selectedCountries.includes(alpha2);
                 const countryName = alpha2 ? getCountryName(alpha2, language) : geo.properties.name;
                 
                 return (
@@ -76,11 +80,11 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
                     onKeyDown={(event) => handleKeyDown(event, geo)}
                     onMouseEnter={(e) => handleMouseEnter(geo, e)}
                     onMouseLeave={handleMouseLeave}
-                    className={`wm-geo ${isSelected ? 'selected' : ''}`}
-                    role={alpha2 ? 'button' : undefined}
-                    tabIndex={alpha2 ? 0 : -1}
-                    aria-label={alpha2 ? `${isEnglish ? 'Filter by' : 'Filtrar por'} ${countryName}` : undefined}
-                    aria-pressed={alpha2 ? isSelected : undefined}
+                    className={`wm-geo ${isSelected ? 'selected' : ''} ${isSupported ? '' : 'unsupported'}`}
+                    role={isSupported ? 'button' : undefined}
+                    tabIndex={isSupported ? 0 : -1}
+                    aria-label={isSupported ? `${isEnglish ? 'Filter by' : 'Filtrar por'} ${countryName}` : undefined}
+                    aria-pressed={isSupported ? isSelected : undefined}
                   />
                 );
               })

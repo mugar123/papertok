@@ -39,6 +39,15 @@
   transition: color 0.2s;
 }
 
+.cds-minimal-close:focus-visible,
+.cds-badge-btn:focus-visible,
+.cds-fcal-nav:focus-visible,
+.cds-fcal-day:focus-visible,
+.cds-minimal-apply:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+
 @media (hover: hover) and (pointer: fine) {
   .cds-minimal-close:hover {
     color: #fff;
@@ -218,9 +227,16 @@
   cursor: pointer;
   color: rgba(255, 255, 255, 0.7);
   transition: all 0.2s ease;
+  border: 0;
+  background: transparent;
 }
 
 .cds-fcal-day.empty {
+  cursor: default;
+}
+
+.cds-fcal-day:disabled {
+  opacity: 0.22;
   cursor: default;
 }
 
@@ -238,10 +254,52 @@
 }
 
 .cds-fcal-day.endpoint {
-  background: var(--accent) !important;
+  background: var(--accent-primary) !important;
   color: #fff;
   box-shadow: 0 0 15px rgba(155, 135, 245, 0.6);
   text-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
+}
+
+@media (max-width: 560px) {
+  .cds-minimal-container {
+    padding: 18px 4px;
+  }
+
+  .cds-year-label {
+    font-size: 27px;
+  }
+
+  .cds-minimal-actions {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .cds-popover-wrapper,
+  .cds-badge-btn,
+  .cds-minimal-apply {
+    width: 100%;
+  }
+
+  .cds-badge-btn,
+  .cds-minimal-apply {
+    min-height: 44px;
+    justify-content: center;
+  }
+
+  .cds-floating-calendar {
+    position: fixed;
+    right: 12px;
+    bottom: 88px;
+    left: 12px;
+    width: auto;
+    max-width: 360px;
+    margin: 0 auto;
+  }
+
+  .cds-fcal-day {
+    min-height: 38px;
+  }
 }
 
 /* Apply Button */

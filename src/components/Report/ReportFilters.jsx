@@ -1,13 +1,29 @@
-import { useState, useMemo } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
 import { getCountryName, searchCountries } from '../../data/countries';
-import { Filter, Search, X, MapPin, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, Filter, LoaderCircle, MapPin, Search, X } from 'lucide-react';
 import WorldMap from './WorldMap';
 import { useLanguage } from '../../context/LanguageContext';
 import './ReportFilters.css';
 
 const EASE = [0.16, 1, 0.3, 1];
+const QUICK_COUNTRIES = ['US', 'GB', 'DE', 'FR', 'CN', 'JP', 'ES', 'CA'];
+
+function normalizeFilters(filters = {}) {
+  return {
+    categories: [...new Set(filters.categories || [])],
+    countries: [...new Set(filters.countries || [])],
+  };
+}
+
+function filterKey(filters = {}) {
+  const normalized = normalizeFilters(filters);
+  return JSON.stringify({
+    categories: [...normalized.categories].sort(),
+    countries: [...normalized.countries].sort(),
+  });
+}
 
 /** Smooth expand/collapse for a block of content. */
 function Collapse({ isOpen, children, reduced, id }) {
@@ -42,58 +58,93 @@ function Chevron({ isOpen, size = 16, reduced }) {
   );
 }
 
-export default function ReportFilters({ filters, onChange }) {
+export default function ReportFilters({ filters, onChange, loading = false }) {
   const { language, isEnglish } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const [isCountryOpen, setIsCountryOpen] = useState(() => (filters.countries?.length || 0) > 0);
   const [countrySearch, setCountrySearch] = useState('');
+  const [draftFilters, setDraftFilters] = useState(() => normalizeFilters(filters));
+  const countryInputRef = useRef(null);
   const reduced = useReducedMotion();
 
   const areaKeys = Object.keys(CATEGORIES);
+  const appliedFilters = useMemo(() => normalizeFilters(filters), [filters]);
+  const appliedKey = useMemo(() => filterKey(appliedFilters), [appliedFilters]);
+  const draftKey = useMemo(() => filterKey(draftFilters), [draftFilters]);
+  const hasPendingChanges = appliedKey !== draftKey;
 
-  const searchResults = useMemo(() => {
-    return searchCountries(countrySearch, language);
-  }, [countrySearch, language]);
+  const searchResults = useMemo(() => (
+    searchCountries(countrySearch, language)
+  ), [countrySearch, language]);
 
-  const toggleCategory = (key) => {
-    const current = filters.categories || [];
-    const next = current.includes(key)
-      ? current.filter(k => k !== key)
-      : [...current, key];
-    onChange({ ...filters, categories: next });
+  const toggleDraftValue = (field, value) => {
+    setDraftFilters(current => {
+      const values = current[field] || [];
+      return {
+        ...current,
+        [field]: values.includes(value)
+          ? values.filter(item => item !== value)
+          : [...values, value],
+      };
+    });
   };
+
+  const toggleCategory = (key) => toggleDraftValue('categories', key);
 
   const toggleCountry = (code) => {
-    const current = filters.countries || [];
-    const next = current.includes(code)
-      ? current.filter(c => c !== code)
-      : [...current, code];
-    onChange({ ...filters, countries: next });
+    toggleDraftValue('countries', code);
     setCountrySearch('');
+    countryInputRef.current?.blur();
   };
 
-  const clearAll = () => {
-    onChange({ categories: [], countries: [] });
+  const removeAppliedValue = (field, value) => {
+    const next = {
+      ...appliedFilters,
+      [field]: appliedFilters[field].filter(item => item !== value),
+    };
+    onChange(next);
   };
 
-  const activeCategories = filters.categories || [];
-  const activeCountries = filters.countries || [];
-  const activeCount = activeCategories.length + activeCountries.length;
+  const closePanel = () => {
+    setDraftFilters(appliedFilters);
+    setCountrySearch('');
+    setIsOpen(false);
+  };
+
+  const togglePanel = () => {
+    if (isOpen) closePanel();
+    else {
+      setDraftFilters(appliedFilters);
+      setIsOpen(true);
+    }
+  };
+
+  const applyFilters = () => {
+    if (!hasPendingChanges || loading) return;
+    onChange(normalizeFilters(draftFilters));
+    setCountrySearch('');
+    setIsOpen(false);
+  };
+
+  const activeCategories = draftFilters.categories;
+  const activeCountries = draftFilters.countries;
+  const appliedCount = appliedFilters.categories.length + appliedFilters.countries.length;
+  const draftCount = activeCategories.length + activeCountries.length;
 
   return (
     <div className="rf">
-      {/* Toggle button */}
       <button
+        type="button"
         className={`rf-toggle ${isOpen ? 'is-open' : ''}`}
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={togglePanel}
         aria-expanded={isOpen}
         aria-controls="rf-panel"
       >
-        <div className="rf-toggle-left">
-          <Filter size={14} />
+        <span className="rf-toggle-left">
+          <Filter size={15} />
           <span>{isEnglish ? 'Filters' : 'Filtros'}</span>
           <AnimatePresence>
-            {activeCount > 0 && (
+            {appliedCount > 0 && (
               <motion.span
                 className="rf-badge"
                 initial={reduced ? false : { scale: 0.6, opacity: 0 }}
@@ -101,17 +152,19 @@ export default function ReportFilters({ filters, onChange }) {
                 exit={reduced ? { opacity: 0 } : { scale: 0.6, opacity: 0 }}
                 transition={{ duration: 0.18 }}
               >
-                {activeCount}
+                {appliedCount}
               </motion.span>
             )}
           </AnimatePresence>
-        </div>
-        <Chevron isOpen={isOpen} reduced={reduced} />
+        </span>
+        <span className="rf-toggle-status">
+          {loading && <LoaderCircle className="rf-loading-icon" size={14} aria-hidden="true" />}
+          <Chevron isOpen={isOpen} reduced={reduced} />
+        </span>
       </button>
 
-      {/* Active filters at a glance while the panel is closed */}
       <AnimatePresence initial={false}>
-        {!isOpen && activeCount > 0 && (
+        {!isOpen && appliedCount > 0 && (
           <motion.div
             className="rf-active-row"
             initial={{ height: 0, opacity: 0 }}
@@ -120,15 +173,27 @@ export default function ReportFilters({ filters, onChange }) {
             transition={reduced ? { duration: 0 } : { duration: 0.25, ease: EASE }}
             style={{ overflow: 'hidden' }}
           >
-            <div className="rf-active-chips">
-              {activeCategories.map(key => (
-                <button key={key} className="rf-active-chip" onClick={() => toggleCategory(key)} title={isEnglish ? 'Remove filter' : 'Quitar filtro'}>
-                  {(isEnglish ? CATEGORIES[key]?.labelEn : CATEGORIES[key]?.label) || key} <X size={10} />
+            <div className="rf-active-chips" aria-label={isEnglish ? 'Active filters' : 'Filtros activos'}>
+              {appliedFilters.categories.map(key => (
+                <button
+                  type="button"
+                  key={key}
+                  className="rf-active-chip"
+                  onClick={() => removeAppliedValue('categories', key)}
+                  aria-label={`${isEnglish ? 'Remove' : 'Quitar'} ${(isEnglish ? CATEGORIES[key]?.labelEn : CATEGORIES[key]?.label) || key}`}
+                >
+                  {(isEnglish ? CATEGORIES[key]?.labelEn : CATEGORIES[key]?.label) || key} <X size={11} />
                 </button>
               ))}
-              {activeCountries.map(code => (
-                <button key={code} className="rf-active-chip" onClick={() => toggleCountry(code)} title={isEnglish ? 'Remove filter' : 'Quitar filtro'}>
-                  {getCountryName(code, language)} <X size={10} />
+              {appliedFilters.countries.map(code => (
+                <button
+                  type="button"
+                  key={code}
+                  className="rf-active-chip"
+                  onClick={() => removeAppliedValue('countries', code)}
+                  aria-label={`${isEnglish ? 'Remove' : 'Quitar'} ${getCountryName(code, language)}`}
+                >
+                  {getCountryName(code, language)} <X size={11} />
                 </button>
               ))}
             </div>
@@ -136,43 +201,45 @@ export default function ReportFilters({ filters, onChange }) {
         )}
       </AnimatePresence>
 
-      {/* Expandable panel */}
       <Collapse isOpen={isOpen} reduced={reduced} id="rf-panel">
         <div className="rf-panel">
-          {/* Category filters */}
           <div className="rf-section">
             <span className="rf-section-label">{isEnglish ? 'Discipline' : 'Disciplina'}</span>
             <motion.div
               className="rf-pills"
               initial={reduced ? false : 'hidden'}
               animate="visible"
-              variants={{ visible: { transition: { staggerChildren: 0.015 } } }}
+              variants={{ visible: { transition: { staggerChildren: 0.012 } } }}
             >
               {areaKeys.map(key => {
                 const area = CATEGORIES[key];
                 const Icon = area.icon;
                 const isActive = activeCategories.includes(key);
+                const label = isEnglish ? area.labelEn : area.label;
                 return (
                   <motion.button
+                    type="button"
                     key={key}
                     className={`rf-pill ${isActive ? 'active' : ''}`}
                     onClick={() => toggleCategory(key)}
-                    style={isActive ? { background: area.gradient, borderColor: 'transparent' } : {}}
+                    aria-pressed={isActive}
+                    aria-label={`${isActive ? (isEnglish ? 'Remove' : 'Quitar') : (isEnglish ? 'Add' : 'Añadir')} ${label}`}
+                    style={isActive ? { '--rf-pill-accent': area.gradient } : undefined}
                     variants={{
                       hidden: { opacity: 0, y: 6 },
-                      visible: { opacity: 1, y: 0, transition: { duration: 0.22, ease: EASE } },
+                      visible: { opacity: 1, y: 0, transition: { duration: 0.2, ease: EASE } },
                     }}
-                    whileTap={reduced ? undefined : { scale: 0.95 }}
+                    whileTap={reduced ? undefined : { scale: 0.96 }}
                   >
-                    <Icon size={13} />
-                    {isEnglish ? area.labelEn : area.label}
+                    {isActive && <Check size={12} aria-hidden="true" />}
+                    {!isActive && <Icon size={13} aria-hidden="true" />}
+                    {label}
                   </motion.button>
                 );
               })}
             </motion.div>
           </div>
 
-          {/* Country filters */}
           <div className="rf-section">
             <button
               className="rf-country-toggle"
@@ -181,84 +248,141 @@ export default function ReportFilters({ filters, onChange }) {
               aria-controls="rf-country-controls"
               onClick={() => setIsCountryOpen(open => !open)}
             >
-              <span><MapPin size={13} /> {isEnglish ? 'Country of origin' : 'País de origen'}{activeCountries.length ? ` (${activeCountries.length})` : ''}</span>
+              <span><MapPin size={13} /> {isEnglish ? 'Affiliation country' : 'País de afiliación'}{activeCountries.length ? ` (${activeCountries.length})` : ''}</span>
               <Chevron isOpen={isCountryOpen} size={15} reduced={reduced} />
             </button>
 
-            {/* The map expands and folds with the section instead of popping. */}
             <Collapse isOpen={isCountryOpen} reduced={reduced} id="rf-country-controls">
               <div className="rf-country-controls">
-                {/* Search */}
+                <p className="rf-country-note">
+                  {isEnglish
+                    ? 'Country results use normalized OpenAlex affiliations.'
+                    : 'Los resultados por país usan afiliaciones normalizadas de OpenAlex.'}
+                </p>
+
                 <div className="rf-search-wrap">
-                  <Search size={14} className="rf-search-icon" />
+                  <Search size={15} className="rf-search-icon" aria-hidden="true" />
                   <input
+                    ref={countryInputRef}
                     className="rf-search"
-                    type="text"
+                    type="search"
+                    aria-label={isEnglish ? 'Search affiliation country' : 'Buscar país de afiliación'}
+                    autoComplete="off"
                     placeholder={isEnglish ? 'Search country...' : 'Buscar país...'}
                     value={countrySearch}
-                    onChange={(e) => setCountrySearch(e.target.value)}
+                    onChange={(event) => setCountrySearch(event.target.value)}
                   />
                   {countrySearch && (
-                    <button className="rf-search-clear" onClick={() => setCountrySearch('')}>
+                    <button
+                      type="button"
+                      className="rf-search-clear"
+                      onClick={() => setCountrySearch('')}
+                      aria-label={isEnglish ? 'Clear country search' : 'Borrar búsqueda de país'}
+                    >
                       <X size={12} />
                     </button>
                   )}
                 </div>
 
-                {/* Search results dropdown */}
-                <AnimatePresence>
-                  {searchResults.length > 0 && (
+                <AnimatePresence mode="wait">
+                  {countrySearch && searchResults.length > 0 && (
                     <motion.div
+                      key="results"
                       className="rf-search-results"
-                      initial={reduced ? false : { opacity: 0, y: -6 }}
+                      role="listbox"
+                      aria-label={isEnglish ? 'Country results' : 'Resultados de países'}
+                      initial={reduced ? false : { opacity: 0, y: -4 }}
                       animate={{ opacity: 1, y: 0 }}
-                      exit={reduced ? { opacity: 0 } : { opacity: 0, y: -6 }}
-                      transition={{ duration: 0.18, ease: EASE }}
+                      exit={reduced ? { opacity: 0 } : { opacity: 0, y: -4 }}
+                      transition={{ duration: 0.16, ease: EASE }}
                     >
-                      {searchResults.map(({ code, name }) => (
-                        <button
-                          key={code}
-                          className={`rf-search-result ${activeCountries.includes(code) ? 'selected' : ''}`}
-                          onClick={() => toggleCountry(code)}
-                        >
-                          <span>{name}</span>
-                          <span className="rf-country-code">{code}</span>
-                        </button>
-                      ))}
+                      {searchResults.map(({ code, name }) => {
+                        const selected = activeCountries.includes(code);
+                        return (
+                          <button
+                            type="button"
+                            role="option"
+                            aria-selected={selected}
+                            key={code}
+                            className={`rf-search-result ${selected ? 'selected' : ''}`}
+                            onClick={() => toggleCountry(code)}
+                          >
+                            <span>{name}</span>
+                            <span className="rf-country-result-meta">
+                              {selected && <Check size={13} aria-hidden="true" />}
+                              <span className="rf-country-code">{code}</span>
+                            </span>
+                          </button>
+                        );
+                      })}
                     </motion.div>
+                  )}
+                  {countrySearch && searchResults.length === 0 && (
+                    <motion.p
+                      key="empty"
+                      className="rf-search-empty"
+                      initial={reduced ? false : { opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                    >
+                      {isEnglish ? 'No matching countries' : 'No hay países coincidentes'}
+                    </motion.p>
                   )}
                 </AnimatePresence>
 
-                {/* World Map */}
+                {!countrySearch && (
+                  <div className="rf-quick-countries">
+                    <span className="rf-quick-label">{isEnglish ? 'Quick selection' : 'Selección rápida'}</span>
+                    <div className="rf-quick-list">
+                      {QUICK_COUNTRIES.map(code => {
+                        const selected = activeCountries.includes(code);
+                        return (
+                          <button
+                            type="button"
+                            key={code}
+                            className={`rf-quick-country ${selected ? 'selected' : ''}`}
+                            aria-pressed={selected}
+                            onClick={() => toggleCountry(code)}
+                          >
+                            {getCountryName(code, language)}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 <motion.div
                   className="rf-map-wrap"
-                  initial={reduced ? false : { opacity: 0, scale: 0.985 }}
+                  initial={reduced ? false : { opacity: 0, scale: 0.99 }}
                   animate={{ opacity: 1, scale: 1 }}
-                  transition={{ duration: 0.3, ease: EASE, delay: reduced ? 0 : 0.08 }}
+                  transition={{ duration: 0.25, ease: EASE }}
                 >
-                  <WorldMap
-                    selectedCountries={activeCountries}
-                    onToggleCountry={toggleCountry}
-                  />
+                  <WorldMap selectedCountries={activeCountries} onToggleCountry={toggleCountry} />
                   <p className="rf-map-hint">
-                    {isEnglish ? 'Select a country on the map to filter the edition.' : 'Toca un país del mapa para filtrar la edición.'}
+                    {isEnglish ? 'Select a supported country on the map.' : 'Selecciona un país disponible en el mapa.'}
                   </p>
                 </motion.div>
 
-                {/* Selected countries pills */}
-                <div className="rf-selected-countries">
+                <div className="rf-selected-countries" aria-live="polite">
                   <AnimatePresence>
                     {activeCountries.map(code => (
                       <motion.span
                         key={code}
                         className="rf-country-pill"
-                        initial={reduced ? false : { opacity: 0, scale: 0.8, y: 5 }}
+                        initial={reduced ? false : { opacity: 0, scale: 0.9, y: 3 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
-                        exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.8, y: 5 }}
-                        transition={{ duration: 0.2 }}
+                        exit={reduced ? { opacity: 0 } : { opacity: 0, scale: 0.9, y: 3 }}
+                        transition={{ duration: 0.18 }}
                       >
                         {getCountryName(code, language)}
-                        <button onClick={() => toggleCountry(code)}><X size={10} /></button>
+                        <button
+                          type="button"
+                          onClick={() => toggleCountry(code)}
+                          aria-label={`${isEnglish ? 'Remove' : 'Quitar'} ${getCountryName(code, language)}`}
+                        >
+                          <X size={11} />
+                        </button>
                       </motion.span>
                     ))}
                   </AnimatePresence>
@@ -267,21 +391,30 @@ export default function ReportFilters({ filters, onChange }) {
             </Collapse>
           </div>
 
-          {/* Clear all */}
-          <AnimatePresence>
-            {activeCount > 0 && (
-              <motion.button
-                className="rf-clear"
-                onClick={clearAll}
-                initial={reduced ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.18 }}
+          <div className="rf-actions">
+            <button
+              type="button"
+              className="rf-clear"
+              onClick={() => setDraftFilters({ categories: [], countries: [] })}
+              disabled={draftCount === 0}
+            >
+              <X size={13} /> {isEnglish ? 'Clear selection' : 'Limpiar selección'}
+            </button>
+            <div className="rf-actions-primary">
+              <button type="button" className="rf-cancel" onClick={closePanel}>
+                {isEnglish ? 'Cancel' : 'Cancelar'}
+              </button>
+              <button
+                type="button"
+                className="rf-apply"
+                onClick={applyFilters}
+                disabled={!hasPendingChanges || loading}
               >
-                <X size={12} /> {isEnglish ? 'Clear filters' : 'Limpiar filtros'}
-              </motion.button>
-            )}
-          </AnimatePresence>
+                {loading ? <LoaderCircle className="rf-loading-icon" size={15} aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
+                {isEnglish ? 'Apply filters' : 'Aplicar filtros'}
+              </button>
+            </div>
+          </div>
         </div>
       </Collapse>
     </div>

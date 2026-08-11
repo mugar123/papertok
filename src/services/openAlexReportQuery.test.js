@@ -10,6 +10,7 @@ test('builds trend filters from current OpenAlex topic fields', () => {
 
   assert.match(filter, /primary_topic\.field\.id:17\|31|primary_topic\.field\.id:31\|17/);
   assert.match(filter, /authorships\.institutions\.country_code:ES/);
+  assert.match(filter, /has_doi:true/);
   assert.doesNotMatch(filter, /concepts\.id/);
 });
 

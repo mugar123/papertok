@@ -14,52 +14,79 @@ const WEEKDAYS = {
   en: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
 };
 
-export default function CustomDateSelector({ onApply, onCancel }) {
+function formatYMD(year, month, day) {
+  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function getInitialSelection(value, currentYear) {
+  const valid = value?.type === 'custom'
+    && /^\d{4}-\d{2}-\d{2}$/.test(value.from || '')
+    && /^\d{4}-\d{2}-\d{2}$/.test(value.to || '');
+  if (!valid) {
+    return { yearRange: [Math.max(1950, currentYear - 10), currentYear], start: null, end: null, month: 0 };
+  }
+
+  return {
+    yearRange: [Number(value.from.slice(0, 4)), Number(value.to.slice(0, 4))],
+    start: value.from,
+    end: value.to,
+    month: Math.max(0, Math.min(11, Number(value.from.slice(5, 7)) - 1)),
+  };
+}
+
+export default function CustomDateSelector({ value, onApply, onCancel }) {
   const { language, isEnglish } = useLanguage();
   const currentYear = new Date().getFullYear();
   const MIN_YEAR = 1950;
-  
-  const [yearRange, setYearRange] = useState([1994, 2008]);
+  const initial = getInitialSelection(value, currentYear);
+  const today = new Date();
+  const todayStr = formatYMD(today.getFullYear(), today.getMonth(), today.getDate());
+
+  const [yearRange, setYearRange] = useState(initial.yearRange);
   const isSingleYear = yearRange[0] === yearRange[1];
-  
-  const [exactDateMode, setExactDateMode] = useState(false);
-  const [selectedMonth, setSelectedMonth] = useState(0); 
-  
-  // Start and End full date strings (YYYY-MM-DD)
-  const [startDateStr, setStartDateStr] = useState(null);
-  const [endDateStr, setEndDateStr] = useState(null);
 
-  const formatYMD = (year, month, day) => {
-    return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  };
+  const [exactDateMode, setExactDateMode] = useState(isSingleYear && Boolean(initial.start));
+  const [selectedMonth, setSelectedMonth] = useState(initial.month);
+  const [startDateStr, setStartDateStr] = useState(initial.start);
+  const [endDateStr, setEndDateStr] = useState(initial.end);
 
-  const popoverRef = useRef(null);
+  const selectorRef = useRef(null);
 
   // Close popover when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
-      if (popoverRef.current && !popoverRef.current.contains(event.target)) {
+      if (selectorRef.current && !selectorRef.current.contains(event.target)) {
         setExactDateMode(false);
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [popoverRef]);
+    function handleKeyDown(event) {
+      if (event.key === 'Escape') setExactDateMode(false);
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, []);
 
   const handleYearRangeChange = (nextRange) => {
     setYearRange(nextRange);
-    if (nextRange[0] !== nextRange[1]) {
-      setExactDateMode(false);
-      setStartDateStr(null);
-      setEndDateStr(null);
-    }
+    setExactDateMode(false);
+    setStartDateStr(null);
+    setEndDateStr(null);
   };
 
   const handleApply = () => {
-    if (isSingleYear && exactDateMode && startDateStr) {
+    if (startDateStr) {
       onApply({ type: 'custom', from: startDateStr, to: endDateStr || startDateStr });
     } else {
-      onApply({ type: 'custom', from: `${yearRange[0]}-01-01`, to: `${yearRange[1]}-12-31` });
+      const fullRangeEnd = `${yearRange[1]}-12-31`;
+      onApply({
+        type: 'custom',
+        from: `${yearRange[0]}-01-01`,
+        to: fullRangeEnd > todayStr ? todayStr : fullRangeEnd,
+      });
     }
   };
 
@@ -77,6 +104,7 @@ export default function CustomDateSelector({ onApply, onCancel }) {
   const handleDayClick = (day) => {
     if (!day) return;
     const clickedDateStr = formatYMD(yearRange[0], selectedMonth, day);
+    if (clickedDateStr > todayStr) return;
     
     if (startDateStr && endDateStr) {
       setStartDateStr(clickedDateStr);
@@ -110,12 +138,22 @@ export default function CustomDateSelector({ onApply, onCancel }) {
   };
 
   const daysArray = getDaysArray(yearRange[0], selectedMonth);
+  const formatDayLabel = (day) => new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'es-ES', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }).format(new Date(yearRange[0], selectedMonth, day));
 
   return (
-    <div className="cds-minimal-container">
+    <div className="cds-minimal-container" ref={selectorRef}>
       <div className="cds-minimal-header">
         <span className="cds-minimal-title">{isEnglish ? 'Historical period' : 'Periodo histórico'}</span>
-        <button className="cds-minimal-close" onClick={onCancel}>✕</button>
+        <button
+          type="button"
+          className="cds-minimal-close"
+          onClick={onCancel}
+          aria-label={isEnglish ? 'Close date selector' : 'Cerrar selector de fechas'}
+        >✕</button>
       </div>
 
       <div className="cds-minimal-timeline">
@@ -132,6 +170,7 @@ export default function CustomDateSelector({ onApply, onCancel }) {
             max={currentYear}
             value={yearRange}
             onChange={handleYearRangeChange}
+            ariaLabelForHandle={isEnglish ? ['Start year', 'End year'] : ['Año inicial', 'Año final']}
             trackStyle={[{ background: 'linear-gradient(90deg, #9b87f5, #7E69AB)', height: 4 }]}
             handleStyle={[
               { backgroundColor: '#fff', borderColor: 'transparent', width: 16, height: 16, marginTop: -6, boxShadow: '0 0 10px rgba(155, 135, 245, 0.5)' },
@@ -144,10 +183,12 @@ export default function CustomDateSelector({ onApply, onCancel }) {
 
       <div className="cds-minimal-actions">
         {isSingleYear ? (
-          <div className="cds-popover-wrapper" ref={popoverRef}>
+          <div className="cds-popover-wrapper">
             <button 
+              type="button"
               className={`cds-badge-btn ${exactDateMode ? 'active' : ''}`}
               onClick={() => setExactDateMode(!exactDateMode)}
+              aria-expanded={exactDateMode}
             >
               <CalendarIcon size={14} />
               <span>{startDateStr
@@ -159,26 +200,47 @@ export default function CustomDateSelector({ onApply, onCancel }) {
             {exactDateMode && (
               <div className="cds-floating-calendar">
                 <div className="cds-fcal-header">
-                  <button className="cds-fcal-nav" onClick={() => setSelectedMonth(m => Math.max(0, m - 1))} disabled={selectedMonth === 0}>
+                  <button
+                    type="button"
+                    className="cds-fcal-nav"
+                    onClick={() => setSelectedMonth(m => Math.max(0, m - 1))}
+                    disabled={selectedMonth === 0}
+                    aria-label={isEnglish ? 'Previous month' : 'Mes anterior'}
+                  >
                     <ChevronLeft size={16} />
                   </button>
                   <span className="cds-fcal-month">{MONTHS[language][selectedMonth]} {yearRange[0]}</span>
-                  <button className="cds-fcal-nav" onClick={() => setSelectedMonth(m => Math.min(11, m + 1))} disabled={selectedMonth === 11}>
+                  <button
+                    type="button"
+                    className="cds-fcal-nav"
+                    onClick={() => setSelectedMonth(m => Math.min(11, m + 1))}
+                    disabled={selectedMonth === 11}
+                    aria-label={isEnglish ? 'Next month' : 'Mes siguiente'}
+                  >
                     <ChevronRight size={16} />
                   </button>
                 </div>
                 
                 <div className="cds-fcal-grid">
                   {WEEKDAYS[language].map((wd, index) => <div key={`${wd}-${index}`} className="cds-fcal-wd">{wd}</div>)}
-                  {daysArray.map((day, idx) => (
-                    <div 
-                      key={idx} 
-                      className={`cds-fcal-day ${!day ? 'empty' : ''} ${isDaySelected(day) ? 'selected' : ''} ${isDayEndpoint(day) ? 'endpoint' : ''}`}
-                      onClick={() => handleDayClick(day)}
-                    >
-                      {day}
-                    </div>
-                  ))}
+                  {daysArray.map((day, idx) => {
+                    if (!day) return <span key={`empty-${idx}`} className="cds-fcal-day empty" aria-hidden="true" />;
+                    const dateValue = formatYMD(yearRange[0], selectedMonth, day);
+                    const isFuture = dateValue > todayStr;
+                    return (
+                      <button
+                        type="button"
+                        key={dateValue}
+                        className={`cds-fcal-day ${isDaySelected(day) ? 'selected' : ''} ${isDayEndpoint(day) ? 'endpoint' : ''}`}
+                        onClick={() => handleDayClick(day)}
+                        disabled={isFuture}
+                        aria-label={formatDayLabel(day)}
+                        aria-pressed={isDaySelected(day)}
+                      >
+                        {day}
+                      </button>
+                    );
+                  })}
                 </div>
                 
                 <div className="cds-exact-summary" style={{ marginTop: 16, fontSize: 13, color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
@@ -200,7 +262,7 @@ export default function CustomDateSelector({ onApply, onCancel }) {
           <div className="cds-badge-placeholder">{isEnglish ? 'General historical range' : 'Rango histórico general'}</div>
         )}
 
-        <button className="cds-minimal-apply" onClick={handleApply}>
+        <button type="button" className="cds-minimal-apply" onClick={handleApply}>
           <Check size={16} /> {isEnglish ? 'Search' : 'Buscar'}
         </button>
       </div>

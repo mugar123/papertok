@@ -21,8 +21,13 @@
   fill: rgba(255, 255, 255, 0.08);
   stroke: rgba(255, 255, 255, 0.15);
   stroke-width: 0.5px;
-  outline: none !important;
   transition: fill 0.4s ease-out, stroke 0.4s ease-out;
+}
+
+.wm-geo.unsupported {
+  fill: rgba(255, 255, 255, 0.035);
+  stroke: rgba(255, 255, 255, 0.07);
+  pointer-events: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -30,7 +35,6 @@
     fill: rgba(255, 255, 255, 0.2);
     stroke: rgba(255, 255, 255, 0.4);
     cursor: pointer;
-    outline: none !important;
   }
 }
 
@@ -79,20 +83,5 @@
   to {
     opacity: 1;
     transform: translate(-50%, -100%);
-  }
-}
-
-@media (max-width: 768px) {
-  .wm {
-    overflow-x: auto;
-    overflow-y: hidden;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-  .wm::-webkit-scrollbar {
-    display: none;
-  }
-  .wm svg {
-    min-width: 600px;
   }
 }

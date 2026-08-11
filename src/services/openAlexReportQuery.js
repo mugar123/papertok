@@ -35,6 +35,7 @@ export function buildOpenAlexTrendFilter(period, filters = {}) {
     `from_publication_date:${period.fromStr}`,
     `to_publication_date:${period.toStr}`,
     'type:article',
+    'has_doi:true',
   ];
   const fields = unique(normalized.categories.flatMap(category => REPORT_OPENALEX_FIELDS[category]));
   if (fields.length > 0) clauses.push(`primary_topic.field.id:${fields.join('|')}`);

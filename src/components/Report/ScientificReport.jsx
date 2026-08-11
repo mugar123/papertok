@@ -198,11 +198,15 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
   useEffect(() => {
     trendsRef.current = null;
-    const requestId = setTimeout(() => {
+    reportRequestId.current += 1;
+    const timerId = setTimeout(() => {
       setTrends({ status: 'loading', items: [], loading: true });
       fetchReport(timeframe, filters, 1, { refreshTrends: true });
     }, 0);
-    return () => clearTimeout(requestId);
+    return () => {
+      clearTimeout(timerId);
+      reportRequestId.current += 1;
+    };
   }, [timeframe, filters, fetchReport]);
 
   useEffect(() => {
@@ -237,6 +241,10 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const heroOpenCopy = heroAccess.paperId === report.mainDiscovery?.id ? heroAccess.copy : null;
   const oaCount = allPapers.filter(p => p.openAccess || (p.id === report.mainDiscovery?.id && heroOpenCopy)).length;
   const hasActiveFilters = (filters.categories?.length || 0) + (filters.countries?.length || 0) > 0;
+  const hasUnavailableSource = report.coverage?.sources?.some(source => source.status === 'unavailable');
+  const broaderTimeframe = typeof timeframe === 'string'
+    ? { '24h': '7d', '7d': '30d', '30d': '1y', '1y': '10y' }[timeframe]
+    : null;
 
   const hero = report.mainDiscovery;
   const accessibleHero = heroOpenCopy ? { ...hero, ...heroOpenCopy, openAccess: true } : hero;
@@ -269,7 +277,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const previousTrendPeriod = formatTrendPeriod(trends.periods?.previous, locale);
 
   return (
-    <main className="sr">
+    <main className="sr" aria-busy={loading}>
       {/* Header */}
       <header className="sr-header">
         <div className="sr-header-top">
@@ -301,12 +309,29 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
       {showCustomPicker && (
         <CustomDateSelector
+          value={customRange}
           onApply={(rangeObj) => { setCustomRange(rangeObj); setTimeframe(rangeObj); setShowCustomPicker(false); }}
           onCancel={() => setShowCustomPicker(false)}
         />
       )}
 
-      <ReportFilters filters={filters} onChange={setFilters} />
+      <ReportFilters filters={filters} onChange={setFilters} loading={loading} />
+
+      {error && totalPapers > 0 && (
+        <div className="sr-inline-error" role="alert">
+          <span>
+            {isEnglish
+              ? 'The filters could not be updated. The previous edition is still shown.'
+              : 'No se pudieron actualizar los filtros. Se mantiene visible la edición anterior.'}
+          </span>
+          <button
+            type="button"
+            onClick={() => fetchReport(timeframe, filters, 1, { forceRefresh: true, refreshTrends: true })}
+          >
+            {isEnglish ? 'Retry' : 'Reintentar'}
+          </button>
+        </div>
+      )}
 
       {loading && totalPapers === 0 ? (
         <div className="sr-state"><div className="sr-spinner" /><p>{isEnglish ? 'Compiling the edition...' : 'Compilando la edición...'}</p></div>
@@ -338,21 +363,19 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   {isEnglish ? 'Clear filters' : 'Limpiar filtros'}
                 </button>
               )}
-              {timeframe !== '10y' && (
+              {broaderTimeframe && (
                 <button
                   className="sr-retry"
                   onClick={() => {
-                    setTimeframe(timeframe === '30d' ? '1y' : '30d');
+                    setTimeframe(broaderTimeframe);
                     setCustomRange(null);
                     setShowCustomPicker(false);
                   }}
                 >
-                  {timeframe === '30d'
-                    ? (isEnglish ? 'Expand to 1 year' : 'Ampliar a 1 año')
-                    : (isEnglish ? 'Expand to 30 days' : 'Ampliar a 30 días')}
+                  {isEnglish ? 'Broaden period' : 'Ampliar periodo'}
                 </button>
               )}
-              {timeframe === '10y' && !hasActiveFilters && (
+              {(hasUnavailableSource || !broaderTimeframe) && (
                 <button className="sr-retry" onClick={() => fetchReport(timeframe, filters, 1, { forceRefresh: true, refreshTrends: true })}>
                   {isEnglish ? 'Try again' : 'Reintentar'}
                 </button>
