@@ -37,7 +37,7 @@ function LoadingState({ label }) {
   );
 }
 
-export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
+export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onSelectPaper }) {
   const { isEnglish, locale } = useLanguage();
   const hasGraphIdentifier = Boolean(getCitationGraphDoi(paper));
   const [mode, setMode] = useState(hasGraphIdentifier ? 'graph' : 'similar');
@@ -47,11 +47,14 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
   const [papers, setPapers] = useState([]);
   const [relatedStatus, setRelatedStatus] = useState(hasGraphIdentifier ? 'idle' : 'loading');
   const [isClosing, setIsClosing] = useState(false);
+  const [isSelectionReady, setIsSelectionReady] = useState(false);
   const [selectedPaperKey, setSelectedPaperKey] = useState(null);
   const closingRef = useRef(false);
+  const preparingRef = useRef(false);
   const mountedRef = useRef(false);
   const pendingSelectionRef = useRef(null);
   const onCloseRef = useRef(onClose);
+  const onPreparePaperRef = useRef(onPreparePaper);
   const onSelectPaperRef = useRef(onSelectPaper);
   const relatedRequestedRef = useRef(!hasGraphIdentifier);
   const prefersReducedMotion = useReducedMotion();
@@ -61,6 +64,10 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
   }, [onClose]);
 
   useEffect(() => {
+    onPreparePaperRef.current = onPreparePaper;
+  }, [onPreparePaper]);
+
+  useEffect(() => {
     onSelectPaperRef.current = onSelectPaper;
   }, [onSelectPaper]);
 
@@ -68,6 +75,7 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      preparingRef.current = false;
       pendingSelectionRef.current = null;
     };
   }, []);
@@ -91,15 +99,28 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
     if (closingRef.current) return;
     closingRef.current = true;
     pendingSelectionRef.current = null;
+    setIsSelectionReady(false);
     setIsClosing(true);
     if (getRelatedTransitionDuration(RELATED_SHEET_CLOSE_MS, prefersReducedMotion) === 0) finishClose();
   }, [finishClose, prefersReducedMotion]);
 
-  const requestPaper = useCallback((relatedPaper, paperKey) => {
-    if (closingRef.current) return;
-    closingRef.current = true;
-    pendingSelectionRef.current = { paper: relatedPaper, key: paperKey };
+  const requestPaper = useCallback(async (relatedPaper, paperKey) => {
+    if (closingRef.current || preparingRef.current) return;
+    preparingRef.current = true;
     setSelectedPaperKey(paperKey);
+    let preparedPaper = relatedPaper;
+    try {
+      preparedPaper = await onPreparePaperRef.current(relatedPaper) || relatedPaper;
+    } catch (error) {
+      console.warn('Could not prepare the selected related paper.', error);
+    } finally {
+      preparingRef.current = false;
+    }
+
+    if (!mountedRef.current || closingRef.current) return;
+    pendingSelectionRef.current = { paper: preparedPaper, key: paperKey };
+    closingRef.current = true;
+    setIsSelectionReady(true);
     setIsClosing(true);
     if (getRelatedTransitionDuration(RELATED_PAPER_HANDOFF_MS, prefersReducedMotion) === 0) finishSelection();
   }, [finishSelection, prefersReducedMotion]);
@@ -185,20 +206,22 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
     const title = String(paper?.title || (isEnglish ? 'Current paper' : 'Paper actual')).trim();
     return title.length > 38 ? `${title.slice(0, 38).trim()}…` : title;
   }, [isEnglish, paper?.title]);
+  const isPreparingPaper = Boolean(selectedPaperKey) && !isClosing;
+  const isSelectingPaper = Boolean(selectedPaperKey) && isSelectionReady;
 
   return (
     <div
-      className={`related-overlay ${isClosing ? 'is-closing' : ''} ${selectedPaperKey ? 'is-selecting-paper' : ''}`}
+      className={`related-overlay ${isClosing ? 'is-closing' : ''} ${isSelectingPaper ? 'is-selecting-paper' : ''} ${isPreparingPaper ? 'is-preparing-paper' : ''}`}
       onClick={requestClose}
       role="presentation"
     >
       <section
-        className={`related-sheet related-sheet--graph ${selectedPaperKey ? 'is-selecting-paper' : ''}`}
+        className={`related-sheet related-sheet--graph ${isSelectingPaper ? 'is-selecting-paper' : ''} ${isPreparingPaper ? 'is-preparing-paper' : ''}`}
         onClick={event => event.stopPropagation()}
         onAnimationEnd={handleSheetAnimationEnd}
         aria-label={isEnglish ? 'Paper connections' : 'Conexiones del paper'}
         aria-modal="true"
-        aria-busy={visibleStatus === 'loading'}
+        aria-busy={visibleStatus === 'loading' || isPreparingPaper}
         role="dialog"
       >
         <div className="related-grabber" aria-hidden="true" />
@@ -211,7 +234,7 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
           <button
             className={mode === 'graph' ? 'is-active' : ''}
             onClick={() => setMode('graph')}
-            disabled={!hasGraphIdentifier}
+            disabled={!hasGraphIdentifier || Boolean(selectedPaperKey)}
             role="tab"
             aria-selected={mode === 'graph'}
           >
@@ -220,6 +243,7 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
           <button
             className={mode === 'similar' ? 'is-active' : ''}
             onClick={() => setMode('similar')}
+            disabled={Boolean(selectedPaperKey)}
             role="tab"
             aria-selected={mode === 'similar'}
           >
@@ -232,6 +256,7 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
             <button
               className={graphSide === 'references' ? 'is-active' : ''}
               onClick={() => setGraphSide('references')}
+              disabled={Boolean(selectedPaperKey)}
               aria-pressed={graphSide === 'references'}
             >
               <BookOpen size={17} />
@@ -246,6 +271,7 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
             <button
               className={graphSide === 'citations' ? 'is-active' : ''}
               onClick={() => setGraphSide('citations')}
+              disabled={Boolean(selectedPaperKey)}
               aria-pressed={graphSide === 'citations'}
             >
               <GitBranch size={17} />
@@ -284,10 +310,11 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
             {visibleEntries.length ? visibleEntries.map(({ paper: related, key }, index) => (
               <button
                 key={key}
-                className={`related-item ${selectedPaperKey === key ? 'is-selected' : ''}`}
+                className={`related-item ${selectedPaperKey === key ? 'is-selected' : ''} ${isPreparingPaper && selectedPaperKey === key ? 'is-preparing' : ''}`}
                 style={{ '--related-index': index }}
                 onClick={() => requestPaper(related, key)}
                 disabled={Boolean(selectedPaperKey)}
+                aria-busy={isPreparingPaper && selectedPaperKey === key}
               >
                 <span className="related-item-copy">
                   <strong><ScientificText>{related.title}</ScientificText></strong>
@@ -297,11 +324,21 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
                     {related.citationCountKnown ? ` · ${related.citationCount} ${isEnglish ? 'citations' : 'citas'}` : ''}
                   </small>
                 </span>
-                <ChevronRight size={18} />
+                {isPreparingPaper && selectedPaperKey === key ? (
+                  <span className="related-item-pending" aria-hidden="true">
+                    <span /><span /><span />
+                  </span>
+                ) : <ChevronRight size={18} />}
               </button>
             )) : <div className="related-state">{graphEmptyLabel}</div>}
           </div>
         )}
+
+        <span className="visually-hidden" role="status" aria-live="polite">
+          {isPreparingPaper
+            ? (isEnglish ? 'Preparing the selected paper' : 'Preparando el paper seleccionado')
+            : ''}
+        </span>
 
         {mode === 'graph' && graphStatus === 'ready' && (
           <div className="knowledge-source">

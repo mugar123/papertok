@@ -91,7 +91,6 @@ const PaperCard = memo(function PaperCard({
   const [showRelated, setShowRelated] = useState(false);
   const [showAIExplanation, setShowAIExplanation] = useState(false);
   const [selectedRelatedPaper, setSelectedRelatedPaper] = useState(null);
-  const [isHydratingRelatedPaper, setIsHydratingRelatedPaper] = useState(false);
   const [isClosingRelatedCard, setIsClosingRelatedCard] = useState(false);
   const [isResolvingAccess, setIsResolvingAccess] = useState(false);
   const [resolvedAccess, setResolvedAccess] = useState({ paperId: null, copy: null });
@@ -117,7 +116,6 @@ const PaperCard = memo(function PaperCard({
   const viewStartTime = useRef(null);
   const totalViewTime = useRef(0);
   const relatedCardClosingRef = useRef(false);
-  const relatedHydrationRef = useRef(0);
 
   useEffect(() => {
     if (!isCardVisible) {
@@ -269,19 +267,20 @@ const PaperCard = memo(function PaperCard({
     setShowRelated(false);
   }, []);
 
-  const selectRelatedPaper = useCallback(async (relatedPaper) => {
-    const hydrationId = relatedHydrationRef.current + 1;
-    relatedHydrationRef.current = hydrationId;
+  const prepareRelatedPaper = useCallback(async (relatedPaper) => {
+    try {
+      return await hydrateCitationGraphPaper(relatedPaper);
+    } catch (error) {
+      console.warn('Could not enrich the selected related paper before opening it.', error);
+      return relatedPaper;
+    }
+  }, []);
+
+  const selectRelatedPaper = useCallback((relatedPaper) => {
     relatedCardClosingRef.current = false;
     setIsClosingRelatedCard(false);
     setShowRelated(false);
-    setIsHydratingRelatedPaper(true);
-    try {
-      const hydratedPaper = await hydrateCitationGraphPaper(relatedPaper);
-      if (relatedHydrationRef.current === hydrationId) setSelectedRelatedPaper(hydratedPaper);
-    } finally {
-      if (relatedHydrationRef.current === hydrationId) setIsHydratingRelatedPaper(false);
-    }
+    setSelectedRelatedPaper(relatedPaper);
   }, []);
 
   const handleMarkAsRead = (e) => {
@@ -976,6 +975,7 @@ const PaperCard = memo(function PaperCard({
         <RelatedPapersSheet
           paper={paper}
           onClose={closeRelatedSheet}
+          onPreparePaper={prepareRelatedPaper}
           onSelectPaper={selectRelatedPaper}
         />,
         document.body,
@@ -986,19 +986,10 @@ const PaperCard = memo(function PaperCard({
         document.body,
         'papertok-ai-explanation',
       )}
-      {isHydratingRelatedPaper && createPortal(
-        <div className="related-card-overlay related-card-overlay--loading" role="status" aria-live="polite" aria-busy="true">
-          <AnimatedAtom size={62} strokeWidth={1} className="related-card-loading-atom" />
-          <p>{isEnglish ? 'Preparing the paper…' : 'Preparando el paper…'}</p>
-        </div>,
-        document.body,
-        'papertok-related-card-loading',
-      )}
       {selectedRelatedPaper && createPortal(
         <div
           className={`related-card-overlay ${isClosingRelatedCard ? 'is-closing' : ''}`}
           onAnimationEnd={handleRelatedCardAnimationEnd}
-          onAnimationCancel={handleRelatedCardAnimationEnd}
         >
           <button
             className="related-card-back"
