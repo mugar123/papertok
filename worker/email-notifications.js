@@ -1,7 +1,9 @@
 import { XMLParser } from 'fast-xml-parser';
 import { filterRelevantQueryTopicPapers } from '../src/utils/queryTopicSearch.js';
+import { applyEmailDeliveryLedgerAction } from './email-delivery-ledger.js';
 
 const SUBSCRIPTION_PREFIX = 'notification:subscription:';
+const DELIVERY_STATE_PREFIX = 'notification:delivery-state:';
 const UNSUBSCRIBE_PREFIX = 'notification:unsubscribe:';
 const BREVO_API = 'https://api.brevo.com/v3';
 const RESEND_API = 'https://api.resend.com';
@@ -10,12 +12,29 @@ const PAPER_TOK_URL = 'https://mugar123.github.io/papertok/#/following';
 const MAX_FOLLOWS = 40;
 const MAX_QUERIED_FOLLOWS = 24;
 const MAX_PREVIEW_ITEMS = 20;
-const MAX_SENT_PAPER_KEYS = 120;
+const MAX_SENT_PAPER_KEYS = 400;
 const DEFAULT_DAILY_SEND_LIMIT = 290;
-const SEND_COUNT_PREFIX = 'notification:send-count:';
 const SCHEDULE_STATUS_KEY = 'notification:schedule:last-run';
+const SCHEDULE_HISTORY_PREFIX = 'notification:schedule:history:';
+const SCHEDULE_CURSOR_KEY = 'notification:schedule:cursor';
+const DELIVERY_LEDGER_PREFIX = 'notification:delivery-ledger:';
 const TEST_IDEMPOTENCY_WINDOW_MS = 60_000;
 const DAY_MS = 24 * 60 * 60 * 1000;
+const DIGEST_FRESHNESS_DAYS = 10;
+const SCHEDULE_HISTORY_TTL_SECONDS = 14 * 24 * 60 * 60;
+const DELIVERY_LEDGER_TTL_SECONDS = 3 * 24 * 60 * 60;
+const DELIVERY_STATE_TTL_SECONDS = 120 * 24 * 60 * 60;
+const DELIVERY_PENDING_RETRY_MIN_AGE_MS = 5 * 60 * 1000;
+const DELIVERY_PENDING_RETRY_WINDOW_MS = 25 * 60 * 1000;
+const DIGEST_SOURCE_MAX_ATTEMPTS = 2;
+const DIGEST_SOURCE_TIMEOUT_MS = 5_000;
+const DIGEST_SOURCE_RETRY_MAX_DELAY_MS = 1_000;
+const EMAIL_PROVIDER_TIMEOUT_MS = 12_000;
+const SCHEDULE_PROCESSING_BUDGET_MS = 12 * 60 * 1000;
+const SCHEDULE_MIN_BATCH_REMAINING_MS = 3 * 60 * 1000;
+const SCHEDULE_PAGE_SIZE = 3;
+const EMPTY_RETRY_INTERVAL_MS = 4 * 60 * 60 * 1000;
+const FAILURE_RETRY_INTERVAL_MS = 40 * 60 * 1000;
 const FUTURE_DATE_TOLERANCE_MS = DAY_MS;
 const FOLLOWED_PAPER_MIN_SCORE = 55;
 const EXPLORATION_PAPER_MIN_SCORE = 70;
@@ -41,6 +60,25 @@ export class EmailNotificationError extends Error {
     this.name = 'EmailNotificationError';
     this.code = code;
     this.status = status;
+  }
+}
+
+export class EmailDigestTransientError extends EmailNotificationError {
+  constructor(sourceReport) {
+    super('EMAIL_DIGEST_SOURCES_UNAVAILABLE', 503);
+    this.name = 'EmailDigestTransientError';
+    this.transient = true;
+    this.sourceReport = sourceReport;
+  }
+}
+
+class DigestSourceError extends Error {
+  constructor(source, code, message = code) {
+    super(message);
+    this.name = 'DigestSourceError';
+    this.source = source;
+    this.code = code;
+    this.transient = true;
   }
 }
 
@@ -382,6 +420,133 @@ function asArray(value) {
   return Array.isArray(value) ? value : [value];
 }
 
+function createSourceReport() {
+  return {
+    attempted: 0,
+    succeeded: 0,
+    failed: 0,
+    requestAttempts: 0,
+    retried: 0,
+    requiredFailed: 0,
+    bySource: {},
+    failureCodes: {},
+  };
+}
+
+function sourceCodeName(source) {
+  return cleanText(source, 40).toUpperCase().replace(/[^A-Z0-9]+/g, '_') || 'UNKNOWN';
+}
+
+function sourceBucket(report, source) {
+  if (!report) return null;
+  report.bySource[source] ||= { attempted: 0, succeeded: 0, failed: 0 };
+  return report.bySource[source];
+}
+
+function recordSourceFailure(report, source, code) {
+  if (!report) return;
+  report.failed += 1;
+  sourceBucket(report, source).failed += 1;
+  report.failureCodes[code] = (report.failureCodes[code] || 0) + 1;
+}
+
+function digestSourceError(source, error) {
+  if (error instanceof DigestSourceError) return error;
+  return new DigestSourceError(
+    source,
+    `EMAIL_SOURCE_${sourceCodeName(source)}_INVALID_RESPONSE`,
+    error?.message,
+  );
+}
+
+function retryDelayMs(response, attempt) {
+  const retryAfter = response?.headers?.get?.('retry-after');
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    const requestedDelay = Number.isFinite(seconds)
+      ? seconds * 1_000
+      : Date.parse(retryAfter) - Date.now();
+    if (Number.isFinite(requestedDelay) && requestedDelay > 0) {
+      return Math.min(requestedDelay, DIGEST_SOURCE_RETRY_MAX_DELAY_MS);
+    }
+  }
+  return Math.min(150 * (2 ** attempt), DIGEST_SOURCE_RETRY_MAX_DELAY_MS);
+}
+
+function wait(delayMs) {
+  return new Promise(resolve => setTimeout(resolve, delayMs));
+}
+
+async function fetchDigestSource(input, init, {
+  source,
+  report,
+  timeoutMs = DIGEST_SOURCE_TIMEOUT_MS,
+} = {}) {
+  let lastError;
+  for (let attempt = 0; attempt < DIGEST_SOURCE_MAX_ATTEMPTS; attempt += 1) {
+    if (report) {
+      report.requestAttempts += 1;
+      if (attempt > 0) report.retried += 1;
+    }
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+    let response;
+    try {
+      response = await fetch(input, { ...init, signal: controller.signal });
+    } catch (error) {
+      const timedOut = controller.signal.aborted || error?.name === 'AbortError';
+      lastError = new DigestSourceError(
+        source,
+        `EMAIL_SOURCE_${sourceCodeName(source)}_${timedOut ? 'TIMEOUT' : 'UNAVAILABLE'}`,
+        error?.message,
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (response?.ok) return response;
+    if (response) {
+      const suffix = response.status === 429
+        ? 'RATE_LIMITED'
+        : response.status >= 500
+          ? 'UNAVAILABLE'
+          : 'REJECTED';
+      lastError = new DigestSourceError(
+        source,
+        `EMAIL_SOURCE_${sourceCodeName(source)}_${suffix}`,
+        `${source} digest error: ${response.status}`,
+      );
+      if (response.status !== 429 && response.status < 500) throw lastError;
+    }
+    if (attempt + 1 < DIGEST_SOURCE_MAX_ATTEMPTS) {
+      await wait(retryDelayMs(response, attempt));
+    }
+  }
+  throw lastError || new DigestSourceError(
+    source,
+    `EMAIL_SOURCE_${sourceCodeName(source)}_UNAVAILABLE`,
+  );
+}
+
+async function trackDigestSource(report, source, operation) {
+  if (report) {
+    report.attempted += 1;
+    sourceBucket(report, source).attempted += 1;
+  }
+  try {
+    const result = await operation();
+    if (report) {
+      report.succeeded += 1;
+      sourceBucket(report, source).succeeded += 1;
+    }
+    return result;
+  } catch (error) {
+    const sourceError = digestSourceError(source, error);
+    recordSourceFailure(report, source, sourceError.code);
+    throw sourceError;
+  }
+}
+
 function isArxivCategory(value) {
   const category = cleanText(value, 80);
   if (!/^[a-z-]+(?:\.[A-Za-z-]+)?$/.test(category)) return false;
@@ -447,7 +612,7 @@ function parseArxivDigestFeed(xml, follows = []) {
   }).filter(Boolean);
 }
 
-async function fetchArxivTopicUpdates(follows) {
+async function fetchArxivTopicUpdates(follows, sourceReport) {
   const categories = [...new Set(
     follows.flatMap(arxivCategoriesForFollow),
   )].slice(0, MAX_ARXIV_DIGEST_CATEGORIES);
@@ -460,21 +625,19 @@ async function fetchArxivTopicUpdates(follows) {
   url.searchParams.set('sortBy', 'submittedDate');
   url.searchParams.set('sortOrder', 'descending');
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 8000);
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
+  return trackDigestSource(sourceReport, 'arxiv', async () => {
+    const response = await fetchDigestSource(url, {
       headers: {
         accept: 'application/atom+xml, application/xml, text/xml;q=0.9',
         'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
       },
+    }, {
+      source: 'arxiv',
+      report: sourceReport,
+      timeoutMs: 8_000,
     });
-    if (!response.ok) throw new Error(`arXiv digest error: ${response.status}`);
     return parseArxivDigestFeed(await response.text(), follows);
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  });
 }
 
 async function verifyFirebaseIdentity(request, env) {
@@ -512,10 +675,91 @@ function publicSubscription(subscription, email) {
   };
 }
 
+const DELIVERY_STATE_FIELDS = [
+  'lastCheckedAt',
+  'lastSentAt',
+  'lastTestAt',
+  'sentPaperKeys',
+  'lastDelivery',
+  'lastTestDelivery',
+];
+
+function deliveryStateKey(subscriptionKey, subscription) {
+  const uid = String(subscriptionKey || '').startsWith(SUBSCRIPTION_PREFIX)
+    ? String(subscriptionKey).slice(SUBSCRIPTION_PREFIX.length)
+    : String(subscriptionKey || '');
+  const stateId = cleanText(subscription?.stateId, 80).replace(/[^a-zA-Z0-9_-]/g, '');
+  return stateId
+    ? `${DELIVERY_STATE_PREFIX}${uid}:${stateId}`
+    : `${DELIVERY_STATE_PREFIX}${uid}`;
+}
+
+function deliveryStateFromSubscription(subscription = {}) {
+  return Object.fromEntries(DELIVERY_STATE_FIELDS
+    .filter(field => subscription?.[field] !== undefined)
+    .map(field => [field, subscription[field]]));
+}
+
+function stripDeliveryState(subscription = {}) {
+  const clean = { ...subscription };
+  DELIVERY_STATE_FIELDS.forEach(field => { delete clean[field]; });
+  return clean;
+}
+
+function subscriptionGeneration(subscription = {}) {
+  const stateId = cleanText(subscription.stateId, 80);
+  if (stateId) return `state:${stateId}`;
+  return `legacy:${cleanText(
+    subscription.unsubscribeToken || subscription.createdAt || subscription.uid,
+    200,
+  )}`;
+}
+
+async function loadSubscriptionRecord(env, key) {
+  const subscription = await env.NOTIFICATION_STORE.get(key, 'json');
+  if (!subscription) return null;
+  const stateKey = deliveryStateKey(key, subscription);
+  const state = await env.NOTIFICATION_STORE.get(stateKey, 'json');
+  return { subscription, state, stateKey };
+}
+
+async function loadSubscriptionWithState(env, key) {
+  const record = await loadSubscriptionRecord(env, key);
+  if (!record) return null;
+  return {
+    ...record.subscription,
+    ...deliveryStateFromSubscription(record.subscription),
+    ...(record.state || {}),
+  };
+}
+
+async function updateDeliveryState(env, key, expectedSubscription, buildPatch) {
+  const subscription = await env.NOTIFICATION_STORE.get(key, 'json');
+  if (!subscription) return null;
+  if (
+    expectedSubscription
+    && subscriptionGeneration(subscription) !== subscriptionGeneration(expectedSubscription)
+  ) {
+    return null;
+  }
+  const stateKey = deliveryStateKey(key, subscription);
+  const storedState = await env.NOTIFICATION_STORE.get(stateKey, 'json');
+  const currentState = {
+    ...deliveryStateFromSubscription(subscription),
+    ...(storedState || {}),
+  };
+  const mergedState = { ...currentState, ...buildPatch(currentState, subscription) };
+  await env.NOTIFICATION_STORE.put(stateKey, JSON.stringify(mergedState), {
+    expirationTtl: DELIVERY_STATE_TTL_SECONDS,
+  });
+  return { ...subscription, ...mergedState };
+}
+
 async function deleteSubscription(env, uid, subscription) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   await Promise.all([
     env.NOTIFICATION_STORE.delete(`${SUBSCRIPTION_PREFIX}${uid}`),
+    env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, subscription)),
     subscription?.unsubscribeToken
       ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`)
       : Promise.resolve(),
@@ -528,7 +772,13 @@ async function saveSubscription(request, env, identity) {
   if (!body) throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
   const preferences = sanitizePreferences(body);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
-  const existing = await env.NOTIFICATION_STORE.get(key, 'json');
+  const existingRecord = await loadSubscriptionRecord(env, key);
+  const existingRaw = existingRecord?.subscription || null;
+  const existing = existingRaw ? {
+    ...existingRaw,
+    ...deliveryStateFromSubscription(existingRaw),
+    ...(existingRecord.state || {}),
+  } : null;
 
   if (!preferences.enabled) {
     await deleteSubscription(env, identity.uid, existing);
@@ -546,8 +796,11 @@ async function saveSubscription(request, env, identity) {
   }
   const unsubscribeToken = existing?.unsubscribeToken || crypto.randomUUID().replace(/-/g, '');
   const now = new Date().toISOString();
+  const persistedBase = existingRecord?.state
+    ? stripDeliveryState(existingRaw)
+    : (existingRaw || {});
   const subscription = {
-    ...existing,
+    ...persistedBase,
     ...preferences,
     uid: identity.uid,
     email: identity.email,
@@ -555,6 +808,7 @@ async function saveSubscription(request, env, identity) {
     follows,
     previewItems,
     unsubscribeToken,
+    ...(!existingRaw ? { stateId: crypto.randomUUID().replace(/-/g, '') } : {}),
     createdAt: existing?.createdAt || now,
     updatedAt: now,
   };
@@ -562,7 +816,7 @@ async function saveSubscription(request, env, identity) {
     env.NOTIFICATION_STORE.put(key, JSON.stringify(subscription)),
     env.NOTIFICATION_STORE.put(`${UNSUBSCRIBE_PREFIX}${unsubscribeToken}`, identity.uid),
   ]);
-  return publicSubscription(subscription, identity.email);
+  return publicSubscription({ ...subscription, ...(existingRecord?.state || {}) }, identity.email);
 }
 
 function addOpenAlexCredentials(url, env) {
@@ -607,10 +861,10 @@ function openAlexWorkForTopicRelevance(work = {}) {
   };
 }
 
-async function fetchOpenAlexUpdates(follow, env, now = Date.now()) {
+async function fetchOpenAlexUpdates(follow, env, now = Date.now(), sourceReport) {
   const id = normalizeId(follow.canonicalId);
   const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
-  const cutoff = new Date(now - 9 * DAY_MS).toISOString().slice(0, 10);
+  const cutoff = new Date(now - DIGEST_FRESHNESS_DAYS * DAY_MS).toISOString().slice(0, 10);
   const today = new Date(now).toISOString().slice(0, 10);
   let filter = `from_publication_date:${cutoff},to_publication_date:${today}`;
 
@@ -631,21 +885,25 @@ async function fetchOpenAlexUpdates(follow, env, now = Date.now()) {
   url.searchParams.set('filter', filter);
   url.searchParams.set('sort', 'publication_date:desc');
   url.searchParams.set('per-page', '6');
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`OpenAlex digest error: ${response.status}`);
-  const payload = await response.json();
-  let works = payload?.results || [];
-  if (follow.type === 'topic' && isQueryTopicId(id)) {
-    const query = topicSearchQuery(follow);
-    works = works.filter(work => filterRelevantQueryTopicPapers(
-      [openAlexWorkForTopicRelevance(work)],
-      { query, categoryIds: follow.metadata?.categoryIds || [] },
-    ).length > 0);
-  }
-  return works.map(work => mapOpenAlexPaper(work, follow)).filter(Boolean);
+  return trackDigestSource(sourceReport, 'openalex', async () => {
+    const response = await fetchDigestSource(url, { headers: { accept: 'application/json' } }, {
+      source: 'openalex',
+      report: sourceReport,
+    });
+    const payload = await response.json();
+    let works = payload?.results || [];
+    if (follow.type === 'topic' && isQueryTopicId(id)) {
+      const query = topicSearchQuery(follow);
+      works = works.filter(work => filterRelevantQueryTopicPapers(
+        [openAlexWorkForTopicRelevance(work)],
+        { query, categoryIds: follow.metadata?.categoryIds || [] },
+      ).length > 0);
+    }
+    return works.map(work => mapOpenAlexPaper(work, follow)).filter(Boolean);
+  });
 }
 
-async function fetchExplorationUpdates(env, now = Date.now()) {
+async function fetchExplorationUpdates(env, now = Date.now(), sourceReport) {
   const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
   const cutoff = new Date(now - 4 * DAY_MS).toISOString().slice(0, 10);
   const today = new Date(now).toISOString().slice(0, 10);
@@ -655,24 +913,29 @@ async function fetchExplorationUpdates(env, now = Date.now()) {
   );
   url.searchParams.set('sort', 'cited_by_count:desc');
   url.searchParams.set('per-page', '8');
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
-  if (!response.ok) {
-    console.warn('OpenAlex digest exploration unavailable', response.status);
-    return [];
-  }
-  const payload = await response.json().catch(() => ({}));
-  return (payload?.results || []).map(work => mapOpenAlexPaper(work, null)).filter(Boolean);
+  return trackDigestSource(sourceReport, 'openalex', async () => {
+    const response = await fetchDigestSource(url, { headers: { accept: 'application/json' } }, {
+      source: 'openalex',
+      report: sourceReport,
+    });
+    const payload = await response.json();
+    return (payload?.results || []).map(work => mapOpenAlexPaper(work, null)).filter(Boolean);
+  });
 }
 
-async function fetchProjectUpdates(follow, env) {
+async function fetchProjectUpdates(follow, env, sourceReport) {
   const requestUrl = new URL('https://api.openaire.eu/search/publications');
   requestUrl.searchParams.set('format', 'json');
   requestUrl.searchParams.set('size', '10');
   requestUrl.searchParams.set('page', '1');
   requestUrl.searchParams.set(follow.canonicalId.includes('::') ? 'openaireProjectID' : 'projectID', follow.canonicalId);
-  const response = await fetch(requestUrl, { headers: { accept: 'application/json' } });
-  if (!response.ok) throw new Error(`OpenAIRE digest error: ${response.status}`);
-  const payload = await response.json();
+  const payload = await trackDigestSource(sourceReport, 'openaire', async () => {
+    const response = await fetchDigestSource(requestUrl, { headers: { accept: 'application/json' } }, {
+      source: 'openaire',
+      report: sourceReport,
+    });
+    return response.json();
+  });
   let rows = payload?.response?.results?.result || [];
   if (!Array.isArray(rows)) rows = [rows];
   const dois = rows.flatMap((row) => {
@@ -688,10 +951,15 @@ async function fetchProjectUpdates(follow, env) {
   const openAlexUrl = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
   openAlexUrl.searchParams.set('filter', `doi:${dois.map(doi => doi.replace(/^https?:\/\/doi\.org\//i, '')).join('|')}`);
   openAlexUrl.searchParams.set('per-page', '10');
-  const openAlexResponse = await fetch(openAlexUrl, { headers: { accept: 'application/json' } });
-  if (!openAlexResponse.ok) return [];
-  const openAlexPayload = await openAlexResponse.json();
-  return (openAlexPayload?.results || []).map(work => mapOpenAlexPaper(work, follow)).filter(Boolean);
+  return trackDigestSource(sourceReport, 'openalex', async () => {
+    const openAlexResponse = await fetchDigestSource(
+      openAlexUrl,
+      { headers: { accept: 'application/json' } },
+      { source: 'openalex', report: sourceReport },
+    );
+    const openAlexPayload = await openAlexResponse.json();
+    return (openAlexPayload?.results || []).map(work => mapOpenAlexPaper(work, follow)).filter(Boolean);
+  });
 }
 
 async function mapWithConcurrency(items, concurrency, mapper) {
@@ -702,15 +970,14 @@ async function mapWithConcurrency(items, concurrency, mapper) {
       const index = nextIndex;
       nextIndex += 1;
       try {
-        output[index] = await mapper(items[index]);
+        output[index] = { status: 'fulfilled', value: await mapper(items[index]) };
       } catch (error) {
-        console.warn('Digest source unavailable', error?.message || error);
-        output[index] = [];
+        output[index] = { status: 'rejected', reason: error };
       }
     }
   }
   await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
-  return output.flat();
+  return output;
 }
 
 function publicationTime(paper) {
@@ -851,53 +1118,94 @@ function selectDigestPapers(papers, {
   return selected;
 }
 
+function digestFollowsForWindow(follows, now = Date.now()) {
+  const allFollows = Array.isArray(follows) ? follows : [];
+  if (allFollows.length <= MAX_QUERIED_FOLLOWS) return allFollows;
+  const dayIndex = Math.floor(now / DAY_MS);
+  const offset = dayIndex % allFollows.length;
+  return allFollows.slice(offset).concat(allFollows.slice(0, offset)).slice(0, MAX_QUERIED_FOLLOWS);
+}
+
 async function collectDigestPapers(subscription, env, { test = false, now = Date.now() } = {}) {
-  const follows = (subscription.follows || []).slice(0, MAX_QUERIED_FOLLOWS);
-  if (!follows.length) return [];
+  const follows = digestFollowsForWindow(subscription.follows, now);
+  const sourceReport = createSourceReport();
+  if (!follows.length) return { papers: [], sourceReport };
   const arxivFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length > 0);
   const indexedFollows = follows.filter(follow => arxivCategoriesForFollow(follow).length === 0);
   const indexedFreshPromise = mapWithConcurrency(indexedFollows, 4, follow => (
-    follow.type === 'project' ? fetchProjectUpdates(follow, env) : fetchOpenAlexUpdates(follow, env, now)
+    follow.type === 'project'
+      ? fetchProjectUpdates(follow, env, sourceReport)
+      : fetchOpenAlexUpdates(follow, env, now, sourceReport)
   ));
-  const arxivFreshPromise = fetchArxivTopicUpdates(arxivFollows).catch(async (error) => {
-    console.warn('arXiv digest unavailable, using OpenAlex fallback', error?.message || error);
-    return mapWithConcurrency(arxivFollows, 2, follow => fetchOpenAlexUpdates(follow, env, now));
-  });
-  const [indexedFresh, arxivFresh] = await Promise.all([indexedFreshPromise, arxivFreshPromise]);
+  const arxivFreshPromise = (async () => {
+    if (!arxivFollows.length) return { papers: [], requiredFailed: 0 };
+    try {
+      return {
+        papers: await fetchArxivTopicUpdates(arxivFollows, sourceReport),
+        requiredFailed: 0,
+      };
+    } catch (error) {
+      console.warn('arXiv digest unavailable, using OpenAlex fallback', error?.code || 'EMAIL_SOURCE_ARXIV_UNAVAILABLE');
+      const fallbackResults = await mapWithConcurrency(
+        arxivFollows,
+        2,
+        follow => fetchOpenAlexUpdates(follow, env, now, sourceReport),
+      );
+      return {
+        papers: fallbackResults
+          .filter(result => result.status === 'fulfilled')
+          .flatMap(result => result.value),
+        requiredFailed: fallbackResults.filter(result => result.status === 'rejected').length,
+      };
+    }
+  })();
+  const [indexedResults, arxivResult] = await Promise.all([indexedFreshPromise, arxivFreshPromise]);
+  const indexedFresh = indexedResults
+    .filter(result => result.status === 'fulfilled')
+    .flatMap(result => result.value);
+  sourceReport.requiredFailed = (
+    indexedResults.filter(result => result.status === 'rejected').length
+    + arxivResult.requiredFailed
+  );
   const combined = mergePapers([
     ...indexedFresh,
-    ...arxivFresh,
+    ...arxivResult.papers,
     ...(subscription.previewItems || []),
   ]);
-  const fallbackDays = subscription.frequency === 'weekly' ? 8 : 2;
-  const cutoff = subscription.lastSentAt
-    ? Date.parse(subscription.lastSentAt) - 60 * 60 * 1000
-    : now - fallbackDays * DAY_MS;
+  const cutoff = now - DIGEST_FRESHNESS_DAYS * DAY_MS;
   const maximum = subscription.maxPapers || 5;
   const sentKeys = test ? new Set() : new Set(subscription.sentPaperKeys || []);
   const followedSelection = selectDigestPapers(
     combined.filter(paper => publicationTime(paper) >= cutoff),
     { limit: maximum, now, excludedKeys: sentKeys },
   );
-  if (test || !followedSelection.length || followedSelection.length >= maximum) {
-    return followedSelection;
+  let discovery = [];
+  if (
+    !test
+    && followedSelection.length < maximum
+    && (followedSelection.length > 0 || sourceReport.requiredFailed === 0)
+  ) {
+    const selectedKeys = new Set([
+      ...sentKeys,
+      ...followedSelection.flatMap(paperIdentityKeys),
+    ]);
+    try {
+      const exploration = await fetchExplorationUpdates(env, now, sourceReport);
+      discovery = selectDigestPapers(exploration, {
+        limit: 1,
+        now,
+        exploration: true,
+        excludedKeys: selectedKeys,
+      });
+    } catch (error) {
+      console.warn('Digest exploration unavailable', error?.code || 'EMAIL_SOURCE_OPENALEX_UNAVAILABLE');
+    }
   }
-
-  const selectedKeys = new Set([
-    ...sentKeys,
-    ...followedSelection.flatMap(paperIdentityKeys),
-  ]);
-  const exploration = await fetchExplorationUpdates(env, now).catch((error) => {
-    console.warn('Digest exploration unavailable', error?.message || error);
-    return [];
-  });
-  const discovery = selectDigestPapers(exploration, {
-    limit: 1,
-    now,
-    exploration: true,
-    excludedKeys: selectedKeys,
-  });
-  return [...followedSelection, ...discovery].slice(0, maximum);
+  const papers = [...followedSelection, ...discovery].slice(0, maximum);
+  if (!papers.length && sourceReport.requiredFailed > 0) {
+    throw new EmailDigestTransientError(sourceReport);
+  }
+  return { papers, sourceReport };
 }
 
 function requestedEmailProvider(env) {
@@ -927,32 +1235,131 @@ async function resolveResendSender(env) {
   return 'PaperTok <onboarding@resend.dev>';
 }
 
-async function dailySendState(env) {
-  if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
+const kvDeliveryLedgerLocks = new WeakMap();
+
+function utcDay(now = Date.now()) {
+  const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+  return new Date(timestamp).toISOString().slice(0, 10);
+}
+
+function dailySendLimit(env) {
   const configuredLimit = Number(env.EMAIL_DAILY_SEND_LIMIT);
-  const limit = Number.isFinite(configuredLimit) && configuredLimit > 0
+  return Number.isFinite(configuredLimit) && configuredLimit > 0
     ? Math.floor(configuredLimit)
     : DEFAULT_DAILY_SEND_LIMIT;
-  const dateKey = new Date().toISOString().slice(0, 10);
-  const key = `${SEND_COUNT_PREFIX}${dateKey}`;
-  const current = Number(await env.NOTIFICATION_STORE.get(key)) || 0;
-  return { current, key, limit };
 }
 
-async function assertDailySendAvailable(env) {
-  const state = await dailySendState(env);
-  if (state.current >= state.limit) throw new EmailNotificationError('EMAIL_PROVIDER_LIMIT', 429);
-  return state;
+function deliveryReservationSeed(subscription, { test = false, now = Date.now() } = {}) {
+  const timestamp = Number.isFinite(Number(now)) ? Number(now) : Date.now();
+  const uid = cleanText(subscription?.uid, 160) || 'unknown';
+  const window = test
+    ? `test-${Math.floor(timestamp / TEST_IDEMPOTENCY_WINDOW_MS)}`
+    : `digest-${utcDay(timestamp)}`;
+  return `papertok:${window}:${uid}:${subscriptionGeneration(subscription)}`;
 }
 
-async function recordSuccessfulSend(env, state) {
+async function buildDeliveryReservationId(subscription, options = {}) {
+  const digest = new Uint8Array(await crypto.subtle.digest(
+    'SHA-256',
+    new TextEncoder().encode(deliveryReservationSeed(subscription, options)),
+  ));
+  const bytes = digest.slice(0, 16);
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
+
+function withKvDeliveryLedgerLock(store, key, operation) {
+  let locks = kvDeliveryLedgerLocks.get(store);
+  if (!locks) {
+    locks = new Map();
+    kvDeliveryLedgerLocks.set(store, locks);
+  }
+  const previous = locks.get(key) || Promise.resolve();
+  const current = previous.catch(() => {}).then(operation);
+  locks.set(key, current);
+  return current.finally(() => {
+    if (locks.get(key) === current) locks.delete(key);
+  });
+}
+
+async function callEmailDeliveryLedger(env, payload, now = Date.now()) {
+  const day = utcDay(now);
+  const ledgerNow = Date.now();
+  if (env.EMAIL_DELIVERY_LEDGER?.idFromName && env.EMAIL_DELIVERY_LEDGER?.get) {
+    const id = env.EMAIL_DELIVERY_LEDGER.idFromName(day);
+    const stub = env.EMAIL_DELIVERY_LEDGER.get(id);
+    const response = await stub.fetch('https://papertok.internal/email-delivery', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ ...payload, now: new Date(ledgerNow).toISOString() }),
+    });
+    const result = await response.json().catch(() => null);
+    if (!response.ok || !result) {
+      throw new EmailNotificationError('EMAIL_DELIVERY_LEDGER_UNAVAILABLE', 503);
+    }
+    return result;
+  }
+
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
-  const latest = Number(await env.NOTIFICATION_STORE.get(state.key)) || 0;
-  await env.NOTIFICATION_STORE.put(
-    state.key,
-    String(Math.min(latest + 1, state.limit)),
-    { expirationTtl: 172_800 },
-  );
+  const key = `${DELIVERY_LEDGER_PREFIX}${day}`;
+  return withKvDeliveryLedgerLock(env.NOTIFICATION_STORE, key, async () => {
+    const current = await env.NOTIFICATION_STORE.get(key, 'json');
+    const outcome = applyEmailDeliveryLedgerAction(current, {
+      ...payload,
+      now: new Date(ledgerNow).toISOString(),
+    });
+    if (outcome.status >= 400) {
+      throw new EmailNotificationError('EMAIL_DELIVERY_LEDGER_UNAVAILABLE', 503);
+    }
+    if (payload.action !== 'inspect') {
+      await env.NOTIFICATION_STORE.put(key, JSON.stringify(outcome.state), {
+        expirationTtl: DELIVERY_LEDGER_TTL_SECONDS,
+      });
+    }
+    return outcome.result;
+  });
+}
+
+async function inspectEmailDelivery(env, reservationId, now) {
+  return callEmailDeliveryLedger(env, {
+    action: 'inspect',
+    reservationId,
+  }, now);
+}
+
+async function reserveEmailDelivery(env, reservationId, now, draft) {
+  const result = await callEmailDeliveryLedger(env, {
+    action: 'reserve',
+    reservationId,
+    limit: dailySendLimit(env),
+    retryMinAgeMs: DELIVERY_PENDING_RETRY_MIN_AGE_MS,
+    retryWindowMs: DELIVERY_PENDING_RETRY_WINDOW_MS,
+    ...(draft ? { draft } : {}),
+  }, now);
+  if (!result.accepted) throw new EmailNotificationError('EMAIL_PROVIDER_LIMIT', 429);
+  return result;
+}
+
+async function commitEmailDelivery(env, reservationId, delivery, now) {
+  return callEmailDeliveryLedger(env, {
+    action: 'commit',
+    reservationId,
+    delivery,
+  }, now);
+}
+
+async function releaseEmailDelivery(env, reservationId, now) {
+  try {
+    await callEmailDeliveryLedger(env, { action: 'release', reservationId }, now);
+  } catch (error) {
+    console.warn('Could not release email delivery reservation', error?.code || 'EMAIL_DELIVERY_LEDGER_UNAVAILABLE');
+  }
+}
+
+async function buildProviderIdempotencyKey(subscription, options = {}) {
+  return buildDeliveryReservationId(subscription, options);
 }
 
 function buildResendIdempotencyKey(subscription, { test = false, now = Date.now() } = {}) {
@@ -986,6 +1393,12 @@ function brevoSendErrorCode(status, payload = {}) {
     return 'EMAIL_SENDER_NOT_VERIFIED';
   }
   return 'EMAIL_SEND_FAILED';
+}
+
+function providerOutcomeDefinitelyRejected(status) {
+  if (status === 429) return true;
+  if ([408, 409, 425].includes(status) || status >= 500) return false;
+  return status >= 400 && status < 500;
 }
 
 const EMAIL_COPY = {
@@ -1077,9 +1490,19 @@ function renderDigest(subscription, papers, unsubscribeUrl, test) {
   return { html, text, subject: test ? copy.testSubject : title };
 }
 
-async function sendWithBrevo(subscription, content, env, { test = false } = {}) {
+async function fetchEmailProvider(input, init) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), EMAIL_PROVIDER_TIMEOUT_MS);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function sendWithBrevo(subscription, content, env, { test = false, idempotencyKey } = {}) {
   const sender = resolveBrevoSender(env);
-  const response = await fetch(`${BREVO_API}/smtp/email`, {
+  const response = await fetchEmailProvider(`${BREVO_API}/smtp/email`, {
     method: 'POST',
     headers: {
       'api-key': env.BREVO_API_KEY,
@@ -1096,27 +1519,36 @@ async function sendWithBrevo(subscription, content, env, { test = false } = {}) 
       subject: content.subject,
       htmlContent: content.html,
       textContent: content.text,
+      headers: { idempotencyKey },
       tags: [test ? 'papertok-test' : 'papertok-following-digest'],
     }),
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    console.error('Brevo rejected digest', response.status, payload?.message || payload?.code || 'unknown');
+    if (response.status === 400 && /duplicate_parameter/i.test(cleanText(
+      `${payload?.code || ''} ${payload?.message || ''}`,
+      500,
+    ))) {
+      return null;
+    }
     const code = brevoSendErrorCode(response.status, payload);
-    throw new EmailNotificationError(code, response.status === 429 ? 429 : 502);
+    console.error('Brevo rejected digest', response.status, code);
+    const error = new EmailNotificationError(code, response.status === 429 ? 429 : 502);
+    error.deliveryRejected = providerOutcomeDefinitelyRejected(response.status);
+    throw error;
   }
   return payload?.messageId || payload?.messageIds?.[0] || null;
 }
 
-async function sendWithResend(subscription, content, unsubscribeUrl, env, { test = false } = {}) {
+async function sendWithResend(subscription, content, unsubscribeUrl, env, { idempotencyKey } = {}) {
   const from = await resolveResendSender(env);
-  const response = await fetch(`${RESEND_API}/emails`, {
+  const response = await fetchEmailProvider(`${RESEND_API}/emails`, {
     method: 'POST',
     headers: {
       authorization: `Bearer ${env.RESEND_API_KEY}`,
       'content-type': 'application/json',
       'user-agent': 'PaperTok/1.0',
-      'idempotency-key': buildResendIdempotencyKey(subscription, { test }),
+      'idempotency-key': idempotencyKey,
     },
     body: JSON.stringify({
       from,
@@ -1132,45 +1564,261 @@ async function sendWithResend(subscription, content, unsubscribeUrl, env, { test
   });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    console.error('Resend rejected digest', response.status, payload?.message || payload?.name || 'unknown');
     const code = resendSendErrorCode(response.status, payload);
-    throw new EmailNotificationError(code, response.status === 429 ? 429 : 502);
+    console.error('Resend rejected digest', response.status, code);
+    const error = new EmailNotificationError(code, response.status === 429 ? 429 : 502);
+    error.deliveryRejected = providerOutcomeDefinitelyRejected(response.status);
+    throw error;
   }
   return payload?.id || null;
 }
 
-async function sendDigest(subscription, papers, env, { test = false } = {}) {
+function compactSourceReport(report = {}) {
+  return {
+    attempted: Math.max(0, Number(report.attempted) || 0),
+    succeeded: Math.max(0, Number(report.succeeded) || 0),
+    failed: Math.max(0, Number(report.failed) || 0),
+    requestAttempts: Math.max(0, Number(report.requestAttempts) || 0),
+    retried: Math.max(0, Number(report.retried) || 0),
+    requiredFailed: Math.max(0, Number(report.requiredFailed) || 0),
+    bySource: Object.fromEntries(Object.entries(report.bySource || {}).map(([source, counts]) => [source, {
+      attempted: Math.max(0, Number(counts?.attempted) || 0),
+      succeeded: Math.max(0, Number(counts?.succeeded) || 0),
+      failed: Math.max(0, Number(counts?.failed) || 0),
+    }])),
+    failureCodes: Object.fromEntries(Object.entries(report.failureCodes || {})
+      .filter(([, count]) => Number(count) > 0)),
+  };
+}
+
+function lastDeliveryStatus(status, at, {
+  kind = 'digest',
+  paperCount = 0,
+  partial = false,
+  code,
+  sourceReport,
+} = {}) {
+  return {
+    status,
+    kind,
+    at,
+    paperCount: Math.max(0, Number(paperCount) || 0),
+    partial: Boolean(partial),
+    ...(code ? { code: cleanText(code, 100) } : {}),
+    ...(sourceReport ? { sources: compactSourceReport(sourceReport) } : {}),
+  };
+}
+
+function deliveryStatePatch(currentState, delivery, status = 'sent') {
+  const sentAt = delivery.sentAt || new Date().toISOString();
+  if (delivery.kind === 'test') {
+    return {
+      lastTestAt: sentAt,
+      lastTestDelivery: lastDeliveryStatus(status, sentAt, {
+        kind: 'test',
+        paperCount: delivery.paperCount,
+        partial: delivery.partial,
+        sourceReport: delivery.sources,
+      }),
+    };
+  }
+  const sentPaperKeys = [...new Set([
+    ...(currentState.sentPaperKeys || []),
+    ...(delivery.paperKeys || []),
+  ])].slice(-MAX_SENT_PAPER_KEYS);
+  return {
+    lastCheckedAt: sentAt,
+    lastSentAt: sentAt,
+    sentPaperKeys,
+    lastDelivery: lastDeliveryStatus(status, sentAt, {
+      paperCount: delivery.paperCount,
+      partial: delivery.partial,
+      sourceReport: delivery.sources,
+    }),
+  };
+}
+
+function papersForCurrentSubscription(papers, subscription, test) {
+  const sentKeys = test ? new Set() : new Set(subscription.sentPaperKeys || []);
+  const followKeys = new Set((subscription.follows || []).map(follow => (
+    `${follow.type}:${follow.canonicalId}`
+  )));
+  return papers.filter(paper => (
+    !paperIdentityKeys(paper).some(key => sentKeys.has(key))
+    && (!(paper.matches || []).length || getPaperFollowKeys(paper).some(key => followKeys.has(key)))
+  )).slice(0, subscription.maxPapers || 5);
+}
+
+function buildDeliveryDraft(subscription, papers, provider, env, {
+  test = false,
+  now = Date.now(),
+  sourceReport = createSourceReport(),
+} = {}) {
+  const workerBase = cleanText(env.WORKER_PUBLIC_URL, 500)
+    || 'https://papertok-report-api.papertok-mugar123.workers.dev';
+  const unsubscribeUrl = `${workerBase}/notifications/unsubscribe?token=${encodeURIComponent(subscription.unsubscribeToken)}&lang=${subscriptionLanguage(subscription)}`;
+  return {
+    provider,
+    recipient: {
+      email: subscription.email,
+      displayName: subscription.displayName,
+    },
+    content: renderDigest(subscription, papers, unsubscribeUrl, test),
+    unsubscribeUrl,
+    delivery: {
+      kind: test ? 'test' : 'digest',
+      sentAt: new Date(now).toISOString(),
+      paperCount: papers.length,
+      paperKeys: test ? [] : papers.flatMap(paperIdentityKeys),
+      partial: sourceReport.failed > 0,
+      sources: compactSourceReport(sourceReport),
+    },
+  };
+}
+
+async function deliverReservedDraft(env, reservationId, draft, now, {
+  test = false,
+  ledgerTime = now,
+} = {}) {
+  const idempotencyKey = reservationId;
+  let providerId;
+  try {
+    providerId = draft.provider === 'brevo'
+      ? await sendWithBrevo(draft.recipient, draft.content, env, { test, idempotencyKey })
+      : await sendWithResend(
+        draft.recipient,
+        draft.content,
+        draft.unsubscribeUrl,
+        env,
+        { test, idempotencyKey },
+      );
+  } catch (error) {
+    if (error?.deliveryRejected) await releaseEmailDelivery(env, reservationId, now);
+    if (error instanceof EmailNotificationError) throw error;
+    const unknown = new EmailNotificationError('EMAIL_SEND_OUTCOME_UNKNOWN', 502);
+    unknown.transient = true;
+    throw unknown;
+  }
+  await commitEmailDelivery(env, reservationId, draft.delivery, ledgerTime);
+  return { sent: true, providerId, delivery: draft.delivery };
+}
+
+async function resumeScheduledDelivery(subscription, env, {
+  now = Date.now(),
+  key = `${SUBSCRIPTION_PREFIX}${subscription.uid}`,
+} = {}) {
+  const ledgerTimes = [now, now - DAY_MS];
+  for (const ledgerTime of ledgerTimes) {
+    const reservationId = await buildDeliveryReservationId(subscription, { now: ledgerTime });
+    const existing = await inspectEmailDelivery(env, reservationId, ledgerTime);
+    if (existing.status === 'missing') continue;
+    if (existing.status === 'committed' && existing.delivery) {
+      return { reconciled: true, delivery: existing.delivery };
+    }
+    if (existing.status !== 'reserved') return { pending: true };
+
+    const latest = await loadSubscriptionWithState(env, key);
+    if (!latest?.enabled) return { pending: true, cancelled: true };
+    if (!(latest.follows || []).length) return { pending: true, invalid: true };
+    const draft = existing.draft;
+    if (!draft?.delivery) return { pending: true };
+    const reservedAt = Date.parse(existing.reservedAt || '');
+    const reservationAge = Number.isFinite(reservedAt) ? Date.now() - reservedAt : Number.POSITIVE_INFINITY;
+    const retryExpired = (
+      reservationAge > DELIVERY_PENDING_RETRY_WINDOW_MS
+      || Number(existing.attempts || 1) >= 2
+    );
+    if (retryExpired) {
+      await commitEmailDelivery(env, reservationId, draft.delivery, ledgerTime);
+      return { reconciled: true, uncertain: true, delivery: draft.delivery };
+    }
+
+    const reservation = await reserveEmailDelivery(env, reservationId, ledgerTime);
+    if (!reservation.retry || !reservation.draft) return { pending: true };
+    return deliverReservedDraft(env, reservationId, reservation.draft, now, { ledgerTime });
+  }
+  return null;
+}
+
+async function sendDigest(subscription, papers, env, {
+  test = false,
+  now = Date.now(),
+  key = `${SUBSCRIPTION_PREFIX}${subscription.uid}`,
+  sourceReport = createSourceReport(),
+} = {}) {
   const provider = configuredEmailProvider(env);
   if (!provider) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
-  const sendState = await assertDailySendAvailable(env);
-  const workerBase = cleanText(env.WORKER_PUBLIC_URL, 500) || 'https://papertok-report-api.papertok-mugar123.workers.dev';
-  const unsubscribeUrl = `${workerBase}/notifications/unsubscribe?token=${encodeURIComponent(subscription.unsubscribeToken)}&lang=${subscriptionLanguage(subscription)}`;
-  const content = renderDigest(subscription, papers, unsubscribeUrl, test);
-  const providerId = provider === 'brevo'
-    ? await sendWithBrevo(subscription, content, env, { test })
-    : await sendWithResend(subscription, content, unsubscribeUrl, env, { test });
-  await recordSuccessfulSend(env, sendState);
-  return providerId;
+  const reservationId = await buildDeliveryReservationId(subscription, { test, now });
+  const latest = await loadSubscriptionWithState(env, key);
+  if (!latest?.enabled || !(latest.follows || []).length) {
+    return { cancelled: true, invalid: Boolean(latest?.enabled) };
+  }
+  if (!test && !isSubscriptionDue(latest, new Date(now))) {
+    return { cancelled: true };
+  }
+  const currentPapers = papersForCurrentSubscription(papers, latest, test);
+  if (!test && !currentPapers.length) {
+    return { cancelled: true, reconciled: true };
+  }
+  const draft = buildDeliveryDraft(latest, currentPapers, provider, env, {
+    test,
+    now,
+    sourceReport,
+  });
+  const reservation = await reserveEmailDelivery(env, reservationId, now, draft);
+  if (reservation.duplicate) {
+    if (reservation.status === 'committed' && reservation.delivery) {
+      return { reconciled: true, delivery: reservation.delivery };
+    }
+    if (!reservation.retry) return { pending: true };
+  }
+  if (!reservation.duplicate) {
+    const beforeDelivery = await loadSubscriptionWithState(env, key);
+    if (
+      !beforeDelivery?.enabled
+      || subscriptionGeneration(beforeDelivery) !== subscriptionGeneration(latest)
+      || beforeDelivery.updatedAt !== latest.updatedAt
+    ) {
+      await releaseEmailDelivery(env, reservationId, now);
+      return { cancelled: true };
+    }
+  }
+  const reservedDraft = reservation.draft || draft;
+  return deliverReservedDraft(env, reservationId, reservedDraft, now, { test });
 }
 
 async function testSubscription(env, identity) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
-  const subscription = await env.NOTIFICATION_STORE.get(key, 'json');
+  const subscription = await loadSubscriptionWithState(env, key);
   if (!subscription?.enabled) throw new EmailNotificationError('EMAIL_SUBSCRIPTION_REQUIRED', 409);
+  if (!(subscription.follows || []).length) throw new EmailNotificationError('EMAIL_FOLLOWS_REQUIRED', 409);
   const lastTestAt = Date.parse(subscription.lastTestAt || 0);
   if (lastTestAt && Date.now() - lastTestAt < 60_000) {
     throw new EmailNotificationError('EMAIL_TEST_RATE_LIMIT', 429);
   }
-  const papers = await collectDigestPapers(subscription, env, { test: true });
-  const providerId = await sendDigest(subscription, papers, env, { test: true });
-  const updated = { ...subscription, lastTestAt: new Date().toISOString() };
-  await env.NOTIFICATION_STORE.put(key, JSON.stringify(updated));
+  const now = Date.now();
+  const { papers, sourceReport } = await collectDigestPapers(subscription, env, { test: true, now });
+  const result = await sendDigest(subscription, papers, env, {
+    test: true,
+    now,
+    key,
+    sourceReport,
+  });
+  if (result.pending) throw new EmailNotificationError('EMAIL_TEST_RATE_LIMIT', 429);
+  if (result.invalid || result.cancelled) throw new EmailNotificationError('EMAIL_SUBSCRIPTION_REQUIRED', 409);
+  const updated = await updateDeliveryState(
+    env,
+    key,
+    subscription,
+    state => deliveryStatePatch(state, result.delivery, result.reconciled ? 'reconciled' : 'sent'),
+  );
+  if (!updated) throw new EmailNotificationError('EMAIL_SUBSCRIPTION_REQUIRED', 409);
   return {
     ok: true,
-    providerId,
-    paperCount: papers.length,
-    followCount: subscription.follows?.length || 0,
+    providerId: result.providerId || null,
+    paperCount: result.delivery.paperCount,
+    followCount: updated.follows?.length || 0,
     preferences: publicSubscription(updated, identity.email),
   };
 }
@@ -1181,7 +1829,7 @@ export async function handleEmailNotificationRequest(request, env, pathname) {
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
 
   if (pathname === '/notifications/preferences' && request.method === 'GET') {
-    const subscription = await env.NOTIFICATION_STORE.get(key, 'json');
+    const subscription = await loadSubscriptionWithState(env, key);
     return { preferences: publicSubscription(subscription, identity.email) };
   }
   if (pathname === '/notifications/preferences' && request.method === 'PUT') {
@@ -1205,7 +1853,7 @@ export async function handleEmailUnsubscribe(request, env) {
   const uid = await env.NOTIFICATION_STORE.get(`${UNSUBSCRIBE_PREFIX}${token}`);
   let language = requestedLanguage;
   if (uid) {
-    const subscription = await env.NOTIFICATION_STORE.get(`${SUBSCRIPTION_PREFIX}${uid}`, 'json');
+    const subscription = await loadSubscriptionWithState(env, `${SUBSCRIPTION_PREFIX}${uid}`);
     language = subscriptionLanguage(subscription);
     await deleteSubscription(env, uid, subscription);
   }
@@ -1214,6 +1862,45 @@ export async function handleEmailUnsubscribe(request, env) {
     status: 200,
     headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
   });
+}
+
+export async function getEmailScheduleHealth(env, now = Date.now()) {
+  if (!env.NOTIFICATION_STORE) {
+    return { available: false, fresh: false, code: 'EMAIL_SCHEDULE_NOT_CONFIGURED' };
+  }
+  try {
+    const summary = await env.NOTIFICATION_STORE.get(SCHEDULE_STATUS_KEY, 'json');
+    if (!summary) return { available: false, fresh: false, code: 'EMAIL_SCHEDULE_NOT_RUN' };
+    const completedAt = cleanText(summary.completedAt, 40);
+    const completedTime = Date.parse(completedAt);
+    const fresh = Number.isFinite(completedTime) && now - completedTime <= 30 * 60 * 60 * 1000;
+    const count = field => Math.max(0, Number(summary[field]) || 0);
+    return {
+      available: true,
+      fresh,
+      ...(fresh ? {} : { code: 'EMAIL_SCHEDULE_STALE' }),
+      scheduledAt: cleanText(summary.scheduledAt, 40) || null,
+      completedAt: completedAt || null,
+      scanned: count('scanned'),
+      processed: count('processed'),
+      deferred: count('deferred'),
+      due: count('due'),
+      sent: count('sent'),
+      empty: count('empty'),
+      invalid: count('invalid'),
+      reconciled: count('reconciled'),
+      uncertain: count('uncertain'),
+      partial: count('partial'),
+      skipped: count('skipped'),
+      failed: count('failed'),
+      failureCodes: Object.fromEntries(Object.entries(summary.failureCodes || {})
+        .map(([code, value]) => [cleanText(code, 100), Math.max(0, Number(value) || 0)])
+        .filter(([code, value]) => code && value > 0)
+        .slice(0, 24)),
+    };
+  } catch {
+    return { available: false, fresh: false, code: 'EMAIL_SCHEDULE_UNAVAILABLE' };
+  }
 }
 
 export async function checkEmailProviderHealth(env) {
@@ -1302,36 +1989,201 @@ export async function checkEmailProviderHealth(env) {
   }
 }
 
-function isSubscriptionDue(subscription, now) {
+function isSubscriptionCalendarDue(subscription, now) {
   if (!subscription?.enabled) return false;
   const lastSent = Date.parse(subscription.lastSentAt || 0);
+  const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
   if (subscription.frequency === 'weekly') {
-    return now.getUTCDay() === 1 && (!lastSent || now.getTime() - lastSent >= 6 * 24 * 60 * 60 * 1000);
+    return now.getUTCDay() === 1 && (!lastSent || lastSent < dayStart);
   }
-  return !lastSent || now.getTime() - lastSent >= 20 * 60 * 60 * 1000;
+  return !lastSent || lastSent < dayStart;
+}
+
+function isSubscriptionDue(subscription, now) {
+  if (!isSubscriptionCalendarDue(subscription, now)) return false;
+  const dayStart = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  const lastDeliveryAt = Date.parse(subscription.lastDelivery?.at || 0);
+  if (!Number.isFinite(lastDeliveryAt) || lastDeliveryAt < dayStart) return true;
+  const elapsed = now.getTime() - lastDeliveryAt;
+  if (subscription.lastDelivery?.status === 'invalid') return false;
+  if (subscription.lastDelivery?.status === 'empty') return elapsed >= EMPTY_RETRY_INTERVAL_MS;
+  if (subscription.lastDelivery?.status === 'failed') return elapsed >= FAILURE_RETRY_INTERVAL_MS;
+  return true;
+}
+
+function shouldInspectPreviousDay(subscription, now) {
+  return (
+    isSubscriptionCalendarDue(subscription, now)
+    || (subscription?.frequency === 'weekly' && now.getUTCDay() === 2)
+  );
+}
+
+function allowsNewScheduledDelivery(now) {
+  return !(now.getUTCHours() === 13 && now.getUTCMinutes() >= 40);
+}
+
+async function loadScheduleCursor(store) {
+  try {
+    return cleanText(await store.get(SCHEDULE_CURSOR_KEY), 2_000) || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function persistScheduleCursor(store, cursor) {
+  if (cursor) await store.put(SCHEDULE_CURSOR_KEY, cursor);
+  else await store.delete(SCHEDULE_CURSOR_KEY);
+}
+
+function failureCodeCounts(sourceReport, code) {
+  const counts = { ...(sourceReport?.failureCodes || {}) };
+  if (code) counts[code] = (counts[code] || 0) + 1;
+  return counts;
+}
+
+function mergeSourceReports(target, report) {
+  if (!report) return target;
+  ['attempted', 'succeeded', 'failed', 'requestAttempts', 'retried', 'requiredFailed'].forEach((field) => {
+    target[field] += Math.max(0, Number(report[field]) || 0);
+  });
+  Object.entries(report.bySource || {}).forEach(([source, counts]) => {
+    target.bySource[source] ||= { attempted: 0, succeeded: 0, failed: 0 };
+    ['attempted', 'succeeded', 'failed'].forEach((field) => {
+      target.bySource[source][field] += Math.max(0, Number(counts?.[field]) || 0);
+    });
+  });
+  Object.entries(report.failureCodes || {}).forEach(([code, count]) => {
+    target.failureCodes[code] = (target.failureCodes[code] || 0) + Math.max(0, Number(count) || 0);
+  });
+  return target;
+}
+
+async function recordSubscriptionOutcome(env, key, subscription, status, at, {
+  code,
+  paperCount = 0,
+  partial = false,
+  sourceReport,
+} = {}) {
+  return updateDeliveryState(env, key, subscription, () => ({
+    lastCheckedAt: at,
+    lastDelivery: lastDeliveryStatus(status, at, {
+      code,
+      paperCount,
+      partial,
+      sourceReport,
+    }),
+  }));
+}
+
+async function persistScheduledDelivery(env, key, subscription, delivery) {
+  const status = delivery.uncertain ? 'uncertain' : delivery.reconciled ? 'reconciled' : 'sent';
+  const updated = await updateDeliveryState(
+    env,
+    key,
+    subscription,
+    state => deliveryStatePatch(state, delivery.delivery, status),
+  );
+  if (!updated && delivery.sent) {
+    return {
+      sent: true,
+      partial: Boolean(delivery.delivery.partial),
+      sources: compactSourceReport(delivery.delivery.sources),
+      failureCodes: failureCodeCounts(delivery.delivery.sources),
+    };
+  }
+  if (!updated) return { skipped: true };
+  return {
+    [status]: true,
+    partial: Boolean(delivery.delivery.partial),
+    sources: compactSourceReport(delivery.delivery.sources),
+    failureCodes: failureCodeCounts(
+      delivery.delivery.sources,
+      delivery.uncertain ? 'EMAIL_SEND_OUTCOME_UNCONFIRMED' : undefined,
+    ),
+  };
 }
 
 async function processScheduledSubscription(env, key, now) {
-  const subscription = await env.NOTIFICATION_STORE.get(key.name, 'json');
-  if (!isSubscriptionDue(subscription, now)) return { skipped: true };
-  const papers = await collectDigestPapers(subscription, env, { now: now.getTime() });
+  const subscription = await loadSubscriptionWithState(env, key.name);
+  if (!subscription?.enabled || !shouldInspectPreviousDay(subscription, now)) return { skipped: true };
   const checkedAt = now.toISOString();
-  if (!papers.length) {
-    await env.NOTIFICATION_STORE.put(key.name, JSON.stringify({ ...subscription, lastCheckedAt: checkedAt }));
-    return { empty: true };
+  if (!(subscription.follows || []).length) {
+    const code = 'EMAIL_SUBSCRIPTION_INVALID';
+    await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code });
+    return { invalid: true, failureCodes: { [code]: 1 } };
   }
-  await sendDigest(subscription, papers, env);
-  const sentPaperKeys = [...new Set([
-    ...(subscription.sentPaperKeys || []),
-    ...papers.flatMap(paperIdentityKeys),
-  ])].slice(-MAX_SENT_PAPER_KEYS);
-  await env.NOTIFICATION_STORE.put(key.name, JSON.stringify({
-    ...subscription,
-    lastCheckedAt: checkedAt,
-    lastSentAt: checkedAt,
-    sentPaperKeys,
-  }));
-  return { sent: true };
+  let sourceReport;
+  try {
+    const resumed = await resumeScheduledDelivery(subscription, env, {
+      now: now.getTime(),
+      key: key.name,
+    });
+    if (resumed) {
+      if (resumed.invalid) {
+        const code = 'EMAIL_SUBSCRIPTION_INVALID';
+        await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code });
+        return { invalid: true, failureCodes: { [code]: 1 } };
+      }
+      if (resumed.pending || resumed.cancelled) return { skipped: true };
+      return persistScheduledDelivery(env, key.name, subscription, resumed);
+    }
+
+    if (!isSubscriptionDue(subscription, now) || !allowsNewScheduledDelivery(now)) {
+      return { skipped: true };
+    }
+
+    const collected = await collectDigestPapers(subscription, env, { now: now.getTime() });
+    sourceReport = collected.sourceReport;
+    if (!collected.papers.length) {
+      await recordSubscriptionOutcome(env, key.name, subscription, 'empty', checkedAt, { sourceReport });
+      return {
+        empty: true,
+        partial: false,
+        sources: compactSourceReport(sourceReport),
+        failureCodes: failureCodeCounts(sourceReport),
+      };
+    }
+
+    const delivery = await sendDigest(subscription, collected.papers, env, {
+      now: now.getTime(),
+      key: key.name,
+      sourceReport,
+    });
+    if (delivery.pending) return { skipped: true, sources: compactSourceReport(sourceReport) };
+    if (delivery.invalid) {
+      const code = 'EMAIL_SUBSCRIPTION_INVALID';
+      await recordSubscriptionOutcome(env, key.name, subscription, 'invalid', checkedAt, { code, sourceReport });
+      return {
+        invalid: true,
+        sources: compactSourceReport(sourceReport),
+        failureCodes: failureCodeCounts(sourceReport, code),
+      };
+    }
+    if (delivery.cancelled) return { skipped: true, sources: compactSourceReport(sourceReport) };
+    return persistScheduledDelivery(env, key.name, subscription, delivery);
+  } catch (error) {
+    sourceReport ||= error?.sourceReport;
+    const code = cleanText(error?.code, 100) || 'EMAIL_SCHEDULE_PROCESSING_FAILED';
+    console.warn('Scheduled email subscription failed', code);
+    try {
+      await recordSubscriptionOutcome(
+        env,
+        key.name,
+        subscription,
+        'failed',
+        checkedAt,
+        { code, sourceReport },
+      );
+    } catch (recordError) {
+      console.warn('Could not persist subscription delivery failure', recordError?.message || recordError);
+    }
+    return {
+      failed: true,
+      partial: false,
+      sources: compactSourceReport(sourceReport),
+      failureCodes: failureCodeCounts(sourceReport, code),
+    };
+  }
 }
 
 async function recordScheduleOutcome(env, summary) {
@@ -1342,10 +2194,19 @@ async function recordScheduleOutcome(env, summary) {
   } catch (error) {
     console.warn('Could not persist email notification schedule outcome', error?.message || error);
   }
+  try {
+    const historyKey = `${SCHEDULE_HISTORY_PREFIX}${summary.scheduledAt}`;
+    await env.NOTIFICATION_STORE.put(historyKey, JSON.stringify(summary), {
+      expirationTtl: SCHEDULE_HISTORY_TTL_SECONDS,
+    });
+  } catch (error) {
+    console.warn('Could not persist email notification schedule history', error?.message || error);
+  }
 }
 
 export async function runEmailNotificationSchedule(env, scheduledTime = Date.now()) {
   const now = new Date(scheduledTime);
+  const startedAt = Date.now();
   const provider = configuredEmailProvider(env);
   if (!env.NOTIFICATION_STORE || !provider) {
     const summary = {
@@ -1353,45 +2214,111 @@ export async function runEmailNotificationSchedule(env, scheduledTime = Date.now
       completedAt: new Date().toISOString(),
       provider: provider || null,
       scanned: 0,
+      processed: 0,
+      deferred: 0,
       due: 0,
       sent: 0,
       empty: 0,
+      invalid: 0,
+      reconciled: 0,
+      uncertain: 0,
+      partial: 0,
       skipped: 1,
       failed: 0,
+      sources: compactSourceReport(),
+      failureCodes: {},
       disabled: true,
     };
     await recordScheduleOutcome(env, summary);
     return summary;
   }
-  let cursor;
+  let cursor = await loadScheduleCursor(env.NOTIFICATION_STORE);
   let scanned = 0;
+  let processed = 0;
+  let deferred = 0;
   let sent = 0;
   let empty = 0;
+  let invalid = 0;
+  let reconciled = 0;
+  let uncertain = 0;
+  let partial = 0;
   let skipped = 0;
   let failed = 0;
-  do {
-    const page = await env.NOTIFICATION_STORE.list({ prefix: SUBSCRIPTION_PREFIX, cursor, limit: 100 });
-    for (let index = 0; index < page.keys.length; index += 3) {
-      const batch = page.keys.slice(index, index + 3);
-      const results = await Promise.allSettled(batch.map(key => processScheduledSubscription(env, key, now)));
-      scanned += batch.length;
-      sent += results.filter(result => result.status === 'fulfilled' && result.value?.sent).length;
-      empty += results.filter(result => result.status === 'fulfilled' && result.value?.empty).length;
-      skipped += results.filter(result => result.status === 'fulfilled' && result.value?.skipped).length;
-      failed += results.filter(result => result.status === 'rejected').length;
+  const sources = createSourceReport();
+  const failureCodes = {};
+  let inventoryComplete = false;
+  while (!inventoryComplete) {
+    const elapsed = Date.now() - startedAt;
+    if (elapsed >= SCHEDULE_PROCESSING_BUDGET_MS - SCHEDULE_MIN_BATCH_REMAINING_MS) {
+      deferred = 1;
+      skipped += 1;
+      failureCodes.EMAIL_SCHEDULE_TIME_BUDGET = 1;
+      break;
     }
+    let page;
+    try {
+      page = await env.NOTIFICATION_STORE.list({
+        prefix: SUBSCRIPTION_PREFIX,
+        cursor,
+        limit: SCHEDULE_PAGE_SIZE,
+      });
+    } catch (error) {
+      if (!cursor) throw error;
+      console.warn('Email schedule cursor was invalid; restarting subscription scan');
+      cursor = undefined;
+      await persistScheduleCursor(env.NOTIFICATION_STORE, undefined);
+      continue;
+    }
+    const batch = page.keys || [];
+    const results = await Promise.allSettled(batch.map(key => processScheduledSubscription(env, key, now)));
+    processed += batch.length;
+    scanned += batch.length;
+    sent += results.filter(result => result.status === 'fulfilled' && result.value?.sent).length;
+    empty += results.filter(result => result.status === 'fulfilled' && result.value?.empty).length;
+    invalid += results.filter(result => result.status === 'fulfilled' && result.value?.invalid).length;
+    reconciled += results.filter(result => result.status === 'fulfilled' && result.value?.reconciled).length;
+    uncertain += results.filter(result => result.status === 'fulfilled' && result.value?.uncertain).length;
+    partial += results.filter(result => result.status === 'fulfilled' && result.value?.partial).length;
+    skipped += results.filter(result => result.status === 'fulfilled' && result.value?.skipped).length;
+    failed += results.filter(result => (
+      result.status === 'rejected' || (result.status === 'fulfilled' && result.value?.failed)
+    )).length;
+    results.forEach((result) => {
+      if (result.status === 'fulfilled') mergeSourceReports(sources, result.value?.sources);
+      const counts = result.status === 'fulfilled'
+        ? result.value?.failureCodes
+        : { EMAIL_SCHEDULE_PROCESSING_FAILED: 1 };
+      Object.entries(counts || {}).forEach(([code, count]) => {
+        failureCodes[code] = (failureCodes[code] || 0) + Number(count || 0);
+      });
+    });
     cursor = page.list_complete ? undefined : page.cursor;
-  } while (cursor);
+    inventoryComplete = Boolean(page.list_complete || !page.cursor);
+    try {
+      await persistScheduleCursor(env.NOTIFICATION_STORE, cursor);
+    } catch (error) {
+      console.warn('Could not persist email schedule cursor', error?.message || error);
+    }
+    if (!batch.length && !cursor) inventoryComplete = true;
+  }
   const summary = {
     scheduledAt: now.toISOString(),
     completedAt: new Date().toISOString(),
     provider,
     scanned,
-    due: sent + empty + failed,
+    processed,
+    deferred,
+    due: sent + empty + invalid + reconciled + uncertain + failed,
     sent,
     empty,
+    invalid,
+    reconciled,
+    uncertain,
+    partial,
     skipped,
     failed,
+    sources: compactSourceReport(sources),
+    failureCodes,
   };
   await recordScheduleOutcome(env, summary);
   return summary;
@@ -1399,7 +2326,11 @@ export async function runEmailNotificationSchedule(env, scheduledTime = Date.now
 
 export const emailNotificationInternals = {
   brevoSendErrorCode,
+  buildDeliveryReservationId,
+  buildProviderIdempotencyKey,
   buildResendIdempotencyKey,
+  collectDigestPapers,
+  compactSourceReport,
   configuredEmailProvider,
   sanitizeFollow,
   sanitizePaper,
@@ -1415,5 +2346,12 @@ export const emailNotificationInternals = {
   resendSendErrorCode,
   renderScientificHtml,
   renderDigest,
+  allowsNewScheduledDelivery,
+  digestFollowsForWindow,
+  providerOutcomeDefinitelyRejected,
+  deliveryLedgerPrefix: DELIVERY_LEDGER_PREFIX,
+  deliveryStatePrefix: DELIVERY_STATE_PREFIX,
+  scheduleCursorKey: SCHEDULE_CURSOR_KEY,
+  scheduleHistoryPrefix: SCHEDULE_HISTORY_PREFIX,
   scheduleStatusKey: SCHEDULE_STATUS_KEY,
 };

@@ -3,12 +3,15 @@ import assert from 'node:assert/strict';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,
+  getEmailScheduleHealth,
   runEmailNotificationSchedule,
 } from './email-notifications.js';
 
 const {
   brevoSendErrorCode,
+  buildProviderIdempotencyKey,
   buildResendIdempotencyKey,
+  collectDigestPapers,
   configuredEmailProvider,
   sanitizeFollow,
   sanitizePreferences,
@@ -23,6 +26,12 @@ const {
   resendSendErrorCode,
   renderScientificHtml,
   renderDigest,
+  digestFollowsForWindow,
+  providerOutcomeDefinitelyRejected,
+  deliveryLedgerPrefix,
+  deliveryStatePrefix,
+  scheduleHistoryPrefix,
+  scheduleCursorKey,
   scheduleStatusKey,
 } = emailNotificationInternals;
 
@@ -67,13 +76,82 @@ function createMemoryKv(entries = {}) {
     async delete(key) {
       values.delete(key);
     },
-    async list({ prefix = '' } = {}) {
+    async list({ prefix = '', cursor, limit = 1_000 } = {}) {
+      const matchingKeys = [...values.keys()].filter(key => key.startsWith(prefix)).sort();
+      const start = Math.max(0, Number(cursor) || 0);
+      const end = Math.min(matchingKeys.length, start + limit);
       return {
-        keys: [...values.keys()].filter(key => key.startsWith(prefix)).map(name => ({ name })),
-        list_complete: true,
+        keys: matchingKeys.slice(start, end).map(name => ({ name })),
+        list_complete: end >= matchingKeys.length,
+        ...(end < matchingKeys.length ? { cursor: String(end) } : {}),
       };
     },
   };
+}
+
+function digestFollow(canonicalId = 'A1', displayName = 'Ada Author') {
+  return {
+    type: 'author',
+    canonicalId,
+    displayName,
+    externalIds: {},
+    metadata: { categoryIds: [] },
+  };
+}
+
+function digestPaper({
+  id = 'backlog-paper',
+  published = '2026-08-06',
+  matches = [digestFollow()],
+  citationCount = 4,
+} = {}) {
+  return {
+    id,
+    doi: '',
+    title: `Strong paper ${id}`,
+    authors: ['Ada Lovelace'],
+    published,
+    journal: 'PaperTok Journal',
+    citationCount,
+    openAccess: true,
+    url: `https://example.com/${id}`,
+    matches,
+  };
+}
+
+function digestSubscription(overrides = {}) {
+  return {
+    uid: 'reader-1',
+    email: 'reader@example.com',
+    enabled: true,
+    frequency: 'daily',
+    maxPapers: 5,
+    unsubscribeToken: 'unsubscribe-token',
+    follows: [digestFollow()],
+    previewItems: [],
+    sentPaperKeys: [],
+    ...overrides,
+  };
+}
+
+function emailEnvironment(kv) {
+  return {
+    NOTIFICATION_STORE: kv,
+    EMAIL_PROVIDER: 'brevo',
+    BREVO_API_KEY: 'xkeysib-test',
+    BREVO_FROM_EMAIL: 'papertok@example.com',
+  };
+}
+
+async function storedSubscriptionWithState(kv, subscriptionKey) {
+  const subscription = await kv.get(subscriptionKey, 'json');
+  if (!subscription) return null;
+  const uid = subscriptionKey.replace(/^notification:subscription:/, '');
+  const stateKey = subscription.stateId
+    ? `${deliveryStatePrefix}${uid}:${subscription.stateId}`
+    : `${deliveryStatePrefix}${uid}`;
+  const state = await kv.get(stateKey, 'json');
+  return { ...subscription, ...(state || {}) };
 }
 
 test('sanitizes notification preferences and followed entities', () => {
@@ -262,10 +340,84 @@ test('only admits a bounded exploration paper with a strong scientific signal', 
   ], { limit: 1, now, exploration: true }), []);
 });
 
+test('selects unsent preview backlog inside the rolling window despite a newer lastSentAt', async () => {
+  const now = Date.parse('2026-08-09T07:00:00Z');
+  const backlog = digestPaper({ id: 'weekend-backlog', published: '2026-08-06' });
+  const restoreFetch = stubFetch(jsonResponse(200, { results: [] }));
+  try {
+    const result = await collectDigestPapers(digestSubscription({
+      lastSentAt: '2026-08-08T07:00:00Z',
+      previewItems: [backlog],
+    }), {}, { now });
+
+    assert.deepEqual(result.papers.map(paper => paper.id), ['weekend-backlog']);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('excludes sent preview backlog throughout the rolling freshness window', async () => {
+  const now = Date.parse('2026-08-09T07:00:00Z');
+  const backlog = digestPaper({ id: 'already-sent', published: '2026-08-06' });
+  const restoreFetch = stubFetch(jsonResponse(200, { results: [] }));
+  try {
+    const result = await collectDigestPapers(digestSubscription({
+      lastSentAt: '2026-08-08T07:00:00Z',
+      previewItems: [backlog],
+      sentPaperKeys: ['id:already-sent'],
+    }), {}, { now });
+
+    assert.deepEqual(result.papers, []);
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('uses at most one strong exploration paper when followed selection is empty', async () => {
+  const now = Date.parse('2026-08-09T07:00:00Z');
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if ((url.searchParams.get('filter') || '').includes('author.id:A1')) {
+      return jsonResponse(200, { results: [] });
+    }
+    return jsonResponse(200, {
+      results: [
+        {
+          id: 'https://openalex.org/WEXPLORE',
+          display_name: 'High quality exploration',
+          publication_date: '2026-08-09',
+          cited_by_count: 12,
+          authorships: [{ author: { display_name: 'Grace Hopper' } }],
+          primary_location: {
+            source: { display_name: 'Discovery Journal' },
+            landing_page_url: 'https://example.com/exploration',
+          },
+          open_access: { is_oa: true },
+        },
+      ],
+    });
+  };
+
+  try {
+    const result = await collectDigestPapers(digestSubscription(), {}, { now });
+    assert.deepEqual(result.papers.map(paper => paper.id), ['WEXPLORE']);
+    assert.equal(result.papers[0].matches.length, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('sends daily subscriptions once per day and weekly subscriptions on Monday', () => {
   const monday = new Date('2026-07-27T07:00:00Z');
+  const laterMonday = new Date('2026-07-27T11:00:00Z');
   const tuesday = new Date('2026-07-28T07:00:00Z');
   assert.equal(isSubscriptionDue({ enabled: true, frequency: 'daily' }, monday), true);
+  assert.equal(isSubscriptionDue({
+    enabled: true,
+    frequency: 'daily',
+    lastSentAt: monday.toISOString(),
+  }, laterMonday), false);
   assert.equal(isSubscriptionDue({ enabled: true, frequency: 'weekly' }, monday), true);
   assert.equal(isSubscriptionDue({ enabled: true, frequency: 'weekly' }, tuesday), false);
 });
@@ -350,6 +502,7 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
       arxivQuery = url.searchParams.get('search_query') || '';
       return textResponse(200, arxivXml);
     }
+    if (url.hostname === 'api.openalex.org') return jsonResponse(200, { results: [] });
     if (url.hostname === 'api.brevo.com' && url.pathname === '/v3/smtp/email') {
       brevoPayload = JSON.parse(options.body);
       return jsonResponse(201, { messageId: 'arxiv-email-id' });
@@ -374,9 +527,15 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
       brevoPayload.htmlContent.includes('The evolution of galaxy dust scaling relations'),
       true,
     );
-    const storedSubscription = await kv.get(subscriptionKey, 'json');
+    const storedSubscription = await storedSubscriptionWithState(kv, subscriptionKey);
     assert.equal(storedSubscription.lastSentAt, now.toISOString());
     assert.equal(storedSubscription.sentPaperKeys.includes('id:2607.26058'), true);
+    const rawSubscription = await kv.get(subscriptionKey, 'json');
+    const deliveryState = await kv.get(`${deliveryStatePrefix}arxiv-reader`, 'json');
+    assert.equal(rawSubscription.lastSentAt, '2026-07-28T07:00:00Z');
+    assert.notEqual(rawSubscription.lastSentAt, now.toISOString());
+    assert.equal(rawSubscription.lastDelivery, undefined);
+    assert.equal(deliveryState.lastSentAt, now.toISOString());
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -477,6 +636,10 @@ test('scheduled digest fetches and emails papers from every followed entity type
     assert.equal(result.empty, 0);
     assert.deepEqual(brevoPayload.sender, { name: 'PaperTok', email: 'papertok@example.com' });
     assert.deepEqual(brevoPayload.to, [{ email: 'reader@example.com', name: 'Reader' }]);
+    assert.match(
+      brevoPayload.headers.idempotencyKey,
+      /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+    );
     assert.equal(brevoPayload.subject, '4 novedades científicas para ti');
     assert.equal(
       brevoPayload.htmlContent.includes('https://papertok-report-api.papertok-mugar123.workers.dev/notifications/unsubscribe?token=unsubscribe-token'),
@@ -489,12 +652,12 @@ test('scheduled digest fetches and emails papers from every followed entity type
     assert.equal(requests.filter(url => url.startsWith('https://api.openaire.eu/')).length, 1);
     assert.equal(requests.filter(url => url.startsWith('https://api.brevo.com/v3/smtp/email')).length, 1);
 
-    const storedSubscription = await kv.get(subscriptionKey, 'json');
+    const storedSubscription = await storedSubscriptionWithState(kv, subscriptionKey);
     assert.equal(storedSubscription.lastSentAt, now.toISOString());
     assert.equal(storedSubscription.lastCheckedAt, now.toISOString());
     assert.equal(storedSubscription.sentPaperKeys.includes('doi:10.1234/author'), true);
     assert.equal(
-      [...kv.values.entries()].some(([key, value]) => key.startsWith('notification:send-count:') && value === '1'),
+      [...kv.values.keys()].some(key => key.startsWith(deliveryLedgerPrefix)),
       true,
     );
   } finally {
@@ -532,7 +695,174 @@ test('does not overwrite an enabled subscription when the client sends zero foll
   assert.deepEqual(await kv.get(subscriptionKey, 'json'), existing);
 });
 
-test('records an empty no-send run without calling a provider', async () => {
+test('keeps delivery state separate and intact when notification preferences change', async () => {
+  const subscriptionKey = 'notification:subscription:state-reader';
+  const deliveryStateKey = `${deliveryStatePrefix}state-reader`;
+  const deliveryState = {
+    lastSentAt: '2026-08-08T07:00:00.000Z',
+    sentPaperKeys: ['id:already-sent'],
+    lastDelivery: { status: 'sent', at: '2026-08-08T07:00:00.000Z', paperCount: 1 },
+  };
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({ uid: 'state-reader' }),
+    [deliveryStateKey]: deliveryState,
+  });
+  const newerDeliveryState = {
+    ...deliveryState,
+    lastSentAt: '2026-08-09T07:00:00.000Z',
+    sentPaperKeys: ['id:already-sent', 'id:newer-send'],
+  };
+  const basePut = kv.put.bind(kv);
+  let injectedConcurrentDelivery = false;
+  kv.put = async (key, value, options) => {
+    if (!injectedConcurrentDelivery && key === subscriptionKey) {
+      injectedConcurrentDelivery = true;
+      await basePut(deliveryStateKey, JSON.stringify(newerDeliveryState));
+    }
+    return basePut(key, value, options);
+  };
+  const request = new Request('https://example.com/notifications/preferences', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      enabled: true,
+      frequency: 'weekly',
+      maxPapers: 3,
+      language: 'en',
+      follows: [digestFollow()],
+      previewItems: [],
+    }),
+  });
+
+  await saveSubscription(request, { NOTIFICATION_STORE: kv }, {
+    uid: 'state-reader',
+    email: 'reader@example.com',
+    displayName: 'Reader',
+  });
+
+  const rawSubscription = await kv.get(subscriptionKey, 'json');
+  assert.equal(rawSubscription.frequency, 'weekly');
+  assert.equal(rawSubscription.lastSentAt, undefined);
+  assert.equal(rawSubscription.lastDelivery, undefined);
+  assert.deepEqual(await kv.get(deliveryStateKey, 'json'), newerDeliveryState);
+});
+
+test('does not attach a completed send from an old subscription generation to a resubscription', async () => {
+  const now = new Date('2026-08-09T07:00:00Z');
+  const subscriptionKey = 'notification:subscription:resubscribed-reader';
+  const oldStateKey = `${deliveryStatePrefix}resubscribed-reader:old-generation`;
+  const newStateKey = `${deliveryStatePrefix}resubscribed-reader:new-generation`;
+  const oldSubscription = digestSubscription({
+    uid: 'resubscribed-reader',
+    stateId: 'old-generation',
+    updatedAt: '2026-08-08T12:00:00.000Z',
+    previewItems: [digestPaper({ id: 'old-generation-paper', published: '2026-08-09' })],
+  });
+  const newSubscription = digestSubscription({
+    uid: 'resubscribed-reader',
+    stateId: 'new-generation',
+    updatedAt: '2026-08-09T07:00:01.000Z',
+    previewItems: [],
+  });
+  const kv = createMemoryKv({ [subscriptionKey]: oldSubscription });
+  const basePut = kv.put.bind(kv);
+  let resubscribedDuringOldStateWrite = false;
+  kv.put = async (key, value, options) => {
+    if (!resubscribedDuringOldStateWrite && key === oldStateKey) {
+      resubscribedDuringOldStateWrite = true;
+      await basePut(subscriptionKey, JSON.stringify(newSubscription));
+    }
+    return basePut(key, value, options);
+  };
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') {
+      providerCalls += 1;
+      return jsonResponse(201, { messageId: 'old-generation-delivery' });
+    }
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    const result = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
+
+    assert.equal(result.sent, 1);
+    assert.equal(providerCalls, 1);
+    assert.equal(resubscribedDuringOldStateWrite, true);
+    assert.equal((await kv.get(oldStateKey, 'json')).lastDelivery.status, 'sent');
+    assert.equal(await kv.get(newStateKey, 'json'), null);
+    const current = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(current.stateId, 'new-generation');
+    assert.equal(current.lastSentAt, undefined);
+    assert.deepEqual(current.sentPaperKeys, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('rotates oversized follow sets so every follow can contribute to later digests', () => {
+  const follows = Array.from({ length: 40 }, (_, index) => digestFollow(`A${index + 1}`));
+  const first = digestFollowsForWindow(follows, Date.parse('2026-08-09T07:00:00.000Z'));
+  const next = digestFollowsForWindow(follows, Date.parse('2026-08-10T07:00:00.000Z'));
+
+  assert.equal(first.length, 24);
+  assert.equal(next.length, 24);
+  assert.notEqual(first[0].canonicalId, next[0].canonicalId);
+  assert.equal(new Set([...first, ...next].map(follow => follow.canonicalId)).size > 24, true);
+});
+
+test('records subscriptions deferred by the cron processing budget', async () => {
+  const now = new Date('2026-08-09T07:00:00.000Z');
+  const kv = createMemoryKv(Object.fromEntries(Array.from({ length: 4 }, (_, index) => [
+    `notification:subscription:deferred-${index}`,
+    digestSubscription({ uid: `deferred-${index}`, enabled: false }),
+  ])));
+  const originalDateNow = Date.now;
+  let calls = 0;
+  Date.now = () => (calls++ === 0 ? 1_000 : 20 * 60 * 1000);
+
+  try {
+    const result = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
+
+    assert.equal(result.scanned, 0);
+    assert.equal(result.processed, 0);
+    assert.equal(result.deferred, 1);
+    assert.equal(result.skipped, 1);
+    assert.deepEqual(result.failureCodes, { EMAIL_SCHEDULE_TIME_BUDGET: 1 });
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
+test('resumes a deferred subscription scan from its persisted cursor', async () => {
+  const now = new Date('2026-08-09T07:00:00.000Z');
+  const kv = createMemoryKv(Object.fromEntries(Array.from({ length: 6 }, (_, index) => [
+    `notification:subscription:cursor-${index}`,
+    digestSubscription({ uid: `cursor-${index}`, enabled: false }),
+  ])));
+  const originalDateNow = Date.now;
+  let calls = 0;
+  Date.now = () => (calls++ < 2 ? 1_000 : 10 * 60 * 1000);
+
+  try {
+    const first = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
+    assert.equal(first.processed, 3);
+    assert.equal(first.deferred, 1);
+    assert.equal(await kv.get(scheduleCursorKey), '3');
+
+    Date.now = originalDateNow;
+    const second = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
+    assert.equal(second.processed, 3);
+    assert.equal(second.deferred, 0);
+    assert.equal(await kv.get(scheduleCursorKey), null);
+  } finally {
+    Date.now = originalDateNow;
+  }
+});
+
+test('marks a legacy enabled subscription with zero follows invalid without calling a provider', async () => {
   const now = new Date('2026-08-02T07:00:02Z');
   const subscriptionKey = 'notification:subscription:empty-reader';
   const kv = createMemoryKv({
@@ -559,16 +889,197 @@ test('records an empty no-send run without calling a provider', async () => {
     }, now.getTime());
 
     assert.equal(result.sent, 0);
-    assert.equal(result.empty, 1);
+    assert.equal(result.empty, 0);
+    assert.equal(result.invalid, 1);
     assert.equal(result.failed, 0);
-    const storedSubscription = await kv.get(subscriptionKey, 'json');
+    const storedSubscription = await storedSubscriptionWithState(kv, subscriptionKey);
     assert.equal(storedSubscription.lastCheckedAt, now.toISOString());
     assert.equal(storedSubscription.lastSentAt, undefined);
-    assert.equal([...kv.values.keys()].some(key => key.startsWith('notification:send-count:')), false);
+    assert.equal(storedSubscription.lastDelivery.status, 'invalid');
+    assert.equal([...kv.values.keys()].some(key => key.startsWith(deliveryLedgerPrefix)), false);
     const storedOutcome = await kv.get(scheduleStatusKey, 'json');
     assert.equal(storedOutcome.scheduledAt, now.toISOString());
-    assert.equal(storedOutcome.empty, 1);
+    assert.equal(storedOutcome.invalid, 1);
     assert.equal(storedOutcome.failed, 0);
+    assert.equal(
+      [...kv.values.keys()].some(key => key.startsWith(scheduleHistoryPrefix)),
+      true,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('counts all required source failures as failed rather than empty and never calls the provider', async () => {
+  const now = new Date('2026-08-09T07:00:00Z');
+  const subscriptionKey = 'notification:subscription:source-failure';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({ uid: 'source-failure' }),
+  });
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') providerCalls += 1;
+    return jsonResponse(503, { message: 'temporarily unavailable' });
+  };
+
+  try {
+    const result = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
+
+    assert.equal(result.failed, 1);
+    assert.equal(result.empty, 0);
+    assert.equal(result.sent, 0);
+    assert.equal(providerCalls, 0);
+    assert.equal(result.failureCodes.EMAIL_DIGEST_SOURCES_UNAVAILABLE, 1);
+    assert.equal(result.sources.requiredFailed, 1);
+    assert.equal(result.sources.failed, 1);
+    const stored = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(stored.lastDelivery.status, 'failed');
+    assert.equal(stored.lastDelivery.code, 'EMAIL_DIGEST_SOURCES_UNAVAILABLE');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('counts authoritative successful source responses with no papers as empty', async () => {
+  const now = new Date('2026-08-09T07:20:00Z');
+  const subscriptionKey = 'notification:subscription:authoritative-empty';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({ uid: 'authoritative-empty' }),
+  });
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') providerCalls += 1;
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    const result = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
+
+    assert.equal(result.empty, 1);
+    assert.equal(result.failed, 0);
+    assert.equal(providerCalls, 0);
+    assert.equal(result.sources.succeeded, 2);
+    assert.equal(result.sources.failed, 0);
+    const stored = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(stored.lastDelivery.status, 'empty');
+    assert.equal(stored.lastDelivery.sources.succeeded, 2);
+    assert.equal(stored.lastDelivery.sources.failed, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('retries an empty daily selection in the next cron window and sends when papers appear', async () => {
+  const firstWindow = new Date('2026-08-09T07:00:00Z');
+  const retryWindow = new Date('2026-08-09T11:00:00Z');
+  const subscriptionKey = 'notification:subscription:empty-then-ready';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({ uid: 'empty-then-ready' }),
+  });
+  let papersAvailable = false;
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') {
+      providerCalls += 1;
+      return jsonResponse(201, { messageId: 'retry-delivery' });
+    }
+    const filter = url.searchParams.get('filter') || '';
+    if (papersAvailable && filter.includes('author.id:A1')) {
+      return jsonResponse(200, {
+        results: [{
+          id: 'https://openalex.org/WRETRY',
+          display_name: 'Paper discovered during the retry window',
+          publication_date: '2026-08-09',
+          cited_by_count: 2,
+          authorships: [{ author: { display_name: 'Retry Researcher' } }],
+          primary_location: {
+            source: { display_name: 'PaperTok Journal' },
+            landing_page_url: 'https://example.com/retry-paper',
+          },
+          open_access: { is_oa: true },
+        }],
+      });
+    }
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    const first = await runEmailNotificationSchedule(emailEnvironment(kv), firstWindow.getTime());
+    papersAvailable = true;
+    const retry = await runEmailNotificationSchedule(emailEnvironment(kv), retryWindow.getTime());
+
+    assert.equal(first.empty, 1);
+    assert.equal(first.sent, 0);
+    assert.equal(retry.sent, 1);
+    assert.equal(retry.empty, 0);
+    assert.equal(providerCalls, 1);
+    const stored = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(stored.lastSentAt, retryWindow.toISOString());
+    assert.equal(stored.lastDelivery.status, 'sent');
+    assert.equal(stored.sentPaperKeys.includes('id:wretry'), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('sends usable papers after a partial source failure and records the partial outcome', async () => {
+  const now = new Date('2026-08-09T07:00:00Z');
+  const subscriptionKey = 'notification:subscription:partial-reader';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({
+      uid: 'partial-reader',
+      follows: [digestFollow('A1', 'Unavailable Author'), digestFollow('A2', 'Available Author')],
+    }),
+  });
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') {
+      providerCalls += 1;
+      return jsonResponse(201, { messageId: 'partial-delivery' });
+    }
+    const filter = url.searchParams.get('filter') || '';
+    if (filter.includes('author.id:A1')) return jsonResponse(503, {});
+    if (filter.includes('author.id:A2')) {
+      return jsonResponse(200, {
+        results: [{
+          id: 'https://openalex.org/WPARTIAL',
+          display_name: 'Usable paper from the available source',
+          publication_date: '2026-08-09',
+          cited_by_count: 5,
+          authorships: [{ author: { display_name: 'Available Researcher' } }],
+          primary_location: {
+            source: { display_name: 'PaperTok Journal' },
+            landing_page_url: 'https://example.com/partial-paper',
+          },
+          open_access: { is_oa: true },
+        }],
+      });
+    }
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    const result = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
+
+    assert.equal(result.sent, 1);
+    assert.equal(result.failed, 0);
+    assert.equal(result.partial, 1);
+    assert.equal(providerCalls, 1);
+    assert.equal(result.failureCodes.EMAIL_SOURCE_OPENALEX_UNAVAILABLE, 1);
+    assert.equal(result.sources.failed, 1);
+    assert.equal(result.sources.requiredFailed, 1);
+    const stored = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(stored.lastDelivery.status, 'sent');
+    assert.equal(stored.lastDelivery.partial, true);
+    assert.equal(stored.lastDelivery.sources.requiredFailed, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -590,6 +1101,240 @@ test('keeps scheduled digest idempotency stable for the UTC day', () => {
   assert.equal(morning, evening);
 });
 
+test('builds a deterministic UUID provider idempotency key per user and UTC day', async () => {
+  const subscription = { uid: 'user-123' };
+  const morning = await buildProviderIdempotencyKey(subscription, {
+    now: Date.parse('2026-08-09T07:00:00Z'),
+  });
+  const retry = await buildProviderIdempotencyKey(subscription, {
+    now: Date.parse('2026-08-09T11:00:00Z'),
+  });
+  const nextDay = await buildProviderIdempotencyKey(subscription, {
+    now: Date.parse('2026-08-10T07:00:00Z'),
+  });
+
+  assert.equal(morning, retry);
+  assert.notEqual(morning, nextDay);
+  assert.match(morning, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+});
+
+test('two cron windows cannot duplicate a successful daily digest', async () => {
+  const firstWindow = new Date('2026-08-09T07:00:00Z');
+  const retryWindow = new Date('2026-08-09T07:20:00Z');
+  const laterWindow = new Date('2026-08-09T11:00:00Z');
+  const subscriptionKey = 'notification:subscription:concurrent-reader';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({
+      uid: 'concurrent-reader',
+      previewItems: [digestPaper({ id: 'concurrent-paper', published: '2026-08-08' })],
+    }),
+  });
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') {
+      providerCalls += 1;
+      await new Promise(resolve => setTimeout(resolve, 20));
+      return jsonResponse(201, { messageId: 'single-delivery' });
+    }
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    const [first, retry] = await Promise.all([
+      runEmailNotificationSchedule(emailEnvironment(kv), firstWindow.getTime()),
+      runEmailNotificationSchedule(emailEnvironment(kv), retryWindow.getTime()),
+    ]);
+    const later = await runEmailNotificationSchedule(emailEnvironment(kv), laterWindow.getTime());
+
+    assert.equal(first.sent + retry.sent, 1);
+    assert.equal(providerCalls, 1);
+    assert.equal(later.sent, 0);
+    assert.equal(later.skipped, 1);
+    const stored = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(stored.lastDelivery.status, 'sent');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('retries one unknown provider outcome inside the idempotency window', async () => {
+  const firstWindow = new Date('2026-08-09T07:00:00Z');
+  const firstAttemptAt = new Date('2026-08-09T07:12:00Z');
+  const retryWindow = new Date('2026-08-09T07:20:00Z');
+  const subscriptionKey = 'notification:subscription:network-retry-reader';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({
+      uid: 'network-retry-reader',
+      previewItems: [digestPaper({ id: 'network-retry-paper', published: '2026-08-08' })],
+    }),
+  });
+  const providerKeys = [];
+  const providerBodies = [];
+  let rejectSourceCalls = false;
+  const originalFetch = globalThis.fetch;
+  const originalDateNow = Date.now;
+  globalThis.fetch = async (input, options = {}) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') {
+      const body = JSON.parse(options.body);
+      providerBodies.push(body);
+      providerKeys.push(body.headers.idempotencyKey);
+      if (providerKeys.length === 1) throw new TypeError('simulated response loss');
+      return jsonResponse(201, { messageId: 'accepted-on-safe-retry' });
+    }
+    if (rejectSourceCalls) throw new Error('No source call expected while replaying a reserved delivery');
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    Date.now = () => firstAttemptAt.getTime();
+    const first = await runEmailNotificationSchedule(emailEnvironment(kv), firstWindow.getTime());
+    const changed = await kv.get(subscriptionKey, 'json');
+    changed.previewItems = [digestPaper({ id: 'different-paper', published: '2026-08-09' })];
+    await kv.put(subscriptionKey, JSON.stringify(changed));
+    rejectSourceCalls = true;
+    Date.now = () => retryWindow.getTime();
+    const retry = await runEmailNotificationSchedule(emailEnvironment(kv), retryWindow.getTime());
+
+    assert.equal(first.failed, 1);
+    assert.equal(retry.sent, 1);
+    assert.equal(providerKeys.length, 2);
+    assert.equal(providerKeys[0], providerKeys[1]);
+    assert.deepEqual(providerBodies[0], providerBodies[1]);
+    const stored = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(stored.lastDelivery.status, 'sent');
+    assert.equal(stored.lastSentAt, firstWindow.toISOString());
+  } finally {
+    Date.now = originalDateNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('uses the final cron window only to replay a late uncertain provider response', async () => {
+  const firstWindow = new Date('2026-08-09T13:20:00Z');
+  const firstAttemptAt = new Date('2026-08-09T13:32:00Z');
+  const retryWindow = new Date('2026-08-09T13:40:00Z');
+  const subscriptionKey = 'notification:subscription:late-provider-retry';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({
+      uid: 'late-provider-retry',
+      previewItems: [digestPaper({ id: 'late-retry-paper', published: '2026-08-09' })],
+    }),
+  });
+  const providerBodies = [];
+  let rejectSourceCalls = false;
+  const originalFetch = globalThis.fetch;
+  const originalDateNow = Date.now;
+  globalThis.fetch = async (input, options = {}) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') {
+      providerBodies.push(JSON.parse(options.body));
+      return providerBodies.length === 1
+        ? jsonResponse(503, { message: 'upstream response uncertain' })
+        : jsonResponse(201, { messageId: 'late-retry-delivery' });
+    }
+    if (rejectSourceCalls) throw new Error('No source call expected in the final retry-only window');
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    Date.now = () => firstAttemptAt.getTime();
+    const first = await runEmailNotificationSchedule(emailEnvironment(kv), firstWindow.getTime());
+    rejectSourceCalls = true;
+    Date.now = () => retryWindow.getTime();
+    const retry = await runEmailNotificationSchedule(emailEnvironment(kv), retryWindow.getTime());
+
+    assert.equal(first.failed, 1);
+    assert.equal(retry.sent, 1);
+    assert.equal(providerBodies.length, 2);
+    assert.deepEqual(providerBodies[0], providerBodies[1]);
+  } finally {
+    Date.now = originalDateNow;
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('does not start a new digest in the final recovery-only cron window', async () => {
+  const now = new Date('2026-08-09T13:40:00Z');
+  const subscriptionKey = 'notification:subscription:final-window-reader';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({
+      uid: 'final-window-reader',
+      previewItems: [digestPaper({ id: 'final-window-paper', published: '2026-08-09' })],
+    }),
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error('The recovery-only window must not query sources or contact the provider');
+  };
+
+  try {
+    const result = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
+
+    assert.equal(result.sent, 0);
+    assert.equal(result.failed, 0);
+    assert.equal(result.due, 0);
+    assert.equal(result.skipped, 1);
+    const stored = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(stored.lastSentAt, undefined);
+    assert.equal(stored.lastDelivery, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('provider success followed by state reconciliation failure does not resend', async () => {
+  const firstWindow = new Date('2026-08-09T11:00:00Z');
+  const retryWindow = new Date('2026-08-10T07:00:00Z');
+  const subscriptionKey = 'notification:subscription:reconcile-reader';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({
+      uid: 'reconcile-reader',
+      previewItems: [digestPaper({ id: 'reconcile-paper', published: '2026-08-08' })],
+    }),
+  });
+  const basePut = kv.put.bind(kv);
+  const stateKey = `${deliveryStatePrefix}reconcile-reader`;
+  let rejectDeliveryStateWrites = true;
+  kv.put = async (key, value, options) => {
+    if (rejectDeliveryStateWrites && key === stateKey) {
+      throw new Error('simulated delivery-state write failure');
+    }
+    return basePut(key, value, options);
+  };
+  let providerCalls = 0;
+  let rejectSourceCalls = false;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') {
+      providerCalls += 1;
+      return jsonResponse(201, { messageId: 'accepted-before-kv-failure' });
+    }
+    if (rejectSourceCalls) throw new Error('No source call expected during reconciliation');
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    const first = await runEmailNotificationSchedule(emailEnvironment(kv), firstWindow.getTime());
+    rejectDeliveryStateWrites = false;
+    rejectSourceCalls = true;
+    const retry = await runEmailNotificationSchedule(emailEnvironment(kv), retryWindow.getTime());
+
+    assert.equal(first.failed, 1);
+    assert.equal(retry.reconciled, 1);
+    assert.equal(providerCalls, 1);
+    const stored = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(stored.lastDelivery.status, 'reconciled');
+    assert.equal(stored.lastSentAt, firstWindow.toISOString());
+    assert.equal(stored.sentPaperKeys.includes('id:reconcile-paper'), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('reports the resend.dev recipient restriction instead of an invalid credential', () => {
   const code = resendSendErrorCode(403, {
     name: 'validation_error',
@@ -597,6 +1342,18 @@ test('reports the resend.dev recipient restriction instead of an invalid credent
   });
   assert.equal(code, 'EMAIL_TEST_RECIPIENT_RESTRICTED');
   assert.equal(resendSendErrorCode(403, { name: 'forbidden', message: 'Account suspended' }), 'EMAIL_PROVIDER_AUTH_FAILED');
+});
+
+test('retains uncertain provider outcomes but releases definitive request rejections', () => {
+  assert.equal(providerOutcomeDefinitelyRejected(500), false);
+  assert.equal(providerOutcomeDefinitelyRejected(503), false);
+  assert.equal(providerOutcomeDefinitelyRejected(408), false);
+  assert.equal(providerOutcomeDefinitelyRejected(409), false);
+  assert.equal(providerOutcomeDefinitelyRejected(425), false);
+  assert.equal(providerOutcomeDefinitelyRejected(400), true);
+  assert.equal(providerOutcomeDefinitelyRejected(401), true);
+  assert.equal(providerOutcomeDefinitelyRejected(422), true);
+  assert.equal(providerOutcomeDefinitelyRejected(429), true);
 });
 
 test('prefers a fully configured Brevo provider and keeps Resend as fallback', () => {
@@ -743,6 +1500,39 @@ test('is not configured without an email provider key', async () => {
   assert.equal(health.configured, false);
   assert.equal(health.available, false);
   assert.equal(health.code, 'EMAIL_NOT_CONFIGURED');
+});
+
+test('exposes a PII-free freshness summary for the latest newsletter schedule', async () => {
+  const kv = createMemoryKv({
+    [scheduleStatusKey]: {
+      scheduledAt: '2026-08-09T07:00:00.000Z',
+      completedAt: '2026-08-09T07:00:30.000Z',
+      scanned: 3,
+      processed: 2,
+      deferred: 1,
+      due: 2,
+      sent: 1,
+      empty: 0,
+      invalid: 1,
+      reconciled: 0,
+      partial: 1,
+      skipped: 1,
+      failed: 0,
+      failureCodes: { EMAIL_SOURCE_OPENALEX_UNAVAILABLE: 1 },
+    },
+  });
+
+  const health = await getEmailScheduleHealth({ NOTIFICATION_STORE: kv }, Date.parse('2026-08-09T08:00:00.000Z'));
+
+  assert.equal(health.available, true);
+  assert.equal(health.fresh, true);
+  assert.equal(health.sent, 1);
+  assert.equal(health.processed, 2);
+  assert.equal(health.deferred, 1);
+  assert.equal(health.invalid, 1);
+  assert.deepEqual(health.failureCodes, { EMAIL_SOURCE_OPENALEX_UNAVAILABLE: 1 });
+  assert.equal(Object.hasOwn(health, 'email'), false);
+  assert.equal(Object.hasOwn(health, 'uid'), false);
 });
 
 test('escapes paper metadata in email HTML', () => {

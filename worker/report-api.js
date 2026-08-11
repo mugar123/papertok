@@ -9,6 +9,7 @@ import {
 import {
   checkEmailProviderHealth,
   EmailNotificationError,
+  getEmailScheduleHealth,
   handleEmailNotificationRequest,
   handleEmailUnsubscribe,
   runEmailNotificationSchedule,
@@ -22,6 +23,7 @@ import {
 } from '../src/utils/citationGraph.js';
 
 export { KimiBudgetLedger } from './kimi-budget-ledger.js';
+export { EmailDeliveryLedger } from './email-delivery-ledger.js';
 
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://mugar123.github.io',
@@ -1133,8 +1135,12 @@ export default {
     }
     if (url.pathname === '/health/email') {
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
-      const health = await checkEmailProviderHealth(env);
-      return json(health, health.available ? 200 : 503, {
+      const [health, schedule] = await Promise.all([
+        checkEmailProviderHealth(env),
+        getEmailScheduleHealth(env),
+      ]);
+      const operational = health.available && schedule.fresh;
+      return json({ ...health, schedule }, operational ? 200 : 503, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
       });

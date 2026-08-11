@@ -51,6 +51,33 @@ test('returns only the Cloudflare country code for automatic language selection'
   assert.deepEqual(await response.json(), { country: 'MX' });
 });
 
+test('returns an unhealthy status when the email provider works but the scheduler is stale', async () => {
+  const env = {
+    EMAIL_PROVIDER: 'brevo',
+    BREVO_API_KEY: 'xkeysib-test',
+    BREVO_FROM_EMAIL: 'papertok@example.com',
+    NOTIFICATION_STORE: {
+      get: async () => ({
+        scheduledAt: '2026-01-01T07:00:00.000Z',
+        completedAt: '2026-01-01T07:01:00.000Z',
+        scanned: 1,
+      }),
+    },
+  };
+  const response = await withWorkerFetchMock(async () => new Response(JSON.stringify({
+    senders: [{ active: true, email: 'papertok@example.com' }],
+  }), { headers: { 'content-type': 'application/json' } }), () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/health/email',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), env));
+
+  assert.equal(response.status, 503);
+  const payload = await response.json();
+  assert.equal(payload.available, true);
+  assert.equal(payload.schedule.fresh, false);
+  assert.equal(payload.schedule.code, 'EMAIL_SCHEDULE_STALE');
+});
+
 test('proxies OpenReview forum papers while excluding imported public records', async () => {
   let upstreamUrl = '';
   const response = await withWorkerFetchMock(async url => {

@@ -28,9 +28,17 @@ id = "45c1519982dd48f8a0ea08403c159ae1"
 name = "KIMI_BUDGET_LEDGER"
 class_name = "KimiBudgetLedger"
 
+[[durable_objects.bindings]]
+name = "EMAIL_DELIVERY_LEDGER"
+class_name = "EmailDeliveryLedger"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["KimiBudgetLedger"]
 
+[[migrations]]
+tag = "v2"
+new_sqlite_classes = ["EmailDeliveryLedger"]
+
 [triggers]
-crons = ["0 7 * * *"]
+crons = ["*/20 7-13 * * *"]
