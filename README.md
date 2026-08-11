@@ -4,6 +4,12 @@
 
 [Open PaperTok](https://mugar123.github.io/papertok/#/)
 
+<p align="center">
+  <a href="https://mugar123.github.io/papertok/#/">
+    <img src="docs/assets/papertok-feed.png" alt="PaperTok personalized scientific paper feed" width="100%">
+  </a>
+</p>
+
 PaperTok is an open-source web app for discovering research papers through a scrollable, personalized feed.
 
 I started building it as a physics student because I kept running into the same problem: there is an enormous amount of interesting research available online, but discovering papers outside of a very specific search can still be surprisingly difficult.
@@ -216,6 +222,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, verification and security guid
 PaperTok relies on the work of open scientific infrastructure projects and research databases that make scholarly metadata accessible to developers and researchers.
 
 In particular, the project would not be possible without services such as arXiv, OpenAlex and PubMed.
+
+## License
+
+PaperTok is available under the [MIT License](LICENSE).
 
 ---
 
