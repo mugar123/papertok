@@ -7,6 +7,7 @@ import {
   buildRelatedPaperEntries,
   getRelatedTransitionAction,
   getRelatedTransitionDuration,
+  getRelatedTransitionFallbackDelay,
   RELATED_PAPER_HANDOFF_MS,
   RELATED_SHEET_CLOSE_MS,
 } from '../../utils/relatedPaperTransition.js';
@@ -50,9 +51,9 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
   const [isSelectionReady, setIsSelectionReady] = useState(false);
   const [selectedPaperKey, setSelectedPaperKey] = useState(null);
   const closingRef = useRef(false);
-  const preparingRef = useRef(false);
   const mountedRef = useRef(false);
   const pendingSelectionRef = useRef(null);
+  const transitionTimerRef = useRef(null);
   const onCloseRef = useRef(onClose);
   const onPreparePaperRef = useRef(onPreparePaper);
   const onSelectPaperRef = useRef(onSelectPaper);
@@ -75,13 +76,15 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      preparingRef.current = false;
       pendingSelectionRef.current = null;
+      if (transitionTimerRef.current !== null) clearTimeout(transitionTimerRef.current);
     };
   }, []);
 
   const finishClose = useCallback(() => {
     if (!mountedRef.current || !closingRef.current) return;
+    if (transitionTimerRef.current !== null) clearTimeout(transitionTimerRef.current);
+    transitionTimerRef.current = null;
     closingRef.current = false;
     onCloseRef.current();
   }, []);
@@ -90,6 +93,8 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     if (!mountedRef.current) return;
     const pendingSelection = pendingSelectionRef.current;
     if (!pendingSelection) return;
+    if (transitionTimerRef.current !== null) clearTimeout(transitionTimerRef.current);
+    transitionTimerRef.current = null;
     pendingSelectionRef.current = null;
     closingRef.current = false;
     onSelectPaperRef.current(pendingSelection.paper);
@@ -101,28 +106,34 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     pendingSelectionRef.current = null;
     setIsSelectionReady(false);
     setIsClosing(true);
-    if (getRelatedTransitionDuration(RELATED_SHEET_CLOSE_MS, prefersReducedMotion) === 0) finishClose();
+    const duration = getRelatedTransitionDuration(RELATED_SHEET_CLOSE_MS, prefersReducedMotion);
+    if (duration === 0) {
+      finishClose();
+      return;
+    }
+    transitionTimerRef.current = setTimeout(
+      finishClose,
+      getRelatedTransitionFallbackDelay(RELATED_SHEET_CLOSE_MS, prefersReducedMotion),
+    );
   }, [finishClose, prefersReducedMotion]);
 
-  const requestPaper = useCallback(async (relatedPaper, paperKey) => {
-    if (closingRef.current || preparingRef.current) return;
-    preparingRef.current = true;
-    setSelectedPaperKey(paperKey);
-    let preparedPaper = relatedPaper;
-    try {
-      preparedPaper = await onPreparePaperRef.current(relatedPaper) || relatedPaper;
-    } catch (error) {
-      console.warn('Could not prepare the selected related paper.', error);
-    } finally {
-      preparingRef.current = false;
-    }
-
-    if (!mountedRef.current || closingRef.current) return;
-    pendingSelectionRef.current = { paper: preparedPaper, key: paperKey };
+  const requestPaper = useCallback((relatedPaper, paperKey) => {
+    if (closingRef.current) return;
+    onPreparePaperRef.current?.(relatedPaper);
+    pendingSelectionRef.current = { paper: relatedPaper, key: paperKey };
     closingRef.current = true;
+    setSelectedPaperKey(paperKey);
     setIsSelectionReady(true);
     setIsClosing(true);
-    if (getRelatedTransitionDuration(RELATED_PAPER_HANDOFF_MS, prefersReducedMotion) === 0) finishSelection();
+    const duration = getRelatedTransitionDuration(RELATED_PAPER_HANDOFF_MS, prefersReducedMotion);
+    if (duration === 0) {
+      finishSelection();
+      return;
+    }
+    transitionTimerRef.current = setTimeout(
+      finishSelection,
+      getRelatedTransitionFallbackDelay(RELATED_PAPER_HANDOFF_MS, prefersReducedMotion),
+    );
   }, [finishSelection, prefersReducedMotion]);
 
   const handleSheetAnimationEnd = useCallback((event) => {
@@ -206,22 +217,21 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     const title = String(paper?.title || (isEnglish ? 'Current paper' : 'Paper actual')).trim();
     return title.length > 38 ? `${title.slice(0, 38).trim()}…` : title;
   }, [isEnglish, paper?.title]);
-  const isPreparingPaper = Boolean(selectedPaperKey) && !isClosing;
   const isSelectingPaper = Boolean(selectedPaperKey) && isSelectionReady;
 
   return (
     <div
-      className={`related-overlay ${isClosing ? 'is-closing' : ''} ${isSelectingPaper ? 'is-selecting-paper' : ''} ${isPreparingPaper ? 'is-preparing-paper' : ''}`}
+      className={`related-overlay ${isClosing ? 'is-closing' : ''} ${isSelectingPaper ? 'is-selecting-paper' : ''}`}
       onClick={requestClose}
       role="presentation"
     >
       <section
-        className={`related-sheet related-sheet--graph ${isSelectingPaper ? 'is-selecting-paper' : ''} ${isPreparingPaper ? 'is-preparing-paper' : ''}`}
+        className={`related-sheet related-sheet--graph ${isSelectingPaper ? 'is-selecting-paper' : ''}`}
         onClick={event => event.stopPropagation()}
         onAnimationEnd={handleSheetAnimationEnd}
         aria-label={isEnglish ? 'Paper connections' : 'Conexiones del paper'}
         aria-modal="true"
-        aria-busy={visibleStatus === 'loading' || isPreparingPaper}
+        aria-busy={visibleStatus === 'loading'}
         role="dialog"
       >
         <div className="related-grabber" aria-hidden="true" />
@@ -310,11 +320,10 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
             {visibleEntries.length ? visibleEntries.map(({ paper: related, key }, index) => (
               <button
                 key={key}
-                className={`related-item ${selectedPaperKey === key ? 'is-selected' : ''} ${isPreparingPaper && selectedPaperKey === key ? 'is-preparing' : ''}`}
+                className={`related-item ${selectedPaperKey === key ? 'is-selected' : ''}`}
                 style={{ '--related-index': index }}
                 onClick={() => requestPaper(related, key)}
                 disabled={Boolean(selectedPaperKey)}
-                aria-busy={isPreparingPaper && selectedPaperKey === key}
               >
                 <span className="related-item-copy">
                   <strong><ScientificText>{related.title}</ScientificText></strong>
@@ -324,21 +333,11 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                     {related.citationCountKnown ? ` · ${related.citationCount} ${isEnglish ? 'citations' : 'citas'}` : ''}
                   </small>
                 </span>
-                {isPreparingPaper && selectedPaperKey === key ? (
-                  <span className="related-item-pending" aria-hidden="true">
-                    <span /><span /><span />
-                  </span>
-                ) : <ChevronRight size={18} />}
+                <ChevronRight size={18} />
               </button>
             )) : <div className="related-state">{graphEmptyLabel}</div>}
           </div>
         )}
-
-        <span className="visually-hidden" role="status" aria-live="polite">
-          {isPreparingPaper
-            ? (isEnglish ? 'Preparing the selected paper' : 'Preparando el paper seleccionado')
-            : ''}
-        </span>
 
         {mode === 'graph' && graphStatus === 'ready' && (
           <div className="knowledge-source">

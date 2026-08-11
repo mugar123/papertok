@@ -3,6 +3,7 @@ import { normalizeCitationDoi } from './citationGraph.js';
 export const RELATED_SHEET_CLOSE_MS = 180;
 export const RELATED_PAPER_HANDOFF_MS = 210;
 export const RELATED_CARD_CLOSE_MS = 220;
+export const RELATED_TRANSITION_FALLBACK_GRACE_MS = 80;
 
 function normalizeText(value) {
   return String(value ?? '').trim().toLowerCase();
@@ -53,6 +54,11 @@ export function buildRelatedPaperEntries(papers) {
 export function getRelatedTransitionDuration(durationMs, prefersReducedMotion = false) {
   const duration = Math.max(0, Number(durationMs) || 0);
   return prefersReducedMotion ? 0 : duration;
+}
+
+export function getRelatedTransitionFallbackDelay(durationMs, prefersReducedMotion = false) {
+  const duration = getRelatedTransitionDuration(durationMs, prefersReducedMotion);
+  return duration === 0 ? 0 : duration + RELATED_TRANSITION_FALLBACK_GRACE_MS;
 }
 
 export function getRelatedTransitionAction(animationName) {

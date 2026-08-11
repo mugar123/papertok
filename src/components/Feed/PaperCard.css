@@ -1030,26 +1030,6 @@
   opacity: 0.32;
   transform: translateX(-5px);
 }
-.related-item-pending {
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  flex: 0 0 18px;
-}
-
-.related-item-pending span {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: #c4b5fd;
-  animation: relatedPendingDot 0.9s ease-in-out infinite;
-}
-
-.related-item-pending span:nth-child(2) { animation-delay: 0.12s; }
-.related-item-pending span:nth-child(3) { animation-delay: 0.24s; }
 .related-item-copy { min-width: 0; flex: 1; display: grid; gap: 6px; }
 .related-item-copy strong { font-size: 0.92rem; line-height: 1.3; }
 .related-item-copy small { color: rgba(255, 255, 255, 0.58); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1085,6 +1065,47 @@
   animation: relatedCardIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform, opacity;
 }
+
+.related-card-content {
+  width: 100%;
+  height: 100%;
+}
+
+.related-card-content.is-ready {
+  animation: relatedCardContentIn 0.24s ease-out both;
+}
+
+.related-card-loading {
+  min-height: 100svh;
+  display: flex;
+  align-items: flex-end;
+  padding: clamp(88px, 12vh, 144px) clamp(28px, 4vw, 72px) clamp(74px, 10vh, 116px);
+  background: #0b0b12;
+}
+
+.related-card-loading-content {
+  width: min(760px, calc(100vw - 112px));
+  display: grid;
+  gap: 14px;
+}
+
+.related-card-loading-line {
+  display: block;
+  width: 100%;
+  height: 18px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.045) 20%, rgba(167, 139, 250, 0.16) 48%, rgba(255, 255, 255, 0.045) 76%);
+  background-size: 240% 100%;
+  animation: relatedShimmer 1.45s ease-in-out infinite;
+}
+
+.related-card-loading-meta { width: 34%; height: 24px; margin-bottom: 6px; }
+.related-card-loading-title { height: clamp(36px, 4.2vw, 58px); }
+.related-card-loading-title-short { width: 72%; }
+.related-card-loading-author { width: 48%; height: 34px; margin: 8px 0 12px; }
+.related-card-loading-abstract { display: grid; gap: 10px; margin-top: 2px; }
+.related-card-loading-abstract .related-card-loading-line { height: 16px; }
+.related-card-loading-copy-short { width: 78%; }
 
 .related-card-back {
   position: absolute;
@@ -1173,14 +1194,14 @@
   to { background-position: -140% 0; }
 }
 
-@keyframes relatedPendingDot {
-  0%, 100% { opacity: 0.28; transform: scale(0.82); }
-  50% { opacity: 0.9; transform: scale(1); }
-}
-
 @keyframes relatedCardIn {
   from { opacity: 0; transform: translateY(16px) scale(0.985); }
   to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes relatedCardContentIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes relatedCardOut {
@@ -1198,7 +1219,8 @@
   .related-sheet,
   .related-item,
   .related-card-overlay,
-  .related-item-pending span,
+  .related-card-content,
+  .related-card-loading-line,
   .related-skeleton {
     animation: none !important;
   }
@@ -1214,6 +1236,13 @@
 }
 
 @media (max-width: 520px) {
+  .related-card-loading {
+    padding: 92px 22px 96px;
+  }
+  .related-card-loading-content { width: calc(100vw - 44px); gap: 11px; }
+  .related-card-loading-meta { width: 48%; }
+  .related-card-loading-title { height: 34px; }
+  .related-card-loading-author { width: 68%; }
   .related-sheet--graph { max-height: min(84vh, 720px); }
   .knowledge-path {
     grid-template-columns: minmax(76px, 1fr) 12px minmax(92px, 1.15fr) 12px minmax(76px, 1fr);

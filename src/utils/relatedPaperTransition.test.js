@@ -5,6 +5,7 @@ import {
   getRelatedPaperIdentity,
   getRelatedTransitionAction,
   getRelatedTransitionDuration,
+  getRelatedTransitionFallbackDelay,
 } from './relatedPaperTransition.js';
 
 test('prefers normalized stable identifiers for related paper identity', () => {
@@ -43,6 +44,8 @@ test('reduced motion removes transition delay without changing normal durations'
   assert.equal(getRelatedTransitionDuration(210), 210);
   assert.equal(getRelatedTransitionDuration(210, true), 0);
   assert.equal(getRelatedTransitionDuration(-10), 0);
+  assert.equal(getRelatedTransitionFallbackDelay(210), 290);
+  assert.equal(getRelatedTransitionFallbackDelay(210, true), 0);
 });
 
 test('classifies only the handoff animations as actionable transitions', () => {

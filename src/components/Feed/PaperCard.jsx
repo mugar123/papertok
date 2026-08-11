@@ -28,9 +28,11 @@ import {
   getRelatedPaperIdentity,
   getRelatedTransitionAction,
   getRelatedTransitionDuration,
+  getRelatedTransitionFallbackDelay,
   RELATED_CARD_CLOSE_MS,
 } from '../../utils/relatedPaperTransition.js';
 import { hydrateCitationGraphPaper } from '../../services/citationGraphService.js';
+import { resolveWithin } from '../../utils/asyncTiming.js';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -56,6 +58,7 @@ const RESOURCE_KIND_CONFIG = {
   version: { label: { es: 'Versión', en: 'Version' }, Icon: History },
 };
 const ENRICHMENT_SETTLE_DELAY_MS = 240;
+const RELATED_PAPER_HYDRATION_TIMEOUT_MS = 8_000;
 
 function mergeResearchResources(...groups) {
   const seen = new Set();
@@ -65,6 +68,25 @@ function mergeResearchResources(...groups) {
     seen.add(key);
     return true;
   }).slice(0, 8);
+}
+
+function RelatedPaperCardSkeleton({ label }) {
+  return (
+    <div className="related-card-loading" role="status" aria-live="polite">
+      <span className="visually-hidden">{label}</span>
+      <div className="related-card-loading-content" aria-hidden="true">
+        <span className="related-card-loading-line related-card-loading-meta" />
+        <span className="related-card-loading-line related-card-loading-title" />
+        <span className="related-card-loading-line related-card-loading-title related-card-loading-title-short" />
+        <span className="related-card-loading-line related-card-loading-author" />
+        <div className="related-card-loading-abstract">
+          <span className="related-card-loading-line" />
+          <span className="related-card-loading-line" />
+          <span className="related-card-loading-line related-card-loading-copy-short" />
+        </div>
+      </div>
+    </div>
+  );
 }
 
 const PaperCard = memo(function PaperCard({ 
@@ -90,6 +112,7 @@ const PaperCard = memo(function PaperCard({
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
   const [showAIExplanation, setShowAIExplanation] = useState(false);
+  const [pendingRelatedPaper, setPendingRelatedPaper] = useState(null);
   const [selectedRelatedPaper, setSelectedRelatedPaper] = useState(null);
   const [isClosingRelatedCard, setIsClosingRelatedCard] = useState(false);
   const [isResolvingAccess, setIsResolvingAccess] = useState(false);
@@ -116,6 +139,9 @@ const PaperCard = memo(function PaperCard({
   const viewStartTime = useRef(null);
   const totalViewTime = useRef(0);
   const relatedCardClosingRef = useRef(false);
+  const relatedCardTransitionTimerRef = useRef(null);
+  const relatedPreparationRef = useRef(null);
+  const relatedHydrationRequestRef = useRef(0);
 
   useEffect(() => {
     if (!isCardVisible) {
@@ -233,8 +259,9 @@ const PaperCard = memo(function PaperCard({
   };
 
   const isReadActive = isRead || isMarkingRead;
-  const selectedRelatedState = selectedRelatedPaper
-    ? getInteractionState(selectedRelatedPaper) || {}
+  const activeRelatedPaper = selectedRelatedPaper || pendingRelatedPaper;
+  const selectedRelatedState = activeRelatedPaper
+    ? getInteractionState(activeRelatedPaper) || {}
     : {};
   const visiblePrimaryCategory = useMemo(
     () => [paper.primaryCategory, ...(paper.categories || [])]
@@ -247,41 +274,78 @@ const PaperCard = memo(function PaperCard({
   const closeRelatedCard = useCallback(() => {
     if (relatedCardClosingRef.current) return;
     relatedCardClosingRef.current = true;
+    relatedHydrationRequestRef.current += 1;
     setIsClosingRelatedCard(true);
-    if (getRelatedTransitionDuration(RELATED_CARD_CLOSE_MS, prefersReducedMotion) === 0) {
+    const duration = getRelatedTransitionDuration(RELATED_CARD_CLOSE_MS, prefersReducedMotion);
+    const finishRelatedCardClose = () => {
       relatedCardClosingRef.current = false;
+      relatedPreparationRef.current = null;
+      relatedCardTransitionTimerRef.current = null;
+      setPendingRelatedPaper(null);
       setSelectedRelatedPaper(null);
       setIsClosingRelatedCard(false);
+    };
+    if (duration === 0) {
+      finishRelatedCardClose();
+      return;
     }
+    relatedCardTransitionTimerRef.current = setTimeout(
+      finishRelatedCardClose,
+      getRelatedTransitionFallbackDelay(RELATED_CARD_CLOSE_MS, prefersReducedMotion),
+    );
   }, [prefersReducedMotion]);
 
   const handleRelatedCardAnimationEnd = useCallback((event) => {
     if (event.target !== event.currentTarget || getRelatedTransitionAction(event.animationName) !== 'close') return;
     if (!relatedCardClosingRef.current) return;
+    if (relatedCardTransitionTimerRef.current !== null) clearTimeout(relatedCardTransitionTimerRef.current);
+    relatedCardTransitionTimerRef.current = null;
     relatedCardClosingRef.current = false;
+    relatedPreparationRef.current = null;
+    setPendingRelatedPaper(null);
     setSelectedRelatedPaper(null);
     setIsClosingRelatedCard(false);
+  }, []);
+
+  useEffect(() => () => {
+    if (relatedCardTransitionTimerRef.current !== null) clearTimeout(relatedCardTransitionTimerRef.current);
+    relatedHydrationRequestRef.current += 1;
   }, []);
 
   const closeRelatedSheet = useCallback(() => {
     setShowRelated(false);
   }, []);
 
-  const prepareRelatedPaper = useCallback(async (relatedPaper) => {
-    try {
-      return await hydrateCitationGraphPaper(relatedPaper);
-    } catch (error) {
-      console.warn('Could not enrich the selected related paper before opening it.', error);
-      return relatedPaper;
-    }
+  const prepareRelatedPaper = useCallback((relatedPaper) => {
+    const identity = getRelatedPaperIdentity(relatedPaper);
+    const promise = resolveWithin(
+      hydrateCitationGraphPaper(relatedPaper),
+      RELATED_PAPER_HYDRATION_TIMEOUT_MS,
+      relatedPaper,
+    );
+    relatedPreparationRef.current = { identity, promise };
+    return promise;
   }, []);
 
   const selectRelatedPaper = useCallback((relatedPaper) => {
     relatedCardClosingRef.current = false;
     setIsClosingRelatedCard(false);
     setShowRelated(false);
-    setSelectedRelatedPaper(relatedPaper);
-  }, []);
+    setPendingRelatedPaper(relatedPaper);
+    setSelectedRelatedPaper(null);
+
+    const identity = getRelatedPaperIdentity(relatedPaper);
+    const preparation = relatedPreparationRef.current?.identity === identity
+      ? relatedPreparationRef.current.promise
+      : prepareRelatedPaper(relatedPaper);
+    const requestId = relatedHydrationRequestRef.current + 1;
+    relatedHydrationRequestRef.current = requestId;
+    Promise.resolve(preparation).then(preparedPaper => {
+      if (relatedHydrationRequestRef.current !== requestId || relatedCardClosingRef.current) return;
+      setSelectedRelatedPaper(preparedPaper || relatedPaper);
+      setPendingRelatedPaper(null);
+    });
+  }, [prepareRelatedPaper]);
 
   const handleMarkAsRead = (e) => {
     e.stopPropagation();
@@ -986,7 +1050,7 @@ const PaperCard = memo(function PaperCard({
         document.body,
         'papertok-ai-explanation',
       )}
-      {selectedRelatedPaper && createPortal(
+      {activeRelatedPaper && createPortal(
         <div
           className={`related-card-overlay ${isClosingRelatedCard ? 'is-closing' : ''}`}
           onAnimationEnd={handleRelatedCardAnimationEnd}
@@ -999,24 +1063,30 @@ const PaperCard = memo(function PaperCard({
           >
             <ArrowLeft size={22} />
           </button>
-          <PaperCard
-            paper={selectedRelatedPaper}
-            isLiked={Boolean(selectedRelatedState.isLiked)}
-            isSaved={Boolean(selectedRelatedState.isSaved)}
-            isRead={Boolean(selectedRelatedState.isRead)}
-            onLike={onLike}
-            onNotInterested={onNotInterested}
-            onMarkAsRead={onMarkAsRead}
-            trackViewTime={trackViewTime}
-            trackSkip={trackSkip}
-            onOpenPdf={onOpenPdf}
-            onSaveToList={onSaveToList}
-            getInteractionState={getInteractionState}
-            hideScrollHint
-          />
+          {selectedRelatedPaper ? (
+            <div className="related-card-content is-ready">
+              <PaperCard
+                paper={selectedRelatedPaper}
+                isLiked={Boolean(selectedRelatedState.isLiked)}
+                isSaved={Boolean(selectedRelatedState.isSaved)}
+                isRead={Boolean(selectedRelatedState.isRead)}
+                onLike={onLike}
+                onNotInterested={onNotInterested}
+                onMarkAsRead={onMarkAsRead}
+                trackViewTime={trackViewTime}
+                trackSkip={trackSkip}
+                onOpenPdf={onOpenPdf}
+                onSaveToList={onSaveToList}
+                getInteractionState={getInteractionState}
+                hideScrollHint
+              />
+            </div>
+          ) : (
+            <RelatedPaperCardSkeleton label={isEnglish ? 'Loading paper details' : 'Cargando detalles del paper'} />
+          )}
         </div>,
         document.body,
-        `papertok-related-card:${getRelatedPaperIdentity(selectedRelatedPaper) || 'selected'}`,
+        `papertok-related-card:${getRelatedPaperIdentity(activeRelatedPaper) || 'selected'}`,
       )}
     </div>
   );
