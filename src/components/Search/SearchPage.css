@@ -485,6 +485,10 @@
   line-height: 1.3;
 }
 
+.search-section[data-section="projects"] .search-item-info h4 {
+  overflow-wrap: anywhere;
+}
+
 .search-item-info p {
   margin: 0;
   font-size: 0.82rem;

@@ -179,14 +179,29 @@
   min-width: 0;
 }
 
+.ehc-title-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
 .ehc-name {
+  min-width: 0;
+  max-width: 100%;
   margin: 0;
   font-size: 1.6rem;
   font-weight: 800;
   line-height: 1.15;
   color: var(--text-primary);
   text-shadow: 0 2px 8px rgba(0,0,0,0.5);
+  overflow-wrap: anywhere;
 }
+
+.ehc-title-row .ehc-name { flex: 1 1 auto; }
+.ehc-title-row .entity-follow-btn { flex: 0 0 auto; }
 
 .ehc-meta {
   margin: 0;
@@ -1505,6 +1520,15 @@
   
   .ehc-name {
     font-size: 1.3rem;
+  }
+
+  .ehc-title-row {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .ehc-title-row .ehc-name {
+    flex: 1 1 180px;
   }
   
   .ehc-icon, .ehc-wiki-image, .ehc-visual-slot {

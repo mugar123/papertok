@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronRight, GitBranch, Loader2, Network, Sparkles, X } from 'lucide-react';
+import { BookOpen, ChevronRight, GitBranch, Network, Sparkles, X } from 'lucide-react';
 import { useReducedMotion } from 'framer-motion';
 import { getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService';
 import { getRelatedPapers } from '../../services/relatedPapersService';
@@ -28,8 +28,8 @@ function formatCompactCount(value, locale = 'es-ES') {
 
 function LoadingState({ label }) {
   return (
-    <div className="related-state related-loading">
-      <div className="related-loading-label"><Loader2 className="spinning" size={20} />{label}</div>
+    <div className="related-state related-loading" role="status" aria-live="polite">
+      <span className="visually-hidden">{label}</span>
       <div className="related-skeletons" aria-hidden="true">
         {[0, 1].map(index => <span className="related-skeleton" key={index} style={{ '--skeleton-index': index }} />)}
       </div>
@@ -196,7 +196,6 @@ export default function RelatedPapersSheet({ paper, onClose, onSelectPaper }) {
         className={`related-sheet related-sheet--graph ${selectedPaperKey ? 'is-selecting-paper' : ''}`}
         onClick={event => event.stopPropagation()}
         onAnimationEnd={handleSheetAnimationEnd}
-        onAnimationCancel={handleSheetAnimationEnd}
         aria-label={isEnglish ? 'Paper connections' : 'Conexiones del paper'}
         aria-modal="true"
         aria-busy={visibleStatus === 'loading'}

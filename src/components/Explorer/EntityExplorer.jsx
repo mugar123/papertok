@@ -970,7 +970,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
               </AnimatePresence>
             </div>
             <div className="ehc-info">
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div className="ehc-title-row">
                 <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName}</h1>
                 {followEntity && (
                   <button

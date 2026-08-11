@@ -212,6 +212,9 @@ export default function AIExplanationSheet({ paper, onClose }) {
   const { readingPreferences } = useAuth();
   const { language } = useLanguage();
   const prefersReducedMotion = useReducedMotion();
+  const [isMobileViewport, setIsMobileViewport] = useState(() => (
+    typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches
+  ));
   const copy = SHEET_COPY[language];
   const [level, setLevel] = useState(readingPreferences.aiExplanationLevel);
   const [results, setResults] = useState({});
@@ -245,6 +248,17 @@ export default function AIExplanationSheet({ paper, onClose }) {
     setIsClosing(true);
     closeTimerRef.current = setTimeout(onClose, prefersReducedMotion ? 0 : 250);
   }, [onClose, prefersReducedMotion]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 640px)');
+    const updateViewport = event => setIsMobileViewport(event.matches);
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener('change', updateViewport);
+      return () => mediaQuery.removeEventListener('change', updateViewport);
+    }
+    mediaQuery.addListener(updateViewport);
+    return () => mediaQuery.removeListener(updateViewport);
+  }, []);
 
   useEffect(() => {
     const handleKeyDown = event => {
@@ -290,14 +304,20 @@ export default function AIExplanationSheet({ paper, onClose }) {
       onClick={requestClose}
     >
       <motion.div
-        className="ai-explanation-sheet"
+        className={`ai-explanation-sheet ${isMobileViewport ? 'is-mobile-sheet' : ''} ${isClosing ? 'is-closing' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="ai-explanation-title"
-        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 46, scale: 0.972 }}
-        animate={isClosing
-          ? prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 26, scale: 0.986 }
-          : { opacity: 1, y: 0, scale: 1 }}
+        initial={isMobileViewport || prefersReducedMotion
+          ? false
+          : { opacity: 0, y: 46, scale: 0.972 }}
+        animate={isMobileViewport
+          ? undefined
+          : isClosing
+            ? prefersReducedMotion
+              ? { opacity: 0 }
+              : { opacity: 0, y: 26, scale: 0.986 }
+            : { opacity: 1, y: 0, scale: 1 }}
         transition={sheetTransition}
         onClick={event => event.stopPropagation()}
       >
