@@ -14,6 +14,12 @@
   box-shadow: 0 20px 54px rgba(0, 0, 0, 0.38);
   backdrop-filter: blur(18px);
   animation: analyticsConsentIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  transition: border-color 0.28s ease, box-shadow 0.28s ease;
+}
+
+.analytics-consent.is-success {
+  border-color: rgba(52, 211, 153, 0.38);
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(52, 211, 153, 0.06);
 }
 
 .analytics-consent-icon {
@@ -58,9 +64,33 @@
 }
 
 .analytics-consent-actions .analytics-consent-accept {
+  display: inline-flex;
+  min-width: 118px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   border-color: rgba(167, 139, 250, 0.4);
   color: #fff;
   background: rgba(124, 58, 237, 0.75);
+}
+
+.analytics-consent-actions .analytics-consent-accept.is-loading svg {
+  animation: analyticsConsentSpin 0.8s linear infinite;
+}
+
+.analytics-consent-actions .analytics-consent-accept.is-success {
+  border-color: rgba(52, 211, 153, 0.42);
+  color: #d8fff0;
+  background: rgba(16, 185, 129, 0.72);
+  animation: analyticsConsentConfirmed 0.32s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.analytics-consent-actions button:disabled {
+  cursor: default;
+}
+
+.analytics-consent-decline:disabled {
+  opacity: 0.48;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -89,6 +119,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .analytics-consent,
+  .analytics-consent-accept.is-success,
+  .analytics-consent-accept.is-loading svg,
   .analytics-consent-actions button {
     animation: none;
     transition: none;
@@ -98,4 +130,13 @@
 @keyframes analyticsConsentIn {
   from { opacity: 0; transform: translateY(12px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes analyticsConsentSpin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes analyticsConsentConfirmed {
+  0% { transform: scale(0.97); }
+  100% { transform: scale(1); }
 }

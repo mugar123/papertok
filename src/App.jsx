@@ -141,6 +141,8 @@ function AppContent() {
         </Routes>
       </AnimatePresence>
 
+      <AnalyticsConsentBanner />
+
       {pdfPaper && (
         <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />
       )}
@@ -174,7 +176,6 @@ function App() {
       <LanguageProvider>
         <AnalyticsProvider>
           <UserScopedAppContent />
-          <AnalyticsConsentBanner />
         </AnalyticsProvider>
       </LanguageProvider>
     </AuthProvider>
