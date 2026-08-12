@@ -25,6 +25,7 @@ Frontend variables are public in the built JavaScript:
 | Variable | Purpose |
 | --- | --- |
 | `VITE_FIREBASE_*` | Firebase web configuration |
+| `VITE_GA_MEASUREMENT_ID` | Public GA4 measurement ID; analytics remains consent-gated |
 | `VITE_PAPER_API_BASE_URL` | Cloudflare Worker base URL |
 | `VITE_REPORT_API_URL` | Legacy report API alias |
 | `VITE_SCOPUS_ENABLED` | Enables Scopus-backed browser flows when the Worker is configured |
@@ -32,6 +33,11 @@ Frontend variables are public in the built JavaScript:
 
 Never put secret provider tokens in a `VITE_*` variable. See `worker/README.md` for Worker
 secrets.
+
+Google Analytics uses basic consent mode: the Analytics SDK is not loaded until the user
+explicitly opts in. PaperTok records normalized application routes only. Entity identifiers,
+searches, paper titles, interests, account identifiers, and recommendation events are excluded.
+Consent is stored locally on the device and can be changed from Settings at any time.
 
 ## Commands
 
@@ -75,4 +81,3 @@ node scripts/diagnostics/test-openalex.js
 
 These scripts may hit live APIs, depend on temporary provider behavior, or consume quota.
 They are not acceptance tests.
-

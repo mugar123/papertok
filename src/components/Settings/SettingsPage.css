@@ -268,6 +268,11 @@
   background: rgba(6, 182, 212, 0.07);
 }
 
+.settings-row-icon--github {
+  color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.025);
+}
+
 .settings-row-content {
   min-width: 0;
 }
@@ -498,8 +503,54 @@
   background: rgba(245, 158, 11, 0.06);
 }
 
+.settings-toggle-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.settings-toggle {
+  position: relative;
+  width: 44px;
+  height: 26px;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, 0.05);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.settings-toggle > span {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--text-secondary);
+  transition: transform var(--transition-fast), background var(--transition-fast);
+}
+
+.settings-toggle.is-active {
+  border-color: rgba(129, 92, 246, 0.65);
+  background: rgba(124, 58, 237, 0.68);
+}
+
+.settings-toggle.is-active > span {
+  transform: translateX(18px);
+  background: #fff;
+}
+
 .settings-section--session {
   padding-bottom: 10px;
+}
+
+.settings-section--community {
+  opacity: 0.92;
 }
 
 .settings-signout {
@@ -651,6 +702,8 @@
   .settings-row-action,
   .settings-levels button,
   .settings-language button,
+  .settings-toggle,
+  .settings-toggle > span,
   .settings-signout {
     transition: none;
   }

@@ -1,0 +1,101 @@
+.analytics-consent {
+  position: fixed;
+  z-index: 1200;
+  right: 20px;
+  bottom: 20px;
+  display: grid;
+  width: min(520px, calc(100vw - 40px));
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
+  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(18px);
+  animation: analyticsConsentIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.analytics-consent-icon {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  border-radius: 8px;
+  color: #b49af8;
+  background: rgba(124, 58, 237, 0.09);
+}
+
+.analytics-consent-copy h2 {
+  font-size: 14px;
+  letter-spacing: 0;
+}
+
+.analytics-consent-copy p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.analytics-consent-actions {
+  display: flex;
+  grid-column: 2;
+  justify-content: flex-end;
+  gap: 7px;
+}
+
+.analytics-consent-actions button {
+  min-height: 36px;
+  padding: 7px 11px;
+  border: 1px solid var(--border-default);
+  border-radius: 7px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 750;
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+
+.analytics-consent-actions .analytics-consent-accept {
+  border-color: rgba(167, 139, 250, 0.4);
+  color: #fff;
+  background: rgba(124, 58, 237, 0.75);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .analytics-consent-decline:hover {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.04);
+  }
+
+  .analytics-consent-actions .analytics-consent-accept:hover {
+    background: rgba(139, 74, 242, 0.9);
+  }
+}
+
+@media (max-width: 560px) {
+  .analytics-consent {
+    right: 12px;
+    bottom: 12px;
+    width: calc(100vw - 24px);
+    padding: 14px;
+  }
+
+  .analytics-consent-actions {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .analytics-consent,
+  .analytics-consent-actions button {
+    animation: none;
+    transition: none;
+  }
+}
+
+@keyframes analyticsConsentIn {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}

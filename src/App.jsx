@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LanguageProvider } from './context/LanguageContext'
+import { AnalyticsProvider } from './context/AnalyticsContext'
 import { FeedProvider } from './context/FeedContext'
 import { FollowingProvider } from './context/FollowingContext'
 import { FollowingUpdatesProvider } from './context/FollowingUpdatesContext'
@@ -22,6 +23,7 @@ import ScientificReport from './components/Report/ScientificReport'
 import FollowingFeedPage from './components/Following/FollowingFeedPage'
 import SettingsPage from './components/Settings/SettingsPage'
 import FollowingSettingsPage from './components/Settings/FollowingSettingsPage'
+import AnalyticsConsentBanner from './components/Privacy/AnalyticsConsentBanner'
 import './App.css'
 
 function AppContent() {
@@ -170,7 +172,10 @@ function App() {
   return (
     <AuthProvider>
       <LanguageProvider>
-        <UserScopedAppContent />
+        <AnalyticsProvider>
+          <UserScopedAppContent />
+          <AnalyticsConsentBanner />
+        </AnalyticsProvider>
       </LanguageProvider>
     </AuthProvider>
   )

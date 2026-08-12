@@ -2,11 +2,14 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Bell,
+  BarChart3,
   BookOpen,
   Building2,
   BriefcaseBusiness,
   Camera,
   ChevronRight,
+  Code2,
+  ExternalLink,
   FlaskConical,
   GraduationCap,
   Languages,
@@ -25,6 +28,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useFollowing } from '../../context/FollowingContext';
 import { useEmailNotifications } from '../../context/EmailNotificationsContext';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext';
+import { ANALYTICS_CONSENT } from '../../services/analyticsService';
 import { AI_EXPLANATION_LEVELS } from '../../services/aiExplanationService';
 import { CATEGORIES } from '../../data/categories';
 import { prepareProfileImage } from '../../utils/profileImage';
@@ -117,6 +122,19 @@ const SETTINGS_COPY = {
     notificationsDescription: 'Decide si quieres recibir novedades aunque PaperTok esté cerrado.',
     emailUpdates: 'Novedades por email',
     configure: 'Configurar',
+    privacy: 'Privacidad',
+    privacyDescription: 'Controla las mediciones anónimas utilizadas para mejorar PaperTok.',
+    usageAnalytics: 'Analítica de uso',
+    usageAnalyticsDescription: 'Solo registra páginas anónimas; nunca búsquedas, papers, intereses ni datos de cuenta.',
+    analyticsEnabled: 'Activada',
+    analyticsDisabled: 'Desactivada',
+    analyticsToggleLabel: 'Permitir analítica de uso',
+    community: 'Comunidad',
+    communityDescription: 'Descubre el proyecto y participa en su desarrollo.',
+    openSource: 'PaperTok es open source',
+    openSourceDescription: 'Consulta el código, comparte ideas o contribuye en GitHub.',
+    viewOnGitHub: 'Ver en GitHub',
+    opensNewTab: 'se abre en una pestaña nueva',
     session: 'Sesión',
     sessionDescription: 'La información personalizada permanece asociada a esta cuenta.',
     signOut: 'Cerrar sesión',
@@ -170,6 +188,19 @@ const SETTINGS_COPY = {
     notificationsDescription: 'Choose whether to receive updates while PaperTok is closed.',
     emailUpdates: 'Email updates',
     configure: 'Configure',
+    privacy: 'Privacy',
+    privacyDescription: 'Control the anonymous measurements used to improve PaperTok.',
+    usageAnalytics: 'Usage analytics',
+    usageAnalyticsDescription: 'Only anonymous pages are recorded; never searches, papers, interests, or account data.',
+    analyticsEnabled: 'On',
+    analyticsDisabled: 'Off',
+    analyticsToggleLabel: 'Allow usage analytics',
+    community: 'Community',
+    communityDescription: 'Explore the project and take part in its development.',
+    openSource: 'PaperTok is open source',
+    openSourceDescription: 'View the code, share ideas, or contribute on GitHub.',
+    viewOnGitHub: 'View on GitHub',
+    opensNewTab: 'opens in a new tab',
     session: 'Session',
     sessionDescription: 'Your personalized information remains linked to this account.',
     signOut: 'Sign out',
@@ -216,6 +247,7 @@ export default function SettingsPage() {
   const navigate = useNavigate();
   const profileInputRef = useRef(null);
   const { language, setLanguage } = useLanguage();
+  const { consent: analyticsConsent, updateConsent: updateAnalyticsConsent } = useAnalyticsConsent();
   const copy = SETTINGS_COPY[language];
   const {
     user,
@@ -600,6 +632,72 @@ export default function SettingsPage() {
                 <button className="settings-row-action" onClick={() => setIsNotificationsOpen(true)}>
                   {copy.configure} <ChevronRight size={17} />
                 </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="settings-section" aria-labelledby="privacy-heading">
+            <div className="settings-section-heading">
+              <ShieldCheck size={18} />
+              <div>
+                <h2 id="privacy-heading">{copy.privacy}</h2>
+                <p>{copy.privacyDescription}</p>
+              </div>
+            </div>
+
+            <div className="settings-list">
+              <div className="settings-row" style={{ '--settings-index': 5 }}>
+                <span className="settings-row-icon is-cyan"><BarChart3 size={20} /></span>
+                <div className="settings-row-content">
+                  <h3>{copy.usageAnalytics}</h3>
+                  <p>{copy.usageAnalyticsDescription}</p>
+                </div>
+                <div className="settings-toggle-control">
+                  <span>{analyticsConsent === ANALYTICS_CONSENT.GRANTED ? copy.analyticsEnabled : copy.analyticsDisabled}</span>
+                  <button
+                    type="button"
+                    className={`settings-toggle ${analyticsConsent === ANALYTICS_CONSENT.GRANTED ? 'is-active' : ''}`}
+                    role="switch"
+                    aria-checked={analyticsConsent === ANALYTICS_CONSENT.GRANTED}
+                    aria-label={copy.analyticsToggleLabel}
+                    onClick={() => updateAnalyticsConsent(
+                      analyticsConsent === ANALYTICS_CONSENT.GRANTED
+                        ? ANALYTICS_CONSENT.DENIED
+                        : ANALYTICS_CONSENT.GRANTED,
+                    )}
+                  >
+                    <span aria-hidden="true" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="settings-section settings-section--community" aria-labelledby="community-heading">
+            <div className="settings-section-heading">
+              <Code2 size={18} />
+              <div>
+                <h2 id="community-heading">{copy.community}</h2>
+                <p>{copy.communityDescription}</p>
+              </div>
+            </div>
+
+            <div className="settings-list">
+              <div className="settings-row" style={{ '--settings-index': 6 }}>
+                <span className="settings-row-icon settings-row-icon--github"><Code2 size={20} /></span>
+                <div className="settings-row-content">
+                  <h3>{copy.openSource}</h3>
+                  <p>{copy.openSourceDescription}</p>
+                </div>
+                <a
+                  className="settings-row-action"
+                  href="https://github.com/mugar123/papertok"
+                  target="_blank"
+                  rel="noreferrer"
+                  aria-label={`${copy.viewOnGitHub} (${copy.opensNewTab})`}
+                >
+                  {copy.viewOnGitHub} <ExternalLink size={16} />
+                </a>
               </div>
             </div>
           </section>
