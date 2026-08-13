@@ -8,7 +8,6 @@ import {
   useState,
 } from 'react';
 import { useAuth } from './AuthContext';
-import { browserLanguageFallback, detectLanguageFromLocation } from '../services/languageDetectionService';
 
 const LanguageContext = createContext(null);
 const LANGUAGE_STORAGE_KEY = 'papertok_language';
@@ -52,7 +51,7 @@ export function LanguageProvider({ children }) {
   const [guestManualLanguage, setGuestManualLanguage] = useState(readStoredManualLanguage);
   // Keep the initial protected-route loader in the user's last chosen language.
   // The Firestore profile is loaded asynchronously, after that loader is visible.
-  const [detectedLanguage, setDetectedLanguage] = useState(
+  const [detectedLanguage] = useState(
     () => readStoredLanguage() || 'en',
   );
   const accountManualLanguage = user
