@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db, IS_DEMO } from '../services/firebase';
 import { fetchFollowingUpdates } from '../services/followingUpdatesService';
@@ -44,7 +44,15 @@ export function FollowingUpdatesProvider({ children }) {
   const [meta, setMeta] = useState({ checkedEntities: 0, totalEntities: 0, failedEntities: 0 });
   const [lastUpdatedAt, setLastUpdatedAt] = useState(null);
   const initializedForUser = useRef(null);
+  const activeUserIdRef = useRef(userId);
   const signature = useMemo(() => getFollowingSignature(followedEntities), [followedEntities]);
+
+  useLayoutEffect(() => {
+    activeUserIdRef.current = userId;
+    return () => {
+      if (activeUserIdRef.current === userId) activeUserIdRef.current = null;
+    };
+  }, [userId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,6 +116,7 @@ export function FollowingUpdatesProvider({ children }) {
 
     try {
       const result = await request;
+      if (activeUserIdRef.current !== userId) return;
       const savedAt = new Date().toISOString();
       setItems(result.papers);
       setMeta({
@@ -129,11 +138,14 @@ export function FollowingUpdatesProvider({ children }) {
         savedAt,
       });
     } catch (refreshError) {
+      if (activeUserIdRef.current !== userId) return;
       console.error('Error loading followed updates', refreshError);
       setError(refreshError);
     } finally {
-      setLoading(false);
-      setRefreshing(false);
+      if (activeUserIdRef.current === userId) {
+        setLoading(false);
+        setRefreshing(false);
+      }
     }
   }, [followedEntities, followsLoading, signature, userId]);
 

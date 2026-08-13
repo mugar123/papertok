@@ -63,12 +63,15 @@ diversity.
 - Firestore stores profiles, follows, interactions, preferences, and reading data.
 - Browser storage is used only for bounded caches and must be namespaced by user when it
   contains personalized state.
-- Cloudflare KV stores notification and usage state.
+- Cloudflare KV stores notification state. Atomic AI and protected-provider request quotas use
+  a Durable Object ledger keyed by bounded UTC periods and hashed user identifiers.
 - Scheduled digests query native arXiv categories directly before falling back to OpenAlex,
   avoiding the indexing delay for newly submitted physics and mathematics papers.
 - AI explanations bound PDF acquisition and provider retries within the browser request
   deadline, while provider JSON is normalized before LaTeX-aware rendering.
 - The Kimi budget ledger uses a Durable Object for atomic monthly reservations.
+- Provider-backed Worker routes verify Firebase identity and use canonical cache keys before
+  spending protected API quota.
 
 ## Worker
 
@@ -94,5 +97,10 @@ normalized provenance includes Hugging Face.
 ## Deployment
 
 - A push to `main` runs `.github/workflows/deploy.yml` and publishes `dist/` to GitHub Pages.
-- The Worker is deployed independently with `npx wrangler deploy`.
-- Frontend and Worker contracts must remain backward compatible during staggered deployments.
+- The locked Worker CLI is validated with `npm run worker:deploy:dry-run` and deployed separately
+  with `npm run worker:deploy`.
+- For a contract change, deploy and verify GitHub Pages first, then deploy the Worker. Roll back
+  the Worker before the frontend if verification fails. This ordering keeps the currently deployed
+  browser compatible while authenticated Worker routes are introduced.
+- Firestore rules are deployed explicitly with
+  `npx --yes firebase-tools@15.26.0 deploy --only firestore:rules --project papertok-168df`.

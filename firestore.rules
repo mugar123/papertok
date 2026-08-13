@@ -1,0 +1,135 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function ownsUserTree(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    function validString(value, maximum) {
+      return value is string && value.size() <= maximum;
+    }
+
+    function userProfileKeys() {
+      return [
+        'onboardingComplete',
+        'preferences',
+        'selectedCategories',
+        'followedAuthors',
+        'followingMigratedAt',
+        'readingPreferences',
+        'profilePhoto'
+      ];
+    }
+
+    match /users/{userId} {
+      allow read, delete: if ownsUserTree(userId);
+      allow create, update: if ownsUserTree(userId)
+        && request.resource.data.keys().hasOnly(userProfileKeys())
+        && (!('onboardingComplete' in request.resource.data)
+          || request.resource.data.onboardingComplete is bool)
+        && (!('preferences' in request.resource.data)
+          || request.resource.data.preferences is list
+            && request.resource.data.preferences.size() <= 100)
+        && (!('selectedCategories' in request.resource.data)
+          || request.resource.data.selectedCategories is list
+            && request.resource.data.selectedCategories.size() <= 100)
+        && (!('followedAuthors' in request.resource.data)
+          || request.resource.data.followedAuthors is list
+            && request.resource.data.followedAuthors.size() <= 100)
+        && (!('readingPreferences' in request.resource.data)
+          || request.resource.data.readingPreferences is map
+            && request.resource.data.readingPreferences.keys().hasOnly([
+              'aiExplanationLevel', 'language', 'languagePreferenceSet'
+            ])
+            && (!('aiExplanationLevel' in request.resource.data.readingPreferences)
+              || request.resource.data.readingPreferences.aiExplanationLevel in [
+                'beginner', 'university', 'researcher'
+              ])
+            && (!('language' in request.resource.data.readingPreferences)
+              || request.resource.data.readingPreferences.language in ['es', 'en'])
+            && (!('languagePreferenceSet' in request.resource.data.readingPreferences)
+              || request.resource.data.readingPreferences.languagePreferenceSet is bool))
+        && (!('profilePhoto' in request.resource.data)
+          || validString(request.resource.data.profilePhoto, 280000));
+
+      match /interactions/{paperId} {
+        allow read, delete: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly([
+            'liked', 'notInterested', 'saved', 'read', 'readLater', 'openedPdf',
+            'viewTime', 'skip', 'pdfBounce', 'paperTitle', 'paperAuthors',
+            'paperCategory', 'paperAbstract', 'paper', 'timestamp', 'readAt',
+            'libraryUpdatedAt', 'deviceType', 'context', 'note', 'tags'
+          ])
+          && (!('paperTitle' in request.resource.data)
+            || validString(request.resource.data.paperTitle, 1000))
+          && (!('paperAbstract' in request.resource.data)
+            || validString(request.resource.data.paperAbstract, 1000))
+          && (!('paperCategory' in request.resource.data)
+            || validString(request.resource.data.paperCategory, 160))
+          && (!('note' in request.resource.data) || validString(request.resource.data.note, 10000))
+          && (!('tags' in request.resource.data)
+            || request.resource.data.tags is list && request.resource.data.tags.size() <= 12)
+          && (!('paperAuthors' in request.resource.data)
+            || request.resource.data.paperAuthors is list && request.resource.data.paperAuthors.size() <= 20)
+          && (!('paper' in request.resource.data) || request.resource.data.paper is map);
+      }
+
+      match /following/{followId} {
+        allow read, delete: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly([
+            'type', 'canonicalId', 'displayName', 'source', 'externalIds',
+            'metadata', 'followedAt', 'followKey'
+          ])
+          && request.resource.data.type in ['author', 'topic', 'institution', 'project']
+          && validString(request.resource.data.canonicalId, 500)
+          && validString(request.resource.data.displayName, 500)
+          && (!('source' in request.resource.data) || validString(request.resource.data.source, 80))
+          && (!('externalIds' in request.resource.data) || request.resource.data.externalIds is map)
+          && (!('metadata' in request.resource.data) || request.resource.data.metadata is map);
+      }
+
+      match /settings/followingUpdates {
+        allow read, delete: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly(['seenIds', 'updatedAt'])
+          && request.resource.data.seenIds is list
+          && request.resource.data.seenIds.size() <= 500;
+      }
+
+      match /lists/{listId} {
+        allow read, delete: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly(['id', 'name', 'emoji', 'paperIds', 'createdAt'])
+          && validString(request.resource.data.name, 120)
+          && validString(request.resource.data.emoji, 40)
+          && request.resource.data.paperIds is list
+          && request.resource.data.paperIds.size() <= 500;
+      }
+
+      match /savedPapers/{paperId} {
+        allow read, delete: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly([
+            'title', 'authors', 'primaryCategory', 'published', 'arxivId',
+            'summary', 'savedAt'
+          ])
+          && validString(request.resource.data.title, 1000)
+          && (!('authors' in request.resource.data)
+            || request.resource.data.authors is list && request.resource.data.authors.size() <= 20)
+          && (!('summary' in request.resource.data)
+            || validString(request.resource.data.summary, 1000));
+      }
+
+      match /{document=**} {
+        allow read, write: if false;
+      }
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

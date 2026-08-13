@@ -12,6 +12,7 @@ import PaperCard from '../Feed/PaperCard';
 import { CATEGORIES, getCategoryGradient, getCategoryLabel } from '../../data/categories';
 import { resolvePaperTopic } from '../../utils/topicNavigation';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
+import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
 import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Flame, Database, Sparkles } from 'lucide-react';
 import ScientificText from '../ScientificText';
 import 'katex/dist/katex.min.css';
@@ -230,7 +231,9 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   };
 
   const handleShare = (paper) => {
-    const url = paper.pdfUrl || paper.landingPageUrl || (paper.arxivId ? `https://arxiv.org/abs/${paper.arxivId}` : '');
+    const url = safeExternalUrl(paper.pdfUrl)
+      || safeExternalUrl(paper.landingPageUrl)
+      || (paper.arxivId ? `https://arxiv.org/abs/${encodeURIComponent(paper.arxivId)}` : '');
     if (navigator.share) { navigator.share({ title: paper.title, url }); }
     else { navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2000); }
   };
@@ -499,7 +502,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   ) : (
                     <>
                       <span className="sr-tag verified"><BadgeCheck size={12} /> Verified</span>
-                      {hero.doi && <a href={`https://doi.org/${hero.doi}`} target="_blank" rel="noopener noreferrer" className="sr-tag doi" onClick={e => e.stopPropagation()}><ExternalLink size={12} /> DOI</a>}
+                      {safeDoiUrl(hero.doi) && <a href={safeDoiUrl(hero.doi)} target="_blank" rel="noopener noreferrer" className="sr-tag doi" onClick={e => e.stopPropagation()}><ExternalLink size={12} /> DOI</a>}
                     </>
                   )}
                   {accessibleHero.openAccess

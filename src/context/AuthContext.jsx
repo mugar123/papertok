@@ -9,6 +9,7 @@ import {
 } from '../utils/userSettings';
 import { settleWithin } from '../utils/asyncTiming';
 import { normalizeProfilePhoto } from '../utils/profileImage';
+import { clearUserScopedStorage } from '../utils/userScopedStorage';
 
 const AuthContext = createContext(null);
 const PROFILE_CACHE_TIMEOUT_MS = 800;
@@ -145,6 +146,7 @@ export function AuthProvider({ children }) {
   };
 
   const signOut = async () => {
+    const signingOutUserId = user?.uid;
     if (IS_DEMO) {
       setUser(null);
       setOnboardingComplete(false);
@@ -157,6 +159,7 @@ export function AuthProvider({ children }) {
     }
     try {
       await firebaseSignOut(auth);
+      clearUserScopedStorage(signingOutUserId);
     } catch (err) {
       setError(err?.code || 'AUTH_FAILED');
     }

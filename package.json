@@ -7,9 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
+    "security:secrets": "node scripts/check-secrets.mjs",
     "test": "node --test src/**/*.test.js worker/**/*.test.js",
-    "check": "npm run lint && npm test && npm run build",
-    "preview": "vite preview"
+    "check": "npm run security:secrets && npm run lint && npm test && npm run build && npm run worker:deploy:dry-run",
+    "preview": "vite preview",
+    "worker:deploy": "wrangler deploy",
+    "worker:deploy:dry-run": "wrangler deploy --dry-run"
   },
   "dependencies": {
     "@vnedyalk0v/react19-simple-maps": "^2.0.9",
@@ -18,11 +21,11 @@
     "framer-motion": "^12.40.0",
     "katex": "^0.17.0",
     "lucide-react": "^1.18.0",
+    "protobufjs": "7.6.5",
     "rc-slider": "^11.1.9",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "react-latex-next": "^3.0.0",
-    "react-router-dom": "^7.17.0"
+    "react-router-dom": "7.18.2"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
@@ -33,6 +36,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "wrangler": "4.122.0"
   }
 }

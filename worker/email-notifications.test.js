@@ -4,6 +4,7 @@ import {
   emailNotificationInternals,
   checkEmailProviderHealth,
   getEmailScheduleHealth,
+  handleEmailUnsubscribe,
   runEmailNotificationSchedule,
 } from './email-notifications.js';
 
@@ -693,6 +694,76 @@ test('does not overwrite an enabled subscription when the client sends zero foll
     error => error?.code === 'EMAIL_FOLLOWS_REQUIRED' && error?.status === 409,
   );
   assert.deepEqual(await kv.get(subscriptionKey, 'json'), existing);
+});
+
+test('rejects oversized notification preference payloads before parsing them', async () => {
+  const request = new Request('https://example.com/notifications/preferences', {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ enabled: true, padding: 'x'.repeat(100_000) }),
+  });
+
+  await assert.rejects(
+    () => saveSubscription(request, { NOTIFICATION_STORE: createMemoryKv() }, {
+      uid: 'reader',
+      email: 'reader@example.com',
+      displayName: 'Reader',
+    }),
+    error => error?.code === 'EMAIL_REQUEST_TOO_LARGE' && error?.status === 413,
+  );
+});
+
+test('unsubscribe GET confirms without mutating and POST removes the subscription', async () => {
+  const token = 'valid-unsubscribe-token';
+  const subscription = {
+    uid: 'reader',
+    email: 'reader@example.com',
+    enabled: true,
+    language: 'en',
+    unsubscribeToken: token,
+  };
+  const kv = createMemoryKv({
+    'notification:subscription:reader': subscription,
+    [`notification:unsubscribe:${token}`]: 'reader',
+  });
+  const url = `https://example.com/notifications/unsubscribe?token=${token}&lang=en`;
+
+  const confirmation = await handleEmailUnsubscribe(new Request(url), { NOTIFICATION_STORE: kv });
+  assert.equal(confirmation.status, 200);
+  assert.match(await confirmation.text(), /Confirm unsubscribe/);
+  assert.deepEqual(await kv.get('notification:subscription:reader', 'json'), subscription);
+
+  const result = await handleEmailUnsubscribe(new Request(url, { method: 'POST' }), {
+    NOTIFICATION_STORE: kv,
+  });
+  assert.equal(result.status, 200);
+  assert.match(await result.text(), /Emails disabled/);
+  assert.equal(await kv.get('notification:subscription:reader'), null);
+  assert.equal(await kv.get(`notification:unsubscribe:${token}`), null);
+});
+
+test('a stale unsubscribe token cannot delete a newer subscription generation', async () => {
+  const staleToken = 'stale-unsubscribe-token';
+  const currentToken = 'current-unsubscribe-token';
+  const kv = createMemoryKv({
+    'notification:subscription:reader': {
+      uid: 'reader',
+      email: 'reader@example.com',
+      enabled: true,
+      language: 'en',
+      unsubscribeToken: currentToken,
+    },
+    [`notification:unsubscribe:${staleToken}`]: 'reader',
+  });
+
+  const response = await handleEmailUnsubscribe(new Request(
+    `https://example.com/notifications/unsubscribe?token=${staleToken}&lang=en`,
+    { method: 'POST' },
+  ), { NOTIFICATION_STORE: kv });
+
+  assert.equal(response.status, 400);
+  assert.ok(await kv.get('notification:subscription:reader', 'json'));
+  assert.equal(await kv.get(`notification:unsubscribe:${staleToken}`), null);
 });
 
 test('keeps delivery state separate and intact when notification preferences change', async () => {

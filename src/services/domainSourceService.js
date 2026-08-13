@@ -4,6 +4,7 @@ import { isScopusEnabled, ScopusAdapter } from './adapters/ScopusAdapter.js';
 import { isTechnicalClassification } from '../utils/scientificClassification.js';
 import { mapOpenReviewNote } from './openReviewService.js';
 import { mapHuggingFacePaper } from './huggingFaceService.js';
+import { authenticatedWorkerFetch } from './workerApiClient.js';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -441,7 +442,10 @@ async function fetchJson(path, params) {
     Object.entries(params).forEach(([key, value]) => {
       if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
     });
-    const response = await fetch(url, { signal: controller.signal, headers: { accept: 'application/json' } });
+    const protectedPath = ['/sources/core', '/sources/physics'].includes(path);
+    const response = protectedPath
+      ? await authenticatedWorkerFetch(url, { signal: controller.signal, headers: { accept: 'application/json' } })
+      : await fetch(url, { signal: controller.signal, headers: { accept: 'application/json' } });
     if (!response.ok) throw new Error(`${path} returned ${response.status}`);
     return response.json();
   } finally {

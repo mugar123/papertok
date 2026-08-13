@@ -2,6 +2,7 @@ import { PaperBuilder } from './PaperBuilder.js';
 import { normalizeCitationDoi } from '../utils/citationGraph.js';
 import { fetchPapersByDois } from './openAlexService.js';
 import { findOpenAccessCopy } from './unpaywallService.js';
+import { authenticatedWorkerFetch } from './workerApiClient.js';
 
 const CACHE = new Map();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
@@ -136,7 +137,7 @@ export async function getCitationGraph(paper, limit = 8) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 12_000);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await authenticatedWorkerFetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Citation graph API error: ${response.status}`);
     const data = mapCitationGraphPayload(await response.json());
     CACHE.set(cacheKey, { data, timestamp: Date.now() });

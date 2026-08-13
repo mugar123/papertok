@@ -32,6 +32,7 @@ import { fetchTopicPapers } from '../../services/topicRetrievalService.js';
 import { getEntityWikiInfo } from '../../services/wikiService';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import { getUiErrorMessage } from '../../utils/errorMessages';
+import { safeExternalUrl } from '../../utils/externalUrl.js';
 import 'katex/dist/katex.min.css';
 import './EntityExplorer.css';
 
@@ -147,6 +148,10 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   const authorInstitutionDisplayName = getLocalizedInstitutionName(authorInstitution, language);
   const wikiRequestKey = `${entityReloadKey}:${language}:${type}:${entityDisplayName}`;
   const visibleWikiInfo = wikiInfo?._requestKey === wikiRequestKey ? wikiInfo : null;
+  const safeRorUrl = safeExternalUrl(entity?.ror);
+  const safeProjectWebsiteUrl = safeExternalUrl(entity?.websiteUrl);
+  const safeWikiUrl = safeExternalUrl(visibleWikiInfo?.url);
+  const safeHomepageUrl = safeExternalUrl(entity?.homepage_url);
   const canLoadWikiInfo = Boolean(
     entityDisplayName && ['institution', 'concept', 'topic', 'source'].includes(type),
   );
@@ -990,9 +995,9 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                   <p className="ehc-meta">
                     {[entity.geo?.city, entity.geo?.country].filter(Boolean).join(', ')}
                   </p>
-                  {entity.rorVerified && (
+                  {entity.rorVerified && safeRorUrl && (
                     <div className="ehc-institution-identity">
-                      <a href={entity.ror} target="_blank" rel="noopener noreferrer" title={isEnglish ? 'View official ROR record' : 'Ver registro oficial en ROR'}>
+                      <a href={safeRorUrl} target="_blank" rel="noopener noreferrer" title={isEnglish ? 'View official ROR record' : 'Ver registro oficial en ROR'}>
                         <BadgeCheck size={13} /> {isEnglish ? 'ROR verified' : 'ROR verificado'}
                       </a>
                       {entity.established && <span>{isEnglish ? 'Since' : 'Desde'} {entity.established}</span>}
@@ -1038,7 +1043,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                   {entity.funder}{entity.fundingStream ? ` — ${entity.fundingStream}` : ''}
                 </p>
               )}
-              {type === 'project' && (entity.openaireId || entity.websiteUrl) && (
+              {type === 'project' && (entity.openaireId || safeProjectWebsiteUrl) && (
                 <div className="project-links-menu" ref={projectLinksMenuRef}>
                   <button
                     type="button"
@@ -1078,10 +1083,10 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                             <ExternalLink size={14} />
                           </a>
                         )}
-                        {entity.websiteUrl && (
+                        {safeProjectWebsiteUrl && (
                           <a
                             className="project-links-option"
-                            href={entity.websiteUrl}
+                            href={safeProjectWebsiteUrl}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={() => setIsProjectLinksMenuOpen(false)}
@@ -1326,13 +1331,13 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                   </button>
                 )}
                 <div className="ehc-links">
-                  {visibleWikiInfo?.url && (
-                    <a href={visibleWikiInfo.url} target="_blank" rel="noopener noreferrer" className="ehc-link">
+                  {safeWikiUrl && (
+                    <a href={safeWikiUrl} target="_blank" rel="noopener noreferrer" className="ehc-link">
                       Wikipedia <ExternalLink size={14} />
                     </a>
                   )}
-                  {entity?.homepage_url && (
-                    <a href={entity.homepage_url} target="_blank" rel="noopener noreferrer" className="ehc-link">
+                  {safeHomepageUrl && (
+                    <a href={safeHomepageUrl} target="_blank" rel="noopener noreferrer" className="ehc-link">
                       {isEnglish ? 'Official website' : 'Web oficial'} <ExternalLink size={14} />
                     </a>
                   )}
@@ -1385,12 +1390,15 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
               {/* External links */}
               {orcidInfo.researcherUrls?.length > 0 && (
                 <div className="orcid-links-row">
-                  {orcidInfo.researcherUrls.map((u, i) => (
-                    <a key={i} href={u.url} target="_blank" rel="noopener noreferrer" className="orcid-ext-link">
-                      <Globe size={12} />
-                      {u.name || (isEnglish ? 'External link' : 'Enlace externo')}
-                    </a>
-                  ))}
+                  {orcidInfo.researcherUrls.map((u, i) => {
+                    const safeUrl = safeExternalUrl(u.url);
+                    return safeUrl ? (
+                      <a key={i} href={safeUrl} target="_blank" rel="noopener noreferrer" className="orcid-ext-link">
+                        <Globe size={12} />
+                        {u.name || (isEnglish ? 'External link' : 'Enlace externo')}
+                      </a>
+                    ) : null;
+                  })}
                 </div>
               )}
 
@@ -1548,7 +1556,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                         paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                           <a
                             className="eli-citations eli-citations--link"
-                            href={paper.scopusCitedByUrl}
+                            href={safeExternalUrl(paper.scopusCitedByUrl) || undefined}
                             target="_blank"
                             rel="noopener noreferrer"
                             onClick={(event) => event.stopPropagation()}

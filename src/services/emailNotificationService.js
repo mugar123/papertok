@@ -1,4 +1,5 @@
 import { auth } from './firebase.js';
+import { authenticatedWorkerFetch, trustedWorkerUrl } from './workerApiClient.js';
 import { getLocalizedInstitutionName } from '../utils/institutionLocalization.js';
 import {
   isOpaqueQueryTopicText,
@@ -95,17 +96,14 @@ export function serializeUpdateForNotifications(paper = {}, language = 'es') {
 }
 
 async function authenticatedRequest(path, options = {}) {
-  const currentUser = auth.currentUser;
-  if (!currentUser) throw new EmailNotificationServiceError('EMAIL_AUTH_REQUIRED', 401);
-  const token = await currentUser.getIdToken();
+  if (!auth.currentUser) throw new EmailNotificationServiceError('EMAIL_AUTH_REQUIRED', 401);
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 25_000);
   try {
-    const response = await fetch(`${apiBase()}${path}`, {
+    const response = await authenticatedWorkerFetch(`${apiBase()}${path}`, {
       ...options,
       signal: controller.signal,
       headers: {
-        authorization: `Bearer ${token}`,
         ...(options.body ? { 'content-type': 'application/json' } : {}),
         ...options.headers,
       },
@@ -130,7 +128,9 @@ export async function getEmailNotificationHealth() {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 10_000);
   try {
-    const response = await fetch(`${apiBase()}/health/email`, { signal: controller.signal });
+    const url = trustedWorkerUrl(`${apiBase()}/health/email`);
+    if (!url) throw new EmailNotificationServiceError('EMAIL_NOT_CONFIGURED');
+    const response = await fetch(url, { signal: controller.signal });
     const payload = await response.json().catch(() => ({}));
     return {
       configured: Boolean(payload.configured),

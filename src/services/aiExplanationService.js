@@ -1,5 +1,5 @@
-import { auth } from './firebase.js';
 import { hasUsableAIAbstract, isAIReadablePdfUrl } from '../utils/aiExplanationAccess.js';
+import { authenticatedWorkerFetch } from './workerApiClient.js';
 
 const explanationCache = new Map();
 
@@ -99,18 +99,13 @@ export async function explainPaper(paper, level = 'university', { force = false,
 
   const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
   if (!apiBase) throw new AIExplanationServiceError('AI_NOT_CONFIGURED');
-  const currentUser = auth.currentUser;
-  if (!currentUser) throw new AIExplanationServiceError('AI_AUTH_REQUIRED');
-  const token = await currentUser.getIdToken();
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 70_000);
   try {
-    const response = await fetch(`${apiBase}/ai/explain`, {
+    const response = await authenticatedWorkerFetch(`${apiBase}/ai/explain`, {
       method: 'POST',
       signal: controller.signal,
       headers: {
-        authorization: `Bearer ${token}`,
         'content-type': 'application/json',
       },
       body: JSON.stringify({

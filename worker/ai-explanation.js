@@ -6,6 +6,8 @@ import {
   microsToUsd,
   usdToMicros,
 } from './kimi-budget-ledger.js';
+import { reserveRequestQuota } from './request-quota-ledger.js';
+import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.js';
 
 const PROMPT_VERSION = 'paper-explainer-v4';
 const DEFAULT_MODEL = 'gemini-3.5-flash';
@@ -298,12 +300,22 @@ async function fetchPaperPdf(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOnlySourc
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(pdfUrl, {
-      signal: controller.signal,
-      redirect: 'follow',
-      headers: { accept: 'application/pdf' },
-    });
-    if (!response.ok || !isAIReadablePdfUrl(response.url)) return null;
+    let currentUrl = pdfUrl;
+    let response;
+    for (let redirectCount = 0; redirectCount <= 3; redirectCount += 1) {
+      response = await fetch(currentUrl, {
+        signal: controller.signal,
+        redirect: 'manual',
+        headers: { accept: 'application/pdf' },
+      });
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      const location = response.headers.get('location');
+      if (!location || redirectCount === 3) return null;
+      const nextUrl = new URL(location, currentUrl).toString();
+      if (!isAIReadablePdfUrl(nextUrl)) return null;
+      currentUrl = nextUrl;
+    }
+    if (!response?.ok || !isAIReadablePdfUrl(response.url || currentUrl)) return null;
     const contentType = response.headers.get('content-type') || '';
     const contentLength = Number(response.headers.get('content-length') || 0);
     if (!contentType.toLowerCase().includes('pdf') || contentLength > MAX_PDF_BYTES) return null;
@@ -930,19 +942,18 @@ export async function checkAIProviderHealth(env) {
 }
 
 async function verifyFirebaseUser(request, env) {
-  const authorization = request.headers.get('authorization') || '';
-  const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
-  if (!token) throw new AIExplanationError('AI_AUTH_REQUIRED', 401);
-  if (!env.FIREBASE_WEB_API_KEY) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
-  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ idToken: token }),
-  });
-  const payload = await response.json().catch(() => ({}));
-  const uid = payload?.users?.[0]?.localId;
-  if (!response.ok || !uid) throw new AIExplanationError('AI_AUTH_REQUIRED', 401);
-  return uid;
+  try {
+    const identity = await verifyFirebaseIdentity(request, env);
+    return identity.uid;
+  } catch (error) {
+    if (error instanceof WorkerAuthError) {
+      throw new AIExplanationError(
+        error.status === 503 ? 'AI_NOT_CONFIGURED' : 'AI_AUTH_REQUIRED',
+        error.status,
+      );
+    }
+    throw error;
+  }
 }
 
 function todayKey() {
@@ -962,53 +973,27 @@ export function getDailyQuotaReset(now = Date.now()) {
   };
 }
 
-async function getUsage(env, key) {
-  const store = env.AI_USAGE?.get ? env.AI_USAGE : env.NOTIFICATION_STORE;
-  if (store?.get) return Number(await store.get(`ai-usage:${key}`)) || 0;
-  const cached = await caches.default.match(new Request(`https://papertok.internal/usage/${encodeURIComponent(key)}`));
-  return cached ? Number(await cached.text()) || 0 : 0;
-}
-
-async function setUsage(env, key, value) {
-  const store = env.AI_USAGE?.put ? env.AI_USAGE : env.NOTIFICATION_STORE;
-  if (store?.put) {
-    await store.put(`ai-usage:${key}`, String(value), { expirationTtl: 172_800 });
-    return;
-  }
-  await caches.default.put(
-    new Request(`https://papertok.internal/usage/${encodeURIComponent(key)}`),
-    new Response(String(value), { headers: { 'cache-control': 'max-age=172800' } }),
-  );
-}
-
-async function assertWithinQuota(env, uid) {
+async function reserveAIQuota(env, uid) {
   const day = todayKey();
-  const userKey = `${day}:user:${uid}`;
-  const globalKey = `${day}:global`;
   const userLimit = safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100);
   const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
-  const [userUsage, globalUsage] = await Promise.all([getUsage(env, userKey), getUsage(env, globalKey)]);
-  if (userUsage >= userLimit) {
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `ai:${day}`,
+    subject: `ai:${uid}`,
+    subjectLimit: userLimit,
+    globalLimit,
+  });
+  if (!reservation.accepted && reservation.code) {
+    throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+  }
+  if (!reservation.accepted) {
     throw new AIExplanationError('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', {
       ...getDailyQuotaReset(),
-      scope: 'user',
-      remainingUses: 0,
+      scope: reservation.scope || 'global',
+      ...(reservation.scope === 'user' ? { remainingUses: 0 } : {}),
     });
   }
-  if (globalUsage >= globalLimit) {
-    throw new AIExplanationError('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', {
-      ...getDailyQuotaReset(),
-      scope: 'global',
-    });
-  }
-  return { userKey, globalKey, userUsage, globalUsage, userLimit };
-}
-
-async function recordUsage(env, quota) {
-  await Promise.all([
-    setUsage(env, quota.userKey, quota.userUsage + 1),
-    setUsage(env, quota.globalKey, quota.globalUsage + 1),
-  ]);
+  return { remainingUses: reservation.remaining };
 }
 
 async function sha256(value) {
@@ -1017,13 +1002,7 @@ async function sha256(value) {
 }
 
 export async function explanationCacheKey(paper, level, language, provider, model) {
-  const fingerprint = await sha256(JSON.stringify({
-    id: paper.id,
-    title: paper.title,
-    abstract: paper.abstract,
-    doi: paper.doi,
-    pdfUrl: paper.pdfUrl,
-  }));
+  const fingerprint = await sha256(JSON.stringify(paper));
   return new Request(`https://papertok.internal/ai/${provider}/${model}/${PROMPT_VERSION}/${language}/${level}/${fingerprint}`);
 }
 
@@ -1052,7 +1031,7 @@ export async function handleAIExplanation(request, env) {
   const cached = await caches.default.match(cacheKey);
   if (cached) return { ...(await cached.json()), remainingUses: null, cached: true };
 
-  const quota = await assertWithinQuota(env, uid);
+  const quota = await reserveAIQuota(env, uid);
   const pdfBase64 = await fetchPaperPdf(
     paper.pdfUrl,
     paper.abstract
@@ -1069,8 +1048,6 @@ export async function handleAIExplanation(request, env) {
     pdfBase64,
     env,
   });
-  await recordUsage(env, quota);
-
   const cacheableResponse = {
     ...result,
     level,
@@ -1086,7 +1063,7 @@ export async function handleAIExplanation(request, env) {
   }));
   return {
     ...cacheableResponse,
-    remainingUses: Math.max(0, quota.userLimit - quota.userUsage - 1),
+    remainingUses: quota.remainingUses,
     cached: false,
   };
 }

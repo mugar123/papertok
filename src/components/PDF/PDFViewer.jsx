@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import './PDFViewer.css';
+import { isTrustedInlinePdfUrl, safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
 
 export default function PDFViewer({ paper, onClose }) {
   const { isEnglish } = useLanguage();
@@ -9,7 +10,8 @@ export default function PDFViewer({ paper, onClose }) {
   const [showFallback, setShowFallback] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
-  const pdfUrl = paper.pdfUrl || (paper.arxivId ? `https://arxiv.org/pdf/${paper.arxivId}` : '');
+  const candidatePdfUrl = paper.pdfUrl || (paper.arxivId ? `https://arxiv.org/pdf/${paper.arxivId}` : '');
+  const pdfUrl = isTrustedInlinePdfUrl(candidatePdfUrl) ? safeExternalUrl(candidatePdfUrl) : '';
 
   const { trackPdfBounce } = useFeed();
   const startTimeRef = useRef(null);
@@ -45,7 +47,9 @@ export default function PDFViewer({ paper, onClose }) {
     };
   }, []);
 
-  const externalUrl = pdfUrl || (paper.doi ? `https://doi.org/${paper.doi}` : `https://openalex.org/${paper.id}`);
+  const externalUrl = safeExternalUrl(candidatePdfUrl)
+    || safeDoiUrl(paper.doi)
+    || (/^[A-Z]\d+$/i.test(String(paper.id || '')) ? `https://openalex.org/${paper.id}` : '');
   const shouldShowFallback = !pdfUrl || showFallback;
 
   // Fallback timeout
@@ -74,7 +78,7 @@ export default function PDFViewer({ paper, onClose }) {
 
           <h3 className="pdf-title">{paper.title}</h3>
 
-          <a
+          {externalUrl && <a
             href={externalUrl}
             target="_blank"
             rel="noopener noreferrer"
@@ -86,7 +90,7 @@ export default function PDFViewer({ paper, onClose }) {
               <line x1="10" y1="14" x2="21" y2="3" />
             </svg>
             <span>{isEnglish ? 'New tab' : 'Nueva pestaña'}</span>
-          </a>
+          </a>}
         </div>
 
         {/* Loading indicator */}
@@ -103,9 +107,9 @@ export default function PDFViewer({ paper, onClose }) {
             <p>{!pdfUrl
               ? (isEnglish ? 'No open-access PDF is available.' : 'No hay PDF de acceso abierto disponible.')
               : (isEnglish ? 'The PDF could not be loaded in the app.' : 'El PDF no pudo cargarse en la app.')}</p>
-            <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
+            {externalUrl && <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
               {isEnglish ? 'Open original source in a new tab →' : 'Abrir fuente original en nueva pestaña →'}
-            </a>
+            </a>}
           </div>
         )}
 
@@ -114,6 +118,8 @@ export default function PDFViewer({ paper, onClose }) {
           src={pdfUrl}
           className={`pdf-iframe ${iframeLoaded ? 'pdf-iframe--loaded' : ''}`}
           title={`PDF: ${paper.title}`}
+          sandbox="allow-same-origin"
+          referrerPolicy="no-referrer"
           onLoad={() => setIframeLoaded(true)}
         />}
       </div>

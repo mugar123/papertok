@@ -1,4 +1,5 @@
 import { PaperBuilder } from './PaperBuilder.js';
+import { authenticatedWorkerFetch } from './workerApiClient.js';
 
 const CACHE = new Map();
 const CACHE_TTL = 24 * 60 * 60 * 1000;
@@ -48,7 +49,9 @@ export async function getRelatedPapers(paper, limit = 8) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = apiBase
+      ? await authenticatedWorkerFetch(url, { signal: controller.signal })
+      : await fetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Semantic Scholar API error: ${response.status}`);
     const payload = await response.json();
     const items = payload.recommendedPapers || payload.papers || [];

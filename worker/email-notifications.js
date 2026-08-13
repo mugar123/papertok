@@ -13,6 +13,7 @@ const MAX_FOLLOWS = 40;
 const MAX_QUERIED_FOLLOWS = 24;
 const MAX_PREVIEW_ITEMS = 20;
 const MAX_SENT_PAPER_KEYS = 400;
+const MAX_PREFERENCES_REQUEST_BYTES = 96 * 1024;
 const DEFAULT_DAILY_SEND_LIMIT = 290;
 const SCHEDULE_STATUS_KEY = 'notification:schedule:last-run';
 const SCHEDULE_HISTORY_PREFIX = 'notification:schedule:history:';
@@ -84,6 +85,50 @@ class DigestSourceError extends Error {
 
 function cleanText(value, maxLength = 300) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
+}
+
+async function readBoundedJson(request, maximumBytes = MAX_PREFERENCES_REQUEST_BYTES) {
+  const declaredLength = Number(request.headers.get('content-length') || 0);
+  if (Number.isFinite(declaredLength) && declaredLength > maximumBytes) {
+    throw new EmailNotificationError('EMAIL_REQUEST_TOO_LARGE', 413);
+  }
+  let bytes;
+  if (request.body?.getReader) {
+    const reader = request.body.getReader();
+    const chunks = [];
+    let byteLength = 0;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        byteLength += value.byteLength;
+        if (byteLength > maximumBytes) {
+          await reader.cancel();
+          throw new EmailNotificationError('EMAIL_REQUEST_TOO_LARGE', 413);
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    bytes = new Uint8Array(byteLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      bytes.set(chunk, offset);
+      offset += chunk.byteLength;
+    }
+  } else {
+    const fallbackBytes = new TextEncoder().encode(await request.text());
+    if (fallbackBytes.byteLength > maximumBytes) {
+      throw new EmailNotificationError('EMAIL_REQUEST_TOO_LARGE', 413);
+    }
+    bytes = fallbackBytes;
+  }
+  try {
+    return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+  } catch {
+    throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
+  }
 }
 
 function escapeHtml(value) {
@@ -768,8 +813,10 @@ async function deleteSubscription(env, uid, subscription) {
 
 async function saveSubscription(request, env, identity) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
-  const body = await request.json().catch(() => null);
-  if (!body) throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
+  const body = await readBoundedJson(request);
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new EmailNotificationError('EMAIL_INVALID_REQUEST', 400);
+  }
   const preferences = sanitizePreferences(body);
   const key = `${SUBSCRIPTION_PREFIX}${identity.uid}`;
   const existingRecord = await loadSubscriptionRecord(env, key);
@@ -1420,6 +1467,9 @@ const EMAIL_COPY = {
     openPaperTok: 'Abrir PaperTok',
     unavailable: 'Servicio no disponible',
     invalidLink: 'Enlace de baja no válido',
+    confirmTitle: 'Confirmar baja',
+    confirmBody: '¿Quieres dejar de recibir novedades de PaperTok por email?',
+    confirmAction: 'Desactivar correos',
     disabledTitle: 'Correos desactivados',
     disabledBody: 'Ya no recibirás novedades de PaperTok por email.',
     returnToPaperTok: 'Volver a PaperTok',
@@ -1442,6 +1492,9 @@ const EMAIL_COPY = {
     openPaperTok: 'Open PaperTok',
     unavailable: 'Service unavailable',
     invalidLink: 'Invalid unsubscribe link',
+    confirmTitle: 'Confirm unsubscribe',
+    confirmBody: 'Do you want to stop receiving PaperTok updates by email?',
+    confirmAction: 'Disable emails',
     disabledTitle: 'Emails disabled',
     disabledBody: 'You will no longer receive PaperTok updates by email.',
     returnToPaperTok: 'Return to PaperTok',
@@ -1849,18 +1902,36 @@ export async function handleEmailUnsubscribe(request, env) {
     : 'es';
   if (!env.NOTIFICATION_STORE) return new Response(EMAIL_COPY[requestedLanguage].unavailable, { status: 503 });
   const token = cleanText(requestUrl.searchParams.get('token'), 100);
-  if (!token) return new Response(EMAIL_COPY[requestedLanguage].invalidLink, { status: 400 });
+  if (!/^[a-zA-Z0-9_-]{16,100}$/.test(token)) {
+    return new Response(EMAIL_COPY[requestedLanguage].invalidLink, { status: 400 });
+  }
   const uid = await env.NOTIFICATION_STORE.get(`${UNSUBSCRIBE_PREFIX}${token}`);
-  let language = requestedLanguage;
-  if (uid) {
-    const subscription = await loadSubscriptionWithState(env, `${SUBSCRIPTION_PREFIX}${uid}`);
-    language = subscriptionLanguage(subscription);
+  if (!uid) return new Response(EMAIL_COPY[requestedLanguage].invalidLink, { status: 400 });
+  const subscription = await loadSubscriptionWithState(env, `${SUBSCRIPTION_PREFIX}${uid}`);
+  if (!subscription || subscription.unsubscribeToken !== token) {
+    await env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${token}`);
+    return new Response(EMAIL_COPY[requestedLanguage].invalidLink, { status: 400 });
+  }
+  const language = subscriptionLanguage(subscription);
+  const copy = EMAIL_COPY[language];
+  if (request.method === 'POST') {
     await deleteSubscription(env, uid, subscription);
   }
-  const copy = EMAIL_COPY[language];
-  return new Response(`<!doctype html><html lang="${language}"><body style="background:#0c0b10;color:#f6f4fb;font-family:Arial,sans-serif;text-align:center;padding:80px 20px"><h1>${escapeHtml(copy.disabledTitle)}</h1><p style="color:#aaa3b6">${escapeHtml(copy.disabledBody)}</p><a href="${PAPER_TOK_URL}" style="color:#a98cf7">${escapeHtml(copy.returnToPaperTok)}</a></body></html>`, {
+
+  const title = request.method === 'POST' ? copy.disabledTitle : copy.confirmTitle;
+  const body = request.method === 'POST' ? copy.disabledBody : copy.confirmBody;
+  const action = request.method === 'GET'
+    ? `<form method="post" action="${escapeHtml(requestUrl.pathname)}?token=${encodeURIComponent(token)}&lang=${language}"><button type="submit" style="border:0;border-radius:8px;background:#8b5cf6;color:white;padding:12px 18px;font-weight:700;cursor:pointer">${escapeHtml(copy.confirmAction)}</button></form>`
+    : `<a href="${PAPER_TOK_URL}" style="color:#a98cf7">${escapeHtml(copy.returnToPaperTok)}</a>`;
+  return new Response(`<!doctype html><html lang="${language}"><head><meta name="referrer" content="no-referrer"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="background:#0c0b10;color:#f6f4fb;font-family:Arial,sans-serif;text-align:center;padding:80px 20px"><h1>${escapeHtml(title)}</h1><p style="color:#aaa3b6">${escapeHtml(body)}</p>${action}</body></html>`, {
     status: 200,
-    headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'no-store' },
+    headers: {
+      'content-type': 'text/html; charset=utf-8',
+      'cache-control': 'no-store',
+      'content-security-policy': "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+      'referrer-policy': 'no-referrer',
+      'x-content-type-options': 'nosniff',
+    },
   });
 }
 
@@ -2346,6 +2417,7 @@ export const emailNotificationInternals = {
   resendSendErrorCode,
   renderScientificHtml,
   renderDigest,
+  readBoundedJson,
   allowsNewScheduledDelivery,
   digestFollowsForWindow,
   providerOutcomeDefinitelyRejected,

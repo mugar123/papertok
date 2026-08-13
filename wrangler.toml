@@ -19,6 +19,8 @@ FIREBASE_WEB_API_KEY = "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0"
 WORKER_PUBLIC_URL = "https://papertok-report-api.papertok-mugar123.workers.dev"
 EMAIL_PROVIDER = "brevo"
 EMAIL_DAILY_SEND_LIMIT = "290"
+PROVIDER_USER_MINUTE_LIMIT = "60"
+PROVIDER_GLOBAL_MINUTE_LIMIT = "2000"
 
 [[kv_namespaces]]
 binding = "NOTIFICATION_STORE"
@@ -32,6 +34,10 @@ class_name = "KimiBudgetLedger"
 name = "EMAIL_DELIVERY_LEDGER"
 class_name = "EmailDeliveryLedger"
 
+[[durable_objects.bindings]]
+name = "REQUEST_QUOTA_LEDGER"
+class_name = "RequestQuotaLedger"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["KimiBudgetLedger"]
@@ -39,6 +45,10 @@ new_sqlite_classes = ["KimiBudgetLedger"]
 [[migrations]]
 tag = "v2"
 new_sqlite_classes = ["EmailDeliveryLedger"]
+
+[[migrations]]
+tag = "v3"
+new_sqlite_classes = ["RequestQuotaLedger"]
 
 [triggers]
 crons = ["*/20 7-13 * * *"]

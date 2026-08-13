@@ -1,4 +1,5 @@
 import { BaseAdapter } from './BaseAdapter.js';
+import { authenticatedWorkerFetch } from '../workerApiClient.js';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const SCOPUS_ENABLED = import.meta.env?.VITE_SCOPUS_ENABLED === 'true';
@@ -80,7 +81,10 @@ export class ScopusAdapter extends BaseAdapter {
         url.searchParams.set('terms', terms.join('|'));
       }
 
-      const response = await fetch(url, { signal: controller.signal, headers: { accept: 'application/json' } });
+      const response = await authenticatedWorkerFetch(url, {
+        signal: controller.signal,
+        headers: { accept: 'application/json' },
+      });
       if (!response.ok) throw new Error(`Scopus source returned ${response.status}`);
       const data = await response.json();
       const searchResults = data?.['search-results'] || {};

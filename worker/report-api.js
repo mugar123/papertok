@@ -21,9 +21,12 @@ import {
   normalizeCitationDoi,
   normalizeCitationRows,
 } from '../src/utils/citationGraph.js';
+import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.js';
+import { reserveRequestQuota } from './request-quota-ledger.js';
 
 export { KimiBudgetLedger } from './kimi-budget-ledger.js';
 export { EmailDeliveryLedger } from './email-delivery-ledger.js';
+export { RequestQuotaLedger } from './request-quota-ledger.js';
 
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://mugar123.github.io',
@@ -49,11 +52,45 @@ const SOURCE_CACHE_SECONDS = {
   huggingFaceResources: 7 * 24 * 60 * 60,
 };
 const ARXIV_PARAMS = ['search_query', 'id_list', 'start', 'max_results', 'sortBy', 'sortOrder'];
+const CACHE_PARAMS_BY_PATH = Object.freeze({
+  '/report/trends': ['from', 'to', 'previous_from', 'previous_to', 'categories', 'countries'],
+  '/related': ['paper_id', 'limit'],
+  '/citation-graph': ['doi', 'limit'],
+  '/oa': ['doi'],
+  '/arxiv': ARXIV_PARAMS,
+  '/sources/biorxiv': ['category', 'page', 'limit', 'sort'],
+  '/sources/europepmc': ['q', 'page', 'limit', 'sort'],
+  '/sources/core': ['q', 'page', 'limit', 'sort'],
+  '/sources/osti': ['q', 'page', 'limit', 'sort'],
+  '/sources/nasa': ['q', 'page', 'limit', 'sort'],
+  '/sources/physics': ['q', 'fallback_q', 'page', 'limit', 'sort'],
+  '/sources/scopus': ['terms', 'author', 'page', 'limit', 'sort'],
+  '/sources/openreview': ['q', 'page', 'limit', 'sort'],
+  '/sources/huggingface': ['q', 'page', 'limit', 'sort'],
+  '/enrich/icite': ['pmids'],
+  '/resources/huggingface': ['arxiv_id'],
+});
+const PROTECTED_PROVIDER_PATHS = new Set([
+  '/report/trends',
+  '/related',
+  '/citation-graph',
+  '/sources/core',
+  '/sources/physics',
+  '/sources/scopus',
+]);
+const DEFAULT_PROVIDER_USER_MINUTE_LIMIT = 60;
+const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: { 'content-type': 'application/json; charset=utf-8', ...headers },
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'x-content-type-options': 'nosniff',
+      'referrer-policy': 'no-referrer',
+      'permissions-policy': 'camera=(), microphone=(), geolocation=()',
+      ...headers,
+    },
   });
 }
 
@@ -74,6 +111,60 @@ function corsHeaders(origin, env) {
     : {};
 }
 
+function canonicalCacheKey(request, origin) {
+  const requestUrl = new URL(request.url);
+  const cacheUrl = new URL(`https://papertok.internal/cache${requestUrl.pathname}`);
+  for (const name of CACHE_PARAMS_BY_PATH[requestUrl.pathname] || []) {
+    const value = requestUrl.searchParams.get(name);
+    if (value !== null) cacheUrl.searchParams.set(name, value.trim());
+  }
+  cacheUrl.searchParams.set('_origin', origin || 'no-origin');
+  return new Request(cacheUrl.toString(), { method: 'GET' });
+}
+
+function boundedLimit(value, fallback, maximum) {
+  const parsed = Number.parseInt(value, 10);
+  return Number.isInteger(parsed) ? Math.max(1, Math.min(maximum, parsed)) : fallback;
+}
+
+async function authenticateProtectedProviderRequest(request, env, pathname) {
+  if (!PROTECTED_PROVIDER_PATHS.has(pathname)) return null;
+  return verifyFirebaseIdentity(request, env);
+}
+
+async function reserveProtectedProviderQuota(identity, env, origin) {
+  if (!identity) return null;
+  const minute = new Date().toISOString().slice(0, 16);
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `provider:${minute}`,
+    subject: `provider:${identity.uid}`,
+    subjectLimit: boundedLimit(
+      env.PROVIDER_USER_MINUTE_LIMIT,
+      DEFAULT_PROVIDER_USER_MINUTE_LIMIT,
+      500,
+    ),
+    globalLimit: boundedLimit(
+      env.PROVIDER_GLOBAL_MINUTE_LIMIT,
+      DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT,
+      100_000,
+    ),
+  });
+  if (!reservation.accepted && reservation.code) {
+    return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+    });
+  }
+  if (!reservation.accepted) {
+    return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+      'retry-after': '60',
+    });
+  }
+  return null;
+}
+
 async function fetchOpenAlexPeriod(period, filters, env) {
   const url = new URL('https://api.openalex.org/works');
   url.searchParams.set('filter', buildOpenAlexTrendFilter(period, filters));
@@ -91,7 +182,7 @@ async function fetchOpenAlexPeriod(period, filters, env) {
   };
 }
 
-async function handleTrends(request, env) {
+async function handleTrends(request, env, identity) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -109,12 +200,11 @@ async function handleTrends(request, env) {
     countries: (requestUrl.searchParams.get('countries') || '').split(',').filter(Boolean).slice(0, 20),
   });
   const cache = caches.default;
-  const cacheUrl = new URL(requestUrl);
-  // CORS varies by origin, so keep each allowed origin in a separate cache entry.
-  cacheUrl.searchParams.set('_origin', origin || 'no-origin');
-  const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
+  const cacheKey = canonicalCacheKey(request, origin);
   const cached = await cache.match(cacheKey);
   if (cached) return cached;
+  const quotaError = await reserveProtectedProviderQuota(identity, env, origin);
+  if (quotaError) return quotaError;
 
   const [current, previous] = await Promise.all([
     fetchOpenAlexPeriod({ fromStr: dates.from, toStr: dates.to }, filters, env),
@@ -137,12 +227,12 @@ function getSafeLimit(value, fallback = 8, max = 10) {
   return Number.isFinite(parsed) ? Math.max(1, Math.min(max, parsed)) : fallback;
 }
 
-async function cacheResponse(request, origin, env, ttl, fetcher) {
-  const cacheUrl = new URL(request.url);
-  cacheUrl.searchParams.set('_origin', origin || 'no-origin');
-  const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
+async function cacheResponse(request, origin, env, ttl, fetcher, identity = null) {
+  const cacheKey = canonicalCacheKey(request, origin);
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
+  const quotaError = await reserveProtectedProviderQuota(identity, env, origin);
+  if (quotaError) return quotaError;
   const payload = await fetcher();
   const response = json(payload, 200, {
     ...corsHeaders(origin, env),
@@ -152,7 +242,7 @@ async function cacheResponse(request, origin, env, ttl, fetcher) {
   return response;
 }
 
-async function handleRelated(request, env) {
+async function handleRelated(request, env, identity) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -169,7 +259,7 @@ async function handleRelated(request, env) {
     const response = await fetch(url, { headers });
     if (!response.ok) throw new Error(`Semantic Scholar error: ${response.status}`);
     return response.json();
-  });
+  }, identity);
 }
 
 async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 8000) {
@@ -390,7 +480,7 @@ async function fetchOpenCitationsRows(doi, relation, env) {
   return fetchJsonWithTimeout(url, { headers }, 7500);
 }
 
-async function handleCitationGraph(request, env) {
+async function handleCitationGraph(request, env, identity) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -451,7 +541,7 @@ async function handleCitationGraph(request, env) {
       source: partial ? 'opencitations+openalex' : 'opencitations',
       partial,
     };
-  });
+  }, identity);
 }
 
 async function handleOpenAccess(request, env) {
@@ -499,9 +589,7 @@ async function handleArxiv(request, env) {
     return json({ error: 'Missing arXiv query' }, 400, corsHeaders(origin, env));
   }
 
-  const cacheUrl = new URL(request.url);
-  cacheUrl.searchParams.set('_origin', origin || 'no-origin');
-  const cacheKey = new Request(cacheUrl.toString(), { method: 'GET' });
+  const cacheKey = canonicalCacheKey(request, origin);
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
 
@@ -528,6 +616,8 @@ async function handleArxiv(request, env) {
     headers: {
       ...corsHeaders(origin, env),
       'content-type': 'application/atom+xml; charset=utf-8',
+      'x-content-type-options': 'nosniff',
+      'referrer-policy': 'no-referrer',
       'cache-control': `public, max-age=120, s-maxage=${ARXIV_CACHE_SECONDS}, stale-while-revalidate=3600`,
     },
   });
@@ -760,7 +850,7 @@ async function handleHuggingFaceResources(request, env) {
   });
 }
 
-async function handleCore(request, env) {
+async function handleCore(request, env, identity) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
@@ -773,7 +863,7 @@ async function handleCore(request, env) {
     url.searchParams.set('offset', String((context.page - 1) * context.limit));
     const headers = env.CORE_API_KEY ? { authorization: `Bearer ${env.CORE_API_KEY}` } : {};
     return fetchJsonUpstream(url, headers);
-  });
+  }, identity);
 }
 
 async function handleOsti(request, env) {
@@ -958,7 +1048,7 @@ function emptyPhysicsLiterature(fallbackReason) {
   };
 }
 
-async function handlePhysicsLiterature(request, env) {
+async function handlePhysicsLiterature(request, env, identity) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
@@ -979,10 +1069,10 @@ async function handlePhysicsLiterature(request, env) {
     return fallbackQuery
       ? fetchInspireLiterature(context, fallbackQuery, 'ads_not_configured')
       : emptyPhysicsLiterature('ads_not_configured');
-  });
+  }, identity);
 }
 
-async function handleScopus(request, env) {
+async function handleScopus(request, env, identity) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
   if (!env.ELSEVIER_API_KEY) {
@@ -1039,7 +1129,7 @@ async function handleScopus(request, env) {
         },
       },
     };
-  });
+  }, identity);
 }
 
 const DOMAIN_SOURCE_HANDLERS = {
@@ -1153,23 +1243,35 @@ export default {
         'cache-control': 'no-store',
       });
     }
+    let protectedIdentity;
+    try {
+      protectedIdentity = await authenticateProtectedProviderRequest(request, env, url.pathname);
+    } catch (error) {
+      const knownError = error instanceof WorkerAuthError;
+      const status = knownError ? error.status : 503;
+      return json({ code: knownError ? error.code : 'PROVIDER_AUTH_UNAVAILABLE' }, status, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+        ...(status === 429 ? { 'retry-after': '60' } : {}),
+      });
+    }
     if (url.pathname === '/report/trends') {
       try {
-        return await handleTrends(request, env);
-      } catch (error) {
-        return json({ error: 'Trend data unavailable', detail: error.message }, 502, corsHeaders(origin, env));
+        return await handleTrends(request, env, protectedIdentity);
+      } catch {
+        return json({ error: 'Trend data unavailable' }, 502, corsHeaders(origin, env));
       }
     }
     if (url.pathname === '/related') {
       try {
-        return await handleRelated(request, env);
+        return await handleRelated(request, env, protectedIdentity);
       } catch {
         return json({ error: 'Related papers unavailable' }, 502, corsHeaders(origin, env));
       }
     }
     if (url.pathname === '/citation-graph') {
       try {
-        return await handleCitationGraph(request, env);
+        return await handleCitationGraph(request, env, protectedIdentity);
       } catch (error) {
         console.error('Citation graph failed', error);
         return json({ error: 'Citation graph unavailable' }, 502, corsHeaders(origin, env));
@@ -1191,7 +1293,7 @@ export default {
     }
     if (DOMAIN_SOURCE_HANDLERS[url.pathname]) {
       try {
-        return await DOMAIN_SOURCE_HANDLERS[url.pathname](request, env);
+        return await DOMAIN_SOURCE_HANDLERS[url.pathname](request, env, protectedIdentity);
       } catch (error) {
         console.error(`Specialist source failed: ${url.pathname}`, error);
         const isScopus = url.pathname === '/sources/scopus';

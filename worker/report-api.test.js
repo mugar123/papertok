@@ -140,3 +140,185 @@ test('validates and batches NIH iCite PubMed identifiers', async () => {
   assert.match(upstreamUrl, /pmids=123%2C456/);
   assert.deepEqual(await response.json(), { data: [{ pmid: 123, citation_count: 7 }] });
 });
+
+test('requires Firebase authentication before a secret-backed source can be used', async () => {
+  const response = await withWorkerFetchMock(async () => {
+    throw new Error('No upstream request should be made');
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/scopus?terms=physics',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), { FIREBASE_WEB_API_KEY: 'firebase-test-key' }));
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { code: 'AUTH_REQUIRED' });
+});
+
+test('does not spend protected-provider quota for an invalid authenticated query', async () => {
+  let quotaReservations = 0;
+  const originalCaches = globalThis.caches;
+  globalThis.caches = {
+    default: {
+      match: async request => request.url.includes('/auth/')
+        ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
+        : null,
+      put: async () => undefined,
+    },
+  };
+  try {
+    const response = await reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/core',
+      {
+        headers: {
+          origin: 'https://mugar123.github.io',
+          authorization: 'Bearer test-token',
+        },
+      },
+    ), {
+      FIREBASE_WEB_API_KEY: 'firebase-test-key',
+      REQUEST_QUOTA_LEDGER: {
+        idFromName: () => 'quota-id',
+        get: () => ({
+          fetch: async () => {
+            quotaReservations += 1;
+            return new Response(JSON.stringify({ accepted: true }));
+          },
+        }),
+      },
+    });
+
+    assert.equal(response.status, 400);
+    assert.equal(quotaReservations, 0);
+  } finally {
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
+test('does not spend protected-provider quota for an authenticated cache hit', async () => {
+  let quotaReservations = 0;
+  let upstreamCalls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.fetch = async () => {
+    upstreamCalls += 1;
+    throw new Error('No upstream request should be made');
+  };
+  globalThis.caches = {
+    default: {
+      match: async request => {
+        if (request.url.includes('/auth/')) {
+          return new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } });
+        }
+        if (request.url.includes('/cache/sources/core')) {
+          return new Response(JSON.stringify({ results: [{ id: 'cached-paper' }] }), {
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return null;
+      },
+      put: async () => undefined,
+    },
+  };
+  try {
+    const response = await reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/core?q=physics&limit=4',
+      {
+        headers: {
+          origin: 'https://mugar123.github.io',
+          authorization: 'Bearer test-token',
+        },
+      },
+    ), {
+      FIREBASE_WEB_API_KEY: 'firebase-test-key',
+      REQUEST_QUOTA_LEDGER: {
+        idFromName: () => 'quota-id',
+        get: () => ({
+          fetch: async () => {
+            quotaReservations += 1;
+            return new Response(JSON.stringify({ accepted: true }));
+          },
+        }),
+      },
+    });
+
+    assert.equal(response.status, 200);
+    assert.deepEqual(await response.json(), { results: [{ id: 'cached-paper' }] });
+    assert.equal(quotaReservations, 0);
+    assert.equal(upstreamCalls, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
+test('canonical source cache keys ignore unknown query parameters', async () => {
+  const responses = new Map();
+  let upstreamCalls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.fetch = async () => {
+    upstreamCalls += 1;
+    return new Response(JSON.stringify({ notes: [] }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  globalThis.caches = {
+    default: {
+      match: async request => responses.get(request.url)?.clone() || null,
+      put: async (request, response) => responses.set(request.url, response.clone()),
+    },
+  };
+  try {
+    const base = 'https://papertok-report-api.example/sources/openreview?q=security&limit=4';
+    const options = { headers: { origin: 'https://mugar123.github.io' } };
+    const first = await reportApi.fetch(new Request(`${base}&nonce=one`, options), {});
+    const second = await reportApi.fetch(new Request(`${base}&nonce=two`, options), {});
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.equal(upstreamCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
+test('duplicate cache parameters cannot create cache variants for one upstream request', async () => {
+  const responses = new Map();
+  let upstreamCalls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.fetch = async () => {
+    upstreamCalls += 1;
+    return new Response(JSON.stringify({ notes: [] }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  globalThis.caches = {
+    default: {
+      match: async request => responses.get(request.url)?.clone() || null,
+      put: async (request, response) => responses.set(request.url, response.clone()),
+    },
+  };
+  try {
+    const base = 'https://papertok-report-api.example/sources/openreview?q=security&limit=4';
+    const options = { headers: { origin: 'https://mugar123.github.io' } };
+    const first = await reportApi.fetch(new Request(base, options), {});
+    const second = await reportApi.fetch(new Request(`${base}&limit=nonce`, options), {});
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.equal(upstreamCalls, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
+test('adds baseline browser hardening headers to JSON responses', async () => {
+  const response = await reportApi.fetch(new Request('https://papertok-report-api.example/health'), {});
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+  assert.match(response.headers.get('permissions-policy'), /camera=\(\)/);
+});

@@ -33,6 +33,12 @@ import {
 } from '../../utils/relatedPaperTransition.js';
 import { hydrateCitationGraphPaper } from '../../services/citationGraphService.js';
 import { resolveWithin } from '../../utils/asyncTiming.js';
+import {
+  isTrustedInlinePdfUrl,
+  openExternalUrl,
+  safeDoiUrl,
+  safeExternalUrl,
+} from '../../utils/externalUrl.js';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -471,18 +477,26 @@ const PaperCard = memo(function PaperCard({
   const handleOpenPaper = async (event) => {
     event.stopPropagation();
     if (resolvedOpenCopy?.pdfUrl) {
-      onOpenPdf({ ...paper, ...resolvedOpenCopy, openAccess: true });
+      if (isTrustedInlinePdfUrl(resolvedOpenCopy.pdfUrl)) {
+        onOpenPdf({ ...paper, ...resolvedOpenCopy, openAccess: true });
+      } else {
+        openExternalUrl(resolvedOpenCopy.pdfUrl);
+      }
       return;
     }
     if (resolvedOpenCopy?.landingPageUrl) {
-      window.open(resolvedOpenCopy.landingPageUrl, '_blank', 'noopener,noreferrer');
+      openExternalUrl(resolvedOpenCopy.landingPageUrl);
       return;
     }
     if (paper.openAccessPdfUrl) {
-      window.open(paper.openAccessPdfUrl, '_blank', 'noopener,noreferrer');
+      if (isTrustedInlinePdfUrl(paper.openAccessPdfUrl)) {
+        onOpenPdf({ ...paper, pdfUrl: safeExternalUrl(paper.openAccessPdfUrl), openAccess: true });
+      } else {
+        openExternalUrl(paper.openAccessPdfUrl);
+      }
       return;
     }
-    const hasValidPdf = paper.pdfUrl && (paper.pdfUrl.includes('arxiv.org') || /\.pdf(?:$|[?#])/i.test(paper.pdfUrl));
+    const hasValidPdf = isTrustedInlinePdfUrl(paper.pdfUrl);
     if (paper.arxivId || hasValidPdf) {
       onOpenPdf(paper);
       return;
@@ -494,18 +508,24 @@ const PaperCard = memo(function PaperCard({
       setIsResolvingAccess(false);
       if (openCopy?.pdfUrl) {
         setResolvedAccess({ paperId: paper.id, copy: openCopy });
-        onOpenPdf({ ...paper, ...openCopy, openAccess: true });
+        if (isTrustedInlinePdfUrl(openCopy.pdfUrl)) {
+          onOpenPdf({ ...paper, ...openCopy, openAccess: true });
+        } else {
+          openExternalUrl(openCopy.pdfUrl);
+        }
         return;
       }
       if (openCopy?.landingPageUrl) {
         setResolvedAccess({ paperId: paper.id, copy: openCopy });
-        window.open(openCopy.landingPageUrl, '_blank', 'noopener,noreferrer');
+        openExternalUrl(openCopy.landingPageUrl);
         return;
       }
     }
 
-    const fallbackUrl = paper.pdfUrl || paper.landingPageUrl || (paper.doi ? `https://doi.org/${paper.doi}` : '');
-    if (fallbackUrl) window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+    const fallbackUrl = safeExternalUrl(paper.pdfUrl)
+      || safeExternalUrl(paper.landingPageUrl)
+      || safeDoiUrl(paper.doi);
+    openExternalUrl(fallbackUrl);
   };
 
   const isPreprint = paper.publicationStatus === 'preprint';
@@ -523,12 +543,12 @@ const PaperCard = memo(function PaperCard({
     : paper.accessSource === 'europepmc'
       ? (isEnglish ? 'Open full text' : 'Texto completo abierto')
       : 'Open Access';
-  const bestAvailableUrl = resolvedOpenCopy?.pdfUrl
-    || resolvedOpenCopy?.landingPageUrl
-    || paper.openAccessPdfUrl
-    || paper.pdfUrl
-    || paper.landingPageUrl
-    || (paper.doi ? `https://doi.org/${paper.doi}` : '');
+  const bestAvailableUrl = safeExternalUrl(resolvedOpenCopy?.pdfUrl)
+    || safeExternalUrl(resolvedOpenCopy?.landingPageUrl)
+    || safeExternalUrl(paper.openAccessPdfUrl)
+    || safeExternalUrl(paper.pdfUrl)
+    || safeExternalUrl(paper.landingPageUrl)
+    || safeDoiUrl(paper.doi);
   const primaryActionLabel = isResolvingAccess
     ? (isEnglish ? 'Finding access...' : 'Buscando acceso...')
     : resolvedOpenCopy
@@ -653,7 +673,7 @@ const PaperCard = memo(function PaperCard({
                 <a
                   className="pc-citations"
                   style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
-                  href={paper.scopusCitedByUrl}
+                  href={safeExternalUrl(paper.scopusCitedByUrl) || undefined}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={(event) => event.stopPropagation()}
@@ -682,7 +702,7 @@ const PaperCard = memo(function PaperCard({
                </span>
                {paper.doi && (
                  <a 
-                   href={`https://doi.org/${paper.doi}`} 
+                   href={safeDoiUrl(paper.doi)}
                    target="_blank" 
                    rel="noopener noreferrer"
                    style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.1)', padding: '2px 6px', borderRadius: '4px', textDecoration: 'none' }}
@@ -850,7 +870,7 @@ const PaperCard = memo(function PaperCard({
                   <a
                     key={resource.id}
                     className={`pc-linked-resource pc-linked-resource--${resource.kind}`}
-                    href={resource.url}
+                    href={safeExternalUrl(resource.url) || undefined}
                     target="_blank"
                     rel="noopener noreferrer"
                     onClick={(event) => event.stopPropagation()}

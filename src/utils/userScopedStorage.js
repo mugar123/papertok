@@ -49,3 +49,28 @@ export function removeLegacySeenPaperIds(storage) {
   }
 }
 
+export function clearUserScopedStorage(userId, storage) {
+  const target = getStorage(storage);
+  if (!target || !userId) return;
+  const encodedUserId = encodeURIComponent(userId);
+  const safeUserId = String(userId).replace(/[^a-zA-Z0-9._-]/g, '_');
+  const exactKeys = new Set([
+    getSeenPapersStorageKey(userId),
+    `papertok_following_${safeUserId}`,
+    `papertok_following_updates_${safeUserId}`,
+    `papertok_readingLibrary_${userId}`,
+  ]);
+  const feedPrefix = `papertok_feed_snapshot_${encodedUserId}_`;
+
+  try {
+    const keys = [];
+    for (let index = 0; index < target.length; index += 1) {
+      const key = target.key(index);
+      if (key) keys.push(key);
+    }
+    keys.filter(key => exactKeys.has(key) || key.startsWith(feedPrefix))
+      .forEach(key => target.removeItem(key));
+  } catch {
+    // Cleanup must not prevent Firebase from ending the session.
+  }
+}

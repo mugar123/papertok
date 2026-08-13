@@ -2,6 +2,7 @@ import { openAlexJson } from './openAlexClient.js';
 import { buildOpenAlexTrendFilter, normalizeReportFilters } from './openAlexReportQuery.js';
 import { getComparisonPeriods, formatReportDate } from '../utils/scientificReportPeriods.js';
 import { computeScientificTrends } from '../utils/reportTrendMath.js';
+import { authenticatedWorkerFetch } from './workerApiClient.js';
 
 const TREND_CACHE = new Map();
 const ACTIVE_CACHE_TTL = 6 * 60 * 60 * 1000;
@@ -34,7 +35,7 @@ async function fetchWorkerTrends(periods, filters) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 10000);
   try {
-    const response = await fetch(url, { signal: controller.signal });
+    const response = await authenticatedWorkerFetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Trend API error: ${response.status}`);
     const data = await response.json();
     return {
