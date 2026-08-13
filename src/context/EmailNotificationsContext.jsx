@@ -20,7 +20,7 @@ const DEFAULT_PREFERENCES = {
   enabled: false,
   frequency: 'daily',
   maxPapers: 5,
-  language: 'es',
+  language: 'en',
   email: '',
   lastSentAt: null,
   lastTestAt: null,

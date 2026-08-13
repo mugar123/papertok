@@ -16,7 +16,7 @@ const LANGUAGE_MODE_STORAGE_KEY = 'papertok_language_mode';
 const SUPPORTED_LANGUAGES = new Set(['es', 'en']);
 
 function normalizeLanguage(value) {
-  return SUPPORTED_LANGUAGES.has(value) ? value : 'es';
+  return SUPPORTED_LANGUAGES.has(value) ? value : 'en';
 }
 
 function readStoredManualLanguage() {
@@ -53,7 +53,7 @@ export function LanguageProvider({ children }) {
   // Keep the initial protected-route loader in the user's last chosen language.
   // The Firestore profile is loaded asynchronously, after that loader is visible.
   const [detectedLanguage, setDetectedLanguage] = useState(
-    () => readStoredLanguage() || browserLanguageFallback(),
+    () => readStoredLanguage() || 'en',
   );
   const accountManualLanguage = user
     && readingPreferences?.languagePreferenceSet === true
@@ -70,22 +70,6 @@ export function LanguageProvider({ children }) {
   useEffect(() => {
     if (accountManualLanguage) persistLanguage(accountManualLanguage);
   }, [accountManualLanguage]);
-
-  useEffect(() => {
-    if (manualLanguage) return undefined;
-
-    const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 1_800);
-    detectLanguageFromLocation({ signal: controller.signal })
-      .then(nextLanguage => {
-        if (!controller.signal.aborted) setDetectedLanguage(normalizeLanguage(nextLanguage));
-      });
-
-    return () => {
-      window.clearTimeout(timeout);
-      controller.abort();
-    };
-  }, [manualLanguage]);
 
   const setLanguage = useCallback(async (nextLanguage) => {
     const normalized = normalizeLanguage(nextLanguage);

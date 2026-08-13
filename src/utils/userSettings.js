@@ -1,6 +1,6 @@
 export const DEFAULT_READING_PREFERENCES = Object.freeze({
   aiExplanationLevel: 'university',
-  language: 'es',
+  language: 'en',
   languagePreferenceSet: false,
 });
 

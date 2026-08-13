@@ -8,12 +8,12 @@ import {
 test('normalizes the preferred AI explanation level', () => {
   assert.deepEqual(normalizeReadingPreferences({ aiExplanationLevel: 'researcher' }), {
     aiExplanationLevel: 'researcher',
-    language: 'es',
+    language: 'en',
     languagePreferenceSet: false,
   });
   assert.deepEqual(normalizeReadingPreferences({ aiExplanationLevel: 'unknown' }), {
     aiExplanationLevel: DEFAULT_READING_PREFERENCES.aiExplanationLevel,
-    language: 'es',
+    language: 'en',
     languagePreferenceSet: false,
   });
 });
@@ -24,7 +24,7 @@ test('normalizes the interface language', () => {
     language: 'en',
     languagePreferenceSet: false,
   });
-  assert.equal(normalizeReadingPreferences({ language: 'fr' }).language, 'es');
+  assert.equal(normalizeReadingPreferences({ language: 'fr' }).language, 'en');
 });
 
 test('keeps track of whether the language was selected manually', () => {
