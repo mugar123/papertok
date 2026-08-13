@@ -137,7 +137,6 @@ export default function PDFViewer({ paper, onClose }) {
           src={pdfUrl}
           className={`pdf-iframe ${iframeLoaded ? 'pdf-iframe--loaded' : ''}`}
           title={`PDF: ${paper.title}`}
-          sandbox="allow-same-origin"
           referrerPolicy="no-referrer"
           onLoad={() => setIframeLoaded(true)}
         />}
