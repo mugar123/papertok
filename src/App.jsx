@@ -30,9 +30,18 @@ function AppContent() {
   const [pdfPaper, setPdfPaper] = useState(null)
   const [saveModalPaper, setSaveModalPaper] = useState(null)
   const location = useLocation()
+  const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
+  const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
+  const navbarRoutes = ['/', '/lists', '/research', '/following', '/settings', '/settings/following']
+  const showNavbar = navbarRoutes.includes(normalizedPathname)
+    && Boolean(user)
+    && !authLoading
+    && onboardingComplete
+    && !profileLoadError
 
     return (
       <FeedProvider>
+        {showNavbar && <Navbar />}
         <AnimatePresence mode="wait" initial={false}>
           <Routes location={location} key={location.pathname}>
           <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
@@ -49,7 +58,6 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <Navbar />
                   <FeedContainer
                     onOpenPdf={setPdfPaper}
                     onSaveToList={setSaveModalPaper}
@@ -63,7 +71,6 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <Navbar />
                   <ListsPage onOpenPdf={setPdfPaper} onEditPaper={setSaveModalPaper} />
                 </PageTransition>
               </ProtectedRoute>
@@ -74,7 +81,6 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <Navbar />
                   <ScientificReport
                     onOpenPdf={setPdfPaper}
                     onSaveToList={setSaveModalPaper}
@@ -90,7 +96,6 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <Navbar />
                   <FollowingFeedPage
                     onOpenPdf={setPdfPaper}
                     onSaveToList={setSaveModalPaper}
@@ -112,7 +117,6 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <Navbar />
                   <SettingsPage />
                 </PageTransition>
               </ProtectedRoute>
@@ -123,7 +127,6 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <Navbar />
                   <FollowingSettingsPage />
                 </PageTransition>
               </ProtectedRoute>

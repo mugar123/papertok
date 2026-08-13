@@ -46,7 +46,7 @@
   max-width: 900px;
   margin: 0 auto;
   width: 100%;
-  animation: fadeIn 0.4s ease-out, slideUp 0.4s ease-out;
+  animation: fadeIn 0.4s ease-out, onboardingSlideUp 0.4s ease-out;
 }
 
 .onboarding-title {
@@ -174,7 +174,7 @@
 }
 
 .subcat-section {
-  animation: slideUp 0.4s ease-out backwards;
+  animation: onboardingSlideUp 0.4s ease-out backwards;
 }
 
 .subcat-section-header {

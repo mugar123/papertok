@@ -343,3 +343,17 @@
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .navbar-slider,
+  .navbar-action-btn,
+  .navbar-avatar,
+  .navbar-dropdown {
+    transition: none;
+    animation: none;
+  }
+
+  .navbar-action-btn.spinning svg {
+    animation: none;
+  }
+}

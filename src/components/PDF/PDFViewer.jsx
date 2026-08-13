@@ -1,14 +1,18 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { useReducedMotion } from 'framer-motion';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import './PDFViewer.css';
 import { isTrustedInlinePdfUrl, safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 
 export default function PDFViewer({ paper, onClose }) {
   const { isEnglish } = useLanguage();
   const [iframeLoaded, setIframeLoaded] = useState(false);
   const [showFallback, setShowFallback] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
+  const closeTimerRef = useRef(null);
 
   const candidatePdfUrl = paper.pdfUrl || (paper.arxivId ? `https://arxiv.org/pdf/${paper.arxivId}` : '');
   const pdfUrl = isTrustedInlinePdfUrl(candidatePdfUrl) ? safeExternalUrl(candidatePdfUrl) : '';
@@ -17,27 +21,33 @@ export default function PDFViewer({ paper, onClose }) {
   const startTimeRef = useRef(null);
 
   const handleClose = useCallback(() => {
+    if (isClosing) return;
     setIsClosing(true);
     const elapsed = (Date.now() - startTimeRef.current) / 1000;
     if (elapsed < 5) {
       trackPdfBounce(paper);
     }
-    setTimeout(() => {
+    if (prefersReducedMotion) {
       onClose();
-    }, 300); // Wait for the animation to finish
-  }, [onClose, paper, trackPdfBounce]);
+      return;
+    }
+    closeTimerRef.current = setTimeout(onClose, 360);
+  }, [isClosing, onClose, paper, prefersReducedMotion, trackPdfBounce]);
 
-  // Close on Escape key
+  const finishClose = useCallback((event) => {
+    if (!isClosing || event.target !== event.currentTarget) return;
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+    onClose();
+  }, [isClosing, onClose]);
+  const dialogRef = useDialogFocus(true, handleClose);
+
   useEffect(() => {
     startTimeRef.current = Date.now();
-    const handleKeyDown = (e) => {
-      if (e.key === 'Escape') handleClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [handleClose]);
+  }, []);
+
+  useEffect(() => () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+  }, []);
 
   // Lock body scroll on mount, unlock on unmount
   useEffect(() => {
@@ -65,11 +75,20 @@ export default function PDFViewer({ paper, onClose }) {
   }, [iframeLoaded, pdfUrl]);
 
   return (
-    <div className={`pdf-overlay ${isClosing ? 'is-closing' : ''}`} onClick={handleClose}>
+    <div
+      ref={dialogRef}
+      className={`pdf-overlay ${isClosing ? 'is-closing' : ''}`}
+      onClick={handleClose}
+      onAnimationEnd={finishClose}
+      role="dialog"
+      aria-modal="true"
+      aria-label={isEnglish ? 'PDF viewer' : 'Visor de PDF'}
+      tabIndex={-1}
+    >
       <div className={`pdf-viewer ${isClosing ? 'is-closing' : ''}`} onClick={(e) => e.stopPropagation()}>
         {/* Top bar */}
         <div className="pdf-topbar glass-strong">
-          <button className="pdf-close-btn" onClick={handleClose} title={isEnglish ? 'Close' : 'Cerrar'}>
+          <button data-dialog-initial-focus className="pdf-close-btn" onClick={handleClose} aria-label={isEnglish ? 'Close PDF' : 'Cerrar PDF'} title={isEnglish ? 'Close' : 'Cerrar'}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />

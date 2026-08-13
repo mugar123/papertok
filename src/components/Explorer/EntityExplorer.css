@@ -907,7 +907,7 @@
   pointer-events: none;
   background: rgba(255, 255, 255, 0.01) !important;
   border-color: rgba(255, 255, 255, 0.02) !important;
-  animation: pulseGlow 1.5s infinite alternate !important;
+  animation: pulseGlow 1.5s infinite alternate;
 }
 
 .skeleton-pill {
@@ -1159,14 +1159,15 @@
   }
 }
 
+.ee-author-card.staggerFadeUp {
+  opacity: 0;
+  animation: staggerFadeUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: calc(min(var(--i, 0), 8) * 0.035s);
+}
+
 @keyframes pulseGlow {
   from { opacity: 0.6; }
   to { opacity: 1; }
-}
-
-@keyframes slideUp {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
 }
 
 @keyframes bgPulseFade {
@@ -2327,6 +2328,26 @@
 @keyframes fadeInUp {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .explorer-list-item,
+  .ee-author-card.staggerFadeUp,
+  .skeleton-item,
+  .skel,
+  .orcid-career-section--animate,
+  .orcid-career-section--animate > *,
+  .ehc-spinner {
+    animation: none;
+  }
+
+  .explorer-list-item,
+  .ee-author-card.staggerFadeUp,
+  .orcid-career-section--animate > * {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
 }
 
 .eli-header-inst-link {

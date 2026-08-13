@@ -33,6 +33,7 @@ import { getEntityWikiInfo } from '../../services/wikiService';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { safeExternalUrl } from '../../utils/externalUrl.js';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import 'katex/dist/katex.min.css';
 import './EntityExplorer.css';
 
@@ -88,6 +89,8 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
 
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
+  const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
+  const selectedPaperDialogRef = useDialogFocus(Boolean(selectedPaper && !pdfPaperToView), closeSelectedPaper);
   const [wikiInfo, setWikiInfo] = useState(null);
   const [settledWikiRequestKey, setSettledWikiRequestKey] = useState('');
   const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState('');
@@ -102,6 +105,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
 
   const [activeTab, setActiveTab] = useState('papers');
   const [expandedSummary, setExpandedSummary] = useState(false);
+  const [participantsExpanded, setParticipantsExpanded] = useState(false);
   const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(false);
   const [isProjectLinksMenuOpen, setIsProjectLinksMenuOpen] = useState(false);
   const [projectSummaryExpandedHeight, setProjectSummaryExpandedHeight] = useState(0);
@@ -244,6 +248,8 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       setPdfPaperToView(null);
       setOrcidInfo(null);
       setActiveTab('papers');
+      setExpandedSummary(false);
+      setParticipantsExpanded(false);
     }, 0);
   }, [type, id]);
 
@@ -1060,10 +1066,12 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                     {isProjectLinksMenuOpen && (
                       <motion.div
                         className="project-links-dropdown"
-                        initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -4, scale: 0.98 }}
-                        transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                        exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.98 }}
+                        transition={prefersReducedMotion
+                          ? { duration: 0 }
+                          : { duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
                         role="menu"
                       >
                         {entity.openaireId && (
@@ -1205,7 +1213,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
           {/* Project Summary - expandable */}
           {type === 'project' && entity?.summary && (
             <motion.div
-              layout
+              layout={!prefersReducedMotion}
               className={`project-summary-box ${expandedSummary ? 'is-expanded' : ''} ${isProjectSummaryExpandable ? 'is-expandable' : ''}`}
               onClick={isProjectSummaryExpandable ? () => setExpandedSummary(!expandedSummary) : undefined}
               onKeyDown={isProjectSummaryExpandable ? (event) => handleActivationKey(event, () => setExpandedSummary(!expandedSummary)) : undefined}
@@ -1217,7 +1225,9 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                   ? (isEnglish ? 'Collapse project summary' : 'Contraer resumen del proyecto')
                   : (isEnglish ? 'Expand project summary' : 'Ampliar resumen del proyecto')
                 : undefined}
-              transition={{ layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] } }}
+              transition={prefersReducedMotion
+                ? { duration: 0 }
+                : { layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] } }}
             >
               <p
                 ref={projectSummaryTextRef}
@@ -1252,12 +1262,25 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
           {type === 'project' && entity.participants?.length > 0 && (
             <div className="project-participants">
               <h4 className="project-section-title"><Building2 size={14} /> {isEnglish ? 'Participating organizations' : 'Organizaciones participantes'}</h4>
-              <div className="project-participants-grid">
-                {entity.participants.slice(0, expandedSummary ? entity.participants.length : 6).map((p, i) => (
-                  <button
+              <motion.div
+                id="project-participants-list"
+                layout={!prefersReducedMotion}
+                className="project-participants-grid"
+                transition={prefersReducedMotion ? { duration: 0 } : { layout: { duration: 0.28 } }}
+              >
+                <AnimatePresence initial={false}>
+                {entity.participants.slice(0, participantsExpanded ? entity.participants.length : 6).map((p, i) => (
+                  <motion.button
                     key={`${p.name}-${p.country || i}`}
                     type="button"
                     className="project-participant-card"
+                    layout={!prefersReducedMotion}
+                    initial={i < 6 || prefersReducedMotion ? false : { opacity: 0, y: 8, scale: 0.985 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.99 }}
+                    transition={prefersReducedMotion
+                      ? { duration: 0 }
+                      : { duration: 0.24, delay: i < 6 ? 0 : Math.min((i - 6) * 0.025, 0.18) }}
                     onClick={() => openParticipantInstitution(p)}
                     disabled={resolvingParticipant === p.name}
                     aria-label={`${isEnglish ? 'Open institution profile for' : 'Abrir perfil institucional de'} ${p.name}`}
@@ -1269,15 +1292,23 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                     {resolvingParticipant === p.name
                       ? <Loader2 size={15} className="ehc-spinner" aria-hidden="true" />
                       : <ChevronRight size={15} className="project-participant-arrow" aria-hidden="true" />}
-                  </button>
+                  </motion.button>
                 ))}
-              </div>
+                </AnimatePresence>
+              </motion.div>
               {participantNavigationError && (
                 <p className="project-participant-error" role="alert">{participantNavigationError}</p>
               )}
-              {entity.participants.length > 6 && !expandedSummary && (
-                <button className="project-show-more" onClick={() => setExpandedSummary(true)}>
-                  +{entity.participants.length - 6} {isEnglish ? 'more organizations' : 'organizaciones más'}
+              {entity.participants.length > 6 && (
+                <button
+                  className="project-show-more"
+                  onClick={() => setParticipantsExpanded(value => !value)}
+                  aria-expanded={participantsExpanded}
+                  aria-controls="project-participants-list"
+                >
+                  {participantsExpanded
+                    ? (isEnglish ? 'Show fewer organizations' : 'Mostrar menos organizaciones')
+                    : `+${entity.participants.length - 6} ${isEnglish ? 'more organizations' : 'organizaciones más'}`}
                 </button>
               )}
             </div>
@@ -1592,12 +1623,10 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                 </div>
               ))}
               
-              <AnimatePresence>
-                {isLoadingPapers && !isFetchingMore && [1, 2, 3, 4, 5].map((n) => (
-                  <motion.div 
+              {isLoadingPapers && !isFetchingMore && [1, 2, 3, 4, 5].map((n) => (
+                  <div
                     key={`skeleton-${n}`} 
                     className="explorer-list-item skeleton-item"
-                    exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.3 } }}
                   >
                     <div className="eli-header">
                       <div className="skeleton-pill"></div>
@@ -1608,9 +1637,8 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                     <div className="skeleton-text"></div>
                     <div className="skeleton-text long"></div>
                     <div className="skeleton-text medium"></div>
-                  </motion.div>
+                  </div>
                 ))}
-              </AnimatePresence>
 
               {/* Infinite Scroll Sentinel */}
               {hasMore && (
@@ -1668,21 +1696,18 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
               </div>
             ))}
             
-            <AnimatePresence>
-              {isLoadingAuthors && !isFetchingMoreAuthors && [1, 2, 3, 4, 5, 6].map(n => (
-                <motion.div 
+            {isLoadingAuthors && !isFetchingMoreAuthors && [1, 2, 3, 4, 5, 6].map(n => (
+                <div
                   key={`skel-author-${n}`} 
                   className="ee-author-card skeleton-item"
-                  exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.3 } }}
                 >
                   <div className="ee-author-icon skel skel-circle" style={{ width: '40px', height: '40px' }}></div>
                   <div className="ee-author-info">
                     <div className="skel skel-line" style={{ width: '70%', height: '18px', marginBottom: '8px' }}></div>
                     <div className="skel skel-line" style={{ width: '50%', height: '12px' }}></div>
                   </div>
-                </motion.div>
+                </div>
               ))}
-            </AnimatePresence>
             
             {hasMoreAuthors && (
               <div ref={observerAuthorsRef} className="ehc-sentinel">
@@ -1725,10 +1750,10 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
             />
             <motion.div 
               className="ee-filter-drawer" 
-              initial={{x:'100%'}} 
-              animate={{x:0}} 
-              exit={{x:'100%'}} 
-              transition={{type:'spring', damping:25, stiffness:200}}
+              initial={prefersReducedMotion ? { opacity: 0 } : { x: '100%' }}
+              animate={prefersReducedMotion ? { opacity: 1 } : { x: 0 }}
+              exit={prefersReducedMotion ? { opacity: 0 } : { x: '100%' }}
+              transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', damping: 25, stiffness: 200 }}
               role="dialog"
               aria-modal="true"
               aria-labelledby="entity-filter-title"
@@ -1822,7 +1847,12 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       <AnimatePresence initial={false}>
         {selectedPaper && !pdfPaperToView && (
           <motion.div 
+            ref={selectedPaperDialogRef}
             className="explorer-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-label={isEnglish ? 'Publication details' : 'Detalles de la publicación'}
+            tabIndex={-1}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -1838,8 +1868,9 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                 : { type: 'spring', damping: 30, stiffness: 330, mass: 0.72 }}
             >
               <button
+                data-dialog-initial-focus
                 className="explorer-overlay-close"
-                onClick={() => setSelectedPaper(null)}
+                onClick={closeSelectedPaper}
                 aria-label={isEnglish ? 'Close publication' : 'Cerrar publicación'}
                 title={isEnglish ? 'Back' : 'Volver'}
               >
@@ -1866,21 +1897,9 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
         )}
       </AnimatePresence>
 
-    {/* PDF Viewer Overlay */}
-      <AnimatePresence>
-        {pdfPaperToView && (
-          <motion.div 
-            className="explorer-overlay" 
-            style={{ zIndex: 1001 }}
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.2 }}
-          >
-            <PDFViewer paper={pdfPaperToView} onClose={() => setPdfPaperToView(null)} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {pdfPaperToView && (
+        <PDFViewer paper={pdfPaperToView} onClose={() => setPdfPaperToView(null)} />
+      )}
     </div>
   );
 }

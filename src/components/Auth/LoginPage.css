@@ -96,7 +96,7 @@
   padding: var(--space-8);
   max-width: 440px;
   width: 100%;
-  animation: fadeIn 0.8s ease-out, slideUp 0.8s ease-out;
+  animation: fadeIn 0.8s ease-out, loginSlideUp 0.8s ease-out;
 }
 
 .login-logo {

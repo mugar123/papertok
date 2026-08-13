@@ -17,6 +17,7 @@ import {
   RotateCw,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   searchAuthors,
   searchInstitutions,
@@ -39,6 +40,7 @@ import {
   getSearchSectionOrder,
   resolvePreferredSearchSection,
 } from '../../utils/searchRelevance';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 
 import './SearchPage.css';
 
@@ -126,6 +128,7 @@ function formatPaperDate(paper, locale) {
 
 export default function SearchPage({ onSaveToList = () => {} }) {
   const navigate = useNavigate();
+  const prefersReducedMotion = useReducedMotion();
   const { language, isEnglish, locale } = useLanguage();
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
@@ -148,6 +151,8 @@ export default function SearchPage({ onSaveToList = () => {} }) {
   
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaper, setPdfPaper] = useState(null);
+  const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
+  const selectedPaperDialogRef = useDialogFocus(Boolean(selectedPaper && !pdfPaper), closeSelectedPaper);
   
   const timeoutRef = useRef(null);
   const requestAbortRef = useRef(null);
@@ -819,11 +824,26 @@ export default function SearchPage({ onSaveToList = () => {} }) {
       </div>
 
       {/* Paper Card Overlay */}
+      <AnimatePresence initial={false}>
       {selectedPaper && !pdfPaper && (
-        <div className="search-overlay">
+        <motion.div
+          ref={selectedPaperDialogRef}
+          className="search-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={isEnglish ? 'Paper details' : 'Detalles del paper'}
+          tabIndex={-1}
+          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.99 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.995 }}
+          transition={prefersReducedMotion
+            ? { duration: 0 }
+            : { duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
+        >
           <button 
+            data-dialog-initial-focus
             className="search-back-btn" 
-            onClick={() => setSelectedPaper(null)}
+            onClick={closeSelectedPaper}
             aria-label={isEnglish ? 'Back to search results' : 'Volver a los resultados'}
             style={{ position: 'absolute', top: 'max(16px, env(safe-area-inset-top))', left: '16px', zIndex: 1200, background: 'rgba(255,255,255,0.1)', width: '40px', height: '40px' }}
           >
@@ -845,14 +865,13 @@ export default function SearchPage({ onSaveToList = () => {} }) {
               trackSkip={trackSkip}
             />
           </div>
-        </div>
+        </motion.div>
       )}
+      </AnimatePresence>
 
       {/* PDF Viewer */}
       {pdfPaper && (
-        <div className="search-overlay" style={{ zIndex: 1200 }}>
-          <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />
-        </div>
+        <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />
       )}
     </div>
   );

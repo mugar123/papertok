@@ -628,7 +628,7 @@
   height: 100vh;
   z-index: 1100;
   background: rgba(10, 10, 15, 0.98);
-  animation: fadeIn 0.2s ease-out forwards;
+  transform-origin: 50% 40%;
 }
 
 /* Hide scrollbar completely to make it look cleaner */

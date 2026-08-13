@@ -504,6 +504,12 @@
   transition: opacity 0.2s;
 }
 
+.sr-custom-date-slot {
+  position: relative;
+  z-index: 20;
+  overflow: visible;
+}
+
 .sr-body.updating { opacity: 0.76; }
 .sr-update-line {
   position: absolute;
@@ -619,6 +625,20 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 8px;
+}
+
+.sr-trend-skeleton {
+  min-height: 72px;
+  border-left: 2px solid rgba(52, 211, 153, 0.16);
+  border-radius: 0 8px 8px 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.025), rgba(255, 255, 255, 0.065), rgba(255, 255, 255, 0.025));
+  background-size: 200% 100%;
+  animation: sr-trend-skeleton 1.2s ease-in-out infinite;
+}
+
+@keyframes sr-trend-skeleton {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
 }
 
 .sr-trend-item {
@@ -1276,7 +1296,8 @@
   .sr-trends-heading { align-items: flex-start; flex-direction: column; gap: 4px; }
   .sr-trend-list { display: flex; overflow-x: auto; scrollbar-width: none; }
   .sr-trend-list::-webkit-scrollbar { display: none; }
-  .sr-trend-item { min-width: 132px; }
+  .sr-trend-item,
+  .sr-trend-skeleton { min-width: 132px; }
 
   .sr-bento { grid-template-columns: 1fr; gap: 12px; }
   .sr-bento-card.wide { grid-column: 1; }
@@ -1291,5 +1312,9 @@
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+
+  .sr-trend-skeleton {
+    animation: none;
   }
 }

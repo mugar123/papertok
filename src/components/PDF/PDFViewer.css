@@ -2,15 +2,15 @@
 .pdf-overlay {
   position: fixed;
   inset: 0;
-  z-index: var(--z-overlay);
+  z-index: 12100;
   background: rgba(0, 0, 0, 0.85);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
-  animation: fadeIn 0.3s ease-out;
+  animation: pdfOverlayIn 0.3s ease-out;
 }
 
 .pdf-overlay.is-closing {
-  animation: fadeOut 0.3s forwards;
+  animation: pdfOverlayOut 0.3s forwards;
 }
 
 .pdf-viewer {
@@ -18,11 +18,11 @@
   inset: 0;
   display: flex;
   flex-direction: column;
-  animation: slideUp 0.3s ease-out;
+  animation: pdfViewerIn 0.3s ease-out;
 }
 
 .pdf-viewer.is-closing {
-  animation: fadeOut 0.2s forwards;
+  animation: pdfViewerOut 0.2s forwards;
 }
 
 .pdf-topbar {
@@ -150,7 +150,7 @@
   }
 }
 
-@keyframes slideUp {
+@keyframes pdfViewerIn {
   from {
     transform: translateY(100%);
   }
@@ -159,22 +159,35 @@
   }
 }
 
-@keyframes slideOutToBottom {
+@keyframes pdfViewerOut {
   from {
-    transform: translateY(0);
     opacity: 1;
   }
   to {
-    transform: translateY(100px);
     opacity: 0;
   }
 }
 
-@keyframes fadeOut {
-  from {
-    opacity: 1;
+@keyframes pdfOverlayIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes pdfOverlayOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pdf-overlay,
+  .pdf-overlay.is-closing,
+  .pdf-viewer,
+  .pdf-viewer.is-closing,
+  .pdf-loading-spinner {
+    animation: none;
   }
-  to {
-    opacity: 0;
+
+  .pdf-iframe {
+    transition: none;
   }
 }

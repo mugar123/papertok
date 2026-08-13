@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
@@ -17,6 +17,7 @@ import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink,
 import ScientificText from '../ScientificText';
 import 'katex/dist/katex.min.css';
 import './ScientificReport.css';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 
 function getHeroCategoryLabel(paper, language = 'es') {
   const category = typeof paper?.primaryCategory === 'string' ? paper.primaryCategory.trim() : '';
@@ -39,10 +40,14 @@ function getLocalizedTopicLabel(value, language = 'es') {
 function AnimatedNumber({ value, duration = 600, locale = 'es-ES' }) {
   const [display, setDisplay] = useState(0);
   const ref = useRef(null);
+  const prefersReducedMotion = useReducedMotion();
 
   useEffect(() => {
     const target = typeof value === 'number' ? value : parseInt(value, 10) || 0;
-    if (target === 0) return undefined;
+    if (prefersReducedMotion || target === 0) {
+      ref.current = requestAnimationFrame(() => setDisplay(target));
+      return () => cancelAnimationFrame(ref.current);
+    }
 
     let start = null;
     const step = (ts) => {
@@ -54,7 +59,7 @@ function AnimatedNumber({ value, duration = 600, locale = 'es-ES' }) {
     };
     ref.current = requestAnimationFrame(step);
     return () => cancelAnimationFrame(ref.current);
-  }, [value, duration]);
+  }, [value, duration, prefersReducedMotion]);
 
   return <>{(value === 0 ? 0 : display).toLocaleString(locale)}</>;
 }
@@ -116,6 +121,7 @@ function ReportCoverage({ coverage }) {
 
 export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const { language, isEnglish, locale } = useLanguage();
+  const prefersReducedMotion = useReducedMotion();
   const [timeframe, setTimeframe] = useState('7d');
   const [filters, setFilters] = useState({ categories: [], countries: [] });
   const [report, setReport] = useState({ mainDiscovery: null, highlights: [] });
@@ -129,6 +135,8 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const [heroAccess, setHeroAccess] = useState({ paperId: null, copy: null });
   const reportRequestId = useRef(0);
   const trendsRef = useRef(null);
+  const closeOverlay = useCallback(() => setSelectedPaper(null), []);
+  const paperDialogRef = useDialogFocus(Boolean(selectedPaper), closeOverlay);
 
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
@@ -183,6 +191,10 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       console.error('Error fetching report:', err);
       if (requestId === reportRequestId.current) {
         setError('REPORT_LOAD_FAILED');
+        if (options.refreshTrends) {
+          trendsRef.current = null;
+          setTrends({ status: 'unavailable', items: [], loading: false });
+        }
       }
       return false;
     } finally {
@@ -201,7 +213,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     trendsRef.current = null;
     reportRequestId.current += 1;
     const timerId = setTimeout(() => {
-      setTrends({ status: 'loading', items: [], loading: true });
+      setTrends(current => ({
+        ...current,
+        status: current.items?.length ? current.status : 'loading',
+        loading: true,
+      }));
       fetchReport(timeframe, filters, 1, { refreshTrends: true });
     }, 0);
     return () => {
@@ -252,6 +268,10 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const hero = report.mainDiscovery;
   const accessibleHero = heroOpenCopy ? { ...hero, ...heroOpenCopy, openAccess: true } : hero;
   const heroGradient = hero ? getCategoryGradient(hero.primaryCategory || '') : 'var(--gradient-brand)';
+  const reportContentKey = [
+    hero?.id || 'no-hero',
+    ...(report.highlights || []).map(paper => paper.id),
+  ].join('|');
 
   useEffect(() => {
     let active = true;
@@ -270,10 +290,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     { id: '10y', label: isEnglish ? '10 years' : '10 años' },
     { id: 'custom', label: isEnglish ? 'Custom' : 'Otro' },
   ];
-
-  const closeOverlay = () => {
-    setSelectedPaper(null);
-  };
 
   const trendItems = trends.items || [];
   const currentTrendPeriod = formatTrendPeriod(trends.periods?.current, locale);
@@ -310,13 +326,25 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
         </nav>
       </header>
 
+      <AnimatePresence initial={false}>
       {showCustomPicker && (
+        <motion.div
+          className="sr-custom-date-slot"
+          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6 }}
+          animate={{ opacity: 1, height: 'auto', y: 0 }}
+          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -4 }}
+          transition={prefersReducedMotion
+            ? { duration: 0 }
+            : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+        >
         <CustomDateSelector
           value={customRange}
           onApply={(rangeObj) => { setCustomRange(rangeObj); setTimeframe(rangeObj); setShowCustomPicker(false); }}
           onCancel={() => setShowCustomPicker(false)}
         />
+        </motion.div>
       )}
+      </AnimatePresence>
 
       <ReportFilters filters={filters} onChange={setFilters} loading={loading} />
 
@@ -387,9 +415,14 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           </div>
         </div>
       ) : (
-        <div
+        <AnimatePresence mode="wait" initial={false}>
+        <motion.div
           className={`sr-body ${loading ? 'updating' : ''}`}
-          key={typeof timeframe === 'string' ? timeframe : JSON.stringify(timeframe)}
+          key={reportContentKey}
+          initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0 }}
+          animate={{ opacity: loading ? 0.76 : 1 }}
+          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0 }}
+          transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22 }}
         >
 
           {loading && <div className="sr-update-line" aria-label={isEnglish ? 'Updating the edition' : 'Actualizando la edición'} />}
@@ -433,7 +466,13 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                 </small>
               )}
             </div>
-            {trendItems.length > 0 ? (
+            {trends.loading ? (
+              <div className="sr-trend-list sr-trend-list--loading" role="status" aria-label={isEnglish ? 'Calculating trends' : 'Calculando tendencias'}>
+                {[0, 1, 2, 3, 4].map(index => (
+                  <span key={index} className="sr-trend-skeleton" />
+                ))}
+              </div>
+            ) : trendItems.length > 0 ? (
               <div className="sr-trend-list">
                 {trendItems.map((item, index) => (
                   <div
@@ -452,9 +491,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
               </div>
             ) : (
               <p className="sr-trends-state">
-                {trends.loading || trends.status === 'loading'
-                  ? (isEnglish ? 'Calculating changes from the previous period...' : 'Calculando cambios frente al periodo anterior...')
-                  : trends.status === 'unavailable'
+                {trends.status === 'unavailable'
                     ? (isEnglish
                       ? 'Trends are unavailable right now; the paper selection remains active.'
                       : 'Las tendencias no están disponibles ahora; la selección de papers sigue activa.')
@@ -578,29 +615,35 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </section>
           )}
 
-        </div>
+        </motion.div>
+        </AnimatePresence>
       )}
 
       {/* Paper Detail Overlay */}
       <AnimatePresence>
         {selectedPaper && (
           <motion.div 
+            ref={paperDialogRef}
             className="sr-paper-overlay" 
             onClick={closeOverlay}
-            initial={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-            animate={{ opacity: 1, backdropFilter: 'blur(12px)' }}
-            exit={{ opacity: 0, backdropFilter: 'blur(0px)' }}
-            transition={{ duration: 0.3 }}
+            role="dialog"
+            aria-modal="true"
+            aria-label={isEnglish ? 'Paper details' : 'Detalles del paper'}
+            tabIndex={-1}
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, backdropFilter: 'blur(0px)' }}
+            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, backdropFilter: 'blur(12px)' }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, backdropFilter: 'blur(0px)' }}
+            transition={{ duration: prefersReducedMotion ? 0 : 0.3 }}
           >
             <motion.div 
               className="sr-paper-overlay-inner" 
               onClick={(e) => e.stopPropagation()}
-              initial={{ opacity: 0, scale: 0.85, y: 40 }}
+              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85, y: 40 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.85, y: 40 }}
-              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85, y: 40 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: [0.16, 1, 0.3, 1] }}
             >
-              <button className="sr-overlay-close" onClick={closeOverlay}>
+              <button data-dialog-initial-focus className="sr-overlay-close" onClick={closeOverlay} aria-label={isEnglish ? 'Close paper' : 'Cerrar paper'}>
                 <X size={20} />
               </button>
               <div className="sr-paper-card-wrapper">

@@ -26,6 +26,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import ScientificText from '../ScientificText';
 import { normalizeAIExplanationMath } from '../../utils/aiExplanationMath.js';
 import { formatQuotaCountdown, formatQuotaResetTime } from '../../utils/aiQuota.js';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import './AIExplanationSheet.css';
 
 const ERROR_COPY = {
@@ -248,6 +249,7 @@ export default function AIExplanationSheet({ paper, onClose }) {
     setIsClosing(true);
     closeTimerRef.current = setTimeout(onClose, prefersReducedMotion ? 0 : 250);
   }, [onClose, prefersReducedMotion]);
+  const dialogRef = useDialogFocus(true, requestClose);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 640px)');
@@ -260,16 +262,9 @@ export default function AIExplanationSheet({ paper, onClose }) {
     return () => mediaQuery.removeListener(updateViewport);
   }, []);
 
-  useEffect(() => {
-    const handleKeyDown = event => {
-      if (event.key === 'Escape') requestClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
-    };
-  }, [requestClose]);
+  useEffect(() => () => {
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
+  }, []);
 
   useEffect(() => {
     if (!error?.quota?.resetAt) return undefined;
@@ -304,10 +299,12 @@ export default function AIExplanationSheet({ paper, onClose }) {
       onClick={requestClose}
     >
       <motion.div
+        ref={dialogRef}
         className={`ai-explanation-sheet ${isMobileViewport ? 'is-mobile-sheet' : ''} ${isClosing ? 'is-closing' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="ai-explanation-title"
+        tabIndex={-1}
         initial={isMobileViewport || prefersReducedMotion
           ? false
           : { opacity: 0, y: 46, scale: 0.972 }}
@@ -330,7 +327,13 @@ export default function AIExplanationSheet({ paper, onClose }) {
               <p>{paper.title}</p>
             </div>
           </div>
-          <button className="ai-explanation-close" onClick={requestClose} aria-label={copy.closeExplanation} title={copy.close}>
+          <button
+            className="ai-explanation-close"
+            onClick={requestClose}
+            aria-label={copy.closeExplanation}
+            title={copy.close}
+            data-dialog-initial-focus
+          >
             <X size={20} />
           </button>
         </header>

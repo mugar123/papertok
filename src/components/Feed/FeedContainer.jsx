@@ -1,4 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from 'react';
+import { useReducedMotion } from 'framer-motion';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
@@ -6,18 +7,12 @@ import { getUiErrorMessage } from '../../utils/errorMessages';
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
 import AnimatedAtom from './AnimatedAtom';
-import {
-  accumulateWheelGesture,
-  shouldUseNativeWheelScroll,
-  WHEEL_LISTENER_OPTIONS,
-} from '../../utils/wheelNavigation';
 import { FEED_DISPLAY_STATES, getFeedDisplayState } from '../../utils/feedLoadingState';
 import './FeedContainer.css';
 
 // Per-surface scroll memory: the Siguiendo feed shares this container with
 // For You and must not clobber its saved position.
 const savedScrollByKey = {};
-const WHEEL_GESTURE_RESET_MS = 180;
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
@@ -48,6 +43,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     [source, feed.refreshFeed],
   );
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
+  const prefersReducedMotion = useReducedMotion();
 
   const handleViewTime = useCallback((paper, seconds) => {
     source?.onPaperViewed?.(paper);
@@ -130,9 +126,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   // Scroll to top when feed is refreshed manually or mode changes
   useEffect(() => {
     if (isRefreshing && feedRef.current) {
-      feedRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+      feedRef.current.scrollTo({ top: 0, behavior: prefersReducedMotion ? 'auto' : 'smooth' });
     }
-  }, [isRefreshing]);
+  }, [isRefreshing, prefersReducedMotion]);
 
   useEffect(() => () => {
     if (scrollIdleTimerRef.current) clearTimeout(scrollIdleTimerRef.current);
@@ -162,77 +158,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, [hasMore, loading, loadMore]);
 
   const isScrollingRef = useRef(false);
-  const wheelDeltaRef = useRef(0);
-  const wheelResetTimerRef = useRef(null);
 
-  // Implement mouse wheel scroll snapping on desktop
-  useEffect(() => {
-    const container = feedRef.current;
-    if (!container) return;
-
-    const handleWheel = (e) => {
-      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
-
-      const nestedScroller = e.target instanceof Element ? e.target.closest('.pc-abstract--open') : null;
-      if (nestedScroller) {
-        const canScrollDown = e.deltaY > 0 && nestedScroller.scrollTop + nestedScroller.clientHeight < nestedScroller.scrollHeight - 1;
-        const canScrollUp = e.deltaY < 0 && nestedScroller.scrollTop > 1;
-        if (canScrollDown || canScrollUp) return;
-      }
-
-      // Trackpads provide pixel-precise, finger-following scrolling. Let the browser
-      // handle their momentum instead of competing with it through scrollTo().
-      if (shouldUseNativeWheelScroll(e.deltaMode)) {
-        return;
-      }
-
-      // Traditional line/page mouse wheels still get one-card navigation, but
-      // the passive listener never blocks pixel-precise trackpad momentum.
-      if (isScrollingRef.current) {
-        return;
-      }
-
-      const deltaMultiplier = e.deltaMode === WheelEvent.DOM_DELTA_LINE
-        ? 16
-        : e.deltaMode === WheelEvent.DOM_DELTA_PAGE
-          ? container.clientHeight
-          : 1;
-      const normalizedDelta = e.deltaY * deltaMultiplier;
-      const gesture = accumulateWheelGesture(wheelDeltaRef.current, normalizedDelta);
-      wheelDeltaRef.current = gesture.accumulatedDelta;
-
-      if (wheelResetTimerRef.current) clearTimeout(wheelResetTimerRef.current);
-      wheelResetTimerRef.current = setTimeout(() => {
-        wheelDeltaRef.current = 0;
-      }, WHEEL_GESTURE_RESET_MS);
-
-      if (!gesture.direction) return;
-
-      const direction = gesture.direction;
-      const cardHeight = container.clientHeight;
-      const currentScroll = container.scrollTop;
-      const currentIndex = Math.round(currentScroll / cardHeight);
-      const nextIndex = currentIndex + direction;
-
-      if (nextIndex >= 0 && nextIndex < papers.length + (loading ? 1 : 0)) {
-        isScrollingRef.current = true;
-        container.scrollTo({
-          top: nextIndex * cardHeight,
-          behavior: 'smooth'
-        });
-
-        setTimeout(() => {
-          isScrollingRef.current = false;
-        }, 700);
-      }
-    };
-
-    container.addEventListener('wheel', handleWheel, WHEEL_LISTENER_OPTIONS);
-    return () => {
-      container.removeEventListener('wheel', handleWheel);
-      if (wheelResetTimerRef.current) clearTimeout(wheelResetTimerRef.current);
-    };
-  }, [papers.length, loading]);
+  // Wheel and trackpad input stay entirely native. CSS scroll snapping keeps
+  // cards aligned without a non-passive listener blocking momentum scrolling.
 
   // Implement keyboard arrow navigation on desktop
   useEffect(() => {
@@ -241,6 +169,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       if (!container) return;
 
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        const activeTarget = e.target instanceof Element ? e.target : null;
+        const isInteractive = activeTarget?.closest(
+          'input, textarea, select, button, a, summary, [contenteditable="true"], [role="textbox"], [role="button"], [role="link"]',
+        );
+        const hasOpenModal = document.querySelector('[aria-modal="true"]');
+        if (isInteractive || hasOpenModal) return;
+
         e.preventDefault();
         if (isScrollingRef.current) return;
 
@@ -254,12 +189,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
           isScrollingRef.current = true;
           container.scrollTo({
             top: nextIndex * cardHeight,
-            behavior: 'smooth'
+            behavior: prefersReducedMotion ? 'auto' : 'smooth'
           });
 
           setTimeout(() => {
             isScrollingRef.current = false;
-          }, 700);
+          }, prefersReducedMotion ? 0 : 700);
         }
       }
     };
@@ -268,7 +203,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [papers.length, loading]);
+  }, [papers.length, loading, prefersReducedMotion]);
 
   const handleRefresh = useCallback(() => {
     refreshFeed();

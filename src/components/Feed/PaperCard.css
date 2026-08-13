@@ -194,6 +194,16 @@
   margin-bottom: 10px;
 }
 
+.pc-semantic-tags-slot {
+  display: grid;
+  min-width: 0;
+}
+
+.pc-semantic-tags-slot > .pc-semantic-tags {
+  min-height: 0;
+  overflow: hidden;
+}
+
 .pc-semantic-tag {
   display: inline-flex;
   align-items: center;
@@ -563,7 +573,7 @@
 .pc-abstract--open {
   max-height: 400px;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: auto;
 }
 
 .pc-abstract--open::-webkit-scrollbar { width: 4px; }
@@ -774,7 +784,8 @@
 
 .related-sheet {
   width: min(720px, 100%);
-  max-height: min(76vh, 720px);
+  height: min(68vh, 610px);
+  max-height: 720px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -783,8 +794,14 @@
   border-radius: 8px 8px 0 0;
   box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.45);
   animation: relatedSheetIn 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
+  transition: height 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform, opacity;
 }
+
+.related-sheet--loading { height: min(430px, 58vh); }
+.related-sheet--empty,
+.related-sheet--error,
+.related-sheet--unavailable { height: min(350px, 52vh); }
 
 .related-grabber {
   width: 34px;
@@ -942,10 +959,29 @@
 }
 
 .related-list {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   padding: 8px;
   scroll-behavior: smooth;
   animation: relatedContentIn 0.25s ease-out both;
+}
+
+.related-state,
+.related-loading {
+  flex: 1 1 auto;
+  min-height: 180px;
+}
+
+@media (max-width: 640px) {
+  .related-sheet {
+    height: min(74dvh, 620px);
+  }
+
+  .related-sheet--loading { height: min(410px, 58dvh); }
+  .related-sheet--empty,
+  .related-sheet--error,
+  .related-sheet--unavailable { height: min(330px, 48dvh); }
 }
 
 .related-item {
@@ -1742,4 +1778,46 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc,
+  .pc-abstract,
+  .pc-bg,
+  .pc-body,
+  .pc-side-icon,
+  .pc-side-btn,
+  .pc-scroll-hint,
+  .pc-scroll-hint-arrow,
+  .pc-heart-burst,
+  .pc-heart-ring,
+  .pc-bg-icon,
+  .pc-mesh-line,
+  .pc-mesh-dot,
+  .related-overlay,
+  .related-sheet,
+  .related-list,
+  .related-item {
+    animation: none;
+    transition: none;
+  }
+
+  .pc--fade-out {
+    opacity: 1;
+    transform: none;
+  }
+
+  .pc-bg-icon,
+  .pc-mesh-line,
+  .pc-mesh-dot {
+    will-change: auto;
+  }
+
+  .related-item {
+    opacity: 1;
+  }
+
+  .related-list {
+    scroll-behavior: auto;
+  }
 }

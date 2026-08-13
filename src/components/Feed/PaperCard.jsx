@@ -39,6 +39,7 @@ import {
   safeDoiUrl,
   safeExternalUrl,
 } from '../../utils/externalUrl.js';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -148,6 +149,7 @@ const PaperCard = memo(function PaperCard({
   const relatedCardTransitionTimerRef = useRef(null);
   const relatedPreparationRef = useRef(null);
   const relatedHydrationRequestRef = useRef(0);
+  const authorsDialogRef = useDialogFocus(showAuthorsModal, () => setShowAuthorsModal(false));
 
   useEffect(() => {
     if (!isCardVisible) {
@@ -256,11 +258,14 @@ const PaperCard = memo(function PaperCard({
   const toggleExpanded = (e, newState) => {
     e.stopPropagation();
     setExpanded(newState);
-    if (!newState && abstractRef.current) {
-      // Small delay to allow the DOM to start updating before resetting scroll
-      setTimeout(() => {
-        if (abstractRef.current) abstractRef.current.scrollTop = 0;
-      }, 50);
+    if (!newState && prefersReducedMotion && abstractRef.current) {
+      abstractRef.current.scrollTop = 0;
+    }
+  };
+
+  const handleAbstractTransitionEnd = (event) => {
+    if (!expanded && event.propertyName === 'max-height' && abstractRef.current) {
+      abstractRef.current.scrollTop = 0;
     }
   };
 
@@ -300,6 +305,7 @@ const PaperCard = memo(function PaperCard({
       getRelatedTransitionFallbackDelay(RELATED_CARD_CLOSE_MS, prefersReducedMotion),
     );
   }, [prefersReducedMotion]);
+  const relatedCardDialogRef = useDialogFocus(Boolean(activeRelatedPaper), closeRelatedCard);
 
   const handleRelatedCardAnimationEnd = useCallback((event) => {
     if (event.target !== event.currentTarget || getRelatedTransitionAction(event.animationName) !== 'close') return;
@@ -358,7 +364,7 @@ const PaperCard = memo(function PaperCard({
     setIsMarkingRead(true);
     setTimeout(() => {
       onMarkAsRead(paper);
-    }, 1500); // give time for animation before unmounting
+    }, prefersReducedMotion ? 0 : 1500); // give time for animation before unmounting
   };
 
   // Get area info for the gradient background
@@ -725,8 +731,18 @@ const PaperCard = memo(function PaperCard({
           )}
         </div>
         
+        <AnimatePresence initial={false}>
         {paperTopicTags.length > 0 && (
-          <div className="pc-semantic-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+          <motion.div
+            className="pc-semantic-tags-slot"
+            initial={prefersReducedMotion ? false : { gridTemplateRows: '0fr', opacity: 0 }}
+            animate={{ gridTemplateRows: '1fr', opacity: 1 }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { gridTemplateRows: '0fr', opacity: 0 }}
+            transition={prefersReducedMotion
+              ? { duration: 0 }
+              : { gridTemplateRows: { duration: 0.32, ease: [0.16, 1, 0.3, 1] }, opacity: { duration: 0.2 } }}
+          >
+          <div className="pc-semantic-tags">
             {paperTopicTags.map((tag) => {
               const topic = resolvePaperTopic(tag.value, language);
               if (!topic) return null;
@@ -746,7 +762,9 @@ const PaperCard = memo(function PaperCard({
               );
             })}
           </div>
+          </motion.div>
         )}
+        </AnimatePresence>
 
         <AnimatePresence initial={false}>
           {project && (
@@ -850,6 +868,7 @@ const PaperCard = memo(function PaperCard({
           ref={abstractRef}
           className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''}`}
           onClick={(e) => toggleExpanded(e, !expanded)}
+          onTransitionEnd={handleAbstractTransitionEnd}
         >
           <p>
             {hasUsableAIAbstract(paper.abstract)
@@ -1013,7 +1032,12 @@ const PaperCard = memo(function PaperCard({
       <AnimatePresence>
         {showAuthorsModal && (
           <motion.div 
+            ref={authorsDialogRef}
             className="pc-authors-modal-overlay"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pc-authors-dialog-title"
+            tabIndex={-1}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -1021,15 +1045,15 @@ const PaperCard = memo(function PaperCard({
           >
             <motion.div 
               className="pc-authors-modal-sheet"
-              initial={{ y: '100%' }}
+              initial={prefersReducedMotion ? false : { y: '100%' }}
               animate={{ y: 0 }}
-              exit={{ y: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              exit={prefersReducedMotion ? { opacity: 0 } : { y: '100%' }}
+              transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', damping: 25, stiffness: 200 }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="pc-authors-modal-header">
-                <h3>{isEnglish ? 'Authors' : 'Autores'}</h3>
-                <button onClick={() => setShowAuthorsModal(false)}>
+                <h3 id="pc-authors-dialog-title">{isEnglish ? 'Authors' : 'Autores'}</h3>
+                <button data-dialog-initial-focus onClick={() => setShowAuthorsModal(false)} aria-label={isEnglish ? 'Close authors' : 'Cerrar autores'}>
                   <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
                 </button>
               </div>
@@ -1072,11 +1096,17 @@ const PaperCard = memo(function PaperCard({
       )}
       {activeRelatedPaper && createPortal(
         <div
+          ref={relatedCardDialogRef}
           className={`related-card-overlay ${isClosingRelatedCard ? 'is-closing' : ''}`}
+          role="dialog"
+          aria-modal="true"
+          aria-label={isEnglish ? 'Related paper' : 'Paper relacionado'}
+          tabIndex={-1}
           onAnimationEnd={handleRelatedCardAnimationEnd}
         >
           <button
             className="related-card-back"
+            data-dialog-initial-focus
             onClick={closeRelatedCard}
             aria-label={isEnglish ? 'Back to previous paper' : 'Volver al paper anterior'}
             title={isEnglish ? 'Back' : 'Volver'}

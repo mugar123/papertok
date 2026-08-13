@@ -14,6 +14,7 @@ export default function Navbar() {
   const { isEnglish } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
+  const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
   const [showDropdown, setShowDropdown] = useState(false);
   const [isReportRefreshing, setIsReportRefreshing] = useState(false);
   const dropdownRef = useRef(null);
@@ -44,9 +45,9 @@ export default function Navbar() {
     navigate('/login');
   };
 
-  const isFollowingActive = location.pathname === '/following';
-  const isResearchActive = location.pathname === '/research' || location.pathname === '/report';
-  const isHomeActive = location.pathname === '/';
+  const isFollowingActive = pathname === '/following';
+  const isResearchActive = pathname === '/research' || pathname === '/report';
+  const isHomeActive = pathname === '/';
 
   let sliderTransform = 'translateX(0)';
   if (isResearchActive) {
@@ -85,6 +86,7 @@ export default function Navbar() {
           <button
             className={`navbar-tab ${isHomeActive && feedMode === 'top' ? 'active' : ''}`}
             onClick={() => {
+              setShowDropdown(false);
               if (location.pathname !== '/') navigate('/');
               setFeedMode('top');
             }}
@@ -95,6 +97,7 @@ export default function Navbar() {
           <NavLink
             to="/research"
             className={`navbar-tab ${isResearchActive ? 'active' : ''}`}
+            onClick={() => setShowDropdown(false)}
           >
             Research
           </NavLink>
@@ -102,6 +105,7 @@ export default function Navbar() {
           <NavLink
             to="/following"
             className={`navbar-tab ${isFollowingActive ? 'active' : ''}`}
+            onClick={() => setShowDropdown(false)}
           >
             {isEnglish ? 'Following' : 'Siguiendo'}
           </NavLink>
@@ -118,7 +122,7 @@ export default function Navbar() {
         <div className="navbar-right">
           <button
             className="navbar-action-btn"
-            onClick={() => navigate('/search')}
+            onClick={() => { setShowDropdown(false); navigate('/search'); }}
             title={isEnglish ? 'Search' : 'Buscar'}
           >
             <Search size={20} />

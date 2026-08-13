@@ -104,3 +104,9 @@
 .sk-btn--small {
   width: 100px;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .sk-pill, .sk-small, .sk-title, .sk-name, .sk-text, .sk-btn, .sk-avatar {
+    animation: none;
+  }
+}

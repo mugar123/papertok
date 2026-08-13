@@ -13,6 +13,7 @@ import {
 } from '../../utils/relatedPaperTransition.js';
 import ScientificText from '../ScientificText';
 import { useLanguage } from '../../context/LanguageContext';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 
 const INITIAL_GRAPH = {
   references: [],
@@ -116,6 +117,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
       getRelatedTransitionFallbackDelay(RELATED_SHEET_CLOSE_MS, prefersReducedMotion),
     );
   }, [finishClose, prefersReducedMotion]);
+  const dialogRef = useDialogFocus(true, requestClose);
 
   const requestPaper = useCallback((relatedPaper, paperKey) => {
     if (closingRef.current) return;
@@ -192,16 +194,6 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     return () => { cancelled = true; };
   }, [hasGraphIdentifier, paper]);
 
-  useEffect(() => {
-    const handleKeyDown = event => {
-      if (event.key === 'Escape') requestClose();
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [requestClose]);
-
   const graphPapers = graph[graphSide] || [];
   const graphEmptyLabel = graphSide === 'references'
     ? (isEnglish ? 'No linked references were found for this paper.' : 'No se encontraron referencias enlazadas para este paper.')
@@ -226,18 +218,27 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
       role="presentation"
     >
       <section
-        className={`related-sheet related-sheet--graph ${isSelectingPaper ? 'is-selecting-paper' : ''}`}
+        ref={dialogRef}
+        className={`related-sheet related-sheet--graph related-sheet--${visibleStatus} ${isSelectingPaper ? 'is-selecting-paper' : ''}`}
         onClick={event => event.stopPropagation()}
         onAnimationEnd={handleSheetAnimationEnd}
         aria-label={isEnglish ? 'Paper connections' : 'Conexiones del paper'}
         aria-modal="true"
         aria-busy={visibleStatus === 'loading'}
         role="dialog"
+        tabIndex={-1}
       >
         <div className="related-grabber" aria-hidden="true" />
         <header className="related-header">
           <div><Network size={18} /><h3>{isEnglish ? 'Paper connections' : 'Conexiones del paper'}</h3></div>
-          <button onClick={requestClose} aria-label={isEnglish ? 'Close' : 'Cerrar'} title={isEnglish ? 'Close' : 'Cerrar'} autoFocus><X size={20} /></button>
+          <button
+            onClick={requestClose}
+            aria-label={isEnglish ? 'Close' : 'Cerrar'}
+            title={isEnglish ? 'Close' : 'Cerrar'}
+            data-dialog-initial-focus
+          >
+            <X size={20} />
+          </button>
         </header>
 
         <div className="related-mode-tabs" role="tablist" aria-label={isEnglish ? 'Connection type' : 'Tipo de conexión'}>
