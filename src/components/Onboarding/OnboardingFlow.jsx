@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { CATEGORIES } from '../../data/categories';
 import './OnboardingFlow.css';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 
 export default function OnboardingFlow() {
   const [step, setStep] = useState(1);
@@ -11,8 +12,19 @@ export default function OnboardingFlow() {
   const [selectedSubcategories, setSelectedSubcategories] = useState(new Set());
   const [saving, setSaving] = useState(false);
   const { completeOnboarding } = useAuth();
-  const { isEnglish } = useLanguage();
+  const { isEnglish, language } = useLanguage();
   const navigate = useNavigate();
+  const location = useLocation();
+  const { trackEvent, markActivation } = useAnalyticsConsent();
+  const returnTo = typeof location.state?.returnTo === 'string'
+    && location.state.returnTo.startsWith('/')
+    && !location.state.returnTo.startsWith('//')
+    ? location.state.returnTo
+    : '/';
+
+  useEffect(() => {
+    trackEvent('tutorial_begin', { language });
+  }, [language, trackEvent]);
 
   const toggleArea = (areaKey) => {
     setSelectedAreas((prev) => {
@@ -76,7 +88,9 @@ export default function OnboardingFlow() {
     setSaving(true);
     try {
       await completeOnboarding(Array.from(selectedSubcategories));
-      navigate('/', { replace: true });
+      trackEvent('tutorial_complete', { language });
+      markActivation();
+      navigate(returnTo, { replace: true });
     } catch (err) {
       console.error('Error saving preferences:', err);
       setSaving(false);

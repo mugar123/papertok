@@ -4,6 +4,7 @@ import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 
 import { db, IS_DEMO } from '../services/firebase';
 import { getRorInstitution, normalizeRorId } from '../services/rorService';
 import { useAuth } from './AuthContext';
+import { useAnalyticsConsent } from './AnalyticsContext';
 import {
   createFollowEntity,
   createFollowKey,
@@ -29,6 +30,7 @@ function writeDemoFollowing(userId, follows) {
 
 export function FollowingProvider({ children }) {
   const { user, followedAuthors } = useAuth();
+  const { trackEvent, markActivation } = useAnalyticsConsent();
   const [followedEntities, setFollowedEntities] = useState([]);
   const [loading, setLoading] = useState(Boolean(user));
   const [error, setError] = useState(null);
@@ -192,6 +194,12 @@ export function FollowingProvider({ children }) {
         }
         else await setDoc(followRef, { ...entity, followedAt: serverTimestamp() });
       }
+      trackEvent('follow_change', {
+        entity_type: entity.type,
+        action: wasFollowing ? 'remove' : 'add',
+        surface: 'other',
+      });
+      if (!wasFollowing) markActivation();
       return !wasFollowing;
     } catch (toggleError) {
       setFollowedEntities(previous);
@@ -204,7 +212,7 @@ export function FollowingProvider({ children }) {
         return updated;
       });
     }
-  }, [followedEntities, pendingFollowKeys, user]);
+  }, [followedEntities, markActivation, pendingFollowKeys, trackEvent, user]);
 
   const localizedFollowedEntities = useMemo(() => followedEntities.map((entity) => {
     if (entity.type !== 'institution' || entity.metadata?.localizedNames?.en) return entity;

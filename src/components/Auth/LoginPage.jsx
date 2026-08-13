@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { FileText, Bookmark, Microscope, FlaskConical, Atom, Dna, Brain, Cpu, Database, Orbit, Network, Activity } from 'lucide-react';
 import './LoginPage.css';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 
 const FLOATING_ICONS = [FileText, Bookmark, Microscope, FlaskConical, Atom, Dna, Brain, Cpu, Database, Orbit, Network, Activity];
 
@@ -13,22 +14,40 @@ export default function LoginPage() {
   const { language, isEnglish } = useLanguage();
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const { trackEvent } = useAnalyticsConsent();
+  const requestedReturnTo = location.state?.returnTo;
+  const returnToFromQuery = new URLSearchParams(location.search).get('returnTo');
+  const requestedDestination = requestedReturnTo || returnToFromQuery;
+  const returnTo = typeof requestedDestination === 'string'
+    && requestedDestination.startsWith('/')
+    && !requestedDestination.startsWith('//')
+    && !['/login', '/onboarding'].includes(requestedDestination.split('?')[0])
+    ? requestedDestination
+    : '/';
 
   // Redirect if already authenticated
   useEffect(() => {
     if (!loading && user) {
       if (onboardingComplete) {
-        navigate('/', { replace: true });
+        navigate(returnTo, { replace: true });
       } else {
-        navigate('/onboarding', { replace: true });
+        navigate('/onboarding', { replace: true, state: { returnTo } });
       }
     }
-  }, [user, loading, onboardingComplete, navigate]);
+  }, [user, loading, onboardingComplete, navigate, returnTo]);
 
   const handleSignIn = async () => {
     setIsLoading(true);
-    await signInWithGoogle();
-    setIsLoading(false);
+    trackEvent('select_content', { content_type: 'signup_cta', surface: 'login' });
+    try {
+      const result = await signInWithGoogle();
+      trackEvent(result?.isNewUser ? 'sign_up' : 'login', { method: 'google' });
+    } catch {
+      // AuthContext exposes the localized error state below.
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const [floatingElements, setFloatingElements] = useState([]);
@@ -116,6 +135,17 @@ export default function LoginPage() {
               <span>{isEnglish ? 'Continue with Google' : 'Continuar con Google'}</span>
             </>
           )}
+        </button>
+
+        <button
+          type="button"
+          className="login-explore-btn"
+          onClick={() => {
+            trackEvent('guest_demo_start', { entry_point: 'login', language });
+            navigate('/', { replace: true });
+          }}
+        >
+          {isEnglish ? 'Explore without an account' : 'Explorar sin crear una cuenta'}
         </button>
 
         {error && <p className="login-error">{getUiErrorMessage(error, language, 'AUTH_FAILED')}</p>}

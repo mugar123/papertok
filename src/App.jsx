@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
+import { useCallback, useState } from 'react'
+import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -24,12 +24,20 @@ import FollowingFeedPage from './components/Following/FollowingFeedPage'
 import SettingsPage from './components/Settings/SettingsPage'
 import FollowingSettingsPage from './components/Settings/FollowingSettingsPage'
 import AnalyticsConsentBanner from './components/Privacy/AnalyticsConsentBanner'
+import GuestFeedPage from './components/Public/GuestFeedPage'
+import AuthPrompt from './components/Public/AuthPrompt'
+import PublicPaperPage from './components/Public/PublicPaperPage'
+import PublicListPage from './components/Lists/PublicListPage'
+import { getPublicPaperPath } from './utils/publicNavigation'
 import './App.css'
 
 function AppContent() {
   const [pdfPaper, setPdfPaper] = useState(null)
   const [saveModalPaper, setSaveModalPaper] = useState(null)
+  const [guestFeedReady, setGuestFeedReady] = useState(false)
+  const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const location = useLocation()
+  const navigate = useNavigate()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
   const navbarRoutes = ['/', '/lists', '/research', '/following', '/settings', '/settings/following']
@@ -39,11 +47,21 @@ function AppContent() {
     && onboardingComplete
     && !profileLoadError
 
-    return (
-      <FeedProvider>
-        {showNavbar && <Navbar />}
-        <AnimatePresence mode="wait" initial={false}>
-          <Routes location={location} key={location.pathname}>
+  const requestAuthentication = useCallback(() => {
+    setAuthPromptOpen(true)
+  }, [])
+
+  const continueToAuthentication = useCallback(() => {
+    setAuthPromptOpen(false)
+    const returnTo = `${location.pathname}${location.search}`
+    navigate('/login', { state: { returnTo } })
+  }, [location.pathname, location.search, navigate])
+
+  return (
+    <FeedProvider>
+      {showNavbar && <Navbar />}
+      <AnimatePresence mode="wait" initial={false}>
+        <Routes location={location} key={location.pathname}>
           <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
           <Route
             path="/onboarding"
@@ -56,14 +74,24 @@ function AppContent() {
           <Route
             path="/"
             element={
-              <ProtectedRoute>
+              authLoading || user ? (
+                <ProtectedRoute>
+                  <PageTransition>
+                    <FeedContainer
+                      onOpenPdf={setPdfPaper}
+                      onSaveToList={setSaveModalPaper}
+                    />
+                  </PageTransition>
+                </ProtectedRoute>
+              ) : (
                 <PageTransition>
-                  <FeedContainer
+                  <GuestFeedPage
+                    onReady={setGuestFeedReady}
+                    onAuthRequired={requestAuthentication}
                     onOpenPdf={setPdfPaper}
-                    onSaveToList={setSaveModalPaper}
                   />
                 </PageTransition>
-              </ProtectedRoute>
+              )
             }
           />
           <Route
@@ -135,16 +163,65 @@ function AppContent() {
           <Route
             path="/explorer/:type/:id"
             element={
-              <ProtectedRoute>
-                <PageTransition><EntityExplorer onSaveToList={setSaveModalPaper} /></PageTransition>
-              </ProtectedRoute>
+              <PageTransition>
+                <EntityExplorer
+                  publicMode={!user}
+                  onAuthRequired={requestAuthentication}
+                  onSaveToList={user ? setSaveModalPaper : requestAuthentication}
+                />
+              </PageTransition>
+            }
+          />
+          <Route
+            path="/public/entity/:type/:id"
+            element={
+              <PageTransition>
+                <EntityExplorer
+                  publicMode={!user}
+                  onAuthRequired={requestAuthentication}
+                  onSaveToList={user ? setSaveModalPaper : requestAuthentication}
+                />
+              </PageTransition>
+            }
+          />
+          <Route
+            path="/public/paper/:paperKey"
+            element={
+              <PageTransition>
+                <PublicPaperPage
+                  isAuthenticated={Boolean(user)}
+                  onAuthRequired={requestAuthentication}
+                  onOpenPdf={setPdfPaper}
+                  onSaveToList={user ? setSaveModalPaper : requestAuthentication}
+                />
+              </PageTransition>
+            }
+          />
+          <Route
+            path="/public/list/:shareId"
+            element={
+              <PageTransition>
+                <PublicListPage
+                  buildPaperPath={getPublicPaperPath}
+                  onAuthRequired={requestAuthentication}
+                />
+              </PageTransition>
             }
           />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AnimatePresence>
 
-      <AnalyticsConsentBanner />
+      <AnalyticsConsentBanner guestFeedReady={guestFeedReady} />
+
+      <AnimatePresence>
+        {authPromptOpen && (
+          <AuthPrompt
+            onClose={() => setAuthPromptOpen(false)}
+            onContinue={continueToAuthentication}
+          />
+        )}
+      </AnimatePresence>
 
       {pdfPaper && (
         <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />

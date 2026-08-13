@@ -40,6 +40,8 @@ import {
   safeExternalUrl,
 } from '../../utils/externalUrl.js';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
+import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/publicNavigation.js';
 
 // Pool of icons for the background constellation per area
 const AREA_BG_ICONS = {
@@ -110,7 +112,11 @@ const PaperCard = memo(function PaperCard({
   onSaveToList = () => {},
   getInteractionState = () => ({}),
   hideScrollHint = false,
-  showFollowReason = false
+  showFollowReason = false,
+  publicMode = false,
+  onAuthRequired,
+  analyticsSurface = 'feed',
+  position,
 }) {
   const [expanded, setExpanded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
@@ -129,6 +135,7 @@ const PaperCard = memo(function PaperCard({
   const [isCardSettled, setIsCardSettled] = useState(false);
   const { followedByType, isFollowing } = useFollowing();
   const { language, isEnglish } = useLanguage();
+  const { trackEvent } = useAnalyticsConsent();
   const navigate = useNavigate();
   
   const hasFollowedAuthor = useMemo(() => {
@@ -149,7 +156,9 @@ const PaperCard = memo(function PaperCard({
   const relatedCardTransitionTimerRef = useRef(null);
   const relatedPreparationRef = useRef(null);
   const relatedHydrationRequestRef = useRef(0);
+  const analyticsViewedPaperRef = useRef(null);
   const authorsDialogRef = useDialogFocus(showAuthorsModal, () => setShowAuthorsModal(false));
+  const paperViewKey = paper?.id || paper?.doi || paper?.arxivId || 'paper';
 
   useEffect(() => {
     if (!isCardVisible) {
@@ -206,6 +215,10 @@ const PaperCard = memo(function PaperCard({
         const [entry] = entries;
         setIsCardVisible(entry.isIntersecting && entry.intersectionRatio >= 0.15);
         if (entry.isIntersecting && entry.intersectionRatio > 0.5) {
+          if (analyticsViewedPaperRef.current !== paperViewKey) {
+            analyticsViewedPaperRef.current = paperViewKey;
+            trackEvent('paper_view', { surface: analyticsSurface, position });
+          }
           if (!viewStartTime.current) viewStartTime.current = Date.now();
         } else {
           if (viewStartTime.current) {
@@ -239,7 +252,7 @@ const PaperCard = memo(function PaperCard({
         }
       }
     };
-  }, [paper, selectedRelatedPaper, showRelated, trackViewTime, trackSkip]);
+  }, [analyticsSurface, paper, paperViewKey, position, selectedRelatedPaper, showRelated, trackEvent, trackViewTime, trackSkip]);
 
   const [project, setProject] = useState(null);
   const prefersReducedMotion = useReducedMotion();
@@ -340,6 +353,11 @@ const PaperCard = memo(function PaperCard({
   }, []);
 
   const selectRelatedPaper = useCallback((relatedPaper) => {
+    trackEvent('select_content', {
+      content_type: 'paper',
+      surface: analyticsSurface,
+      position,
+    });
     relatedCardClosingRef.current = false;
     setIsClosingRelatedCard(false);
     setShowRelated(false);
@@ -357,10 +375,18 @@ const PaperCard = memo(function PaperCard({
       setSelectedRelatedPaper(preparedPaper || relatedPaper);
       setPendingRelatedPaper(null);
     });
-  }, [prepareRelatedPaper]);
+  }, [analyticsSurface, position, prepareRelatedPaper, trackEvent]);
+
+  const requireAuthentication = useCallback((action) => {
+    onAuthRequired?.(action);
+  }, [onAuthRequired]);
 
   const handleMarkAsRead = (e) => {
     e.stopPropagation();
+    if (publicMode) {
+      requireAuthentication('mark_read');
+      return;
+    }
     setIsMarkingRead(true);
     setTimeout(() => {
       onMarkAsRead(paper);
@@ -420,9 +446,16 @@ const PaperCard = memo(function PaperCard({
 
   const openTopic = useCallback((event, topic) => {
     event.stopPropagation();
-    const path = topicExplorerPath(topic);
+    const path = publicMode
+      ? getPublicEntityPath(topic.type, topic.id)
+      : topicExplorerPath(topic);
+    trackEvent('select_content', {
+      content_type: topic.type === 'concept' ? 'topic' : topic.type,
+      surface: analyticsSurface,
+      position,
+    });
     if (path) navigate(path);
-  }, [navigate]);
+  }, [analyticsSurface, navigate, position, publicMode, trackEvent]);
 
   // Generate scattered background icons (stable per paper id)
   const bgIcons = useMemo(() => {
@@ -458,16 +491,25 @@ const PaperCard = memo(function PaperCard({
     const now = Date.now();
     if (now - lastTap.current < 300) {
       if (!isLiked) {
+        if (publicMode) {
+          requireAuthentication('like');
+          lastTap.current = now;
+          return;
+        }
         onLike(paper);
         setShowHeart(true);
         setTimeout(() => setShowHeart(false), 1200);
       }
     }
     lastTap.current = now;
-  }, [isLiked, onLike, paper]);
+  }, [isLiked, onLike, paper, publicMode, requireAuthentication]);
 
   const handleLike = (e) => {
     e.stopPropagation();
+    if (publicMode) {
+      requireAuthentication('like');
+      return;
+    }
     onLike(paper);
     if (!isLiked) {
       setShowHeart(true);
@@ -477,11 +519,36 @@ const PaperCard = memo(function PaperCard({
 
   const handleNotInterested = (e) => {
     e.stopPropagation();
+    if (publicMode) {
+      requireAuthentication('not_interested');
+      return;
+    }
     onNotInterested(paper);
+  };
+
+  const handleSave = (event) => {
+    event.stopPropagation();
+    if (publicMode) {
+      requireAuthentication('save');
+      return;
+    }
+    onSaveToList(paper);
   };
 
   const handleOpenPaper = async (event) => {
     event.stopPropagation();
+    const destination = resolvedOpenCopy?.pdfUrl
+      || paper.openAccessPdfUrl
+      || isTrustedInlinePdfUrl(paper.pdfUrl)
+      ? 'pdf'
+      : paper.arxivId
+        ? 'arxiv'
+        : paper.landingPageUrl || resolvedOpenCopy?.landingPageUrl
+          ? 'publisher'
+          : paper.doi
+            ? 'doi'
+            : 'other';
+    trackEvent('paper_open', { surface: analyticsSurface, destination, position });
     if (resolvedOpenCopy?.pdfUrl) {
       if (isTrustedInlinePdfUrl(resolvedOpenCopy.pdfUrl)) {
         onOpenPdf({ ...paper, ...resolvedOpenCopy, openAccess: true });
@@ -555,6 +622,33 @@ const PaperCard = memo(function PaperCard({
     || safeExternalUrl(paper.pdfUrl)
     || safeExternalUrl(paper.landingPageUrl)
     || safeDoiUrl(paper.doi);
+  const shareUrl = getPublicPaperUrl(paper)
+    || bestAvailableUrl
+    || (paper.arxivId ? `https://arxiv.org/abs/${encodeURIComponent(paper.arxivId)}` : '');
+
+  const handleShare = async (event) => {
+    event.stopPropagation();
+    if (!shareUrl) return;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: paper.title, url: shareUrl });
+        trackEvent('share', { method: 'native', content_type: 'paper', surface: analyticsSurface });
+      } catch (error) {
+        if (error?.name !== 'AbortError') console.error('Paper share failed', error);
+      }
+      return;
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      trackEvent('share', { method: 'clipboard', content_type: 'paper', surface: analyticsSurface });
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('Could not copy paper link', error);
+    }
+  };
   const primaryActionLabel = isResolvingAccess
     ? (isEnglish ? 'Finding access...' : 'Buscando acceso...')
     : resolvedOpenCopy
@@ -806,7 +900,15 @@ const PaperCard = memo(function PaperCard({
                     onClick={(e) => {
                       e.stopPropagation();
                       const paperId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
-                      navigate(`/explorer/project/${encodeURIComponent(project.code)}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`);
+                      const path = publicMode
+                        ? getPublicEntityPath('project', project.code)
+                        : `/explorer/project/${encodeURIComponent(project.code)}?name=${encodeURIComponent(project.acronym)}&funder=${encodeURIComponent(project.funder)}&arxivId=${paperId}`;
+                      trackEvent('select_content', {
+                        content_type: 'project',
+                        surface: analyticsSurface,
+                        position,
+                      });
+                      if (path) navigate(path);
                     }}
                     title={project.code
                       ? (isEnglish ? 'Open research project' : 'Abrir proyecto de investigación')
@@ -851,7 +953,16 @@ const PaperCard = memo(function PaperCard({
                  onClick={(e) => {
                    e.stopPropagation(); 
                    const pId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
-                   navigate(`/explorer/author/${encodeURIComponent(author.name || author)}?arxivId=${pId}`); 
+                   const authorName = author.name || author;
+                   const path = publicMode
+                     ? getPublicEntityPath('author', author.id || authorName)
+                     : `/explorer/author/${encodeURIComponent(authorName)}?arxivId=${pId}`;
+                   trackEvent('select_content', {
+                     content_type: 'author',
+                     surface: analyticsSurface,
+                     position,
+                   });
+                   if (path) navigate(path);
                  }}
                  style={{ cursor: 'pointer', padding: '4px 0' }}
                  onMouseOver={(e) => e.currentTarget.style.textDecoration = 'underline'}
@@ -920,17 +1031,7 @@ const PaperCard = memo(function PaperCard({
           </button>
           <button
             className="pc-read-btn pc-read-btn--secondary"
-            onClick={(e) => { 
-              e.stopPropagation(); 
-              const url = bestAvailableUrl || (paper.arxivId ? `https://arxiv.org/abs/${paper.arxivId}` : '');
-              if (navigator.share) {
-                navigator.share({ title: paper.title, url });
-              } else {
-                navigator.clipboard.writeText(url);
-                setCopied(true);
-                setTimeout(() => setCopied(false), 2000);
-              }
-            }}
+            onClick={handleShare}
             style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
           >
             {copied
@@ -940,7 +1041,14 @@ const PaperCard = memo(function PaperCard({
           {canRequestAIExplanation && (
             <button
               className="pc-ai-btn"
-              onClick={(event) => { event.stopPropagation(); setShowAIExplanation(true); }}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (publicMode) {
+                  requireAuthentication('ai_explanation');
+                  return;
+                }
+                setShowAIExplanation(true);
+              }}
               aria-label={isEnglish ? 'Explain this paper with AI' : 'Explicar este paper con IA'}
               title={isEnglish ? 'Explain with AI' : 'Explicar con IA'}
             >
@@ -973,7 +1081,7 @@ const PaperCard = memo(function PaperCard({
           <span style={isLiked ? { color: '#ff2d55' } : {}}>{isEnglish ? 'Like' : 'Me gusta'}</span>
         </button>
 
-        <button className={`pc-side-btn ${isSaved ? 'pc-side-btn--saved' : ''}`} onClick={(e) => { e.stopPropagation(); onSaveToList(paper); }}>
+        <button className={`pc-side-btn ${isSaved ? 'pc-side-btn--saved' : ''}`} onClick={handleSave}>
           <div className="pc-side-icon">
             <svg viewBox="0 0 24 24" fill={isSaved ? '#ffd60a' : 'none'} stroke={isSaved ? '#ffd60a' : 'currentColor'} strokeWidth="2" style={isSaved ? { filter: 'drop-shadow(0 0 8px rgba(255, 214, 10, 0.6))' } : {}}>
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
@@ -1065,7 +1173,15 @@ const PaperCard = memo(function PaperCard({
                     onClick={() => {
                       setShowAuthorsModal(false);
                       const authorStr = typeof author === 'string' ? author : author.name;
-                      navigate(`/explorer/author/${encodeURIComponent(authorStr)}?arxivId=${paper.arxivId || ''}`);
+                      const path = publicMode
+                        ? getPublicEntityPath('author', author.id || authorStr)
+                        : `/explorer/author/${encodeURIComponent(authorStr)}?arxivId=${paper.arxivId || ''}`;
+                      trackEvent('select_content', {
+                        content_type: 'author',
+                        surface: analyticsSurface,
+                        position,
+                      });
+                      if (path) navigate(path);
                     }}
                   >
                     <div className="pc-author-avatar-large" style={{ '--i': idx }}>
@@ -1129,6 +1245,10 @@ const PaperCard = memo(function PaperCard({
                 onSaveToList={onSaveToList}
                 getInteractionState={getInteractionState}
                 hideScrollHint
+                publicMode={publicMode}
+                onAuthRequired={onAuthRequired}
+                analyticsSurface={analyticsSurface}
+                position={position}
               />
             </div>
           ) : (

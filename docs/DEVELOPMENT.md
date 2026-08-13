@@ -35,9 +35,12 @@ Never put secret provider tokens in a `VITE_*` variable. See `worker/README.md` 
 secrets.
 
 Google Analytics uses basic consent mode: the Analytics SDK is not loaded until the user
-explicitly opts in. PaperTok records normalized application routes only. Entity identifiers,
-searches, paper titles, interests, account identifiers, and recommendation events are excluded.
-Consent is stored locally on the device and can be changed from Settings at any time.
+explicitly opts in. PaperTok records normalized application routes and a strict allowlist of
+coarse funnel events (acquisition channel, guest demo, search result count, follow/save/share,
+AI explanation status, onboarding, newsletter subscription, activation, and day-seven return).
+Entity identifiers, search text, paper titles, interests, account identifiers, URLs, and other
+free-form values are excluded. Consent is stored in local browser storage with a first-party
+cookie fallback, so either explicit choice survives reloads. It can be changed from Settings.
 
 ## Commands
 

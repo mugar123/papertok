@@ -10,6 +10,109 @@ service cloud.firestore {
       return value is string && value.size() <= maximum;
     }
 
+    function validBoundedStringList(values, maximumItems, maximumLength) {
+      return values is list
+        && values.size() <= maximumItems
+        && (values.size() < 1 || validString(values[0], maximumLength))
+        && (values.size() < 2 || validString(values[1], maximumLength))
+        && (values.size() < 3 || validString(values[2], maximumLength))
+        && (values.size() < 4 || validString(values[3], maximumLength))
+        && (values.size() < 5 || validString(values[4], maximumLength))
+        && (values.size() < 6 || validString(values[5], maximumLength))
+        && (values.size() < 7 || validString(values[6], maximumLength))
+        && (values.size() < 8 || validString(values[7], maximumLength))
+        && (values.size() < 9 || validString(values[8], maximumLength))
+        && (values.size() < 10 || validString(values[9], maximumLength))
+        && (values.size() < 11 || validString(values[10], maximumLength))
+        && (values.size() < 12 || validString(values[11], maximumLength))
+        && (values.size() < 13 || validString(values[12], maximumLength))
+        && (values.size() < 14 || validString(values[13], maximumLength))
+        && (values.size() < 15 || validString(values[14], maximumLength))
+        && (values.size() < 16 || validString(values[15], maximumLength))
+        && (values.size() < 17 || validString(values[16], maximumLength))
+        && (values.size() < 18 || validString(values[17], maximumLength))
+        && (values.size() < 19 || validString(values[18], maximumLength))
+        && (values.size() < 20 || validString(values[19], maximumLength));
+    }
+
+    function validPublicPaper(paper) {
+      return paper is map
+        && paper.keys().hasOnly([
+          'id', 'title', 'authors', 'abstract', 'year', 'date', 'category',
+          'concepts', 'citations', 'doi', 'arxivId', 'openUrl'
+        ])
+        && paper.keys().hasAll(['id', 'title', 'authors'])
+        && validString(paper.id, 300) && paper.id.size() > 0
+        && validString(paper.title, 500) && paper.title.size() > 0
+        && validBoundedStringList(paper.authors, 20, 160)
+        && (!('abstract' in paper) || validString(paper.abstract, 3000))
+        && (!('year' in paper) || paper.year is int && paper.year >= 1000 && paper.year <= 3000)
+        && (!('date' in paper) || validString(paper.date, 40))
+        && (!('category' in paper) || validString(paper.category, 120))
+        && (!('concepts' in paper) || validBoundedStringList(paper.concepts, 12, 120))
+        && (!('citations' in paper)
+          || paper.citations is int && paper.citations >= 0 && paper.citations <= 1000000000)
+        && (!('doi' in paper)
+          || validString(paper.doi, 300) && paper.doi.matches('^10\\.[0-9]{4,9}/.+$'))
+        && (!('arxivId' in paper)
+          || validString(paper.arxivId, 100)
+            && paper.arxivId.matches('^([A-Za-z-]+(\\.[A-Z]{2})?/[0-9]{7}|[0-9]{4}\\.[0-9]{4,5})(v[0-9]+)?$'))
+        && (!('openUrl' in paper)
+          || validString(paper.openUrl, 2000) && paper.openUrl.matches('^https://[^[:space:]]+$'));
+    }
+
+    function validPublicPapers(papers) {
+      return papers is list
+        && papers.size() <= 12
+        && (papers.size() < 1 || validPublicPaper(papers[0]))
+        && (papers.size() < 2 || validPublicPaper(papers[1]))
+        && (papers.size() < 3 || validPublicPaper(papers[2]))
+        && (papers.size() < 4 || validPublicPaper(papers[3]))
+        && (papers.size() < 5 || validPublicPaper(papers[4]))
+        && (papers.size() < 6 || validPublicPaper(papers[5]))
+        && (papers.size() < 7 || validPublicPaper(papers[6]))
+        && (papers.size() < 8 || validPublicPaper(papers[7]))
+        && (papers.size() < 9 || validPublicPaper(papers[8]))
+        && (papers.size() < 10 || validPublicPaper(papers[9]))
+        && (papers.size() < 11 || validPublicPaper(papers[10]))
+        && (papers.size() < 12 || validPublicPaper(papers[11]));
+    }
+
+    function validPublicList() {
+      return request.resource.data.keys().hasOnly([
+          'title', 'description', 'language', 'paperCount',
+          'papers', 'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'title', 'language', 'paperCount', 'papers',
+          'createdAt', 'updatedAt'
+        ])
+        && validString(request.resource.data.title, 120)
+        && request.resource.data.title.size() > 0
+        && (!('description' in request.resource.data)
+          || validString(request.resource.data.description, 600))
+        && request.resource.data.language in ['es', 'en']
+        && request.resource.data.paperCount is int
+        && request.resource.data.paperCount == request.resource.data.papers.size()
+        && validPublicPapers(request.resource.data.papers)
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    function ownsPublicList(shareId) {
+      return request.auth != null
+        && exists(/databases/$(database)/documents/publicListOwners/$(shareId))
+        && get(/databases/$(database)/documents/publicListOwners/$(shareId)).data.ownerId
+          == request.auth.uid;
+    }
+
+    function ownsPublicListAfter(shareId) {
+      return request.auth != null
+        && existsAfter(/databases/$(database)/documents/publicListOwners/$(shareId))
+        && getAfter(/databases/$(database)/documents/publicListOwners/$(shareId)).data.ownerId
+          == request.auth.uid;
+    }
+
     function userProfileKeys() {
       return [
         'onboardingComplete',
@@ -20,6 +123,32 @@ service cloud.firestore {
         'readingPreferences',
         'profilePhoto'
       ];
+    }
+
+    match /publicLists/{shareId} {
+      allow read: if true;
+      allow create: if ownsPublicListAfter(shareId)
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        && validPublicList();
+      allow update: if ownsPublicList(shareId)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && validPublicList();
+      allow delete: if ownsPublicList(shareId);
+    }
+
+    match /publicListOwners/{shareId} {
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['ownerId', 'listId', 'createdAt'])
+        && request.resource.data.ownerId == request.auth.uid
+        && validString(request.resource.data.listId, 160)
+        && request.resource.data.listId.size() > 0
+        && request.resource.data.createdAt == request.time
+        && getAfter(
+          /databases/$(database)/documents/users/$(request.auth.uid)/lists/$(request.resource.data.listId)
+        ).data.publicShareId == shareId;
+      allow delete: if ownsPublicList(shareId);
     }
 
     match /users/{userId} {
@@ -100,13 +229,26 @@ service cloud.firestore {
       }
 
       match /lists/{listId} {
-        allow read, delete: if ownsUserTree(userId);
+        allow read: if ownsUserTree(userId);
+        allow delete: if ownsUserTree(userId)
+          && (!('publicShareId' in resource.data)
+            || (!existsAfter(
+                /databases/$(database)/documents/publicLists/$(resource.data.publicShareId)
+              )
+              && !existsAfter(
+                /databases/$(database)/documents/publicListOwners/$(resource.data.publicShareId)
+              )));
         allow create, update: if ownsUserTree(userId)
-          && request.resource.data.keys().hasOnly(['id', 'name', 'emoji', 'paperIds', 'createdAt'])
+          && request.resource.data.keys().hasOnly([
+            'id', 'name', 'emoji', 'paperIds', 'createdAt', 'publicShareId'
+          ])
           && validString(request.resource.data.name, 120)
           && validString(request.resource.data.emoji, 40)
           && request.resource.data.paperIds is list
-          && request.resource.data.paperIds.size() <= 500;
+          && request.resource.data.paperIds.size() <= 500
+          && (!('publicShareId' in request.resource.data)
+            || validString(request.resource.data.publicShareId, 32)
+              && request.resource.data.publicShareId.matches('^[a-f0-9]{32}$'));
       }
 
       match /savedPapers/{paperId} {
@@ -114,13 +256,19 @@ service cloud.firestore {
         allow create, update: if ownsUserTree(userId)
           && request.resource.data.keys().hasOnly([
             'title', 'authors', 'primaryCategory', 'published', 'arxivId',
-            'summary', 'savedAt'
+            'summary', 'doi', 'landingPageUrl', 'savedAt'
           ])
           && validString(request.resource.data.title, 1000)
           && (!('authors' in request.resource.data)
             || request.resource.data.authors is list && request.resource.data.authors.size() <= 20)
           && (!('summary' in request.resource.data)
-            || validString(request.resource.data.summary, 1000));
+            || validString(request.resource.data.summary, 1000))
+          && (!('doi' in request.resource.data)
+            || request.resource.data.doi == null
+            || validString(request.resource.data.doi, 300))
+          && (!('landingPageUrl' in request.resource.data)
+            || request.resource.data.landingPageUrl == null
+            || validString(request.resource.data.landingPageUrl, 2000));
       }
 
       match /{document=**} {

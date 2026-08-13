@@ -174,6 +174,7 @@ papertok/
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Development guide](docs/DEVELOPMENT.md)
+- [Public discovery and sharing](docs/PUBLIC_DISCOVERY.md)
 - [Worker configuration](worker/README.md)
 - [Contributing](CONTRIBUTING.md)
 - [Agent guidance](AGENTS.md)

@@ -76,7 +76,7 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return <Navigate to="/login" replace state={{ returnTo: `${location.pathname}${location.search}` }} />;
   }
 
   if (profileLoadError) {
@@ -137,7 +137,7 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
   }
 
   if (requireOnboarding && !onboardingComplete) {
-    return <Navigate to="/onboarding" replace />;
+    return <Navigate to="/onboarding" replace state={{ returnTo: `${location.pathname}${location.search}` }} />;
   }
 
   return children;

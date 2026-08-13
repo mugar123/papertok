@@ -18,15 +18,23 @@ import { useLanguage } from '../../context/LanguageContext';
 import { getCategoryLabel } from '../../data/categories';
 import { getIcon } from '../../utils/icons';
 import { paperLegacyAdapter } from '../../models/Paper';
-import { Download, Pencil, X } from 'lucide-react';
+import { Copy, Download, Globe2, Pencil, RefreshCw, Unlink, X } from 'lucide-react';
 import { downloadCitationFile } from '../../utils/readingLibrary';
 import { settleWithin } from '../../utils/asyncTiming';
 import { getUiErrorMessage } from '../../utils/errorMessages';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext';
+import {
+  publishPublicList,
+  unpublishPublicList,
+  updatePublicList,
+} from '../../services/publicListService.js';
+import { getPublicListUrl } from '../../utils/publicNavigation.js';
 import './ListsPage.css';
 
 const LISTS_LOAD_DEADLINE_MS = 2_500;
 const PAPER_METADATA_LOAD_DEADLINE_MS = 4_000;
 const PAPER_METADATA_BATCH_SIZE = 10;
+const PRIVATE_LIST_IDS = new Set(['__favorites__', '__read__', '__read_later__']);
 
 function demoGet(key, fallback) {
   try { const v = localStorage.getItem(`papertok_${key}`); return v ? JSON.parse(v) : fallback; }
@@ -38,10 +46,29 @@ function demoSet(key, value) {
   catch (err) { console.error('Error in demoSet', err); }
 }
 
+async function copyText(value) {
+  if (globalThis.navigator?.clipboard?.writeText) {
+    await globalThis.navigator.clipboard.writeText(value);
+    return;
+  }
+  if (typeof document === 'undefined') throw new Error('Clipboard access is unavailable.');
+  const input = document.createElement('textarea');
+  input.value = value;
+  input.setAttribute('readonly', '');
+  input.style.position = 'fixed';
+  input.style.opacity = '0';
+  document.body.appendChild(input);
+  input.select();
+  const copied = document.execCommand('copy');
+  input.remove();
+  if (!copied) throw new Error('Clipboard access is unavailable.');
+}
+
 
 
 export default function ListsPage({ onOpenPdf, onEditPaper }) {
   const { user } = useAuth();
+  const { trackEvent } = useAnalyticsConsent();
   const { language, isEnglish } = useLanguage();
   const {
     unmarkAsRead,
@@ -59,6 +86,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   const [metadataError, setMetadataError] = useState(null);
   const [error, setError] = useState(null);
   const [reloadToken, setReloadToken] = useState(0);
+  const [shareFeedback, setShareFeedback] = useState(null);
   const metadataRequestId = useRef(0);
   const failedMetadataRequests = useRef(new Map());
 
@@ -78,7 +106,25 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     ];
   }, [isEnglish, likedPaperIds, lists, personalLibrary, readPaperIds]);
 
-  const getPaper = (paperId) => savedPapers[paperId] || personalLibrary[paperId]?.paper;
+  const getPaper = (paperId) => {
+    const libraryPaper = personalLibrary[paperId]?.paper;
+    const savedPaper = savedPapers[paperId];
+    if (!libraryPaper) return savedPaper;
+    if (!savedPaper) return libraryPaper;
+    const mergedPaper = {
+      ...libraryPaper,
+      ...savedPaper,
+      doi: libraryPaper.doi || savedPaper.doi,
+      arxivId: libraryPaper.arxivId || savedPaper.arxivId,
+      openUrl: libraryPaper.openUrl || savedPaper.openUrl,
+      landingPageUrl: libraryPaper.landingPageUrl || savedPaper.landingPageUrl,
+      pdfUrl: libraryPaper.pdfUrl || savedPaper.pdfUrl,
+      abstract: libraryPaper.abstract || savedPaper.abstract,
+      summary: libraryPaper.summary || savedPaper.summary,
+      concepts: libraryPaper.concepts?.length ? libraryPaper.concepts : savedPaper.concepts,
+    };
+    return mergedPaper.sources ? mergedPaper : paperLegacyAdapter(mergedPaper);
+  };
 
   useEffect(() => {
     let active = true;
@@ -340,14 +386,19 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     setExpandedList(null);
     setMetadataLoadingListId(null);
     setMetadataError(null);
+    setShareFeedback(null);
   };
 
   const handleDeleteList = async (listId) => {
-    if (listId === '__favorites__' || listId === '__read__' || listId === '__read_later__') return;
+    if (PRIVATE_LIST_IDS.has(listId)) return;
+    const list = lists.find(candidate => candidate.id === listId);
     if (IS_DEMO) {
       const allLists = demoGet('lists', []).filter((l) => l.id !== listId);
       localStorage.setItem('papertok_lists', JSON.stringify(allLists));
     } else {
+      if (list?.publicShareId) {
+        await unpublishPublicList(list.publicShareId, list.id);
+      }
       await deleteDoc(doc(db, 'users', user.uid, 'lists', listId));
     }
     setLists((prev) => prev.filter((l) => l.id !== listId));
@@ -400,6 +451,95 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       return list;
     }));
   };
+
+  const setListShareId = (listId, publicShareId) => {
+    setLists(current => current.map(list => {
+      if (list.id !== listId) return list;
+      if (publicShareId) return { ...list, publicShareId };
+      const privateList = { ...list };
+      delete privateList.publicShareId;
+      return privateList;
+    }));
+  };
+
+  const copyListLink = async (listId, publicShareId) => {
+    const url = getPublicListUrl(publicShareId);
+    if (!url) throw new Error('A public link could not be created.');
+    await copyText(url);
+    trackEvent('share', { method: 'clipboard', content_type: 'list', surface: 'lists' });
+    setShareFeedback({ listId, state: 'success', url, copied: true });
+    return url;
+  };
+
+  const handlePublishList = async (list, papers) => {
+    if (IS_DEMO) {
+      setShareFeedback({ listId: list.id, state: 'unsupported' });
+      return;
+    }
+
+    setShareFeedback({ listId: list.id, state: 'loading' });
+    const input = {
+      listId: list.id,
+      title: list.name,
+      description: list.description,
+      language: language === 'en' ? 'en' : 'es',
+      papers,
+    };
+
+    try {
+      const result = list.publicShareId
+        ? await updatePublicList(list.publicShareId, input)
+        : await publishPublicList(input);
+      setListShareId(list.id, result.shareId);
+      try {
+        await copyListLink(list.id, result.shareId);
+      } catch (clipboardError) {
+        console.error('Public list link could not be copied:', clipboardError);
+        setShareFeedback({
+          listId: list.id,
+          state: 'success',
+          url: getPublicListUrl(result.shareId),
+          copied: false,
+        });
+      }
+    } catch (publishError) {
+      console.error('Error publishing public list:', publishError);
+      setShareFeedback({ listId: list.id, state: 'error' });
+    }
+  };
+
+  const handleCopyListLink = async (list) => {
+    try {
+      setShareFeedback({ listId: list.id, state: 'loading' });
+      await copyListLink(list.id, list.publicShareId);
+    } catch (clipboardError) {
+      console.error('Public list link could not be copied:', clipboardError);
+      setShareFeedback({
+        listId: list.id,
+        state: 'copy-error',
+        url: getPublicListUrl(list.publicShareId),
+      });
+    }
+  };
+
+  const handleUnpublishList = async (list) => {
+    const confirmed = globalThis.confirm?.(
+      isEnglish
+        ? 'Stop sharing this list? Its public link will no longer work.'
+        : '¿Dejar de compartir esta lista? Su enlace público dejará de funcionar.',
+    );
+    if (confirmed === false) return;
+
+    setShareFeedback({ listId: list.id, state: 'loading' });
+    try {
+      await unpublishPublicList(list.publicShareId, list.id);
+      setListShareId(list.id, null);
+      setShareFeedback({ listId: list.id, state: 'unpublished' });
+    } catch (unpublishError) {
+      console.error('Error unpublishing public list:', unpublishError);
+      setShareFeedback({ listId: list.id, state: 'error' });
+    }
+  };
   return (
     <div className="lists-page">
       <div className="lists-header"><h1>{isEnglish ? 'My lists' : 'Mis listas'}</h1></div>
@@ -427,6 +567,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
             const list = displayLists.find((l) => l.id === expandedList);
             if (!list) return null;
             const exportPapers = (list.paperIds || []).map(getPaper).filter(Boolean);
+            const publicPapers = (list.paperIds || [])
+              .map(paperId => ({ paperId, paper: getPaper(paperId) }))
+              .filter(({ paperId, paper }) => paper?.title && paper.title !== paperId)
+              .map(({ paper }) => paper);
+            const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
+            const listShareFeedback = shareFeedback?.listId === list.id ? shareFeedback : null;
+            const shareBusy = listShareFeedback?.state === 'loading';
             return (
               <>
                 <div className="lists-expanded-heading">
@@ -437,13 +584,100 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     })()}
                     {list.name}
                   </h2>
-                  {exportPapers.length > 0 && (
-                    <div className="lists-export-actions">
-                      <button onClick={() => downloadCitationFile(exportPapers, 'bibtex', `papertok-${list.name}`)}><Download size={16} /> BibTeX</button>
-                      <button onClick={() => downloadCitationFile(exportPapers, 'ris', `papertok-${list.name}`)}><Download size={16} /> RIS</button>
-                    </div>
-                  )}
+                  <div className="lists-expanded-actions">
+                    {exportPapers.length > 0 && (
+                      <div className="lists-export-actions">
+                        <button onClick={() => downloadCitationFile(exportPapers, 'bibtex', `papertok-${list.name}`)}><Download size={16} /> BibTeX</button>
+                        <button onClick={() => downloadCitationFile(exportPapers, 'ris', `papertok-${list.name}`)}><Download size={16} /> RIS</button>
+                      </div>
+                    )}
+                    {isCustomList && !IS_DEMO && (
+                      <div className="lists-share-actions">
+                        {list.publicShareId ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyListLink(list)}
+                              disabled={shareBusy}
+                              title={isEnglish ? 'Copy public link' : 'Copiar enlace público'}
+                            >
+                              <Copy size={16} /> {isEnglish ? 'Copy link' : 'Copiar enlace'}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handlePublishList(list, publicPapers)}
+                              disabled={shareBusy || metadataLoadingListId === list.id}
+                              title={isEnglish ? 'Update the public list' : 'Actualizar la lista pública'}
+                            >
+                              <RefreshCw size={16} /> {isEnglish ? 'Update' : 'Actualizar'}
+                            </button>
+                            <button
+                              type="button"
+                              className="is-danger"
+                              onClick={() => handleUnpublishList(list)}
+                              disabled={shareBusy}
+                              title={isEnglish ? 'Stop sharing' : 'Dejar de compartir'}
+                            >
+                              <Unlink size={16} />
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="is-primary"
+                            onClick={() => handlePublishList(list, publicPapers)}
+                            disabled={shareBusy || metadataLoadingListId === list.id}
+                          >
+                            <Globe2 size={16} /> {isEnglish ? 'Publish & copy link' : 'Publicar y copiar enlace'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                    {isCustomList && IS_DEMO && (
+                      <span className="lists-share-demo-note">
+                        {isEnglish ? 'Public sharing is unavailable in demo mode.' : 'No se pueden publicar listas en el modo demo.'}
+                      </span>
+                    )}
+                  </div>
                 </div>
+                {listShareFeedback && (
+                  <div
+                    className={`lists-share-status ${['error', 'copy-error'].includes(listShareFeedback.state) ? 'is-error' : ''}`}
+                    role={['error', 'copy-error'].includes(listShareFeedback.state) ? 'alert' : 'status'}
+                    aria-live="polite"
+                  >
+                    {listShareFeedback.state === 'loading' && (
+                      <><span className="lists-loading-spinner" /> {isEnglish ? 'Updating public link...' : 'Actualizando enlace público...'}</>
+                    )}
+                    {listShareFeedback.state === 'success' && (
+                      <>
+                        <span>{listShareFeedback.copied
+                          ? (isEnglish ? 'Public link copied.' : 'Enlace público copiado.')
+                          : (isEnglish ? 'Public link ready. Copy it from here:' : 'Enlace público listo. Cópialo desde aquí:')}</span>
+                        {listShareFeedback.url && <a href={listShareFeedback.url} target="_blank" rel="noopener noreferrer">{listShareFeedback.url}</a>}
+                      </>
+                    )}
+                    {listShareFeedback.state === 'copy-error' && (
+                      <>
+                        <span>{isEnglish ? 'The link is public, but it could not be copied automatically.' : 'El enlace es público, pero no se pudo copiar automáticamente.'}</span>
+                        {listShareFeedback.url && <a href={listShareFeedback.url} target="_blank" rel="noopener noreferrer">{listShareFeedback.url}</a>}
+                      </>
+                    )}
+                    {listShareFeedback.state === 'unpublished' && (
+                      <span>{isEnglish ? 'The list is private again.' : 'La lista vuelve a ser privada.'}</span>
+                    )}
+                    {listShareFeedback.state === 'error' && (
+                      <span>{isEnglish ? 'The public link could not be updated. Try again.' : 'No se pudo actualizar el enlace público. Inténtalo de nuevo.'}</span>
+                    )}
+                  </div>
+                )}
+                {isCustomList && ((list.paperIds || []).length > 20 || publicPapers.length < (list.paperIds || []).length) && (
+                  <p className="lists-share-limit-note">
+                    {isEnglish
+                      ? 'Public links include up to 12 papers with available details.'
+                      : 'Los enlaces públicos incluyen hasta 12 papers con datos disponibles.'}
+                  </p>
+                )}
                 {metadataLoadingListId === list.id && (
                   <div className="lists-metadata-status" aria-live="polite">
                     <div className="lists-loading-spinner" />

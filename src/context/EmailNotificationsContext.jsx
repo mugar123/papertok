@@ -4,6 +4,7 @@ import { useAuth } from './AuthContext';
 import { useFollowing } from './FollowingContext';
 import { useFollowingUpdates } from './FollowingUpdatesContext';
 import { useLanguage } from './LanguageContext';
+import { useAnalyticsConsent } from './AnalyticsContext';
 import {
   EmailNotificationServiceError,
   getEmailNotificationPreferences,
@@ -28,6 +29,7 @@ const DEFAULT_PREFERENCES = {
 export function EmailNotificationsProvider({ children }) {
   const { user } = useAuth();
   const { language } = useLanguage();
+  const { trackEvent, markActivation } = useAnalyticsConsent();
   const userEmail = user?.email || '';
   const { followedEntities, loading: followsLoading, error: followsError } = useFollowing();
   const { items, loading: updatesLoading } = useFollowingUpdates();
@@ -80,6 +82,7 @@ export function EmailNotificationsProvider({ children }) {
     setSaving(true);
     setError(null);
     try {
+      const wasEnabled = preferences.enabled;
       const saved = await saveEmailNotificationPreferences(
         { ...nextPreferences, language },
         followedEntities,
@@ -87,6 +90,12 @@ export function EmailNotificationsProvider({ children }) {
       );
       const normalized = { ...DEFAULT_PREFERENCES, ...saved, language, email: saved.email || userEmail };
       setPreferences(normalized);
+      if (normalized.enabled !== wasEnabled) {
+        trackEvent('newsletter_change', {
+          action: normalized.enabled ? 'subscribe' : 'unsubscribe',
+        });
+        if (normalized.enabled) markActivation();
+      }
       return normalized;
     } catch (saveError) {
       setError(saveError);
@@ -94,7 +103,7 @@ export function EmailNotificationsProvider({ children }) {
     } finally {
       setSaving(false);
     }
-  }, [followedEntities, hasFollows, items, language, notificationDataReady, userEmail]);
+  }, [followedEntities, hasFollows, items, language, markActivation, notificationDataReady, preferences.enabled, trackEvent, userEmail]);
 
   const sendTest = useCallback(async (nextPreferences = preferences) => {
     if (!notificationDataReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');

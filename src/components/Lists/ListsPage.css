@@ -240,10 +240,21 @@
 .lists-export-actions,
 .lists-paper-actions { display: flex; align-items: center; gap: var(--space-2); }
 
-.lists-export-actions button {
+.lists-expanded-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+}
+
+.lists-export-actions button,
+.lists-share-actions button {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
+  min-height: 36px;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
@@ -251,8 +262,78 @@
   font-size: var(--fs-xs);
 }
 
+.lists-share-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border-subtle);
+}
+
+.lists-share-actions button.is-primary {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+  color: white;
+}
+
+.lists-share-actions button.is-danger {
+  width: 36px;
+  padding: 0;
+  color: var(--accent-danger);
+}
+
+.lists-share-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.lists-share-status {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin: calc(var(--space-4) * -1) 0 var(--space-5);
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+}
+
+.lists-share-status.is-error {
+  border-color: rgba(239, 68, 68, 0.35);
+  color: var(--accent-danger);
+}
+
+.lists-share-status a {
+  max-width: 100%;
+  overflow: hidden;
+  color: var(--accent-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lists-share-status .lists-loading-spinner {
+  width: 16px;
+  height: 16px;
+}
+
+.lists-share-demo-note,
+.lists-share-limit-note {
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+.lists-share-limit-note {
+  margin: calc(var(--space-4) * -1) 0 var(--space-5);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .lists-export-actions button:hover { background: var(--bg-glass-hover); color: var(--text-primary); }
+  .lists-share-actions button:not(:disabled):hover { background: var(--bg-glass-hover); color: var(--text-primary); }
+  .lists-share-actions button.is-primary:not(:disabled):hover { background: var(--accent-secondary); }
+  .lists-share-actions button.is-danger:not(:disabled):hover { color: var(--accent-danger); }
 }
 
 .lists-expanded-papers {
@@ -429,6 +510,8 @@
   }
 
   .lists-expanded-heading { align-items: flex-start; flex-direction: column; }
+  .lists-expanded-actions { width: 100%; justify-content: flex-start; }
+  .lists-share-actions { padding: var(--space-2) 0 0; border-left: 0; border-top: 1px solid var(--border-subtle); }
 }
 
 @media (max-width: 768px) {

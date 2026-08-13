@@ -31,6 +31,7 @@ import { PaperBuilder } from '../../services/PaperBuilder';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
@@ -130,6 +131,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const { language, isEnglish, locale } = useLanguage();
+  const { trackEvent } = useAnalyticsConsent();
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
@@ -268,6 +270,15 @@ export default function SearchPage({ onSaveToList = () => {} }) {
 
     const outcomes = await allOutcomesPromise;
     if (isCurrentSearch()) {
+      const resultCount = outcomes.reduce(
+        (total, outcome) => total + (Array.isArray(outcome.value) ? outcome.value.length : 0),
+        0,
+      );
+      trackEvent('search_performed', {
+        search_type: 'all',
+        result_count: resultCount,
+        has_results: resultCount > 0,
+      });
       const unavailableSections = outcomes
         .filter(outcome => outcome.status !== 'fulfilled')
         .map(outcome => outcome.section);
@@ -279,7 +290,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
         requestAbortRef.current = null;
       }
     }
-  }, [language]);
+  }, [language, trackEvent]);
 
   useEffect(() => {
     if (!query.trim()) {

@@ -4,6 +4,7 @@ import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, setDoc } 
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { getIcon, AVAILABLE_ICONS } from '../../utils/icons';
 import { BookOpen, Download, StickyNote, Tags } from 'lucide-react';
 import { downloadCitationFile } from '../../utils/readingLibrary';
@@ -23,6 +24,7 @@ function demoSet(key, value) {
 export default function SaveToListModal({ paper, onClose }) {
   const { user } = useAuth();
   const { isEnglish } = useLanguage();
+  const { trackEvent, markActivation } = useAnalyticsConsent();
   const { markSaved, personalLibrary, toggleReadLater, saveReadingMetadata } = useFeed();
   const [lists, setLists] = useState([]);
   const [paperLists, setPaperLists] = useState(new Set());
@@ -84,7 +86,8 @@ export default function SaveToListModal({ paper, onClose }) {
     allSaved[paper.id] = {
       title: paper.title, authors: paper.authors?.slice(0, 5),
       primaryCategory: paper.primaryCategory, published: paper.published,
-      arxivId: paper.arxivId, summary: paper.summary?.substring(0, 500),
+      arxivId: paper.arxivId, summary: (paper.summary || paper.abstract)?.substring(0, 500),
+      doi: paper.doi, landingPageUrl: paper.landingPageUrl,
     };
     demoSet('savedPapersData', allSaved);
   };
@@ -122,14 +125,23 @@ export default function SaveToListModal({ paper, onClose }) {
           await setDoc(savedRef, {
             title: paper.title, authors: paper.authors?.slice(0, 5),
             primaryCategory: paper.primaryCategory, published: paper.published,
-            arxivId: paper.arxivId, summary: paper.summary?.substring(0, 500),
+            arxivId: paper.arxivId, summary: (paper.summary || paper.abstract)?.substring(0, 500),
+            doi: paper.doi || null,
+            landingPageUrl: paper.landingPageUrl || null,
             savedAt: new Date().toISOString(),
           }, { merge: true });
         }
       } catch (err) {
         console.error('Error updating list:', err);
+        setPaperLists(paperLists);
+        return;
       }
     }
+    trackEvent('save_change', {
+      action: isInList ? 'remove' : 'add',
+      surface: 'lists',
+    });
+    if (!isInList) markActivation();
   };
 
   const handleCreateList = async () => {
@@ -151,12 +163,15 @@ export default function SaveToListModal({ paper, onClose }) {
         await setDoc(listRef, newList);
       } catch (err) {
         console.error('Error creating list:', err);
+        return;
       }
     }
 
     setLists((prev) => [...prev, newList]);
     setPaperLists((prev) => new Set([...prev, listId]));
     markSaved(paper);
+    trackEvent('save_change', { action: 'add', surface: 'lists' });
+    markActivation();
     setNewListName('');
   };
 

@@ -13,7 +13,6 @@
   background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
   box-shadow: 0 20px 54px rgba(0, 0, 0, 0.38);
   backdrop-filter: blur(18px);
-  animation: analyticsConsentIn 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
   transition: border-color 0.28s ease, box-shadow 0.28s ease;
 }
 
@@ -50,6 +49,15 @@
   grid-column: 2;
   justify-content: flex-end;
   gap: 7px;
+}
+
+.analytics-consent-error {
+  grid-column: 2;
+  margin: -2px 0 0;
+  color: #fda4af;
+  font-size: 10px;
+  line-height: 1.4;
+  text-align: right;
 }
 
 .analytics-consent-actions button {
@@ -115,6 +123,10 @@
   .analytics-consent-actions {
     grid-column: 1 / -1;
   }
+
+  .analytics-consent-error {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -125,11 +137,6 @@
     animation: none;
     transition: none;
   }
-}
-
-@keyframes analyticsConsentIn {
-  from { opacity: 0; transform: translateY(12px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes analyticsConsentSpin {

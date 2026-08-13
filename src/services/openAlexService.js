@@ -1468,7 +1468,7 @@ export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '', e
  * and format them as standard Paper objects (since they might not be on arXiv).
  * @param {string[]} dois 
  */
-export async function fetchPapersByDois(dois) {
+export async function fetchPapersByDois(dois, options = {}) {
   if (!dois || dois.length === 0) return [];
   
   const cleanDois = dois.map(doi => {
@@ -1496,6 +1496,7 @@ export async function fetchPapersByDois(dois) {
       }
     } catch (err) {
       console.error("OpenAlex fetchPapersByDois failed", err);
+      if (options.throwOnProviderError) throw err;
     }
   }
   

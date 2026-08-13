@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect } from 'react';
 import { IS_DEMO, auth, googleProvider, db } from '../services/firebase';
-import { onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth';
+import { getAdditionalUserInfo, onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth';
 import { deleteField, doc, getDoc, getDocFromCache, setDoc } from 'firebase/firestore';
 import {
   DEFAULT_READING_PREFERENCES,
@@ -136,12 +136,14 @@ export function AuthProvider({ children }) {
         setUser(demoUser);
         demoSet('user', demoUser);
       }, 500);
-      return;
+      return { isNewUser: false };
     }
     try {
-      await signInWithPopup(auth, googleProvider);
+      const result = await signInWithPopup(auth, googleProvider);
+      return { isNewUser: Boolean(getAdditionalUserInfo(result)?.isNewUser) };
     } catch (err) {
       setError(err?.code || 'AUTH_FAILED');
+      throw err;
     }
   };
 

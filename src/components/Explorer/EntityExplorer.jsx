@@ -34,6 +34,9 @@ import { getLocalizedInstitutionName } from '../../utils/institutionLocalization
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { safeExternalUrl } from '../../utils/externalUrl.js';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
+import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
+import { getPublicEntityPath, getPublicEntityUrl } from '../../utils/publicNavigation.js';
 import 'katex/dist/katex.min.css';
 import './EntityExplorer.css';
 
@@ -63,11 +66,16 @@ const ROR_RELATION_LABELS = {
   },
 };
 
-export default function EntityExplorer({ onSaveToList = () => {} }) {
+export default function EntityExplorer({
+  onSaveToList = () => {},
+  publicMode = false,
+  onAuthRequired = () => {},
+}) {
   const { type, id } = useParams();
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const { language, isEnglish, locale } = useLanguage();
+  const { trackEvent } = useAnalyticsConsent();
   const [searchParams] = useSearchParams();
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
@@ -135,6 +143,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   const [authorsPage, setAuthorsPage] = useState(1);
   const [hasMoreAuthors, setHasMoreAuthors] = useState(false);
   const observerAuthorsRef = useRef(null);
+  const viewedEntityRef = useRef('');
   const projectLinksMenuRef = useRef(null);
   const projectSummaryTextRef = useRef(null);
   const wikiDescriptionTextRef = useRef(null);
@@ -146,6 +155,58 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   const entityDisplayName = type === 'institution'
     ? getLocalizedInstitutionName(entity, language)
     : entityOfficialName;
+  const publicEntityPath = useMemo(
+    () => entity ? getPublicEntityPath(type, id) : null,
+    [entity, id, type],
+  );
+  const publicEntityUrl = useMemo(
+    () => entity ? getPublicEntityUrl(type, id) : null,
+    [entity, id, type],
+  );
+  const metadataConfig = useMemo(() => {
+    if (!entity || !entityDisplayName || !publicEntityPath) return { noIndex: true };
+    const typeLabel = {
+      author: { en: 'Author', es: 'Autor' },
+      institution: { en: 'Institution', es: 'Institución' },
+      project: { en: 'Research project', es: 'Proyecto de investigación' },
+      source: { en: 'Scientific journal', es: 'Revista científica' },
+      concept: { en: 'Research topic', es: 'Tema de investigación' },
+      topic: { en: 'Research topic', es: 'Tema de investigación' },
+    }[type] || { en: 'Scientific entity', es: 'Entidad científica' };
+
+    return {
+      title: {
+        en: `${entityDisplayName} - ${typeLabel.en} | PaperTok`,
+        es: `${entityDisplayName} - ${typeLabel.es} | PaperTok`,
+      },
+      description: {
+        en: `Explore scientific papers, citations, and research connected to ${entityDisplayName} on PaperTok.`,
+        es: `Explora artículos científicos, citas e investigación relacionada con ${entityDisplayName} en PaperTok.`,
+      },
+      route: publicEntityPath,
+      ogType: 'profile',
+    };
+  }, [entity, entityDisplayName, publicEntityPath, type]);
+  usePublicPageMetadata(metadataConfig);
+
+  const analyticsEntityType = ['author', 'institution', 'project'].includes(type)
+    ? type
+    : ['topic', 'concept'].includes(type)
+      ? 'topic'
+      : 'other';
+  const navigateToEntity = useCallback((nextType, nextId) => {
+    if (publicMode) {
+      const publicPath = getPublicEntityPath(nextType, nextId);
+      if (publicPath) navigate(publicPath);
+      return;
+    }
+    navigate(`/explorer/${nextType}/${encodeURIComponent(nextId)}`);
+  }, [navigate, publicMode]);
+  const handleBack = useCallback(() => {
+    const historyIndex = typeof window !== 'undefined' ? window.history.state?.idx : null;
+    if (Number.isInteger(historyIndex) && historyIndex > 0) navigate(-1);
+    else navigate('/');
+  }, [navigate]);
   const authorInstitution = type === 'author'
     ? entity?.institutionData || entity?.last_known_institutions?.[0] || (entity?.institution ? { display_name: entity.institution } : null)
     : null;
@@ -173,6 +234,14 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
     isSaved: savedPaperIds.has(paper.id),
     isRead: readPaperIds.has(paper.id),
   }), [likedPaperIds, readPaperIds, savedPaperIds]);
+
+  useEffect(() => {
+    if (!entity) return;
+    const viewKey = `${type}:${id}`;
+    if (viewedEntityRef.current === viewKey) return;
+    viewedEntityRef.current = viewKey;
+    trackEvent('select_content', { content_type: analyticsEntityType, surface: 'explorer' });
+  }, [analyticsEntityType, entity, id, trackEvent, type]);
 
   const measureExpandableDescriptions = useCallback(() => {
     const measure = (element, setHeight, setExpandable) => {
@@ -240,6 +309,8 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       metadata,
     };
   }, [entity, entityDisplayName, entityOfficialName, id, type]);
+  const entityIsFollowing = Boolean(!publicMode && followEntity && isFollowing(followEntity));
+  const entityFollowPending = Boolean(!publicMode && followEntity && isFollowPending(followEntity));
 
   // Reset overlays when navigating to a different entity
   useEffect(() => {
@@ -744,16 +815,43 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
     ));
   }, [entity, papers, sortBy]);
 
-  const handleShare = () => {
+  const handleShare = async () => {
+    if (!publicEntityUrl) return;
     if (navigator.share) {
-      navigator.share({
-        title: entityDisplayName || 'PaperTok',
-        url: window.location.href,
-      }).catch(console.error);
-    } else {
-      navigator.clipboard.writeText(window.location.href);
-      alert(isEnglish ? 'Link copied to clipboard' : 'Enlace copiado al portapapeles');
+      trackEvent('share', { method: 'native', content_type: analyticsEntityType, surface: 'explorer' });
+      try {
+        await navigator.share({
+          title: entityDisplayName || 'PaperTok',
+          url: publicEntityUrl,
+        });
+      } catch (error) {
+        if (error?.name !== 'AbortError') console.error(error);
+      }
+      return;
     }
+
+    trackEvent('share', { method: 'clipboard', content_type: analyticsEntityType, surface: 'explorer' });
+    try {
+      await navigator.clipboard.writeText(publicEntityUrl);
+      alert(isEnglish ? 'Link copied to clipboard' : 'Enlace copiado al portapapeles');
+    } catch (error) {
+      console.error('Failed to copy entity link', error);
+    }
+  };
+
+  const handleFollow = (event) => {
+    event.stopPropagation();
+    if (!followEntity) return;
+
+    if (publicMode) {
+      trackEvent('select_content', {
+        content_type: analyticsEntityType,
+        surface: 'explorer',
+      });
+      onAuthRequired();
+      return;
+    }
+    toggleFollow(followEntity).catch(console.error);
   };
 
   const retryPapers = () => {
@@ -782,7 +880,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
         aliases: [participant.name],
       });
       if (institution) {
-        navigate(`/explorer/institution/${institution.id}`);
+        navigateToEntity('institution', institution.id);
       } else {
         setParticipantNavigationError(isEnglish
           ? `We could not find an institution profile for ${participant.name}.`
@@ -810,7 +908,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
     setAuthorInstitutionNavigationError('');
     try {
       if (institutionId || rorId) {
-        navigate(`/explorer/institution/${institutionId || rorId}`);
+        navigateToEntity('institution', institutionId || rorId);
         return;
       }
 
@@ -820,7 +918,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
       });
 
       if (institution?.id) {
-        navigate(`/explorer/institution/${institution.id.split('/').pop()}`);
+        navigateToEntity('institution', institution.id.split('/').pop());
       } else {
         setAuthorInstitutionNavigationError(isEnglish
           ? 'We could not find this institution profile.'
@@ -841,7 +939,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
         <div className="explorer-hero">
           <div className="explorer-hero-top">
             <div className="eht-left">
-              <button className="explorer-back-btn" onClick={() => navigate(-1)} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
+              <button className="explorer-back-btn" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
                 <ArrowLeft size={20} />
               </button>
               <div className="skeleton-item" style={{ width: '80px', height: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}></div>
@@ -882,7 +980,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
   if (!entity) {
     return (
       <div className="explorer-error">
-        <button className="explorer-back-btn" onClick={() => navigate(-1)} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
+        <button className="explorer-back-btn" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
           <ArrowLeft size={24} />
         </button>
         <h2>{entityError
@@ -936,7 +1034,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
         
         <div className="explorer-hero-top">
           <div className="eht-left">
-            <button className="explorer-back-btn" onClick={() => navigate(-1)} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
+            <button className="explorer-back-btn" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
               <ArrowLeft size={20} />
             </button>
             <span className="ehc-type">{entityTypeLabel}</span>
@@ -985,12 +1083,12 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                 <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName}</h1>
                 {followEntity && (
                   <button
-                    className={`entity-follow-btn ${isFollowing(followEntity) ? 'following' : ''} ${isFollowPending(followEntity) ? 'is-pending' : ''}`}
-                    onClick={(e) => { e.stopPropagation(); toggleFollow(followEntity).catch(console.error); }}
-                    disabled={isFollowPending(followEntity)}
-                    aria-pressed={isFollowing(followEntity)}
+                    className={`entity-follow-btn ${entityIsFollowing ? 'following' : ''} ${entityFollowPending ? 'is-pending' : ''}`}
+                    onClick={handleFollow}
+                    disabled={entityFollowPending}
+                    aria-pressed={entityIsFollowing}
                   >
-                    {isFollowing(followEntity)
+                    {entityIsFollowing
                         ? <><Check size={14} /> <span>{isEnglish ? 'Following' : 'Siguiendo'}</span></>
                         : <span>{isEnglish ? 'Follow' : 'Seguir'}</span>}
                   </button>
@@ -1015,7 +1113,7 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                         <button
                           key={`${relationship.type}-${relationship.rorId}`}
                           type="button"
-                          onClick={() => navigate(`/explorer/institution/${relationship.rorId}`)}
+                          onClick={() => navigateToEntity('institution', relationship.rorId)}
                           title={`${ROR_RELATION_LABELS[language][relationship.type] || ROR_RELATION_LABELS[language].related}: ${relationship.label}`}
                         >
                           <span>{ROR_RELATION_LABELS[language][relationship.type] || ROR_RELATION_LABELS[language].related}</span>
@@ -1447,11 +1545,11 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                           className="orcid-item-org orcid-item-org--link"
                           onClick={async () => {
                             const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
-                            if (inst) navigate(`/explorer/institution/${inst.id}`);
+                            if (inst) navigateToEntity('institution', inst.id);
                           }}
                           onKeyDown={(event) => handleActivationKey(event, async () => {
                             const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
-                            if (inst) navigate(`/explorer/institution/${inst.id}`);
+                            if (inst) navigateToEntity('institution', inst.id);
                           })}
                           role="link"
                           tabIndex={0}
@@ -1487,11 +1585,11 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                           className="orcid-item-org orcid-item-org--link"
                           onClick={async () => {
                             const inst = await findInstitution({ rorUrl: edu.ror, name: edu.organization });
-                            if (inst) navigate(`/explorer/institution/${inst.id}`);
+                            if (inst) navigateToEntity('institution', inst.id);
                           }}
                           onKeyDown={(event) => handleActivationKey(event, async () => {
                             const inst = await findInstitution({ rorUrl: edu.ror, name: edu.organization });
-                            if (inst) navigate(`/explorer/institution/${inst.id}`);
+                            if (inst) navigateToEntity('institution', inst.id);
                           })}
                           role="link"
                           tabIndex={0}
@@ -1677,8 +1775,8 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                 key={author.id} 
                 className="ee-author-card staggerFadeUp" 
                 style={{ '--i': idx }}
-                onClick={() => navigate(`/explorer/author/${encodeURIComponent(author.id)}`)}
-                onKeyDown={(event) => handleActivationKey(event, () => navigate(`/explorer/author/${encodeURIComponent(author.id)}`))}
+                onClick={() => navigateToEntity('author', author.id)}
+                onKeyDown={(event) => handleActivationKey(event, () => navigateToEntity('author', author.id))}
                 role="link"
                 tabIndex={0}
                 aria-label={`${isEnglish ? 'Open profile for' : 'Abrir perfil de'} ${author.display_name}`}
@@ -1890,6 +1988,9 @@ export default function EntityExplorer({ onSaveToList = () => {} }) {
                   getInteractionState={getInteractionState}
                   trackViewTime={trackViewTime}
                   trackSkip={trackSkip}
+                  publicMode={publicMode}
+                  onAuthRequired={onAuthRequired}
+                  analyticsSurface="explorer"
                 />
               </div>
             </motion.div>

@@ -23,6 +23,7 @@ import {
 } from '../../services/aiExplanationService.js';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import ScientificText from '../ScientificText';
 import { normalizeAIExplanationMath } from '../../utils/aiExplanationMath.js';
 import { formatQuotaCountdown, formatQuotaResetTime } from '../../utils/aiQuota.js';
@@ -212,6 +213,7 @@ function ExplanationContent({ result, language }) {
 export default function AIExplanationSheet({ paper, onClose }) {
   const { readingPreferences } = useAuth();
   const { language } = useLanguage();
+  const { trackEvent, markActivation } = useAnalyticsConsent();
   const prefersReducedMotion = useReducedMotion();
   const [isMobileViewport, setIsMobileViewport] = useState(() => (
     typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches
@@ -276,10 +278,14 @@ export default function AIExplanationSheet({ paper, onClose }) {
     if (loadingLevel) return;
     setError(null);
     setLoadingLevel(level);
+    trackEvent('ai_explanation', { action: 'request', surface: 'feed' });
     try {
       const response = await explainPaper(paper, level, { language });
       setResults(previous => ({ ...previous, [level]: response }));
+      trackEvent('ai_explanation', { action: 'complete', surface: 'feed' });
+      markActivation();
     } catch (requestError) {
+      trackEvent('ai_explanation', { action: 'error', surface: 'feed' });
       setError({
         message: ERROR_COPY[language][requestError?.code] || ERROR_COPY[language].AI_UNAVAILABLE,
         code: requestError?.code,

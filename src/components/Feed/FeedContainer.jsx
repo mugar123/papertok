@@ -25,6 +25,9 @@ const SCROLL_INTERACTION_SETTLE_MS = 220;
 export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey = 'forYou' }) {
   const feed = useFeed();
   const { language, isEnglish } = useLanguage();
+  const publicMode = Boolean(source?.publicMode);
+  const onAuthRequired = source?.onAuthRequired;
+  const analyticsSurface = source?.surface || (scrollKey === 'following' ? 'following' : 'feed');
   const {
     trackPdfOpened,
     likedPaperIds, savedPaperIds, readPaperIds, toggleLike, markNotInterested, markAsRead,
@@ -46,9 +49,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const prefersReducedMotion = useReducedMotion();
 
   const handleViewTime = useCallback((paper, seconds) => {
+    if (publicMode) return;
     source?.onPaperViewed?.(paper);
     trackViewTime(paper, seconds);
-  }, [source, trackViewTime]);
+  }, [publicMode, source, trackViewTime]);
   const feedRef = useRef(null);
   const sentinelRef = useRef(null);
   const [showLoader, setShowLoader] = useState(false);
@@ -57,13 +61,17 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   const scrollIdleTimerRef = useRef(null);
   const skipFlushTimerRef = useRef(null);
   const pendingSkippedPapersRef = useRef(new Map());
-  const getInteractionState = useCallback((paper) => ({
+  const getInteractionState = useCallback((paper) => publicMode ? {} : ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
     isRead: readPaperIds?.has(paper.id),
-  }), [likedPaperIds, readPaperIds, savedPaperIds]);
+  }), [likedPaperIds, publicMode, readPaperIds, savedPaperIds]);
 
   const flushPendingSkips = useCallback(() => {
+    if (publicMode) {
+      pendingSkippedPapersRef.current.clear();
+      return;
+    }
     const skippedPapers = Array.from(pendingSkippedPapersRef.current.values());
     pendingSkippedPapersRef.current.clear();
     if (skippedPapers.length === 0) return;
@@ -73,7 +81,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
       return;
     }
     skippedPapers.forEach((paper) => void trackSkip(paper));
-  }, [trackSkip, trackSkippedPapers]);
+  }, [publicMode, trackSkip, trackSkippedPapers]);
 
   const schedulePendingSkipFlush = useCallback(() => {
     if (skipFlushTimerRef.current) clearTimeout(skipFlushTimerRef.current);
@@ -81,11 +89,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, [flushPendingSkips]);
 
   const handleSkip = useCallback((paper) => {
+    if (publicMode) return;
     source?.onPaperViewed?.(paper);
     if (!paper?.id) return;
     pendingSkippedPapersRef.current.set(paper.id, paper);
     schedulePendingSkipFlush();
-  }, [schedulePendingSkipFlush, source]);
+  }, [publicMode, schedulePendingSkipFlush, source]);
 
   // Restore scroll position instantly before browser paints. Must run only once
   // per mount: re-assigning scrollTop on later papers.length changes (infinite
@@ -210,9 +219,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   }, [refreshFeed]);
 
   const handleOpenPdf = useCallback((paper) => {
-    trackPdfOpened(paper);
+    if (!publicMode) trackPdfOpened(paper);
     onOpenPdf(paper);
-  }, [onOpenPdf, trackPdfOpened]);
+  }, [onOpenPdf, publicMode, trackPdfOpened]);
 
   const handleSaveToList = useCallback((paper) => {
     onSaveToList(paper);
@@ -326,13 +335,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
   return (
     <div className="feed-wrapper">
       <div className="feed-container" ref={feedRef} onScroll={handleScroll}>
-        {papers.map((paper) => (
+        {papers.map((paper, index) => (
           <div key={paper.id} className="feed-snap-item">
             <PaperCard
               paper={paper}
-              isLiked={likedPaperIds.has(paper.id)}
-              isSaved={savedPaperIds.has(paper.id)}
-              isRead={readPaperIds?.has(paper.id)}
+              isLiked={!publicMode && likedPaperIds.has(paper.id)}
+              isSaved={!publicMode && savedPaperIds.has(paper.id)}
+              isRead={!publicMode && readPaperIds?.has(paper.id)}
               onLike={toggleLike}
               onNotInterested={markNotInterested}
               onMarkAsRead={markAsRead}
@@ -342,6 +351,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               onSaveToList={handleSaveToList}
               getInteractionState={getInteractionState}
               showFollowReason={Boolean(source?.showFollowReason)}
+              publicMode={publicMode}
+              onAuthRequired={onAuthRequired}
+              analyticsSurface={analyticsSurface}
+              position={index + 1}
             />
           </div>
         ))}
