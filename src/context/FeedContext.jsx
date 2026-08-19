@@ -334,7 +334,14 @@ export function FeedProvider({ children }) {
       ])].slice(0, PERSONAL_LIBRARY_MAX_RECORDS);
 
       const records = await fetchLibraryRecords(userId, paperIds);
-      if (activeUserId.current !== userId) return;
+      if (activeUserId.current !== userId) {
+        // Abandoned, not finished. Leaving the status on 'loading' would make
+        // every later call short-circuit on a library that was never filled,
+        // and the guard below is what a page reads to decide it can stop
+        // showing a skeleton.
+        personalLibraryStatus.current = { userId, generation: -1, state: 'idle' };
+        return;
+      }
 
       const library = {};
       records.forEach(({ id, data }) => {

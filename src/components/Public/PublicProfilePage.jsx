@@ -29,6 +29,10 @@ import { fetchLibraryRecords } from '../../services/interactionProfileStore.js';
 import { IS_DEMO } from '../../services/firebase.js';
 import { getPublicListPath, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import { resolveProfileView } from '../../utils/profileAccess.js';
+import {
+  createPendingIdRequests,
+  requestMissingRecords,
+} from '../../utils/pendingIdRequests.js';
 import { cleanPaperText, displayAuthorName } from '../../utils/paperText.js';
 import { getIcon } from '../../utils/icons.js';
 import { normalizeHandle } from '../../utils/userHandle.js';
@@ -65,6 +69,9 @@ import './PublicProfilePage.css';
 // One page of rows per tab. Anything past it stays reachable in Mis listas;
 // the point here is a profile, not an infinite archive.
 const PROFILE_TAB_ROW_LIMIT = 60;
+// Long enough that a retry is not just the same blip again, short enough that a
+// row does not sit on its fallback title while the reader is looking at it.
+const LIKED_RETRY_DELAY_MS = 600;
 
 function authorLine(authors) {
   const names = (Array.isArray(authors) ? authors : [])
@@ -172,7 +179,11 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const [ownListsFailed, setOwnListsFailed] = useState(false);
   const [libraryReady, setLibraryReady] = useState(false);
   const [likedExtra, setLikedExtra] = useState({});
-  const requestedLikedIds = useRef(new Set());
+  const likedRequests = useRef(null);
+  if (likedRequests.current === null) likedRequests.current = createPendingIdRequests();
+  // Releasing a claim mutates a ref, which schedules no render. This token is
+  // what turns "these ids are askable again" into an effect that actually runs.
+  const [likedRetry, setLikedRetry] = useState(0);
   // Follows (F2). `null` means "not asked yet", which is what keeps the header
   // from flashing a zero before the real number lands.
   const [followerStats, setFollowerStats] = useState(null);
@@ -329,33 +340,48 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
 
   useEffect(() => {
     if (!view.isOwner || activeTab !== 'liked' || IS_DEMO || !user?.uid) return undefined;
-    const missing = likedOrder.filter(id => (
-      !personalLibrary[id]?.paper && !likedExtra[id] && !requestedLikedIds.current.has(id)
-    ));
-    if (missing.length === 0) return undefined;
-    missing.forEach(id => requestedLikedIds.current.add(id));
-    // `requestedLikedIds` never forgets an id, so a response has to land in
-    // state no matter what tab is active by then — a cancel-on-cleanup here
-    // turns "switched tabs during the fetch" into rows that stay untitled for
-    // the life of the page, with no retry. `likedExtra` is a cache keyed by
-    // id, so a late merge is idempotent and unmount makes setState a no-op.
-    fetchLibraryRecords(user.uid, missing)
-      .then(records => {
-        if (records.length === 0) return;
+    const wanted = likedOrder.filter(id => !personalLibrary[id]?.paper && !likedExtra[id]);
+    if (wanted.length === 0) return undefined;
+    let abandoned = false;
+    let retryTimer = null;
+
+    // An id counts as asked-for only once its response lands (`pendingIdRequests`
+    // holds the claim until then), so a read that fails or never arrives leaves
+    // the id askable instead of leaving its row on the fallback title for the
+    // life of the page.
+    requestMissingRecords({
+      ids: wanted,
+      requests: likedRequests.current,
+      fetchRecords: ids => fetchLibraryRecords(user.uid, ids),
+    }).then(({ records, retryable, error }) => {
+      // The merge is deliberately not cancelled: `likedExtra` is a cache keyed
+      // by id, so a response arriving after a tab switch is idempotent and
+      // still fills the rows, and after unmount setState is a no-op.
+      if (records.length > 0) {
         setLikedExtra(current => {
           const next = { ...current };
           records.forEach(({ id, data }) => { next[id] = data; });
           return next;
         });
-      })
-      .catch(error => {
-        // A failed batch must become retryable, or a transient error leaves
-        // the same permanent blanks the cancel did.
-        missing.forEach(id => requestedLikedIds.current.delete(id));
-        console.error('Error loading liked paper titles:', error);
-      });
-    return undefined;
-  }, [view.isOwner, activeTab, likedOrder, personalLibrary, likedExtra, user?.uid]);
+      }
+      if (error) console.error('Error loading liked paper titles:', error);
+      // The retry, on the other hand, only makes sense while this effect is
+      // still the live one; `requestMissingRecords` has already bounded how
+      // many times a failing read gets to come back here. The wait is what
+      // makes those attempts worth having: fired back to back they would all
+      // land inside the same blip that caused the first failure.
+      if (retryable && !abandoned) {
+        retryTimer = setTimeout(() => setLikedRetry(count => count + 1), LIKED_RETRY_DELAY_MS);
+      }
+    });
+
+    return () => {
+      abandoned = true;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
+  }, [
+    view.isOwner, activeTab, likedOrder, personalLibrary, likedExtra, user?.uid, likedRetry,
+  ]);
 
   const likedRows = useMemo(() => likedOrder.map(id => {
     const library = personalLibrary[id]?.paper;

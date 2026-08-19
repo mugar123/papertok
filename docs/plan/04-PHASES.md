@@ -251,6 +251,91 @@ esta fase deshace esa suposición sin romper nada de lo que F1/F2 construyeron.
 
 ---
 
+## F9 — Búsqueda de usuarios
+
+### P16 `[rules]`+UI — Buscar usuarios sin abrir el volcado
+
+F1 cerró `list` en `userProfiles/` y `handles/` a propósito (revisión de
+seguridad: nadie vuelca el directorio con sus fotos, a tu cuota), y esta fase
+**no lo reabre**. Firestore no busca texto, pero sí hace queries de rango, y
+eso basta para "encontrar a alguien por su handle o su nombre": la búsqueda
+lee una colección nueva, `userSearch/{uid}` (`01-DATA-MODEL.md`), un índice
+mínimo — handle y nombre en minúsculas, sin foto ni bio — donde **los
+perfiles privados no existen**. "No aparecer en resultados" no es un filtro
+de UI: es ausencia a nivel de datos, verificable contra el emulador. El
+análisis de por qué buscar es enumerar, y qué se le concede a cambio, está en
+`02-SECURITY.md` §7.
+
+- **Entra**: colección `userSearch/{uid}` con `allow list` acotado
+  (autenticado + `request.query.limit <= 20`, el patrón de techo de
+  `follows/`) y `get`/escritura ajena cerrados; escritura del dueño **en el
+  mismo batch** que el perfil, con coherencia por `getAfter` (handle
+  idéntico, `nameLower == displayName.lower()`, perfil público tras el
+  batch); cláusula nueva en `userProfiles/`: toda escritura que deje el
+  perfil privado —y el delete— exige `!existsAfter(userSearch/{uid})`, que es
+  la dirección a prueba de fallos; `userSearchService` (dos queries de
+  prefijo —handle y nombre— fusionadas y deduplicadas por uid en cliente,
+  mínimo 2 caracteres, disparo al enviar o con debounce ≥400 ms, nunca por
+  tecla); ruta `/search` con filas nombre+handle+monograma — sin foto: la
+  foto es exactamente lo que la revisión de F1 cerró — que navegan al perfil
+  público, donde la privacidad ya la imponen las rules de F8.
+- **Motor de búsqueda**: **ninguno**, y no solo por ahorrar sino porque no
+  encaja: sin Cloud Functions (plan Blaze) no hay triggers de sincronización,
+  y el Worker no ve las escrituras de perfil (van directas cliente→Firestore
+  por diseño, `00-ARCHITECTURE.md`), así que Algolia/Typesense obligarían a
+  sincronizar desde el cliente con una clave de escritura expuesta. Coste si
+  algún día hiciera falta typo-tolerance de verdad: Algolia da del orden de
+  10k búsquedas/mes gratis y ~0,50 $/1.000 después, más resolver el problema
+  de sync; Typesense/Meilisearch Cloud parten de ~20–30 $/mes. La alternativa
+  gratis es esta fase; sus límites (prefijo, no substring ni typos) y la
+  escalada **sin** motor están en `02-SECURITY.md` §7.
+- **Coste en lecturas**: una búsqueda ejecutada = 2 queries acotadas
+  (facturadas por resultado, mínimo 1 cada una): 2–20 lecturas, típicamente
+  <6. Cero lecturas por fila pintada (nombre y handle viajan en el doc del
+  índice). Abrir un resultado = el coste normal de un perfil (F1/F2). Cada
+  guardado de perfil gana ~1 lectura de rules por el `existsAfter`/`getAfter`
+  nuevo. **La carga del feed sigue costando 1**: nada de esto entra en su
+  camino, y el test estructural lo fija.
+- **Toca**: `firestore.rules`, servicio nuevo + tests,
+  `userProfileService.js` (los batches de crear / guardar / renombrar handle /
+  despublicar ganan el doc de búsqueda), componente de búsqueda, `App.jsx`
+  (ruta). Punto de entrada provisional fuera de `Navbar.jsx` (rama del
+  compañero, STATE.md); el icono en la Navbar llega cuando esa rama aterrice.
+- **Depende de**: P3, P15. Paralelizable con F3: no comparte ficheros con
+  P6–P8 salvo `firestore.rules`, que es aditivo.
+- **Presupuesto de expresiones**: la cláusula nueva de `userProfiles/` gasta
+  el margen que F1 dejó medido (7 pines pasan, 8 fallan; el tope de 6 "deja
+  una entrada de margen para la próxima cláusula" — esta fase ES esa
+  cláusula). Obligatorio re-ejecutar el test de límite con 6 pines contra el
+  emulador; si deja de pasar, el tope de pines baja a 5 en esta misma fase.
+- **Migración**: los perfiles públicos anteriores a la fase no tienen doc de
+  búsqueda. Reparación perezosa en el editor (detectar público-sin-doc y
+  escribirlo al guardar, patrón `partitionStalePins`); opcional, un backfill
+  único con Admin SDK en local (gratis; salta las rules, así que no necesita
+  P10). A la escala actual, la perezosa basta.
+- **Tests que la cierran**: emulador — `list` sin `limit`, con `limit(21)` o
+  sin auth denegados; crear doc de búsqueda con perfil privado denegado;
+  dejar el perfil privado (o borrarlo) con doc de búsqueda vivo denegado, y
+  el batch correcto permitido; `nameLower` o handle discordantes con el
+  perfil denegados; escribir el doc de otro denegado; forma cerrada y
+  `createdAt` de servidor; **coste del feed sigue en 1 documento**.
+  Unitarios del servicio (fusión/dedupe, mínimo de caracteres, debounce).
+  Estructural: ningún módulo del camino del feed importa `userSearchService`
+  (el patrón de P4). Pasada de mutación de todas las cláusulas nuevas. La
+  copy de `VisibilityChoice` gana una línea ("un perfil público aparece en la
+  búsqueda de usuarios") y el test `F8: what going private does NOT hide`
+  gana su complemento: privado ⇒ fuera del índice.
+- **Despliegue**: rules → app, un solo despliegue de rules. El bloque
+  `userSearch/` es aditivo e inerte, y la cláusula nueva de `userProfiles/`
+  no rompe a un bundle cacheado: mientras una cuenta no tenga doc de
+  búsqueda, `!existsAfter` es verdadero y sus escrituras de siempre pasan tal
+  cual. El único choque posible es una cuenta que ya creó su doc con el
+  bundle nuevo y guarda en privado desde un bundle viejo — se deniega en la
+  dirección segura y se resuelve recargando; no hace falta el despliegue en
+  dos fases de F8.
+
+---
+
 ## Mapa de dependencias
 
 ```
@@ -262,6 +347,7 @@ P10 → P11 → P12                       (F6 núcleo)
 P10 → P13                             (F6 afiliación)
 P10 + P3 → P14                        (F7)
 P1 + P3 + P4 → P15                    (F8, hecha)
+P3 + P15 → P16                        (F9, paralelizable con F3)
 ```
 
 Bloqueadas por humano: **P9** (OAuth App GitHub), **P10** (service account),

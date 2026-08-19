@@ -207,3 +207,93 @@ que es donde está la información para resolverlo.
 - Nota de deuda preexistente (no bloquea): hay una segunda implementación
   divergente de verificación en `email-notifications.js:688-709`; unificar
   cuando se toque el Worker. Registrado en STATE.md.
+
+## 7. F9 — Búsqueda de usuarios: buscar es enumerar, y el diseño lo asume
+
+Las rules no pueden distinguir "búsqueda" de "volcado": ven `limit` y
+`orderBy` de una query, pero **no los valores de los `where`**, así que
+cualquier índice consultable por prefijo es enumerable paseando prefijos con
+paciencia. Prometer lo contrario sería mentira; lo que sí se decide es **qué
+obtiene quien enumera y cuánta fricción paga**. La revisión de F1 cerró
+`list` en `userProfiles/` y `handles/` porque el premio era el directorio
+completo con fotos y bios, anónimo y a cuota ajena. F9 no reabre eso: crea
+`userSearch/{uid}` (modelo en `01-DATA-MODEL.md`) donde el premio de la
+enumeración se reduce a *handle + nombre en minúsculas de quien eligió ser
+público* — datos que ya se sirven uno a uno por `allow get` del perfil — y la
+fricción sube: hace falta sesión (una cuenta real, bloqueable por UID en
+rules con la lista corta de §1), el techo `limit ≤ 20` lo impone el servidor
+(el patrón verificado de `follows/` en producción), y el backstop sigue
+siendo la cuota diaria del free tier (§2.3).
+
+### Los perfiles privados no se filtran: no están
+
+La garantía de F8 ("un perfil privado no aparece en resultados") no se
+implementa filtrando resultados en cliente, que un cliente modificado
+ignoraría. Un perfil privado **no tiene documento en el índice**:
+
+- Escribir en `userSearch/{uid}` exige, vía `getAfter`, que el perfil quede
+  **público** tras el batch.
+- La dirección a prueba de fallos vive en `userProfiles/`: toda escritura que
+  deje el perfil privado, y el delete del perfil, exigen
+  `!existsAfter(userSearch/{uid})` — volverse privado sin salir del índice no
+  es un bug improbable, es una escritura que Firestore rechaza.
+- Los handles de perfiles privados siguen sin ser enumerables (`handles/`
+  conserva `list: if false`); siguen siendo *sondeables* por `get` exacto,
+  que es exactamente lo que F8 ya documenta y avisa en pantalla.
+
+Boceto (ilustrativo, no producción):
+
+```
+match /userSearch/{uid} {
+  allow get: if false;                    // nadie necesita un doc suelto
+  allow list: if request.auth != null
+    && request.query.limit <= 20;         // techo servidor, patrón follows/
+  allow create, update: if request.auth != null && request.auth.uid == uid
+    && request.resource.data.keys().hasOnly(['handle','nameLower','createdAt'])
+    && profileIsPublic(getAfter(/…/userProfiles/$(uid)).data)
+    && request.resource.data.handle == getAfter(/…/userProfiles/$(uid)).data.handle
+    && request.resource.data.nameLower
+       == getAfter(/…/userProfiles/$(uid)).data.displayName.lower();
+  allow delete: if request.auth != null && request.auth.uid == uid;
+}
+// y en userProfiles/{uid}: toda escritura que deje el perfil privado, y el
+// delete, exigen además !existsAfter(/…/userSearch/$(uid))
+```
+
+### Lo que las rules SÍ validan aquí, y lo que no
+
+- **Sí**: que `nameLower` deriva del `displayName` real (`.lower()` sobre el
+  perfil post-batch). Sin esa igualdad, un cliente podría rellenar el campo
+  con tokens ajenos ("taylor swift") para colarse en búsquedas de otros — la
+  superficie clásica de los índices mantenidos por el cliente, cerrada aquí
+  por construcción. Handle coherente, forma cerrada, tamaños, `createdAt` de
+  servidor: el catálogo de §1.
+- **No**: la frescura en la dirección abierta. Si un guardado de perfil
+  renombra `displayName` sin tocar el doc de búsqueda (el servicio siempre
+  hace ambos en un batch; esto sería un bug de cliente), el índice sirve un
+  nombre rancio hasta el siguiente guardado. Es deriva cosmética, nunca de
+  privacidad: la dirección que importa (privado ⇒ fuera) sí está en rules.
+- **No**: el ritmo de las lecturas. No hay throttle de búsquedas en rules
+  (los `rateLimits/` de §2 gobiernan escrituras); las capas reales son la
+  sesión obligatoria, el `limit`, el debounce del cliente oficial y la cuota
+  diaria. Aceptado igual que en `follows/`, cuyo grafo también es enumerable
+  con sesión.
+
+### Límites de la búsqueda y escalada sin motor
+
+Es búsqueda por **prefijo desde el inicio del campo**: "nico" encuentra a
+"Nicolás Muñoz" por nombre y "@nick_mugar" por handle; "muñoz" no encuentra
+nada, y no hay plegado de acentos ni tolerancia a typos (la derivación
+verificable en rules es `.lower()` y solo eso; normalizar acentos en cliente
+haría inverificable la derivación y reabriría el stuffing).
+
+Escalada si el prefijo se queda corto, **sin motor externo y aún verificable**:
+campo `nameTokens` (lista de palabras del nombre en minúsculas, separadas por
+espacio simple normalizado en cliente) con la igualdad
+`nameTokens.join(' ') == displayName.lower()` en rules, consultado con
+`array-contains` para palabra exacta — "muñoz" pasa a encontrar. Motor
+externo (Algolia y compañía) solo si algún día hicieran falta typos, con dos
+costes: el precio (04-PHASES) y el problema estructural de sync — sin Cloud
+Functions no hay trigger, el Worker no ve las escrituras de perfil, y
+sincronizar desde el cliente exige exponer una clave de escritura del índice,
+que es esta misma sección otra vez pero en un servicio sin rules.

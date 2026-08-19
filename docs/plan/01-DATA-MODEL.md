@@ -126,6 +126,42 @@ atómico perfil+handle, mismo patrón `getAfter` que las listas públicas).
 Delete: owner (cambio de handle = delete viejo + create nuevo + update perfil
 en un batch). Lee: cualquiera (resolver `/user/{handle}` → uid: 1 lectura).
 
+### `userSearch/{uid}` — índice de búsqueda de usuarios (F9)
+
+`userProfiles/` y `handles/` tienen `allow list: if false` desde la revisión
+de seguridad de F1 y **así se quedan**. Buscar necesita `list`, y abrirlo
+sobre el perfil regalaría el volcado del directorio con fotos y bios; en su
+lugar la búsqueda lee esta colección aparte, que contiene exactamente lo que
+una fila de resultados pinta y **solo perfiles públicos** — un perfil privado
+no está en el índice, así que no puede aparecer en resultados ni siquiera
+para un cliente modificado.
+
+```
+handle      string ≤40   == getAfter(userProfiles/{uid}).handle (mismo batch)
+nameLower   string ≤80   == displayName.lower() del perfil tras el batch;
+                         las rules verifican la derivación — el cliente no
+                         puede meter tokens ajenos para colarse en búsquedas
+createdAt   timestamp    == request.time
+```
+
+Clave por **uid y no por handle**: la coherencia por `getAfter` con
+`userProfiles/{uid}` usa el mismo segmento de ruta, y renombrar el handle es
+un update en el sitio, no un delete+create más en un batch que ya toca tres
+documentos.
+
+| | |
+| --- | --- |
+| Lee | Solo `list`, autenticado y con `request.query.limit <= 20` (el techo servidor de `follows/`, más estricto). `get: if false`: nadie necesita un doc suelto, el perfil ya se lee por `userProfiles/`. Sin sesión no se busca — encarece el scraping y el punto de entrada es de la app con sesión. |
+| Escribe | Solo el dueño, en batch coherente con su perfil (`getAfter`): perfil público tras el batch, handle idéntico, `nameLower` derivado del `displayName` real. Delete: el dueño. La dirección crítica va al revés: `userProfiles/` exige `!existsAfter(userSearch/{uid})` en toda escritura que deje el perfil privado y en el delete — volverse privado sin salir del índice es imposible, no improbable. Coste: ~1 lectura de rules extra por guardado de perfil. |
+| Patrón de acceso | Dos queries de prefijo por búsqueda ejecutada — `where('handle','>=',q).where('handle','<=',q+'\uf8ff').limit(10)` y la simétrica sobre `nameLower` — fusionadas y deduplicadas por uid en cliente. Mínimo 2 caracteres, disparo al enviar o con debounce ≥400 ms, jamás por tecla. |
+| Índices | Ninguno compuesto: cada query es un rango sobre un solo campo (índice automático). |
+| Cota | Doc de ~150 B. Sin foto ni bio a propósito: es lo que la revisión de F1 cerró, y también lo que deja el volcado sin nada que valga la pena. |
+
+Límite asumido: es búsqueda por **prefijo desde el inicio del campo**
+("nico" encuentra a "Nicolás Muñoz"; "muñoz" no), sin acentos plegados ni
+typos. La escalada sin motor externo y el análisis de enumeración están en
+`02-SECURITY.md` §7.
+
 ### `follows/{followerUid}_{targetUid}` — seguimiento entre usuarios (F2)
 
 **No** se mete en `users/{uid}/following`: esa subcolección es privada,
@@ -242,3 +278,4 @@ enviar y no lo persiste en ningún sitio legible. El opt-in es
 | Perfil público | 1 perfil (+1 si se llega por handle) + 2 `count()` |
 | Página de lista pública | Sin cambio: 1 |
 | Seguir / dejar de seguir | 1 write / 1 delete |
+| Búsqueda de usuarios (una búsqueda ejecutada) | 2 queries acotadas: 2–20 lecturas, típicamente <6; 0 por fila (nombre y handle viajan en el doc del índice) |
