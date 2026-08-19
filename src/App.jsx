@@ -23,6 +23,8 @@ import ScientificReport from './components/Report/ScientificReport'
 import FollowingFeedPage from './components/Following/FollowingFeedPage'
 import SettingsPage from './components/Settings/SettingsPage'
 import FollowingSettingsPage from './components/Settings/FollowingSettingsPage'
+import MyCommentsPage from './components/Settings/MyCommentsPage'
+import ModerationPage from './components/Admin/ModerationPage'
 import AnalyticsConsentBanner from './components/Privacy/AnalyticsConsentBanner'
 import GuestFeedPage from './components/Public/GuestFeedPage'
 import AuthPrompt from './components/Public/AuthPrompt'
@@ -42,7 +44,7 @@ function AppContent() {
   const navigate = useNavigate()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/', '/lists', '/research', '/following', '/profile', '/settings', '/settings/following', '/settings/profile']
+  const navbarRoutes = ['/', '/lists', '/research', '/following', '/profile', '/settings', '/settings/following', '/settings/profile', '/settings/comments']
   // The paper and profile pages keep the app chrome for a signed-in user —
   // reaching a paper from Liked, or a profile from the follow sheet, must not
   // feel like leaving the app. Signed-out visitors on a shared link still get
@@ -186,6 +188,28 @@ function AppContent() {
               <ProtectedRoute>
                 <PageTransition>
                   <FollowingSettingsPage />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/settings/comments"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <MyCommentsPage />
+                </PageTransition>
+              </ProtectedRoute>
+            }
+          />
+          {/* Unlisted, not secret: the rules deny the queue to any uid that
+              is not the admin's, and the page says so. */}
+          <Route
+            path="/admin/moderation"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <ModerationPage />
                 </PageTransition>
               </ProtectedRoute>
             }

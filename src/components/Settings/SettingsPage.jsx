@@ -16,6 +16,7 @@ import {
   LoaderCircle,
   LogOut,
   Mail,
+  MessageCircle,
   RotateCcw,
   ShieldCheck,
   SlidersHorizontal,
@@ -100,6 +101,8 @@ const SETTINGS_COPY = {
     viewAll: 'Ver todo',
     publicProfile: 'Perfil público',
     publicProfileDescription: 'Tu handle, tu biografía y las listas que decidas mostrar',
+    myComments: 'Mis comentarios',
+    myCommentsDescription: 'Lo que has escrito en los papers, incluido lo moderado',
     scientificInterests: 'Intereses científicos',
     selectedOne: 'subcategoría seleccionada',
     selectedMany: 'subcategorías seleccionadas',
@@ -168,6 +171,8 @@ const SETTINGS_COPY = {
     viewAll: 'View all',
     publicProfile: 'Public profile',
     publicProfileDescription: 'Your handle, your bio and the lists you choose to show',
+    myComments: 'My comments',
+    myCommentsDescription: 'What you have written on papers, moderated items included',
     scientificInterests: 'Scientific interests',
     selectedOne: 'selected subcategory',
     selectedMany: 'selected subcategories',
@@ -506,6 +511,17 @@ export default function SettingsPage() {
                 </div>
                 <button className="settings-row-action" onClick={() => navigate('/settings/profile')}>
                   {copy.edit} <ChevronRight size={17} />
+                </button>
+              </div>
+
+              <div className="settings-row" style={{ '--settings-index': 1 }}>
+                <span className="settings-row-icon is-purple"><MessageCircle size={20} /></span>
+                <div className="settings-row-content">
+                  <h3>{copy.myComments}</h3>
+                  <p>{copy.myCommentsDescription}</p>
+                </div>
+                <button className="settings-row-action" onClick={() => navigate('/settings/comments')}>
+                  {copy.viewAll} <ChevronRight size={17} />
                 </button>
               </div>
 

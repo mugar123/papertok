@@ -1,0 +1,714 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { CornerDownRight, Flag, MessageCircle, Pencil, Trash2, X } from 'lucide-react';
+import {
+  createComment,
+  deleteComment,
+  editComment,
+  fetchCommentCount,
+  fetchThreadPage,
+  groupThread,
+} from '../../services/commentService.js';
+import { resolveThreadAnchor } from '../../services/paperStubService.js';
+import {
+  commentTargetPath,
+  hideCommentLocally,
+  locallyHiddenCommentIds,
+  readModerationConfig,
+  submitReport,
+} from '../../services/reportService.js';
+import { profileIsPublic, readOwnUserProfile } from '../../services/userProfileService.js';
+import { getPublicProfilePath } from '../../utils/publicNavigation.js';
+import './CommentsSheet.css';
+
+/**
+ * The comment thread of one paper, as a sheet over the paper page.
+ *
+ * Everything Firestore here is lazy and bounded: nothing loads until the
+ * sheet opens, and then it is one stub read (two for a dual-identity paper —
+ * the split-brain check), one capped count, one `limit(20)` page, and the
+ * viewer's own profile for composer gating. The feed never comes near any of
+ * it.
+ *
+ * Threads read oldest-first, so a reply's parent is always already on
+ * screen; replies hang one level deep under their parent, and answering a
+ * reply answers its thread (the parent), TikTok-style.
+ *
+ * Who may write is the rules' decision, mirrored honestly by the composer:
+ * signed out → sign in; no public profile → create one; private profile →
+ * commenting is a public act, with the path to going public spelled out.
+ */
+
+const COPY = {
+  title: { es: 'Comentarios', en: 'Comments' },
+  close: { es: 'Cerrar', en: 'Close' },
+  loading: { es: 'Cargando...', en: 'Loading...' },
+  empty: { es: 'Nadie ha comentado todavía. Abre la conversación.', en: 'Nobody has commented yet. Start the conversation.' },
+  loadError: { es: 'No se pudieron cargar los comentarios.', en: 'The comments could not be loaded.' },
+  retry: { es: 'Reintentar', en: 'Try again' },
+  more: { es: 'Cargar más', en: 'Load more' },
+  placeholder: { es: 'Añade un comentario...', en: 'Add a comment...' },
+  replyingTo: { es: 'Respondiendo a', en: 'Replying to' },
+  editing: { es: 'Editando tu comentario', en: 'Editing your comment' },
+  cancel: { es: 'Cancelar', en: 'Cancel' },
+  send: { es: 'Publicar', en: 'Post' },
+  save: { es: 'Guardar', en: 'Save' },
+  reply: { es: 'Responder', en: 'Reply' },
+  edit: { es: 'Editar', en: 'Edit' },
+  delete: { es: 'Borrar', en: 'Delete' },
+  deleteConfirm: { es: '¿Borrar? Sus respuestas se borran también.', en: 'Delete? Its replies go too.' },
+  deleteReplyConfirm: { es: '¿Borrar esta respuesta?', en: 'Delete this reply?' },
+  confirm: { es: 'Sí, borrar', en: 'Yes, delete' },
+  report: { es: 'Reportar', en: 'Report' },
+  reportWhy: { es: 'Motivo del reporte', en: 'Reason' },
+  reportSpam: { es: 'Spam', en: 'Spam' },
+  reportAbuse: { es: 'Abuso', en: 'Abuse' },
+  reportOther: { es: 'Otro', en: 'Other' },
+  reported: { es: 'Reportado. Ya no lo verás en este dispositivo.', en: 'Reported. You will no longer see it on this device.' },
+  reportThrottled: { es: 'Reportaste hace muy poco. Espera un minuto.', en: 'You reported very recently. Give it a minute.' },
+  edited: { es: 'editado', en: 'edited' },
+  hiddenBadge: { es: 'Oculto por moderación', en: 'Hidden by moderation' },
+  hiddenExplain: { es: 'Solo tú lo ves aquí.', en: 'Only you can see it here.' },
+  signInPrompt: { es: 'Inicia sesión para unirte a la conversación.', en: 'Sign in to join the conversation.' },
+  signIn: { es: 'Iniciar sesión', en: 'Sign in' },
+  needProfileTitle: { es: 'Comentar necesita un perfil público', en: 'Commenting needs a public profile' },
+  needProfileBody: { es: 'Tu comentario se firma con tu handle. Crea tu perfil para comentar.', en: 'Your comment is signed with your handle. Create your profile to comment.' },
+  needProfileCta: { es: 'Crear mi perfil', en: 'Create my profile' },
+  privateTitle: { es: 'Tu perfil es privado', en: 'Your profile is private' },
+  privateBody: {
+    es: 'Comentar es un acto público: tu handle queda a la vista junto a lo que escribas. Para comentar, haz público tu perfil desde su editor.',
+    en: 'Commenting is a public act: your handle stands next to what you write. To comment, make your profile public from the profile editor.',
+  },
+  privateCta: { es: 'Revisar mi privacidad', en: 'Review my privacy' },
+  frozen: { es: 'Los comentarios están pausados temporalmente en toda la app.', en: 'Comments are temporarily paused across the app.' },
+  throttled: { es: 'Vas demasiado rápido. Espera unos segundos y vuelve a intentarlo.', en: 'Too fast. Wait a few seconds and try again.' },
+  writeError: { es: 'No se pudo publicar. Revisa tu conexión.', en: 'It could not be posted. Check your connection.' },
+  deleteError: { es: 'No se pudo borrar. Vuelve a intentarlo.', en: 'It could not be deleted. Try again.' },
+};
+
+const RELATIVE_STEPS = [
+  { seconds: 60, es: 'ahora', en: 'now' },
+  { seconds: 3600, divisor: 60, es: 'min', en: 'min' },
+  { seconds: 86400, divisor: 3600, es: 'h', en: 'h' },
+  { seconds: 2592000, divisor: 86400, es: 'd', en: 'd' },
+];
+
+function relativeTime(value, isEnglish) {
+  const date = typeof value?.toDate === 'function' ? value.toDate() : value;
+  const time = date instanceof Date ? date.getTime() : NaN;
+  if (!Number.isFinite(time)) return '';
+  const elapsed = Math.max(0, (Date.now() - time) / 1000);
+  for (const step of RELATIVE_STEPS) {
+    if (elapsed < step.seconds) {
+      if (!step.divisor) return isEnglish ? step.en : step.es;
+      return `${Math.floor(elapsed / step.divisor)} ${isEnglish ? step.en : step.es}`;
+    }
+  }
+  return date.toLocaleDateString(isEnglish ? 'en' : 'es', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+function initialOf(name) {
+  return (name || '?').trim().charAt(0).toUpperCase() || '?';
+}
+
+/**
+ * Turns a denied write into the honest sentence for it: the killswitch, the
+ * throttle, or a plain failure. One extra read (the config doc) and only on
+ * the error path — the happy path never pays for the diagnosis.
+ */
+async function explainDenial(error, text) {
+  if (error?.code !== 'permission-denied') return text(COPY.writeError);
+  const config = await readModerationConfig().catch(() => null);
+  if (config?.commentsFrozen) return text(COPY.frozen);
+  return text(COPY.throttled);
+}
+
+function CommentBody({ comment, isEnglish, text }) {
+  return (
+    <>
+      <div className="comment-row-meta">
+        <Link className="comment-row-handle" to={getPublicProfilePath(comment.authorHandle) || '#'}>
+          @{comment.authorHandle}
+        </Link>
+        <span className="comment-row-time">{relativeTime(comment.createdAt, isEnglish)}</span>
+        {comment.editedAt && <span className="comment-row-edited">{text(COPY.edited)}</span>}
+      </div>
+      {comment.status === 'hidden' && (
+        <div className="comment-row-hidden-badge">
+          {text(COPY.hiddenBadge)} · {text(COPY.hiddenExplain)}
+        </div>
+      )}
+      <p className="comment-row-text">{comment.text}</p>
+    </>
+  );
+}
+
+function CommentRow({
+  comment, isReply, viewerUid, canInteract, busy,
+  onReply, onEdit, onDelete, onReport, isEnglish, text,
+}) {
+  const [confirming, setConfirming] = useState(null); // 'delete' | 'report'
+  const own = viewerUid && comment.authorUid === viewerUid;
+
+  return (
+    <div className={`comment-row${isReply ? ' comment-row--reply' : ''}`}>
+      <span className="comment-avatar" aria-hidden="true">{initialOf(comment.authorHandle)}</span>
+      <div className="comment-row-main">
+        <CommentBody comment={comment} isEnglish={isEnglish} text={text} />
+
+        {confirming === 'delete' ? (
+          <div className="comment-row-confirm" role="alert">
+            <span>{text(isReply ? COPY.deleteReplyConfirm : COPY.deleteConfirm)}</span>
+            <button type="button" className="comment-action comment-action--danger" disabled={busy}
+              onClick={() => { setConfirming(null); onDelete(comment); }}>
+              {text(COPY.confirm)}
+            </button>
+            <button type="button" className="comment-action" onClick={() => setConfirming(null)}>
+              {text(COPY.cancel)}
+            </button>
+          </div>
+        ) : confirming === 'report' ? (
+          <div className="comment-row-confirm" role="alert">
+            <span>{text(COPY.reportWhy)}:</span>
+            {[['spam', COPY.reportSpam], ['abuse', COPY.reportAbuse], ['other', COPY.reportOther]].map(([reason, label]) => (
+              <button key={reason} type="button" className="comment-action" disabled={busy}
+                onClick={() => { setConfirming(null); onReport(comment, reason); }}>
+                {text(label)}
+              </button>
+            ))}
+            <button type="button" className="comment-action" onClick={() => setConfirming(null)}>
+              {text(COPY.cancel)}
+            </button>
+          </div>
+        ) : (
+          <div className="comment-row-actions">
+            {canInteract && (
+              <button type="button" className="comment-action" onClick={() => onReply(comment)}>
+                <CornerDownRight size={13} aria-hidden="true" /> {text(COPY.reply)}
+              </button>
+            )}
+            {own && (
+              <>
+                <button type="button" className="comment-action" onClick={() => onEdit(comment)}>
+                  <Pencil size={13} aria-hidden="true" /> {text(COPY.edit)}
+                </button>
+                <button type="button" className="comment-action comment-action--danger"
+                  onClick={() => setConfirming('delete')}>
+                  <Trash2 size={13} aria-hidden="true" /> {text(COPY.delete)}
+                </button>
+              </>
+            )}
+            {!own && viewerUid && (
+              <button type="button" className="comment-action" onClick={() => setConfirming('report')}>
+                <Flag size={13} aria-hidden="true" /> {text(COPY.report)}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClose, onAuthRequired }) {
+  const prefersReducedMotion = useReducedMotion();
+  const text = useCallback(entry => entry[isEnglish ? 'en' : 'es'], [isEnglish]);
+
+  const [anchor, setAnchor] = useState(null);
+  const [status, setStatus] = useState('loading');
+  const [attempt, setAttempt] = useState(0);
+  const [rows, setRows] = useState([]);
+  // One pagination source per stub the paper resolves to: the canonical one
+  // plus any alternate that already holds comments (split-brain read).
+  const [sources, setSources] = useState([]);
+  const [count, setCount] = useState(null);
+  const [ownProfile, setOwnProfile] = useState({ status: 'loading', profile: null });
+  const [hiddenLocally, setHiddenLocally] = useState(() => locallyHiddenCommentIds());
+  const [paging, setPaging] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(null);
+  const [composerError, setComposerError] = useState(null);
+  const [draft, setDraft] = useState('');
+  const [replyTarget, setReplyTarget] = useState(null);
+  const [editTarget, setEditTarget] = useState(null);
+
+  const sheet = useRef(null);
+  const closeButton = useRef(null);
+  const composerInput = useRef(null);
+  const dupReported = useRef(false);
+  const viewerUid = ownProfile.uid || null;
+
+  const slidesFromBottom = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 599px)').matches,
+    [],
+  );
+
+  // Everything the sheet needs, loaded once per open (and per retry). The
+  // initial state is already 'loading', and the retry button re-arms it in
+  // its own handler — no synchronous setState in the effect.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const resolved = await resolveThreadAnchor(paper);
+      if (!active) return;
+      if (!resolved) {
+        setStatus('error');
+        return;
+      }
+      setAnchor(resolved);
+
+      const keys = [
+        ...(resolved.stubExists ? [resolved.key] : []),
+        ...resolved.alternates.map(alternate => alternate.key),
+      ];
+      const pages = await Promise.all(keys.map(async key => ({
+        key, ...(await fetchThreadPage(key)),
+      })));
+      if (!active) return;
+      const merged = pages
+        .flatMap(page => page.comments.map(comment => ({ ...comment, paperKey: page.key })))
+        .sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+      setRows(merged);
+      setSources(pages.map(page => ({ key: page.key, cursor: page.cursor, hasMore: page.hasMore })));
+
+      const counts = await Promise.all(keys.map(key => fetchCommentCount(key).catch(() => null)));
+      if (!active) return;
+      const total = counts.reduce((sum, entry) => sum + (entry?.count ?? 0), 0);
+      setCount({ count: total, capped: counts.some(entry => entry?.capped) });
+      setStatus('ready');
+    })().catch((error) => {
+      console.error('The comment thread could not be loaded', error);
+      if (active) setStatus('error');
+    });
+    return () => { active = false; };
+  }, [paper, attempt]);
+
+  // The viewer's own profile decides what the composer is allowed to say.
+  // Signed out, the composer never consults it (the signed-out gate comes
+  // first), so the effect simply has nothing to fetch.
+  useEffect(() => {
+    let active = true;
+    if (!isAuthenticated) return undefined;
+    readOwnUserProfile()
+      .then((profile) => {
+        if (active) setOwnProfile({ status: 'ready', profile, uid: profile?.uid ?? undefined });
+      })
+      .catch(() => {
+        if (active) setOwnProfile({ status: 'ready', profile: null });
+      });
+    return () => { active = false; };
+  }, [isAuthenticated]);
+
+  // Two stubs for one paper is a data condition the admin fixes by merging;
+  // the reader who noticed files the report, silently and at most once.
+  useEffect(() => {
+    if (!anchor || !isAuthenticated || dupReported.current) return;
+    if (!anchor.stubExists || anchor.alternates.length === 0) return;
+    dupReported.current = true;
+    submitReport({
+      targetPath: `papers/${anchor.key}`,
+      targetAuthorUid: '',
+      reason: 'dup-stub',
+      note: `also: ${anchor.alternates.map(alternate => `papers/${alternate.key}`).join(', ')}`,
+    }).catch(() => { /* throttled or offline: the condition resurfaces */ });
+  }, [anchor, isAuthenticated]);
+
+  // Modal keyboard contract, same as FollowSheet: Escape closes, Tab cycles.
+  useEffect(() => {
+    closeButton.current?.focus();
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab' || !sheet.current) return;
+      const focusable = [...sheet.current.querySelectorAll(
+        'button:not(:disabled), a[href], textarea:not(:disabled)',
+      )];
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose]);
+
+  const visibleRows = useMemo(() => rows.filter(row => (
+    (row.status !== 'hidden' || row.authorUid === viewerUid)
+    && !hiddenLocally.has(row.id)
+  )), [rows, viewerUid, hiddenLocally]);
+  const thread = useMemo(() => groupThread(visibleRows), [visibleRows]);
+
+  const composerState = !isAuthenticated
+    ? 'signed-out'
+    : ownProfile.status !== 'ready'
+      ? 'loading'
+      : !ownProfile.profile
+        ? 'no-profile'
+        : !profileIsPublic(ownProfile.profile)
+          ? 'private'
+          : 'ready';
+  const canInteract = composerState === 'ready';
+
+  const loadMore = async () => {
+    if (paging) return;
+    const pending = sources.filter(source => source.hasMore && source.cursor);
+    if (!pending.length) return;
+    setPaging(true);
+    try {
+      const pages = await Promise.all(pending.map(async source => ({
+        key: source.key,
+        ...(await fetchThreadPage(source.key, { cursor: source.cursor })),
+      })));
+      const fresh = pages
+        .flatMap(page => page.comments.map(comment => ({ ...comment, paperKey: page.key })))
+        .sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+      setRows(previous => [...previous, ...fresh]);
+      setSources(previous => previous.map(source => {
+        const page = pages.find(entry => entry.key === source.key);
+        return page ? { key: source.key, cursor: page.cursor, hasMore: page.hasMore } : source;
+      }));
+    } catch (error) {
+      console.error('The comment thread could not be paged', error);
+    } finally {
+      setPaging(false);
+    }
+  };
+
+  const startReply = (comment) => {
+    // Replying to a reply answers its thread: one level, by design.
+    setEditTarget(null);
+    setReplyTarget(comment.replyTo
+      ? rows.find(row => row.id === comment.replyTo) ?? comment
+      : comment);
+    composerInput.current?.focus();
+  };
+
+  const startEdit = (comment) => {
+    setReplyTarget(null);
+    setEditTarget(comment);
+    setDraft(comment.text);
+    composerInput.current?.focus();
+  };
+
+  const resetComposer = () => {
+    setDraft('');
+    setReplyTarget(null);
+    setEditTarget(null);
+    setComposerError(null);
+  };
+
+  const submit = async () => {
+    if (busy || !anchor || !draft.trim()) return;
+    setBusy(true);
+    setComposerError(null);
+    setNotice(null);
+    try {
+      if (editTarget) {
+        const trimmed = draft.trim();
+        await editComment(editTarget.paperKey ?? anchor.key, editTarget.id, trimmed);
+        setRows(previous => previous.map(row => (
+          row.id === editTarget.id ? { ...row, text: trimmed, editedAt: new Date() } : row
+        )));
+      } else {
+        const result = await createComment({
+          anchor,
+          paper,
+          authorHandle: ownProfile.profile.handle,
+          text: draft,
+          replyTo: replyTarget?.id ?? null,
+        });
+        setRows(previous => [...previous, {
+          id: result.id, ...result.comment, authorUid: viewerUid ?? result.comment.authorUid, paperKey: anchor.key,
+        }]);
+        setCount(previous => (previous ? { ...previous, count: previous.count + 1 } : previous));
+        if (!anchor.stubExists) setAnchor(previous => ({ ...previous, stubExists: true }));
+      }
+      resetComposer();
+    } catch (error) {
+      setComposerError(await explainDenial(error, text));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (comment) => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await deleteComment({
+        paperKey: comment.paperKey ?? anchor.key,
+        commentId: comment.id,
+        isReply: Boolean(comment.replyTo),
+      });
+      const droppedIds = new Set([comment.id]);
+      if (!comment.replyTo) {
+        for (const row of rows) {
+          if (row.replyTo === comment.id) droppedIds.add(row.id);
+        }
+      }
+      setRows(previous => previous.filter(row => !droppedIds.has(row.id)));
+      setCount(previous => (previous
+        ? { ...previous, count: Math.max(0, previous.count - droppedIds.size) }
+        : previous));
+    } catch (error) {
+      console.error('The comment could not be deleted', error);
+      setNotice(text(COPY.deleteError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const report = async (comment, reason) => {
+    setBusy(true);
+    setNotice(null);
+    try {
+      await submitReport({
+        targetPath: commentTargetPath(comment.paperKey ?? anchor.key, comment.id),
+        targetAuthorUid: comment.authorUid,
+        reason,
+      });
+      hideCommentLocally(comment.id);
+      setHiddenLocally(locallyHiddenCommentIds());
+      setNotice(text(COPY.reported));
+    } catch (error) {
+      setNotice(error?.code === 'permission-denied' ? text(COPY.reportThrottled) : text(COPY.writeError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const sheetMotion = prefersReducedMotion ? {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: { duration: 0.1 },
+  } : slidesFromBottom ? {
+    initial: { y: '100%' },
+    animate: { y: 0 },
+    exit: { y: '100%' },
+    transition: { type: 'spring', damping: 32, stiffness: 340 },
+  } : {
+    initial: { opacity: 0, scale: 0.96, y: 12 },
+    animate: { opacity: 1, scale: 1, y: 0 },
+    exit: { opacity: 0, scale: 0.97, y: 8 },
+    transition: { duration: 0.24, ease: [0.16, 1, 0.3, 1] },
+  };
+
+  const hasMore = sources.some(source => source.hasMore);
+
+  return (
+    <motion.div
+      className="comments-sheet-backdrop"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: prefersReducedMotion ? 0.1 : 0.18 }}
+      onClick={onClose}
+    >
+      <motion.div
+        ref={sheet}
+        className="comments-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label={text(COPY.title)}
+        {...sheetMotion}
+        onClick={event => event.stopPropagation()}
+      >
+        <header className="comments-sheet-header">
+          <h2 className="comments-sheet-title">
+            {text(COPY.title)}
+            {count != null && (
+              <span className="comments-sheet-count">{count.capped ? '1000+' : count.count}</span>
+            )}
+          </h2>
+          <button
+            ref={closeButton}
+            type="button"
+            className="comments-sheet-close"
+            onClick={onClose}
+            aria-label={text(COPY.close)}
+          >
+            <X size={18} />
+          </button>
+        </header>
+
+        <div className="comments-sheet-body">
+          {status === 'loading' && (
+            <div className="comments-sheet-loading" aria-label={text(COPY.loading)} aria-busy="true">
+              <div className="comment-row-skeleton" />
+              <div className="comment-row-skeleton" />
+              <div className="comment-row-skeleton" />
+            </div>
+          )}
+          {status === 'error' && (
+            <div className="comments-sheet-state">
+              <p>{text(COPY.loadError)}</p>
+              <button
+                type="button"
+                className="comments-sheet-more"
+                onClick={() => {
+                  setStatus('loading');
+                  setAttempt(value => value + 1);
+                }}
+              >
+                {text(COPY.retry)}
+              </button>
+            </div>
+          )}
+          {status === 'ready' && thread.length === 0 && (
+            <div className="comments-sheet-state">
+              <span className="comments-sheet-state-icon" aria-hidden="true">
+                <MessageCircle size={20} />
+              </span>
+              <p>{text(COPY.empty)}</p>
+            </div>
+          )}
+          {status === 'ready' && thread.length > 0 && (
+            <ul className="comments-list">
+              {thread.map(entry => (
+                <li key={entry.id} className="comments-list-item">
+                  <CommentRow
+                    comment={entry}
+                    isReply={false}
+                    viewerUid={viewerUid}
+                    canInteract={canInteract}
+                    busy={busy}
+                    onReply={startReply}
+                    onEdit={startEdit}
+                    onDelete={remove}
+                    onReport={report}
+                    isEnglish={isEnglish}
+                    text={text}
+                  />
+                  {entry.replies.length > 0 && (
+                    <ul className="comments-replies">
+                      {entry.replies.map(reply => (
+                        <li key={reply.id}>
+                          <CommentRow
+                            comment={reply}
+                            isReply
+                            viewerUid={viewerUid}
+                            canInteract={canInteract}
+                            busy={busy}
+                            onReply={startReply}
+                            onEdit={startEdit}
+                            onDelete={remove}
+                            onReport={report}
+                            isEnglish={isEnglish}
+                            text={text}
+                          />
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {status === 'ready' && hasMore && (
+            <button type="button" className="comments-sheet-more" onClick={loadMore} disabled={paging}>
+              {paging ? text(COPY.loading) : text(COPY.more)}
+            </button>
+          )}
+          {notice && <p className="comments-sheet-notice" role="status">{notice}</p>}
+        </div>
+
+        <footer className="comments-sheet-footer">
+          {composerState === 'signed-out' && (
+            <div className="comments-gate">
+              <p>{text(COPY.signInPrompt)}</p>
+              <button type="button" className="comments-gate-cta" onClick={onAuthRequired}>
+                {text(COPY.signIn)}
+              </button>
+            </div>
+          )}
+          {composerState === 'no-profile' && (
+            <div className="comments-gate">
+              <p><strong>{text(COPY.needProfileTitle)}.</strong> {text(COPY.needProfileBody)}</p>
+              <Link className="comments-gate-cta" to="/settings/profile" onClick={onClose}>
+                {text(COPY.needProfileCta)}
+              </Link>
+            </div>
+          )}
+          {composerState === 'private' && (
+            <div className="comments-gate">
+              <p><strong>{text(COPY.privateTitle)}.</strong> {text(COPY.privateBody)}</p>
+              <Link className="comments-gate-cta" to="/settings/profile" onClick={onClose}>
+                {text(COPY.privateCta)}
+              </Link>
+            </div>
+          )}
+          {composerState === 'ready' && (
+            <div className="comments-composer">
+              {replyTarget && (
+                <div className="comments-composer-context">
+                  <CornerDownRight size={13} aria-hidden="true" />
+                  <span>{text(COPY.replyingTo)} @{replyTarget.authorHandle}</span>
+                  <button type="button" onClick={() => setReplyTarget(null)} aria-label={text(COPY.cancel)}>
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+              {editTarget && (
+                <div className="comments-composer-context">
+                  <Pencil size={13} aria-hidden="true" />
+                  <span>{text(COPY.editing)}</span>
+                  <button type="button" onClick={resetComposer} aria-label={text(COPY.cancel)}>
+                    <X size={13} />
+                  </button>
+                </div>
+              )}
+              <div className="comments-composer-row">
+                <textarea
+                  ref={composerInput}
+                  className="comments-composer-input"
+                  value={draft}
+                  maxLength={4000}
+                  rows={1}
+                  placeholder={text(COPY.placeholder)}
+                  onChange={event => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' && !event.shiftKey) {
+                      event.preventDefault();
+                      submit();
+                    }
+                  }}
+                />
+                <button
+                  type="button"
+                  className="comments-composer-send"
+                  onClick={submit}
+                  disabled={busy || !draft.trim()}
+                >
+                  {text(editTarget ? COPY.save : COPY.send)}
+                </button>
+              </div>
+              <AnimatePresence>
+                {composerError && (
+                  <motion.p
+                    className="comments-composer-error"
+                    role="alert"
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                  >
+                    {composerError}
+                  </motion.p>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+        </footer>
+      </motion.div>
+    </motion.div>
+  );
+}

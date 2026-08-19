@@ -97,6 +97,39 @@
   }
 }
 
+/* The door to the paper's comment thread: a floating pill in the same glass
+   as the page's other chrome, anchored to the bottom edge where the sheet it
+   opens will rise from. Fixed and outside the card, which is not this
+   feature's file to touch. */
+.public-paper-comments-button {
+  position: fixed;
+  z-index: 900;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 14px);
+  left: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  background: rgba(17, 15, 31, 0.82);
+  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(18px);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transform: translateX(-50%);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.public-paper-comments-button:hover,
+.public-paper-comments-button:focus-visible {
+  border-color: rgba(255, 255, 255, 0.3);
+  color: var(--text-primary);
+}
+
 .public-paper-state {
   display: flex;
   width: min(520px, calc(100% - 40px));

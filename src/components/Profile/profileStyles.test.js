@@ -17,6 +17,9 @@ const OWNED = [
   '../Profile/ProfilePage.css',
   '../Public/PublicProfilePage.css',
   '../Public/FollowSheet.css',
+  '../Comments/CommentsSheet.css',
+  '../Settings/MyCommentsPage.css',
+  '../Admin/ModerationPage.css',
 ];
 
 test('every design token used by the profile screens is actually defined', async () => {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowLeft, Home, RotateCw } from 'lucide-react';
+import { ArrowLeft, Home, MessageCircle, RotateCw } from 'lucide-react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useFeed } from '../../context/FeedContext.jsx';
@@ -20,9 +20,11 @@ import {
   getPublicPaperPath,
   parsePaperKey,
 } from '../../utils/publicNavigation.js';
+import { canonicalPaperIdentity } from '../../utils/paperCanonicalKey.js';
 import { paperLegacyAdapter } from '../../models/Paper.js';
 import PaperCard from '../Feed/PaperCard.jsx';
 import SkeletonCard from '../Feed/SkeletonCard.jsx';
+import CommentsSheet from '../Comments/CommentsSheet.jsx';
 import './PublicPaperPage.css';
 
 const COPY = {
@@ -57,6 +59,10 @@ const COPY = {
   home: {
     es: 'Inicio',
     en: 'Home',
+  },
+  comments: {
+    es: 'Comentarios',
+    en: 'Comments',
   },
 };
 
@@ -120,6 +126,7 @@ export default function PublicPaperPage({
   } = useFeed();
   const [result, setResult] = useState({ requestKey: '', paper: null, status: 'loading' });
   const [attempt, setAttempt] = useState(0);
+  const [commentsOpen, setCommentsOpen] = useState(false);
   const requestIdRef = useRef(0);
   const identity = useMemo(() => parsePaperKey(paperKey), [paperKey]);
 
@@ -294,6 +301,35 @@ export default function PublicPaperPage({
           >
             <SkeletonCard />
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* The door to the paper's thread. It exists only when the paper can
+          anchor one (a canonical identity to converge on), and everything
+          behind it is lazy: no Firestore is touched until the sheet opens.
+          Deliberately outside PaperCard — the card is the feed team's file. */}
+      {status === 'ready' && paper && canonicalPaperIdentity(paper) && (
+        <button
+          type="button"
+          className="public-paper-comments-button"
+          onClick={() => setCommentsOpen(true)}
+          aria-haspopup="dialog"
+          aria-expanded={commentsOpen}
+        >
+          <MessageCircle size={17} aria-hidden="true" />
+          {text(COPY.comments)}
+        </button>
+      )}
+
+      <AnimatePresence>
+        {commentsOpen && paper && (
+          <CommentsSheet
+            paper={paper}
+            isAuthenticated={isAuthenticated}
+            isEnglish={isEnglish}
+            onClose={() => setCommentsOpen(false)}
+            onAuthRequired={onAuthRequired}
+          />
         )}
       </AnimatePresence>
 
