@@ -85,7 +85,7 @@
   background: var(--bg-secondary);
   color: var(--text-primary);
   font: inherit;
-  font-size: var(--fs-md);
+  font-size: var(--fs-base);
 }
 
 .profile-field textarea {
@@ -111,7 +111,7 @@
 }
 
 .profile-hint.is-error {
-  color: var(--danger, #ff6b6b);
+  color: var(--accent-danger);
 }
 
 .profile-photo-row {
@@ -148,7 +148,7 @@
 
 .profile-pin-toggle.is-pinned {
   border-color: transparent;
-  background: var(--accent-primary, #4f8cff);
+  background: var(--accent-primary);
   color: #fff;
 }
 
@@ -171,7 +171,7 @@
   min-height: 42px;
   padding: 0 var(--space-6);
   border: none;
-  background: var(--accent-primary, #4f8cff);
+  background: var(--accent-primary);
   color: #fff;
   font-weight: var(--fw-semibold);
 }
@@ -189,11 +189,11 @@
   font-size: var(--fs-sm);
 }
 
-.profile-feedback.is-error { color: var(--danger, #ff6b6b); }
-.profile-feedback.is-saved { color: var(--success, #3ecf8e); }
+.profile-feedback.is-error { color: var(--accent-danger); }
+.profile-feedback.is-saved { color: var(--accent-success); }
 
 .profile-pinned {
-  margin-top: var(--space-7);
+  margin-top: var(--space-8);
   padding-top: var(--space-6);
   border-top: 1px solid var(--border-subtle);
 }
@@ -279,9 +279,9 @@
   gap: var(--space-4);
   margin-top: var(--space-6);
   padding: var(--space-4);
-  border: 1px solid var(--danger, #ff6b6b);
+  border: 1px solid var(--accent-danger);
   border-radius: 14px;
-  background: color-mix(in srgb, var(--danger, #ff6b6b) 10%, transparent);
+  background: color-mix(in srgb, var(--accent-danger) 10%, transparent);
 }
 
 .profile-stale p {

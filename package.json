@@ -8,7 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "security:secrets": "node scripts/check-secrets.mjs",
-    "test": "node --test src/**/*.test.js worker/**/*.test.js",
+    "test": "node --test $(find src worker -name '*.test.js')",
     "check": "npm run security:secrets && npm run lint && npm test && npm run build && npm run worker:deploy:dry-run",
     "preview": "vite preview",
     "worker:deploy": "wrangler deploy",

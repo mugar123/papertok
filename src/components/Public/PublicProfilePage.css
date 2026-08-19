@@ -70,7 +70,7 @@
 
 .public-profile-verified {
   display: inline-flex;
-  color: var(--accent-primary, #4f8cff);
+  color: var(--accent-primary);
 }
 
 .public-profile-handle {
@@ -82,14 +82,14 @@
 .public-profile-bio {
   margin: var(--space-3) 0 0;
   color: var(--text-secondary);
-  font-size: var(--fs-md);
+  font-size: var(--fs-base);
   line-height: 1.55;
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
 
 .public-profile-lists {
-  margin-top: var(--space-7);
+  margin-top: var(--space-8);
 }
 
 .public-profile-lists h2 {
@@ -120,7 +120,7 @@
   gap: var(--space-3);
   padding: var(--space-4);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg, 14px);
+  border-radius: var(--radius-lg);
   background: var(--bg-secondary);
   color: inherit;
   text-decoration: none;
@@ -129,7 +129,7 @@
 
 .public-profile-list-card:hover,
 .public-profile-list-card:focus-visible {
-  border-color: var(--border-strong, var(--text-tertiary));
+  border-color: var(--text-tertiary);
   transform: translateY(-1px);
 }
 
@@ -163,7 +163,7 @@
 }
 
 .public-profile-footer {
-  margin-top: var(--space-7);
+  margin-top: var(--space-8);
   padding-top: var(--space-5);
   border-top: 1px solid var(--border-subtle);
 }
