@@ -43,11 +43,13 @@ function AppContent() {
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
   const navbarRoutes = ['/', '/lists', '/research', '/following', '/profile', '/settings', '/settings/following', '/settings/profile']
-  // The paper page keeps the app chrome for a signed-in user — reaching a
-  // paper from Liked must not feel like leaving the app. Signed-out visitors
-  // on a shared link still get the standalone page (`user` gates below).
+  // The paper and profile pages keep the app chrome for a signed-in user —
+  // reaching a paper from Liked, or a profile from the follow sheet, must not
+  // feel like leaving the app. Signed-out visitors on a shared link still get
+  // the standalone page (`user` gates below).
   const showNavbar = (navbarRoutes.includes(normalizedPathname)
-    || normalizedPathname.startsWith('/public/paper/'))
+    || normalizedPathname.startsWith('/public/paper/')
+    || normalizedPathname.startsWith('/public/user/'))
     && Boolean(user)
     && !authLoading
     && onboardingComplete

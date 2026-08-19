@@ -292,6 +292,14 @@ export default function SettingsPage() {
       .filter(Boolean);
   }, [language, userPreferences]);
 
+  // The tab keeps saying which screen this is; restored on the way out so the
+  // pages that manage their own metadata are not affected.
+  useEffect(() => {
+    const previous = document.title;
+    document.title = language === 'en' ? 'Settings | PaperTok' : 'Configuración | PaperTok';
+    return () => { document.title = previous; };
+  }, [language]);
+
   const selectedInterestCount = Array.isArray(userPreferences) ? userPreferences.length : 0;
   const notificationStatus = emailStatus(
     notificationPreferences,
@@ -497,7 +505,7 @@ export default function SettingsPage() {
                   <p>{copy.publicProfileDescription}</p>
                 </div>
                 <button className="settings-row-action" onClick={() => navigate('/settings/profile')}>
-                  {copy.viewAll} <ChevronRight size={17} />
+                  {copy.edit} <ChevronRight size={17} />
                 </button>
               </div>
 
@@ -510,15 +518,21 @@ export default function SettingsPage() {
                       ? copy.loadingFollowing
                       : `${followedEntities.length} ${followedEntities.length === 1 ? copy.followedOne : copy.followedMany} ${copy.recommendationsSuffix}`}
                   </p>
-                  <div className="settings-follow-summary" aria-label={copy.followingSummary}>
-                    {FOLLOW_SUMMARY.map(({ type, label, Icon }) => (
-                      <span key={type}>
-                        <Icon size={12} />
-                        {label[language]}
-                        <strong>{followedByType[type]?.length || 0}</strong>
-                      </span>
-                    ))}
-                  </div>
+                  {/* Only the kinds actually followed: four zeros in a row are
+                      noise, and "0 followed entities" already says it all. */}
+                  {FOLLOW_SUMMARY.some(({ type }) => (followedByType[type]?.length || 0) > 0) && (
+                    <div className="settings-follow-summary" aria-label={copy.followingSummary}>
+                      {FOLLOW_SUMMARY
+                        .filter(({ type }) => (followedByType[type]?.length || 0) > 0)
+                        .map(({ type, label, Icon }) => (
+                          <span key={type}>
+                            <Icon size={12} />
+                            {label[language]}
+                            <strong>{followedByType[type].length}</strong>
+                          </span>
+                        ))}
+                    </div>
+                  )}
                 </div>
                 <button className="settings-row-action" onClick={() => navigate('/settings/following')}>
                   {copy.viewAll} <ChevronRight size={17} />

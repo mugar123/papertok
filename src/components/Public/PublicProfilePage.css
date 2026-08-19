@@ -12,8 +12,9 @@
   padding: clamp(24px, 5vw, 56px) clamp(20px, 5vw, 40px) 64px;
 }
 
-/* /profile renders inside the app, under the fixed navbar; the public URL
-   keeps its own breathing room instead. */
+/* With the app chrome (Navbar) present — one's own /profile, or any profile
+   opened while signed in — the shell clears the fixed bar; the signed-out
+   shareable page keeps its own breathing room instead. */
 .public-profile-page--app .public-profile-shell {
   padding-top: calc(var(--nav-height) + var(--space-8));
 }
@@ -32,22 +33,24 @@
   letter-spacing: 0.06em;
 }
 
+/* --- Header ---------------------------------------------------------------- */
+
 .public-profile-header {
   display: flex;
   align-items: flex-start;
-  gap: var(--space-5);
+  gap: clamp(var(--space-5), 4vw, var(--space-8));
   padding-bottom: var(--space-6);
-  border-bottom: 1px solid var(--border-subtle);
 }
 
 .public-profile-avatar {
   flex: 0 0 auto;
-  width: 84px;
-  height: 84px;
-  border-radius: 50%;
+  width: 96px;
+  height: 96px;
+  border-radius: var(--radius-full);
   overflow: hidden;
   background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-md);
 }
 
 .public-profile-avatar img {
@@ -74,6 +77,7 @@
 
 .public-profile-identity {
   min-width: 0;
+  flex: 1;
 }
 
 .public-profile-identity h1 {
@@ -84,6 +88,7 @@
   font-family: var(--font-heading);
   font-size: var(--fs-2xl);
   font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
   overflow-wrap: anywhere;
 }
 
@@ -107,244 +112,56 @@
   overflow-wrap: anywhere;
 }
 
-.public-profile-lists {
-  margin-top: var(--space-8);
-}
-
-.public-profile-lists h2 {
-  margin: 0 0 var(--space-4);
-  font-family: var(--font-heading);
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-semibold);
-}
-
-.public-profile-empty {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: var(--fs-sm);
-}
-
-.public-profile-list-grid {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: grid;
-  gap: var(--space-3);
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-}
-
-.public-profile-list-card {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-secondary);
-  color: inherit;
-  text-decoration: none;
-  transition: border-color 0.18s ease, transform 0.18s ease;
-}
-
-.public-profile-list-card:hover,
-.public-profile-list-card:focus-visible {
-  border-color: var(--text-tertiary);
-  transform: translateY(-1px);
-}
-
-.public-profile-list-emoji {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--bg-primary);
-  font-size: 18px;
-}
-
-.public-profile-list-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.public-profile-list-title {
-  font-weight: var(--fw-semibold);
-  overflow-wrap: anywhere;
-}
-
-.public-profile-list-count {
-  color: var(--text-tertiary);
-  font-size: var(--fs-xs);
-}
-
-.public-profile-footer {
-  margin-top: var(--space-8);
-  padding-top: var(--space-5);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.public-profile-auth-cta {
-  display: inline-flex;
-  align-items: center;
-  min-height: 40px;
-  padding: 0 var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.public-profile-page--state .public-profile-shell {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-3);
-  padding-top: clamp(48px, 12vh, 120px);
-}
-
-.public-profile-page--state h1 {
-  margin: 0;
-  font-family: var(--font-heading);
-  font-size: var(--fs-xl);
-}
-
-.public-profile-state-body {
-  margin: 0;
-  color: var(--text-secondary);
-}
-
-.public-profile-retry {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 38px;
-  margin-top: var(--space-2);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  cursor: pointer;
-}
-
-@media (max-width: 560px) {
-  .public-profile-header {
-    flex-direction: column;
-  }
-}
-
-/* Placeholder held while the profile read is in flight. The page mounts only
-   after the previous route has finished exiting, so without this there is a
-   visibly blank frame before any content appears. */
-.public-profile-skeleton {
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-  animation: public-profile-pulse 1.4s ease-in-out infinite;
-}
-
-.public-profile-skeleton--title {
-  width: min(220px, 60%);
-  height: 26px;
-  margin-bottom: var(--space-3);
-}
-
-.public-profile-skeleton--line {
-  width: min(140px, 40%);
-  height: 14px;
-}
-
-@keyframes public-profile-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .public-profile-skeleton { animation: none; }
-}
-
-/* --- The unified profile: owner chrome ----------------------------------- */
-
-.profile-gear {
-  position: absolute;
-  top: clamp(20px, 4vw, 44px);
-  right: clamp(20px, 5vw, 40px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: color var(--transition-fast), border-color var(--transition-fast);
-}
-
-.public-profile-page--app .profile-gear {
-  top: calc(var(--nav-height) + var(--space-8));
-}
-
-@media (max-width: 560px) {
-  .public-profile-page--app .profile-gear {
-    top: calc(var(--nav-height-mobile) + var(--space-6));
-  }
-}
-
-.profile-gear:hover,
-.profile-gear:focus-visible {
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-}
-
-.profile-handle-cta {
-  margin: var(--space-1) 0 0;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent-primary);
-  font: inherit;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-}
+/* --- Counters ---------------------------------------------------------------
+   Users only: Following and Followers come from the public follow graph, so
+   a visitor sees the same real numbers the owner does. Likes is owner-only
+   and simply absent from a visitor's row — no dash placeholders. */
 
 .profile-stats {
   list-style: none;
   display: flex;
-  gap: var(--space-6);
+  gap: var(--space-2);
   margin: var(--space-4) 0 0;
   padding: 0;
 }
 
 .profile-stat {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 0;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-height: 36px;
+  margin: 0;
+  padding: var(--space-1) var(--space-3);
   border: none;
+  border-radius: var(--radius-full);
   background: none;
   color: inherit;
   font: inherit;
   text-align: left;
+  transition: background var(--transition-fast);
+}
+
+.profile-stats li:first-child .profile-stat {
+  padding-left: 0;
 }
 
 button.profile-stat {
   cursor: pointer;
 }
 
-button.profile-stat:hover strong,
-button.profile-stat:focus-visible strong {
-  color: var(--accent-primary);
+button.profile-stat:disabled {
+  cursor: default;
+}
+
+button.profile-stat:hover:not(:disabled),
+button.profile-stat:focus-visible:not(:disabled) {
+  background: var(--bg-glass);
+}
+
+.profile-stats li:first-child .profile-stat:hover:not(:disabled),
+.profile-stats li:first-child .profile-stat:focus-visible:not(:disabled) {
+  padding-left: var(--space-3);
+  margin-left: calc(-1 * var(--space-3));
 }
 
 .profile-stat strong {
@@ -352,7 +169,6 @@ button.profile-stat:focus-visible strong {
   font-size: var(--fs-lg);
   font-weight: var(--fw-bold);
   line-height: var(--lh-tight);
-  transition: color var(--transition-fast);
 }
 
 .profile-stat span {
@@ -360,11 +176,15 @@ button.profile-stat:focus-visible strong {
   font-size: var(--fs-xs);
 }
 
-.profile-stat--static strong {
-  color: var(--text-secondary);
-}
+/* --- Header actions ---------------------------------------------------------
+   One slot, whoever is looking: the owner gets Edit + the followed-content
+   chip, a visitor gets Follow. The header keeps one shape. */
 
 .profile-owner-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
   margin-top: var(--space-4);
 }
 
@@ -388,13 +208,44 @@ button.profile-stat:focus-visible strong {
   border-color: var(--border-strong);
 }
 
-/* The visitor's counterpart to "Edit profile": same slot, same metrics, so the
-   header keeps one shape whoever is looking at it. */
+/* The other graph: entities followed for the feed (authors, topics,
+   institutions — private). Its own labeled door, so it never shares the word
+   "Following" with the user counter again. */
+.profile-content-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 38px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.profile-content-chip strong {
+  color: var(--text-primary);
+  font-weight: var(--fw-bold);
+}
+
+.profile-content-chip:hover,
+.profile-content-chip:focus-visible {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
 .profile-follow-button {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
   min-height: 38px;
+  min-width: 132px;
+  justify-content: center;
   padding: 0 var(--space-5);
   border: 1px solid transparent;
   border-radius: var(--radius-full);
@@ -413,16 +264,17 @@ button.profile-stat:focus-visible strong {
   background: var(--gradient-brand-hover);
 }
 
-/* Already following: the button stops shouting and becomes the quiet state it
-   shares with "Edit profile". */
+/* Already following: the button rests quiet, like "Edit profile". Hovering it
+   is the unfollow affordance — label and color change together (the class
+   comes from the same state as the label, NOT from :hover, so that right
+   after clicking Follow the button rests quiet even under the pointer). */
 .profile-follow-button--following {
   border-color: var(--border-default);
   background: var(--bg-secondary);
   color: var(--text-primary);
 }
 
-.profile-follow-button--following:hover:not(:disabled),
-.profile-follow-button--following:focus-visible:not(:disabled) {
+.profile-follow-button--following.is-unfollow-intent:not(:disabled) {
   border-color: var(--accent-danger);
   background: var(--bg-secondary);
   color: var(--accent-danger);
@@ -439,12 +291,61 @@ button.profile-stat:focus-visible strong {
   font-size: var(--fs-xs);
 }
 
-/* --- Tabs ----------------------------------------------------------------- */
+/* The gear sits where the eye expects settings, aligned with the top of the
+   header block whichever chrome the page has. */
+.profile-gear {
+  position: absolute;
+  top: clamp(20px, 4vw, 44px);
+  right: clamp(20px, 5vw, 40px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.public-profile-page--app .profile-gear {
+  top: calc(var(--nav-height) + var(--space-8));
+}
+
+@media (max-width: 560px) {
+  .public-profile-page--app .profile-gear {
+    top: calc(var(--nav-height-mobile) + var(--space-6));
+  }
+}
+
+.profile-gear:hover,
+.profile-gear:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  transform: rotate(15deg);
+}
+
+.profile-handle-cta {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-primary);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+
+/* --- Tabs ------------------------------------------------------------------ */
 
 .profile-tabs {
   display: flex;
   gap: var(--space-2);
-  margin-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -517,13 +418,88 @@ button.profile-stat:focus-visible strong {
   text-decoration: underline;
 }
 
-/* --- Own list cards -------------------------------------------------------- */
+/* The visitor has exactly one section, so it gets a heading, not a tab bar
+   with a single tab. */
+.profile-visitor-lists {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-5);
+}
+
+.profile-visitor-heading {
+  margin: 0 0 var(--space-4);
+  font-family: var(--font-heading);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+}
+
+/* --- List cards -------------------------------------------------------------- */
+
+.public-profile-list-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+}
+
+.public-profile-list-card {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.public-profile-list-card:hover,
+.public-profile-list-card:focus-visible {
+  /* Hover feedback is the lift and the border; the global a:hover accent
+     would repaint the whole card's text instead. */
+  color: inherit;
+  border-color: var(--border-strong);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-sm);
+}
 
 .profile-list-card--own {
-  width: 100%;
   font: inherit;
   text-align: left;
   cursor: pointer;
+}
+
+.public-profile-list-emoji {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+.public-profile-list-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.public-profile-list-title {
+  font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
+}
+
+.public-profile-list-count {
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
 }
 
 .profile-badge-public {
@@ -564,7 +540,8 @@ button.profile-stat:focus-visible strong {
 
 a.profile-row:hover,
 a.profile-row:focus-visible {
-  border-color: var(--text-tertiary);
+  color: inherit;
+  border-color: var(--border-strong);
   transform: translateY(-1px);
 }
 
@@ -587,13 +564,240 @@ a.profile-row:focus-visible {
   overflow-wrap: anywhere;
 }
 
+/* --- Empty states ------------------------------------------------------------
+   The same shape the following-settings screen already uses: an icon, a short
+   fact, a hint. A single grey line floating in a big panel read as a bug. */
+
+.profile-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-10) var(--space-4) var(--space-8);
+  text-align: center;
+}
+
+.profile-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--accent-primary);
+}
+
+.profile-empty-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+}
+
+.profile-empty-hint {
+  margin: 0;
+  max-width: 340px;
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+/* --- Footer (signed-out CTA) ------------------------------------------------ */
+
+.public-profile-footer {
+  margin-top: var(--space-8);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.public-profile-auth-cta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+/* --- Error / not-found / unsupported ---------------------------------------- */
+
+.public-profile-page--state .public-profile-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding-top: clamp(48px, 12vh, 120px);
+}
+
+.public-profile-page--state h1 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--fs-xl);
+}
+
+.public-profile-state-body {
+  margin: 0;
+  color: var(--text-secondary);
+}
+
+.public-profile-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 38px;
+  margin-top: var(--space-2);
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+/* --- Skeleton ----------------------------------------------------------------
+   Held while the profile read is in flight, and shaped like the finished
+   page — header, counters, tab bar, first rows — so nothing jumps when the
+   content lands. */
+
+.public-profile-skeleton {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  animation: public-profile-pulse 1.4s ease-in-out infinite;
+}
+
+.public-profile-skeleton--title {
+  width: min(220px, 60%);
+  height: 26px;
+  margin-bottom: var(--space-3);
+}
+
+.public-profile-skeleton--line {
+  width: min(140px, 40%);
+  height: 14px;
+}
+
+.profile-skeleton-stats {
+  display: flex;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+.public-profile-skeleton--stat {
+  width: 88px;
+  height: 24px;
+  border-radius: var(--radius-full);
+}
+
+.public-profile-skeleton--tabs {
+  height: 42px;
+  margin-top: var(--space-2);
+  border-radius: var(--radius-md);
+}
+
+.profile-skeleton-rows {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.public-profile-skeleton--row {
+  height: 62px;
+  border-radius: var(--radius-lg);
+}
+
+@keyframes public-profile-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* --- Mobile ------------------------------------------------------------------
+   A composed portrait header, not a stretched desktop row: identity centered
+   under the avatar, counters and actions centered with it. */
+
 @media (max-width: 560px) {
+  .public-profile-header {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .public-profile-avatar {
+    width: 88px;
+    height: 88px;
+  }
+
+  .public-profile-identity {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    width: 100%;
+  }
+
+  .public-profile-identity h1 {
+    justify-content: center;
+  }
+
+  .public-profile-bio {
+    max-width: 34ch;
+  }
+
   .profile-stats {
-    gap: var(--space-5);
+    justify-content: center;
+    gap: var(--space-1);
+  }
+
+  .profile-stat {
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    padding: var(--space-1) var(--space-3);
+  }
+
+  .profile-stats li:first-child .profile-stat {
+    padding-left: var(--space-3);
+  }
+
+  .profile-stats li:first-child .profile-stat:hover:not(:disabled),
+  .profile-stats li:first-child .profile-stat:focus-visible:not(:disabled) {
+    margin-left: 0;
+  }
+
+  .profile-owner-actions {
+    justify-content: center;
   }
 
   .profile-panel-header {
     flex-direction: column;
+    align-items: center;
     gap: var(--space-2);
+    text-align: center;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-profile-skeleton {
+    animation: none;
+  }
+
+  .profile-gear:hover,
+  .profile-gear:focus-visible {
+    transform: none;
+  }
+
+  .public-profile-list-card:hover,
+  .public-profile-list-card:focus-visible,
+  a.profile-row:hover,
+  a.profile-row:focus-visible {
+    transform: none;
   }
 }

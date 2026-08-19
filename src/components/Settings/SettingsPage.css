@@ -379,7 +379,7 @@
   min-height: 84px;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 8px;
   padding: 11px;
   border: 1px solid var(--border-default);
@@ -666,6 +666,15 @@
   .settings-row-action {
     width: 100%;
     grid-column: 1 / -1;
+    margin-top: 2px;
+  }
+
+  /* The toggle spans the row like every other control at this width, instead
+     of hanging under the icon column. */
+  .settings-toggle-control {
+    width: 100%;
+    grid-column: 1 / -1;
+    justify-content: space-between;
     margin-top: 2px;
   }
 

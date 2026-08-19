@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
-  BadgeCheck, Globe2, RefreshCw, Settings2, UserCheck, UserPlus,
+  BadgeCheck, Bookmark, FolderOpen, Globe2, Heart, RefreshCw, Rss, Settings2,
+  UserCheck, UserPlus, UserX,
 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -25,8 +26,10 @@ import { fetchLibraryRecords } from '../../services/interactionProfileStore.js';
 import { IS_DEMO } from '../../services/firebase.js';
 import { getPublicListPath, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import { resolveProfileView } from '../../utils/profileAccess.js';
+import { cleanPaperText, displayAuthorName } from '../../utils/paperText.js';
 import { getIcon } from '../../utils/icons.js';
 import { normalizeHandle } from '../../utils/userHandle.js';
+import ScientificText from '../ScientificText.js';
 import FollowSheet from './FollowSheet.jsx';
 import './PublicProfilePage.css';
 
@@ -43,10 +46,17 @@ import './PublicProfilePage.css';
  *
  * A visitor gets the header plus the pinned public lists denormalized into the
  * profile document — nothing else is fetched, so nothing else can leak. The
- * owner additionally gets real counters and the Saved/Liked tabs, all fed from
- * data the app already holds in memory (FollowingContext, the interaction
- * aggregate in FeedContext) plus two bounded reads: their own lists page and
- * the library records for the papers on screen.
+ * owner additionally gets the Saved/Liked tabs, fed from data the app already
+ * holds in memory plus two bounded reads.
+ *
+ * The header counters both count *users*: Following and Followers come from
+ * the public `follows` edges (one capped aggregation each — public data, so a
+ * visitor sees real numbers too, with no dashes standing in for privacy). The
+ * *entities* the owner follows for their feed — authors, topics, institutions,
+ * private under `users/{uid}/following` — are deliberately a separate chip
+ * ("Followed content"), because one word meaning two different graphs was a
+ * standing source of confusion. Likes stay owner-only: the visitor header just
+ * has one stat fewer, rather than a dash pretending data is missing.
  */
 
 // One page of rows per tab. Anything past it stays reachable in Mis listas;
@@ -55,16 +65,35 @@ const PROFILE_TAB_ROW_LIMIT = 60;
 
 function authorLine(authors) {
   const names = (Array.isArray(authors) ? authors : [])
-    .map(author => (typeof author === 'string' ? author : author?.name || ''))
+    .map(author => displayAuthorName(typeof author === 'string' ? author : author?.name || ''))
     .filter(Boolean);
   if (names.length === 0) return '';
   return names.length > 2 ? `${names[0]} +${names.length - 1}` : names.join(', ');
 }
 
+// Entry of one row or card in a panel. The delay is capped so the fortieth
+// row does not make the page feel slower than the fourth.
+const rowMotion = (prefersReducedMotion, index) => ({
+  initial: prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 7 },
+  animate: {
+    opacity: 1,
+    y: 0,
+    transition: {
+      delay: prefersReducedMotion ? 0 : Math.min(index * 0.022, 0.22),
+      duration: prefersReducedMotion ? 0.08 : 0.2,
+      ease: 'easeOut',
+    },
+  },
+});
+
 function PaperRow({ row, fallbackTitle }) {
+  // Titles arrive with source dirt (literal <sub> tags, $LaTeX$): HTML is
+  // cleaned here at paint time — the stored documents keep the debt visible —
+  // and the math is rendered by the same component the feed cards use.
+  const title = cleanPaperText(row.title) || fallbackTitle;
   const body = (
     <>
-      <span className="profile-row-title">{row.title || fallbackTitle}</span>
+      <span className="profile-row-title"><ScientificText>{title}</ScientificText></span>
       {row.subtitle && <span className="profile-row-meta">{row.subtitle}</span>}
     </>
   );
@@ -86,12 +115,24 @@ function PaperRow({ row, fallbackTitle }) {
     : <div className="profile-row profile-row--static">{body}</div>;
 }
 
+function EmptyState({ Icon, title, hint, action }) {
+  return (
+    <div className="profile-empty-state">
+      <span className="profile-empty-icon" aria-hidden="true"><Icon size={22} /></span>
+      <p className="profile-empty-title">{title}</p>
+      {hint && <p className="profile-empty-hint">{hint}</p>}
+      {action}
+    </div>
+  );
+}
+
 /**
  * The copy of the paper this row can hand to the paper page. A serialized
  * library record travels as is; a like that only stored title metadata
  * becomes a stub — but only for arXiv-shaped ids, because the legacy paper
  * adapter derives arXiv links from `id` and would fabricate broken ones for
- * anything else.
+ * anything else. The seed keeps the stored title untouched: cleanup is a
+ * display concern, and the paper page does its own.
  */
 function seedPaperFor(id, storedPaper, title, authors, category) {
   if (storedPaper) return storedPaper;
@@ -112,7 +153,9 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const { isEnglish } = useLanguage();
   const prefersReducedMotion = useReducedMotion();
   const navigate = useNavigate();
-  const { user, profilePhoto } = useAuth();
+  const {
+    user, profilePhoto, onboardingComplete, profileLoadError,
+  } = useAuth();
   const {
     likedPaperIds, personalLibrary, ensurePersonalLibrary, getCuratedInteractionIds,
   } = useFeed();
@@ -134,6 +177,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const [following, setFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followError, setFollowError] = useState(false);
+  const [followHover, setFollowHover] = useState(false);
   const [followSheet, setFollowSheet] = useState(null);
 
   const view = resolveProfileView({
@@ -142,6 +186,11 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     selfMode,
   });
   const activeTab = view.tabs.includes(requestedTab) ? requestedTab : 'lists';
+  // Signed in, the app Navbar stays on this page (App.jsx shows it for
+  // /public/user/* too); signed out it is the standalone shared-link page,
+  // with its own brand line and breathing room instead.
+  const hasAppChrome = selfMode
+    || (Boolean(user) && Boolean(onboardingComplete) && !profileLoadError);
 
   useEffect(() => {
     let active = true;
@@ -194,20 +243,20 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   /**
    * The follow numbers of the profile on screen.
    *
-   * Three reads at most, and only when there is a published profile to count:
-   * two capped `count()` aggregations (one billed read each, whatever the size
-   * of the graph) plus, for a signed-in visitor looking at somebody else, the
-   * single `get` that answers "do I already follow this person". A signed-out
-   * visitor pays two; the owner pays two.
+   * Three reads at most: two capped `count()` aggregations (one billed read
+   * each, whatever the size of the graph) plus, for a signed-in visitor, the
+   * single `get` that answers "do I already follow this person" — the owner
+   * skips that one. On one's own page the uid works even before a public
+   * profile exists: follows are keyed by uid, not by handle.
    */
-  const profileUid = profile?.uid || '';
+  const statsUid = profile?.uid || (selfMode ? user?.uid || '' : '');
   useEffect(() => {
-    if (!profileUid || IS_DEMO) return undefined;
+    if (!statsUid || IS_DEMO) return undefined;
     let active = true;
     Promise.all([
-      countFollowers(profileUid),
-      countFollowedUsers(profileUid),
-      readIsFollowing(profileUid),
+      countFollowers(statsUid),
+      countFollowedUsers(statsUid),
+      view.isOwner ? Promise.resolve(false) : readIsFollowing(statsUid),
     ])
       .then(([followers, followed, viewerFollows]) => {
         if (!active) return;
@@ -224,7 +273,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
         setFollowedStats({ count: null, capped: false });
       });
     return () => { active = false; };
-  }, [profileUid, user?.uid, reloadToken]);
+  }, [statsUid, user?.uid, view.isOwner, reloadToken]);
 
   /**
    * Follow / unfollow. The service is idempotent — the composite edge id makes
@@ -234,22 +283,25 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
    */
   const toggleFollow = async () => {
     if (!user) { onAuthRequired?.(); return; }
-    if (!profileUid || followBusy) return;
+    if (!statsUid || followBusy) return;
     const wasFollowing = following;
     setFollowBusy(true);
     setFollowError(false);
     setFollowing(!wasFollowing);
+    // The label must land on its resting state ("Following", quiet), not on
+    // the hover state ("Unfollow", danger) the pointer happens to be over.
+    setFollowHover(false);
     setFollowerStats(current => (current
       ? { ...current, count: Math.max(0, current.count + (wasFollowing ? -1 : 1)) }
       : current));
     try {
       const result = wasFollowing
-        ? await unfollowUser(profileUid)
-        : await followUser(profileUid);
+        ? await unfollowUser(statsUid)
+        : await followUser(statsUid);
       // `changed: false` means the edge was already in the requested state, so
       // the optimistic ±1 counted something that had already been counted.
       if (!result.changed) {
-        setFollowerStats(await countFollowers(profileUid));
+        setFollowerStats(await countFollowers(statsUid));
       }
     } catch (error) {
       console.error('Error updating follow:', error);
@@ -386,28 +438,33 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     tabsLabel: 'Profile sections',
     tabs: { lists: 'Lists', saved: 'Saved', liked: 'Liked' },
     stats: { following: 'Following', followers: 'Followers', likes: 'Likes' },
-    notPublic: 'Only visible to the owner',
-    followers: 'Followers',
-    followsUsers: 'Following',
+    followedContent: 'Followed content',
+    openFollowing: 'See followed users',
+    openFollowers: 'See followers',
+    openLiked: 'Open your liked papers',
     follow: 'Follow',
     unfollow: 'Unfollow',
     followingState: 'Following',
     followFailed: 'That did not go through. Try again.',
-    openFollowers: 'See followers',
+    pinnedHeading: 'Pinned lists',
     papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
     open: title => `Open ${title}`,
     manageLists: 'Manage in My lists',
     publicBadge: 'Public',
     ownListsNote: 'Unpublished lists are only visible to you.',
     ownListsError: 'Your lists could not be loaded. Open My lists to retry.',
-    emptyPinned: 'This profile has not pinned any reading lists yet.',
-    emptyOwnLists: 'No lists yet. Save a paper to a list and it will show up here.',
-    emptySaved: 'Nothing saved to read later yet.',
-    emptyLiked: 'No liked papers yet.',
+    emptyPinnedTitle: 'No pinned lists yet',
+    emptyPinnedHint: 'This profile has not pinned any reading lists.',
+    emptyOwnListsTitle: 'No lists yet',
+    emptyOwnListsHint: 'Save a paper to a list and it will show up here.',
+    emptySavedTitle: 'Nothing saved yet',
+    emptySavedHint: 'Papers you save to read later will show up here.',
+    emptyLikedTitle: 'No liked papers yet',
+    emptyLikedHint: 'Papers you like will show up here.',
     truncated: count => `Showing the ${count} most recent.`,
     loadingRows: 'Loading...',
     untitled: 'Untitled paper',
-    authCta: user ? 'Go to my lists' : 'Sign in to build your own',
+    authCta: 'Sign in to build your own',
   } : {
     brand: 'PaperTok',
     publicProfile: 'Perfil público',
@@ -426,50 +483,65 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     tabsLabel: 'Secciones del perfil',
     tabs: { lists: 'Listas', saved: 'Guardados', liked: 'Me gusta' },
     stats: { following: 'Siguiendo', followers: 'Seguidores', likes: 'Me gusta' },
-    notPublic: 'Solo visible para su dueño',
-    followers: 'Seguidores',
-    followsUsers: 'Siguiendo',
+    followedContent: 'Contenido seguido',
+    openFollowing: 'Ver usuarios seguidos',
+    openFollowers: 'Ver seguidores',
+    openLiked: 'Abrir tus me gusta',
     follow: 'Seguir',
     unfollow: 'Dejar de seguir',
     followingState: 'Siguiendo',
     followFailed: 'No se pudo completar. Inténtalo de nuevo.',
-    openFollowers: 'Ver seguidores',
+    pinnedHeading: 'Listas fijadas',
     papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
     open: title => `Abrir ${title}`,
     manageLists: 'Gestionar en Mis listas',
     publicBadge: 'Pública',
     ownListsNote: 'Las listas no publicadas solo las ves tú.',
     ownListsError: 'No se pudieron cargar tus listas. Ábrelas en Mis listas para reintentar.',
-    emptyPinned: 'Este perfil todavía no ha fijado ninguna lista de lectura.',
-    emptyOwnLists: 'Todavía no hay listas. Guarda un paper en una lista y aparecerá aquí.',
-    emptySaved: 'Todavía no hay nada guardado para leer más tarde.',
-    emptyLiked: 'Todavía no hay papers con me gusta.',
+    emptyPinnedTitle: 'Sin listas fijadas',
+    emptyPinnedHint: 'Este perfil todavía no ha fijado ninguna lista de lectura.',
+    emptyOwnListsTitle: 'Todavía no hay listas',
+    emptyOwnListsHint: 'Guarda un paper en una lista y aparecerá aquí.',
+    emptySavedTitle: 'Nada guardado todavía',
+    emptySavedHint: 'Los papers que guardes para leer más tarde aparecerán aquí.',
+    emptyLikedTitle: 'Todavía no hay me gusta',
+    emptyLikedHint: 'Los papers que te gusten aparecerán aquí.',
     truncated: count => `Se muestran los ${count} más recientes.`,
     loadingRows: 'Cargando...',
     untitled: 'Paper sin título',
-    authCta: user ? 'Ir a mis listas' : 'Inicia sesión para crear el tuyo',
+    authCta: 'Inicia sesión para crear el tuyo',
   };
 
-  const pageClass = `public-profile-page${selfMode ? ' public-profile-page--app' : ''}`;
+  const pageClass = `public-profile-page${hasAppChrome ? ' public-profile-page--app' : ''}`;
 
   if (status !== 'ready') {
     // <Routes> sits inside an AnimatePresence with mode="wait", so the previous
     // page finishes exiting before this one mounts — and only then does the
-    // profile read start. A blank frame in that gap is what made the entry feel
-    // abrupt. Hold the finished layout instead, so the shape never jumps and
-    // only the content fades in.
+    // profile read start. The skeleton holds the whole finished layout (header,
+    // stats, tab bar, first rows), so nothing jumps when the content lands.
     if (status === 'loading') {
       return (
         <main className={pageClass} aria-busy="true" aria-label={copy.loading}>
           <div className="public-profile-shell">
-            {!selfMode && <p className="public-profile-brand">{copy.brand} · {copy.publicProfile}</p>}
+            {!hasAppChrome && <p className="public-profile-brand">{copy.brand} · {copy.publicProfile}</p>}
             <header className="public-profile-header">
               <div className="public-profile-avatar public-profile-skeleton" />
               <div className="public-profile-identity">
                 <div className="public-profile-skeleton public-profile-skeleton--title" />
                 <div className="public-profile-skeleton public-profile-skeleton--line" />
+                <div className="profile-skeleton-stats">
+                  <div className="public-profile-skeleton public-profile-skeleton--stat" />
+                  <div className="public-profile-skeleton public-profile-skeleton--stat" />
+                  <div className="public-profile-skeleton public-profile-skeleton--stat" />
+                </div>
               </div>
             </header>
+            <div className="public-profile-skeleton public-profile-skeleton--tabs" />
+            <div className="profile-skeleton-rows">
+              <div className="public-profile-skeleton public-profile-skeleton--row" />
+              <div className="public-profile-skeleton public-profile-skeleton--row" />
+              <div className="public-profile-skeleton public-profile-skeleton--row" />
+            </div>
           </div>
         </main>
       );
@@ -509,7 +581,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     || (selfMode ? (user?.email || '').split('@')[0] : '')
     || 'PaperTok';
   const avatar = profile?.photo || (view.isOwner ? (profilePhoto || user?.photoURL || '') : '');
-  const followingCount = followedEntities?.length ?? 0;
+  const followedContentCount = followedEntities?.length ?? 0;
   const likesCount = likedPaperIds?.size ?? 0;
 
   const statValue = value => (typeof value === 'number' ? value.toLocaleString() : value);
@@ -523,6 +595,84 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     && Object.values(personalLibrary).filter(record => record.readLater).length > PROFILE_TAB_ROW_LIMIT;
   const likedTruncated = likesCount > PROFILE_TAB_ROW_LIMIT;
 
+  // While following, hovering (or focusing) the button is the unfollow
+  // affordance — it says so, instead of turning red under an unchanged label.
+  const followButtonLabel = following
+    ? (followHover && !followBusy ? copy.unfollow : copy.followingState)
+    : copy.follow;
+  const FollowButtonIcon = following
+    ? (followHover && !followBusy ? UserX : UserCheck)
+    : UserPlus;
+
+  const pinnedLists = profile?.pinnedLists || [];
+
+  const listCards = (lists, own) => (
+    <ul className="public-profile-list-grid">
+      {lists.map((list, index) => {
+        // `emoji` holds a lucide icon name, not a literal emoji.
+        const Icon = getIcon(list.emoji);
+        const inner = (
+          <>
+            <span className="public-profile-list-emoji" aria-hidden="true">
+              <Icon size={18} />
+            </span>
+            <span className="public-profile-list-copy">
+              <span className="public-profile-list-title">{list.title}</span>
+              <span className="public-profile-list-count">
+                {copy.papers(list.paperCount ?? 0)}
+              </span>
+            </span>
+            {own && list.isPublished && (
+              <span className="profile-badge-public">
+                <Globe2 size={12} aria-hidden="true" /> {copy.publicBadge}
+              </span>
+            )}
+          </>
+        );
+        return (
+          <motion.li key={own ? list.id : list.shareId} {...rowMotion(prefersReducedMotion, index)}>
+            {own ? (
+              <button
+                type="button"
+                className="public-profile-list-card profile-list-card--own"
+                onClick={() => navigate('/lists', { state: { openListId: list.id } })}
+                aria-label={copy.open(list.title)}
+              >
+                {inner}
+              </button>
+            ) : (
+              <Link
+                className="public-profile-list-card"
+                to={getPublicListPath(list.shareId)}
+                aria-label={copy.open(list.title)}
+              >
+                {inner}
+              </Link>
+            )}
+          </motion.li>
+        );
+      })}
+    </ul>
+  );
+
+  const paperRows = rows => (
+    <div className="profile-row-list">
+      {rows.map((row, index) => (
+        <motion.div key={row.id} {...rowMotion(prefersReducedMotion, index)}>
+          <PaperRow row={row} fallbackTitle={copy.untitled} />
+        </motion.div>
+      ))}
+    </div>
+  );
+
+  const loadingRows = (
+    <div className="profile-skeleton-rows" aria-label={copy.loadingRows} aria-busy="true">
+      <div className="public-profile-skeleton public-profile-skeleton--row" />
+      <div className="public-profile-skeleton public-profile-skeleton--row" />
+      <div className="public-profile-skeleton public-profile-skeleton--row" />
+    </div>
+  );
+
   return (
     <main className={pageClass}>
       <motion.div
@@ -533,7 +683,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
           ? { duration: 0.12 }
           : { duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
       >
-        {!selfMode && <p className="public-profile-brand">{copy.brand} · {copy.publicProfile}</p>}
+        {!hasAppChrome && <p className="public-profile-brand">{copy.brand} · {copy.publicProfile}</p>}
 
         {view.isOwner && (
           <button
@@ -584,257 +734,219 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
 
             <ul className="profile-stats">
               <li>
-                {view.isOwner ? (
-                  <button
-                    type="button"
-                    className="profile-stat"
-                    onClick={() => navigate('/settings/following')}
-                  >
-                    <strong>{followingLoading ? '…' : statValue(followingCount)}</strong>
-                    <span>{copy.stats.following}</span>
-                  </button>
-                ) : (
-                  <div className="profile-stat profile-stat--static" title={copy.notPublic}>
-                    <strong>—</strong>
-                    <span>{copy.stats.following}</span>
-                  </div>
-                )}
+                <button
+                  type="button"
+                  className="profile-stat"
+                  onClick={() => setFollowSheet('following')}
+                  disabled={!statsUid}
+                  title={copy.openFollowing}
+                >
+                  <strong>{followedStats ? followCount(followedStats) : '…'}</strong>
+                  <span>{copy.stats.following}</span>
+                </button>
               </li>
               <li>
-                {/* The slot F1 left empty. Same markup, real number: a capped
-                    count() aggregation, one billed read. */}
                 <button
                   type="button"
                   className="profile-stat"
                   onClick={() => setFollowSheet('followers')}
-                  disabled={!profile}
+                  disabled={!statsUid}
                   title={copy.openFollowers}
                 >
                   <strong>{followerStats ? followCount(followerStats) : '…'}</strong>
                   <span>{copy.stats.followers}</span>
                 </button>
               </li>
-              <li>
-                {view.isOwner ? (
+              {view.isOwner && (
+                <li>
                   <button
                     type="button"
                     className="profile-stat"
                     onClick={() => setRequestedTab('liked')}
+                    title={copy.openLiked}
                   >
                     <strong>{statValue(likesCount)}</strong>
                     <span>{copy.stats.likes}</span>
                   </button>
-                ) : (
-                  <div className="profile-stat profile-stat--static" title={copy.notPublic}>
-                    <strong>—</strong>
-                    <span>{copy.stats.likes}</span>
-                  </div>
-                )}
-              </li>
+                </li>
+              )}
             </ul>
 
-            {view.isOwner ? (
-              <div className="profile-owner-actions">
+            <div className="profile-owner-actions">
+              {view.isOwner ? (
+                <>
+                  <button
+                    type="button"
+                    className="profile-edit-button"
+                    onClick={() => navigate('/settings/profile')}
+                  >
+                    {copy.editProfile}
+                  </button>
+                  {/* The entities the feed follows (authors, topics,
+                      institutions) are a different graph from followed users,
+                      and private. They get their own labeled door instead of
+                      sharing the word "Following" with the user counter. */}
+                  <button
+                    type="button"
+                    className="profile-content-chip"
+                    onClick={() => navigate('/settings/following')}
+                  >
+                    <Rss size={13} aria-hidden="true" />
+                    {copy.followedContent}
+                    <strong>{followingLoading ? '…' : statValue(followedContentCount)}</strong>
+                  </button>
+                </>
+              ) : profile && (
                 <button
                   type="button"
-                  className="profile-edit-button"
-                  onClick={() => navigate('/settings/profile')}
-                >
-                  {copy.editProfile}
-                </button>
-              </div>
-            ) : profile && (
-              <div className="profile-owner-actions">
-                <button
-                  type="button"
-                  className={`profile-follow-button${following ? ' profile-follow-button--following' : ''}`}
+                  className={`profile-follow-button${following ? ' profile-follow-button--following' : ''}${following && followHover && !followBusy ? ' is-unfollow-intent' : ''}`}
                   onClick={toggleFollow}
+                  onMouseEnter={() => setFollowHover(true)}
+                  onMouseLeave={() => setFollowHover(false)}
+                  onFocus={() => setFollowHover(true)}
+                  onBlur={() => setFollowHover(false)}
                   disabled={followBusy}
                   aria-pressed={following}
-                  title={following ? copy.unfollow : copy.follow}
                 >
-                  {following ? <UserCheck size={16} /> : <UserPlus size={16} />}
-                  {following ? copy.followingState : copy.follow}
+                  <FollowButtonIcon size={16} />
+                  {followButtonLabel}
                 </button>
-                {followError && <p className="profile-follow-error">{copy.followFailed}</p>}
-              </div>
-            )}
+              )}
+            </div>
+            {followError && <p className="profile-follow-error">{copy.followFailed}</p>}
           </div>
         </header>
 
-        <div className="profile-tabs" role="tablist" aria-label={copy.tabsLabel}>
-          {view.tabs.map(tab => (
-            <button
-              key={tab}
-              type="button"
-              role="tab"
-              id={`profile-tab-${tab}`}
-              aria-selected={activeTab === tab}
-              aria-controls={`profile-panel-${tab}`}
-              className={`profile-tab${activeTab === tab ? ' is-active' : ''}`}
-              onClick={() => setRequestedTab(tab)}
-            >
-              {copy.tabs[tab]}
-              {activeTab === tab && (
-                <motion.span
-                  className="profile-tab-indicator"
-                  layoutId="profile-tab-indicator"
-                  aria-hidden="true"
-                  transition={prefersReducedMotion
-                    ? { duration: 0 }
-                    : { type: 'spring', stiffness: 500, damping: 40 }}
-                />
-              )}
-            </button>
-          ))}
-        </div>
+        {view.isOwner ? (
+          <>
+            <div className="profile-tabs" role="tablist" aria-label={copy.tabsLabel}>
+              {view.tabs.map(tab => (
+                <button
+                  key={tab}
+                  type="button"
+                  role="tab"
+                  id={`profile-tab-${tab}`}
+                  aria-selected={activeTab === tab}
+                  aria-controls={`profile-panel-${tab}`}
+                  className={`profile-tab${activeTab === tab ? ' is-active' : ''}`}
+                  onClick={() => setRequestedTab(tab)}
+                >
+                  {copy.tabs[tab]}
+                  {activeTab === tab && (
+                    <motion.span
+                      className="profile-tab-indicator"
+                      layoutId="profile-tab-indicator"
+                      aria-hidden="true"
+                      transition={prefersReducedMotion
+                        ? { duration: 0 }
+                        : { type: 'spring', stiffness: 500, damping: 40 }}
+                    />
+                  )}
+                </button>
+              ))}
+            </div>
 
-        <AnimatePresence mode="wait" initial={false}>
-          <motion.section
-            key={activeTab}
-            id={`profile-panel-${activeTab}`}
-            role="tabpanel"
-            aria-labelledby={`profile-tab-${activeTab}`}
-            className="profile-panel"
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
-            transition={{ duration: prefersReducedMotion ? 0.08 : 0.16, ease: 'easeOut' }}
-          >
-            {activeTab === 'lists' && (view.isOwner ? (
-              <>
-                <div className="profile-panel-header">
-                  <p className="profile-panel-note">{copy.ownListsNote}</p>
-                  <Link className="profile-manage-link" to="/lists">{copy.manageLists}</Link>
-                </div>
-                {ownListsFailed && <p className="public-profile-empty">{copy.ownListsError}</p>}
-                {!ownListsFailed && ownLists === null && (
-                  <p className="public-profile-empty">{copy.loadingRows}</p>
-                )}
-                {!ownListsFailed && ownLists !== null && (ownLists.length === 0 ? (
-                  <p className="public-profile-empty">{copy.emptyOwnLists}</p>
-                ) : (
-                  <ul className="public-profile-list-grid">
-                    {ownLists.map(list => {
-                      const Icon = getIcon(list.emoji);
-                      return (
-                        <li key={list.id}>
-                          <button
-                            type="button"
-                            className="public-profile-list-card profile-list-card--own"
-                            onClick={() => navigate('/lists', { state: { openListId: list.id } })}
-                            aria-label={copy.open(list.title)}
-                          >
-                            <span className="public-profile-list-emoji" aria-hidden="true">
-                              <Icon size={18} />
-                            </span>
-                            <span className="public-profile-list-copy">
-                              <span className="public-profile-list-title">{list.title}</span>
-                              <span className="public-profile-list-count">
-                                {copy.papers(list.paperCount)}
-                              </span>
-                            </span>
-                            {list.isPublished && (
-                              <span className="profile-badge-public">
-                                <Globe2 size={12} aria-hidden="true" /> {copy.publicBadge}
-                              </span>
-                            )}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ))}
-              </>
-            ) : (
-              (profile?.pinnedLists || []).length === 0 ? (
-                <p className="public-profile-empty">{copy.emptyPinned}</p>
-              ) : (
-                <ul className="public-profile-list-grid">
-                  {(profile?.pinnedLists || []).map(list => {
-                    // `emoji` holds a lucide icon name, not a literal emoji.
-                    const Icon = getIcon(list.emoji);
-                    return (
-                      <li key={list.shareId}>
-                        <Link
-                          className="public-profile-list-card"
-                          to={getPublicListPath(list.shareId)}
-                          aria-label={copy.open(list.title)}
-                        >
-                          <span className="public-profile-list-emoji" aria-hidden="true">
-                            <Icon size={18} />
-                          </span>
-                          <span className="public-profile-list-copy">
-                            <span className="public-profile-list-title">{list.title}</span>
-                            <span className="public-profile-list-count">
-                              {copy.papers(list.paperCount ?? 0)}
-                            </span>
-                          </span>
-                        </Link>
-                      </li>
-                    );
-                  })}
-                </ul>
-              )
-            ))}
-
-            {view.isOwner && activeTab === 'saved' && (!libraryReady ? (
-              <p className="public-profile-empty">{copy.loadingRows}</p>
-            ) : savedRows.length === 0 ? (
-              <p className="public-profile-empty">{copy.emptySaved}</p>
-            ) : (
-              <>
-                <div className="profile-row-list">
-                  {savedRows.map(row => (
-                    <PaperRow key={row.id} row={row} fallbackTitle={copy.untitled} />
-                  ))}
-                </div>
-                {savedTruncated && (
-                  <p className="profile-panel-note">{copy.truncated(PROFILE_TAB_ROW_LIMIT)}</p>
-                )}
-              </>
-            ))}
-
-            {view.isOwner && activeTab === 'liked' && (likedRows.length === 0 ? (
-              <p className="public-profile-empty">
-                {libraryReady ? copy.emptyLiked : copy.loadingRows}
-              </p>
-            ) : (
-              <>
-                <div className="profile-row-list">
-                  {likedRows.map(row => (
-                    <PaperRow key={row.id} row={row} fallbackTitle={copy.untitled} />
-                  ))}
-                </div>
-                {likedTruncated && (
-                  <p className="profile-panel-note">{copy.truncated(PROFILE_TAB_ROW_LIMIT)}</p>
-                )}
-              </>
-            ))}
-          </motion.section>
-        </AnimatePresence>
-
-        {!view.isOwner && (
-          <footer className="public-profile-footer">
-            {user ? (
-              <Link className="public-profile-auth-cta" to="/lists">{copy.authCta}</Link>
-            ) : (
-              <button
-                type="button"
-                className="public-profile-auth-cta"
-                onClick={onAuthRequired}
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.section
+                key={activeTab}
+                id={`profile-panel-${activeTab}`}
+                role="tabpanel"
+                aria-labelledby={`profile-tab-${activeTab}`}
+                className="profile-panel"
+                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
+                transition={{ duration: prefersReducedMotion ? 0.08 : 0.16, ease: 'easeOut' }}
               >
-                {copy.authCta}
-              </button>
-            )}
+                {activeTab === 'lists' && (
+                  <>
+                    <div className="profile-panel-header">
+                      <p className="profile-panel-note">{copy.ownListsNote}</p>
+                      <Link className="profile-manage-link" to="/lists">{copy.manageLists}</Link>
+                    </div>
+                    {ownListsFailed && (
+                      <EmptyState
+                        Icon={FolderOpen}
+                        title={copy.emptyOwnListsTitle}
+                        hint={copy.ownListsError}
+                      />
+                    )}
+                    {!ownListsFailed && ownLists === null && loadingRows}
+                    {!ownListsFailed && ownLists !== null && (ownLists.length === 0 ? (
+                      <EmptyState
+                        Icon={FolderOpen}
+                        title={copy.emptyOwnListsTitle}
+                        hint={copy.emptyOwnListsHint}
+                      />
+                    ) : listCards(ownLists, true))}
+                  </>
+                )}
+
+                {activeTab === 'saved' && (!libraryReady ? loadingRows
+                  : savedRows.length === 0 ? (
+                    <EmptyState
+                      Icon={Bookmark}
+                      title={copy.emptySavedTitle}
+                      hint={copy.emptySavedHint}
+                    />
+                  ) : (
+                    <>
+                      {paperRows(savedRows)}
+                      {savedTruncated && (
+                        <p className="profile-panel-note">{copy.truncated(PROFILE_TAB_ROW_LIMIT)}</p>
+                      )}
+                    </>
+                  ))}
+
+                {activeTab === 'liked' && (likedRows.length === 0 ? (
+                  !libraryReady ? loadingRows : (
+                    <EmptyState
+                      Icon={Heart}
+                      title={copy.emptyLikedTitle}
+                      hint={copy.emptyLikedHint}
+                    />
+                  )
+                ) : (
+                  <>
+                    {paperRows(likedRows)}
+                    {likedTruncated && (
+                      <p className="profile-panel-note">{copy.truncated(PROFILE_TAB_ROW_LIMIT)}</p>
+                    )}
+                  </>
+                ))}
+              </motion.section>
+            </AnimatePresence>
+          </>
+        ) : (
+          <section className="profile-visitor-lists" aria-label={copy.pinnedHeading}>
+            <h2 className="profile-visitor-heading">{copy.pinnedHeading}</h2>
+            {pinnedLists.length === 0 ? (
+              <EmptyState
+                Icon={FolderOpen}
+                title={copy.emptyPinnedTitle}
+                hint={copy.emptyPinnedHint}
+              />
+            ) : listCards(pinnedLists, false)}
+          </section>
+        )}
+
+        {!view.isOwner && !user && (
+          <footer className="public-profile-footer">
+            <button
+              type="button"
+              className="public-profile-auth-cta"
+              onClick={onAuthRequired}
+            >
+              {copy.authCta}
+            </button>
           </footer>
         )}
       </motion.div>
 
       <AnimatePresence>
-        {followSheet && profileUid && (
+        {followSheet && statsUid && (
           <FollowSheet
-            uid={profileUid}
+            uid={statsUid}
             mode={followSheet}
             counts={{
               followers: followerStats ? followCount(followerStats) : null,

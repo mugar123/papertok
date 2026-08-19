@@ -9,6 +9,19 @@
   max-width: 680px;
   margin: 0 auto;
   padding: 104px clamp(20px, 5vw, 40px) 96px;
+  /* Same entrance as the profile page it belongs to. */
+  animation: profile-shell-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes profile-shell-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-shell {
+    animation: none;
+  }
 }
 
 .profile-heading h1 {

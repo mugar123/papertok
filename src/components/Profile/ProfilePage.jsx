@@ -196,6 +196,14 @@ export default function ProfilePage() {
     return () => { active = false; };
   }, [user]);
 
+  // The tab keeps saying which screen this is; restored on the way out so the
+  // pages that manage their own metadata are not affected.
+  useEffect(() => {
+    const previous = document.title;
+    document.title = isEnglish ? 'Public profile | PaperTok' : 'Perfil público | PaperTok';
+    return () => { document.title = previous; };
+  }, [isEnglish]);
+
   const handleCheck = useMemo(() => inspectHandle(handleDraft), [handleDraft]);
   const handleError = handleDraft && !handleCheck.valid
     ? HANDLE_ERROR_COPY[isEnglish ? 'en' : 'es'][handleCheck.code]

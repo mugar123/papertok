@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { X } from 'lucide-react';
+import { UsersRound, X } from 'lucide-react';
 import {
   FOLLOW_PAGE_SIZE,
   readFollowedUsersPage,
@@ -24,6 +24,10 @@ import './FollowSheet.css';
  * saving reads. So each row resolves its own public profile, at most one read
  * per row on screen, cached for the life of the sheet so switching tabs and
  * paging back never asks twice.
+ *
+ * Both tabs count *users*, and so do both header counters now — the entities
+ * the feed follows live behind their own "Followed content" chip — so the tab
+ * can simply say "Following" again without colliding with anything.
  */
 
 const MODES = Object.freeze({
@@ -38,17 +42,17 @@ function initialOf(name) {
 function Row({ uid, profile, unavailableLabel, onNavigate }) {
   if (!profile) {
     return (
-      <li className="follow-row follow-row--gone">
+      <>
         <span className="follow-avatar" aria-hidden="true">?</span>
         <span className="follow-row-body">
           <span className="follow-row-name">{unavailableLabel}</span>
         </span>
-      </li>
+      </>
     );
   }
 
   return (
-    <li className="follow-row">
+    <>
       <Link
         className="follow-row-link"
         to={getPublicProfilePath(profile.handle)}
@@ -65,7 +69,7 @@ function Row({ uid, profile, unavailableLabel, onNavigate }) {
         </span>
       </Link>
       <span className="follow-row-key" hidden>{uid}</span>
-    </li>
+    </>
   );
 }
 
@@ -91,14 +95,22 @@ export default function FollowSheet({
   // One entry per uid, for the life of the sheet: the two tabs overlap often
   // (mutuals) and paging must not re-read a profile already on screen.
   const profileCache = useRef(new Map());
+  const sheet = useRef(null);
   const closeButton = useRef(null);
   const current = page.mode === mode ? page : EMPTY_PAGE;
+  // Decided once per open: this drives which entrance the sheet plays (slide
+  // from the bottom edge it is anchored to on phones, a scale-fade when it
+  // floats centered on desktop), not the layout, which is pure CSS.
+  const slidesFromBottom = useMemo(
+    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 599px)').matches,
+    [],
+  );
 
   const copy = isEnglish ? {
     followers: 'Followers',
     following: 'Following',
     close: 'Close',
-    empty: mode === 'followers' ? 'No followers yet.' : 'Not following anyone yet.',
+    emptyTitle: mode === 'followers' ? 'No followers yet' : 'Not following anyone yet',
     more: 'Load more',
     loading: 'Loading...',
     error: 'This list could not be loaded.',
@@ -108,7 +120,7 @@ export default function FollowSheet({
     followers: 'Seguidores',
     following: 'Siguiendo',
     close: 'Cerrar',
-    empty: mode === 'followers' ? 'Todavía no tiene seguidores.' : 'Todavía no sigue a nadie.',
+    emptyTitle: mode === 'followers' ? 'Sin seguidores todavía' : 'Sin usuarios seguidos todavía',
     more: 'Cargar más',
     loading: 'Cargando...',
     error: 'No se pudo cargar esta lista.',
@@ -164,12 +176,50 @@ export default function FollowSheet({
     }
   };
 
+  // A modal dialog owns the keyboard while it is open: Escape closes, and Tab
+  // cycles inside the sheet instead of wandering into the blurred page behind.
   useEffect(() => {
     closeButton.current?.focus();
-    const onKeyDown = event => { if (event.key === 'Escape') onClose(); };
+    const onKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        onClose();
+        return;
+      }
+      if (event.key !== 'Tab' || !sheet.current) return;
+      const focusable = [...sheet.current.querySelectorAll(
+        'button:not(:disabled), a[href]',
+      )];
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [onClose]);
+
+  const sheetMotion = prefersReducedMotion ? {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 },
+    transition: { duration: 0.1 },
+  } : slidesFromBottom ? {
+    initial: { y: '100%' },
+    animate: { y: 0 },
+    exit: { y: '100%' },
+    transition: { type: 'spring', damping: 32, stiffness: 340 },
+  } : {
+    initial: { opacity: 0, scale: 0.96, y: 12 },
+    animate: { opacity: 1, scale: 1, y: 0 },
+    exit: { opacity: 0, scale: 0.97, y: 8 },
+    transition: { duration: 0.24, ease: [0.16, 1, 0.3, 1] },
+  };
 
   return (
     <motion.div
@@ -181,16 +231,12 @@ export default function FollowSheet({
       onClick={onClose}
     >
       <motion.div
+        ref={sheet}
         className="follow-sheet"
         role="dialog"
         aria-modal="true"
         aria-label={mode === 'followers' ? copy.followers : copy.following}
-        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 24 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 24 }}
-        transition={prefersReducedMotion
-          ? { duration: 0.1 }
-          : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
+        {...sheetMotion}
         onClick={event => event.stopPropagation()}
       >
         <header className="follow-sheet-header">
@@ -223,9 +269,15 @@ export default function FollowSheet({
         </header>
 
         <div className="follow-sheet-body">
-          {current.status === 'loading' && <p className="follow-sheet-note">{copy.loading}</p>}
+          {current.status === 'loading' && (
+            <div className="follow-sheet-loading" aria-label={copy.loading} aria-busy="true">
+              <div className="follow-row-skeleton" />
+              <div className="follow-row-skeleton" />
+              <div className="follow-row-skeleton" />
+            </div>
+          )}
           {current.status === 'error' && (
-            <div className="follow-sheet-note">
+            <div className="follow-sheet-state">
               <p>{copy.error}</p>
               <button
                 type="button"
@@ -237,7 +289,12 @@ export default function FollowSheet({
             </div>
           )}
           {current.status === 'ready' && current.rows.length === 0 && (
-            <p className="follow-sheet-note">{copy.empty}</p>
+            <div className="follow-sheet-state">
+              <span className="follow-sheet-state-icon" aria-hidden="true">
+                <UsersRound size={20} />
+              </span>
+              <p>{copy.emptyTitle}</p>
+            </div>
           )}
           <AnimatePresence initial={false}>
             {current.rows.length > 0 && (
@@ -247,14 +304,28 @@ export default function FollowSheet({
                 animate={{ opacity: 1 }}
                 transition={{ duration: prefersReducedMotion ? 0.1 : 0.2 }}
               >
-                {current.rows.map(row => (
-                  <Row
+                {current.rows.map((row, index) => (
+                  <motion.li
                     key={row.uid}
-                    uid={row.uid}
-                    profile={row.profile}
-                    unavailableLabel={copy.unavailable}
-                    onNavigate={onClose}
-                  />
+                    className={`follow-row${row.profile ? '' : ' follow-row--gone'}`}
+                    initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                    animate={{
+                      opacity: 1,
+                      y: 0,
+                      transition: {
+                        delay: prefersReducedMotion ? 0 : Math.min(index * 0.02, 0.16),
+                        duration: prefersReducedMotion ? 0.08 : 0.18,
+                        ease: 'easeOut',
+                      },
+                    }}
+                  >
+                    <Row
+                      uid={row.uid}
+                      profile={row.profile}
+                      unavailableLabel={copy.unavailable}
+                      onNavigate={onClose}
+                    />
+                  </motion.li>
                 ))}
               </motion.ul>
             )}

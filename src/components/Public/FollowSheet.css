@@ -5,19 +5,22 @@
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding: var(--space-4);
+  padding: 0;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(6px);
 }
 
+/* Anchored to the bottom edge on phones (it enters from there), floating
+   centered on anything wider. The body height is fixed per breakpoint so
+   switching tabs never resizes or re-centers the dialog. */
 .follow-sheet {
   display: flex;
   flex-direction: column;
   width: 100%;
   max-width: 460px;
-  max-height: min(70vh, 620px);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-2xl);
+  border-bottom: none;
+  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   background: var(--bg-elevated);
   box-shadow: var(--shadow-xl);
   overflow: hidden;
@@ -35,9 +38,12 @@
 .follow-sheet-tabs {
   display: flex;
   gap: var(--space-2);
+  min-width: 0;
 }
 
 .follow-sheet-tab {
+  display: inline-flex;
+  align-items: center;
   padding: var(--space-2) var(--space-4);
   border: none;
   border-radius: var(--radius-full);
@@ -46,6 +52,7 @@
   font-family: var(--font-body);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
+  white-space: nowrap;
   cursor: pointer;
   transition: color var(--transition-fast), background var(--transition-fast);
 }
@@ -60,10 +67,27 @@
   color: var(--text-primary);
 }
 
+.follow-sheet-tab-count {
+  margin-left: var(--space-2);
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  line-height: 1.6;
+}
+
+.follow-sheet-tab--active .follow-sheet-tab-count {
+  background: var(--bg-glass-strong);
+  color: var(--text-primary);
+}
+
 .follow-sheet-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
   width: 34px;
   height: 34px;
   border: 1px solid var(--border-subtle);
@@ -81,16 +105,64 @@
 }
 
 .follow-sheet-body {
-  flex: 1;
+  height: min(72dvh, 560px);
   overflow-y: auto;
-  padding: var(--space-2) var(--space-3) var(--space-4);
+  padding: var(--space-2) var(--space-3) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
 }
 
-.follow-sheet-note {
-  margin: var(--space-6) 0;
+/* Loading, error and empty all live centered in the fixed-height body, so the
+   sheet reads as one calm surface whatever state the list is in. */
+.follow-sheet-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-2) 0;
+}
+
+.follow-row-skeleton {
+  height: 56px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  animation: follow-sheet-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes follow-sheet-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+.follow-sheet-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  height: 100%;
   color: var(--text-tertiary);
   font-size: var(--fs-sm);
   text-align: center;
+}
+
+.follow-sheet-state p {
+  margin: 0;
+}
+
+.follow-sheet-state .follow-sheet-more {
+  width: auto;
+  margin-top: 0;
+  padding: var(--space-2) var(--space-5);
+}
+
+.follow-sheet-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--accent-primary);
 }
 
 .follow-list {
@@ -100,6 +172,10 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+}
+
+.follow-row {
+  display: block;
 }
 
 .follow-row-link {
@@ -197,11 +273,22 @@
 @media (min-width: 600px) {
   .follow-sheet-backdrop {
     align-items: center;
+    padding: var(--space-4);
+  }
+
+  .follow-sheet {
+    border-bottom: 1px solid var(--border-default);
+    border-radius: var(--radius-2xl);
+  }
+
+  .follow-sheet-body {
+    height: min(52vh, 440px);
+    padding-bottom: var(--space-4);
   }
 }
 
-.follow-sheet-tab-count {
-  margin-left: var(--space-2);
-  color: var(--text-tertiary);
-  font-weight: var(--fw-regular);
+@media (prefers-reduced-motion: reduce) {
+  .follow-row-skeleton {
+    animation: none;
+  }
 }

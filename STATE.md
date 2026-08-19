@@ -1,5 +1,100 @@
 # Estado / pendientes
 
+## Rediseño integral de perfil y ajustes — séptima pasada (2026-08-19)
+
+**Hecho y verificado en vivo** con las dos cuentas (`@mugar` / `@nick_mugar`),
+en escritorio (800/1280) y móvil (375), en dev y, para la vista de visitante
+anónimo, contra el build servido desde un origen limpio (`vite preview`, sin
+sesión de Firebase). 524 tests verdes, lint y build limpios.
+
+### El bug que iba primero (commit aislado `5b7afee`)
+
+Los títulos de Me gusta morían si se cambiaba de pestaña antes de aterrizar
+`fetchLibraryRecords`: los ids se marcaban como pedidos **antes** del fetch,
+el cleanup del efecto descartaba la respuesta al cambiar `activeTab`, y no
+había reintento — 40 × "Paper sin título" hasta recargar. 100 % reproducible
+(Me gusta → otra pestaña en <1 s → volver). Fix de raíz: la respuesta se
+fusiona siempre (la caché `likedExtra` es por id, idempotente; setState tras
+unmount es no-op) y un batch fallido des-marca sus ids para que la siguiente
+activación reintente. Commit propio ANTES del rediseño; la secuencia exacta
+se verificó antes (40/40 sin título) y después (0/40), y otra vez sobre la
+página ya rediseñada.
+
+### La semántica que cambia: los contadores de cabecera cuentan usuarios
+
+La cabecera decía *Siguiendo* = entidades del feed (privado) con el botón
+*Siguiendo* = usuarios al lado: misma palabra, dos grafos. Ahora los tres
+contadores del dueño son **Siguiendo (usuarios) / Seguidores / Me gusta** —
+Siguiendo sale de `countFollowedUsers`, la agregación pública que la hoja ya
+pedía, así que **cero lecturas nuevas** (y en vista de dueño se ahorra el
+`isFollowing` contra uno mismo que antes sí se pedía). Las **entidades**
+tienen su propia puerta etiquetada: chip "Contenido seguido · N" →
+`/settings/following`, solo dueño. En perfil ajeno ya no hay guiones "—":
+se ven Siguiendo y Seguidores **reales** (el grafo es público por diseño de
+F2) y Me gusta simplemente no está — dos stats, composición completa, sin
+huecos. La hoja vuelve a decir "Siguiendo": el renombrado "Usuarios seguidos"
+de la pasada F2 quedó superseded (ya no colisiona con nada y en móvil se
+partía en dos líneas).
+
+### El resto del rediseño
+
+| Cambio | Dónde |
+| --- | --- |
+| Navbar con sesión también en `/public/user/*` (como ya hacía `/public/paper/*`); el eyebrow "PAPERTOK · PUBLIC PROFILE" queda solo para visitantes sin sesión | `App.jsx`; clase `--app` por `hasAppChrome` en la página |
+| Títulos de filas con `ScientificText` (el mismo KaTeX del feed) + saneado al pintar | `PublicProfilePage.jsx` + `src/utils/paperText.js` (+6 tests) |
+| Botón Seguir: hover/focus cambian etiqueta y color **juntos** ("Dejar de seguir" en rojo) vía clase de estado, no `:hover`; tras pulsar Seguir descansa en "Siguiendo" neutro aunque el puntero siga encima | `PublicProfilePage.{jsx,css}` |
+| Perfil ajeno: heading "Listas fijadas" en vez de tab-bar de un solo tab; fuera el CTA "Ir a mis listas" con sesión (la Navbar ya da la vuelta); el CTA de login queda solo sin sesión | ídem |
+| Estados vacíos icono+título+hint (el patrón de FollowingSettingsPage) en las tres pestañas y en la hoja | ídem + `FollowSheet.jsx` |
+| Skeleton completo (cabecera+stats+tab bar+filas) y filas fantasma al cargar pestañas | ídem |
+| Móvil: cabecera retrato centrada (avatar 88 px, stats en columnas centradas, acciones centradas), no el escritorio estirado de antes | `PublicProfilePage.css` |
+| Hoja: **altura fija por breakpoint** (cambiar de pestaña ya no salta ni re-centra), bottom-sheet real en móvil (muelle desde el borde) y scale-fade en escritorio, trampa de foco (Tab cicla dentro), pills de recuento, esqueleto de filas | `FollowSheet.{jsx,css}` |
+| Stagger sobrio de filas/tarjetas (delay con tope 0,22 s); `prefers-reduced-motion` en todas las piezas | ambos |
+| Ajustes: fila Perfil público → "**Editar**" (era "Ver todo"), chips de seguimiento a 0 ocultos, tarjetas de nivel IA alineadas arriba, toggle de analítica a ancho completo en ≤520 px, `<title>` propio reactivo al idioma | `SettingsPage.{jsx,css}` |
+| Editor: `<title>` propio y entrada suave | `ProfilePage.{jsx,css}` |
+| El `a:hover` morado global neutralizado en tarjetas/filas del perfil (el feedback ahí es borde+elevación) | `PublicProfilePage.css` |
+| Entrada `papertok-preview` (vite preview) para auditar la vista sin sesión desde un origen limpio | `.claude/launch.json` |
+
+### Privacidad re-verificada (2026-08-19)
+
+- REST sin auth contra prod: `userProfiles/{uid}` expone solo campos
+  públicos; `users/{uid}` y subcolecciones → 403.
+- Visual sin sesión (origen limpio, build): cabecera pública + Listas
+  fijadas + contadores del grafo público, nada más — sin Guardados, sin
+  Me gusta, sin engranaje, sin editar. Follow sin sesión → prompt de auth,
+  cero escrituras. La hoja funciona sin sesión (lecturas públicas acotadas).
+- `resolveProfileView` intacto; los efectos de dueño siguen detrás de
+  `view.isOwner`.
+- Feed tras el rediseño, medido en vivo: `__papertokReads` = aggregate 2
+  (doble montaje de StrictMode; 1 en prod), interactions 0, library 0.
+
+### Deuda de datos anotada (no tocada, a propósito — amplía R8)
+
+Documentos de `interactions` con títulos que llevan HTML literal
+(`La <sub>2</sub> CuO <sub>4</sub>`) y autores en formato "Apellido, I.".
+**No se reescriben los documentos**: el saneado es solo de presentación
+(`src/utils/paperText.js`: sub/sup numéricos → Unicode ₂/², tags fuera,
+"Do, T." → "T. Do" solo con iniciales inequívocas). La migración real de esos
+docs queda pendiente y pertenece al mismo lote que R8 (ids de interacción no
+canónicos).
+
+### Notas de esta pasada
+
+- Los clics del panel del navegador se cuelgan en emulación móvil y se
+  pierden con viewport redimensionado a 1280: la verificación móvil/ancha fue
+  con capturas + `.click()` sintético (dispara React; el router no, como ya
+  documenta la memoria de la sesión).
+- "Research" sigue sin traducir en la Navbar española — Navbar fuera del
+  encargo y con riesgo de conflicto con la rama del compañero.
+- El idioma de la cuenta quedó devuelto a inglés, como estaba al empezar.
+- `SettingsPage.css` conserva sus colores/px hardcodeados (no está en el
+  test de tokens); solo se tocó lo que la auditoría señaló.
+
+### Choques con el rediseño del compañero
+
+`PaperCard.{jsx,css}` y `Navbar.jsx` intactos. El riesgo de conflicto se
+concentra ahora en `PublicProfilePage.{jsx,css}` y `FollowSheet.{jsx,css}`,
+reescritos enteros en esta pasada.
+
 ## Perfil unificado estilo TikTok — hecho, pendiente de pasada con sesión (2026-08-19)
 
 Una sola página de perfil para el dueño y para los visitantes, con el
@@ -217,10 +312,8 @@ emergiendo, y tarjeta completa.
 
 ## Red social — F2 (P4): seguimiento entre usuarios (2026-08-19)
 
-**Implementado, tests verdes, PENDIENTE DE DESPLIEGUE Y DE VERIFICACIÓN EN
-VIVO.** Sin rules desplegadas la cabecera degrada a "—" y la hoja de listas
-muestra su estado de error: comprobado en vivo, es exactamente el estado
-previo al deploy.
+**Implementado, desplegado y verificado en vivo con dos cuentas reales**
+(`@mugar` y `@nick_mugar`) el 2026-08-19. Rules e índices en `papertok-168df`.
 
 ### El modelo
 
@@ -326,6 +419,47 @@ seguir a `uid_bob` y bloquear ese follow para siempre. Hay test.
   destino tenga perfil público, y el perfil es el único sitio donde eso se
   sabe sin una lectura extra.
 
+### Verificación en vivo (2026-08-19)
+
+**Rules, contra producción y sin cabecera de auth** (REST, no el navegador,
+que comparte sesión y daría falsos positivos). Seis de seis:
+
+| | |
+| --- | --- |
+| query `follows` con `limit(30)` | permitida |
+| query `follows` **sin** `limit` | denegada |
+| query `follows` con `limit(1001)` | denegada |
+| `count()` con `limit(1000)` | permitida |
+| `count()` **sin** `limit` | denegada |
+| crear una arista sin sesión | denegada |
+
+El techo de página no es una convención del cliente: producción rechaza
+cualquier query sobre `follows` que no lo lleve, agregaciones incluidas.
+
+**Flujo completo con sesión**, `@mugar` sobre el perfil de `@nick_mugar`:
+contador real en 0 (ya no "—", que era el estado pre-deploy) → Seguir → 1 y
+botón a "Siguiendo" → recarga y persiste → hoja de seguidores con la fila de
+`@mugar` resuelta (el índice compuesto responde) → desde el perfil propio, la
+pestaña de usuarios seguidos muestra `@nick_mugar` → dejar de seguir → 0 →
+volver a seguir → 1. Sin descuadre en ningún paso. En consola, cero
+`permission-denied`; los únicos errores son los 429 de OpenAlex, que son el
+rate limit de dev ya conocido y ajeno a esto.
+
+**Coste del feed medido en la app real**: `window.__papertokReads` tras cargar
+el feed da `interactions: 0` y `library: 0` — cero escaneo, el agregado hizo
+su trabajo. (`aggregate: 2` es el doble montaje de StrictMode en dev; en
+producción es 1, y el test COST lo fija.)
+
+**Un fallo encontrado y arreglado durante la pasada**: la cabecera dice
+*Siguiendo* para las entidades del feed y la hoja decía *Siguiendo* para los
+usuarios, a un clic de distancia y con números distintos (0 y 1). Misma
+palabra, dos cosas. La pestaña pasa a llamarse **"Usuarios seguidos"** /
+"Following users"; la cabecera no se toca.
+
+**Datos vivos que quedan**: una arista real `mugar → nick_mugar`. Es un follow
+legítimo, no basura de test; para deshacerlo basta pulsar "Siguiendo" en
+`/public/user/nick_mugar`.
+
 ### Choques con el rediseño del compañero
 
 `PaperCard.{jsx,css}` intactos otra vez. `Navbar.jsx` no se tocó en esta fase.
@@ -336,9 +470,9 @@ conflicto es seguro.
 ## Red social del conocimiento — F1 implementada (2026-08-19)
 
 **Fase actual**: **F1 (P1+P2+P3) hecha y verificada en vivo**. Rules
-desplegadas en `papertok-168df` el 2026-08-19. **F2/P4 implementada encima**
-(sección de arriba), pendiente de desplegar. Siguiente: **P5** (clave canónica
-de paper), que es paralelizable.
+desplegadas en `papertok-168df` el 2026-08-19. **F2/P4 hecha, desplegada y verificada en
+vivo** (sección de arriba). Siguiente: **P5** (clave canónica de paper), que
+es paralelizable.
 
 ### Qué entró en F1
 
