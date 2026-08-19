@@ -78,9 +78,10 @@ las use sin romper nada existente.
 
 Dos desviaciones al implementar, argumentadas en `STATE.md`: los contadores
 del stub son `count()` acotado (el increment del boceto es incompatible con
-el borrado en cascada de hilos), y el punto de entrada de la hoja es la
-página del paper, no `PaperCard.jsx` (vetado por los cambios del compañero;
-el feed gana su botón cuando ese archivo quede libre).
+el borrado en cascada de hilos), y la hoja se estrenó en la página del paper
+porque `PaperCard.jsx` estaba vetado — veto ya levantado: el botón vive en
+el carril de la tarjeta, en los tres feeds, con la hoja alojada en App.jsx
+para que nada social entre en el grafo de módulos del feed.
 
 ### P5 `[rules]`-parcial — Stubs de paper
 - **Entra**: `src/utils/paperCanonicalKey.js` **puro** (derivación de clave:

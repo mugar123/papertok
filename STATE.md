@@ -32,12 +32,10 @@ vivo la parte de visitante y de datos (REST sin auth). La pasada con sesión
   inmutable** para clientes y no añade superficie de inflado. Es la desviación
   del plan de esta fase; los campos `commentCount`/`annotationCount` del
   boceto simplemente no existen.
-- **El punto de entrada es la página del paper (`/public/paper/{key}`), no
-  PaperCard.** El plan ponía la hoja en `PaperCard.jsx`; ese archivo es
-  territorio del compañero y quedó prohibido en el encargo. Consecuencia
-  honesta: **desde el feed aún no hay botón de comentarios** — se llega por
-  la tarjeta destino (likes, listas, perfiles, enlaces). Cuando PaperCard
-  quede libre, es un botón que abre `CommentsSheet` con el paper en mano.
+- **El punto de entrada fue primero la página del paper** (PaperCard estaba
+  vetado por los cambios del compañero). **Superseded en la pasada
+  siguiente**: el veto se levantó y el botón vive en la tarjeta — ver la
+  sección "Botón de comentarios en el feed" de abajo.
 - **Hilos en orden cronológico ascendente, una sola query.** Una respuesta
   siempre es posterior a su padre, así que en orden ascendente el padre ya
   está en pantalla cuando llega la respuesta: cero respuestas huérfanas por
@@ -157,11 +155,46 @@ rastro, colección `papers`).
    es top-level aparte precisamente por eso. **Tras fusionar: re-desplegar
    rules y volver a correr `npm run test:rules`.**
 
+### Botón de comentarios en el feed (2026-08-19, pasada posterior)
+
+**Hecho y verificado en vivo.** El veto sobre `PaperCard.{jsx,css}` se
+levantó (working tree comprobado: limpio, último toque el commit `82764ef`
+del compañero), y el botón vive en el carril lateral de la tarjeta, entre
+Like y Save, con el estilo de sus hermanos (`pc-side-btn` — **cero CSS
+nuevo** en PaperCard).
+
+- **Cómo mantiene el invariante de coste**: PaperCard solo gana una prop
+  (`onOpenComments`) y un import puro (`paperCanonicalKey`, para no pintar
+  el botón en papers que no pueden anclar hilo). La hoja, sus servicios y
+  toda lectura viven en **App.jsx**, que ya alojaba `PDFViewer` y
+  `SaveToListModal` por la misma razón: el feed entrega el paper y nada más.
+  Ningún servicio social entra en el grafo de módulos del feed — el test
+  SOURCE pasa **sin tocarlo**, no debilitado.
+- Cableado por prop a los tres feeds (For you, Following, invitado — el
+  invitado puede LEER hilos; el composer le pide sesión) y a la tarjeta
+  anidada de relacionados.
+- `PublicPaperPage` se unifica: fuera la píldora flotante (JSX + CSS), el
+  botón del carril abre la hoja que esa página ya alojaba.
+- En la hoja, navegar por un @handle ahora cierra la hoja (contrato
+  `onNavigate` de FollowSheet), necesaria al ser modal global.
+- **Medido en vivo**: `__papertokReads` tras cargar el feed = aggregate 2
+  (StrictMode; 1 en prod), interactions 0, library 0 — sin cambios. Nada de
+  contadores por tarjeta (R7): el número se cuenta al abrir la hoja.
+- **Verificado en vivo con la sesión de @mugar** (sobrevivió en el origen
+  `localhost:57212`; hay entrada `papertok-dev-57212` en `.claude/launch.json`
+  para reencontrarla): abrir la hoja desde el feed → comentar → cerrar →
+  seguir deslizando, sin roturas. El comentario pasó el batch completo
+  contra las rules desplegadas y **estrenó el primer stub real**:
+  `papers/YXJ4aXY6MjYwOC4xODAzMA` (`arxiv:2608.18030`), clave coherente y
+  campos saneados. La query collection-group de producción respondió (el
+  índice CG está vivo).
+- **Dato de prueba en producción**: el comentario "Probando los comentarios
+  desde el feed" de @mugar en ese paper. Se borra desde la propia hoja o
+  desde `/settings/comments`; el stub restante es inerte (solo admin puede
+  borrarlo, consola de Firebase, colección `papers`).
+
 ### Fuera, a propósito
 
-- **Botón de comentarios en el feed**: bloqueado por el veto a
-  `PaperCard.jsx` (cambios del compañero). Un botón + `CommentsSheet` cuando
-  se libere.
 - **Anotaciones (F4/P8)**: siguiente fase; `annotationsFrozen` ya existe en
   el killswitch y el stub no necesita cambios.
 - **Digest de reportes por email** (02-SECURITY §3): el cron del Worker
