@@ -74,10 +74,18 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     unmarkAsRead,
     toggleLike,
     personalLibrary,
+    ensurePersonalLibrary,
     toggleReadLater,
     likedPaperIds,
     readPaperIds,
   } = useFeed();
+
+  // Notes, tags and read timestamps no longer ride along on every feed load;
+  // this screen is the one that renders them, so it is the one that fetches
+  // them.
+  useEffect(() => {
+    void ensurePersonalLibrary?.();
+  }, [ensurePersonalLibrary]);
   const [lists, setLists] = useState([]);
   const [savedPapers, setSavedPapers] = useState({});
   const [expandedList, setExpandedList] = useState(null);

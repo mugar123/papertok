@@ -25,7 +25,15 @@ export default function SaveToListModal({ paper, onClose }) {
   const { user } = useAuth();
   const { isEnglish } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
-  const { markSaved, personalLibrary, toggleReadLater, saveReadingMetadata } = useFeed();
+  const {
+    markSaved, personalLibrary, ensurePersonalLibrary, toggleReadLater, saveReadingMetadata,
+  } = useFeed();
+
+  // The note and tags for this paper live in the reading library, which is now
+  // loaded on demand rather than with the feed.
+  useEffect(() => {
+    void ensurePersonalLibrary?.();
+  }, [ensurePersonalLibrary]);
   const [lists, setLists] = useState([]);
   const [paperLists, setPaperLists] = useState(new Set());
   const [newListName, setNewListName] = useState('');

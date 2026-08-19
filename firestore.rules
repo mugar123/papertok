@@ -205,6 +205,53 @@ service cloud.firestore {
           && (!('paper' in request.resource.data) || request.resource.data.paper is map);
       }
 
+      // Derived aggregate of the interactions subcollection above, so a feed
+      // load costs one read instead of one per paper the account ever saw.
+      // Everything here is reconstructible from `interactions`, which stays the
+      // source of truth, so the client may write it directly as long as the
+      // shape and every payload size stay bounded. Without the caps a client
+      // could park an arbitrarily large blob in its own tree.
+      match /aggregates/{aggregateId} {
+        allow read, delete: if ownsUserTree(userId) && aggregateId == 'interactions';
+        allow create, update: if ownsUserTree(userId)
+          && aggregateId == 'interactions'
+          && request.resource.data.keys().hasOnly([
+            'schemaVersion', 'updatedAt', 'affinities', 'curated', 'seenFilter',
+            'interactionCount', 'evictedCount', 'sourceDocCount', 'truncated'
+          ])
+          && request.resource.data.keys().hasAll([
+            'schemaVersion', 'updatedAt', 'affinities', 'curated'
+          ])
+          && request.resource.data.schemaVersion is int
+          && request.resource.data.schemaVersion >= 1
+          && request.resource.data.schemaVersion <= 1000
+          && validString(request.resource.data.updatedAt, 40)
+          // Category cohort sums; ~50 buckets per category, 300 categories max.
+          && validString(request.resource.data.affinities, 120000)
+          // Exact paper ids for the sets that render in the UI.
+          && validString(request.resource.data.curated, 320000)
+          // Base64 Bloom filter: 479264 bits is 79880 chars, and the cap leaves
+          // room for nothing larger than that to be stored.
+          && (!('seenFilter' in request.resource.data)
+            || validString(request.resource.data.seenFilter, 120000))
+          // Belt and braces on the 1 MiB document limit: the two required
+          // payloads together, plus the filter's own cap above, bound the whole
+          // document at 560000 characters.
+          && request.resource.data.affinities.size()
+            + request.resource.data.curated.size() <= 440000
+          && (!('interactionCount' in request.resource.data)
+            || request.resource.data.interactionCount is int
+              && request.resource.data.interactionCount >= 0)
+          && (!('evictedCount' in request.resource.data)
+            || request.resource.data.evictedCount is int
+              && request.resource.data.evictedCount >= 0)
+          && (!('sourceDocCount' in request.resource.data)
+            || request.resource.data.sourceDocCount is int
+              && request.resource.data.sourceDocCount >= 0)
+          && (!('truncated' in request.resource.data)
+            || request.resource.data.truncated is bool);
+      }
+
       match /following/{followId} {
         allow read, delete: if ownsUserTree(userId);
         allow create, update: if ownsUserTree(userId)

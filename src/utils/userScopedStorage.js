@@ -1,5 +1,6 @@
 const LEGACY_SEEN_PAPERS_KEY = 'papertok_seenIds';
 const SEEN_PAPERS_KEY_PREFIX = 'papertok_seenIds:';
+const DRIFT_CHECK_KEY_PREFIX = 'papertok_profileDriftCheckedAt:';
 
 function getStorage(storage) {
   if (storage) return storage;
@@ -38,6 +39,41 @@ export function saveSeenPaperIds(userId, paperIds, storage, limit = 500) {
   }
 }
 
+export function getDriftCheckStorageKey(userId) {
+  if (!userId) return null;
+  return `${DRIFT_CHECK_KEY_PREFIX}${encodeURIComponent(userId)}`;
+}
+
+/**
+ * When this device last verified the interaction aggregate against its
+ * subcollection. Kept per device rather than in the aggregate so the check needs
+ * no extra Firestore write and no schema change.
+ */
+export function readProfileDriftCheckedAt(userId, storage) {
+  const key = getDriftCheckStorageKey(userId);
+  const target = getStorage(storage);
+  if (!key || !target) return 0;
+
+  try {
+    const parsed = Number(target.getItem(key));
+    return Number.isFinite(parsed) ? parsed : 0;
+  } catch {
+    return 0;
+  }
+}
+
+export function saveProfileDriftCheckedAt(userId, timestamp, storage) {
+  const key = getDriftCheckStorageKey(userId);
+  const target = getStorage(storage);
+  if (!key || !target) return;
+
+  try {
+    target.setItem(key, String(timestamp));
+  } catch {
+    // Losing the throttle only means checking again sooner than needed.
+  }
+}
+
 export function removeLegacySeenPaperIds(storage) {
   const target = getStorage(storage);
   if (!target) return;
@@ -56,6 +92,7 @@ export function clearUserScopedStorage(userId, storage) {
   const safeUserId = String(userId).replace(/[^a-zA-Z0-9._-]/g, '_');
   const exactKeys = new Set([
     getSeenPapersStorageKey(userId),
+    getDriftCheckStorageKey(userId),
     `papertok_following_${safeUserId}`,
     `papertok_following_updates_${safeUserId}`,
     `papertok_readingLibrary_${userId}`,

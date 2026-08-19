@@ -8,3 +8,7 @@ dist
 .DS_Store
 .claude/
 lint_output.txt
+
+# Firestore emulator artefacts (npm run test:rules)
+firestore-debug.log
+firebase-debug.log

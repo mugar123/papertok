@@ -1,12 +1,12 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
 import { IS_DEMO, db } from '../services/firebase';
-import { collection, getDocs, getDocsFromCache, doc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { useFollowing } from './FollowingContext';
 import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
 import { getDeviceInfo } from '../utils/device';
-import { CATEGORIES, getCategorySimilarity, getAllLeafCategories } from '../data/categories';
+import { CATEGORIES, getAllLeafCategories } from '../data/categories';
 import { PubmedAdapter } from '../services/adapters/PubmedAdapter';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter';
 import { getArxivIdsForOpenAlexWorks, enrichPapersBatch, fetchPapersByDois, getWorksByEntity } from '../services/openAlexService';
@@ -21,11 +21,32 @@ import {
   readRecommendationWeights,
 } from '../utils/recommendationEngine';
 import {
+  readProfileDriftCheckedAt,
   readSeenPaperIds,
   removeLegacySeenPaperIds,
+  saveProfileDriftCheckedAt,
   saveSeenPaperIds,
 } from '../utils/userScopedStorage';
 import { serializeLibraryPaper } from '../utils/readingLibrary';
+import {
+  createEmptyInteractionProfile,
+  curatedIds,
+  isPaperKnown,
+  readCategorySignals,
+  recordInteractionEvent,
+} from '../utils/interactionProfile';
+import {
+  hasInteractionProfile,
+  loadInteractionProfile,
+  unavailableInteractionProfile,
+} from '../utils/interactionProfileLoader';
+import {
+  createInteractionProfileClient,
+  fetchLibraryRecords,
+  flushAllInteractionProfiles,
+  flushInteractionProfileNow,
+  scheduleInteractionProfileFlush,
+} from '../services/interactionProfileStore';
 import { fetchDomainPapers } from '../services/domainSourceService';
 import {
   getOpenAlexEnrichmentId,
@@ -52,9 +73,16 @@ const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
 const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
 const OPENALEX_FEED_WAIT_BUDGET_MS = 4500;
 const ICITE_FEED_WAIT_BUDGET_MS = 1800;
-const INTERACTIONS_CACHE_TIMEOUT_MS = 800;
 const INTERACTIONS_NETWORK_TIMEOUT_MS = 5000;
-const INTERACTIONS_CACHED_REFRESH_TIMEOUT_MS = 1500;
+// Upper bound on the reading-library records fetched on demand by the library
+// screens. Ten ids per `in` query, so this is 60 queries in the worst case and
+// it is reached only by an account with hundreds of deliberately kept papers.
+const PERSONAL_LIBRARY_MAX_RECORDS = 600;
+// How often a device re-checks the aggregate against its subcollection. The
+// check costs a count aggregation, so it must stay off the normal feed load: at
+// this cadence it is a rounding error, and drift only appears after a session
+// that could not write the aggregate at all.
+const PROFILE_DRIFT_CHECK_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 const FEED_SNAPSHOT_TTL_MS = 15 * 60 * 1000;
 const FEED_SNAPSHOT_MAX_PAPERS = PAGE_SIZE * 2;
 
@@ -210,6 +238,21 @@ export function FeedProvider({ children }) {
   const openAlexEnrichmentRequests = useRef(new Map());
   const activeUserId = useRef(user?.uid || null);
   const sessionSeenPapers = useRef(readSeenPaperIds(user?.uid));
+  // The derived aggregate that replaced the full interactions scan. Kept in a
+  // ref because every interaction mutates it synchronously while the durable
+  // write is coalesced behind it.
+  const interactionProfile = useRef(createEmptyInteractionProfile());
+  // False until a profile has actually been read back for this account. Writing
+  // a half-built aggregate over a good one would silently reset the user's
+  // recommendations, which is worse than skipping a session's deltas: the
+  // interaction documents are still the source of truth either way.
+  const interactionProfileHydrated = useRef(false);
+  // The account whose profile is currently reflected in the state above.
+  const loadedProfileUserId = useRef(null);
+  // Bumped every time a profile is applied. Consumers of the reading library
+  // depend on it so they retry once the ids they need actually exist.
+  const [interactionProfileGeneration, setInteractionProfileGeneration] = useState(0);
+  const personalLibraryStatus = useRef({ userId: null, generation: -1, state: 'idle' });
 
   useEffect(() => { likedPaperIdsRef.current = likedPaperIds; }, [likedPaperIds]);
   useEffect(() => { savedPaperIdsRef.current = savedPaperIds; }, [savedPaperIds]);
@@ -232,6 +275,96 @@ export function FeedProvider({ children }) {
       + readPaperIdsRef.current.size;
     return interactionCount > 0 ? RETURNING_BOREDOM_THRESHOLD : COLD_BOREDOM_THRESHOLD;
   };
+
+  // Every interaction folds into the aggregate synchronously and the durable
+  // write is coalesced behind a short debounce, so a burst of skips costs one
+  // write rather than one per card.
+  // The curated id sets are exact up to their caps. Anything evicted past a cap
+  // lives on in the profile's Bloom filter, which keeps the feed's never-repeat
+  // guarantee intact for accounts old enough to overflow them.
+  const isKnownPaper = useCallback(
+    (paperId) => isPaperKnown(interactionProfile.current, paperId),
+    [],
+  );
+
+  const recordProfileEvent = useCallback((event) => {
+    const userId = user?.uid;
+    if (!userId || IS_DEMO) return;
+    recordInteractionEvent(interactionProfile.current, event);
+    if (!interactionProfileHydrated.current) return;
+    scheduleInteractionProfileFlush(userId, interactionProfile.current);
+  }, [user?.uid]);
+
+  useEffect(() => {
+    const flush = () => { void flushAllInteractionProfiles(); };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('pagehide', flush);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      window.removeEventListener('pagehide', flush);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, []);
+
+  // The reading library used to arrive with the feed's profile load because both
+  // came out of the same full scan. It holds a serialised paper per record, so
+  // it is now fetched only by the screens that render it, from the ids the
+  // aggregate already knows, in bounded `in` batches.
+  const ensurePersonalLibrary = useCallback(async () => {
+    const userId = user?.uid;
+    if (!userId || IS_DEMO) return;
+    const status = personalLibraryStatus.current;
+    // Keyed by generation as well as account: an attempt made before the profile
+    // arrived saw no ids, and must not latch the library shut for the session.
+    if (status.userId === userId
+      && status.generation === interactionProfileGeneration
+      && status.state !== 'idle') return;
+    personalLibraryStatus.current = {
+      userId, generation: interactionProfileGeneration, state: 'loading',
+    };
+
+    try {
+      const profile = interactionProfile.current;
+      const paperIds = [...new Set([
+        ...curatedIds(profile, 'read'),
+        ...curatedIds(profile, 'readLater'),
+        ...curatedIds(profile, 'saved'),
+      ])].slice(0, PERSONAL_LIBRARY_MAX_RECORDS);
+
+      const records = await fetchLibraryRecords(userId, paperIds);
+      if (activeUserId.current !== userId) return;
+
+      const library = {};
+      records.forEach(({ id, data }) => {
+        if (!(data.read || data.readLater || data.note || data.tags?.length)) return;
+        library[id] = {
+          paperId: id,
+          paper: data.paper || serializeLibraryPaper({
+            id,
+            title: data.paperTitle || id,
+            authors: data.paperAuthors || [],
+            primaryCategory: data.paperCategory || '',
+            published: data.timestamp || '',
+          }),
+          readLater: Boolean(data.readLater),
+          readAt: data.readAt || (data.read ? data.timestamp : null),
+          note: data.note || '',
+          tags: Array.isArray(data.tags) ? data.tags : [],
+          updatedAt: data.libraryUpdatedAt || data.timestamp || null,
+        };
+      });
+
+      setPersonalLibrary(current => ({ ...library, ...current }));
+      personalLibraryStatus.current = {
+        userId, generation: interactionProfileGeneration, state: 'ready',
+      };
+    } catch (error) {
+      console.error('Error loading reading library:', error);
+      personalLibraryStatus.current = { userId, generation: -1, state: 'idle' };
+    }
+  }, [interactionProfileGeneration, user?.uid]);
 
   // --- TIKTOK-STYLE SCORING & RE-RANKING ---
   const calculateAndAttachScore = useCallback((paper, recentPropsCount = {}) => {
@@ -337,7 +470,8 @@ export function FeedProvider({ children }) {
           !savedPaperIdsRef.current.has(id) &&
           !readPaperIdsRef.current.has(id) &&
           !notInterestedIdsRef.current.has(id) &&
-          !sessionSeenPapers.current.has(id)
+          !sessionSeenPapers.current.has(id) &&
+          !isKnownPaper(id)
         );
         
         if (filteredIds.length === 0) return;
@@ -390,7 +524,7 @@ export function FeedProvider({ children }) {
     } finally {
       if (sessionId === feedSessionId.current) isTraversingNetwork.current = false;
     }
-  }, [calculateAndAttachScore]);
+  }, [calculateAndAttachScore, isKnownPaper]);
 
   // Load user interactions
   useEffect(() => {
@@ -401,6 +535,21 @@ export function FeedProvider({ children }) {
     activeUserId.current = userId;
     sessionSeenPapers.current = readSeenPaperIds(userId);
     removeLegacySeenPaperIds();
+
+    // Switching accounts, or signing out, must clear the previous account's
+    // papers immediately. This is the only place allowed to blank the sets: a
+    // profile that merely failed to load leaves them alone.
+    if (loadedProfileUserId.current && loadedProfileUserId.current !== userId) {
+      setLikedPaperIds(new Set());
+      setNotInterestedIds(new Set());
+      setSavedPaperIds(new Set());
+      setReadPaperIds(new Set());
+      setPersonalLibrary({});
+      interactionProfile.current = createEmptyInteractionProfile();
+      interactionProfileHydrated.current = false;
+      loadedProfileUserId.current = null;
+      personalLibraryStatus.current = { userId: null, generation: -1, state: 'idle' };
+    }
     if (!userId) {
       return () => {
         if (feedSessionId.current === sessionId) feedSessionId.current += 1;
@@ -428,135 +577,108 @@ export function FeedProvider({ children }) {
     }
 
     // Real Firebase mode
+    //
+    // This used to read the whole `interactions` subcollection, one Firestore
+    // read per paper the account had ever scrolled past. It now reads a single
+    // aggregate document that is maintained incrementally on every interaction.
+    // The old two-phase getDocsFromCache/getDocs dance is gone with it: offline
+    // persistence is deliberately off, so that cache is memory-only and empty on
+    // a cold load, and it only ever paid off on a remount inside one session.
+    // A single document read is a single round trip, so the timeout guard below
+    // is all the protection the feed still needs against a slow Firestore.
     const loadInteractions = async () => {
+      interactionProfileHydrated.current = false;
       try {
-        const interactionsRef = collection(db, 'users', userId, 'interactions');
-        const cached = await settleWithin(
-          getDocsFromCache(interactionsRef),
-          INTERACTIONS_CACHE_TIMEOUT_MS,
+        const client = createInteractionProfileClient(userId);
+        const checkedAt = readProfileDriftCheckedAt(userId);
+        const checkDrift = Date.now() - checkedAt > PROFILE_DRIFT_CHECK_INTERVAL_MS;
+        // Recorded whatever the outcome: a check that fails must not retry on
+        // every single load.
+        if (checkDrift) saveProfileDriftCheckedAt(userId, Date.now());
+
+        const settled = await settleWithin(
+          loadInteractionProfile({
+            readAggregate: client.readAggregate,
+            listInteractionPage: client.listInteractionPage,
+            writeAggregate: client.writeAggregate,
+            countInteractions: client.countInteractions,
+            checkDrift,
+            userId,
+          }),
+          INTERACTIONS_NETWORK_TIMEOUT_MS,
         );
-        const cachedSnapshot = cached.status === 'fulfilled' ? cached.value : null;
-        const remote = await settleWithin(
-          getDocs(interactionsRef),
-          cachedSnapshot
-            ? INTERACTIONS_CACHED_REFRESH_TIMEOUT_MS
-            : INTERACTIONS_NETWORK_TIMEOUT_MS,
-        );
-        const snapshot = remote.status === 'fulfilled' ? remote.value : cachedSnapshot;
-        if (!snapshot) {
-          console.warn('El perfil de recomendación no respondió; se iniciará con señales neutrales');
-        }
-        const liked = new Set();
-        const notInterested = new Set();
-        const saved = new Set();
-        const read = new Set();
-        const library = {};
-        const affinities = {};
-        const cooldowns = {};
-
-        snapshot?.forEach((doc) => {
-          const data = doc.data();
-          if (data.liked) liked.add(doc.id);
-          if (data.notInterested) notInterested.add(doc.id);
-          if (data.saved) saved.add(doc.id);
-          if (data.read) read.add(doc.id);
-          if (data.read || data.readLater || data.note || data.tags?.length) {
-            library[doc.id] = {
-              paperId: doc.id,
-              paper: data.paper || serializeLibraryPaper({
-                id: doc.id,
-                title: data.paperTitle || doc.id,
-                authors: data.paperAuthors || [],
-                primaryCategory: data.paperCategory || '',
-                published: data.timestamp || '',
-              }),
-              readLater: Boolean(data.readLater),
-              readAt: data.readAt || (data.read ? data.timestamp : null),
-              note: data.note || '',
-              tags: Array.isArray(data.tags) ? data.tags : [],
-              updatedAt: data.libraryUpdatedAt || data.timestamp || null,
-            };
-          }
-
-          const cat = data.paperCategory;
-          if (cat) {
-            if (!affinities[cat]) affinities[cat] = 0;
-            
-            let decayFactor = 1;
-            if (data.timestamp) {
-              const ts = new Date(data.timestamp).getTime();
-              const daysOld = (Date.now() - ts) / (1000 * 60 * 60 * 24);
-              decayFactor = Math.max(0.2, Math.exp(-daysOld / 30));
-              
-              if (data.notInterested) {
-                if (!cooldowns[cat] || ts > cooldowns[cat]) {
-                  cooldowns[cat] = ts;
-                }
-              }
-            }
-
-            let impact = 0;
-            if (data.liked) impact += 5;
-            if (data.saved) impact += 8;
-            if (data.openedPdf) impact += 4;
-            // Continuous view time: max 15 points
-            if (data.viewTime) {
-               const cappedTime = Math.min(data.viewTime, 60); // Cap at 60s
-               impact += cappedTime * 0.25; 
-            }
-            if (data.skip) impact -= 1;
-            if (data.pdfBounce) impact -= 2;
-            if (data.notInterested) impact -= 10;
-            
-            affinities[cat] += impact * decayFactor;
-
-            // Conceptual penalties for related categories on Not Interested
-            if (data.notInterested) {
-              Object.keys(CATEGORIES).forEach(areaKey => {
-                Object.keys(CATEGORIES[areaKey].subcategories).forEach(otherCat => {
-                  if (otherCat !== cat) {
-                    const sim = getCategorySimilarity(cat, otherCat);
-                    if (sim > 0) {
-                      if (!affinities[otherCat]) affinities[otherCat] = 0;
-                      let penalty;
-                      if (sim >= 0.8) penalty = -5;
-                      else if (sim >= 0.4) penalty = -3;
-                      else penalty = -1;
-                      affinities[otherCat] += penalty * decayFactor;
-                    }
-                  }
-                });
-              });
-            }
-          }
-        });
-        
-        // Clamping to avoid infinite bubbles
-        Object.keys(affinities).forEach(cat => {
-          affinities[cat] = Math.max(-10, Math.min(100, affinities[cat]));
-        });
-
         if (cancelled) return;
+
+        const result = settled.status === 'fulfilled'
+          ? settled.value
+          : unavailableInteractionProfile({ reason: 'timeout' });
+
+        // UNAVAILABLE means the profile could not be determined, not that it is
+        // empty. Overwriting the sets here is what made a user with 39 likes see
+        // none, so this path touches nothing: whatever is already on screen for
+        // this account stays, and the aggregate stays unwritten.
+        if (!hasInteractionProfile(result)) {
+          console.warn(
+            `[Recomendador] Perfil no disponible (${result.reason}); se mantiene el estado actual.`,
+          );
+          return;
+        }
+
+        const { profile } = result;
+        if (result.repairedDrift) {
+          console.info(
+            `[Recomendador] Agregado reparado: le faltaban ${result.drift.missing} documentos `
+            + `(${result.drift.accounted} contabilizados frente a ${result.drift.actual} reales).`,
+          );
+        }
+        if (result.rebuilt) {
+          console.info(
+            `[Recomendador] Perfil reconstruido desde ${result.documentsRead} interacciones`
+            + `${result.truncated ? ' (truncado en el tope duro)' : ''}.`,
+          );
+        }
+        interactionProfile.current = profile;
+        // A profile that genuinely came back — including a legitimately empty one
+        // for a new account — is safe to write back.
+        interactionProfileHydrated.current = true;
+        loadedProfileUserId.current = userId;
+
+        // getDocs returned these ids ordered by document id, and the lists that
+        // render them still expect exactly that order.
+        const orderedSet = name => new Set(curatedIds(profile, name).sort());
+        const liked = orderedSet('liked');
+        const notInterested = orderedSet('notInterested');
+        const saved = orderedSet('saved');
+        const read = orderedSet('read');
+        const { affinities, cooldowns } = readCategorySignals(profile);
 
         setLikedPaperIds(liked);
         setNotInterestedIds(notInterested);
         setSavedPaperIds(saved);
         setReadPaperIds(read);
-        setPersonalLibrary(library);
+        // The reading library is no longer a side effect of the feed's profile
+        // load. It carries a serialised paper per record, which is exactly the
+        // payload that must not ride along on every feed load, so the screens
+        // that render it call ensurePersonalLibrary() instead.
+        setPersonalLibrary({});
+        // Bumping the generation gives ensurePersonalLibrary a new identity, so
+        // the screens that already asked for the library while the profile was
+        // still loading ask again now that it has ids to work with.
+        setInteractionProfileGeneration(generation => generation + 1);
         categoryAffinities.current = affinities;
         categoryCooldowns.current = cooldowns;
         conceptAffinities.current = {};
         relatedCandidates.current = [];
         setRecommendationProfileUserId(userId);
-        
+
         // --- OpenAlex Semantic Profile ---
         const positiveIds = [...liked, ...saved];
         let conceptWeights = {};
         let relatedWorksPool = [];
-        
+
         if (positiveIds.length > 0) {
            const openAlexData = await enrichPapersBatch(positiveIds);
-           
+
            positiveIds.forEach(id => {
               const pid = id.startsWith('arxiv:') ? id.split(':')[1].replace(/v\d+$/, '') : id.replace(/v\d+$/, '');
               const data = openAlexData[pid];
@@ -571,9 +693,9 @@ export function FeedProvider({ children }) {
               }
            });
         }
-        
+
         const relatedArxivIds = await getArxivIdsForOpenAlexWorks(relatedWorksPool);
-        
+
         if (cancelled) return;
 
         Object.keys(conceptWeights).forEach((id) => {
@@ -592,11 +714,14 @@ export function FeedProvider({ children }) {
 
     return () => {
       cancelled = true;
+      // Anything still sitting in the write debounce belongs to the account we
+      // are leaving, so it has to land before the profile ref is reused.
+      if (userId && interactionProfileHydrated.current) void flushInteractionProfileNow(userId);
       if (feedSessionId.current === sessionId) feedSessionId.current += 1;
       feedRequestId.current += 1;
       activeUserId.current = null;
     };
-  }, [user?.uid]);
+  }, [isKnownPaper, user?.uid]);
 
   // --- BOREDOM DETECTION ---
   // Tracks consecutive fast skips in the current session to detect user disengagement.
@@ -933,7 +1058,8 @@ export function FeedProvider({ children }) {
           } else if (!likedPaperIdsRef.current.has(p.id) &&
               !savedPaperIdsRef.current.has(p.id) &&
               !readPaperIdsRef.current.has(p.id) &&
-              !notInterestedIdsRef.current.has(p.id)) {
+              !notInterestedIdsRef.current.has(p.id) &&
+              !isKnownPaper(p.id)) {
             uniqueMap.set(p.id, p);
           }
         });
@@ -950,7 +1076,8 @@ export function FeedProvider({ children }) {
         !readPaperIdsRef.current.has(p.id) &&
         !likedPaperIdsRef.current.has(p.id) &&
         !savedPaperIdsRef.current.has(p.id) &&
-        !sessionSeenPapers.current.has(p.id)
+        !sessionSeenPapers.current.has(p.id) &&
+        !isKnownPaper(p.id)
       );
 
       // If everything was filtered out but we actually fetched papers, it means the user has seen them all.
@@ -961,7 +1088,8 @@ export function FeedProvider({ children }) {
           !notInterestedIdsRef.current.has(p.id) && 
           !readPaperIdsRef.current.has(p.id) &&
           !likedPaperIdsRef.current.has(p.id) &&
-          !savedPaperIdsRef.current.has(p.id)
+          !savedPaperIdsRef.current.has(p.id) &&
+          !isKnownPaper(p.id)
         );
         if (bypassSeen.length > 0) {
           console.log("Bypassing sessionSeenPapers filter to prevent rate limit cascade.");
@@ -1128,7 +1256,7 @@ export function FeedProvider({ children }) {
     }
   }, [
     userPreferences, page, papers, loading, feedMode,
-    categoryAffinities, relatedCandidates,
+    categoryAffinities, relatedCandidates, isKnownPaper,
     calculateAndAttachScore, followedEntities, recommendationProfileReady
   ]);
 
@@ -1155,7 +1283,7 @@ export function FeedProvider({ children }) {
       }
     }, 0);
     return () => clearTimeout(restoreTimer);
-  }, [feedMode, user?.uid, userPreferences]);
+  }, [feedMode, isKnownPaper, user?.uid, userPreferences]);
 
   // A changed set of interests must invalidate the cached feed and replace it.
   useEffect(() => {
@@ -1185,7 +1313,7 @@ export function FeedProvider({ children }) {
       loadPapers(true, null, true);
     }, 0);
     return () => clearTimeout(refreshTimer);
-  }, [user?.uid, userPreferences, recommendationProfileReady, loadPapers, feedMode]);
+  }, [feedMode, isKnownPaper, loadPapers, recommendationProfileReady, user?.uid, userPreferences]);
 
   const followingSignatureRef = useRef(null);
 
@@ -1208,7 +1336,7 @@ export function FeedProvider({ children }) {
       const refreshTimer = setTimeout(() => loadPapers(true, null, true), 0);
       return () => clearTimeout(refreshTimer);
     }
-  }, [followedEntities, followingLoading, loadPapers, recommendationProfileReady, reRankFeed]);
+  }, [followedEntities, followingLoading, isKnownPaper, loadPapers, reRankFeed, recommendationProfileReady]);
 
   // Save current papers to cache before switching, then restore or fetch
   const handleSetFeedMode = useCallback((newMode) => {
@@ -1225,7 +1353,8 @@ export function FeedProvider({ children }) {
         !notInterestedIdsRef.current.has(p.id) && 
         !readPaperIdsRef.current.has(p.id) &&
         !likedPaperIdsRef.current.has(p.id) &&
-        !savedPaperIdsRef.current.has(p.id)
+        !savedPaperIdsRef.current.has(p.id) &&
+        !isKnownPaper(p.id)
       );
       
       setPapers(refiltered);
@@ -1240,7 +1369,7 @@ export function FeedProvider({ children }) {
       setFeedMode(newMode);
       setTimeout(() => loadPapers(true, newMode), 0);
     }
-  }, [feedMode, papers, page, hasMore, loadPapers]);
+  }, [feedMode, hasMore, isKnownPaper, loadPapers, page, papers]);
 
   const loadMore = useCallback(() => {
     if (hasMore && !loading) loadPapers(false);
@@ -1306,6 +1435,11 @@ export function FeedProvider({ children }) {
       };
       demoSet('savedPapersData', allSaved);
     } else if (user) {
+      recordProfileEvent({
+        paperId: paper.id,
+        kind: isCurrentlyLiked ? 'unlike' : 'like',
+        category: paper.primaryCategory,
+      });
       try {
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
         await setDoc(ref, {
@@ -1321,7 +1455,7 @@ export function FeedProvider({ children }) {
         setLikedPaperIds(likedPaperIds);
       }
     }
-  }, [user, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
+  }, [recordProfileEvent, user, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
 
   const markNotInterested = useCallback(async (paper) => {
     if (!user) return;
@@ -1342,6 +1476,11 @@ export function FeedProvider({ children }) {
     } else {
       try {
         
+        recordProfileEvent({
+          paperId: paper.id,
+          kind: 'notInterested',
+          category: paper.primaryCategory,
+        });
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
         await setDoc(ref, {
           notInterested: true, paperCategory: paper.primaryCategory,
@@ -1353,7 +1492,7 @@ export function FeedProvider({ children }) {
         console.error('Error saving not interested:', err);
       }
     }
-  }, [user, reRankFeed]);
+  }, [reRankFeed, recordProfileEvent, user]);
 
   const markAsRead = useCallback(async (paper) => {
     if (!user) return;
@@ -1387,6 +1526,12 @@ export function FeedProvider({ children }) {
     } else {
       try {
         
+        recordProfileEvent({
+          paperId: paper.id,
+          kind: 'read',
+          category: paper.primaryCategory,
+          timestamp: readAt,
+        });
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
         await setDoc(ref, {
           read: true,
@@ -1401,7 +1546,7 @@ export function FeedProvider({ children }) {
         console.error('Error saving read status:', err);
       }
     }
-  }, [user]);
+  }, [recordProfileEvent, user]);
 
   const trackViewTime = useCallback(async (paper, timeInSeconds) => {
     if (timeInSeconds < 1) return;
@@ -1429,6 +1574,12 @@ export function FeedProvider({ children }) {
 
     if (user && !IS_DEMO) {
       try {
+        recordProfileEvent({
+          paperId: paper.id,
+          kind: 'viewTime',
+          category: paper.primaryCategory,
+          viewTime: timeInSeconds,
+        });
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
         await setDoc(ref, {
           viewTime: increment(timeInSeconds),
@@ -1439,7 +1590,7 @@ export function FeedProvider({ children }) {
         console.error('Error tracking view time:', err);
       }
     }
-  }, [user, reRankFeed, traverseAndExpandNetwork]);
+  }, [reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user]);
 
   const trackPdfOpened = useCallback(async (paper) => {
     // ─── BOREDOM RESET & GRAFO EXPANSION: opening PDF = highly engaged ───
@@ -1453,6 +1604,11 @@ export function FeedProvider({ children }) {
 
     if (user && !IS_DEMO) {
       try {
+        recordProfileEvent({
+          paperId: paper.id,
+          kind: 'openedPdf',
+          category: paper.primaryCategory,
+        });
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
         await setDoc(ref, {
           openedPdf: true,
@@ -1465,7 +1621,7 @@ export function FeedProvider({ children }) {
         console.error('Error tracking PDF open:', err);
       }
     }
-  }, [user, reRankFeed, traverseAndExpandNetwork]);
+  }, [reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user]);
 
   const trackSkips = useCallback(async (papersToSkip) => {
     const skippedPapers = dedupeInteractionPapers(papersToSkip);
@@ -1486,6 +1642,12 @@ export function FeedProvider({ children }) {
         const deviceType = getDeviceInfo().type;
 
         skippedPapers.forEach((paper) => {
+          recordProfileEvent({
+            paperId: paper.id,
+            kind: 'skip',
+            category: paper.primaryCategory,
+            timestamp,
+          });
           const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
           batch.set(ref, {
             skip: increment(1),
@@ -1501,7 +1663,7 @@ export function FeedProvider({ children }) {
         console.error('Error tracking skips:', err);
       }
     }
-  }, [user, reRankFeed]);
+  }, [reRankFeed, recordProfileEvent, user]);
 
   const trackSkip = useCallback((paper) => trackSkips([paper]), [trackSkips]);
 
@@ -1513,6 +1675,11 @@ export function FeedProvider({ children }) {
     
     if (user && !IS_DEMO) {
       try {
+        recordProfileEvent({
+          paperId: paper.id,
+          kind: 'pdfBounce',
+          category: paper.primaryCategory,
+        });
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
         await setDoc(ref, {
           pdfBounce: increment(1),
@@ -1525,7 +1692,7 @@ export function FeedProvider({ children }) {
         console.error('Error tracking PDF bounce:', err);
       }
     }
-  }, [user, reRankFeed]);
+  }, [reRankFeed, recordProfileEvent, user]);
 
   const markSaved = useCallback(async (paperOrId) => {
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
@@ -1562,6 +1729,11 @@ export function FeedProvider({ children }) {
 
     if (user) {
       try {
+        recordProfileEvent({
+          paperId,
+          kind: 'save',
+          category: paper?.primaryCategory,
+        });
         const ref = doc(db, 'users', user.uid, 'interactions', paperId);
         const interactionData = {
           saved: true,
@@ -1579,7 +1751,7 @@ export function FeedProvider({ children }) {
         console.error('Error saving recommendation interaction:', err);
       }
     }
-  }, [papers, reRankFeed, traverseAndExpandNetwork, user]);
+  }, [papers, reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user]);
 
   const unmarkAsRead = useCallback(async (paperId) => {
     if (!user) return;
@@ -1597,6 +1769,7 @@ export function FeedProvider({ children }) {
       demoSet('readPaperIds', Array.from(newRead));
     } else {
       try {
+        recordProfileEvent({ paperId, kind: 'unread' });
         const ref = doc(db, 'users', user.uid, 'interactions', paperId);
         await updateDoc(ref, {
           read: deleteField(),
@@ -1606,7 +1779,7 @@ export function FeedProvider({ children }) {
         console.error('Error unmarking read status:', err);
       }
     }
-  }, [user]);
+  }, [recordProfileEvent, user]);
 
   const toggleReadLater = useCallback(async (paper) => {
     if (!user || !paper?.id) return false;
@@ -1631,6 +1804,13 @@ export function FeedProvider({ children }) {
 
     if (!IS_DEMO) {
       try {
+        recordProfileEvent({
+          paperId: paper.id,
+          kind: 'readLater',
+          value: nextValue,
+          category: paper.primaryCategory,
+          timestamp: updatedAt,
+        });
         await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), {
           readLater: nextValue,
           paper: storedPaper,
@@ -1644,7 +1824,7 @@ export function FeedProvider({ children }) {
       }
     }
     return nextValue;
-  }, [personalLibrary, user]);
+  }, [personalLibrary, recordProfileEvent, user]);
 
   const saveReadingMetadata = useCallback(async (paper, { note = '', tags = [] }) => {
     if (!user || !paper?.id) return;
@@ -1670,6 +1850,12 @@ export function FeedProvider({ children }) {
 
     if (!IS_DEMO) {
       try {
+        recordProfileEvent({
+          paperId: paper.id,
+          kind: 'metadata',
+          category: paper.primaryCategory,
+          timestamp: updatedAt,
+        });
         await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), {
           note: note.trim(),
           tags: normalizedTags,
@@ -1683,7 +1869,7 @@ export function FeedProvider({ children }) {
         console.error('Error saving reading metadata:', err);
       }
     }
-  }, [user]);
+  }, [recordProfileEvent, user]);
 
   const getRecommendationProfileSnapshot = useCallback(() => ({
     userId: user?.uid || null,
@@ -1703,6 +1889,7 @@ export function FeedProvider({ children }) {
   const value = {
     papers, loading, error, hasMore, isRefreshing,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
+    ensurePersonalLibrary,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
