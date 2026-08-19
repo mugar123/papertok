@@ -26,6 +26,8 @@ import {
   getDoc,
   getDocs,
   collection,
+  collectionGroup,
+  increment,
   limit,
   orderBy,
   query,
@@ -961,4 +963,547 @@ test('F8: hiding pins writes both documents the way the client does', async () =
     pinnedLists: [], showPinnedLists: false, updatedAt: serverTimestamp(),
   });
   await assertSucceeds(batch.commit());
+});
+
+// =========================================================================
+// F3 — paper stubs, comments, throttle, moderation. Everything below is a
+// real write or query against the emulator; nothing asserts on rules text.
+// =========================================================================
+
+const DAVE = 'dave-uid'; // signed in, never created a profile
+// Whatever uid isAdmin() currently carries — the placeholder before the P7
+// paste, the real one after. Read from the rules text so pasting the real
+// uid does not orphan every admin test; the emulator authenticates as any
+// string either way.
+const ADMIN = (await readFile(new URL('../firestore.rules', import.meta.url), 'utf8'))
+  .match(/request\.auth\.uid == '([^']+)'/)?.[1] ?? 'REPLACE_WITH_ADMIN_UID';
+const asCarol = () => testEnv.authenticatedContext(CAROL).firestore();
+const asDave = () => testEnv.authenticatedContext(DAVE).firestore();
+const asAdmin = () => testEnv.authenticatedContext(ADMIN).firestore();
+
+// Rules never verify that the id is base64url(canonicalKey) — no base64 in
+// the rules language — so tests may use readable ids. What the rules DO
+// verify is the coherence between canonicalKey and the identifier fields.
+const PAPER = 'k-doi-abc';
+const SIXTY_S_AGO = () => new Date(Date.now() - 60_000);
+
+function stubSeed(overrides = {}) {
+  return {
+    canonicalKey: 'doi:10.1234/abc', title: 'A paper', authors: ['A. Author'],
+    doi: '10.1234/abc', createdAt: new Date(), createdBy: ALICE,
+    ...overrides,
+  };
+}
+
+function stubBody(overrides = {}) {
+  const body = {
+    canonicalKey: 'doi:10.1234/abc', title: 'A paper', authors: ['A. Author'],
+    doi: '10.1234/abc', createdAt: serverTimestamp(), createdBy: ALICE,
+    ...overrides,
+  };
+  // `{ doi: undefined }` means "without a doi" — the SDK refuses undefined
+  // values, so absence is expressed by dropping the key.
+  return Object.fromEntries(Object.entries(body).filter(([, value]) => value !== undefined));
+}
+
+function commentSeed(uid, handle, overrides = {}) {
+  return {
+    authorUid: uid, authorHandle: handle, text: 'Seeded', status: 'visible',
+    createdAt: new Date(), ...overrides,
+  };
+}
+
+function commentBody(uid, handle, overrides = {}) {
+  return {
+    authorUid: uid, authorHandle: handle, text: 'Interesting result',
+    status: 'visible', createdAt: serverTimestamp(), ...overrides,
+  };
+}
+
+function stamp(db, uid, action) {
+  return [doc(db, 'users', uid, 'rateLimits', action),
+    { lastAt: serverTimestamp(), count: increment(1) }];
+}
+
+/** The batch the app really sends: comment + throttle stamp (+ stub + its stamp). */
+function commentBatch(db, uid, body, { paper = PAPER, stub = null } = {}) {
+  const batch = writeBatch(db);
+  if (stub) {
+    batch.set(doc(db, 'papers', paper), stub);
+    const [stubRef, stubStamp] = stamp(db, uid, 'stubs');
+    batch.set(stubRef, stubStamp, { merge: true });
+  }
+  const commentRef = doc(collection(db, 'papers', paper, 'comments'));
+  batch.set(commentRef, body);
+  const [commentsRef, commentsStamp] = stamp(db, uid, 'comments');
+  batch.set(commentsRef, commentsStamp, { merge: true });
+  return { batch, commentRef };
+}
+
+function reportBatch(db, uid, overrides = {}) {
+  const batch = writeBatch(db);
+  batch.set(doc(collection(db, 'reports')), {
+    reporterUid: uid, targetPath: `papers/${PAPER}/comments/c1`,
+    targetAuthorUid: ALICE, reason: 'spam', status: 'open',
+    createdAt: serverTimestamp(), ...overrides,
+  });
+  const [ref, body] = stamp(db, uid, 'reports');
+  batch.set(ref, body, { merge: true });
+  return batch;
+}
+
+/** Alice and Bob public, Carol private, Dave profile-less; one stub. */
+async function resetSocial({ stub = true, comments = {}, stamps = [], config = null } = {}) {
+  await testEnv.clearFirestore();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    for (const [uid, handle, visibility] of [
+      [ALICE, 'alice', 'public'], [BOB, 'bob', 'public'], [CAROL, 'carol', 'private'],
+    ]) {
+      await setDoc(doc(db, 'userProfiles', uid), {
+        handle, displayName: handle, pinnedLists: [], visibility,
+        createdAt: new Date(), updatedAt: new Date(),
+      });
+      await setDoc(doc(db, 'handles', handle), { uid, createdAt: new Date() });
+    }
+    if (stub) await setDoc(doc(db, 'papers', PAPER), stubSeed());
+    for (const [id, body] of Object.entries(comments)) {
+      await setDoc(doc(db, 'papers', PAPER, 'comments', id), body);
+    }
+    for (const [uid, action, when] of stamps) {
+      await setDoc(doc(db, 'users', uid, 'rateLimits', action), { lastAt: when, count: 1 });
+    }
+    if (config) await setDoc(doc(db, 'config', 'moderation'), config);
+  });
+}
+
+// --- stubs ----------------------------------------------------------------
+
+test('F3: anyone can resolve a stub by id; nobody can page the collection', async () => {
+  await resetSocial();
+  await assertSucceeds(getDoc(doc(asGuest(), 'papers', PAPER)));
+  for (const db of [asGuest(), asAlice()]) {
+    await assertFails(getDocs(query(collection(db, 'papers'), limit(10))));
+  }
+});
+
+test('F3: a stub create needs its throttle stamp, and works with it', async () => {
+  await resetSocial({ stub: false });
+  const bare = asAlice();
+  await assertFails(setDoc(doc(bare, 'papers', PAPER), stubBody()));
+
+  const db = asAlice();
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'papers', PAPER), stubBody());
+  const [ref, body] = stamp(db, ALICE, 'stubs');
+  batch.set(ref, body, { merge: true });
+  await assertSucceeds(batch.commit());
+});
+
+test('F3: a stub is immutable to users; the admin can repair and delete it', async () => {
+  await resetSocial();
+  // The creator themselves cannot rewrite the cache (defacement surface)...
+  await assertFails(updateDoc(doc(asAlice(), 'papers', PAPER), { title: 'Defaced' }));
+  await assertFails(updateDoc(doc(asBob(), 'papers', PAPER), { title: 'Defaced' }));
+  // ...nor overwrite it wholesale with a fresh-looking create.
+  const db = asBob();
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'papers', PAPER), stubBody({ title: 'Replaced', createdBy: BOB }));
+  const [ref, body] = stamp(db, BOB, 'stubs');
+  batch.set(ref, body, { merge: true });
+  await assertFails(batch.commit());
+  await assertFails(deleteDoc(doc(asAlice(), 'papers', PAPER)));
+  await assertSucceeds(updateDoc(doc(asAdmin(), 'papers', PAPER), { title: 'Repaired' }));
+  await assertSucceeds(deleteDoc(doc(asAdmin(), 'papers', PAPER)));
+});
+
+test('F3: the stub identity must cohere with the identifiers it carries', async () => {
+  await resetSocial({ stub: false });
+  const attempt = (overrides) => {
+    const db = asAlice();
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'papers', PAPER), stubBody(overrides));
+    const [ref, body] = stamp(db, ALICE, 'stubs');
+    batch.set(ref, body, { merge: true });
+    return batch.commit();
+  };
+  // A key that does not match its own doi.
+  await assertFails(attempt({ canonicalKey: 'doi:10.9999/other' }));
+  // A doi-shaped key with no doi field to back it.
+  await assertFails(attempt({ canonicalKey: 'doi:10.9999/other', doi: undefined }));
+  // An uppercase doi — canonical spelling is lowercase.
+  await assertFails(attempt({ canonicalKey: 'doi:10.1234/ABC', doi: '10.1234/ABC' }));
+  // A versioned arXiv id — the stub contract is versionless.
+  await assertFails(attempt({
+    canonicalKey: 'arxiv:2401.12345v2', doi: undefined, arxivId: '2401.12345v2',
+  }));
+  // The honest shapes pass: arXiv…
+  await assertSucceeds(attempt({
+    canonicalKey: 'arxiv:2401.12345', doi: undefined, arxivId: '2401.12345',
+  }));
+  // …and a raw provider id, which may not wear a canonical prefix.
+  await testEnv.clearFirestore();
+  await resetSocial({ stub: false });
+  await assertSucceeds(attempt({ canonicalKey: 'pmid:38012345', doi: undefined }));
+});
+
+test('F3: the second create on an existing stub is refused — one paper, one thread', async () => {
+  await resetSocial();
+  const db = asBob();
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'papers', PAPER), stubBody({ createdBy: BOB }));
+  const [ref, body] = stamp(db, BOB, 'stubs');
+  batch.set(ref, body, { merge: true });
+  // set() on an existing document is an update to the rules, and updates are
+  // admin-only: the loser of the race falls back to commenting on the stub
+  // that won, which is exactly the convergence the canonical key exists for.
+  await assertFails(batch.commit());
+});
+
+// --- comments: who may speak ----------------------------------------------
+
+test('F3: a public profile can comment, stub and first comment in one batch', async () => {
+  await resetSocial({ stub: false });
+  const db = asAlice();
+  const { batch } = commentBatch(db, ALICE, commentBody(ALICE, 'alice'), { stub: stubBody() });
+  await assertSucceeds(batch.commit());
+});
+
+test('F3: a comment on an existing stub needs no stub write', async () => {
+  await resetSocial();
+  const { batch } = commentBatch(asBob(), BOB, commentBody(BOB, 'bob'));
+  await assertSucceeds(batch.commit());
+});
+
+test('F3: a private profile cannot comment', async () => {
+  await resetSocial();
+  const { batch } = commentBatch(asCarol(), CAROL, commentBody(CAROL, 'carol'));
+  await assertFails(batch.commit());
+});
+
+test('F3: an account with no public profile cannot comment', async () => {
+  await resetSocial();
+  const { batch } = commentBatch(asDave(), DAVE, commentBody(DAVE, 'dave'));
+  await assertFails(batch.commit());
+});
+
+test('F3: the handle snapshot must be the author\'s real handle', async () => {
+  await resetSocial();
+  const { batch } = commentBatch(asAlice(), ALICE, commentBody(ALICE, 'bob'));
+  await assertFails(batch.commit());
+});
+
+test('F3: nobody can write a comment as somebody else', async () => {
+  await resetSocial();
+  const { batch } = commentBatch(asAlice(), ALICE, commentBody(BOB, 'bob'));
+  await assertFails(batch.commit());
+});
+
+test('F3: a comment cannot be born hidden, backdated, or oversized', async () => {
+  await resetSocial();
+  for (const bad of [
+    { status: 'hidden' },
+    { createdAt: SIXTY_S_AGO() },
+    { text: 'x'.repeat(4001) },
+    { text: '' },
+    { extra: 'field' },
+  ]) {
+    const { batch } = commentBatch(asAlice(), ALICE, commentBody(ALICE, 'alice', bad));
+    await assertFails(batch.commit());
+  }
+});
+
+test('F3: a comment needs a stub, existing or in-batch', async () => {
+  await resetSocial({ stub: false });
+  const { batch } = commentBatch(asAlice(), ALICE, commentBody(ALICE, 'alice'));
+  await assertFails(batch.commit());
+});
+
+// --- comments: the throttle ------------------------------------------------
+
+test('F3: a comment without its throttle stamp does not land', async () => {
+  await resetSocial();
+  const db = asAlice();
+  await assertFails(setDoc(
+    doc(collection(db, 'papers', PAPER, 'comments')),
+    commentBody(ALICE, 'alice'),
+  ));
+});
+
+test('F3: the rate limit actually cuts, and lets go after the interval', async () => {
+  await resetSocial();
+  const first = commentBatch(asAlice(), ALICE, commentBody(ALICE, 'alice'));
+  await assertSucceeds(first.batch.commit());
+  // Immediately again: the stamp update violates the 15 s interval, and the
+  // comment cannot land without the stamp — the batch dies as one.
+  const second = commentBatch(asAlice(), ALICE, commentBody(ALICE, 'alice'));
+  await assertFails(second.batch.commit());
+  // Backdate the ledger as if 60 s had passed: the tap reopens.
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE, 'rateLimits', 'comments'),
+      { lastAt: SIXTY_S_AGO(), count: 1 });
+  });
+  const third = commentBatch(asAlice(), ALICE, commentBody(ALICE, 'alice'));
+  await assertSucceeds(third.batch.commit());
+});
+
+test('F3: the ledger accepts only known actions, with a well-typed count', async () => {
+  await resetSocial();
+  // An unknown action would be a free parking spot under users/{uid} — the
+  // allowlist is what keeps this subcollection meaning one thing.
+  await assertFails(setDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'anything'),
+    { lastAt: serverTimestamp(), count: 1 }));
+  // On an otherwise-valid create, the count typing is the deciding clause.
+  await assertFails(setDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'comments'),
+    { lastAt: serverTimestamp(), count: 'nope' }));
+  await assertFails(setDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'comments'),
+    { lastAt: serverTimestamp(), count: -1 }));
+});
+
+test('F3: a stub cannot be created in somebody else\'s name', async () => {
+  await resetSocial({ stub: false });
+  const db = asAlice();
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'papers', PAPER), stubBody({ createdBy: BOB }));
+  const [ref, body] = stamp(db, ALICE, 'stubs');
+  batch.set(ref, body, { merge: true });
+  await assertFails(batch.commit());
+});
+
+test('F3: only the moderation config document is readable, nothing else in config/', async () => {
+  await resetSocial({ config: { commentsFrozen: false } });
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'config', 'other'), { secret: true });
+  });
+  await assertSucceeds(getDoc(doc(asGuest(), 'config', 'moderation')));
+  await assertFails(getDoc(doc(asGuest(), 'config', 'other')));
+  await assertFails(getDocs(query(collection(asGuest(), 'config'), limit(5))));
+});
+
+test('F3: the throttle ledger cannot be reset, backdated, or read by others', async () => {
+  await resetSocial({ stamps: [[ALICE, 'comments', new Date()]] });
+  // Deleting the ledger would reset the clock.
+  await assertFails(deleteDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'comments')));
+  // Writing a stamp that is not this request's time defeats the comparison.
+  await assertFails(setDoc(doc(asAlice(), 'users', ALICE, 'rateLimits', 'comments'),
+    { lastAt: SIXTY_S_AGO(), count: 1 }));
+  // Also on a fresh CREATE, where no interval applies and the stamp clause is
+  // the one that decides — the mutation pass caught this exact gap.
+  await assertFails(setDoc(doc(asDave(), 'users', DAVE, 'rateLimits', 'comments'),
+    { lastAt: SIXTY_S_AGO(), count: 1 }));
+  // Another account can neither read nor write my ledger.
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'rateLimits', 'comments')));
+  await assertFails(setDoc(doc(asBob(), 'users', ALICE, 'rateLimits', 'comments'),
+    { lastAt: serverTimestamp(), count: 1 }));
+});
+
+// --- comments: threading ----------------------------------------------------
+
+test('F3: replies attach to a real comment, one level deep only', async () => {
+  await resetSocial({
+    comments: {
+      parent: commentSeed(ALICE, 'alice'),
+      reply: commentSeed(BOB, 'bob', { replyTo: 'parent' }),
+    },
+  });
+  // To a top-level comment: yes.
+  const ok = commentBatch(asBob(), BOB, commentBody(BOB, 'bob', { replyTo: 'parent' }));
+  await assertSucceeds(ok.batch.commit());
+  // To a reply: no — that would be level two.
+  const deep = commentBatch(asAlice(), ALICE, commentBody(ALICE, 'alice', { replyTo: 'reply' }));
+  await assertFails(deep.batch.commit());
+  // To a ghost: no.
+  const ghost = commentBatch(asAlice(), ALICE, commentBody(ALICE, 'alice', { replyTo: 'nope' }));
+  await assertFails(ghost.batch.commit());
+});
+
+// --- comments: editing ------------------------------------------------------
+
+test('F3: editing is the author\'s, text only, marked with the server clock', async () => {
+  await resetSocial({ comments: { c1: commentSeed(ALICE, 'alice') } });
+  const ref = (db) => doc(db, 'papers', PAPER, 'comments', 'c1');
+  await assertFails(updateDoc(ref(asBob()), { text: 'Not mine', editedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(ref(asAlice()), { text: 'Edited', editedAt: serverTimestamp() }));
+  // The edit mark must be honest…
+  await assertFails(updateDoc(ref(asAlice()), { text: 'Edited', editedAt: SIXTY_S_AGO() }));
+  // …and nothing else may move: not the clock, not the visibility.
+  await assertFails(updateDoc(ref(asAlice()), {
+    text: 'Edited', editedAt: serverTimestamp(), createdAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(ref(asAlice()), {
+    text: 'Edited', editedAt: serverTimestamp(), status: 'hidden',
+  }));
+});
+
+test('F3: the admin moderates status and cannot rewrite what was said', async () => {
+  await resetSocial({ comments: { c1: commentSeed(ALICE, 'alice') } });
+  const ref = doc(asAdmin(), 'papers', PAPER, 'comments', 'c1');
+  await assertSucceeds(updateDoc(ref, { status: 'hidden' }));
+  await assertSucceeds(updateDoc(ref, { status: 'visible' }));
+  await assertFails(updateDoc(ref, { status: 'shadowbanned' }));
+  await assertFails(updateDoc(ref, { text: 'Reworded', editedAt: serverTimestamp() }));
+});
+
+test('F3: hidden comments stay readable at the data layer, by decision', async () => {
+  // 02-SECURITY.md §1: the official client filters status, the author sees
+  // "hidden" in their own list, and definitive removal is the admin's delete.
+  // Pinned here so a future rules change that breaks the author's view of
+  // their own hidden comment shows up as a failure, not a surprise.
+  await resetSocial({ comments: { c1: commentSeed(ALICE, 'alice', { status: 'hidden' }) } });
+  await assertSucceeds(getDoc(doc(asGuest(), 'papers', PAPER, 'comments', 'c1')));
+});
+
+// --- comments: deleting and the cascade -------------------------------------
+
+test('F3: deleting is the author\'s or the admin\'s, never a stranger\'s', async () => {
+  await resetSocial({ comments: { c1: commentSeed(ALICE, 'alice') } });
+  await assertFails(deleteDoc(doc(asBob(), 'papers', PAPER, 'comments', 'c1')));
+  await assertSucceeds(deleteDoc(doc(asAlice(), 'papers', PAPER, 'comments', 'c1')));
+  await resetSocial({ comments: { c2: commentSeed(BOB, 'bob') } });
+  await assertSucceeds(deleteDoc(doc(asAdmin(), 'papers', PAPER, 'comments', 'c2')));
+});
+
+test('F3: deleting a parent takes its replies with it, in one batch', async () => {
+  await resetSocial({
+    comments: {
+      parent: commentSeed(ALICE, 'alice'),
+      r1: commentSeed(BOB, 'bob', { replyTo: 'parent' }),
+      r2: commentSeed(BOB, 'bob', { replyTo: 'parent' }),
+    },
+  });
+  const db = asAlice();
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'papers', PAPER, 'comments', 'parent'));
+  batch.delete(doc(db, 'papers', PAPER, 'comments', 'r1'));
+  batch.delete(doc(db, 'papers', PAPER, 'comments', 'r2'));
+  await assertSucceeds(batch.commit());
+  let orphans;
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    orphans = await getDocs(collection(context.firestore(), 'papers', PAPER, 'comments'));
+  });
+  assert.equal(orphans.size, 0, 'the cascade must leave no reply behind');
+});
+
+test('F3: the cascade exception is scoped: parent must fall in the same batch', async () => {
+  await resetSocial({
+    comments: {
+      parent: commentSeed(ALICE, 'alice'),
+      r1: commentSeed(BOB, 'bob', { replyTo: 'parent' }),
+    },
+  });
+  // The parent's author cannot pick off someone else's reply while the
+  // parent lives — that would be moderation power nobody granted.
+  await assertFails(deleteDoc(doc(asAlice(), 'papers', PAPER, 'comments', 'r1')));
+  // And a stranger cannot ride the cascade to take a thread down: the batch
+  // dies on the parent, whose delete was never theirs to make.
+  const db = asCarol();
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'papers', PAPER, 'comments', 'parent'));
+  batch.delete(doc(db, 'papers', PAPER, 'comments', 'r1'));
+  await assertFails(batch.commit());
+  // The reply's own author can always delete their reply alone.
+  await assertSucceeds(deleteDoc(doc(asBob(), 'papers', PAPER, 'comments', 'r1')));
+});
+
+test('F3: an orphaned reply is sweepable by any signed-in account, not by guests', async () => {
+  // Belt and braces for a cascade interrupted between batches: the parent is
+  // gone, the reply is invisible to the UI (it only renders under its
+  // parent), and anyone signed in may finish the sweep.
+  await resetSocial({ comments: { r1: commentSeed(BOB, 'bob', { replyTo: 'vanished' }) } });
+  await assertFails(deleteDoc(doc(asGuest(), 'papers', PAPER, 'comments', 'r1')));
+  await assertSucceeds(deleteDoc(doc(asCarol(), 'papers', PAPER, 'comments', 'r1')));
+});
+
+// --- comments: query ceilings ------------------------------------------------
+
+test('F3: comment queries carry a ceiling or they do not run', async () => {
+  await resetSocial({ comments: { c1: commentSeed(ALICE, 'alice') } });
+  const threads = (db) => collection(db, 'papers', PAPER, 'comments');
+  await assertFails(getDocs(threads(asGuest())));
+  await assertFails(getDocs(query(threads(asGuest()), limit(1001))));
+  await assertSucceeds(getDocs(query(threads(asGuest()), orderBy('createdAt', 'asc'), limit(20))));
+  await assertFails(getCountFromServer(query(threads(asGuest()))));
+  await assertSucceeds(getCountFromServer(query(threads(asGuest()), limit(1000))));
+  // The "my comments" collection-group read obeys the same ceiling.
+  await assertFails(getDocs(query(
+    collectionGroup(asAlice(), 'comments'), where('authorUid', '==', ALICE),
+  )));
+  await assertSucceeds(getDocs(query(
+    collectionGroup(asAlice(), 'comments'), where('authorUid', '==', ALICE),
+    orderBy('createdAt', 'desc'), limit(30),
+  )));
+});
+
+// --- the killswitch ----------------------------------------------------------
+
+test('F3: the killswitch freezes comments and stubs, and only the admin holds it', async () => {
+  await resetSocial();
+  await assertFails(setDoc(doc(asAlice(), 'config', 'moderation'), { commentsFrozen: true }));
+  await assertSucceeds(setDoc(doc(asAdmin(), 'config', 'moderation'), { commentsFrozen: true }));
+  // Anyone may read WHY creation refuses.
+  await assertSucceeds(getDoc(doc(asGuest(), 'config', 'moderation')));
+
+  const frozenComment = commentBatch(asAlice(), ALICE, commentBody(ALICE, 'alice'));
+  await assertFails(frozenComment.batch.commit());
+  const db = asAlice();
+  const frozenStub = writeBatch(db);
+  frozenStub.set(doc(db, 'papers', 'k-other'), stubBody({ canonicalKey: 'pmid:99', doi: undefined }));
+  const [ref, body] = stamp(db, ALICE, 'stubs');
+  frozenStub.set(ref, body, { merge: true });
+  await assertFails(frozenStub.commit());
+  // Reporting stays open while the room is on fire.
+  await assertSucceeds(reportBatch(asBob(), BOB).commit());
+
+  await assertSucceeds(setDoc(doc(asAdmin(), 'config', 'moderation'), { commentsFrozen: false }));
+  const thawed = commentBatch(asAlice(), ALICE, commentBody(ALICE, 'alice'));
+  await assertSucceeds(thawed.batch.commit());
+});
+
+// --- reports ------------------------------------------------------------------
+
+test('F3: reporting is create-only for users; the queue belongs to the admin', async () => {
+  await resetSocial();
+  await assertSucceeds(reportBatch(asAlice(), ALICE).commit());
+  let reportId;
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const all = await getDocs(collection(context.firestore(), 'reports'));
+    reportId = all.docs[0].id;
+  });
+  // The reporter cannot read their own report back, nor anyone else's.
+  await assertFails(getDoc(doc(asAlice(), 'reports', reportId)));
+  await assertFails(getDocs(query(collection(asAlice(), 'reports'), limit(10))));
+  // The admin's queue works — bounded, like everything else.
+  await assertSucceeds(getDocs(query(
+    collection(asAdmin(), 'reports'),
+    where('status', '==', 'open'), orderBy('createdAt', 'asc'), limit(50),
+  )));
+  await assertFails(getDocs(collection(asAdmin(), 'reports')));
+  // Closing is a status change and nothing else, and it is the admin's.
+  await assertFails(updateDoc(doc(asAlice(), 'reports', reportId), { status: 'resolved' }));
+  await assertSucceeds(updateDoc(doc(asAdmin(), 'reports', reportId), { status: 'resolved' }));
+  await assertFails(updateDoc(doc(asAdmin(), 'reports', reportId), { reason: 'abuse' }));
+  await assertFails(deleteDoc(doc(asAlice(), 'reports', reportId)));
+  await assertSucceeds(deleteDoc(doc(asAdmin(), 'reports', reportId)));
+});
+
+test('F3: a report cannot be forged, and its throttle cuts', async () => {
+  await resetSocial();
+  // Without its stamp the report does not land at all — the batch helper
+  // below always stamps, which masked this clause until the mutation pass.
+  await assertFails(setDoc(doc(collection(asAlice(), 'reports')), {
+    reporterUid: ALICE, targetPath: `papers/${PAPER}/comments/c1`,
+    targetAuthorUid: ALICE, reason: 'spam', status: 'open',
+    createdAt: serverTimestamp(),
+  }));
+  await assertFails(reportBatch(asAlice(), ALICE, { reporterUid: BOB }).commit());
+  await assertFails(reportBatch(asAlice(), ALICE, { status: 'resolved' }).commit());
+  await assertFails(reportBatch(asAlice(), ALICE, { reason: 'dislike' }).commit());
+  await assertSucceeds(reportBatch(asAlice(), ALICE).commit());
+  // A second report inside the 60 s interval dies with its stamp.
+  await assertFails(reportBatch(asAlice(), ALICE).commit());
+});
+
+test('F3: a private profile can still report — reporting is not a public act', async () => {
+  await resetSocial();
+  await assertSucceeds(reportBatch(asCarol(), CAROL).commit());
 });

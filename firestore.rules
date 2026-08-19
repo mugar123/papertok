@@ -156,11 +156,11 @@ service cloud.firestore {
     // ---------------------------------------------------------------------
 
     function isAdmin() {
-      // Paste the administrator UID here when the moderation queue lands (P7).
-      // A UID is not a secret. Until it is filled in this matches nobody,
-      // which is the safe default.
+      // The moderation queue landed with F3, so the placeholder gave way to
+      // the real thing: @mugar's uid, resolved from handles/mugar. A uid is
+      // not a secret. Changing admins is editing this line and deploying.
       return request.auth != null
-        && request.auth.uid == 'REPLACE_WITH_ADMIN_UID';
+        && request.auth.uid == 'SrqikE0wbtPOsTZMnvK4lcLVHhD3';
     }
 
     // Handles that would collide with an application route or let an account
@@ -660,6 +660,325 @@ service cloud.firestore {
       match /{document=**} {
         allow read, write: if false;
       }
+    }
+
+    // ---------------------------------------------------------------------
+    // F3: paper stubs, comments, throttle ledger, reports, killswitch.
+    // Additive: nothing above this line changes. Kept at the end of the file
+    // on purpose — a parallel branch is editing the users/ block above, and
+    // this section must merge under it without touching it.
+    // ---------------------------------------------------------------------
+
+    // The emergency brake. `config/moderation` is a document the admin can
+    // write from a phone, no deploy: while `commentsFrozen` is true, no stub
+    // and no comment can be created anywhere in the app. Reads are memoized
+    // per evaluation, so the check costs one read per create.
+    function commentsFrozen() {
+      return exists(/databases/$(database)/documents/config/moderation)
+        && get(/databases/$(database)/documents/config/moderation)
+          .data.get('commentsFrozen', false) == true;
+    }
+
+    // The declarative throttle (00-ARCHITECTURE.md). A social create must
+    // carry, in its own batch, a write to users/{uid}/rateLimits/{action}
+    // stamped with this request's time — and that document's own rules
+    // (below) refuse the stamp before the interval has passed. Two documents,
+    // one batch, no server.
+    function throttleSatisfied(action) {
+      return getAfter(
+        /databases/$(database)/documents/users/$(request.auth.uid)/rateLimits/$(action)
+      ).data.lastAt == request.time;
+    }
+
+    function validRateLimitDoc(action) {
+      return (action == 'comments' || action == 'stubs' || action == 'reports')
+        && request.resource.data.keys().hasOnly(['lastAt', 'count'])
+        && request.resource.data.keys().hasAll(['lastAt', 'count'])
+        // The stamp IS the mechanism: `throttleSatisfied` compares it against
+        // request.time, so a backdated or future stamp must be unwritable.
+        && request.resource.data.lastAt == request.time
+        && request.resource.data.count is int
+        && request.resource.data.count >= 0;
+    }
+
+    // Intervals per action, server-enforced. Coarse on purpose: this is the
+    // free, always-on line against mechanical spam, not a daily quota (rules
+    // cannot count). The escalation path if it proves too coarse is written
+    // down in 00-ARCHITECTURE.md.
+    function rateLimitIntervalElapsed(action) {
+      return (action == 'comments'
+          && request.time > resource.data.lastAt + duration.value(15, 's'))
+        || (action == 'stubs'
+          && request.time > resource.data.lastAt + duration.value(30, 's'))
+        || (action == 'reports'
+          && request.time > resource.data.lastAt + duration.value(60, 's'));
+    }
+
+    // A separate top-level match rather than a nested one inside the users/
+    // block above, so the parallel branch editing that block never collides
+    // with this file's tail. Overlapping matches are a union of grants:
+    // the recursive deny inside users/ grants nothing and blocks nothing.
+    match /users/{userId}/rateLimits/{action} {
+      allow get: if ownsUserTree(userId);
+      allow list: if false;
+      // No delete, deliberately: deleting the ledger doc would reset the
+      // clock, and the next create would sail through the interval.
+      allow delete: if false;
+      allow create: if ownsUserTree(userId) && validRateLimitDoc(action);
+      allow update: if ownsUserTree(userId)
+        && validRateLimitDoc(action)
+        && rateLimitIntervalElapsed(action);
+    }
+
+    // The stub's identity field must agree with the identifiers it carries,
+    // in canonical spelling (doi over arxiv, lowercase, no version): a client
+    // cannot dress a key up as a DOI it does not have. What rules cannot
+    // check is that the *document id* is base64url(canonicalKey) — there is
+    // no base64 in this language — so a hostile client could park a stub
+    // with mismatched id and key. That is the same defacement surface as
+    // lying about the title (uncheckable here by nature), and it has the
+    // same remedy: stubs are immutable to everyone but the admin, and a
+    // `dup-stub` report routes the repair.
+    function stubIdentityCoherent() {
+      return ('doi' in request.resource.data)
+        ? request.resource.data.canonicalKey == 'doi:' + request.resource.data.doi
+        : (('arxivId' in request.resource.data)
+          ? request.resource.data.canonicalKey == 'arxiv:' + request.resource.data.arxivId
+          : (!request.resource.data.canonicalKey.matches('^doi:.*')
+            && !request.resource.data.canonicalKey.matches('^arxiv:.*')));
+    }
+
+    function validPaperStub() {
+      return request.resource.data.keys().hasOnly([
+          'canonicalKey', 'title', 'authors', 'year', 'category', 'abstract',
+          'doi', 'arxivId', 'openUrl', 'createdAt', 'createdBy'
+        ])
+        && request.resource.data.keys().hasAll([
+          'canonicalKey', 'title', 'authors', 'createdAt', 'createdBy'
+        ])
+        && validString(request.resource.data.canonicalKey, 600)
+        && request.resource.data.canonicalKey.size() > 0
+        && validString(request.resource.data.title, 500)
+        && request.resource.data.title.size() > 0
+        && validBoundedStringList(request.resource.data.authors, 20, 160)
+        && (!('year' in request.resource.data)
+          || request.resource.data.year is int
+            && request.resource.data.year >= 1000
+            && request.resource.data.year <= 3000)
+        && (!('category' in request.resource.data)
+          || validString(request.resource.data.category, 120))
+        // A truncated cache of the abstract, not the text (1500, not 3000).
+        && (!('abstract' in request.resource.data)
+          || validString(request.resource.data.abstract, 1500))
+        && (!('doi' in request.resource.data)
+          || validString(request.resource.data.doi, 300)
+            && request.resource.data.doi.matches('^10\\.[0-9]{4,9}/.+$')
+            && request.resource.data.doi == request.resource.data.doi.lower())
+        // Versionless by contract: a comment belongs to the paper, not to v2.
+        && (!('arxivId' in request.resource.data)
+          || validString(request.resource.data.arxivId, 100)
+            && request.resource.data.arxivId
+              .matches('^([a-z-]+(\\.[a-z0-9-]+)?/[0-9]{7}|[0-9]{4}\\.[0-9]{4,5})$'))
+        && (!('openUrl' in request.resource.data)
+          || validString(request.resource.data.openUrl, 2000)
+            && request.resource.data.openUrl.matches('^https://[^[:space:]]+$'))
+        && stubIdentityCoherent()
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+    }
+
+    // The author's public profile, read once per evaluation (rules memoize
+    // repeated gets of the same document).
+    function commentAuthorProfile() {
+      return get(
+        /databases/$(database)/documents/userProfiles/$(request.auth.uid)
+      ).data;
+    }
+
+    function validNewComment() {
+      return request.resource.data.keys().hasOnly([
+          'authorUid', 'authorHandle', 'text', 'createdAt', 'status', 'replyTo'
+        ])
+        && request.resource.data.keys().hasAll([
+          'authorUid', 'authorHandle', 'text', 'createdAt', 'status'
+        ])
+        && request.resource.data.authorUid == request.auth.uid
+        && validString(request.resource.data.text, 4000)
+        && request.resource.data.text.size() > 0
+        && request.resource.data.status == 'visible'
+        && request.resource.data.createdAt == request.time
+        // The handle is a denormalized snapshot, and it must be the author's
+        // real one at the moment of writing — anything else would let a
+        // caller sign someone else's name under their own uid. This also
+        // requires a profile to exist at all: no profile, no handle, no
+        // public voice to speak with.
+        && request.resource.data.authorHandle == commentAuthorProfile().handle
+        // Commenting is a public act, so a private profile cannot do it.
+        // Enforced here at the data layer, not just explained in the UI.
+        && profileIsPublic(commentAuthorProfile());
+    }
+
+    // One level of threading, by construction: a reply points at a comment
+    // that exists and is not itself a reply. (A crafted id equal to its own
+    // replyTo dies here too — the document being created does not exist yet.)
+    function validReplyTarget(paperKey) {
+      return !('replyTo' in request.resource.data)
+        || (request.resource.data.replyTo is string
+          && exists(/databases/$(database)/documents/papers/$(paperKey)/comments/$(request.resource.data.replyTo))
+          && !('replyTo' in get(
+            /databases/$(database)/documents/papers/$(paperKey)/comments/$(request.resource.data.replyTo)
+          ).data));
+    }
+
+    match /papers/{paperKey} {
+      // Anyone may resolve a stub — the public comments view needs it signed
+      // out. Nobody may page the collection: there is no paper directory
+      // here, no browse, no search. The stub exists to hang threads off, and
+      // access is always by id.
+      allow get: if true;
+      allow list: if false;
+      allow create: if request.auth != null
+        && !commentsFrozen()
+        && validPaperStub()
+        && throttleSatisfied('stubs');
+      // Immutable after creation, except for the admin. The stub's metadata
+      // is what every reader of the thread sees; a cache anyone could rewrite
+      // would be a defacement surface. Stale metadata is repaired by the
+      // admin, not by the crowd. (No client-maintained counters either:
+      // comment counts are count() aggregations, the F2 pattern, so there is
+      // no increment arithmetic for a cascade delete to corrupt.)
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+
+      match /comments/{commentId} {
+        // Reads live on the collection-group match below — one grant for the
+        // thread under a paper and for "my comments" across papers.
+        allow create: if request.auth != null
+          && !commentsFrozen()
+          && validNewComment()
+          && validReplyTarget(paperKey)
+          // A comment hangs off a stub that exists — already, or created in
+          // this same batch (the first-comment flow).
+          && existsAfter(/databases/$(database)/documents/papers/$(paperKey))
+          && throttleSatisfied('comments');
+        allow update: if request.auth != null
+          && (
+            // The author may rewrite the text, and the edit is marked with
+            // the server's clock. Everything else is frozen to them —
+            // including status, so editing never un-hides a hidden comment.
+            (resource.data.authorUid == request.auth.uid
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['text', 'editedAt'])
+              && validString(request.resource.data.text, 4000)
+              && request.resource.data.text.size() > 0
+              && request.resource.data.editedAt == request.time)
+            // The admin moderates status and touches nothing else — hiding a
+            // comment must not let anyone rewrite what it said.
+            || (isAdmin()
+              && request.resource.data.diff(resource.data).affectedKeys()
+                .hasOnly(['status'])
+              && request.resource.data.status in ['visible', 'hidden'])
+          );
+        // Deleting a parent takes its replies with it (the product decision:
+        // no orphaned replies). The middle branch is the exception the
+        // cascade needs to the "never delete someone else's comment" rule,
+        // and it is scoped tight: a reply may be deleted by a stranger only
+        // when its parent is going down in this same batch at the hands of
+        // the parent's own author, or when the parent is already gone and
+        // the reply is an orphan any signed-in caller may sweep.
+        allow delete: if request.auth != null
+          && (
+            resource.data.authorUid == request.auth.uid
+            || isAdmin()
+            || ('replyTo' in resource.data
+              && (
+                !exists(/databases/$(database)/documents/papers/$(paperKey)/comments/$(resource.data.replyTo))
+                // The author check is redundant today, and the mutation pass
+                // says so: the in-batch parent delete already demands the
+                // parent's author (or admin, whose branch covers replies
+                // anyway), and a batch has one caller. Kept as scoping
+                // defense-in-depth for any future rule that authorizes a
+                // parent delete for somebody new.
+                || (!existsAfter(/databases/$(database)/documents/papers/$(paperKey)/comments/$(resource.data.replyTo))
+                  && get(/databases/$(database)/documents/papers/$(paperKey)/comments/$(resource.data.replyTo))
+                    .data.authorUid == request.auth.uid)
+              ))
+          );
+      }
+    }
+
+    // Read access for comments, granted on the collection-group pattern so
+    // the same two lines cover a thread under one paper AND the "my
+    // comments" collectionGroup query. Rules cannot see a query's `where`,
+    // only its shape, so the enforceable line is the ceiling — and comments
+    // are public content, like follows. Hidden comments stay readable at
+    // this layer by decision (02-SECURITY.md §1): the official client
+    // filters them, their author sees them marked in "my comments", and
+    // definitive removal is the admin's delete. NOTE: this grant applies to
+    // any subcollection named `comments`; only papers/ has one, and nothing
+    // else may take that name without revisiting this block.
+    match /{path=**}/comments/{commentId} {
+      allow get: if true;
+      allow list: if request.query.limit <= 1000;
+    }
+
+    function validReport() {
+      return request.resource.data.keys().hasOnly([
+          'reporterUid', 'targetPath', 'targetAuthorUid', 'reason', 'note',
+          'status', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'reporterUid', 'targetPath', 'targetAuthorUid', 'reason', 'status',
+          'createdAt'
+        ])
+        && request.resource.data.reporterUid == request.auth.uid
+        && validString(request.resource.data.targetPath, 500)
+        && request.resource.data.targetPath.size() > 0
+        && validString(request.resource.data.targetAuthorUid, 128)
+        && request.resource.data.reason in ['spam', 'abuse', 'other', 'dup-stub']
+        && (!('note' in request.resource.data)
+          || validString(request.resource.data.note, 500))
+        && request.resource.data.status == 'open'
+        && request.resource.data.createdAt == request.time;
+    }
+
+    match /reports/{reportId} {
+      // Create-only for users; the queue belongs to the admin alone. A
+      // private profile CAN report — reporting is not a public act — and the
+      // killswitch does not gate it: the alarm stays reachable while the
+      // room is on fire.
+      allow get: if isAdmin();
+      allow list: if isAdmin() && request.query.limit <= 1000;
+      allow create: if request.auth != null
+        && validReport()
+        && throttleSatisfied('reports');
+      allow update: if isAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status'])
+        && request.resource.data.status in ['open', 'resolved', 'dismissed'];
+      allow delete: if isAdmin();
+    }
+
+    match /config/{configId} {
+      // Readable so the client can say WHY a create was refused when the
+      // killswitch is on, instead of a generic error. The flags reveal
+      // nothing an attacker could use — refusal itself is observable.
+      allow get: if configId == 'moderation';
+      allow list: if false;
+      allow create, update: if isAdmin()
+        && configId == 'moderation'
+        && request.resource.data.keys().hasOnly([
+          'commentsFrozen', 'annotationsFrozen', 'relayFrozen', 'updatedAt'
+        ])
+        && (!('commentsFrozen' in request.resource.data)
+          || request.resource.data.commentsFrozen is bool)
+        && (!('annotationsFrozen' in request.resource.data)
+          || request.resource.data.annotationsFrozen is bool)
+        && (!('relayFrozen' in request.resource.data)
+          || request.resource.data.relayFrozen is bool)
+        && (!('updatedAt' in request.resource.data)
+          || request.resource.data.updatedAt == request.time);
+      allow delete: if isAdmin();
     }
 
     match /{document=**} {
