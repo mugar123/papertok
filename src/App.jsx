@@ -3,7 +3,7 @@ import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
 import { AuthProvider, useAuth } from './context/AuthContext'
-import { LanguageProvider } from './context/LanguageContext'
+import { LanguageProvider, useLanguage } from './context/LanguageContext'
 import { AnalyticsProvider } from './context/AnalyticsContext'
 import { FeedProvider } from './context/FeedContext'
 import { FollowingProvider } from './context/FollowingContext'
@@ -17,6 +17,7 @@ import ListsPage from './components/Lists/ListsPage'
 import Navbar from './components/Layout/Navbar'
 import PDFViewer from './components/PDF/PDFViewer'
 import SaveToListModal from './components/Lists/SaveToListModal'
+import CommentsSheet from './components/Comments/CommentsSheet'
 import SearchPage from './components/Search/SearchPage'
 import EntityExplorer from './components/Explorer/EntityExplorer'
 import ScientificReport from './components/Report/ScientificReport'
@@ -38,11 +39,17 @@ import './App.css'
 function AppContent() {
   const [pdfPaper, setPdfPaper] = useState(null)
   const [saveModalPaper, setSaveModalPaper] = useState(null)
+  // The comment sheet is hosted here, next to the PDF viewer and the save
+  // modal, for the same reason those are: the feed hands over a paper and
+  // nothing else, so no social service ever enters the feed's module graph
+  // and a feed load keeps costing one read.
+  const [commentsPaper, setCommentsPaper] = useState(null)
   const [guestFeedReady, setGuestFeedReady] = useState(false)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const location = useLocation()
   const navigate = useNavigate()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
+  const { isEnglish } = useLanguage()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
   const navbarRoutes = ['/', '/lists', '/research', '/following', '/profile', '/settings', '/settings/following', '/settings/profile', '/settings/comments']
   // The paper and profile pages keep the app chrome for a signed-in user —
@@ -90,6 +97,7 @@ function AppContent() {
                     <FeedContainer
                       onOpenPdf={setPdfPaper}
                       onSaveToList={setSaveModalPaper}
+                      onOpenComments={setCommentsPaper}
                     />
                   </PageTransition>
                 </ProtectedRoute>
@@ -99,6 +107,7 @@ function AppContent() {
                     onReady={setGuestFeedReady}
                     onAuthRequired={requestAuthentication}
                     onOpenPdf={setPdfPaper}
+                    onOpenComments={setCommentsPaper}
                   />
                 </PageTransition>
               )
@@ -137,6 +146,7 @@ function AppContent() {
                   <FollowingFeedPage
                     onOpenPdf={setPdfPaper}
                     onSaveToList={setSaveModalPaper}
+                    onOpenComments={setCommentsPaper}
                   />
                 </PageTransition>
               </ProtectedRoute>
@@ -281,6 +291,18 @@ function AppContent() {
           <AuthPrompt
             onClose={() => setAuthPromptOpen(false)}
             onContinue={continueToAuthentication}
+          />
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {commentsPaper && (
+          <CommentsSheet
+            paper={commentsPaper}
+            isAuthenticated={Boolean(user)}
+            isEnglish={isEnglish}
+            onClose={() => setCommentsPaper(null)}
+            onAuthRequired={requestAuthentication}
           />
         )}
       </AnimatePresence>

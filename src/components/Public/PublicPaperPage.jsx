@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { ArrowLeft, Home, MessageCircle, RotateCw } from 'lucide-react';
+import { ArrowLeft, Home, RotateCw } from 'lucide-react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useFeed } from '../../context/FeedContext.jsx';
@@ -20,7 +20,6 @@ import {
   getPublicPaperPath,
   parsePaperKey,
 } from '../../utils/publicNavigation.js';
-import { canonicalPaperIdentity } from '../../utils/paperCanonicalKey.js';
 import { paperLegacyAdapter } from '../../models/Paper.js';
 import PaperCard from '../Feed/PaperCard.jsx';
 import SkeletonCard from '../Feed/SkeletonCard.jsx';
@@ -59,10 +58,6 @@ const COPY = {
   home: {
     es: 'Inicio',
     en: 'Home',
-  },
-  comments: {
-    es: 'Comentarios',
-    en: 'Comments',
   },
 };
 
@@ -304,23 +299,6 @@ export default function PublicPaperPage({
         )}
       </AnimatePresence>
 
-      {/* The door to the paper's thread. It exists only when the paper can
-          anchor one (a canonical identity to converge on), and everything
-          behind it is lazy: no Firestore is touched until the sheet opens.
-          Deliberately outside PaperCard — the card is the feed team's file. */}
-      {status === 'ready' && paper && canonicalPaperIdentity(paper) && (
-        <button
-          type="button"
-          className="public-paper-comments-button"
-          onClick={() => setCommentsOpen(true)}
-          aria-haspopup="dialog"
-          aria-expanded={commentsOpen}
-        >
-          <MessageCircle size={17} aria-hidden="true" />
-          {text(COPY.comments)}
-        </button>
-      )}
-
       <AnimatePresence>
         {commentsOpen && paper && (
           <CommentsSheet
@@ -356,6 +334,9 @@ export default function PublicPaperPage({
             onAuthRequired={onAuthRequired}
             onOpenPdf={handleOpenPdf}
             onSaveToList={onSaveToList}
+            // The card's own rail button — the same door the feed shows.
+            // The sheet stays hosted by this page, which already had it.
+            onOpenComments={() => setCommentsOpen(true)}
             publicMode={!isAuthenticated}
             analyticsSurface="other"
             hideScrollHint

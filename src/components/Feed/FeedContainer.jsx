@@ -22,7 +22,7 @@ const SCROLL_INTERACTION_SETTLE_MS = 220;
  * through useFeed. Shape: { papers, loading, error, hasMore, loadMore,
  * refresh, isRefreshing, emptyState, showFollowReason, onPaperViewed }.
  */
-export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, scrollKey = 'forYou' }) {
+export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments = null, source = null, scrollKey = 'forYou' }) {
   const feed = useFeed();
   const { language, isEnglish } = useLanguage();
   const publicMode = Boolean(source?.publicMode);
@@ -349,6 +349,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, source = null, 
               trackSkip={handleSkip}
               onOpenPdf={handleOpenPdf}
               onSaveToList={handleSaveToList}
+              onOpenComments={onOpenComments}
               getInteractionState={getInteractionState}
               showFollowReason={Boolean(source?.showFollowReason)}
               publicMode={publicMode}

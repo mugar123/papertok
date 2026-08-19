@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
 import { 
   ArrowLeft, Share2, FileText, Check, Loader2, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, Unlock, Lock, ExternalLink,
-  Rocket, Settings, Wrench, Cog, PenTool, Building, Map, Compass, Beaker, TestTube, Thermometer, HeartPulse, Stethoscope, Syringe, Pill, Leaf, Bug, Sprout, Landmark, Coins, Radio, Box, Code2, PackageOpen, History, Sparkles
+  Rocket, Settings, Wrench, Cog, PenTool, Building, Map, Compass, Beaker, TestTube, Thermometer, HeartPulse, Stethoscope, Syringe, Pill, Leaf, Bug, Sprout, Landmark, Coins, Radio, Box, Code2, PackageOpen, History, Sparkles, MessageCircle
 } from 'lucide-react';
+import { canonicalPaperIdentity } from '../../utils/paperCanonicalKey.js';
 import AnimatedAtom from './AnimatedAtom';
 import ScientificText from '../ScientificText';
 import { useFollowing } from '../../context/FollowingContext';
@@ -110,6 +111,11 @@ const PaperCard = memo(function PaperCard({
   trackSkip = () => {},
   onOpenPdf = () => {},
   onSaveToList = () => {},
+  // The door to the paper's comment thread. A callback and nothing more:
+  // the sheet, its services and every Firestore read live with the host
+  // (App.jsx, like the PDF viewer and the save modal), so nothing social
+  // enters the feed's module graph and a feed load still costs one read.
+  onOpenComments = null,
   getInteractionState = () => ({}),
   hideScrollHint = false,
   showFollowReason = false,
@@ -121,6 +127,13 @@ const PaperCard = memo(function PaperCard({
   const [expanded, setExpanded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
+  // Only papers with a canonical identity can anchor a thread; for the rest
+  // the button would open a sheet with nowhere to converge, so it does not
+  // render. Pure string work — no reads.
+  const canOpenComments = useMemo(
+    () => Boolean(onOpenComments && canonicalPaperIdentity(paper)),
+    [onOpenComments, paper],
+  );
   const [isMarkingRead, setIsMarkingRead] = useState(false);
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
@@ -1123,6 +1136,19 @@ const PaperCard = memo(function PaperCard({
           <span style={isLiked ? { color: '#ff2d55' } : {}}>{isEnglish ? 'Like' : 'Me gusta'}</span>
         </button>
 
+        {canOpenComments && (
+          <button
+            className="pc-side-btn"
+            onClick={() => onOpenComments(paper)}
+            aria-haspopup="dialog"
+          >
+            <div className="pc-side-icon">
+              <MessageCircle size={24} />
+            </div>
+            <span>{isEnglish ? 'Comments' : 'Comentarios'}</span>
+          </button>
+        )}
+
         <button className={`pc-side-btn ${isSaved ? 'pc-side-btn--saved' : ''}`} onClick={handleSave}>
           <div className="pc-side-icon">
             <svg viewBox="0 0 24 24" fill={isSaved ? '#ffd60a' : 'none'} stroke={isSaved ? '#ffd60a' : 'currentColor'} strokeWidth="2" style={isSaved ? { filter: 'drop-shadow(0 0 8px rgba(255, 214, 10, 0.6))' } : {}}>
@@ -1285,6 +1311,7 @@ const PaperCard = memo(function PaperCard({
                 trackSkip={trackSkip}
                 onOpenPdf={onOpenPdf}
                 onSaveToList={onSaveToList}
+                onOpenComments={onOpenComments}
                 getInteractionState={getInteractionState}
                 hideScrollHint
                 publicMode={publicMode}

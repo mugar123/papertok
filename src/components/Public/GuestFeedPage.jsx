@@ -7,7 +7,7 @@ import { ANALYTICS_CONSENT } from '../../services/analyticsService.js';
 import FeedContainer from '../Feed/FeedContainer.jsx';
 import './GuestFeedPage.css';
 
-export default function GuestFeedPage({ onReady, onAuthRequired, onOpenPdf }) {
+export default function GuestFeedPage({ onReady, onAuthRequired, onOpenPdf, onOpenComments = null }) {
   const { isEnglish, language, setLanguage } = useLanguage();
   const { consent, trackEvent } = useAnalyticsConsent();
   const guestFeed = useGuestFeed();
@@ -72,6 +72,7 @@ export default function GuestFeedPage({ onReady, onAuthRequired, onOpenPdf }) {
         scrollKey="guest"
         onOpenPdf={onOpenPdf}
         onSaveToList={() => requestAccount('list')}
+        onOpenComments={onOpenComments}
       />
     </main>
   );

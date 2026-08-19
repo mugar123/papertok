@@ -124,11 +124,17 @@ async function explainDenial(error, text) {
   return text(COPY.throttled);
 }
 
-function CommentBody({ comment, isEnglish, text }) {
+function CommentBody({ comment, isEnglish, text, onNavigate }) {
   return (
     <>
       <div className="comment-row-meta">
-        <Link className="comment-row-handle" to={getPublicProfilePath(comment.authorHandle) || '#'}>
+        {/* Navigating from inside a modal closes the modal (the FollowSheet
+            contract) — otherwise the sheet would sit over the profile. */}
+        <Link
+          className="comment-row-handle"
+          to={getPublicProfilePath(comment.authorHandle) || '#'}
+          onClick={onNavigate}
+        >
           @{comment.authorHandle}
         </Link>
         <span className="comment-row-time">{relativeTime(comment.createdAt, isEnglish)}</span>
@@ -146,7 +152,7 @@ function CommentBody({ comment, isEnglish, text }) {
 
 function CommentRow({
   comment, isReply, viewerUid, canInteract, busy,
-  onReply, onEdit, onDelete, onReport, isEnglish, text,
+  onReply, onEdit, onDelete, onReport, isEnglish, text, onNavigate,
 }) {
   const [confirming, setConfirming] = useState(null); // 'delete' | 'report'
   const own = viewerUid && comment.authorUid === viewerUid;
@@ -155,7 +161,7 @@ function CommentRow({
     <div className={`comment-row${isReply ? ' comment-row--reply' : ''}`}>
       <span className="comment-avatar" aria-hidden="true">{initialOf(comment.authorHandle)}</span>
       <div className="comment-row-main">
-        <CommentBody comment={comment} isEnglish={isEnglish} text={text} />
+        <CommentBody comment={comment} isEnglish={isEnglish} text={text} onNavigate={onNavigate} />
 
         {confirming === 'delete' ? (
           <div className="comment-row-confirm" role="alert">
@@ -588,6 +594,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                     onReport={report}
                     isEnglish={isEnglish}
                     text={text}
+                    onNavigate={onClose}
                   />
                   {entry.replies.length > 0 && (
                     <ul className="comments-replies">
@@ -605,6 +612,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                             onReport={report}
                             isEnglish={isEnglish}
                             text={text}
+                            onNavigate={onClose}
                           />
                         </li>
                       ))}

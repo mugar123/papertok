@@ -16,7 +16,7 @@ import './FollowingFeedPage.css';
  * page applies one relevance-and-diversity ranking across every follow and
  * hands it to the shared container, so no feed mechanics are duplicated.
  */
-export default function FollowingFeedPage({ onOpenPdf, onSaveToList }) {
+export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComments = null }) {
   const navigate = useNavigate();
   const { isEnglish } = useLanguage();
   const { followedEntities } = useFollowing();
@@ -82,6 +82,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList }) {
     <FeedContainer
       onOpenPdf={onOpenPdf}
       onSaveToList={onSaveToList}
+      onOpenComments={onOpenComments}
       source={source}
       scrollKey="following"
     />
