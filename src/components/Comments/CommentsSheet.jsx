@@ -492,21 +492,60 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     }
   };
 
+  // The sheet arrives on a spring — it should read as pulled into place — and
+  // leaves on a short ease-in, because a spring on the way out reads as
+  // hesitation. Entrance and exit are therefore separate transitions rather
+  // than one shared curve, and the backdrop below is timed so that neither of
+  // the two ever outlives the other on screen.
   const sheetMotion = prefersReducedMotion ? {
     initial: { opacity: 0 },
-    animate: { opacity: 1 },
-    exit: { opacity: 0 },
-    transition: { duration: 0.1 },
+    animate: { opacity: 1, transition: { duration: 0.12 } },
+    exit: { opacity: 0, transition: { duration: 0.12 } },
   } : slidesFromBottom ? {
     initial: { y: '100%' },
-    animate: { y: 0 },
-    exit: { y: '100%' },
-    transition: { type: 'spring', damping: 32, stiffness: 340 },
+    animate: {
+      y: 0,
+      transition: { type: 'spring', stiffness: 420, damping: 38, mass: 0.9 },
+    },
+    exit: {
+      y: '100%',
+      transition: { duration: 0.22, ease: [0.4, 0, 1, 1] },
+    },
   } : {
-    initial: { opacity: 0, scale: 0.96, y: 12 },
-    animate: { opacity: 1, scale: 1, y: 0 },
-    exit: { opacity: 0, scale: 0.97, y: 8 },
-    transition: { duration: 0.24, ease: [0.16, 1, 0.3, 1] },
+    initial: { opacity: 0, scale: 0.94, y: 18 },
+    animate: {
+      opacity: 1,
+      scale: 1,
+      y: 0,
+      transition: {
+        type: 'spring',
+        stiffness: 460,
+        damping: 36,
+        mass: 0.9,
+        // Opacity on a spring flickers at the settle; give it its own tween.
+        opacity: { duration: 0.18, ease: [0.16, 1, 0.3, 1] },
+      },
+    },
+    exit: {
+      opacity: 0,
+      scale: 0.97,
+      y: 8,
+      transition: { duration: 0.16, ease: [0.4, 0, 1, 1] },
+    },
+  };
+
+  // Slightly slower out than the sheet, so the dimmed backdrop is the last
+  // thing to go and the sheet never flashes against the bare page.
+  const backdropMotion = {
+    initial: { opacity: 0 },
+    animate: {
+      opacity: 1,
+      transition: { duration: prefersReducedMotion ? 0.12 : 0.22, ease: 'easeOut' },
+    },
+    exit: {
+      opacity: 0,
+      transition: { duration: prefersReducedMotion ? 0.12 : 0.24, ease: 'easeIn' },
+    },
   };
 
   const hasMore = sources.some(source => source.hasMore);
@@ -514,10 +553,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   return (
     <motion.div
       className="comments-sheet-backdrop"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: prefersReducedMotion ? 0.1 : 0.18 }}
+      {...backdropMotion}
       onClick={onClose}
     >
       <motion.div

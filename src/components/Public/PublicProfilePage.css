@@ -14,14 +14,16 @@
 
 /* With the app chrome (Navbar) present — one's own /profile, or any profile
    opened while signed in — the shell clears the fixed bar; the signed-out
-   shareable page keeps its own breathing room instead. */
+   shareable page keeps its own breathing room instead. The gap is deliberately
+   larger than a bare clearance: the header crowded against the bar read as
+   cramped, so the whole column starts well below it. */
 .public-profile-page--app .public-profile-shell {
-  padding-top: calc(var(--nav-height) + var(--space-8));
+  padding-top: calc(var(--nav-height) + var(--space-16));
 }
 
 @media (max-width: 560px) {
   .public-profile-page--app .public-profile-shell {
-    padding-top: calc(var(--nav-height-mobile) + var(--space-6));
+    padding-top: calc(var(--nav-height-mobile) + var(--space-10));
   }
 }
 

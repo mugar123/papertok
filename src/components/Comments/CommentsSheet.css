@@ -23,6 +23,11 @@
   background: var(--bg-elevated);
   box-shadow: var(--shadow-xl);
   overflow: hidden;
+  /* The sheet grows out of the edge it is anchored to, and it is promoted to
+     its own layer for the length of the transition so the spring stays on the
+     compositor instead of repainting the thread underneath. */
+  transform-origin: 50% 100%;
+  will-change: transform, opacity;
 }
 
 .comments-sheet-header {
@@ -451,6 +456,7 @@
   .comments-sheet {
     border-bottom: 1px solid var(--border-default);
     border-radius: var(--radius-2xl);
+    transform-origin: 50% 50%;
   }
 
   .comments-sheet-body {
