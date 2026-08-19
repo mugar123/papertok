@@ -151,6 +151,222 @@ service cloud.firestore {
       allow delete: if ownsPublicList(shareId);
     }
 
+    // ---------------------------------------------------------------------
+    // Public user profiles (F1). Additive: nothing above this line changes.
+    // ---------------------------------------------------------------------
+
+    function isAdmin() {
+      // Paste the administrator UID here when the moderation queue lands (P7).
+      // A UID is not a secret. Until it is filled in this matches nobody,
+      // which is the safe default.
+      return request.auth != null
+        && request.auth.uid == 'REPLACE_WITH_ADMIN_UID';
+    }
+
+    // Handles that would collide with an application route or let an account
+    // pose as staff. Kept identical to RESERVED_HANDLES in
+    // src/utils/userHandle.js; userHandle.test.js fails if the two drift.
+    function reservedHandles() {
+      return [
+        'about', 'admin', 'administrator', 'api', 'assets', 'auth',
+        'contact', 'docs', 'entity', 'explorer', 'feed', 'following', 'help',
+        'legal', 'list', 'lists', 'login', 'logout', 'me', 'moderator',
+        'onboarding', 'paper', 'papers', 'papertok', 'privacy', 'profile',
+        'public', 'register', 'report', 'research', 'root', 'search',
+        'security', 'settings', 'signin', 'signup', 'staff', 'support',
+        'system', 'team', 'terms', 'user', 'users', 'www'
+      ];
+    }
+
+    function validHandleSegment(handle) {
+      return handle.matches('^[a-z0-9_]{3,40}$')
+        && handle.matches('^[a-z0-9_]*[a-z][a-z0-9_]*$')
+        && !(handle in reservedHandles());
+    }
+
+    // Ownership of a pinned share, in ONE document access.
+    //
+    // `ownsPublicList` above spends two (exists + get); at eight pinned lists
+    // that would be sixteen and blow the ten-call ceiling for a single-document
+    // request. A missing owner document makes `get()` return null, and reading
+    // `.data` off null denies the write — which is the outcome we want for a
+    // share id that does not exist.
+    function ownsPinnedShare(shareId) {
+      return get(/databases/$(database)/documents/publicListOwners/$(shareId))
+        .data.ownerId == request.auth.uid;
+    }
+
+    // A pinned list is a denormalized card: enough to render the profile
+    // without reading publicLists, and nothing else. The public list document
+    // itself is never touched by pinning — but the pin must be the owner's own
+    // list, or attribution would be forgeable by anyone who knows a share id.
+    function validPinnedList(entry) {
+      return entry.keys().hasOnly(['shareId', 'title', 'emoji', 'paperCount'])
+        && entry.shareId is string
+        && entry.shareId.matches('^[a-f0-9]{32}$')
+        && entry.title is string
+        && entry.title.size() > 0
+        && entry.title.size() <= 120
+        && (!('emoji' in entry)
+          || entry.emoji is string && entry.emoji.size() <= 40)
+        && entry.paperCount is int
+        && entry.paperCount >= 0
+        && entry.paperCount <= 12
+        && ownsPinnedShare(entry.shareId);
+    }
+
+    // Six, and the ceiling is measured, not chosen.
+    //
+    // Every entry costs one get() for its ownership check, but the binding
+    // limit turned out to be the 1000-expression budget per rule evaluation,
+    // not the 10-document-access one: against the emulator, seven pins pass and
+    // eight fail outright with an expression-limit error. Six leaves one entry
+    // of slack so that the next clause added to this file — F2 follows, F6
+    // orcid — does not silently start rejecting saves for anyone sitting at the
+    // cap. `tests/firestore.rules.test.js` pins both the cap and the headroom.
+    function validPinnedLists(entries) {
+      return entries is list
+        && entries.size() <= 6
+        && (entries.size() < 1 || validPinnedList(entries[0]))
+        && (entries.size() < 2 || validPinnedList(entries[1]))
+        && (entries.size() < 3 || validPinnedList(entries[2]))
+        && (entries.size() < 4 || validPinnedList(entries[3]))
+        && (entries.size() < 5 || validPinnedList(entries[4]))
+        && (entries.size() < 6 || validPinnedList(entries[5]));
+    }
+
+    // orcid, verified and followerCount are written only by the service
+    // identity (F6/F2), which bypasses rules. Declaring them untouchable for
+    // clients here is the guarantee that a user cannot mark themselves verified
+    // or award themselves followers. They stay in the hasOnly allowlist so that
+    // a client update carrying the merged document is not rejected outright.
+    function publicProfileServiceFieldsAbsent() {
+      return !('orcid' in request.resource.data)
+        && !('followerCount' in request.resource.data)
+        && (!('verified' in request.resource.data)
+          || request.resource.data.verified == false);
+    }
+
+    function publicProfileServiceFieldsUnchanged() {
+      return ('orcid' in request.resource.data) == ('orcid' in resource.data)
+        && (!('orcid' in resource.data)
+          || request.resource.data.orcid == resource.data.orcid)
+        && ('verified' in request.resource.data) == ('verified' in resource.data)
+        && (!('verified' in resource.data)
+          || request.resource.data.verified == resource.data.verified)
+        && ('followerCount' in request.resource.data)
+          == ('followerCount' in resource.data)
+        && (!('followerCount' in resource.data)
+          || request.resource.data.followerCount == resource.data.followerCount);
+    }
+
+    function validPublicProfile() {
+      return request.resource.data.keys().hasOnly([
+          'handle', 'displayName', 'bio', 'photo', 'orcid', 'verified',
+          'allowContact', 'pinnedLists', 'followerCount',
+          'createdAt', 'updatedAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'handle', 'displayName', 'pinnedLists', 'createdAt', 'updatedAt'
+        ])
+        && validString(request.resource.data.handle, 40)
+        // Grammar only. The reserved-name check lives on handles/{handle},
+        // which every handle here must be backed by; repeating its 44-item
+        // list on each profile write costs expression budget for nothing.
+        && request.resource.data.handle.matches('^[a-z0-9_]{3,40}$')
+        && validString(request.resource.data.displayName, 80)
+        && request.resource.data.displayName.size() > 0
+        && (!('bio' in request.resource.data)
+          || validString(request.resource.data.bio, 500))
+        // The recompressed public photo, not the 280 KB private one.
+        && (!('photo' in request.resource.data)
+          || validString(request.resource.data.photo, 60000))
+        && (!('allowContact' in request.resource.data)
+          || request.resource.data.allowContact is bool)
+        && validPinnedLists(request.resource.data.pinnedLists)
+        && (!('followerCount' in request.resource.data)
+          || request.resource.data.followerCount is int
+            && request.resource.data.followerCount >= 0)
+        && request.resource.data.createdAt is timestamp
+        && request.resource.data.updatedAt is timestamp;
+    }
+
+    match /userProfiles/{profileUid} {
+      // Public by design: a profile page has to render for a signed-out
+      // reader, and resolving a handle must not require a session.
+      //
+      // `get` only. `read` would also grant `list`, which lets anyone page
+      // through the whole collection and walk off with the user directory,
+      // photos included, billed to this project. Every read path in the app
+      // addresses a profile by uid or resolves one through handles/.
+      allow get: if true;
+      allow list: if false;
+      allow create: if request.auth != null
+        && request.auth.uid == profileUid
+        && validPublicProfile()
+        && publicProfileServiceFieldsAbsent()
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.updatedAt == request.time
+        // The reservation has to land in the same batch, or the profile
+        // claims a handle nobody holds.
+        && existsAfter(
+          /databases/$(database)/documents/handles/$(request.resource.data.handle)
+        );
+      allow update: if request.auth != null
+        && request.auth.uid == profileUid
+        && validPublicProfile()
+        && publicProfileServiceFieldsUnchanged()
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.updatedAt == request.time
+        && (
+          request.resource.data.handle == resource.data.handle
+          || (
+            // Changing a handle is delete-old + create-new + update-profile in
+            // one batch. Both halves are checked so an account cannot end up
+            // holding two reservations.
+            getAfter(
+              /databases/$(database)/documents/handles/$(request.resource.data.handle)
+            ).data.uid == request.auth.uid
+            && !existsAfter(
+              /databases/$(database)/documents/handles/$(resource.data.handle)
+            )
+          )
+        );
+      // Deleting a profile has to free its reservation in the same batch.
+      // Without this an account could delete-and-recreate its way to an
+      // unlimited pile of handles: the `!existsAfter` guard on update only
+      // covers renaming, not this path.
+      allow delete: if (request.auth != null
+          && request.auth.uid == profileUid
+          && !existsAfter(
+            /databases/$(database)/documents/handles/$(resource.data.handle)
+          ))
+        || isAdmin();
+    }
+
+    match /handles/{handle} {
+      // Resolving /public/user/{handle} to a uid must work signed out — by
+      // exact id. `list` stays shut so the reservation table cannot be dumped
+      // as a handle-to-uid directory.
+      allow get: if true;
+      allow list: if false;
+      // Create-only on purpose. Firestore refuses a create when the document
+      // already exists and there is no update rule here, so an occupied
+      // handle can never change hands in place: that is the uniqueness
+      // guarantee, enforced by the database rather than by a client check.
+      allow create: if request.auth != null
+        && request.resource.data.keys().hasOnly(['uid', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && validHandleSegment(handle)
+        && getAfter(
+          /databases/$(database)/documents/userProfiles/$(request.auth.uid)
+        ).data.handle == handle;
+      allow delete: if (request.auth != null
+          && resource.data.uid == request.auth.uid)
+        || isAdmin();
+    }
+
     match /users/{userId} {
       allow read, delete: if ownsUserTree(userId);
       allow create, update: if ownsUserTree(userId)

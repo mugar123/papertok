@@ -18,4 +18,9 @@ export default defineConfig([
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
   },
+  {
+    // Rules tests run under Node against the Firestore emulator, not in a page.
+    files: ['tests/**/*.js'],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+  },
 ])

@@ -1,3 +1,5 @@
+import { isValidHandle, normalizeHandle } from './userHandle.js';
+
 const VITE_BASE_URL = import.meta.env?.BASE_URL || '/';
 
 export const DEFAULT_PUBLIC_ORIGIN = 'https://mugar123.github.io';
@@ -297,6 +299,25 @@ export function getPublicPaperUrl(typeOrPaper, identifier, options = {}) {
   const input = resolvePaperArguments(typeOrPaper, identifier, options);
   const path = getPublicPaperPath(typeOrPaper, input.identifier, input.options);
   return path ? getAbsoluteShareUrl(path, input.options) : null;
+}
+
+/**
+ * A profile lives at /public/user/{handle}. The handle is normalized and
+ * validated here so a link can never point at a handle the reservation rules
+ * would have refused — including a reserved one that would shadow a route.
+ */
+export function getPublicProfilePath(handleOrProfile) {
+  const raw = handleOrProfile && typeof handleOrProfile === 'object'
+    ? handleOrProfile.handle
+    : handleOrProfile;
+  const handle = normalizeHandle(cleanText(raw));
+  if (!handle || !isValidHandle(handle)) return null;
+  return `${PUBLIC_ROUTE_PREFIX}/user/${encodePathSegment(handle)}`;
+}
+
+export function getPublicProfileUrl(handleOrProfile, options = {}) {
+  const path = getPublicProfilePath(handleOrProfile);
+  return path ? getAbsoluteShareUrl(path, options) : null;
 }
 
 export function getSharedListPath(listOrId) {

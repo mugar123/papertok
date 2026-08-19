@@ -28,6 +28,8 @@ import GuestFeedPage from './components/Public/GuestFeedPage'
 import AuthPrompt from './components/Public/AuthPrompt'
 import PublicPaperPage from './components/Public/PublicPaperPage'
 import PublicListPage from './components/Lists/PublicListPage'
+import PublicProfilePage from './components/Public/PublicProfilePage'
+import ProfilePage from './components/Profile/ProfilePage'
 import { getPublicPaperPath } from './utils/publicNavigation'
 import './App.css'
 
@@ -40,7 +42,7 @@ function AppContent() {
   const navigate = useNavigate()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/', '/lists', '/research', '/following', '/settings', '/settings/following']
+  const navbarRoutes = ['/', '/lists', '/research', '/following', '/settings', '/settings/following', '/settings/profile']
   const showNavbar = navbarRoutes.includes(normalizedPathname)
     && Boolean(user)
     && !authLoading
@@ -151,6 +153,16 @@ function AppContent() {
             }
           />
           <Route
+            path="/settings/profile"
+            element={
+              <PageTransition>
+                <ProtectedRoute>
+                  <ProfilePage />
+                </ProtectedRoute>
+              </PageTransition>
+            }
+          />
+          <Route
             path="/settings/following"
             element={
               <ProtectedRoute>
@@ -194,6 +206,14 @@ function AppContent() {
                   onOpenPdf={setPdfPaper}
                   onSaveToList={user ? setSaveModalPaper : requestAuthentication}
                 />
+              </PageTransition>
+            }
+          />
+          <Route
+            path="/public/user/:handle"
+            element={
+              <PageTransition>
+                <PublicProfilePage onAuthRequired={requestAuthentication} />
               </PageTransition>
             }
           />

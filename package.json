@@ -12,7 +12,8 @@
     "check": "npm run security:secrets && npm run lint && npm test && npm run build && npm run worker:deploy:dry-run",
     "preview": "vite preview",
     "worker:deploy": "wrangler deploy",
-    "worker:deploy:dry-run": "wrangler deploy --dry-run"
+    "worker:deploy:dry-run": "wrangler deploy --dry-run",
+    "test:rules": "firebase emulators:exec --only firestore --project papertok-rules-test \"node --test tests/firestore.rules.test.js\""
   },
   "dependencies": {
     "@vnedyalk0v/react19-simple-maps": "^2.0.9",
@@ -30,6 +31,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@firebase/rules-unit-testing": "^5.0.1",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",

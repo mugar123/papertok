@@ -8,6 +8,8 @@ import {
   getPublicEntityUrl,
   getPublicPaperPath,
   getPublicPaperUrl,
+  getPublicProfilePath,
+  getPublicProfileUrl,
   getSharedListPath,
   getSharedListUrl,
   getSiteRootUrl,
@@ -81,4 +83,25 @@ test('builds shared-list paths and absolute share URLs with the Vite base', () =
     getAbsoluteShareUrl('/public/entity/topic/astro-ph.CO', URL_OPTIONS),
     'https://example.test/papertok/#/public/entity/topic/astro-ph.CO',
   );
+});
+
+test('builds a public profile path from a handle or a profile', () => {
+  assert.equal(getPublicProfilePath('ada'), '/public/user/ada');
+  assert.equal(getPublicProfilePath('  @Ada_Lovelace '), '/public/user/ada_lovelace');
+  assert.equal(getPublicProfilePath({ handle: 'ADA' }), '/public/user/ada');
+});
+
+test('refuses to build a profile path for a handle the rules would reject', () => {
+  // A link to a reserved handle would shadow an application route, and a link
+  // to an invalid one would 404 after costing a Firestore read.
+  for (const handle of ['settings', 'admin', 'api', 'ada lovelace', '../admin', 'ab', '']) {
+    assert.equal(getPublicProfilePath(handle), null, `${handle} must not become a link`);
+  }
+  assert.equal(getPublicProfilePath(null), null);
+  assert.equal(getPublicProfileUrl('admin'), null);
+});
+
+test('a profile URL is absolute and hash-routed like every other share link', () => {
+  const url = getPublicProfileUrl('ada', { origin: 'https://example.test', base: '/papertok/' });
+  assert.equal(url, 'https://example.test/papertok/#/public/user/ada');
 });

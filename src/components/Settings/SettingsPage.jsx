@@ -97,6 +97,8 @@ const SETTINGS_COPY = {
     recommendationsSuffix: 'influyen en tus recomendaciones',
     followingSummary: 'Resumen de contenido seguido',
     viewAll: 'Ver todo',
+    publicProfile: 'Perfil público',
+    publicProfileDescription: 'Tu handle, tu biografía y las listas que decidas mostrar',
     scientificInterests: 'Intereses científicos',
     selectedOne: 'subcategoría seleccionada',
     selectedMany: 'subcategorías seleccionadas',
@@ -163,6 +165,8 @@ const SETTINGS_COPY = {
     recommendationsSuffix: 'influence your recommendations',
     followingSummary: 'Summary of followed content',
     viewAll: 'View all',
+    publicProfile: 'Public profile',
+    publicProfileDescription: 'Your handle, your bio and the lists you choose to show',
     scientificInterests: 'Scientific interests',
     selectedOne: 'selected subcategory',
     selectedMany: 'selected subcategories',
@@ -470,6 +474,17 @@ export default function SettingsPage() {
 
             <div className="settings-list">
               <div className="settings-row" style={{ '--settings-index': 0 }}>
+                <span className="settings-row-icon is-purple"><UserRound size={20} /></span>
+                <div className="settings-row-content">
+                  <h3>{copy.publicProfile}</h3>
+                  <p>{copy.publicProfileDescription}</p>
+                </div>
+                <button className="settings-row-action" onClick={() => navigate('/settings/profile')}>
+                  {copy.viewAll} <ChevronRight size={17} />
+                </button>
+              </div>
+
+              <div className="settings-row" style={{ '--settings-index': 1 }}>
                 <span className="settings-row-icon is-purple"><UsersRound size={20} /></span>
                 <div className="settings-row-content">
                   <h3>{copy.followedContent}</h3>
@@ -493,7 +508,7 @@ export default function SettingsPage() {
                 </button>
               </div>
 
-              <div className="settings-row" style={{ '--settings-index': 1 }}>
+              <div className="settings-row" style={{ '--settings-index': 2 }}>
                 <span className="settings-row-icon is-green"><SlidersHorizontal size={20} /></span>
                 <div className="settings-row-content">
                   <h3>{copy.scientificInterests}</h3>
