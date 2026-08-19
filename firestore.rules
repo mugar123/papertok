@@ -334,6 +334,12 @@ service cloud.firestore {
         && request.auth.uid == profileUid
         && validPublicProfile()
         && publicProfileServiceFieldsAbsent()
+        // The choice is the feature, so a profile cannot come into existence
+        // without it. Deployed only after every live client sends the field:
+        // an older cached bundle creating a profile would otherwise be
+        // refused. Updates stay exempt — legacy documents predate the field
+        // and must keep being editable until their owner answers the prompt.
+        && 'visibility' in request.resource.data
         && request.resource.data.createdAt == request.time
         && request.resource.data.updatedAt == request.time
         // The reservation has to land in the same batch, or the profile

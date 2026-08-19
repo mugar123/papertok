@@ -195,7 +195,7 @@ test('two accounts racing for one handle: the second one loses', async () => {
   const claim = (db, uid) => {
     const batch = writeBatch(db);
     batch.set(doc(db, 'userProfiles', uid), {
-      handle: 'contested', displayName: 'Someone', pinnedLists: [],
+      handle: 'contested', displayName: 'Someone', pinnedLists: [], visibility: 'public',
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
     });
     batch.set(doc(db, 'handles', 'contested'), { uid, createdAt: serverTimestamp() });
@@ -217,7 +217,7 @@ test('a reserved handle cannot be claimed at all', async () => {
   for (const handle of ['admin', 'settings', 'api', 'public']) {
     const batch = writeBatch(db);
     batch.set(doc(db, 'userProfiles', ALICE), {
-      handle, displayName: 'Alice', pinnedLists: [],
+      handle, displayName: 'Alice', pinnedLists: [], visibility: 'public',
       createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
     });
     batch.set(doc(db, 'handles', handle), { uid: ALICE, createdAt: serverTimestamp() });
@@ -277,7 +277,7 @@ test('FIX C: delete-and-recreate cannot be used to hoard handles', async () => {
   // Take a second handle. The first is gone, so this is one reservation, not two.
   const again = writeBatch(db);
   again.set(doc(db, 'userProfiles', ALICE), {
-    handle: 'alice2', displayName: 'Alice', pinnedLists: [],
+    handle: 'alice2', displayName: 'Alice', pinnedLists: [], visibility: 'public',
     createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
   });
   again.set(doc(db, 'handles', 'alice2'), { uid: ALICE, createdAt: serverTimestamp() });
@@ -861,6 +861,36 @@ test('F8: stashed pins live in an owner-only subcollection', async () => {
     smuggled: 'anything',
   }));
   await assertFails(setDoc(stash, { smuggled: 'anything', updatedAt: serverTimestamp() }));
+});
+
+test('F8 (second deploy): a profile cannot be created without a choice', async () => {
+  // The client already refuses this; from this rules version the database
+  // refuses it too, so no client — stale, modified or hand-rolled — can create
+  // a profile whose visibility nobody picked.
+  await reset({ aliceProfile: false });
+  const db = asAlice();
+  const attempt = (extra) => {
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'userProfiles', ALICE), {
+      handle: 'alice', displayName: 'Alice', pinnedLists: [],
+      ...extra,
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    });
+    batch.set(doc(db, 'handles', 'alice'), { uid: ALICE, createdAt: serverTimestamp() });
+    return batch.commit();
+  };
+  await assertFails(attempt({}));
+  await assertFails(attempt({ visibility: 'secret' }));
+  await assertSucceeds(attempt({ visibility: 'private' }));
+});
+
+test('F8 (second deploy): a legacy profile stays editable without the field', async () => {
+  // Requiring the choice on create must not lock existing owners out of their
+  // own profile before they have answered the prompt.
+  await reset();
+  await assertSucceeds(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    displayName: 'Alice Renamed', updatedAt: serverTimestamp(),
+  }));
 });
 
 test('F8: hiding pinned lists is a state the profile can carry', async () => {
