@@ -1,28 +1,33 @@
 /**
- * Bookkeeping for "fetch these ids once, and only once".
+ * Bookkeeping for "fetch these ids once, and only once — but only believe
+ * answers that deserve it".
  *
- * The failure this exists to prevent: marking an id as asked-for *before* its
- * response arrives. A request that is then abandoned — the read failed, the tab
- * changed, the page went away — leaves the id looking answered, and the row it
- * belongs to keeps its fallback title ("Untitled paper") for the life of the
- * page with no way to ask again.
+ * Two failure shapes produced pages of "Untitled paper" rows:
  *
- * So a claim is provisional and a settlement is final:
+ * 1. Marking an id as asked-for *before* its response arrived. An abandoned
+ *    request left the id looking answered, permanently blank, no retry.
+ * 2. Believing a non-authoritative answer. With the backend unreachable,
+ *    Firestore's `getDocs` does not reject — it resolves from the local cache,
+ *    and an empty cache resolves to an empty *success*. Settling ids on that
+ *    answer latched a connectivity blip into "these papers have no titles"
+ *    for the life of the page. A permission blip (rules mid-deploy) burning a
+ *    small fixed retry budget in under two seconds stranded the page the same
+ *    way.
  *
- * - `claim(ids)` returns the ids nobody is fetching yet and holds them, so a
- *   re-render does not fire the same read twice.
- * - `fulfill(ids)` is called **only when a response actually lands**. The batch
- *   is authoritative: an id with no record in it has no title to find, and
- *   re-asking on every render would burn reads on a known blank.
- * - `release(ids)` hands an abandoned or failed claim back to the pool, and
- *   reports how many ids became askable again — a caller holding this in a ref
- *   needs that to know whether a retry is worth scheduling, because mutating a
- *   ref renders nothing on its own.
+ * So the rules here are:
  *
- * `maxAttempts` bounds the retry: an id whose read keeps failing settles rather
- * than looping forever against a denial that is not going to change.
+ * - `claim(ids)` holds ids while a request is in flight, so a re-render does
+ *   not fire the same read twice.
+ * - `fulfill(ids)` settles ids for good. Only two things earn it: a record
+ *   actually in hand, or a server-confirmed absence.
+ * - `release(ids)` hands ids back to the pool and counts the attempt. Nothing
+ *   is ever settled by failure — instead `attemptsFor` reports how many times
+ *   an id has come back unanswered, and the caller stretches the delay
+ *   between retries. A read that keeps failing ends up costing one cheap
+ *   request per backoff ceiling instead of a page stuck on fallbacks, and it
+ *   heals itself the moment the backend answers again.
  */
-export function createPendingIdRequests({ maxAttempts = 3 } = {}) {
+export function createPendingIdRequests() {
   const inFlight = new Set();
   const settled = new Set();
   const attempts = new Map();
@@ -49,25 +54,22 @@ export function createPendingIdRequests({ maxAttempts = 3 } = {}) {
     let askable = 0;
     ids.forEach(id => {
       if (!inFlight.delete(id)) return;
-      const spent = (attempts.get(id) || 0) + 1;
-      if (spent >= maxAttempts) {
-        // Out of attempts: settle it rather than spin. The row keeps its
-        // fallback title, which is the honest thing to show for a title this
-        // page could not read.
-        attempts.delete(id);
-        settled.add(id);
-        return;
-      }
-      attempts.set(id, spent);
+      attempts.set(id, (attempts.get(id) || 0) + 1);
       askable += 1;
     });
     return askable;
   };
 
+  const attemptsFor = ids => ids.reduce(
+    (most, id) => Math.max(most, attempts.get(id) || 0),
+    0,
+  );
+
   return {
     claim,
     fulfill,
     release,
+    attemptsFor,
     isSettled: id => settled.has(id),
     isInFlight: id => inFlight.has(id),
   };
@@ -76,19 +78,49 @@ export function createPendingIdRequests({ maxAttempts = 3 } = {}) {
 /**
  * One round of "get the records for the ids that still need them".
  *
- * Never rejects: a caller in an effect wants the outcome, not an unhandled
- * rejection. `retryable` is true only when the failure left ids askable again,
- * which is the caller's cue to schedule the render that re-runs the effect.
+ * `fetchRecords` may resolve to a plain array (treated as authoritative) or to
+ * `{ records, authoritative }`. Records in hand always settle their ids —
+ * cached data is still data. Ids that came back with nothing settle only when
+ * the answer was authoritative; otherwise they are released and `retryable`
+ * tells the caller to schedule another round, with `attempt` sizing the
+ * backoff. Never rejects: a caller in an effect wants the outcome, not an
+ * unhandled rejection.
  */
 export async function requestMissingRecords({ ids, requests, fetchRecords }) {
   const missing = requests.claim(ids);
-  if (missing.length === 0) return { records: [], missing, retryable: false, error: null };
+  if (missing.length === 0) {
+    return { records: [], missing, retryable: false, attempt: 0, error: null };
+  }
   try {
-    const records = await fetchRecords(missing);
-    // The response landed: now, and only now, do these ids count as asked-for.
-    requests.fulfill(missing);
-    return { records, missing, retryable: false, error: null };
+    const result = await fetchRecords(missing);
+    const { records, authoritative } = Array.isArray(result)
+      ? { records: result, authoritative: true }
+      : { records: result.records, authoritative: !result.fromCache && result.authoritative !== false };
+    const answered = new Set(records.map(record => record.id));
+    requests.fulfill(missing.filter(id => answered.has(id)));
+    const unanswered = missing.filter(id => !answered.has(id));
+    if (authoritative) {
+      // The server itself said these ids have no records. That absence is
+      // final: re-asking on every render would burn reads on a known blank.
+      requests.fulfill(unanswered);
+      return { records, missing, retryable: false, attempt: 0, error: null };
+    }
+    const askable = requests.release(unanswered);
+    return {
+      records,
+      missing,
+      retryable: askable > 0,
+      attempt: requests.attemptsFor(unanswered),
+      error: null,
+    };
   } catch (error) {
-    return { records: [], missing, retryable: requests.release(missing) > 0, error };
+    const askable = requests.release(missing);
+    return {
+      records: [],
+      missing,
+      retryable: askable > 0,
+      attempt: requests.attemptsFor(missing),
+      error,
+    };
   }
 }

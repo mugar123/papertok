@@ -160,8 +160,18 @@ export function flushAllInteractionProfiles() {
  * that render it, from the ids the aggregate already holds, in batches the
  * `in` operator accepts.
  */
+/**
+ * Returns `{ records, fromCache }`, not a bare array, because the caller has
+ * to know how much the answer is worth. With the backend unreachable,
+ * `getDocs` does not reject — it resolves against the local cache, and this
+ * app keeps Firestore's default in-memory cache, so on a fresh page that
+ * answer is an empty success. Treating it as "these ids have no records"
+ * is what turned a connectivity blip into a page of untitled rows.
+ * `fromCache` is true if ANY batch was served locally: absence is only
+ * trustworthy when every batch heard back from the server.
+ */
 export async function fetchLibraryRecords(userId, paperIds) {
-  if (!userId || !paperIds?.length) return [];
+  if (!userId || !paperIds?.length) return { records: [], fromCache: false };
   const batches = [];
   for (let index = 0; index < paperIds.length; index += LIBRARY_BATCH_SIZE) {
     batches.push(paperIds.slice(index, index + LIBRARY_BATCH_SIZE));
@@ -171,9 +181,12 @@ export async function fetchLibraryRecords(userId, paperIds) {
     const snapshot = await getDocs(
       query(interactionsRef(userId), where(documentId(), 'in', batch)),
     );
-    return snapshot.docs.map(item => ({ id: item.id, data: item.data() }));
+    return {
+      fromCache: snapshot.metadata.fromCache,
+      records: snapshot.docs.map(item => ({ id: item.id, data: item.data() })),
+    };
   }));
-  const records = results.flat();
+  const records = results.flatMap(result => result.records);
   countReads('library', records.length);
-  return records;
+  return { records, fromCache: results.some(result => result.fromCache) };
 }

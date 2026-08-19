@@ -6,13 +6,20 @@ import { createPendingIdRequests, requestMissingRecords } from './pendingIdReque
 /**
  * A stand-in for `fetchLibraryRecords` whose responses are held open, so a test
  * can decide what arrives before what — which is the whole subject here.
+ * `deliver()` answers from the server; `deliverFromCache()` answers the way
+ * Firestore answers when the backend is unreachable: successfully, from
+ * whatever the local cache holds (here: nothing).
  */
 function deferredFetch(records = {}) {
   const calls = [];
   const fetchRecords = ids => new Promise((resolve, reject) => {
     calls.push({
       ids,
-      deliver: () => resolve(ids.filter(id => records[id]).map(id => ({ id, data: records[id] }))),
+      deliver: () => resolve({
+        fromCache: false,
+        records: ids.filter(id => records[id]).map(id => ({ id, data: records[id] })),
+      }),
+      deliverFromCache: () => resolve({ fromCache: true, records: [] }),
       fail: error => reject(error || new Error('read denied')),
     });
   });
@@ -48,7 +55,7 @@ test('an id is not asked for twice while its read is in flight', () => {
   assert.deepEqual(requests.claim(IDS), [], 'a re-render must not re-issue the same read');
 });
 
-test('a claim is provisional: only an arrived response settles an id', () => {
+test('a claim is provisional: only a fulfilled response settles an id', () => {
   const requests = createPendingIdRequests();
   requests.claim(IDS);
   assert.equal(requests.isSettled(IDS[0]), false, 'claimed is not answered');
@@ -57,14 +64,17 @@ test('a claim is provisional: only an arrived response settles an id', () => {
   assert.deepEqual(requests.claim(IDS), [], 'an answered id is never asked again');
 });
 
-test('a released claim becomes askable again', () => {
+test('a released claim becomes askable again, and attempts accumulate', () => {
   const requests = createPendingIdRequests();
   requests.claim(IDS);
   assert.equal(requests.release(IDS), 2, 'release reports the ids that became askable');
+  assert.equal(requests.attemptsFor(IDS), 1);
   assert.deepEqual(requests.claim(IDS), IDS);
+  requests.release(IDS);
+  assert.equal(requests.attemptsFor(IDS), 2, 'the caller sizes its backoff from this');
 });
 
-test('an arrived response is authoritative for ids it has no record for', async () => {
+test('a server-confirmed absence settles: a known blank is not re-read forever', async () => {
   const { fetchRecords, calls } = deferredFetch({ [IDS[0]]: RECORDS[IDS[0]] });
   const requests = createPendingIdRequests();
   const tab = likedTab(fetchRecords, requests);
@@ -74,11 +84,62 @@ test('an arrived response is authoritative for ids it has no record for', async 
   await round;
 
   assert.equal(tab.titleOf(IDS[0]), 'Attention Is All You Need');
-  assert.equal(tab.titleOf(IDS[1]), 'Untitled paper', 'no record means no title to show');
-  assert.deepEqual(requests.claim(IDS), [], 'a known blank is not re-read on every render');
+  assert.equal(tab.titleOf(IDS[1]), 'Untitled paper', 'the server said there is no record');
+  assert.deepEqual(requests.claim(IDS), [], 'neither id is asked again');
 });
 
-// The reported bug, start to finish.
+// The reported screenshot, mechanism confirmed live: the backend is briefly
+// unreachable, getDocs resolves *successfully* against an empty in-memory
+// cache, and every row reads "Untitled paper".
+test('an empty answer served from cache settles nothing and heals when the server returns', async () => {
+  const { fetchRecords, calls } = deferredFetch(RECORDS);
+  const requests = createPendingIdRequests();
+  const tab = likedTab(fetchRecords, requests);
+
+  // The blip: a successful-looking response with nothing in it.
+  const during = tab.open(IDS);
+  calls[0].deliverFromCache();
+  const outcome = await during;
+  assert.equal(tab.titleOf(IDS[0]), 'Untitled paper');
+  assert.equal(outcome.retryable, true, 'a cache-served miss must stay retryable');
+  assert.equal(outcome.attempt, 1, 'and it counts toward the backoff');
+  assert.equal(requests.isSettled(IDS[0]), false, 'nothing was latched as final');
+
+  // The network comes back; the next round asks the server and the titles land
+  // without the user reloading or leaving the page.
+  const after = tab.open(IDS);
+  assert.deepEqual(calls[1].ids, IDS, 'the ids are actually re-asked');
+  calls[1].deliver();
+  await after;
+  assert.equal(tab.titleOf(IDS[0]), 'Attention Is All You Need');
+  assert.equal(tab.titleOf(IDS[1]), 'Deep Residual Learning');
+});
+
+test('a partial cache answer keeps what it got and re-asks only the rest', async () => {
+  const requests = createPendingIdRequests();
+  const calls = [];
+  const fetchRecords = ids => new Promise(resolve => {
+    calls.push({
+      ids,
+      deliverPartialFromCache: () => resolve({
+        fromCache: true,
+        records: [{ id: IDS[0], data: RECORDS[IDS[0]] }],
+      }),
+    });
+  });
+  const tab = likedTab(fetchRecords, requests);
+
+  const round = tab.open(IDS);
+  calls[0].deliverPartialFromCache();
+  await round;
+
+  assert.equal(tab.titleOf(IDS[0]), 'Attention Is All You Need', 'cached data is still data');
+  assert.equal(requests.isSettled(IDS[0]), true, 'a record in hand settles its id');
+  assert.equal(requests.isSettled(IDS[1]), false, 'the miss stays open');
+  assert.deepEqual(requests.claim(IDS), [IDS[1]], 'only the miss is re-asked');
+});
+
+// The originally reported bug, start to finish.
 test('titles cancelled before they arrive come back on the next visit', async () => {
   const { fetchRecords, calls } = deferredFetch(RECORDS);
   const requests = createPendingIdRequests();
@@ -126,20 +187,26 @@ test('a failed read reports itself as retryable, and the retry lands', async () 
   assert.equal(tab.titleOf(IDS[0]), 'Attention Is All You Need');
 });
 
-test('a read that keeps failing settles instead of looping forever', async () => {
+// A rules deploy can deny reads for minutes. A fixed retry budget burned its
+// three attempts inside the first two seconds of that and stranded the page;
+// failure now never settles — it only stretches the delay.
+test('persistent failure keeps retrying with growing attempts and recovers at the end', async () => {
   const { fetchRecords, calls } = deferredFetch(RECORDS);
-  const requests = createPendingIdRequests({ maxAttempts: 3 });
+  const requests = createPendingIdRequests();
   const tab = likedTab(fetchRecords, requests);
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const round = tab.open(IDS);
-    calls[attempt].fail();
-    assert.equal((await round).retryable, true, `attempt ${attempt + 1} is still worth retrying`);
+  for (let round = 0; round < 5; round += 1) {
+    const attempt = tab.open(IDS);
+    calls[round].fail();
+    const outcome = await attempt;
+    assert.equal(outcome.retryable, true, `attempt ${round + 1} must stay retryable`);
+    assert.equal(outcome.attempt, round + 1, 'attempts grow so the backoff can stretch');
   }
 
-  const last = tab.open(IDS);
-  calls[2].fail();
-  assert.equal((await last).retryable, false, 'the third failure stops asking');
-  assert.deepEqual(requests.claim(IDS), [], 'and the ids stay settled');
-  assert.equal(calls.length, 3, 'exactly maxAttempts reads, not an unbounded loop');
+  // Five failures later the outage ends — and the titles still arrive.
+  const healed = tab.open(IDS);
+  calls[5].deliver();
+  await healed;
+  assert.equal(tab.titleOf(IDS[0]), 'Attention Is All You Need');
+  assert.equal(tab.titleOf(IDS[1]), 'Deep Residual Learning');
 });
