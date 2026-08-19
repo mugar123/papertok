@@ -33,6 +33,7 @@ import {
   createPendingIdRequests,
   requestMissingRecords,
 } from '../../utils/pendingIdRequests.js';
+import { createSessionCache } from '../../utils/sessionCache.js';
 import { cleanPaperText, displayAuthorName } from '../../utils/paperText.js';
 import { getIcon } from '../../utils/icons.js';
 import { normalizeHandle } from '../../utils/userHandle.js';
@@ -69,9 +70,21 @@ import './PublicProfilePage.css';
 // One page of rows per tab. Anything past it stays reachable in Mis listas;
 // the point here is a profile, not an infinite archive.
 const PROFILE_TAB_ROW_LIMIT = 60;
-// Long enough that a retry is not just the same blip again, short enough that a
-// row does not sit on its fallback title while the reader is looking at it.
-const LIKED_RETRY_DELAY_MS = 600;
+// The first retry lands fast enough that a blip stays invisible; every miss
+// after that doubles the wait, so an outage costs one cheap request per
+// ceiling instead of a page stuck on fallback titles — and heals on its own
+// the moment the backend answers again.
+const LIKED_RETRY_BASE_MS = 600;
+const LIKED_RETRY_MAX_MS = 60_000;
+
+// Session caches, so profile ⇄ settings does not restart from a skeleton and
+// re-read everything it showed two seconds earlier. Seeded into state on
+// mount, revalidated by the same effects that always ran, written back on
+// every fresh answer. Keyed by uid (or handle for visitors): a different
+// account can never be served another account's view.
+const profileCache = createSessionCache({ maxEntries: 8 });
+const ownListsCache = createSessionCache({ maxEntries: 4 });
+const likedExtraCache = createSessionCache({ maxEntries: 4 });
 
 function authorLine(authors) {
   const names = (Array.isArray(authors) ? authors : [])
@@ -171,14 +184,24 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   } = useFeed();
   const { followedEntities, loading: followingLoading } = useFollowing();
 
-  const [profile, setProfile] = useState(null);
-  const [status, setStatus] = useState('loading');
+  // `{ profile }` wrappers, because "this account has no public profile yet"
+  // (a null) is itself a cacheable answer on one's own page.
+  const profileCacheKey = selfMode
+    ? (user?.uid ? `own:${user.uid}` : null)
+    : (handle ? `handle:${handle}` : null);
+  const seededProfile = profileCacheKey ? profileCache.get(profileCacheKey) : undefined;
+  const [profile, setProfile] = useState(seededProfile ? seededProfile.profile : null);
+  const [status, setStatus] = useState(seededProfile ? 'ready' : 'loading');
   const [reloadToken, setReloadToken] = useState(0);
   const [requestedTab, setRequestedTab] = useState('lists');
-  const [ownLists, setOwnLists] = useState(null);
+  const [ownLists, setOwnLists] = useState(
+    () => (user?.uid ? ownListsCache.get(user.uid) ?? null : null),
+  );
   const [ownListsFailed, setOwnListsFailed] = useState(false);
   const [libraryReady, setLibraryReady] = useState(false);
-  const [likedExtra, setLikedExtra] = useState({});
+  const [likedExtra, setLikedExtra] = useState(
+    () => (user?.uid && likedExtraCache.get(user.uid)) || {},
+  );
   const likedRequests = useRef(null);
   if (likedRequests.current === null) likedRequests.current = createPendingIdRequests();
   // Releasing a claim mutates a ref, which schedules no render. This token is
@@ -212,6 +235,12 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     const request = selfMode ? readOwnUserProfile() : readUserProfileByHandle(handle);
     request
       .then(result => {
+        if (profileCacheKey) {
+          // A visitor's not-found is not cached: the profile could be created
+          // a moment later, and 'not-found' must stay a fresh answer.
+          if (result || selfMode) profileCache.set(profileCacheKey, { profile: result });
+          else profileCache.delete(profileCacheKey);
+        }
         if (!active) return;
         setProfile(result);
         // Having no public profile yet is a normal state of one's own page,
@@ -221,18 +250,24 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       .catch(error => {
         console.error('Error loading public profile:', error);
         if (!active) return;
+        // A failed revalidation must not replace a perfectly good cached view
+        // with an error page; the page keeps what it is showing and the next
+        // mount tries again.
+        if (profileCacheKey && profileCache.get(profileCacheKey)) return;
         setStatus(error?.code === 'USER_PROFILES_UNSUPPORTED_IN_DEMO' ? 'unsupported' : 'error');
       });
     return () => { active = false; };
-  }, [handle, selfMode, reloadToken]);
+  }, [handle, selfMode, reloadToken, profileCacheKey]);
 
   // Owner data. Each effect is gated on `view.isOwner`, which is the privacy
   // boundary: a visitor's render never even asks for these.
   useEffect(() => {
     if (!view.isOwner || status !== 'ready' || IS_DEMO) return undefined;
     let active = true;
+    const uid = user?.uid;
     readOwnLists()
       .then(lists => {
+        if (uid) ownListsCache.set(uid, lists);
         if (!active) return;
         setOwnLists(lists);
         setOwnListsFailed(false);
@@ -240,11 +275,13 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       .catch(error => {
         console.error('Error loading own lists:', error);
         if (!active) return;
+        // Lists already on screen (from the session cache) beat an error row.
+        if (uid && ownListsCache.get(uid)) return;
         setOwnLists([]);
         setOwnListsFailed(true);
       });
     return () => { active = false; };
-  }, [view.isOwner, status, reloadToken]);
+  }, [view.isOwner, status, reloadToken, user?.uid]);
 
   useEffect(() => {
     if (!view.isOwner) return undefined;
@@ -353,7 +390,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       ids: wanted,
       requests: likedRequests.current,
       fetchRecords: ids => fetchLibraryRecords(user.uid, ids),
-    }).then(({ records, retryable, error }) => {
+    }).then(({ records, retryable, attempt, error }) => {
       // The merge is deliberately not cancelled: `likedExtra` is a cache keyed
       // by id, so a response arriving after a tab switch is idempotent and
       // still fills the rows, and after unmount setState is a no-op.
@@ -366,12 +403,17 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       }
       if (error) console.error('Error loading liked paper titles:', error);
       // The retry, on the other hand, only makes sense while this effect is
-      // still the live one; `requestMissingRecords` has already bounded how
-      // many times a failing read gets to come back here. The wait is what
-      // makes those attempts worth having: fired back to back they would all
-      // land inside the same blip that caused the first failure.
+      // still the live one. `retryable` covers both a rejected read and the
+      // quieter failure: a "successful" answer served from the local cache
+      // with the backend unreachable, which must never be allowed to settle
+      // as "these papers have no titles". Each attempt doubles the wait so
+      // the retries outlast the blip instead of all landing inside it.
       if (retryable && !abandoned) {
-        retryTimer = setTimeout(() => setLikedRetry(count => count + 1), LIKED_RETRY_DELAY_MS);
+        const delay = Math.min(
+          LIKED_RETRY_BASE_MS * 2 ** Math.max(0, attempt - 1),
+          LIKED_RETRY_MAX_MS,
+        );
+        retryTimer = setTimeout(() => setLikedRetry(count => count + 1), delay);
       }
     });
 
@@ -382,6 +424,14 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   }, [
     view.isOwner, activeTab, likedOrder, personalLibrary, likedExtra, user?.uid, likedRetry,
   ]);
+
+  // Write-through: every title that lands survives the next unmount, so
+  // re-entering the profile paints the Liked tab from memory instead of
+  // re-reading forty documents.
+  useEffect(() => {
+    if (!user?.uid || Object.keys(likedExtra).length === 0) return;
+    likedExtraCache.set(user.uid, likedExtra);
+  }, [likedExtra, user?.uid]);
 
   const likedRows = useMemo(() => likedOrder.map(id => {
     const library = personalLibrary[id]?.paper;

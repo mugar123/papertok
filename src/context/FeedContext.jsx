@@ -333,7 +333,7 @@ export function FeedProvider({ children }) {
         ...curatedIds(profile, 'saved'),
       ])].slice(0, PERSONAL_LIBRARY_MAX_RECORDS);
 
-      const records = await fetchLibraryRecords(userId, paperIds);
+      const { records, fromCache } = await fetchLibraryRecords(userId, paperIds);
       if (activeUserId.current !== userId) {
         // Abandoned, not finished. Leaving the status on 'loading' would make
         // every later call short-circuit on a library that was never filled,
@@ -364,8 +364,15 @@ export function FeedProvider({ children }) {
       });
 
       setPersonalLibrary(current => ({ ...library, ...current }));
+      // A cache-served answer is worth showing but not worth latching: with
+      // the backend unreachable, getDocs resolves against the in-memory cache
+      // (empty on a fresh page) instead of rejecting. Marking that 'ready'
+      // froze an empty library for the session; 'idle' lets the next caller
+      // ask again once the network is back.
       personalLibraryStatus.current = {
-        userId, generation: interactionProfileGeneration, state: 'ready',
+        userId,
+        generation: fromCache ? -1 : interactionProfileGeneration,
+        state: fromCache ? 'idle' : 'ready',
       };
     } catch (error) {
       console.error('Error loading reading library:', error);

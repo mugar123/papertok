@@ -20,7 +20,17 @@ import {
 } from '../../services/reportService.js';
 import { profileIsPublic, readOwnUserProfile } from '../../services/userProfileService.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
+import { createSessionCache } from '../../utils/sessionCache.js';
 import './CommentsSheet.css';
+
+// Opening the sheet used to start from nothing every time: anchor, pages and
+// counts re-read on each open — three round trips of skeleton for a thread
+// that was on screen two seconds earlier. Reopening now paints the cached
+// thread instantly and lets the same load effect revalidate behind it.
+const threadCache = createSessionCache({ maxEntries: 12 });
+// One slot: the signed-in viewer of this tab. Cleared on sign-out so a
+// following session can never inherit the previous account's composer gate.
+let viewerProfileCache = null;
 
 /**
  * The comment thread of one paper, as a sheet over the paper page.
@@ -221,15 +231,22 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   const prefersReducedMotion = useReducedMotion();
   const text = useCallback(entry => entry[isEnglish ? 'en' : 'es'], [isEnglish]);
 
-  const [anchor, setAnchor] = useState(null);
-  const [status, setStatus] = useState('loading');
+  const seededThread = paper?.id ? threadCache.get(paper.id) : undefined;
+  // Whether THIS open started from the cache — a ref, because the load
+  // effect's failure guard needs the fact without re-running when the
+  // write-through below updates the cache.
+  const openedSeeded = useRef(Boolean(seededThread));
+  const [anchor, setAnchor] = useState(seededThread ? seededThread.anchor : null);
+  const [status, setStatus] = useState(seededThread ? 'ready' : 'loading');
   const [attempt, setAttempt] = useState(0);
-  const [rows, setRows] = useState([]);
+  const [rows, setRows] = useState(seededThread ? seededThread.rows : []);
   // One pagination source per stub the paper resolves to: the canonical one
   // plus any alternate that already holds comments (split-brain read).
-  const [sources, setSources] = useState([]);
-  const [count, setCount] = useState(null);
-  const [ownProfile, setOwnProfile] = useState({ status: 'loading', profile: null });
+  const [sources, setSources] = useState(seededThread ? seededThread.sources : []);
+  const [count, setCount] = useState(seededThread ? seededThread.count : null);
+  const [ownProfile, setOwnProfile] = useState(
+    () => (isAuthenticated && viewerProfileCache) || { status: 'loading', profile: null },
+  );
   const [hiddenLocally, setHiddenLocally] = useState(() => locallyHiddenCommentIds());
   const [paging, setPaging] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -285,20 +302,39 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       setStatus('ready');
     })().catch((error) => {
       console.error('The comment thread could not be loaded', error);
-      if (active) setStatus('error');
+      if (!active) return;
+      // A failed refresh behind an already-visible cached thread stays quiet
+      // (the cached view keeps standing); an explicit retry reports honestly.
+      if (openedSeeded.current && attempt === 0) return;
+      setStatus('error');
     });
     return () => { active = false; };
   }, [paper, attempt]);
+
+  // Write-through, and not only after loads: local mutations (post, edit,
+  // delete) flow through `rows`, so the next reopen starts from what the
+  // reader last saw.
+  useEffect(() => {
+    if (status !== 'ready' || !paper?.id || !anchor) return;
+    threadCache.set(paper.id, { anchor, rows, sources, count });
+  }, [status, paper?.id, anchor, rows, sources, count]);
 
   // The viewer's own profile decides what the composer is allowed to say.
   // Signed out, the composer never consults it (the signed-out gate comes
   // first), so the effect simply has nothing to fetch.
   useEffect(() => {
     let active = true;
-    if (!isAuthenticated) return undefined;
+    if (!isAuthenticated) {
+      viewerProfileCache = null;
+      return undefined;
+    }
     readOwnUserProfile()
       .then((profile) => {
-        if (active) setOwnProfile({ status: 'ready', profile, uid: profile?.uid ?? undefined });
+        const resolved = { status: 'ready', profile, uid: profile?.uid ?? undefined };
+        // Only a real answer is worth keeping across opens; a transient
+        // failure must not gate the composer for the rest of the session.
+        viewerProfileCache = resolved;
+        if (active) setOwnProfile(resolved);
       })
       .catch(() => {
         if (active) setOwnProfile({ status: 'ready', profile: null });
