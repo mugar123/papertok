@@ -1,0 +1,145 @@
+.visibility-choice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.visibility-choice-legend {
+  padding: 0;
+  font-family: var(--font-heading);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.visibility-choice-options {
+  display: grid;
+  gap: var(--space-3);
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+/* Nothing is selected until the user selects it: the resting state of both
+   options is identical, so the screen never suggests an answer. */
+.visibility-option {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  padding-right: var(--space-8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.visibility-option:hover,
+.visibility-option:focus-visible {
+  border-color: var(--border-strong);
+}
+
+.visibility-option.is-selected {
+  border-color: var(--accent-primary);
+  background: var(--bg-elevated);
+}
+
+.visibility-option-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+.visibility-option.is-selected .visibility-option-icon {
+  color: var(--accent-primary);
+}
+
+.visibility-option-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.visibility-option-title {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.visibility-option-body {
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+.visibility-option-mark {
+  position: absolute;
+  top: var(--space-4);
+  right: var(--space-4);
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-primary);
+  transition: border-color var(--transition-fast), background var(--transition-fast),
+    box-shadow var(--transition-fast);
+}
+
+.visibility-option.is-selected .visibility-option-mark {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+  box-shadow: inset 0 0 0 3px var(--bg-elevated);
+}
+
+/* The limits of the promise, said before the choice rather than discovered
+   after it. */
+.visibility-caveats {
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-primary);
+}
+
+.visibility-caveats-title {
+  margin: 0 0 var(--space-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.visibility-caveats ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-left: var(--space-5);
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+.visibility-choice-footnote {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .visibility-option {
+    transition: none;
+  }
+}

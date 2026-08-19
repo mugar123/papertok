@@ -680,3 +680,255 @@ test('a signed-out visitor can read the graph but never write it', async () => {
   await assertFails(setDoc(doc(guest, 'follows', EDGE(ALICE, CAROL)), edgeBody(ALICE, CAROL)));
   await assertFails(setDoc(doc(guest, 'follows', EDGE(CAROL, BOB)), edgeBody(CAROL, BOB)));
 });
+
+// =========================================================================
+// F8 — Profile visibility
+//
+// The whole point of this phase is that "private" is a property of the data,
+// not of the screen. Every test here performs a real read as a real caller.
+// =========================================================================
+
+/** Seeds three profiles whose visibility is set per uid. `null` = legacy. */
+async function resetVisibility({ visibility = {}, edges = [] } = {}) {
+  await testEnv.clearFirestore();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    for (const [uid, handle] of [[ALICE, 'alice'], [BOB, 'bob'], [CAROL, 'carol']]) {
+      const chosen = visibility[uid];
+      await setDoc(doc(db, 'userProfiles', uid), {
+        handle,
+        displayName: handle,
+        pinnedLists: [],
+        ...(chosen ? { visibility: chosen } : {}),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await setDoc(doc(db, 'handles', handle), { uid, createdAt: new Date() });
+    }
+    for (const [follower, target] of edges) {
+      await setDoc(doc(db, 'follows', EDGE(follower, target)), {
+        followerUid: follower, targetUid: target, createdAt: new Date(),
+      });
+    }
+  });
+}
+
+test('F8: a private profile is unreadable to a signed-out visitor', async () => {
+  await resetVisibility({ visibility: { [ALICE]: 'private' } });
+  await assertFails(getDoc(doc(asGuest(), 'userProfiles', ALICE)));
+});
+
+test('F8: a private profile is unreadable to another signed-in account', async () => {
+  await resetVisibility({ visibility: { [ALICE]: 'private' } });
+  await assertFails(getDoc(doc(asBob(), 'userProfiles', ALICE)));
+});
+
+test('F8: a private profile is readable by its owner', async () => {
+  await resetVisibility({ visibility: { [ALICE]: 'private' } });
+  await assertSucceeds(getDoc(doc(asAlice(), 'userProfiles', ALICE)));
+});
+
+test('F8: a profile written before this phase keeps reading as public', async () => {
+  // Requirement: nobody's visibility changes behind their back. A legacy
+  // document has no `visibility` field at all, and absence must mean public.
+  await resetVisibility();
+  await assertSucceeds(getDoc(doc(asGuest(), 'userProfiles', ALICE)));
+  await assertSucceeds(getDoc(doc(asBob(), 'userProfiles', ALICE)));
+});
+
+test('F8: an explicitly public profile reads exactly like a legacy one', async () => {
+  await resetVisibility({ visibility: { [ALICE]: 'public' } });
+  await assertSucceeds(getDoc(doc(asGuest(), 'userProfiles', ALICE)));
+});
+
+test('F8: the owner can go private and come back, in both directions', async () => {
+  await resetVisibility({ visibility: { [ALICE]: 'public' } });
+  const db = asAlice();
+  await assertSucceeds(updateDoc(doc(db, 'userProfiles', ALICE), {
+    visibility: 'private', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(getDoc(doc(asGuest(), 'userProfiles', ALICE)));
+  await assertSucceeds(updateDoc(doc(db, 'userProfiles', ALICE), {
+    visibility: 'public', updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(getDoc(doc(asGuest(), 'userProfiles', ALICE)));
+});
+
+test('F8: nobody can change somebody else\'s visibility', async () => {
+  await resetVisibility({ visibility: { [ALICE]: 'private' } });
+  await assertFails(updateDoc(doc(asBob(), 'userProfiles', ALICE), {
+    visibility: 'public', updatedAt: serverTimestamp(),
+  }));
+});
+
+test('F8: visibility only accepts the two values it defines', async () => {
+  await resetVisibility({ visibility: { [ALICE]: 'public' } });
+  const db = asAlice();
+  for (const bad of ['secret', 'PUBLIC', '', 'followers', true, 1]) {
+    await assertFails(updateDoc(doc(db, 'userProfiles', ALICE), {
+      visibility: bad, updatedAt: serverTimestamp(),
+    }));
+  }
+});
+
+test('F8: a private profile cannot be followed', async () => {
+  await resetVisibility({ visibility: { [BOB]: 'private' } });
+  await assertFails(setDoc(doc(asAlice(), 'follows', EDGE(ALICE, BOB)), edgeBody(ALICE, BOB)));
+});
+
+test('F8: public and legacy profiles stay followable', async () => {
+  await resetVisibility({ visibility: { [BOB]: 'public' } });
+  await assertSucceeds(setDoc(doc(asAlice(), 'follows', EDGE(ALICE, BOB)), edgeBody(ALICE, BOB)));
+  // CAROL is legacy — no visibility field — and must behave like public.
+  await assertSucceeds(setDoc(doc(asAlice(), 'follows', EDGE(ALICE, CAROL)), edgeBody(ALICE, CAROL)));
+});
+
+test('F8: going private never deletes existing edges, and unfollow still works', async () => {
+  // Going private stops new follows; it does not reach into the graph and
+  // remove people. The follower must also always be able to leave.
+  await resetVisibility({ visibility: { [BOB]: 'private' }, edges: [[ALICE, BOB]] });
+  await assertSucceeds(getDoc(doc(asGuest(), 'follows', EDGE(ALICE, BOB))));
+  await assertSucceeds(deleteDoc(doc(asAlice(), 'follows', EDGE(ALICE, BOB))));
+});
+
+test('F8: what going private does NOT hide, asserted so the UI cannot lie', async () => {
+  // The privacy screen tells the user these three things stay visible. If a
+  // future change quietly makes one of them false, the copy becomes a lie in
+  // the other direction — so they are pinned here as facts, not as leaks.
+  await resetVisibility({ visibility: { [ALICE]: 'private' }, edges: [[BOB, ALICE], [CAROL, ALICE]] });
+  const guest = asGuest();
+  // 1. The handle reservation still resolves (uniqueness has to be answerable).
+  await assertSucceeds(getDoc(doc(guest, 'handles', 'alice')));
+  // 2. The follower count is still countable.
+  await assertSucceeds(getCountFromServer(query(
+    collection(guest, 'follows'), where('targetUid', '==', ALICE), limit(1000),
+  )));
+  // 3. A list published from Mis listas stays public (it is anonymous by
+  //    design; going private removes attribution, not the list).
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'publicLists', ALICE_SHARE), {
+      title: 'Shared', papers: [], createdAt: new Date(), updatedAt: new Date(),
+    });
+  });
+  await assertSucceeds(getDoc(doc(guest, 'publicLists', ALICE_SHARE)));
+});
+
+test('F8: a private profile keeps its handle, and nobody else can take it', async () => {
+  await resetVisibility({ visibility: { [ALICE]: 'private' } });
+  // Going private must not free the reservation: the switch has to be
+  // reversible, and it is not reversible if the handle can be taken meanwhile.
+  await assertFails(setDoc(doc(asBob(), 'handles', 'alice'), {
+    uid: BOB, createdAt: serverTimestamp(),
+  }));
+  await assertFails(deleteDoc(doc(asBob(), 'handles', 'alice')));
+});
+
+test('F8: a private profile at the pin cap still saves', async () => {
+  // The expression budget is the reason the pin cap is six. This phase adds
+  // clauses to validPublicProfile, so the worst case has to be re-measured
+  // rather than assumed: six pins AND a visibility field in one write.
+  await reset();
+  await seedOwnedLists(6);
+  await assertSucceeds(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    pinnedLists: ownedPins(6), visibility: 'private', updatedAt: serverTimestamp(),
+  }));
+});
+
+test('F8: stashed pins live in an owner-only subcollection', async () => {
+  // Hiding pinned lists means the array is absent from the world-readable
+  // profile: Firestore has no field-level security, so anything left in that
+  // document is public. The stash sits under the private user tree.
+  await reset();
+  const db = asAlice();
+  const stash = doc(db, 'users', ALICE, 'profileStash', 'pinnedLists');
+  await assertSucceeds(setDoc(stash, {
+    pinnedLists: [pin(ALICE_SHARE, 'Hidden list')], updatedAt: serverTimestamp(),
+  }));
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'profileStash', 'pinnedLists')));
+  await assertFails(getDoc(doc(asGuest(), 'users', ALICE, 'profileStash', 'pinnedLists')));
+  // The cap travels with it, so the stash cannot be used as free storage.
+  await assertFails(setDoc(stash, {
+    pinnedLists: Array.from({ length: 7 }, () => pin(ALICE_SHARE, 'x')),
+    updatedAt: serverTimestamp(),
+  }));
+  // And it holds pins, nothing else. The extra key has to ride along with an
+  // OTHERWISE VALID document, or the size check denies the write on its own
+  // and the allowlist never gets a say — which is exactly how a mutation of
+  // this clause survived the first version of this test.
+  await assertFails(setDoc(stash, {
+    pinnedLists: [pin(ALICE_SHARE, 'Hidden list')],
+    updatedAt: serverTimestamp(),
+    smuggled: 'anything',
+  }));
+  await assertFails(setDoc(stash, { smuggled: 'anything', updatedAt: serverTimestamp() }));
+});
+
+test('F8: hiding pinned lists is a state the profile can carry', async () => {
+  await reset();
+  await seedOwnedLists(2);
+  const db = asAlice();
+  // Hiding empties the public array — the entries themselves must leave the
+  // world-readable document, because a readable document has no private
+  // fields — and records that the emptiness was a choice.
+  await assertSucceeds(updateDoc(doc(db, 'userProfiles', ALICE), {
+    pinnedLists: [], showPinnedLists: false, updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(db, 'userProfiles', ALICE), {
+    pinnedLists: ownedPins(2), showPinnedLists: true, updatedAt: serverTimestamp(),
+  }));
+  for (const bad of ['yes', 1, 'true']) {
+    await assertFails(updateDoc(doc(db, 'userProfiles', ALICE), {
+      showPinnedLists: bad, updatedAt: serverTimestamp(),
+    }));
+  }
+});
+
+test('F8: the stash works on an account whose user document is legacy', async () => {
+  // Accounts created by early versions carry fields (`email`, `displayName`,
+  // `photoURL`, `createdAt`) that the users/{uid} key allowlist never covered,
+  // so every merge write to that document is denied — a pre-existing bug this
+  // feature must not inherit. The stash is a subcollection precisely so it
+  // stays writable on those accounts.
+  await reset();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE), {
+      onboardingComplete: true,
+      preferences: ['astro-ph.GA'],
+      email: 'alice@example.test',
+      displayName: 'Alice',
+      photoURL: 'https://example.test/a.png',
+      createdAt: new Date(),
+    });
+  });
+  const db = asAlice();
+  // The parent document is indeed unwritable — that is the bug, asserted so
+  // its eventual fix is visible here too.
+  await assertFails(setDoc(doc(db, 'users', ALICE), { onboardingComplete: true }, { merge: true }));
+  // The stash is unaffected.
+  await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'profileStash', 'pinnedLists'), {
+    pinnedLists: [pin(ALICE_SHARE, 'Hidden')], updatedAt: serverTimestamp(),
+  }));
+});
+
+test('F8: hiding pins writes both documents the way the client does', async () => {
+  // The exact two-write batch setPinnedListsVisible commits.
+  await reset();
+  await seedOwnedLists(1);
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'userProfiles', ALICE), {
+      handle: 'alice', displayName: 'Alice', pinnedLists: [pin(ALICE_SHARE)],
+      visibility: 'private', bio: 'hi', allowContact: true,
+      createdAt: new Date(), updatedAt: new Date(),
+    });
+  });
+  const db = asAlice();
+  const batch = writeBatch(db);
+  batch.set(doc(db, 'users', ALICE, 'profileStash', 'pinnedLists'), {
+    pinnedLists: [pin(ALICE_SHARE)], updatedAt: serverTimestamp(),
+  });
+  batch.update(doc(db, 'userProfiles', ALICE), {
+    pinnedLists: [], showPinnedLists: false, updatedAt: serverTimestamp(),
+  });
+  await assertSucceeds(batch.commit());
+});

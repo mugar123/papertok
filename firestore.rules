@@ -260,10 +260,20 @@ service cloud.firestore {
           || request.resource.data.followerCount == resource.data.followerCount);
     }
 
+    // Profile visibility (F8). A string rather than a boolean, and absence is
+    // load-bearing: a document written before this phase has no `visibility`
+    // and MUST keep reading as public. An absent boolean would coerce to false
+    // and silently take every existing profile private, which is the one
+    // outcome this design refuses.
+    function profileIsPublic(data) {
+      return !('visibility' in data) || data.visibility == 'public';
+    }
+
     function validPublicProfile() {
       return request.resource.data.keys().hasOnly([
           'handle', 'displayName', 'bio', 'photo', 'orcid', 'verified',
-          'allowContact', 'pinnedLists', 'followerCount',
+          'allowContact', 'visibility', 'showPinnedLists', 'pinnedLists',
+          'followerCount',
           'createdAt', 'updatedAt'
         ])
         && request.resource.data.keys().hasAll([
@@ -283,6 +293,15 @@ service cloud.firestore {
           || validString(request.resource.data.photo, 60000))
         && (!('allowContact' in request.resource.data)
           || request.resource.data.allowContact is bool)
+        && (!('visibility' in request.resource.data)
+          || request.resource.data.visibility in ['public', 'private'])
+        // Presentation state, not a disclosure boundary: hiding the pins means
+        // `pinnedLists` is empty here and the entries are parked in the
+        // owner-only document (Firestore has no field-level security, so the
+        // array itself has to leave). This flag exists so that "no pins" and
+        // "pins hidden" survive a reload as different states.
+        && (!('showPinnedLists' in request.resource.data)
+          || request.resource.data.showPinnedLists is bool)
         && validPinnedLists(request.resource.data.pinnedLists)
         && (!('followerCount' in request.resource.data)
           || request.resource.data.followerCount is int
@@ -292,14 +311,24 @@ service cloud.firestore {
     }
 
     match /userProfiles/{profileUid} {
-      // Public by design: a profile page has to render for a signed-out
-      // reader, and resolving a handle must not require a session.
+      // A public profile page has to render for a signed-out reader, and
+      // resolving a handle must not require a session. A private one is
+      // readable by its owner and by nobody else — enforced here, at the data
+      // layer, so "private" survives a caller that ignores the UI entirely.
       //
       // `get` only. `read` would also grant `list`, which lets anyone page
       // through the whole collection and walk off with the user directory,
       // photos included, billed to this project. Every read path in the app
       // addresses a profile by uid or resolves one through handles/.
-      allow get: if true;
+      //
+      // Not covered by going private, deliberately and stated in the UI: the
+      // handle reservation stays readable (uniqueness has to be answerable, and
+      // freeing the handle would make the switch one-way), lists published from
+      // Mis listas stay public (they are anonymous by design — going private
+      // removes the attribution, not the list), and the follow edges pointing
+      // at this uid stay countable.
+      allow get: if profileIsPublic(resource.data)
+        || (request.auth != null && request.auth.uid == profileUid);
       allow list: if false;
       allow create: if request.auth != null
         && request.auth.uid == profileUid
@@ -409,6 +438,13 @@ service cloud.firestore {
         // to follow otherwise, and it keeps the graph from filling with edges
         // pointing at uids that were never users.
         && exists(/databases/$(database)/documents/userProfiles/$(request.resource.data.targetUid))
+        // ...and a profile that has gone private is not a page either. Edges
+        // that already exist are left alone — this only stops new ones, so
+        // going private never silently deletes somebody's follows. Unfollowing
+        // stays open in every case: you must always be able to leave.
+        && profileIsPublic(
+          get(/databases/$(database)/documents/userProfiles/$(request.resource.data.targetUid)).data
+        )
         && request.resource.data.createdAt == request.time;
     }
 
@@ -460,6 +496,24 @@ service cloud.firestore {
               || request.resource.data.readingPreferences.languagePreferenceSet is bool))
         && (!('profilePhoto' in request.resource.data)
           || validString(request.resource.data.profilePhoto, 280000));
+
+      // Where pinned lists wait while "show pinned lists" is off (F8).
+      //
+      // Firestore has no field-level security: hiding the pins means the array
+      // cannot stay in the world-readable profile document at all, so it is
+      // parked here. A subcollection rather than a field on users/{uid}, for a
+      // concrete reason — accounts created by early versions carry fields
+      // (`email`, `displayName`, `photoURL`, `createdAt`) that the allowlist on
+      // that document does not include, which makes every merge write to it
+      // fail. That is a pre-existing bug of its own; this feature routes around
+      // it instead of widening an allowlist to accommodate it.
+      match /profileStash/{stashId} {
+        allow read, delete: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly(['pinnedLists', 'updatedAt'])
+          && request.resource.data.pinnedLists is list
+          && request.resource.data.pinnedLists.size() <= 6;
+      }
 
       match /interactions/{paperId} {
         allow read, delete: if ownsUserTree(userId);

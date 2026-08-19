@@ -213,6 +213,34 @@ export function sanitizeUserProfile(input) {
 }
 
 /**
+ * Profile visibility (F8).
+ *
+ * A string with no default anywhere in this module, deliberately. The absence
+ * of the field means "written before this phase", which reads as public — so a
+ * default here would be indistinguishable from a real choice, and the whole
+ * point is that the first choice is made by the user rather than inherited.
+ */
+export const PROFILE_VISIBILITY = Object.freeze({ public: 'public', private: 'private' });
+
+export function isVisibilityChoice(value) {
+  return value === PROFILE_VISIBILITY.public || value === PROFILE_VISIBILITY.private;
+}
+
+/** A profile document with no `visibility` predates F8 and is public. */
+export function profileIsPublic(profile) {
+  return profile?.visibility !== PROFILE_VISIBILITY.private;
+}
+
+/** True when the owner has never made the choice, so the app must ask. */
+export function needsVisibilityChoice(profile) {
+  return Boolean(profile) && !isVisibilityChoice(profile.visibility);
+}
+
+export function pinnedListsAreVisible(profile) {
+  return profile?.showPinnedLists !== false;
+}
+
+/**
  * `orderBy('publicShareId')` is doing real work here: Firestore drops
  * documents that lack the ordered field, so this returns published lists only,
  * with no extra index and no client-side scan of every list the user owns.
@@ -292,18 +320,101 @@ export async function createUserProfile(input, overrides) {
   const uid = requireOwner(api);
   const handle = requireHandle(input?.handle);
   const payload = sanitizeUserProfile(input);
+  // No fallback on purpose: a profile cannot come into existence without its
+  // owner having chosen. The second rules deploy makes this a server-side
+  // invariant too; refusing here means the UI can never skip the question by
+  // accident.
+  if (!isVisibilityChoice(input?.visibility)) {
+    throw new TypeError('A visibility choice is required to create a profile.');
+  }
   const timestamp = api.now();
   const batch = api.batch(api.database);
 
   batch.set(profileReference(api, uid), {
     handle,
     ...payload,
+    visibility: input.visibility,
     createdAt: timestamp,
     updatedAt: timestamp,
   });
   batch.set(handleReference(api, handle), { uid, createdAt: timestamp });
   await commitHandleClaim(batch, handle);
-  return { uid, handle, ...payload };
+  return { uid, handle, ...payload, visibility: input.visibility };
+}
+
+/**
+ * Flips the profile between public and private. One field on one document:
+ * the handle reservation is deliberately left alone, so going private is
+ * reversible — freeing the handle would let somebody take it while you are
+ * away, and a switch you cannot switch back is not a switch.
+ */
+export async function saveProfileVisibility(visibility, overrides) {
+  const api = operations(overrides);
+  requireSupported(api);
+  const uid = requireOwner(api);
+  if (!isVisibilityChoice(visibility)) {
+    throw new TypeError('Visibility must be either public or private.');
+  }
+  const batch = api.batch(api.database);
+  batch.update(profileReference(api, uid), { visibility, updatedAt: api.now() });
+  await batch.commit();
+  return { uid, visibility };
+}
+
+/**
+ * Where hidden pins wait. A document in an owner-only subcollection rather
+ * than a field on `users/{uid}`: accounts created by early versions of the app
+ * carry fields that document's key allowlist does not cover, so every merge
+ * write to it is denied. That is a pre-existing bug with its own fix; parking
+ * the pins somewhere else keeps this feature from depending on it.
+ */
+function stashReference(api, uid) {
+  return api.document(api.database, 'users', uid, 'profileStash', 'pinnedLists');
+}
+
+/**
+ * Shows or hides the pinned lists.
+ *
+ * Firestore has no field-level security: every field of a readable document is
+ * readable. So hiding the pins cannot be a flag the UI honours — the entries
+ * have to leave the public document. They are parked in `users/{uid}`, which
+ * is owner-only, and put back verbatim when the switch goes the other way.
+ * Two documents, one batch, so the pins can never exist in both places or in
+ * neither.
+ */
+export async function setPinnedListsVisible(visible, overrides) {
+  const api = operations(overrides);
+  requireSupported(api);
+  const uid = requireOwner(api);
+  const batch = api.batch(api.database);
+  const profileRef = profileReference(api, uid);
+  const stashRef = stashReference(api, uid);
+
+  if (visible) {
+    // Restoring reads the stash — one bounded document, and only on the click
+    // that needs it, never on a page load.
+    const stashed = await api.getDocument(stashRef);
+    const pins = sanitizePinnedLists(stashed?.data?.()?.pinnedLists);
+    batch.update(profileRef, {
+      pinnedLists: pins,
+      showPinnedLists: true,
+      updatedAt: api.now(),
+    });
+    batch.set(stashRef, { pinnedLists: [], updatedAt: api.now() });
+    await batch.commit();
+    return { uid, showPinnedLists: true, pinnedLists: pins };
+  }
+
+  const current = await api.getDocument(profileRef);
+  const pins = sanitizePinnedLists(current?.data?.()?.pinnedLists);
+  batch.set(stashRef, { pinnedLists: pins, updatedAt: api.now() });
+  batch.update(profileRef, {
+    pinnedLists: [],
+    showPinnedLists: false,
+    updatedAt: api.now(),
+  });
+  await batch.commit();
+  return { uid, showPinnedLists: false, pinnedLists: [] };
 }
 
 export async function updateUserProfile(patch, overrides) {
@@ -415,7 +526,19 @@ export async function readUserProfileByHandle(handle, overrides) {
   const uid = cleanString(reservation.data()?.uid, 128);
   if (!uid) return null;
 
-  const snapshot = await api.getDocument(profileReference(api, uid));
+  // A private profile denies this read, and that denial must look exactly like
+  // a handle nobody registered. Letting it surface as an error would make the
+  // page say "could not load" for private profiles and "not available" for
+  // free handles, which is a two-state oracle the rules were written to avoid.
+  // The owner reading their own private profile is allowed, so this only
+  // swallows denials for people who genuinely may not see it.
+  let snapshot;
+  try {
+    snapshot = await api.getDocument(profileReference(api, uid));
+  } catch (error) {
+    if (error?.code === 'permission-denied') return null;
+    throw error;
+  }
   const profile = readProfileSnapshot(snapshot);
   // A reservation whose profile moved on is stale, not a redirect.
   return profile && normalizeHandle(profile.handle) === normalized ? profile : null;

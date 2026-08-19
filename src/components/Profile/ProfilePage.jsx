@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { AnimatePresence } from 'framer-motion';
 import {
   ArrowLeft, Check, ExternalLink, Loader2, Pin, PinOff, ShieldCheck,
 } from 'lucide-react';
@@ -7,20 +8,29 @@ import { useAuth } from '../../context/AuthContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import {
   HandleUnavailableError,
+  PROFILE_VISIBILITY,
   USER_PROFILE_LIMITS,
   changeUserHandle,
   createUserProfile,
   deleteOwnUserProfile,
+  needsVisibilityChoice,
   partitionStalePins,
   pinListEntry,
+  pinnedListsAreVisible,
+  profileIsPublic,
   publicAvatarFrom,
   readOwnUserProfile,
   readPinnableLists,
   savePinnedLists,
+  saveProfileVisibility,
   savePublicProfilePhoto,
+  setPinnedListsVisible,
   unpinListEntry,
   updateUserProfile,
 } from '../../services/userProfileService.js';
+import VisibilityChoice from './VisibilityChoice.jsx';
+import { visibilityCopy } from './visibilityCopy.js';
+import VisibilityPrompt from './VisibilityPrompt.jsx';
 import { getIcon } from '../../utils/icons.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { HANDLE_ERRORS, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
@@ -76,6 +86,12 @@ export default function ProfilePage() {
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [feedback, setFeedback] = useState(null);
+  // Null until chosen, on purpose: the create button stays disabled while it
+  // is null, so a profile cannot be born with a visibility nobody picked.
+  const [visibilityDraft, setVisibilityDraft] = useState(null);
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
+  const [pinsBusy, setPinsBusy] = useState(false);
+  const [promptDismissed, setPromptDismissed] = useState(false);
 
   const copy = isEnglish ? {
     back: 'Back',
@@ -91,6 +107,14 @@ export default function ProfilePage() {
     photoMirrorAction: 'Change it in Settings',
     sectionPrivacy: 'Privacy',
     privacyIntro: 'What anyone with your public link can see.',
+    visibilityLabel: 'Public profile',
+    visibilityHintPublic: 'Anyone with the link can open your profile.',
+    visibilityHintPrivate: 'Only you can open your profile. Its page does not exist for anyone else.',
+    pinsLabel: 'Show my pinned lists',
+    pinsHint: 'Off: the lists leave your public profile and wait here. Turning it back on puts them back.',
+    pinsHintPrivate: 'Applies when your profile is public.',
+    visibilityFailed: 'The visibility could not be saved. Try again.',
+    privateNotice: 'Your profile is private: only you can open it.',
     publicNow: 'Public on your page',
     publicItems: ['Handle and display name', 'Bio', 'Account photo (only if enabled below)', 'Pinned lists'],
     neverPublic: 'Never public',
@@ -138,6 +162,14 @@ export default function ProfilePage() {
     photoMirrorAction: 'Cámbiala en Ajustes',
     sectionPrivacy: 'Privacidad',
     privacyIntro: 'Lo que puede ver cualquiera con tu enlace público.',
+    visibilityLabel: 'Perfil público',
+    visibilityHintPublic: 'Cualquiera con el enlace puede abrir tu perfil.',
+    visibilityHintPrivate: 'Solo tú puedes abrir tu perfil. Su página no existe para nadie más.',
+    pinsLabel: 'Mostrar mis listas fijadas',
+    pinsHint: 'Apagado: las listas salen de tu perfil público y se quedan aquí guardadas. Al encenderlo vuelven.',
+    pinsHintPrivate: 'Se aplica cuando tu perfil es público.',
+    visibilityFailed: 'No se pudo guardar la visibilidad. Inténtalo de nuevo.',
+    privateNotice: 'Tu perfil es privado: solo tú puedes abrirlo.',
     publicNow: 'Público en tu página',
     publicItems: ['Handle y nombre visible', 'Biografía', 'Foto de cuenta (solo si la activas abajo)', 'Listas fijadas'],
     neverPublic: 'Nunca es público',
@@ -219,6 +251,12 @@ export default function ProfilePage() {
     [pinnableLists, profile],
   );
   const publicPath = profile ? getPublicProfilePath(profile.handle) : null;
+  const isPublicProfile = profileIsPublic(profile);
+  const pinsVisible = pinnedListsAreVisible(profile);
+  const caveats = visibilityCopy(isEnglish);
+  // Asked here as well as on the profile page: both screens have already read
+  // the profile, so the question costs nothing extra on either.
+  const askVisibility = status === 'ready' && needsVisibilityChoice(profile) && !promptDismissed;
   // Whatever the rest of the app shows, bounded to what the public document
   // may carry. Saving the profile is what mirrors it across.
   const appAvatar = useMemo(
@@ -265,7 +303,11 @@ export default function ProfilePage() {
         pinnedLists: profile?.pinnedLists,
       };
       if (!profile) {
-        const created = await createUserProfile({ ...payload, handle: handleCheck.handle });
+        const created = await createUserProfile({
+          ...payload,
+          handle: handleCheck.handle,
+          visibility: visibilityDraft,
+        });
         setProfile({ ...created, pinnedLists: created.pinnedLists || [] });
         setStatus('ready');
       } else {
@@ -297,6 +339,52 @@ export default function ProfilePage() {
       }).catch(() => {});
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * The two privacy switches. Each writes immediately rather than waiting for
+   * "Save changes": a privacy control that needs a second confirmation is a
+   * control people believe they have already used.
+   */
+  const toggleVisibility = async (makePublic) => {
+    if (!profile || visibilityBusy) return;
+    const next = makePublic ? PROFILE_VISIBILITY.public : PROFILE_VISIBILITY.private;
+    const previous = profile.visibility;
+    setVisibilityBusy(true);
+    setFeedback(null);
+    setProfile(current => ({ ...current, visibility: next }));
+    try {
+      await saveProfileVisibility(next);
+      setFeedback({ state: 'saved', message: copy.saved });
+    } catch (error) {
+      setProfile(current => ({ ...current, visibility: previous }));
+      console.error('Error saving profile visibility:', error);
+      setFeedback({ state: 'error', message: copy.visibilityFailed });
+    } finally {
+      setVisibilityBusy(false);
+    }
+  };
+
+  const togglePinnedListsVisible = async (visible) => {
+    if (!profile || pinsBusy) return;
+    setPinsBusy(true);
+    setFeedback(null);
+    try {
+      // The service moves the entries between the public document and the
+      // owner-only stash, so the result is what the profile now really holds.
+      const result = await setPinnedListsVisible(visible);
+      setProfile(current => ({
+        ...current,
+        pinnedLists: result.pinnedLists,
+        showPinnedLists: result.showPinnedLists,
+      }));
+      setFeedback({ state: 'saved', message: copy.saved });
+    } catch (error) {
+      console.error('Error saving pinned-list visibility:', error);
+      setFeedback({ state: 'error', message: copy.genericError });
+    } finally {
+      setPinsBusy(false);
     }
   };
 
@@ -354,6 +442,9 @@ export default function ProfilePage() {
       setProfile(null);
       setStatus('new');
       setShowPhoto(true);
+      // Creating a profile again is creating a profile: the choice is asked
+      // from scratch rather than inherited from the one just deleted.
+      setVisibilityDraft(null);
       setFeedback({ state: 'saved', message: copy.unpublished });
     } catch (error) {
       reportError(error);
@@ -468,6 +559,70 @@ export default function ProfilePage() {
             <h2 id="profile-privacy-title">{copy.sectionPrivacy}</h2>
             <p className="profile-hint">{copy.privacyIntro}</p>
 
+            {/* Creating the profile: the choice itself, with nothing
+                preselected. The submit button below stays disabled until it
+                has an answer. */}
+            {status === 'new' && (
+              <VisibilityChoice
+                value={visibilityDraft}
+                onChange={setVisibilityDraft}
+                isEnglish={isEnglish}
+                idPrefix="profile-create"
+              />
+            )}
+
+            {/* Editing an existing profile: the same decision as a switch,
+                saved on the spot. */}
+            {status === 'ready' && (
+              <>
+                <label className="profile-switch">
+                  <span className="profile-switch-copy">
+                    <span className="profile-switch-label">{copy.visibilityLabel}</span>
+                    <span className="profile-switch-hint">
+                      {isPublicProfile ? copy.visibilityHintPublic : copy.visibilityHintPrivate}
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={isPublicProfile}
+                    disabled={visibilityBusy}
+                    onChange={event => toggleVisibility(event.target.checked)}
+                  />
+                  <span className="profile-switch-track" aria-hidden="true">
+                    <span className="profile-switch-thumb" />
+                  </span>
+                </label>
+
+                <label className="profile-switch">
+                  <span className="profile-switch-copy">
+                    <span className="profile-switch-label">{copy.pinsLabel}</span>
+                    <span className="profile-switch-hint">
+                      {isPublicProfile ? copy.pinsHint : copy.pinsHintPrivate}
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={pinsVisible}
+                    disabled={pinsBusy}
+                    onChange={event => togglePinnedListsVisible(event.target.checked)}
+                  />
+                  <span className="profile-switch-track" aria-hidden="true">
+                    <span className="profile-switch-thumb" />
+                  </span>
+                </label>
+
+                {/* The limits of the promise, on the screen that makes it. */}
+                <div className="visibility-caveats">
+                  <p className="visibility-caveats-title">{caveats.notProtectedTitle}</p>
+                  <ul>
+                    {caveats.notProtected.map(item => <li key={item}>{item}</li>)}
+                  </ul>
+                </div>
+              </>
+            )}
+
             <div className="profile-privacy-summary">
               <div className="profile-privacy-column">
                 <h3>{copy.publicNow}</h3>
@@ -517,7 +672,12 @@ export default function ProfilePage() {
           </section>
 
           <div className="profile-actions">
-            <button type="submit" className="profile-primary" disabled={saving || deleting || !handleCheck.valid}>
+            <button
+              type="submit"
+              className="profile-primary"
+              disabled={saving || deleting || !handleCheck.valid
+                || (status === 'new' && !visibilityDraft)}
+            >
               {saving ? copy.saving : (status === 'new' ? copy.create : copy.save)}
             </button>
             {feedback && (
@@ -586,6 +746,16 @@ export default function ProfilePage() {
           </section>
         )}
       </div>
+
+      <AnimatePresence>
+        {askVisibility && (
+          <VisibilityPrompt
+            isEnglish={isEnglish}
+            onResolved={visibility => setProfile(current => ({ ...current, visibility }))}
+            onDismiss={() => setPromptDismissed(true)}
+          />
+        )}
+      </AnimatePresence>
     </main>
   );
 }

@@ -2,8 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
-  BadgeCheck, Bookmark, FolderOpen, Globe2, Heart, RefreshCw, Rss, Settings2,
-  UserCheck, UserPlus, UserX,
+  BadgeCheck, Bookmark, FolderOpen, Globe2, Heart, Lock, RefreshCw, Rss,
+  Settings2, UserCheck, UserPlus, UserX,
 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -11,10 +11,13 @@ import { useFeed } from '../../context/FeedContext.jsx';
 import { useFollowing } from '../../context/FollowingContext.jsx';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import {
+  needsVisibilityChoice,
+  profileIsPublic,
   readOwnLists,
   readOwnUserProfile,
   readUserProfileByHandle,
 } from '../../services/userProfileService.js';
+import VisibilityPrompt from '../Profile/VisibilityPrompt.jsx';
 import {
   countFollowedUsers,
   countFollowers,
@@ -179,6 +182,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const [followError, setFollowError] = useState(false);
   const [followHover, setFollowHover] = useState(false);
   const [followSheet, setFollowSheet] = useState(null);
+  const [promptDismissed, setPromptDismissed] = useState(false);
 
   const view = resolveProfileView({
     viewerUid: user?.uid,
@@ -435,6 +439,9 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     settings: 'Settings',
     editProfile: 'Edit profile',
     createProfile: 'Create your public profile',
+    privateBadge: 'Private',
+    privateNotice: 'Only you can see this profile. Its page does not open for anyone else.',
+    privateManage: 'Change this',
     tabsLabel: 'Profile sections',
     tabs: { lists: 'Lists', saved: 'Saved', liked: 'Liked' },
     stats: { following: 'Following', followers: 'Followers', likes: 'Likes' },
@@ -480,6 +487,9 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     settings: 'Ajustes',
     editProfile: 'Editar perfil',
     createProfile: 'Crea tu perfil público',
+    privateBadge: 'Privado',
+    privateNotice: 'Solo tú ves este perfil. Su página no se abre para nadie más.',
+    privateManage: 'Cambiar esto',
     tabsLabel: 'Secciones del perfil',
     tabs: { lists: 'Listas', saved: 'Guardados', liked: 'Me gusta' },
     stats: { following: 'Siguiendo', followers: 'Seguidores', likes: 'Me gusta' },
@@ -697,6 +707,16 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
           </button>
         )}
 
+        {view.isOwner && profile && !profileIsPublic(profile) && (
+          <div className="profile-private-notice">
+            <Lock size={14} aria-hidden="true" />
+            <span>{copy.privateNotice}</span>
+            <button type="button" onClick={() => navigate('/settings/profile')}>
+              {copy.privateManage}
+            </button>
+          </div>
+        )}
+
         <header className="public-profile-header">
           <div className="public-profile-avatar">
             {avatar
@@ -720,7 +740,18 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
               )}
             </h1>
             {profile
-              ? <p className="public-profile-handle">@{profile.handle}</p>
+              ? (
+                <p className="public-profile-handle">
+                  @{profile.handle}
+                  {/* Only the owner ever renders this: for anyone else the
+                      document is unreadable, so there is no page to badge. */}
+                  {view.isOwner && !profileIsPublic(profile) && (
+                    <span className="profile-private-badge">
+                      <Lock size={11} aria-hidden="true" /> {copy.privateBadge}
+                    </span>
+                  )}
+                </p>
+              )
               : (view.isOwner && (
                 <button
                   type="button"
@@ -942,6 +973,19 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
           </footer>
         )}
       </motion.div>
+
+      <AnimatePresence>
+        {/* The one-time question for a profile written before this phase. It
+            renders here because this page has already read the profile, so
+            asking costs no extra read. */}
+        {view.isOwner && needsVisibilityChoice(profile) && !promptDismissed && (
+          <VisibilityPrompt
+            isEnglish={isEnglish}
+            onResolved={visibility => setProfile(current => ({ ...current, visibility }))}
+            onDismiss={() => setPromptDismissed(true)}
+          />
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {followSheet && statsUid && (

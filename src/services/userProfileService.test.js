@@ -24,6 +24,13 @@ import {
   savePublicProfilePhoto,
   unpinListEntry,
   updateUserProfile,
+  PROFILE_VISIBILITY,
+  isVisibilityChoice,
+  needsVisibilityChoice,
+  pinnedListsAreVisible,
+  profileIsPublic,
+  saveProfileVisibility,
+  setPinnedListsVisible,
 } from './userProfileService.js';
 
 const SHARE_ID = 'a'.repeat(32);
@@ -182,7 +189,7 @@ test('unpinning writes the profile and NOTHING in publicLists', async () => {
 
 test('creating a profile reserves the handle in the same batch', async () => {
   const { api, calls } = fakeApi();
-  await createUserProfile({ handle: '  @Ada  ', displayName: 'Ada Lovelace' }, api);
+  await createUserProfile({ handle: '  @Ada  ', displayName: 'Ada Lovelace', visibility: 'public' }, api);
 
   assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1', 'db/handles/ada']);
   assert.equal(calls.at(-1)[0], 'commit', 'both writes must land in one commit');
@@ -194,7 +201,7 @@ test('an invalid or reserved handle never reaches Firestore', async () => {
   for (const handle of ['admin', 'settings', 'ab', 'ada lovelace', '123']) {
     const { api, calls } = fakeApi();
     await assert.rejects(
-      () => createUserProfile({ handle, displayName: 'Ada' }, api),
+      () => createUserProfile({ handle, displayName: 'Ada', visibility: 'public' }, api),
       InvalidHandleError,
       `${handle} should be refused before any write`,
     );
@@ -213,7 +220,7 @@ test('a taken handle surfaces as a collision, not a generic failure', async () =
     }),
   });
   await assert.rejects(
-    () => createUserProfile({ handle: 'ada', displayName: 'Ada' }, api),
+    () => createUserProfile({ handle: 'ada', displayName: 'Ada', visibility: 'public' }, api),
     (error) => error instanceof HandleUnavailableError && error.handle === 'ada',
   );
 });
@@ -238,12 +245,12 @@ test('changing a handle to the same handle writes nothing', async () => {
 
 test('profile writes require a session and a non-demo project', async () => {
   const { api: anonymous } = fakeApi({ currentUser: null });
-  await assert.rejects(() => createUserProfile({ handle: 'ada', displayName: 'Ada' }, anonymous));
+  await assert.rejects(() => createUserProfile({ handle: 'ada', displayName: 'Ada', visibility: 'public' }, anonymous));
   await assert.rejects(() => updateUserProfile({ displayName: 'Ada' }, anonymous));
 
   const { api: demo } = fakeApi({ isDemo: true });
   await assert.rejects(
-    () => createUserProfile({ handle: 'ada', displayName: 'Ada' }, demo),
+    () => createUserProfile({ handle: 'ada', displayName: 'Ada', visibility: 'public' }, demo),
     UserProfileUnsupportedError,
   );
 });
@@ -308,10 +315,14 @@ test('reading a profile never requires a signed-in user', async () => {
 // not execute the rules — that needs the emulator, which needs a JRE that is
 // not installed on this machine.
 
-test('RULES: a profile is fetchable without a session but not listable', async () => {
+test('RULES: a profile is fetchable by uid, gated on visibility, never listable', async () => {
   const block = ruleBlock(await loadRules(), '/userProfiles/{profileUid}');
   assert.ok(block, 'firestore.rules must declare userProfiles');
-  assert.match(block, /allow get: if true/);
+  // `allow get: if true` was the F1 contract; F8 narrows it to public profiles
+  // plus the owner. The behavioural proof is in tests/firestore.rules.test.js,
+  // which runs these against the emulator; this only catches a deletion.
+  assert.match(block, /allow get: if profileIsPublic\(resource\.data\)/);
+  assert.match(block, /request\.auth\.uid == profileUid/);
   assert.match(block, /allow list: if false/);
   // `read` would silently re-grant `list` and reopen the directory dump.
   assert.doesNotMatch(block, /allow read/);
@@ -651,4 +662,99 @@ test('readOwnLists refuses demo mode and signed-out callers like the rest of the
   await assert.rejects(readOwnLists(demo.api), UserProfileUnsupportedError);
   const signedOut = fakeApi({ currentUser: null, ownLists: async () => [] });
   await assert.rejects(readOwnLists(signedOut.api), /Authentication is required/);
+});
+
+// --- F8: visibility --------------------------------------------------------
+
+test('a profile cannot be created without an explicit visibility choice', async () => {
+  // The choice is the feature. A default here would be indistinguishable from
+  // a decision the user actually made.
+  for (const visibility of [undefined, null, '', 'secret', true, 'PUBLIC']) {
+    const { api, calls } = fakeApi();
+    await assert.rejects(
+      () => createUserProfile({ handle: 'ada', displayName: 'Ada', visibility }, api),
+      TypeError,
+      `${String(visibility)} must not be accepted as a choice`,
+    );
+    assert.deepEqual(calls, [], 'nothing may be written without a choice');
+  }
+});
+
+test('the chosen visibility is what gets written', async () => {
+  for (const visibility of ['public', 'private']) {
+    const { api, calls } = fakeApi();
+    await createUserProfile({ handle: 'ada', displayName: 'Ada', visibility }, api);
+    assert.equal(calls[0][2].visibility, visibility);
+  }
+});
+
+test('an absent visibility field reads as public, and asks for a choice', () => {
+  // Requirement: nobody's visibility changes behind their back. A profile
+  // written before this phase has no field and must keep being public until
+  // its owner says otherwise.
+  const legacy = { handle: 'ada', displayName: 'Ada' };
+  assert.equal(profileIsPublic(legacy), true);
+  assert.equal(needsVisibilityChoice(legacy), true);
+
+  const chosen = { ...legacy, visibility: PROFILE_VISIBILITY.public };
+  assert.equal(profileIsPublic(chosen), true);
+  assert.equal(needsVisibilityChoice(chosen), false, 'a real choice is never asked twice');
+
+  const hidden = { ...legacy, visibility: PROFILE_VISIBILITY.private };
+  assert.equal(profileIsPublic(hidden), false);
+  assert.equal(needsVisibilityChoice(hidden), false);
+  // No profile at all is the create flow, not the migration prompt.
+  assert.equal(needsVisibilityChoice(null), false);
+  assert.equal(isVisibilityChoice('followers'), false);
+});
+
+test('switching visibility touches the profile only, never the handle', async () => {
+  // Going private keeps the reservation: the switch has to be reversible, and
+  // it is not reversible if somebody can take the handle while you are away.
+  const { api, calls } = fakeApi();
+  await saveProfileVisibility('private', api);
+  assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1']);
+  assert.equal(calls[0][2].visibility, 'private');
+  assert.equal(calls[0][2].updatedAt, 'SERVER_TIME');
+
+  const rejected = fakeApi();
+  await assert.rejects(() => saveProfileVisibility('secret', rejected.api), TypeError);
+  assert.deepEqual(rejected.calls, []);
+});
+
+test('hiding pinned lists moves them out of the public document', async () => {
+  // Firestore has no field-level security: a flag the UI honours would leave
+  // the entries readable. They have to leave the document.
+  const pins = [{ shareId: SHARE_ID, title: 'Reading', paperCount: 3 }];
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({ exists: () => true, data: () => ({ pinnedLists: pins }) }),
+  });
+  await setPinnedListsVisible(false, api);
+
+  assert.deepEqual(writtenPaths(calls), ['db/users/user-1/profileStash/pinnedLists', 'db/userProfiles/user-1']);
+  assert.deepEqual(calls[0][2].pinnedLists, pins, 'the pins are parked, not discarded');
+  assert.deepEqual(calls[1][2].pinnedLists, [], 'and the public array is emptied');
+  assert.equal(calls[1][2].showPinnedLists, false);
+  assert.equal(calls.at(-1)[0], 'commit', 'both documents move in one commit');
+});
+
+test('showing pinned lists again restores exactly what was parked', async () => {
+  const pins = [{ shareId: SHARE_ID, title: 'Reading', paperCount: 3 }];
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({ exists: () => true, data: () => ({ pinnedLists: pins }) }),
+  });
+  await setPinnedListsVisible(true, api);
+
+  assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1', 'db/users/user-1/profileStash/pinnedLists']);
+  assert.deepEqual(calls[0][2].pinnedLists, pins);
+  assert.equal(calls[0][2].showPinnedLists, true);
+  assert.deepEqual(calls[1][2].pinnedLists, [], 'the stash is emptied, not left duplicated');
+});
+
+test('an empty pin list and hidden pins are different states', () => {
+  // Without the flag they would be identical on reload, and the switch would
+  // appear to forget what the user set.
+  assert.equal(pinnedListsAreVisible({ pinnedLists: [] }), true);
+  assert.equal(pinnedListsAreVisible({ pinnedLists: [], showPinnedLists: false }), false);
+  assert.equal(pinnedListsAreVisible({ showPinnedLists: true }), true);
 });
