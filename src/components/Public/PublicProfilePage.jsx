@@ -278,18 +278,27 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     ));
     if (missing.length === 0) return undefined;
     missing.forEach(id => requestedLikedIds.current.add(id));
-    let active = true;
+    // `requestedLikedIds` never forgets an id, so a response has to land in
+    // state no matter what tab is active by then — a cancel-on-cleanup here
+    // turns "switched tabs during the fetch" into rows that stay untitled for
+    // the life of the page, with no retry. `likedExtra` is a cache keyed by
+    // id, so a late merge is idempotent and unmount makes setState a no-op.
     fetchLibraryRecords(user.uid, missing)
       .then(records => {
-        if (!active || records.length === 0) return;
+        if (records.length === 0) return;
         setLikedExtra(current => {
           const next = { ...current };
           records.forEach(({ id, data }) => { next[id] = data; });
           return next;
         });
       })
-      .catch(error => console.error('Error loading liked paper titles:', error));
-    return () => { active = false; };
+      .catch(error => {
+        // A failed batch must become retryable, or a transient error leaves
+        // the same permanent blanks the cancel did.
+        missing.forEach(id => requestedLikedIds.current.delete(id));
+        console.error('Error loading liked paper titles:', error);
+      });
+    return undefined;
   }, [view.isOwner, activeTab, likedOrder, personalLibrary, likedExtra, user?.uid]);
 
   const likedRows = useMemo(() => likedOrder.map(id => {
