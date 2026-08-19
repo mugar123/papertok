@@ -1553,6 +1553,32 @@ function formatOpenAlexWorkAsPaper(work) {
   });
 }
 
+/**
+ * One work fetched from OpenAlex by its arXiv id, as a full paper — abstract
+ * included, which the enrichment path deliberately leaves out. This is the
+ * public paper page's fallback when arXiv itself refuses to answer: arXiv
+ * rate-limits by IP in bursts, while OpenAlex indexes the same preprints.
+ */
+export async function fetchPaperByArxivIdViaOpenAlex(arxivId, { timeoutMs = 8000 } = {}) {
+  const clean = String(arxivId || '').replace(/^arxiv:/i, '').replace(/v\d+$/i, '').trim();
+  if (!clean) return null;
+  // Same landing-page filter the enrichment batch uses: OpenAlex has no
+  // first-class arXiv id field.
+  const filter = `locations.landing_page_url:${encodeURIComponent(
+    `http://arxiv.org/abs/${clean}|https://arxiv.org/abs/${clean}`,
+  )}`;
+  try {
+    const response = await fetchWithTimeout(`https://api.openalex.org/works?filter=${filter}&per_page=1`, timeoutMs);
+    if (!response?.ok) return null;
+    const data = await response.json();
+    const work = data?.results?.[0];
+    return work ? formatOpenAlexWorkAsPaper(work) : null;
+  } catch (error) {
+    console.warn('OpenAlex arXiv fallback failed', error);
+    return null;
+  }
+}
+
 export async function getTrendingPapers() {
   const cacheKey = 'trending_papers_v2';
   const cached = CACHE.get(cacheKey);

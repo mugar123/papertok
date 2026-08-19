@@ -367,6 +367,69 @@ service cloud.firestore {
         || isAdmin();
     }
 
+    // ---------------------------------------------------------------------
+    // User follows (F2). Additive: nothing above this line changes.
+    // ---------------------------------------------------------------------
+    //
+    // One document per edge, `follows/{followerUid}_{targetUid}`. The composite
+    // id is the whole design: an edge cannot be duplicated (the second create
+    // hits an existing document), unfollowing is a delete by id with no query,
+    // and "does A follow B" is a single get rather than a search.
+    //
+    // Deliberately NOT `users/{uid}/following`: that subcollection is private,
+    // owner-only, and models external entities (authors, topics) for the feed.
+    // Follower lists have to be readable by other people, which a private
+    // subcollection cannot offer without breaking its current contract.
+
+    // A uid that cannot contain the separator, so `{follower}_{target}` maps
+    // back to exactly one pair. Firebase Auth mints 28-character alphanumeric
+    // uids, so this rejects nothing real; without it an account whose uid ended
+    // in `_x` could squat the document another pair needs and permanently block
+    // that follow.
+    function validFollowUid(uid) {
+      return uid is string && uid.matches('^[A-Za-z0-9-]{1,128}$');
+    }
+
+    function validFollowEdge(edgeId) {
+      // `hasAll` is the house shape (02-SECURITY.md) but it is belt-and-braces
+      // here, and the mutation pass says so: deleting it changes no outcome,
+      // because every required key is dereferenced below and a missing key
+      // denies the write on its own. Kept for the shape, not load-bearing.
+      return request.resource.data.keys().hasOnly(['followerUid', 'targetUid', 'createdAt'])
+        && request.resource.data.keys().hasAll(['followerUid', 'targetUid', 'createdAt'])
+        && validFollowUid(request.resource.data.followerUid)
+        && validFollowUid(request.resource.data.targetUid)
+        // The follower is the caller, and the id agrees with the body: the id
+        // is what makes the edge idempotent, so the two must not diverge.
+        && request.resource.data.followerUid == request.auth.uid
+        && edgeId == request.resource.data.followerUid + '_' + request.resource.data.targetUid
+        // Following yourself would be a free +1 on your own follower count.
+        && request.resource.data.targetUid != request.auth.uid
+        // Only accounts with a public profile can be followed. There is no page
+        // to follow otherwise, and it keeps the graph from filling with edges
+        // pointing at uids that were never users.
+        && exists(/databases/$(database)/documents/userProfiles/$(request.resource.data.targetUid))
+        && request.resource.data.createdAt == request.time;
+    }
+
+    match /follows/{edgeId} {
+      // Both directions are public: a follower list is a public fact about a
+      // public profile, and "do I follow this person" has to answer for the
+      // signed-in visitor. Unlike userProfiles, `list` stays open — paging the
+      // follower list IS the feature — but every query must carry a ceiling,
+      // so no caller can ask for the whole graph on this project's bill.
+      allow get: if true;
+      allow list: if request.query.limit <= 1000;
+      // The `!= null` is the same belt-and-braces as `hasAll`: a signed-out
+      // caller already dies on `request.auth.uid` inside validFollowEdge.
+      allow create: if request.auth != null && validFollowEdge(edgeId);
+      // An edge has no mutable state. Re-following is a create against a
+      // document that already exists, which Firestore refuses on its own.
+      allow update: if false;
+      allow delete: if request.auth != null
+        && resource.data.followerUid == request.auth.uid;
+    }
+
     match /users/{userId} {
       allow read, delete: if ownsUserTree(userId);
       allow create, update: if ownsUserTree(userId)

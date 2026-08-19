@@ -16,9 +16,10 @@ import { readFile } from 'node:fs/promises';
 const OWNED = [
   '../Profile/ProfilePage.css',
   '../Public/PublicProfilePage.css',
+  '../Public/FollowSheet.css',
 ];
 
-test('every design token used by the F1 screens is actually defined', async () => {
+test('every design token used by the profile screens is actually defined', async () => {
   const variables = await readFile(new URL('../../styles/variables.css', import.meta.url), 'utf8');
   const defined = new Set(
     (variables.match(/^\s*(--[a-z0-9-]+)\s*:/gim) || [])

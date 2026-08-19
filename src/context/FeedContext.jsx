@@ -1871,6 +1871,15 @@ export function FeedProvider({ children }) {
     }
   }, [recordProfileEvent, user]);
 
+  // The curated interaction ids, most recent first, exactly as the aggregate
+  // holds them. `likedPaperIds` and friends are the same ids re-sorted for the
+  // screens that predate the aggregate; the profile page wants recency. Pure
+  // in-memory access — never a Firestore read.
+  const getCuratedInteractionIds = useCallback(
+    (name) => curatedIds(interactionProfile.current, name),
+    [],
+  );
+
   const getRecommendationProfileSnapshot = useCallback(() => ({
     userId: user?.uid || null,
     ready: recommendationProfileReady,
@@ -1889,7 +1898,7 @@ export function FeedProvider({ children }) {
   const value = {
     papers, loading, error, hasMore, isRefreshing,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
-    ensurePersonalLibrary,
+    ensurePersonalLibrary, getCuratedInteractionIds,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,

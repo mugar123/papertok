@@ -988,34 +988,76 @@ const PaperCard = memo(function PaperCard({
           </p>
         </div>
 
-        {researchResources.length > 0 && (
-          <div className="pc-linked-resources" aria-label={isEnglish ? 'Associated research resources' : 'Recursos de investigación asociados'}>
-            <span className="pc-linked-resources-label"><Database size={14} /> {isEnglish ? 'Resources' : 'Recursos'}</span>
-            <div className="pc-linked-resources-list">
-              {researchResources.map(resource => {
-                const config = RESOURCE_KIND_CONFIG[resource.kind] || RESOURCE_KIND_CONFIG.material;
-                const ResourceIcon = config.Icon;
-                const resourceLabel = config.label[language];
-                return (
-                  <a
-                    key={resource.id}
-                    className={`pc-linked-resource pc-linked-resource--${resource.kind}`}
-                    href={safeExternalUrl(resource.url) || undefined}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    onClick={(event) => event.stopPropagation()}
-                    title={resource.title}
-                    aria-label={`${resourceLabel}: ${resource.title}`}
-                  >
-                    <ResourceIcon size={13} />
-                    <span>{resourceLabel}</span>
-                    <ExternalLink size={11} />
-                  </a>
-                );
-              })}
-            </div>
-          </div>
-        )}
+        <AnimatePresence initial={false}>
+          {researchResources.length > 0 && (
+            <motion.div
+              key={`linked-resources-${paperViewKey}`}
+              className="pc-linked-resources-slot"
+              initial={prefersReducedMotion
+                ? { opacity: 0 }
+                : { gridTemplateRows: '0fr', opacity: 0 }}
+              animate={{ gridTemplateRows: '1fr', opacity: 1 }}
+              exit={prefersReducedMotion
+                ? { opacity: 0 }
+                : { gridTemplateRows: '0fr', opacity: 0 }}
+              transition={prefersReducedMotion
+                ? { duration: 0.12 }
+                : {
+                    gridTemplateRows: { duration: 0.62, ease: [0.22, 1, 0.36, 1] },
+                    opacity: { duration: 0.32, delay: 0.06, ease: 'easeOut' },
+                  }}
+            >
+              <div className="pc-linked-resources-slot-inner">
+                <motion.div
+                  className="pc-linked-resources-motion"
+                  initial={prefersReducedMotion
+                    ? false
+                    : { opacity: 0, y: 5, scale: 0.985 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={prefersReducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, y: 3, scale: 0.99 }}
+                  transition={prefersReducedMotion
+                    ? { duration: 0.12 }
+                    : { duration: 0.46, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <div className="pc-linked-resources" aria-label={isEnglish ? 'Associated research resources' : 'Recursos de investigación asociados'}>
+                    <span className="pc-linked-resources-label"><Database size={14} /> {isEnglish ? 'Resources' : 'Recursos'}</span>
+                    <div className="pc-linked-resources-list">
+                      {researchResources.map((resource, index) => {
+                        const config = RESOURCE_KIND_CONFIG[resource.kind] || RESOURCE_KIND_CONFIG.material;
+                        const ResourceIcon = config.Icon;
+                        const resourceLabel = config.label[language];
+                        const resourceKey = resource.id || `${resource.kind}:${resource.url || resource.title}`;
+                        return (
+                          <motion.a
+                            key={resourceKey}
+                            className={`pc-linked-resource pc-linked-resource--${resource.kind}`}
+                            href={safeExternalUrl(resource.url) || undefined}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(event) => event.stopPropagation()}
+                            title={resource.title}
+                            aria-label={`${resourceLabel}: ${resource.title}`}
+                            initial={prefersReducedMotion ? false : { opacity: 0, y: 3 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={prefersReducedMotion
+                              ? { duration: 0.12 }
+                              : { duration: 0.26, delay: 0.2 + Math.min(index, 4) * 0.045, ease: [0.16, 1, 0.3, 1] }}
+                          >
+                            <ResourceIcon size={13} />
+                            <span>{resourceLabel}</span>
+                            <ExternalLink size={11} />
+                          </motion.a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </motion.div>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         <div className="pc-action-bar">
           <button 

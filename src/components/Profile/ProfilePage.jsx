@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import {
-  ArrowLeft, Check, ExternalLink, ImagePlus, Loader2, Pin, PinOff, Trash2,
+  ArrowLeft, Check, ExternalLink, Loader2, Pin, PinOff, ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
@@ -10,15 +10,17 @@ import {
   USER_PROFILE_LIMITS,
   changeUserHandle,
   createUserProfile,
+  deleteOwnUserProfile,
   partitionStalePins,
   pinListEntry,
+  publicAvatarFrom,
   readOwnUserProfile,
   readPinnableLists,
   savePinnedLists,
+  savePublicProfilePhoto,
   unpinListEntry,
   updateUserProfile,
 } from '../../services/userProfileService.js';
-import { PUBLIC_AVATAR_PRESET, prepareProfileImage } from '../../utils/profileImage.js';
 import { getIcon } from '../../utils/icons.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { HANDLE_ERRORS, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
@@ -44,8 +46,14 @@ const HANDLE_ERROR_COPY = {
 };
 
 /**
- * The owner's view of their public profile: create it, edit it, and choose
- * which published lists appear on it.
+ * The owner's view of their public profile: create it, edit it, decide what it
+ * shows, and unpublish it.
+ *
+ * Privacy here is subtractive, not additive: the public document only ever
+ * carries what this screen writes, so "choose what is public" means choosing
+ * what gets written — the photo toggle controls whether the `photo` field
+ * exists at all, and unpublishing deletes the document plus its handle in one
+ * batch. Nothing needs new rules, because nothing new becomes readable.
  *
  * Pinning happens here rather than on the lists screen because attribution is
  * opt-in: a public list stays anonymous until its owner decides, from their own
@@ -53,9 +61,9 @@ const HANDLE_ERROR_COPY = {
  */
 export default function ProfilePage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const location = useLocation();
+  const { user, profilePhoto } = useAuth();
   const { isEnglish } = useLanguage();
-  const fileInputRef = useRef(null);
 
   const [profile, setProfile] = useState(null);
   const [pinnableLists, setPinnableLists] = useState([]);
@@ -63,29 +71,38 @@ export default function ProfilePage() {
   const [handleDraft, setHandleDraft] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
-  const [photo, setPhoto] = useState('');
   const [allowContact, setAllowContact] = useState(false);
+  const [showPhoto, setShowPhoto] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [feedback, setFeedback] = useState(null);
 
   const copy = isEnglish ? {
-    back: 'Back to settings',
+    back: 'Back',
     title: 'Public profile',
     createIntro: 'Pick a handle and your profile becomes visible at its own public link.',
-    editIntro: 'Anything here is public. Your reading history and notes are not.',
+    editIntro: 'This screen decides everything your public page shows.',
+    sectionIdentity: 'Public identity',
     handle: 'Handle',
     handleHint: 'Lowercase letters, numbers and underscores.',
     displayName: 'Display name',
     bio: 'Bio',
-    photo: 'Photo',
-    choosePhoto: 'Choose photo',
-    removePhoto: 'Remove photo',
+    photoMirror: 'Your profile picture is the one from your account.',
+    photoMirrorAction: 'Change it in Settings',
+    sectionPrivacy: 'Privacy',
+    privacyIntro: 'What anyone with your public link can see.',
+    publicNow: 'Public on your page',
+    publicItems: ['Handle and display name', 'Bio', 'Account photo (only if enabled below)', 'Pinned lists'],
+    neverPublic: 'Never public',
+    neverItems: ['Email address', 'Saved papers and likes', 'Reading history', 'Unpublished lists', 'Who and what you follow'],
+    showPhoto: 'Show my account photo',
+    showPhotoHint: 'Off: your page shows your initial instead of the picture.',
     allowContact: 'Let other users contact me',
+    allowContactHint: 'Your email is never shown or shared either way.',
     create: 'Create my profile',
     save: 'Save changes',
     saving: 'Saving...',
     saved: 'Saved',
-    changeHandle: 'Change handle',
     pinned: 'Lists on my profile',
     pinnedHint: 'Only lists you have already published can be pinned. Pinning is what puts your name on a list.',
     noLists: 'You have not published any lists yet.',
@@ -101,24 +118,38 @@ export default function ProfilePage() {
     staleTitle: 'Some pinned lists are no longer published',
     staleBody: 'They cannot stay on your profile. Remove them to save any other change.',
     staleAction: 'Remove them',
+    sectionDanger: 'Unpublish',
+    unpublishTitle: 'Unpublish my profile',
+    unpublishBody: handle => `Deletes your public page and frees @${handle}. Published lists stay published but stop carrying your name. You can create a profile again whenever you want.`,
+    unpublishAction: 'Unpublish profile',
+    unpublishConfirm: handle => `Unpublish your public profile? Your page will stop existing and @${handle} becomes available to anyone.`,
+    unpublished: 'Profile unpublished.',
   } : {
-    back: 'Volver a ajustes',
+    back: 'Volver',
     title: 'Perfil público',
     createIntro: 'Elige un handle y tu perfil pasa a ser visible en su propio enlace público.',
-    editIntro: 'Todo lo de aquí es público. Tu historial de lectura y tus notas no lo son.',
+    editIntro: 'Esta pantalla decide todo lo que muestra tu página pública.',
+    sectionIdentity: 'Identidad pública',
     handle: 'Handle',
     handleHint: 'Minúsculas, números y guiones bajos.',
     displayName: 'Nombre visible',
     bio: 'Biografía',
-    photo: 'Foto',
-    choosePhoto: 'Elegir foto',
-    removePhoto: 'Quitar foto',
+    photoMirror: 'Tu foto de perfil es la de tu cuenta.',
+    photoMirrorAction: 'Cámbiala en Ajustes',
+    sectionPrivacy: 'Privacidad',
+    privacyIntro: 'Lo que puede ver cualquiera con tu enlace público.',
+    publicNow: 'Público en tu página',
+    publicItems: ['Handle y nombre visible', 'Biografía', 'Foto de cuenta (solo si la activas abajo)', 'Listas fijadas'],
+    neverPublic: 'Nunca es público',
+    neverItems: ['Tu correo', 'Guardados y me gusta', 'Historial de lectura', 'Listas sin publicar', 'A quién y qué sigues'],
+    showPhoto: 'Mostrar mi foto de cuenta',
+    showPhotoHint: 'Apagado: tu página muestra tu inicial en lugar de la foto.',
     allowContact: 'Permitir que otros usuarios me contacten',
+    allowContactHint: 'Tu correo no se muestra ni se comparte en ningún caso.',
     create: 'Crear mi perfil',
     save: 'Guardar cambios',
     saving: 'Guardando...',
     saved: 'Guardado',
-    changeHandle: 'Cambiar handle',
     pinned: 'Listas en mi perfil',
     pinnedHint: 'Solo puedes fijar listas que ya hayas publicado. Fijar una lista es lo que le pone tu nombre.',
     noLists: 'Todavía no has publicado ninguna lista.',
@@ -134,6 +165,12 @@ export default function ProfilePage() {
     staleTitle: 'Algunas listas fijadas ya no están publicadas',
     staleBody: 'No pueden seguir en tu perfil. Quítalas para poder guardar cualquier otro cambio.',
     staleAction: 'Quitarlas',
+    sectionDanger: 'Despublicar',
+    unpublishTitle: 'Despublicar mi perfil',
+    unpublishBody: handle => `Borra tu página pública y libera @${handle}. Las listas publicadas siguen publicadas, pero dejan de llevar tu nombre. Puedes volver a crear el perfil cuando quieras.`,
+    unpublishAction: 'Despublicar perfil',
+    unpublishConfirm: handle => `¿Despublicar tu perfil público? Tu página dejará de existir y @${handle} quedará libre para cualquiera.`,
+    unpublished: 'Perfil despublicado.',
   };
 
   useEffect(() => {
@@ -146,8 +183,9 @@ export default function ProfilePage() {
         setPinnableLists(lists);
         setDisplayName(ownProfile?.displayName || user.displayName || '');
         setBio(ownProfile?.bio || '');
-        setPhoto(ownProfile?.photo || '');
         setAllowContact(ownProfile?.allowContact === true);
+        // The toggle reflects reality: public photo = the field exists.
+        setShowPhoto(ownProfile ? Boolean(ownProfile.photo) : true);
         setHandleDraft(ownProfile?.handle || '');
         setStatus(ownProfile ? 'ready' : 'new');
       })
@@ -173,6 +211,20 @@ export default function ProfilePage() {
     [pinnableLists, profile],
   );
   const publicPath = profile ? getPublicProfilePath(profile.handle) : null;
+  // Whatever the rest of the app shows, bounded to what the public document
+  // may carry. Saving the profile is what mirrors it across.
+  const appAvatar = useMemo(
+    () => publicAvatarFrom(profilePhoto, user?.photoURL),
+    [profilePhoto, user?.photoURL],
+  );
+
+  // The editor is reachable from the profile page and from Settings; going
+  // "back" means the one the visitor actually came from. The fallback covers
+  // a direct URL load, where there is no in-app history to return to.
+  const goBack = () => {
+    if (location.key !== 'default') navigate(-1);
+    else navigate('/profile');
+  };
 
   const reportError = useCallback((error) => {
     console.error('Profile write failed:', error);
@@ -182,22 +234,9 @@ export default function ProfilePage() {
     });
   }, [copy.genericError, copy.handleTaken]);
 
-  const onPickPhoto = async (event) => {
-    const file = event.target.files?.[0];
-    event.target.value = '';
-    if (!file) return;
-    try {
-      // Recompressed against the public budget, not the private one.
-      setPhoto(await prepareProfileImage(file, PUBLIC_AVATAR_PRESET));
-      setFeedback(null);
-    } catch (error) {
-      setFeedback({ state: 'error', message: error?.message || copy.genericError });
-    }
-  };
-
   const onSubmit = async (event) => {
     event.preventDefault();
-    if (saving) return;
+    if (saving || deleting) return;
     if (!displayName.trim()) {
       setFeedback({ state: 'error', message: copy.nameRequired });
       return;
@@ -210,7 +249,13 @@ export default function ProfilePage() {
     setSaving(true);
     setFeedback(null);
     try {
-      const payload = { displayName, bio, photo, allowContact, pinnedLists: profile?.pinnedLists };
+      const payload = {
+        displayName,
+        bio,
+        allowContact,
+        photo: showPhoto ? appAvatar : '',
+        pinnedLists: profile?.pinnedLists,
+      };
       if (!profile) {
         const created = await createUserProfile({ ...payload, handle: handleCheck.handle });
         setProfile({ ...created, pinnedLists: created.pinnedLists || [] });
@@ -220,7 +265,18 @@ export default function ProfilePage() {
           await changeUserHandle(handleCheck.handle, profile.handle);
         }
         const updated = await updateUserProfile(payload);
-        setProfile(current => ({ ...current, ...updated, handle: handleCheck.handle }));
+        // Sanitization drops an empty photo from the update payload, which
+        // leaves an already-stored one in place — removing it is an explicit
+        // field delete.
+        if (!showPhoto && profile.photo) {
+          await savePublicProfilePhoto(null);
+        }
+        setProfile(current => ({
+          ...current,
+          ...updated,
+          handle: handleCheck.handle,
+          ...(showPhoto ? {} : { photo: undefined }),
+        }));
       }
       setFeedback({ state: 'saved', message: copy.saved });
     } catch (error) {
@@ -277,6 +333,27 @@ export default function ProfilePage() {
     }
   };
 
+  const unpublishProfile = async () => {
+    if (!profile || saving || deleting) return;
+    // Same convention as unpublishing a list: environments without confirm()
+    // proceed, an explicit cancel stops.
+    const confirmed = globalThis.confirm?.(copy.unpublishConfirm(profile.handle));
+    if (confirmed === false) return;
+    setDeleting(true);
+    setFeedback(null);
+    try {
+      await deleteOwnUserProfile();
+      setProfile(null);
+      setStatus('new');
+      setShowPhoto(true);
+      setFeedback({ state: 'saved', message: copy.unpublished });
+    } catch (error) {
+      reportError(error);
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   if (!user) return null;
   if (status === 'loading') {
     return (
@@ -292,7 +369,7 @@ export default function ProfilePage() {
     <main className="profile-page">
       <div className="profile-shell">
         <header className="profile-heading">
-          <button type="button" className="profile-back" onClick={() => navigate('/settings')}>
+          <button type="button" className="profile-back" onClick={goBack}>
             <ArrowLeft size={18} /> {copy.back}
           </button>
           <h1>{copy.title}</h1>
@@ -320,82 +397,119 @@ export default function ProfilePage() {
         )}
 
         <form className="profile-form" onSubmit={onSubmit}>
-          <div className="profile-field">
-            <label htmlFor="profile-handle">{copy.handle}</label>
-            <div className="profile-handle-input">
-              <span aria-hidden="true">@</span>
-              <input
-                id="profile-handle"
-                value={handleDraft}
-                onChange={event => setHandleDraft(event.target.value.toLowerCase())}
-                maxLength={HANDLE_MAX_LENGTH}
-                autoComplete="off"
-                spellCheck="false"
-                aria-describedby="profile-handle-hint"
-              />
-            </div>
-            <p id="profile-handle-hint" className={`profile-hint${handleError ? ' is-error' : ''}`}>
-              {handleError || copy.handleHint}
-            </p>
-          </div>
+          <section className="profile-section" aria-labelledby="profile-identity-title">
+            <h2 id="profile-identity-title">{copy.sectionIdentity}</h2>
 
-          <div className="profile-field">
-            <label htmlFor="profile-name">{copy.displayName}</label>
-            <input
-              id="profile-name"
-              value={displayName}
-              onChange={event => setDisplayName(event.target.value)}
-              maxLength={USER_PROFILE_LIMITS.displayName}
-            />
-          </div>
-
-          <div className="profile-field">
-            <label htmlFor="profile-bio">{copy.bio}</label>
-            <textarea
-              id="profile-bio"
-              value={bio}
-              rows={4}
-              onChange={event => setBio(event.target.value)}
-              maxLength={USER_PROFILE_LIMITS.bio}
-            />
-            <p className="profile-hint">{bio.length} / {USER_PROFILE_LIMITS.bio}</p>
-          </div>
-
-          <div className="profile-field">
-            <span className="profile-field-label">{copy.photo}</span>
-            <div className="profile-photo-row">
-              <div className="profile-photo-preview">
-                {photo ? <img src={photo} alt="" /> : <span aria-hidden="true" />}
+            <div className="profile-identity">
+              <div className="profile-identity-avatar">
+                {showPhoto && appAvatar
+                  ? <img src={appAvatar} alt="" referrerPolicy="no-referrer" />
+                  : <span>{(displayName || user.email || '?').trim().charAt(0).toUpperCase()}</span>}
               </div>
-              <button type="button" className="profile-secondary" onClick={() => fileInputRef.current?.click()}>
-                <ImagePlus size={16} /> {copy.choosePhoto}
-              </button>
-              {photo && (
-                <button type="button" className="profile-secondary" onClick={() => setPhoto('')}>
-                  <Trash2 size={16} /> {copy.removePhoto}
+              <p className="profile-identity-hint">
+                {copy.photoMirror}{' '}
+                <button type="button" className="profile-inline-link" onClick={() => navigate('/settings')}>
+                  {copy.photoMirrorAction}
                 </button>
-              )}
+              </p>
+            </div>
+
+            <div className="profile-field">
+              <label htmlFor="profile-handle">{copy.handle}</label>
+              <div className="profile-handle-input">
+                <span aria-hidden="true">@</span>
+                <input
+                  id="profile-handle"
+                  value={handleDraft}
+                  onChange={event => setHandleDraft(event.target.value.toLowerCase())}
+                  maxLength={HANDLE_MAX_LENGTH}
+                  autoComplete="off"
+                  spellCheck="false"
+                  aria-describedby="profile-handle-hint"
+                />
+              </div>
+              <p id="profile-handle-hint" className={`profile-hint${handleError ? ' is-error' : ''}`}>
+                {handleError || copy.handleHint}
+              </p>
+            </div>
+
+            <div className="profile-field">
+              <label htmlFor="profile-name">{copy.displayName}</label>
               <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/png,image/jpeg,image/webp"
-                hidden
-                onChange={onPickPhoto}
+                id="profile-name"
+                value={displayName}
+                onChange={event => setDisplayName(event.target.value)}
+                maxLength={USER_PROFILE_LIMITS.displayName}
               />
             </div>
-          </div>
 
-          <label className="profile-checkbox">
-            <input
-              type="checkbox"
-              checked={allowContact}
-              onChange={event => setAllowContact(event.target.checked)}
-            />
-            {copy.allowContact}
-          </label>
+            <div className="profile-field">
+              <label htmlFor="profile-bio">{copy.bio}</label>
+              <textarea
+                id="profile-bio"
+                value={bio}
+                rows={4}
+                onChange={event => setBio(event.target.value)}
+                maxLength={USER_PROFILE_LIMITS.bio}
+              />
+              <p className="profile-hint">{bio.length} / {USER_PROFILE_LIMITS.bio}</p>
+            </div>
+          </section>
+
+          <section className="profile-section" aria-labelledby="profile-privacy-title">
+            <h2 id="profile-privacy-title">{copy.sectionPrivacy}</h2>
+            <p className="profile-hint">{copy.privacyIntro}</p>
+
+            <div className="profile-privacy-summary">
+              <div className="profile-privacy-column">
+                <h3>{copy.publicNow}</h3>
+                <ul>
+                  {copy.publicItems.map(item => <li key={item}>{item}</li>)}
+                </ul>
+              </div>
+              <div className="profile-privacy-column is-private">
+                <h3><ShieldCheck size={14} aria-hidden="true" /> {copy.neverPublic}</h3>
+                <ul>
+                  {copy.neverItems.map(item => <li key={item}>{item}</li>)}
+                </ul>
+              </div>
+            </div>
+
+            <label className="profile-switch">
+              <span className="profile-switch-copy">
+                <span className="profile-switch-label">{copy.showPhoto}</span>
+                <span className="profile-switch-hint">{copy.showPhotoHint}</span>
+              </span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={showPhoto}
+                onChange={event => setShowPhoto(event.target.checked)}
+              />
+              <span className="profile-switch-track" aria-hidden="true">
+                <span className="profile-switch-thumb" />
+              </span>
+            </label>
+
+            <label className="profile-switch">
+              <span className="profile-switch-copy">
+                <span className="profile-switch-label">{copy.allowContact}</span>
+                <span className="profile-switch-hint">{copy.allowContactHint}</span>
+              </span>
+              <input
+                type="checkbox"
+                role="switch"
+                checked={allowContact}
+                onChange={event => setAllowContact(event.target.checked)}
+              />
+              <span className="profile-switch-track" aria-hidden="true">
+                <span className="profile-switch-thumb" />
+              </span>
+            </label>
+          </section>
 
           <div className="profile-actions">
-            <button type="submit" className="profile-primary" disabled={saving || !handleCheck.valid}>
+            <button type="submit" className="profile-primary" disabled={saving || deleting || !handleCheck.valid}>
               {saving ? copy.saving : (status === 'new' ? copy.create : copy.save)}
             </button>
             {feedback && (
@@ -407,7 +521,7 @@ export default function ProfilePage() {
         </form>
 
         {status === 'ready' && (
-          <section className="profile-pinned" aria-labelledby="profile-pinned-title">
+          <section className="profile-section profile-pinned" aria-labelledby="profile-pinned-title">
             <h2 id="profile-pinned-title">{copy.pinned}</h2>
             <p className="profile-hint">{copy.pinnedHint}</p>
             {pinnableLists.length === 0 ? (
@@ -441,6 +555,26 @@ export default function ProfilePage() {
                 })}
               </ul>
             )}
+          </section>
+        )}
+
+        {status === 'ready' && profile && (
+          <section className="profile-section profile-danger" aria-labelledby="profile-danger-title">
+            <h2 id="profile-danger-title">{copy.sectionDanger}</h2>
+            <div className="profile-danger-row">
+              <div>
+                <strong>{copy.unpublishTitle}</strong>
+                <p>{copy.unpublishBody(profile.handle)}</p>
+              </div>
+              <button
+                type="button"
+                className="profile-danger-button"
+                onClick={unpublishProfile}
+                disabled={saving || deleting}
+              >
+                {deleting ? copy.saving : copy.unpublishAction}
+              </button>
+            </div>
           </section>
         )}
       </div>

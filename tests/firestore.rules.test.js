@@ -22,11 +22,16 @@ import {
 import {
   deleteDoc,
   doc,
+  getCountFromServer,
   getDoc,
   getDocs,
   collection,
+  limit,
+  orderBy,
+  query,
   setDoc,
   updateDoc,
+  where,
   writeBatch,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -432,4 +437,246 @@ test('publicLists and publicListOwners are untouched by any of this', async () =
     ownerId: ALICE, listId: 'l2', createdAt: serverTimestamp(),
   }));
   await assertFails(getDoc(doc(asGuest(), 'publicListOwners', ALICE_SHARE)));
+});
+
+// =========================================================================
+// User follows (F2)
+//
+// The graph lives in `follows/{followerUid}_{targetUid}`, never in
+// `users/{uid}/following` — that subcollection is private and models authors
+// and topics for the feed. Everything below performs a real write or a real
+// query and asserts on what the rules engine decides.
+// =========================================================================
+
+const CAROL = 'carol-uid';
+const EDGE = (follower, target) => `${follower}_${target}`;
+
+/** Both accounts published, so each is followable, plus a clean graph. */
+async function resetFollows({ edges = [] } = {}) {
+  await testEnv.clearFirestore();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    for (const [uid, handle] of [[ALICE, 'alice'], [BOB, 'bob'], [CAROL, 'carol']]) {
+      await setDoc(doc(db, 'userProfiles', uid), {
+        handle, displayName: handle, pinnedLists: [],
+        createdAt: new Date(), updatedAt: new Date(),
+      });
+      await setDoc(doc(db, 'handles', handle), { uid, createdAt: new Date() });
+    }
+    for (const [follower, target] of edges) {
+      await setDoc(doc(db, 'follows', EDGE(follower, target)), {
+        followerUid: follower, targetUid: target, createdAt: new Date(),
+      });
+    }
+  });
+}
+
+function edgeBody(follower, target) {
+  return { followerUid: follower, targetUid: target, createdAt: serverTimestamp() };
+}
+
+/** What the profile page spends on a follower counter: one capped aggregation. */
+async function followerCount(database, uid) {
+  const snapshot = await getCountFromServer(query(
+    collection(database, 'follows'),
+    where('targetUid', '==', uid),
+    limit(1000),
+  ));
+  return snapshot.data().count;
+}
+
+async function followedCount(database, uid) {
+  const snapshot = await getCountFromServer(query(
+    collection(database, 'follows'),
+    where('followerUid', '==', uid),
+    limit(1000),
+  ));
+  return snapshot.data().count;
+}
+
+test('following a user writes one edge, and the counters see it', async () => {
+  await resetFollows();
+  await assertSucceeds(setDoc(doc(asAlice(), 'follows', EDGE(ALICE, BOB)), edgeBody(ALICE, BOB)));
+
+  assert.equal(await followerCount(asGuest(), BOB), 1);
+  assert.equal(await followedCount(asGuest(), ALICE), 1);
+  assert.equal(await followerCount(asGuest(), ALICE), 0, 'the edge points one way only');
+});
+
+test('an account cannot follow itself', async () => {
+  await resetFollows();
+  await assertFails(setDoc(doc(asAlice(), 'follows', EDGE(ALICE, ALICE)), edgeBody(ALICE, ALICE)));
+  assert.equal(await followerCount(asGuest(), ALICE), 0);
+});
+
+test('following twice leaves one edge and one follower', async () => {
+  await resetFollows();
+  const db = asAlice();
+  await assertSucceeds(setDoc(doc(db, 'follows', EDGE(ALICE, BOB)), edgeBody(ALICE, BOB)));
+  // An edge has no mutable state: the second write is an update, and there is
+  // no update rule. The count cannot drift because there is nowhere for a
+  // duplicate to be written — the id IS the pair.
+  await assertFails(setDoc(doc(db, 'follows', EDGE(ALICE, BOB)), edgeBody(ALICE, BOB)));
+
+  assert.equal(await followerCount(asGuest(), BOB), 1);
+  const page = await getDocs(query(
+    collection(asGuest(), 'follows'), where('targetUid', '==', BOB), limit(30),
+  ));
+  assert.equal(page.size, 1);
+});
+
+test('the counters add up across follow, unfollow and follow again', async () => {
+  await resetFollows();
+  const alice = asAlice();
+  const bob = asBob();
+
+  await assertSucceeds(setDoc(doc(alice, 'follows', EDGE(ALICE, CAROL)), edgeBody(ALICE, CAROL)));
+  await assertSucceeds(setDoc(doc(bob, 'follows', EDGE(BOB, CAROL)), edgeBody(BOB, CAROL)));
+  assert.equal(await followerCount(asGuest(), CAROL), 2);
+
+  await assertSucceeds(deleteDoc(doc(alice, 'follows', EDGE(ALICE, CAROL))));
+  assert.equal(await followerCount(asGuest(), CAROL), 1);
+  assert.equal(await followedCount(asGuest(), ALICE), 0);
+
+  await assertSucceeds(setDoc(doc(alice, 'follows', EDGE(ALICE, CAROL)), edgeBody(ALICE, CAROL)));
+  assert.equal(await followerCount(asGuest(), CAROL), 2);
+  assert.equal(await followedCount(asGuest(), ALICE), 1);
+});
+
+test('a user cannot create somebody else\'s follow', async () => {
+  await resetFollows();
+  const bob = asBob();
+  // Neither by writing Alice's id in the body...
+  await assertFails(setDoc(doc(bob, 'follows', EDGE(ALICE, CAROL)), edgeBody(ALICE, CAROL)));
+  // ...nor by parking his own body under her document id...
+  await assertFails(setDoc(doc(bob, 'follows', EDGE(ALICE, CAROL)), edgeBody(BOB, CAROL)));
+  // ...nor by keeping his own id and lying about the document it lives in.
+  await assertFails(setDoc(doc(bob, 'follows', EDGE(BOB, CAROL)), edgeBody(BOB, ALICE)));
+  assert.equal(await followerCount(asGuest(), CAROL), 0);
+});
+
+test('a user cannot delete somebody else\'s follow', async () => {
+  await resetFollows({ edges: [[ALICE, CAROL]] });
+  await assertFails(deleteDoc(doc(asBob(), 'follows', EDGE(ALICE, CAROL))));
+  await assertFails(deleteDoc(doc(asGuest(), 'follows', EDGE(ALICE, CAROL))));
+  assert.equal(await followerCount(asGuest(), CAROL), 1, 'the edge is still there');
+});
+
+test('an edge cannot be edited into a different edge', async () => {
+  await resetFollows({ edges: [[ALICE, BOB]] });
+  await assertFails(updateDoc(doc(asAlice(), 'follows', EDGE(ALICE, BOB)), { targetUid: CAROL }));
+  await assertFails(updateDoc(doc(asAlice(), 'follows', EDGE(ALICE, BOB)), { createdAt: new Date(0) }));
+});
+
+test('an edge carries three fields and a server timestamp, or it is refused', async () => {
+  await resetFollows();
+  const db = asAlice();
+  await assertFails(setDoc(doc(db, 'follows', EDGE(ALICE, BOB)), {
+    ...edgeBody(ALICE, BOB), displayName: 'Alice',
+  }));
+  await assertFails(setDoc(doc(db, 'follows', EDGE(ALICE, BOB)), {
+    followerUid: ALICE, targetUid: BOB, createdAt: new Date(2000, 0, 1),
+  }));
+  await assertFails(setDoc(doc(db, 'follows', EDGE(ALICE, BOB)), { followerUid: ALICE, targetUid: BOB }));
+});
+
+test('an account with no public profile cannot be followed', async () => {
+  await resetFollows();
+  const ghost = 'ghost-uid';
+  await assertFails(setDoc(doc(asAlice(), 'follows', EDGE(ALICE, ghost)), edgeBody(ALICE, ghost)));
+});
+
+test('nobody can inflate a follower counter on a profile document', async () => {
+  // The counters are aggregations over `follows`, so there is nothing to
+  // inflate — and `followerCount` stays frozen for clients (hardening B), which
+  // is what keeps the denormalized escalation path safe for later.
+  await resetFollows();
+  await assertFails(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    followerCount: 999999, updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(asBob(), 'userProfiles', ALICE), {
+    displayName: 'Not Alice', updatedAt: serverTimestamp(),
+  }));
+});
+
+test('the follower graph is public to read, one bounded page at a time', async () => {
+  await resetFollows({ edges: [[ALICE, CAROL], [BOB, CAROL]] });
+  const guest = asGuest();
+
+  await assertSucceeds(getDocs(query(
+    collection(guest, 'follows'), where('targetUid', '==', CAROL), orderBy('createdAt', 'desc'), limit(30),
+  )));
+  await assertSucceeds(getDoc(doc(guest, 'follows', EDGE(ALICE, CAROL))));
+});
+
+test('no caller can ask the graph for more than the page ceiling', async () => {
+  await resetFollows({ edges: [[ALICE, CAROL]] });
+  const guest = asGuest();
+  // The ceiling is the rule, not a client convention: a query with no limit,
+  // or one past the cap, is refused outright — including the aggregations the
+  // counters are built on.
+  await assertFails(getDocs(query(collection(guest, 'follows'), where('targetUid', '==', CAROL))));
+  await assertFails(getDocs(query(collection(guest, 'follows'), limit(1001))));
+  await assertFails(getCountFromServer(query(
+    collection(guest, 'follows'), where('targetUid', '==', CAROL),
+  )));
+  await assertSucceeds(getCountFromServer(query(
+    collection(guest, 'follows'), where('targetUid', '==', CAROL), limit(1000),
+  )));
+});
+
+test('COST: a feed load is still ONE document read, follows or no follows', async () => {
+  // A feed load reads exactly one document: the interaction aggregate. If this
+  // phase had broken that read, every load would fall back to the bounded
+  // rebuild — one read per interaction document, thousands of them.
+  await resetFollows({ edges: [[BOB, ALICE], [CAROL, ALICE], [ALICE, BOB]] });
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'users', ALICE, 'aggregates', 'interactions'), {
+      version: 1, updatedAt: new Date(), sourceDocCount: 3, payload: '{}',
+    });
+    for (const paperId of ['p1', 'p2', 'p3']) {
+      await setDoc(doc(db, 'users', ALICE, 'interactions', paperId), {
+        liked: true, updatedAt: new Date(),
+      });
+    }
+  });
+
+  const db = asAlice();
+  let documentsRead = 0;
+  const aggregate = await getDoc(doc(db, 'users', ALICE, 'aggregates', 'interactions'));
+  documentsRead += aggregate.exists() ? 1 : 0;
+
+  assert.equal(documentsRead, 1, 'the feed load must cost exactly one document');
+  assert.equal(aggregate.data().sourceDocCount, 3, 'and that document must be the usable one');
+
+  // The follows block grants nothing under users/, so it cannot have widened
+  // or narrowed what a feed load touches.
+  await assertFails(getDoc(doc(asBob(), 'users', ALICE, 'aggregates', 'interactions')));
+  await assertFails(getDocs(query(collection(asBob(), 'users', ALICE, 'interactions'), limit(10))));
+});
+
+test('a uid carrying the separator cannot squat an edge document', async () => {
+  // `{follower}_{target}` only reads back as one pair while no uid contains
+  // `_`. Firebase Auth mints alphanumeric uids, so this refuses nothing real —
+  // but without it the account `alice_uid` could occupy the document `alice`
+  // needs to follow `uid_bob`, and block that follow forever.
+  await resetFollows();
+  const odd = 'alice_uid';
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'userProfiles', odd), {
+      handle: 'odd', displayName: 'Odd', pinnedLists: [],
+      createdAt: new Date(), updatedAt: new Date(),
+    });
+  });
+  const db = testEnv.authenticatedContext(odd).firestore();
+  await assertFails(setDoc(doc(db, 'follows', EDGE(odd, BOB)), edgeBody(odd, BOB)));
+  await assertFails(setDoc(doc(asAlice(), 'follows', EDGE(ALICE, odd)), edgeBody(ALICE, odd)));
+});
+
+test('a signed-out visitor can read the graph but never write it', async () => {
+  await resetFollows({ edges: [[ALICE, BOB]] });
+  const guest = asGuest();
+  await assertFails(setDoc(doc(guest, 'follows', EDGE(ALICE, CAROL)), edgeBody(ALICE, CAROL)));
+  await assertFails(setDoc(doc(guest, 'follows', EDGE(CAROL, BOB)), edgeBody(CAROL, BOB)));
 });

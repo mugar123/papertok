@@ -9,8 +9,11 @@ import {
   UserProfileUnsupportedError,
   changeUserHandle,
   createUserProfile,
+  deleteOwnUserProfile,
   partitionStalePins,
   pinListEntry,
+  publicAvatarFrom,
+  readOwnLists,
   readPinnableLists,
   readUserProfile,
   readUserProfileByHandle,
@@ -18,6 +21,7 @@ import {
   sanitizePinnedLists,
   sanitizeUserProfile,
   savePinnedLists,
+  savePublicProfilePhoto,
   unpinListEntry,
   updateUserProfile,
 } from './userProfileService.js';
@@ -49,6 +53,7 @@ function fakeApi(overrides = {}) {
       currentUser: { uid: 'user-1' },
       document: (...parts) => parts.join('/'),
       batch: () => batch,
+      deleteValue: () => 'DELETE_FIELD',
       now: () => 'SERVER_TIME',
       getDocument: async () => ({ exists: () => false }),
       isDemo: false,
@@ -483,4 +488,167 @@ test('the pin ceiling matches the expression budget in the rules', () => {
 
 test('a pinned card cannot claim more papers than a public list can hold', () => {
   assert.equal(sanitizePinnedList({ shareId: SHARE_ID, title: 'x', paperCount: 500 }).paperCount, 12);
+});
+
+// --- the public avatar -----------------------------------------------------
+
+const GOOGLE_AVATAR = 'https://lh3.googleusercontent.com/a/ACg8ocLoyCJZgVTNsCm0=s96-c';
+const INLINE_AVATAR = `data:image/webp;base64,${'A'.repeat(64)}`;
+
+test('mirrors an allowlisted provider avatar URL, since it cannot be recompressed', () => {
+  // Google refuses CORS on these, so the browser cannot fetch one into a data
+  // URL. Storing the URL is the only way the public profile can show it.
+  assert.equal(publicAvatarFrom(null, GOOGLE_AVATAR), GOOGLE_AVATAR);
+  assert.equal(publicAvatarFrom('', 'https://lh6.googleusercontent.com/a/x'), 'https://lh6.googleusercontent.com/a/x');
+});
+
+test('an uploaded photo beats the provider one', () => {
+  assert.equal(publicAvatarFrom(INLINE_AVATAR, GOOGLE_AVATAR), INLINE_AVATAR);
+});
+
+test('refuses avatar URLs from anywhere but the allowlist', () => {
+  // Otherwise a profile owner could point their avatar at a URL they control
+  // and log the IP of everyone who opens their public page.
+  for (const url of [
+    'https://attacker.example/track.gif',
+    'https://evil.googleusercontent.com.attacker.example/x',
+    'http://lh3.googleusercontent.com/a/x',
+    'https://lh3.googleusercontent.com.attacker.example/x',
+    'javascript:alert(1)',
+    'data:text/html;base64,PHNjcmlwdD4=',
+  ]) {
+    assert.equal(publicAvatarFrom(null, url), '', `${url} must not be stored`);
+  }
+});
+
+test('an uploaded photo past the public budget is not mirrored', () => {
+  // The private copy may be up to 280 KB; the public document is read on every
+  // profile visit and must not carry it.
+  const huge = `data:image/png;base64,${'A'.repeat(USER_PROFILE_LIMITS.photo + 10)}`;
+  assert.equal(publicAvatarFrom(huge, null), '');
+  assert.equal(publicAvatarFrom(huge, GOOGLE_AVATAR), GOOGLE_AVATAR, 'falls back rather than storing nothing');
+});
+
+test('mirroring the avatar writes one field and only when a profile exists', async () => {
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({ exists: () => true, id: 'user-1', data: () => ({ handle: 'ada' }) }),
+  });
+  await savePublicProfilePhoto(GOOGLE_AVATAR, api);
+  assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1']);
+  assert.deepEqual(Object.keys(calls[0][2]).sort(), ['photo', 'updatedAt']);
+  assert.equal(calls[0][2].photo, GOOGLE_AVATAR);
+});
+
+test('clearing the avatar removes the field rather than storing an empty string', async () => {
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({ exists: () => true, id: 'user-1', data: () => ({ handle: 'ada' }) }),
+  });
+  await savePublicProfilePhoto(null, api);
+  assert.equal(calls[0][2].photo, 'DELETE_FIELD');
+});
+
+test('changing a photo never creates a public profile', async () => {
+  // Someone who has not opted into a public profile must not get one just by
+  // picking an avatar in the general settings screen.
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({ exists: () => false }),
+  });
+  assert.equal(await savePublicProfilePhoto(GOOGLE_AVATAR, api), null);
+  assert.deepEqual(calls, []);
+});
+
+// --- unpublishing the profile ------------------------------------------------
+
+test('deleting the profile frees the handle in the same batch', async () => {
+  // The rules refuse a profile delete that leaves the reservation behind
+  // (hardening C), so both documents must fall together or the write bounces.
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({ exists: () => true, id: 'user-1', data: () => ({ handle: 'ada' }) }),
+  });
+  assert.equal(await deleteOwnUserProfile(api), true);
+  const deletes = calls.filter(([kind]) => kind === 'delete').map(([, reference]) => reference);
+  assert.deepEqual(deletes.sort(), ['db/handles/ada', 'db/userProfiles/user-1']);
+  assert.deepEqual(calls.at(-1), ['commit'], 'both deletes ride one batch');
+});
+
+test('deleting without a profile is a no-op, not an error', async () => {
+  const { api, calls } = fakeApi({ getDocument: async () => ({ exists: () => false }) });
+  assert.equal(await deleteOwnUserProfile(api), false);
+  assert.deepEqual(calls, []);
+});
+
+test('unpublishing refuses demo mode like every other profile write', async () => {
+  const demo = fakeApi({ isDemo: true });
+  await assert.rejects(deleteOwnUserProfile(demo.api), UserProfileUnsupportedError);
+});
+
+// --- the owner's own list page ---------------------------------------------
+
+test('readOwnLists keeps every list and marks only the published ones', async () => {
+  const { api } = fakeApi({
+    ownLists: async () => [
+      { id: 'a', name: 'Private notes', paperIds: ['x'], createdAt: '2026-08-01T00:00:00Z' },
+      { id: 'b', name: 'Shared reading', paperIds: ['x', 'y'], publicShareId: SHARE_ID, createdAt: '2026-08-02T00:00:00Z' },
+    ],
+  });
+  const lists = await readOwnLists(api);
+  assert.deepEqual(lists.map(list => [list.id, list.isPublished]), [['b', true], ['a', false]]);
+  assert.equal(lists[0].paperCount, 2);
+});
+
+test('readOwnLists asks for one bounded page and clamps whatever comes back', async () => {
+  let requestedPageSize = null;
+  const { api } = fakeApi({
+    ownLists: async (database, uid, pageSize) => {
+      requestedPageSize = pageSize;
+      assert.equal(uid, 'user-1');
+      return Array.from({ length: PINNABLE_LISTS_PAGE_SIZE + 20 }, (unused, index) => ({
+        id: `l${index}`,
+        name: `List ${index}`,
+        paperIds: [],
+      }));
+    },
+  });
+  const lists = await readOwnLists(api);
+  assert.equal(requestedPageSize, PINNABLE_LISTS_PAGE_SIZE);
+  assert.equal(lists.length, PINNABLE_LISTS_PAGE_SIZE, 'an over-long page must be clamped');
+});
+
+test('readOwnLists orders newest first and survives lists without createdAt', async () => {
+  const { api } = fakeApi({
+    ownLists: async () => [
+      { id: 'old', name: 'Old', paperIds: [], createdAt: '2026-01-01T00:00:00Z' },
+      { id: 'undated-b', name: 'Beta', paperIds: [] },
+      { id: 'new', name: 'New', paperIds: [], createdAt: { toMillis: () => 1767225600000 } },
+      { id: 'undated-a', name: 'Alpha', paperIds: [] },
+    ],
+  });
+  // Dated ones first (newest on top); undated sink to the bottom alphabetically
+  // instead of disappearing, which is what an orderBy would have done to them.
+  assert.deepEqual((await readOwnLists(api)).map(list => list.id), [
+    'new', 'old', 'undated-a', 'undated-b',
+  ]);
+});
+
+test('readOwnLists drops garbage rows rather than rendering them', async () => {
+  const { api } = fakeApi({
+    ownLists: async () => [
+      { id: 'ok', name: 'Fine', paperIds: ['x'] },
+      { id: '', name: 'No id', paperIds: [] },
+      { id: 'no-name', name: '', paperIds: [] },
+      { id: 'weird', name: 'Weird fields', paperIds: 'not-an-array', publicShareId: 12345 },
+    ],
+  });
+  const lists = await readOwnLists(api);
+  assert.deepEqual(lists.map(list => list.id).sort(), ['ok', 'weird']);
+  const weird = lists.find(list => list.id === 'weird');
+  assert.equal(weird.paperCount, 0);
+  assert.equal(weird.isPublished, false, 'a non-string shareId is not a publication');
+});
+
+test('readOwnLists refuses demo mode and signed-out callers like the rest of the service', async () => {
+  const demo = fakeApi({ isDemo: true, ownLists: async () => [] });
+  await assert.rejects(readOwnLists(demo.api), UserProfileUnsupportedError);
+  const signedOut = fakeApi({ currentUser: null, ownLists: async () => [] });
+  await assert.rejects(readOwnLists(signedOut.api), /Authentication is required/);
 });

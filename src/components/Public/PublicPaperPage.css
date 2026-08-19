@@ -13,6 +13,16 @@
   height: 100%;
 }
 
+/* Covers the card's box exactly and sits above it, so the card can take its
+   time appearing underneath without any of that showing as empty screen.
+   Below the nav chrome, which stays usable throughout. */
+.public-paper-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 800;
+  pointer-events: none;
+}
+
 .public-paper-nav {
   position: fixed;
   z-index: 900;
@@ -56,6 +66,37 @@
   color: #a78bfa;
 }
 
+/* Signed-in view: the app navbar owns the top, so the page keeps only this
+   floating way back, tucked under it on the left. */
+.public-paper-back-floating {
+  position: fixed;
+  z-index: 900;
+  top: calc(var(--nav-height) + 12px);
+  left: max(12px, env(safe-area-inset-left));
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 999px;
+  background: rgba(17, 15, 31, 0.82);
+  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.26);
+  backdrop-filter: blur(18px);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.public-paper-back-floating:hover,
+.public-paper-back-floating:focus-visible {
+  color: var(--text-primary);
+}
+
+@media (max-width: 560px) {
+  .public-paper-back-floating {
+    top: calc(var(--nav-height-mobile) + 12px);
+  }
+}
+
 .public-paper-state {
   display: flex;
   width: min(520px, calc(100% - 40px));
@@ -82,11 +123,6 @@
   margin: 0;
   color: var(--text-secondary);
   line-height: 1.6;
-}
-
-.public-paper-spinner {
-  color: #a78bfa;
-  animation: public-paper-spin 0.9s linear infinite;
 }
 
 .public-paper-state-actions {
@@ -133,12 +169,3 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .public-paper-spinner {
-    animation: none;
-  }
-}
-
-@keyframes public-paper-spin {
-  to { transform: rotate(360deg); }
-}

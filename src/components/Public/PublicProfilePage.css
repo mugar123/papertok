@@ -6,9 +6,22 @@
 }
 
 .public-profile-shell {
+  position: relative;
   max-width: 760px;
   margin: 0 auto;
   padding: clamp(24px, 5vw, 56px) clamp(20px, 5vw, 40px) 64px;
+}
+
+/* /profile renders inside the app, under the fixed navbar; the public URL
+   keeps its own breathing room instead. */
+.public-profile-page--app .public-profile-shell {
+  padding-top: calc(var(--nav-height) + var(--space-8));
+}
+
+@media (max-width: 560px) {
+  .public-profile-page--app .public-profile-shell {
+    padding-top: calc(var(--nav-height-mobile) + var(--space-6));
+  }
 }
 
 .public-profile-brand {
@@ -44,13 +57,19 @@
   display: block;
 }
 
+/* Matches the avatar the rest of the app falls back to. */
 .public-profile-avatar-fallback {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-tertiary);
+  background: var(--gradient-brand);
+  color: #fff;
+  font-family: var(--font-heading);
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-bold);
+  line-height: 1;
 }
 
 .public-profile-identity {
@@ -219,5 +238,362 @@
 @media (max-width: 560px) {
   .public-profile-header {
     flex-direction: column;
+  }
+}
+
+/* Placeholder held while the profile read is in flight. The page mounts only
+   after the previous route has finished exiting, so without this there is a
+   visibly blank frame before any content appears. */
+.public-profile-skeleton {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  animation: public-profile-pulse 1.4s ease-in-out infinite;
+}
+
+.public-profile-skeleton--title {
+  width: min(220px, 60%);
+  height: 26px;
+  margin-bottom: var(--space-3);
+}
+
+.public-profile-skeleton--line {
+  width: min(140px, 40%);
+  height: 14px;
+}
+
+@keyframes public-profile-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .public-profile-skeleton { animation: none; }
+}
+
+/* --- The unified profile: owner chrome ----------------------------------- */
+
+.profile-gear {
+  position: absolute;
+  top: clamp(20px, 4vw, 44px);
+  right: clamp(20px, 5vw, 40px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.public-profile-page--app .profile-gear {
+  top: calc(var(--nav-height) + var(--space-8));
+}
+
+@media (max-width: 560px) {
+  .public-profile-page--app .profile-gear {
+    top: calc(var(--nav-height-mobile) + var(--space-6));
+  }
+}
+
+.profile-gear:hover,
+.profile-gear:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.profile-handle-cta {
+  margin: var(--space-1) 0 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent-primary);
+  font: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+
+.profile-stats {
+  list-style: none;
+  display: flex;
+  gap: var(--space-6);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+}
+
+.profile-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+button.profile-stat {
+  cursor: pointer;
+}
+
+button.profile-stat:hover strong,
+button.profile-stat:focus-visible strong {
+  color: var(--accent-primary);
+}
+
+.profile-stat strong {
+  font-family: var(--font-heading);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  transition: color var(--transition-fast);
+}
+
+.profile-stat span {
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+.profile-stat--static strong {
+  color: var(--text-secondary);
+}
+
+.profile-owner-actions {
+  margin-top: var(--space-4);
+}
+
+.profile-edit-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 0 var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.profile-edit-button:hover,
+.profile-edit-button:focus-visible {
+  border-color: var(--border-strong);
+}
+
+/* The visitor's counterpart to "Edit profile": same slot, same metrics, so the
+   header keeps one shape whoever is looking at it. */
+.profile-follow-button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: 38px;
+  padding: 0 var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: var(--gradient-brand);
+  color: var(--text-inverse);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast), opacity var(--transition-fast);
+}
+
+.profile-follow-button:hover:not(:disabled),
+.profile-follow-button:focus-visible:not(:disabled) {
+  background: var(--gradient-brand-hover);
+}
+
+/* Already following: the button stops shouting and becomes the quiet state it
+   shares with "Edit profile". */
+.profile-follow-button--following {
+  border-color: var(--border-default);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.profile-follow-button--following:hover:not(:disabled),
+.profile-follow-button--following:focus-visible:not(:disabled) {
+  border-color: var(--accent-danger);
+  background: var(--bg-secondary);
+  color: var(--accent-danger);
+}
+
+.profile-follow-button:disabled {
+  cursor: default;
+  opacity: 0.65;
+}
+
+.profile-follow-error {
+  margin: var(--space-2) 0 0;
+  color: var(--accent-danger);
+  font-size: var(--fs-xs);
+}
+
+/* --- Tabs ----------------------------------------------------------------- */
+
+.profile-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.profile-tab {
+  position: relative;
+  padding: var(--space-3) var(--space-4);
+  border: none;
+  background: none;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.profile-tab:hover,
+.profile-tab:focus-visible {
+  color: var(--text-secondary);
+}
+
+.profile-tab.is-active {
+  color: var(--text-primary);
+}
+
+/* Rendered by framer-motion with a shared layoutId, so it slides between
+   tabs instead of blinking. */
+.profile-tab-indicator {
+  position: absolute;
+  left: var(--space-3);
+  right: var(--space-3);
+  bottom: -1px;
+  height: 2px;
+  border-radius: var(--radius-full);
+  background: var(--accent-primary);
+}
+
+.profile-panel {
+  margin-top: var(--space-5);
+}
+
+.profile-panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.profile-panel-note {
+  margin: var(--space-4) 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+.profile-panel-header .profile-panel-note {
+  margin: 0;
+}
+
+.profile-manage-link {
+  flex: 0 0 auto;
+  color: var(--accent-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+}
+
+.profile-manage-link:hover,
+.profile-manage-link:focus-visible {
+  text-decoration: underline;
+}
+
+/* --- Own list cards -------------------------------------------------------- */
+
+.profile-list-card--own {
+  width: 100%;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-badge-public {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  margin-left: auto;
+  padding: 2px var(--space-2);
+  border: 1px solid var(--accent-success);
+  border-radius: var(--radius-full);
+  color: var(--accent-success);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+/* --- Paper rows (Saved / Liked) -------------------------------------------- */
+
+.profile-row-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.profile-row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+a.profile-row:hover,
+a.profile-row:focus-visible {
+  border-color: var(--text-tertiary);
+  transform: translateY(-1px);
+}
+
+.profile-row--static {
+  cursor: default;
+}
+
+.profile-row-title {
+  font-weight: var(--fw-medium);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.profile-row-meta {
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  .profile-stats {
+    gap: var(--space-5);
+  }
+
+  .profile-panel-header {
+    flex-direction: column;
+    gap: var(--space-2);
   }
 }

@@ -19,6 +19,7 @@
 
 import {
   collection,
+  deleteField,
   doc,
   getDoc,
   getDocs,
@@ -85,13 +86,39 @@ function cleanMultilineString(value, maximum) {
   return value.trim().replace(/\r\n?/g, '\n').slice(0, maximum);
 }
 
+/**
+ * Avatar hosts whose URLs may be stored verbatim in the public profile.
+ *
+ * Google serves account avatars — including the generated letter ones — from
+ * these, and refuses CORS on them, so the browser cannot fetch and recompress
+ * one into a data URL: the URL itself is the only way to show it. Keeping this
+ * to an allowlist stops the public profile from becoming an embed for an
+ * arbitrary URL, which would let a profile owner log the IP of everyone who
+ * views their page.
+ */
+const AVATAR_URL_ALLOWLIST = /^https:\/\/lh[3-6]\.googleusercontent\.com\/[^\s"'<>]+$/;
+
 function cleanPhoto(value) {
   if (typeof value !== 'string') return '';
   const photo = value.trim();
-  // Only the recompressed data URL produced by utils/profileImage.js belongs
-  // in the public document; anything else is dropped rather than truncated.
-  if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(photo)) return '';
-  return photo.length <= USER_PROFILE_LIMITS.photo ? photo : '';
+  if (photo.length > USER_PROFILE_LIMITS.photo) return '';
+  // Either a recompressed data URL from utils/profileImage.js, or an avatar
+  // URL from a host on the allowlist. Anything else is dropped, not truncated.
+  const isInlineImage = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(photo);
+  return isInlineImage || AVATAR_URL_ALLOWLIST.test(photo) ? photo : '';
+}
+
+/**
+ * The avatar the public profile should mirror, given the two the app already
+ * has: the private uploaded one and the identity provider's.
+ *
+ * The uploaded photo wins, but only if it fits the public budget — the private
+ * copy may be up to 280 KB, far past what belongs in a document read on every
+ * profile visit. Callers holding the original file should recompress with
+ * PUBLIC_AVATAR_PRESET instead of relying on this fallback.
+ */
+export function publicAvatarFrom(uploadedPhoto, providerPhotoUrl) {
+  return cleanPhoto(uploadedPhoto) || cleanPhoto(providerPhotoUrl) || '';
 }
 
 export function sanitizePinnedList(entry) {
@@ -199,13 +226,28 @@ async function defaultPublishedLists(database, uid, pageSize) {
   return snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
 }
 
+/**
+ * Every list the account owns, published or not. Same bounded-page rule as
+ * `defaultPublishedLists`; no `orderBy`, because ordering on a field would
+ * silently drop the documents that lack it, and here every list must appear.
+ */
+async function defaultOwnLists(database, uid, pageSize) {
+  const snapshot = await getDocs(query(
+    collection(database, 'users', uid, 'lists'),
+    limit(pageSize),
+  ));
+  return snapshot.docs.map(document => ({ id: document.id, ...document.data() }));
+}
+
 function operations(overrides = {}) {
   return {
     database: overrides.database || db,
     publishedLists: overrides.publishedLists || defaultPublishedLists,
+    ownLists: overrides.ownLists || defaultOwnLists,
     currentUser: overrides.currentUser === undefined ? auth.currentUser : overrides.currentUser,
     isDemo: overrides.isDemo === undefined ? IS_DEMO : overrides.isDemo,
     batch: overrides.batch || (database => writeBatch(database)),
+    deleteValue: overrides.deleteValue || deleteField,
     document: overrides.document || doc,
     getDocument: overrides.getDocument || getDoc,
     now: overrides.now || serverTimestamp,
@@ -290,6 +332,31 @@ export async function savePinnedLists(pinnedLists, overrides) {
   batch.update(profileReference(api, uid), { pinnedLists: payload, updatedAt: api.now() });
   await batch.commit();
   return payload;
+}
+
+/**
+ * Mirrors the app avatar into the public profile. One document, one field.
+ *
+ * The private `users/{uid}.profilePhoto` is owner-only, so a signed-out visitor
+ * can never see it; the public profile needs its own copy or it has no avatar
+ * at all. Silently does nothing when there is no public profile yet — changing
+ * a photo should not create one.
+ */
+export async function savePublicProfilePhoto(photo, overrides) {
+  const api = operations(overrides);
+  requireSupported(api);
+  const uid = requireOwner(api);
+  const existing = await api.getDocument(profileReference(api, uid));
+  if (!existing?.exists()) return null;
+
+  const value = cleanPhoto(photo);
+  const batch = api.batch(api.database);
+  batch.update(profileReference(api, uid), {
+    photo: value || api.deleteValue(),
+    updatedAt: api.now(),
+  });
+  await batch.commit();
+  return value;
 }
 
 /**
@@ -379,6 +446,77 @@ export async function readOwnUserProfile(overrides) {
   const api = operations(overrides);
   requireSupported(api);
   return readUserProfile(requireOwner(api), overrides);
+}
+
+/**
+ * Unpublishes the public profile: deletes `userProfiles/{uid}` and its
+ * `handles/{handle}` reservation in one batch — the rules refuse the profile
+ * delete unless the reservation dies with it (hardening C in STATE.md), so
+ * the pairing is not a courtesy, it is the only shape the database accepts.
+ *
+ * Everything else stays exactly as it was: published lists remain published
+ * (they go back to being anonymous, which is the F1 attribution model), and
+ * the private account is untouched. The handle becomes free for anyone,
+ * including its previous owner.
+ */
+export async function deleteOwnUserProfile(overrides) {
+  const api = operations(overrides);
+  requireSupported(api);
+  const uid = requireOwner(api);
+  const snapshot = await api.getDocument(profileReference(api, uid));
+  if (!snapshot?.exists()) return false;
+
+  const handle = normalizeHandle(snapshot.data()?.handle);
+  const batch = api.batch(api.database);
+  batch.delete(profileReference(api, uid));
+  if (handle) batch.delete(handleReference(api, handle));
+  await batch.commit();
+  return true;
+}
+
+/**
+ * Coerces whatever a list document carries as `createdAt` — a Firestore
+ * Timestamp, an ISO string, a number, or nothing — into epoch millis, for
+ * client-side ordering only. Never stored.
+ */
+function createdAtMillis(value) {
+  if (typeof value?.toMillis === 'function') return value.toMillis();
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+/**
+ * Every list the account owns, as cards for the owner's own profile page —
+ * private ones included, which is why this must never feed a public surface.
+ * The visitor-facing counterpart is the `pinnedLists` array already
+ * denormalized into `userProfiles/{uid}`; nothing here is written anywhere.
+ *
+ * One bounded page, newest first, ordered on the client so a list without
+ * `createdAt` still shows up.
+ */
+export async function readOwnLists(overrides) {
+  const api = operations(overrides);
+  requireSupported(api);
+  const uid = requireOwner(api);
+  const lists = await api.ownLists(api.database, uid, PINNABLE_LISTS_PAGE_SIZE);
+
+  return (Array.isArray(lists) ? lists : [])
+    .slice(0, PINNABLE_LISTS_PAGE_SIZE)
+    .map(list => ({
+      id: cleanString(list?.id, 128),
+      title: cleanString(list?.name || list?.title, USER_PROFILE_LIMITS.listTitle),
+      emoji: cleanString(list?.emoji, USER_PROFILE_LIMITS.listEmoji),
+      paperCount: Array.isArray(list?.paperIds) ? list.paperIds.length : 0,
+      isPublished: Boolean(cleanString(list?.publicShareId, USER_PROFILE_LIMITS.shareId)),
+      createdAtMillis: createdAtMillis(list?.createdAt),
+    }))
+    .filter(entry => entry.id && entry.title)
+    .sort((first, second) => (second.createdAtMillis - first.createdAtMillis)
+      || first.title.localeCompare(second.title));
 }
 
 export { SERVICE_ONLY_FIELDS };

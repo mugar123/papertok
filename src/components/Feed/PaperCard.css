@@ -615,6 +615,28 @@
   margin-top: var(--space-2);
 }
 
+.pc-linked-resources-slot {
+  display: grid;
+  width: 100%;
+  max-width: 100%;
+  will-change: grid-template-rows, opacity;
+}
+
+.pc-linked-resources-slot-inner {
+  width: 100%;
+  min-height: 0;
+  overflow: clip;
+  overflow-clip-margin: 14px;
+}
+
+.pc-linked-resources-motion {
+  width: 100%;
+  min-width: 0;
+  transform-origin: left center;
+  backface-visibility: hidden;
+  will-change: transform, opacity;
+}
+
 .pc-linked-resources {
   display: flex;
   align-items: center;

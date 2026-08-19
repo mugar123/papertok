@@ -32,7 +32,8 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { ANALYTICS_CONSENT } from '../../services/analyticsService';
 import { AI_EXPLANATION_LEVELS } from '../../services/aiExplanationService';
 import { CATEGORIES } from '../../data/categories';
-import { prepareProfileImage } from '../../utils/profileImage';
+import { PUBLIC_AVATAR_PRESET, prepareProfileImage } from '../../utils/profileImage';
+import { savePublicProfilePhoto } from '../../services/userProfileService';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import EditInterestsModal from './EditInterestsModal';
 import EmailNotificationModal from '../Following/EmailNotificationModal';
@@ -342,6 +343,15 @@ export default function SettingsPage() {
     try {
       const preparedPhoto = await prepareProfileImage(file);
       await updateProfilePhoto(preparedPhoto);
+      // The public profile keeps its own copy: `users/{uid}` is owner-only, so
+      // a signed-out visitor could never see this one. Recompressed again
+      // because the public budget is 60 KB against 280 KB here. A failure is
+      // not worth losing the photo the user just set, so it only warns.
+      try {
+        await savePublicProfilePhoto(await prepareProfileImage(file, PUBLIC_AVATAR_PRESET));
+      } catch (mirrorError) {
+        console.error('Could not mirror the photo to the public profile:', mirrorError);
+      }
       setPhotoFeedback({ tone: 'success', text: copy.photoUpdated });
     } catch (error) {
       setPhotoFeedback({
@@ -359,6 +369,13 @@ export default function SettingsPage() {
     setPhotoFeedback(null);
     try {
       await updateProfilePhoto(null);
+      // Removing the upload falls back to the account picture, so the public
+      // profile follows it there rather than being left on the old one.
+      try {
+        await savePublicProfilePhoto(user?.photoURL || null);
+      } catch (mirrorError) {
+        console.error('Could not mirror the photo to the public profile:', mirrorError);
+      }
       setPhotoFeedback({
         tone: 'success',
         text: user?.photoURL ? copy.googlePhotoRestored : copy.photoRemoved,

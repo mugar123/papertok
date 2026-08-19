@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ArrowLeft,
@@ -40,6 +40,13 @@ function getFollowDisplayName(entity, language) {
 
 export default function FollowingSettingsPage() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Reachable from Settings and from the profile's "Siguiendo" counter; back
+  // returns to whichever one it was. The fallback covers a direct URL load.
+  const goBack = () => {
+    if (location.key !== 'default') navigate(-1);
+    else navigate('/settings');
+  };
   const { language, isEnglish, locale } = useLanguage();
   const {
     followedEntities,
@@ -83,9 +90,9 @@ export default function FollowingSettingsPage() {
           <button
             className="following-settings-back"
             type="button"
-            onClick={() => navigate('/settings')}
-            aria-label={isEnglish ? 'Back to settings' : 'Volver a configuración'}
-            title={isEnglish ? 'Back to settings' : 'Volver a configuración'}
+            onClick={goBack}
+            aria-label={isEnglish ? 'Back' : 'Volver'}
+            title={isEnglish ? 'Back' : 'Volver'}
           >
             <ArrowLeft size={20} />
           </button>

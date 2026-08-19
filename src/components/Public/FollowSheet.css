@@ -1,0 +1,207 @@
+.follow-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: var(--space-4);
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(6px);
+}
+
+.follow-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 460px;
+  max-height: min(70vh, 620px);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-xl);
+  overflow: hidden;
+}
+
+.follow-sheet-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.follow-sheet-tabs {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.follow-sheet-tab {
+  padding: var(--space-2) var(--space-4);
+  border: none;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-tertiary);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.follow-sheet-tab:hover,
+.follow-sheet-tab:focus-visible {
+  color: var(--text-primary);
+}
+
+.follow-sheet-tab--active {
+  background: var(--bg-glass);
+  color: var(--text-primary);
+}
+
+.follow-sheet-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.follow-sheet-close:hover,
+.follow-sheet-close:focus-visible {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.follow-sheet-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-2) var(--space-3) var(--space-4);
+}
+
+.follow-sheet-note {
+  margin: var(--space-6) 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.follow-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.follow-row-link {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-lg);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--transition-fast);
+}
+
+.follow-row-link:hover,
+.follow-row-link:focus-visible {
+  background: var(--bg-glass-hover);
+}
+
+.follow-row--gone {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  color: var(--text-tertiary);
+}
+
+.follow-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-family: var(--font-heading);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  overflow: hidden;
+}
+
+.follow-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.follow-row-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.follow-row-name {
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.follow-row-handle {
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+.follow-sheet-more {
+  display: block;
+  width: 100%;
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: border-color var(--transition-fast);
+}
+
+.follow-sheet-more:hover:not(:disabled),
+.follow-sheet-more:focus-visible:not(:disabled) {
+  border-color: var(--border-strong);
+}
+
+.follow-sheet-more:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+@media (min-width: 600px) {
+  .follow-sheet-backdrop {
+    align-items: center;
+  }
+}
+
+.follow-sheet-tab-count {
+  margin-left: var(--space-2);
+  color: var(--text-tertiary);
+  font-weight: var(--fw-regular);
+}

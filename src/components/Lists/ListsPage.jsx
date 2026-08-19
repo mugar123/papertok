@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { IS_DEMO, db } from '../../services/firebase';
 import {
   collection,
@@ -18,7 +19,8 @@ import { useLanguage } from '../../context/LanguageContext';
 import { getCategoryLabel } from '../../data/categories';
 import { getIcon } from '../../utils/icons';
 import { paperLegacyAdapter } from '../../models/Paper';
-import { Copy, Download, Globe2, Pencil, RefreshCw, Unlink, X } from 'lucide-react';
+import { Download, Globe2, Pencil, RefreshCw, Share2, Unlink, X } from 'lucide-react';
+import { shareOrCopyLink } from '../../utils/shareLink.js';
 import { downloadCitationFile } from '../../utils/readingLibrary';
 import { settleWithin } from '../../utils/asyncTiming';
 import { getUiErrorMessage } from '../../utils/errorMessages';
@@ -28,7 +30,7 @@ import {
   unpublishPublicList,
   updatePublicList,
 } from '../../services/publicListService.js';
-import { getPublicListUrl } from '../../utils/publicNavigation.js';
+import { getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import './ListsPage.css';
 
 const LISTS_LOAD_DEADLINE_MS = 2_500;
@@ -68,6 +70,8 @@ async function copyText(value) {
 
 export default function ListsPage({ onOpenPdf, onEditPaper }) {
   const { user } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const { trackEvent } = useAnalyticsConsent();
   const { language, isEnglish } = useLanguage();
   const {
@@ -89,6 +93,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   const [lists, setLists] = useState([]);
   const [savedPapers, setSavedPapers] = useState({});
   const [expandedList, setExpandedList] = useState(null);
+  // True while the expanded list is the one a profile card navigated to: its
+  // back control then returns to the profile instead of collapsing to the
+  // index the visitor never asked for.
+  const [openedFromRoute, setOpenedFromRoute] = useState(false);
   const [loading, setLoading] = useState(false);
   const [metadataLoadingListId, setMetadataLoadingListId] = useState(null);
   const [metadataError, setMetadataError] = useState(null);
@@ -389,9 +397,67 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     }
   }, [personalLibrary, savedPapers, user]);
 
+  // A profile list card arrives with the list it wants opened. Once per id:
+  // the state survives in the history entry, so coming back after closing the
+  // list must not snap it open again.
+  const autoOpenedListId = useRef(null);
+  useEffect(() => {
+    const targetId = location.state?.openListId;
+    if (!targetId || autoOpenedListId.current === targetId) return undefined;
+    // `displayLists`, not `lists`: Favorites, Read later and Reading history
+    // are assembled here rather than stored, and they must restore too.
+    const target = displayLists.find((entry) => entry.id === targetId);
+    if (!target) return undefined;
+    const timeoutId = setTimeout(() => {
+      // Claimed here rather than before the timer: the contexts this list is
+      // built from hydrate in several passes, and every pass re-runs this
+      // effect and cancels the pending open. Marking it early meant the
+      // retry was refused and the list never opened at all.
+      autoOpenedListId.current = targetId;
+      // A profile card sends only the id and means "you came from elsewhere";
+      // a restore after visiting a paper sends the flag it had before.
+      setOpenedFromRoute(location.state?.fromRoute !== false);
+      openList(target);
+    }, 0);
+    return () => clearTimeout(timeoutId);
+  }, [displayLists, location.state, openList]);
+
+  /**
+   * A paper in a list opens its card, not the PDF: the card is the whole
+   * paper (abstract, actions, related work) and carries a "Read article"
+   * button of its own, so nothing is lost and everything else is gained.
+   *
+   * Before leaving, the current history entry is re-stamped with the open
+   * list, so coming back restores the papers rather than the list index.
+   * `fromRoute` rides along so the expanded view's back control keeps
+   * pointing wherever it pointed before.
+   */
+  const openPaperCard = (paper) => {
+    const path = getPublicPaperPath(paper) || getPublicPaperPath(paper.id);
+    if (!path) {
+      // No canonical key (legacy id shapes): the PDF is still better than a
+      // click that does nothing.
+      onOpenPdf?.({ ...paper, arxivId: paper.arxivId || paper.id });
+      return;
+    }
+    if (expandedList) {
+      navigate(location.pathname, {
+        replace: true,
+        state: { openListId: expandedList, fromRoute: openedFromRoute },
+      });
+    }
+    navigate(path, { state: { paper } });
+  };
+
   const closeExpandedList = () => {
     metadataRequestId.current += 1;
+    setOpenedFromRoute(false);
     setExpandedList(null);
+    // Drop the restore marker, or a later visit would reopen a list the user
+    // has explicitly closed.
+    if (location.state?.openListId) {
+      navigate(location.pathname, { replace: true, state: null });
+    }
     setMetadataLoadingListId(null);
     setMetadataError(null);
     setShareFeedback(null);
@@ -470,12 +536,22 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     }));
   };
 
-  const copyListLink = async (listId, publicShareId) => {
+  // The platform share sheet when there is one (phones, mostly), the
+  // clipboard when there is not. A dismissed sheet ends silently: closing it
+  // was a decision, not a failure.
+  const shareListLink = async (listId, publicShareId, listName) => {
     const url = getPublicListUrl(publicShareId);
     if (!url) throw new Error('A public link could not be created.');
-    await copyText(url);
-    trackEvent('share', { method: 'clipboard', content_type: 'list', surface: 'lists' });
-    setShareFeedback({ listId, state: 'success', url, copied: true });
+    const outcome = await shareOrCopyLink({ url, title: listName, copy: copyText });
+    if (outcome === 'shared') {
+      trackEvent('share', { method: 'native', content_type: 'list', surface: 'lists' });
+      setShareFeedback({ listId, state: 'shared', url });
+    } else if (outcome === 'copied') {
+      trackEvent('share', { method: 'clipboard', content_type: 'list', surface: 'lists' });
+      setShareFeedback({ listId, state: 'success', url, copied: true });
+    } else {
+      setShareFeedback(null);
+    }
     return url;
   };
 
@@ -500,9 +576,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         : await publishPublicList(input);
       setListShareId(list.id, result.shareId);
       try {
-        await copyListLink(list.id, result.shareId);
+        await shareListLink(list.id, result.shareId, list.name);
       } catch (clipboardError) {
-        console.error('Public list link could not be copied:', clipboardError);
+        console.error('Public list link could not be shared:', clipboardError);
         setShareFeedback({
           listId: list.id,
           state: 'success',
@@ -516,12 +592,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     }
   };
 
-  const handleCopyListLink = async (list) => {
+  const handleShareList = async (list) => {
     try {
       setShareFeedback({ listId: list.id, state: 'loading' });
-      await copyListLink(list.id, list.publicShareId);
-    } catch (clipboardError) {
-      console.error('Public list link could not be copied:', clipboardError);
+      await shareListLink(list.id, list.publicShareId, list.name);
+    } catch (shareError) {
+      console.error('Public list link could not be shared:', shareError);
       setShareFeedback({
         listId: list.id,
         state: 'copy-error',
@@ -568,8 +644,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
 
       {expandedList ? (
         <div className="lists-expanded">
-          <button className="lists-back-btn" onClick={closeExpandedList}>
-            {isEnglish ? '← Back to lists' : '← Volver a listas'}
+          <button
+            className="lists-back-btn"
+            onClick={openedFromRoute ? () => navigate(-1) : closeExpandedList}
+          >
+            {openedFromRoute
+              ? (isEnglish ? '← Back' : '← Volver')
+              : (isEnglish ? '← Back to lists' : '← Volver a listas')}
           </button>
           {(() => {
             const list = displayLists.find((l) => l.id === expandedList);
@@ -605,11 +686,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                           <>
                             <button
                               type="button"
-                              onClick={() => handleCopyListLink(list)}
+                              onClick={() => handleShareList(list)}
                               disabled={shareBusy}
-                              title={isEnglish ? 'Copy public link' : 'Copiar enlace público'}
+                              title={isEnglish ? 'Share public link' : 'Compartir enlace público'}
                             >
-                              <Copy size={16} /> {isEnglish ? 'Copy link' : 'Copiar enlace'}
+                              <Share2 size={16} /> {isEnglish ? 'Share' : 'Compartir'}
                             </button>
                             <button
                               type="button"
@@ -636,7 +717,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                             onClick={() => handlePublishList(list, publicPapers)}
                             disabled={shareBusy || metadataLoadingListId === list.id}
                           >
-                            <Globe2 size={16} /> {isEnglish ? 'Publish & copy link' : 'Publicar y copiar enlace'}
+                            <Globe2 size={16} /> {isEnglish ? 'Publish & share' : 'Publicar y compartir'}
                           </button>
                         )}
                       </div>
@@ -656,6 +737,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                   >
                     {listShareFeedback.state === 'loading' && (
                       <><span className="lists-loading-spinner" /> {isEnglish ? 'Updating public link...' : 'Actualizando enlace público...'}</>
+                    )}
+                    {listShareFeedback.state === 'shared' && (
+                      <span>{isEnglish ? 'Public link shared.' : 'Enlace público compartido.'}</span>
                     )}
                     {listShareFeedback.state === 'success' && (
                       <>
@@ -715,7 +799,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     );
                     return (
                       <div key={paperId} className="lists-paper-item"
-                        onClick={() => onOpenPdf({ ...paper, arxivId: paper.arxivId || paper.id })}>
+                        onClick={() => openPaperCard(paper)}>
                         <div className="lists-paper-item-content">
                           {paper.categories && paper.categories.length > 0 && (
                             <span className="lists-paper-cat">{getCategoryLabel(paper.categories[0], language)}</span>
@@ -779,7 +863,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       ) : (
         <div className="lists-grid">
           {displayLists.map((list, idx) => (
-            <div key={list.id} className="list-card glass" onClick={() => openList(list)} style={{ '--stagger-index': idx }}>
+            <div key={list.id} className="list-card glass" onClick={() => { setOpenedFromRoute(false); openList(list); }} style={{ '--stagger-index': idx }}>
               <div className="list-card-top">
                 <span className="list-card-emoji">
                   {(() => {

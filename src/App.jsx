@@ -42,8 +42,12 @@ function AppContent() {
   const navigate = useNavigate()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
-  const navbarRoutes = ['/', '/lists', '/research', '/following', '/settings', '/settings/following', '/settings/profile']
-  const showNavbar = navbarRoutes.includes(normalizedPathname)
+  const navbarRoutes = ['/', '/lists', '/research', '/following', '/profile', '/settings', '/settings/following', '/settings/profile']
+  // The paper page keeps the app chrome for a signed-in user — reaching a
+  // paper from Liked must not feel like leaving the app. Signed-out visitors
+  // on a shared link still get the standalone page (`user` gates below).
+  const showNavbar = (navbarRoutes.includes(normalizedPathname)
+    || normalizedPathname.startsWith('/public/paper/'))
     && Boolean(user)
     && !authLoading
     && onboardingComplete
@@ -139,6 +143,18 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition><SearchPage onSaveToList={setSaveModalPaper} /></PageTransition>
+              </ProtectedRoute>
+            }
+          />
+          {/* The user's own profile: the same page as /public/user/:handle,
+              in owner mode. It renders even before a public profile exists. */}
+          <Route
+            path="/profile"
+            element={
+              <ProtectedRoute>
+                <PageTransition>
+                  <PublicProfilePage selfMode />
+                </PageTransition>
               </ProtectedRoute>
             }
           />
