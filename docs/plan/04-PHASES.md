@@ -214,6 +214,36 @@ las use sin romper nada existente.
 
 ---
 
+## F8 — Privacidad del perfil
+
+### P15 `[rules]`+UI — Perfil público o privado — **HECHA** (2026-08-19)
+
+No estaba en el plan original: F1 asumió que todo perfil creado es público, y
+esta fase deshace esa suposición sin romper nada de lo que F1/F2 construyeron.
+
+- **Entra**: campo `visibility: 'public'|'private'` en `userProfiles/{uid}`,
+  con **la ausencia del campo significando público** (los perfiles escritos
+  antes de esta fase no cambian de estado); `allow get` acotado a perfiles
+  públicos más el dueño; elección obligatoria y sin preselección al crear el
+  perfil, y como pregunta única para las cuentas que ya existían; interruptor
+  de listas fijadas que **saca las entradas** del documento público y las
+  guarda en `users/{uid}/profileStash/pinnedLists` (Firestore no tiene
+  seguridad por campo); seguir a un perfil privado denegado en rules, sin
+  tocar las aristas que ya existen.
+- **Decisiones** (detalle en `STATE.md`): el handle sigue reservado, la página
+  de un perfil privado dice lo mismo que un handle libre, las listas ya
+  publicadas siguen públicas, y no hay nivel "solo seguidores" porque el
+  seguimiento es unilateral e instantáneo — sería "todo el mundo con un clic
+  de más" hasta que exista aprobación de solicitudes.
+- **Depende de**: P1, P3, P4.
+- **Tests**: 61 contra el emulador (14 nuevos), pasada de mutación de 14
+  cláusulas con 14 muertas; 531 unitarios.
+- **Despliegue**: rules (permitir + imponer lectura) → app → rules (exigir la
+  elección en el create). Dos despliegues de rules a propósito, para que no
+  haya ventana en la que un bundle cacheado no pueda crear un perfil.
+
+---
+
 ## Mapa de dependencias
 
 ```
@@ -224,6 +254,7 @@ P9                                    (F5, independiente)
 P10 → P11 → P12                       (F6 núcleo)
 P10 → P13                             (F6 afiliación)
 P10 + P3 → P14                        (F7)
+P1 + P3 + P4 → P15                    (F8, hecha)
 ```
 
 Bloqueadas por humano: **P9** (OAuth App GitHub), **P10** (service account),

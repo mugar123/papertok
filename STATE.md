@@ -1,5 +1,142 @@
 # Estado / pendientes
 
+## Privacidad del perfil — F8 / P15 (2026-08-19)
+
+**Implementado, fase 1 de rules desplegada, verificado en vivo.** Fase escrita
+en `docs/plan/04-PHASES.md` como P15; no existía en el plan original, que daba
+por hecho que todo perfil es público.
+
+### Las cuatro decisiones, y por qué
+
+| Pregunta | Decisión | Razón |
+| --- | --- | --- |
+| ¿El handle de un perfil privado sigue reservado? | **Sí**, y nadie más puede pedirlo | Volverse privado es reversible; si el handle se liberase, alguien podría cogerlo mientras estás fuera y el interruptor dejaría de tener vuelta. Un interruptor sin vuelta no es un interruptor. |
+| ¿Qué ve quien abre `/public/user/:handle` de un perfil privado? | **"Este perfil no está disponible"**, idéntico a un handle que no existe | Mínima revelación y cero texto nuevo. Verificado: la salida es la misma palabra por palabra en ambos casos. |
+| ¿Y los enlaces ya compartidos de listas publicadas? | **Siguen funcionando** | Publicar una lista es un acto propio con su control en Mis listas. `publicLists` es anónimo por diseño de F1: ser privado quita la **atribución**, no la lista. |
+| ¿Se puede seguir a un perfil privado? | **No se crean aristas nuevas; las que había se conservan** | Borrarlas sería destructivo e irreversible. Dejar de seguir sigue abierto siempre: hay que poder salir. |
+
+**No hay nivel "solo seguidores"**, y no por esfuerzo: seguir es unilateral e
+instantáneo, así que ese nivel sería "todo el mundo con un clic de más" hasta
+que exista aprobación de solicitudes, que es otra fase.
+
+### Lo que ser privado NO cubre — dicho en pantalla, antes de elegir
+
+Tres cosas, en el propio flujo de elección y en Ajustes: las listas ya
+publicadas siguen accesibles por su enlace, el handle sigue reservado (lo que
+implica que se puede saber que existe), y el número de seguidores se puede
+seguir contando. Los tres están **asertados contra el emulador**
+(`F8: what going private does NOT hide`) para que el texto no se convierta en
+mentira si alguien cambia las rules más adelante.
+
+### El modelo
+
+`visibility: 'public' | 'private'` en `userProfiles/{uid}`, string y no
+booleano porque **la ausencia del campo es portante**: un documento escrito
+antes de esta fase no lo tiene y debe seguir leyéndose como público. Un
+booleano ausente se lee `false` y habría puesto en privado a todo el mundo sin
+preguntar, que es justo lo que esta fase existe para evitar.
+
+| Archivo | Qué cambió |
+| --- | --- |
+| `firestore.rules` | `allow get` de `userProfiles` acotado a `profileIsPublic(resource.data) \|\| dueño`; `visibility` y `showPinnedLists` validados; `follows` exige destino público al crear; **nueva subcolección** `users/{uid}/profileStash/{id}`, owner-only y de forma cerrada |
+| `src/services/userProfileService.js` | `PROFILE_VISIBILITY`, `isVisibilityChoice`, `profileIsPublic`, `needsVisibilityChoice`, `pinnedListsAreVisible`, `saveProfileVisibility`, `setPinnedListsVisible`; `createUserProfile` **exige** la elección; `readUserProfileByHandle` traduce `permission-denied` a "no existe" |
+| `src/components/Profile/VisibilityChoice.{jsx,css}` + `visibilityCopy.js` | La elección, sin nada preseleccionado, con las tres limitaciones a la vista |
+| `src/components/Profile/VisibilityPrompt.{jsx,css}` | La pregunta única para cuentas que ya existían |
+| `src/components/Profile/ProfilePage.jsx` | Elección en el alta; dos interruptores en Privacidad que guardan al instante |
+| `src/components/Public/PublicProfilePage.{jsx,css}` | Insignia "Privado" y aviso, solo para el dueño; el prompt |
+
+**Los interruptores guardan al momento**, sin pasar por "Guardar cambios": un
+control de privacidad que necesita una confirmación aparte es un control que
+la gente cree que ya ha usado.
+
+### Ocultar listas fijadas saca las entradas, no las tapa
+
+Firestore **no tiene seguridad por campo**: si el documento se lee, se leen
+todos sus campos. Así que "listas fijadas: no" no puede ser un flag que la UI
+respete — el array sale del documento público y espera en
+`users/{uid}/profileStash/pinnedLists`, owner-only, en el mismo batch. Vuelve
+intacto al encender. `showPinnedLists` existe para que "no tengo pines" y
+"los tengo ocultos" no sean el mismo estado al recargar.
+
+**Por qué una subcolección y no un campo en `users/{uid}`**: porque ese
+documento **no se puede escribir** en las cuentas antiguas. Ver el bug de
+abajo.
+
+### Verificación en vivo (2026-08-19)
+
+Contra las rules desplegadas en `papertok-168df`:
+
+| | |
+| --- | --- |
+| Perfil privado por REST **sin cabecera de auth** | **403 PERMISSION_DENIED** |
+| `handles/mugar` sin auth | 200 (no protegido, documentado) |
+| Perfil público de otra cuenta | 200 (nada roto) |
+| Página del perfil privado, sin sesión | "This profile is not available", **idéntico** a un handle inexistente |
+| El mismo privado a través de la hoja de seguidores de otro | fila "Account unavailable", sin filtrar nombre ni handle |
+| `users/{uid}/profileStash/pinnedLists` sin auth | 403 |
+| Ciclo privado → público → privado | funciona en ambos sentidos, `visibility` cuadra en el doc |
+| Ocultar y volver a mostrar pines | los pines vuelven intactos desde el guardado privado |
+| Prompt en cuenta con perfil heredado | aparece, sin preselección, con el botón deshabilitado hasta elegir |
+| Coste del feed | sin cambios (nada de esto entra en su camino) |
+
+**Pendiente de tu sesión**: la lectura denegada **desde otra cuenta con
+sesión**. Está cubierta por el emulador con un contexto autenticado real
+(`F8: a private profile is unreadable to another signed-in account`), pero en
+vivo hace falta iniciar sesión como `@nick_mugar`. A propósito he dejado
+`@nick_mugar` **sin elegir todavía**, así que al entrar con esa cuenta verás
+el prompt de migración tal cual lo verá cualquier usuario existente.
+
+`@mugar` quedó **público**, que es como estaba antes de empezar.
+
+### Tests
+
+- **61 contra el emulador** (14 nuevos), de comportamiento.
+- **531 unitarios**.
+- **Pasada de mutación: 14 cláusulas nuevas, 14 muertas.** Una sobrevivió al
+  primer intento (la lista blanca de claves del guardado privado): el test
+  colaba una clave extra en un documento que ya era inválido por otro motivo,
+  así que otra cláusula lo denegaba y la mutación no se notaba. El test ahora
+  cuela la clave en un documento **por lo demás válido**, que es la única
+  forma de que esa cláusula sea la que decide.
+
+### Bug preexistente encontrado (no de esta fase, no arreglado aquí)
+
+**Las cuentas antiguas no pueden escribir su propio `users/{uid}`.** Los
+documentos creados por una versión temprana llevan `email`, `displayName`,
+`photoURL` y `createdAt`, y la lista blanca `userProfileKeys()` de las rules no
+los incluye; como todas las escrituras son `merge`, la lista blanca ve el
+documento entero resultante y deniega. Confirmado en producción con una
+escritura idempotente: `permission-denied`.
+
+Afecta a preferencias, nivel de IA, foto de perfil y la migración de
+seguimientos — conviene revisar si alguno lo traga en silencio. Hay una tarea
+aparte con el diagnóstico y tres opciones de arreglo. Esta fase **no lo
+arregla ni lo esquiva a medias**: guarda los pines en una subcolección, que no
+depende de esa lista blanca. Hay un test que asterta que el documento padre
+hoy es inescribible, para que el arreglo se note ahí también.
+
+### Qué desplegar, en este orden
+
+1. **Rules, fase 1** — `git checkout dbf141b -- firestore.rules` no hace falta:
+   **ya está desplegada** (2026-08-19). Permite el campo, impone la lectura y
+   valida; un cliente viejo sigue pudiendo crear perfiles.
+2. **La app** (`npm run build` + tu despliegue habitual de GitHub Pages).
+3. **Rules, fase 2** — `firebase deploy --only firestore:rules` desde `HEAD`,
+   que ya lleva el `'visibility' in request.resource.data` del create. **No
+   antes del paso 2**: un bundle cacheado que cree un perfil sin el campo sería
+   rechazado. Ese es todo el motivo de que sean dos despliegues.
+
+### Fuera, a propósito
+
+- Nivel "solo seguidores" y solicitudes de seguimiento (razón arriba).
+- Cerrar `handles/{handle}` para privados: exigiría denormalizar la
+  visibilidad en el doc de handle y mantener dos documentos en sincronía, que
+  es justo donde un bug rompe la unicidad. Y "está cogido" se sabe igual
+  intentando registrarlo.
+- Ocultar el grafo de seguidores de un perfil privado: costaría un `get()` por
+  fila en una query de lista. Las aristas guardan solo uids.
+- Arreglar el bug de `users/{uid}` (tarea aparte, decisión de producto).
+
 ## Rediseño integral de perfil y ajustes — séptima pasada (2026-08-19)
 
 **Hecho y verificado en vivo** con las dos cuentas (`@mugar` / `@nick_mugar`),
