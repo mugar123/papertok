@@ -74,7 +74,13 @@ las use sin romper nada existente.
 - **Despliegue**: rules+índices primero, UI después. Cierra F2 (el "feed de
   seguidos" queda excluido a propósito — `01-DATA-MODEL.md`).
 
-## F3 — Comentarios
+## F3 — Comentarios — **HECHA** (2026-08-19; P5+P6+P7 en una sesión)
+
+Dos desviaciones al implementar, argumentadas en `STATE.md`: los contadores
+del stub son `count()` acotado (el increment del boceto es incompatible con
+el borrado en cascada de hilos), y el punto de entrada de la hoja es la
+página del paper, no `PaperCard.jsx` (vetado por los cambios del compañero;
+el feed gana su botón cuando ese archivo quede libre).
 
 ### P5 `[rules]`-parcial — Stubs de paper
 - **Entra**: `src/utils/paperCanonicalKey.js` **puro** (derivación de clave:

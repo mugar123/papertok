@@ -1,5 +1,176 @@
 # Estado / pendientes
 
+## Red social — F3 (P5+P6+P7): comentarios en papers (2026-08-19)
+
+**Implementado; rules e índices DESPLEGADOS en `papertok-168df`; verificado en
+vivo la parte de visitante y de datos (REST sin auth). La pasada con sesión
+(@mugar/@nick_mugar) está pendiente del usuario** — lista de pasos abajo.
+
+### Qué entró
+
+| Pieza | Archivo |
+| --- | --- |
+| Clave canónica de paper (P5): `doi:` > `arxiv:` sin versión > id crudo con prefijo; base64url; candidatos duales para el split-brain | `src/utils/paperCanonicalKey.js` (+21 tests, puro) |
+| Stubs `papers/{paperKey}`: cache mínimo de metadatos, create por el primer comentarista, **inmutable salvo admin**, `list: false` (no hay directorio de papers) | `firestore.rules`, `src/services/paperStubService.js` |
+| Comentarios `papers/{key}/comments/{id}` con hilos de un nivel (`replyTo`), editar/borrar propios, borrado de padre en cascada | rules + `src/services/commentService.js` |
+| Throttle declarativo `users/{uid}/rateLimits/{action}` (comments 15 s, stubs 30 s, reports 60 s), en el mismo batch, con `getAfter` | rules (match top-level aparte, para no tocar el bloque `users/` que edita la otra sesión) |
+| Reportes `reports/{id}` create-only + cola FIFO de admin; killswitch `config/moderation` escribible por admin sin deploy | rules + `src/services/reportService.js` |
+| Hoja de comentarios en la página del paper (botón flotante, lazy: 0 lecturas hasta abrirla) | `src/components/Comments/CommentsSheet.{jsx,css}`, `PublicPaperPage.{jsx,css}` |
+| "Mis comentarios" en ajustes (collection-group por autor; ahí ve el autor sus ocultos) | `src/components/Settings/MyCommentsPage.{jsx,css}`, fila en `SettingsPage` |
+| Cola de moderación en ruta no listada `/admin/moderation` (ocultar/mostrar, borrar con cascada, resolver/descartar, killswitch) | `src/components/Admin/ModerationPage.{jsx,css}`, `App.jsx` |
+| Índices: CG `comments (authorUid, createdAt desc)` y `reports (status, createdAt asc)` | `firestore.indexes.json` |
+
+### Decisiones tomadas al implementar (y por qué)
+
+- **Sin contador denormalizado `commentCount`: el recuento es `count()`
+  acotado a 1000, el patrón de F2.** El plan (00/01) diseñó un increment ±1
+  validado en rules, pero la cascada de borrado lo rompe: borrar padre +
+  N respuestas en un batch exigiría validar "decremento exactamente N" y las
+  rules no pueden contar los deletes de un batch. Permitir decrementos
+  arbitrarios sería deflación libre; hacer N batches de ±1, absurdo. `count()`
+  da el mismo número por 1 lectura al abrir la hoja, deja el stub **totalmente
+  inmutable** para clientes y no añade superficie de inflado. Es la desviación
+  del plan de esta fase; los campos `commentCount`/`annotationCount` del
+  boceto simplemente no existen.
+- **El punto de entrada es la página del paper (`/public/paper/{key}`), no
+  PaperCard.** El plan ponía la hoja en `PaperCard.jsx`; ese archivo es
+  territorio del compañero y quedó prohibido en el encargo. Consecuencia
+  honesta: **desde el feed aún no hay botón de comentarios** — se llega por
+  la tarjeta destino (likes, listas, perfiles, enlaces). Cuando PaperCard
+  quede libre, es un botón que abre `CommentsSheet` con el paper en mano.
+- **Hilos en orden cronológico ascendente, una sola query.** Una respuesta
+  siempre es posterior a su padre, así que en orden ascendente el padre ya
+  está en pantalla cuando llega la respuesta: cero respuestas huérfanas por
+  paginación, cero recuentos por padre, cero índices compuestos para el hilo.
+  Responder a una respuesta responde a su hilo (nivel único, estilo TikTok).
+- **La cascada**: primer batch = padre + hasta 400 respuestas (atómico); si
+  hubiera más, barridos acotados de huérfanos (`!exists(parent)` permite a
+  cualquier autenticado rematar). Un corte a mitad deja solo docs invisibles
+  (una respuesta jamás se pinta sin su padre) y reintentable. En rules, la
+  excepción está acotada: un extraño solo puede borrar una respuesta ajena si
+  el padre cae en el mismo batch a manos de su autor.
+- **`isAdmin()` ya lleva el uid real de @mugar** (`SrqikE0wbtPOsTZMnvK4lcLVHhD3`,
+  resuelto de `handles/mugar`): P7 lo exigía (acción humana 4, hecha). Cambiar
+  de cuenta admin = editar esa línea y desplegar. Los tests del emulador leen
+  el uid del propio archivo, así que sobreviven al cambio.
+- **Ocultos legibles a nivel de datos** (la opción simple que 02-SECURITY.md
+  §1 dejaba abierta): el cliente oficial los filtra, el autor los ve marcados
+  en "Mis comentarios", y el borrado definitivo es del admin. Hay un test que
+  fija la postura para que un cambio futuro no la rompa en silencio.
+- **Reportar queda fuera del killswitch y abierto a perfiles privados**
+  (reportar no es un acto público; la alarma no se congela con la sala).
+  El reportante deja de ver lo reportado en su dispositivo (localStorage,
+  acotado a 300).
+- **Split-brain**: la hoja lee la clave alternativa (2ª lectura solo si el
+  objeto trae DOI+arXiv), fusiona la vista y auto-reporta `dup-stub` una vez
+  (id determinista no — auto-id con throttle; el admin fusiona a mano, como
+  dice el plan).
+
+### Lo que las rules imponen (93 tests de emulador, todos de comportamiento)
+
+Perfil privado o inexistente no comenta; `authorHandle` debe ser el handle
+real del autor (nadie firma con nombre ajeno); nadie escribe/edita/borra
+comentarios de otro; el admin solo mueve `status` (no reescribe texto); el
+throttle corta de verdad y su ledger ni se borra ni se backdatea (ni en el
+create, hueco que encontró la mutación); comentario sin stub no existe;
+respuestas a un nivel; queries sin `limit` o por encima de 1000 denegadas
+(CG incluido); stub inmutable y coherente con su identidad (doi minúsculas,
+arXiv sin versión); reportes create-only con cola solo-admin; killswitch
+congela comments+stubs pero no reports; `config/` solo expone `moderation`.
+
+**Pasada de mutación: 41 cláusulas nuevas eliminadas una a una → 40 muertas,
+1 superviviente demostrado redundante** (el check de autor del padre en la
+cascada: el delete del padre en el mismo batch ya exige a su autor con el
+mismo auth). Anotado en las rules como defensa en profundidad, calcando el
+precedente del `hasAll` de F2. Dos supervivientes de la primera ronda eran
+huecos de test, no de rules (backdate en el create del ledger; reporte sin
+sello enmascarado por un helper que siempre sellaba): tests añadidos y ambas
+mutaciones ahora mueren. Script en el scratchpad de la sesión, no versionado.
+
+### Costes
+
+| Camino | Lecturas |
+| --- | --- |
+| **Carga de feed** | **1, sin cambios** — nada de F3 se importa en el camino del feed; el test SOURCE ahora veta `commentService\|paperStubService\|reportService` además de `followUserService`, y el test COST sigue verde |
+| Página del paper (sin abrir comentarios) | 0 de Firestore (como antes) |
+| Abrir la hoja | 1 stub (+1 si identidad dual) + 1 count + 1 página de 20 + 1 perfil propio (gating del composer; solo autenticado) |
+| Publicar comentario | batch de 2 escrituras (4 si estrena stub) + ~4 lecturas de rules (killswitch, perfil, getAfter, existsAfter; +1 en respuestas) |
+| "Mis comentarios" / cola admin | 1 query acotada por página |
+
+### Tests
+
+- `npm run test:rules`: **93** (29+4 nuevos F3). `npm test`: **590** (86
+  nuevos: clave canónica, stubs, comentarios con cascada, reportes, SOURCE).
+- Lint y build limpios.
+
+### Verificación en vivo (2026-08-19) — hecha la mitad sin sesión
+
+Contra las rules **desplegadas** en `papertok-168df`, por REST sin cabecera
+de auth: stub get permitido (404 en ausente; el primer intento dio 403 por
+propagación de las rules recién liberadas — reintentar antes de alarmarse),
+query de comments sin `limit` → 403, con `limit(20)` → pasa, `limit(1001)` →
+403, crear stub sin auth → 403, `reports` → 403, `config/moderation` legible
+y `config/other` → 403. En el navegador, como visitante: la página del paper
+muestra el botón Comments, la hoja abre con contador 0 real de producción,
+estado vacío y la puerta "Sign in to join the conversation"; consola sin
+`permission-denied` (solo los 429 de OpenAlex de siempre).
+
+**Pendiente de tu sesión (el navegador quedó en el login del server de esta
+sesión):**
+
+1. Con @mugar (público): comentar en un paper → estrena stub; responder,
+   editar, borrar propio. Al borrar un padre con respuestas de la otra
+   cuenta, verificar que se van juntas.
+2. Con @nick_mugar: comentar en EL MISMO paper llegado por otra ruta (p. ej.
+   uno por el feed/arXiv y otro por su URL con DOI) → mismo hilo.
+3. Poner @nick_mugar en privado (Ajustes → Perfil) → la hoja debe mostrar
+   "Tu perfil es privado…" con el camino al editor, y el composer no enviar.
+4. Reportar un comentario de la otra cuenta (desaparece localmente) y, como
+   @mugar, abrir `/admin/moderation`: cola con el reporte, Ocultar (la otra
+   cuenta deja de verlo; el autor lo ve marcado en Mis comentarios),
+   Mostrar, Borrar, Resolver. Probar el killswitch: congelar → comentar
+   falla con el aviso honesto → descongelar.
+5. `/settings/comments` con cualquiera de las dos.
+
+**Datos de prueba**: en producción no se creó NADA (todas las escrituras de
+verificación fueron denegadas por diseño; la hoja de visitante solo lee).
+Lo que crees en la pasada con sesión se borra desde la propia UI (borrar
+comentario borra el hilo; el stub que quede huérfano es inerte y solo el
+admin puede borrarlo — hazlo desde la consola de Firebase si quieres cero
+rastro, colección `papers`).
+
+### Qué desplegar, en qué orden
+
+1. **Rules + índices: YA DESPLEGADOS** (2026-08-19, este chat). Aditivos:
+   ningún cliente viejo pierde nada; el índice CG de `comments` nace con la
+   colección vacía, sin backfill.
+2. **La app** (`npm run build` + push a `main` para GitHub Pages), cuando
+   quieras exponer la UI. No hay ventana de incompatibilidad: la UI vieja
+   no toca las colecciones nuevas.
+3. **⚠️ FUSIÓN MANUAL de `firestore.rules`**: la otra sesión (worktree
+   `brave-keller-ea1633`) también lo toca. Todo lo de F3 está **al final del
+   archivo** (desde el separador "F3: paper stubs…" hasta antes del
+   catch-all global), aposta para que la fusión sea coger ese bloque entero;
+   el único cambio fuera del bloque es el uid real en `isAdmin()` (línea de
+   `REPLACE_WITH_ADMIN_UID`). Si su rama redefine `userProfileKeys()` o el
+   bloque `users/`, no colisiona con nada de F3 — el match de `rateLimits`
+   es top-level aparte precisamente por eso. **Tras fusionar: re-desplegar
+   rules y volver a correr `npm run test:rules`.**
+
+### Fuera, a propósito
+
+- **Botón de comentarios en el feed**: bloqueado por el veto a
+  `PaperCard.jsx` (cambios del compañero). Un botón + `CommentsSheet` cuando
+  se libere.
+- **Anotaciones (F4/P8)**: siguiente fase; `annotationsFrozen` ya existe en
+  el killswitch y el stub no necesita cambios.
+- **Digest de reportes por email** (02-SECURITY §3): el cron del Worker
+  existe, pero tocar `worker/` no era de esta fase.
+- **Insignia "N comentarios" en tarjetas del feed**: sería N lecturas por
+  carga de feed, la familia de bug que R7 documenta. El número vive solo en
+  la hoja.
+- Publicar papers propios: sigue fuera (decisión previa).
+
 ## Privacidad del perfil — F8 / P15 (2026-08-19)
 
 **Implementado, fase 1 de rules desplegada, verificado en vivo.** Fase escrita
@@ -746,8 +917,9 @@ F6), `03-AUTH.md` (GitHub, ORCID por dos vías con la B recomendada, correo
 universitario, vinculación), `04-PHASES.md` (P1–P14 de una sesión cada una),
 `05-RISKS.md`.
 
-**Siguiente**: **P5** (clave canónica + rules de stubs) — P4 ya está
-implementado, ver la sección de F2 arriba —, más las acciones humanas de abajo.
+**Siguiente**: **P8** (anotaciones, F4) — P5/P6/P7 hechos, ver la sección de
+F3 arriba —, más las acciones humanas de abajo (la 4, el uid de admin, quedó
+hecha en F3).
 
 **Decisiones clave y por qué** (detalle en cada doc):
 
