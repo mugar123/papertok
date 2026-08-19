@@ -322,9 +322,11 @@ test('SOURCE: the follow service never touches users/{uid}/following', async () 
   assert.doesNotMatch(code, /'users'/);
 });
 
-test('SOURCE: nothing on the feed path imports the follow service', async () => {
+test('SOURCE: nothing on the feed path imports any social service', async () => {
   // The invariant the cost test in interactionProfileLoader.test.js protects,
-  // asserted where it can actually be broken: by an import.
+  // asserted where it can actually be broken: by an import. Widened in F3
+  // from the follow service alone to every social service — the invariant
+  // was never about follows, it is about the feed costing one read.
   for (const path of [
     '../context/FeedContext.jsx',
     '../components/Feed/FeedContainer.jsx',
@@ -333,6 +335,10 @@ test('SOURCE: nothing on the feed path imports the follow service', async () => 
     '../services/interactionProfileStore.js',
   ]) {
     const source = await readFile(new URL(path, import.meta.url), 'utf8');
-    assert.doesNotMatch(source, /followUserService/, `${path} must stay off the follow graph`);
+    assert.doesNotMatch(
+      source,
+      /followUserService|commentService|paperStubService|reportService/,
+      `${path} must stay off the social collections`,
+    );
   }
 });
