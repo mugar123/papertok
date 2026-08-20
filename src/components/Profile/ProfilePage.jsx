@@ -23,7 +23,6 @@ import {
   deleteOwnUserProfile,
   needsVisibilityChoice,
   partitionStalePins,
-  pinListEntry,
   pinnedListsAreVisible,
   profileIsPublic,
   publicAvatarFrom,
@@ -33,7 +32,7 @@ import {
   saveProfileVisibility,
   savePublicProfilePhoto,
   setPinnedListsVisible,
-  unpinListEntry,
+  togglePinnedList,
   updateUserProfile,
 } from '../../services/userProfileService.js';
 import VisibilityChoice from './VisibilityChoice.jsx';
@@ -387,7 +386,15 @@ export default function ProfilePage() {
         bio,
         allowContact,
         photo: showPhoto ? appAvatar : '',
-        pinnedLists: profile?.pinnedLists,
+        // A stale pin — its list unpublished or republished — makes the rules
+        // refuse the whole write, so carrying it along turns "Save changes"
+        // into a permission error with no visible cause. Once the pin picker
+        // has answered, the stale entries are dropped here exactly as the
+        // banner offers; before it answers, the save keeps what it has rather
+        // than guess every pin stale.
+        pinnedLists: pinnableLists === null
+          ? profile?.pinnedLists
+          : partitionStalePins(profile?.pinnedLists, pinnableLists).pinned,
       };
       if (!profile) {
         const created = await createUserProfile({
@@ -502,9 +509,13 @@ export default function ProfilePage() {
     setFeedback(null);
     const previous = profile.pinnedLists || [];
     try {
-      const next = pinnedIds.has(list.shareId)
-        ? unpinListEntry(previous, list.shareId)
-        : pinListEntry(previous, list);
+      // Routed through the stale-dropping toggle: the rules refuse any write
+      // that keeps a pin whose owner document is gone, and unpublishing (or
+      // republishing, which changes the share id) deletes exactly that
+      // document. Toggling through the raw entry helpers used to carry the
+      // orphan along and turn "pin the republished list" into a permission
+      // error dressed as "something went wrong".
+      const next = togglePinnedList(previous, list, pinnableLists);
       setProfile(current => ({ ...current, pinnedLists: next }));
       await savePinnedLists(next);
     } catch (error) {

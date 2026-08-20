@@ -20,6 +20,7 @@ import {
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import { toIndexedName } from '../src/services/userSearchService.js';
+import { PUBLIC_LIST_LIMITS } from '../src/services/publicListPayload.js';
 import {
   deleteDoc,
   deleteField,
@@ -436,6 +437,62 @@ test('FIX A: a pin whose list was unpublished can still be removed', async () =>
   // ...but dropping it works, so the profile is never permanently stuck.
   await assertSucceeds(updateDoc(doc(db, 'userProfiles', ALICE), {
     pinnedLists: [], updatedAt: serverTimestamp(),
+  }));
+});
+
+test('a stale pin vetoes even the write that pins its own successor', async () => {
+  // The republish sequence: unpublish deletes publicListOwners/{old}, publish
+  // mints a fresh share id. The profile still holds the old pin, and the rules
+  // ownership-check every entry in the array being written — so pinning the
+  // NEW share id while the orphan rides along is refused wholesale. This is
+  // what the profile editor surfaced as a bare "something went wrong" on Pin;
+  // the client now drops stale entries before writing (togglePinnedList), and
+  // this test is the reason it must.
+  await reset();
+  const successor = 'c'.repeat(32);
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    // Alice pinned her list, then republished it: old owner doc gone, new one live.
+    await setDoc(doc(db, 'userProfiles', ALICE), {
+      handle: 'alice', displayName: 'Alice', pinnedLists: [pin(ALICE_SHARE)],
+      createdAt: new Date(), updatedAt: new Date(),
+    });
+    await deleteDoc(doc(db, 'publicListOwners', ALICE_SHARE));
+    await setDoc(doc(db, 'publicListOwners', successor), {
+      ownerId: ALICE, listId: 'l1', createdAt: new Date(),
+    });
+  });
+
+  const db = asAlice();
+  // Carrying the orphan while pinning the successor: refused, in one piece.
+  await assertFails(updateDoc(doc(db, 'userProfiles', ALICE), {
+    pinnedLists: [pin(ALICE_SHARE), pin(successor, 'Republished')],
+    updatedAt: serverTimestamp(),
+  }));
+  // Dropping the orphan and pinning the successor: exactly what the client
+  // writes now, and it must pass.
+  await assertSucceeds(updateDoc(doc(db, 'userProfiles', ALICE), {
+    pinnedLists: [pin(successor, 'Republished')], updatedAt: serverTimestamp(),
+  }));
+});
+
+test('the pin-card paper count is capped by the public-list cap, not the old 12', async () => {
+  // F11 raised PUBLIC_LIST_LIMITS.papers from 12 to 50; the pin card mirrors
+  // the list it denormalizes, so the rules cap moves with it. Left at 12 this
+  // refused the true count of any list past a dozen papers — the live bug was
+  // a 19-paper list whose card could only ever say "12 papers".
+  await reset();
+  const db = asAlice();
+  await assertSucceeds(updateDoc(doc(db, 'userProfiles', ALICE), {
+    pinnedLists: [pin(ALICE_SHARE, 'Relatividad', 19)], updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(db, 'userProfiles', ALICE), {
+    pinnedLists: [pin(ALICE_SHARE, 'At the cap', PUBLIC_LIST_LIMITS.papers)],
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, 'userProfiles', ALICE), {
+    pinnedLists: [pin(ALICE_SHARE, 'Past the cap', PUBLIC_LIST_LIMITS.papers + 1)],
+    updatedAt: serverTimestamp(),
   }));
 });
 

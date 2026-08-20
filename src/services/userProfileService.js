@@ -30,6 +30,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { auth, db, IS_DEMO } from './firebase.js';
+import { PUBLIC_LIST_LIMITS } from './publicListPayload.js';
 import { userSearchEntry, userSearchReference } from './userSearchService.js';
 import { normalizeHandle, requireHandle } from '../utils/userHandle.js';
 
@@ -44,9 +45,13 @@ export const USER_PROFILE_LIMITS = Object.freeze({
   pinnedLists: 6,
   listTitle: 120,
   listEmoji: 40,
-  // A public list holds at most 12 papers (PUBLIC_LIST_LIMITS.papers), so a
-  // card claiming more is a card lying about a list it denormalizes.
-  listPaperCount: 12,
+  // The pin card mirrors the public list it denormalizes, so its count is
+  // capped by the same limit that caps the list itself. Imported rather than
+  // repeated: this sat at a literal 12 while F11 raised the list cap to 50,
+  // and every card for a bigger list quietly lied ("12 papers" on a list of
+  // 19). firestore.rules carries the same number in `entry.paperCount <=`;
+  // a test holds the two together.
+  listPaperCount: PUBLIC_LIST_LIMITS.papers,
   shareId: 32,
 });
 
@@ -175,6 +180,34 @@ export function pinListEntry(currentPinned, entry) {
 export function unpinListEntry(currentPinned, shareId) {
   const normalized = cleanString(shareId, 64).toLowerCase();
   return sanitizePinnedLists(currentPinned).filter(item => item.shareId !== normalized);
+}
+
+/**
+ * Pure: the pinned array after toggling `card`, with every pin that is no
+ * longer backed by a published list dropped on the way.
+ *
+ * The rules ownership-check every entry in the array being written, and a
+ * stale pin — its list unpublished, or republished under a fresh share id —
+ * fails that check, so one leftover entry vetoes the WHOLE write, including
+ * the attempt to pin the list's own successor. That is exactly the state a
+ * republish produces, and what the profile screen surfaced as a bare
+ * "something went wrong" on the Pin button.
+ *
+ * `publishedLists` is the pin picker's own data (readPinnableLists), so the
+ * filter costs no extra read. It must have actually loaded: dropping every
+ * pin because the picker has not answered yet would be the worse bug, so a
+ * missing list refuses instead of guessing.
+ */
+export function togglePinnedList(currentPinned, card, publishedLists) {
+  if (!Array.isArray(publishedLists)) {
+    throw new TypeError('The published lists are required to toggle a pin.');
+  }
+  const { pinned } = partitionStalePins(currentPinned, publishedLists);
+  const target = sanitizePinnedList(card);
+  if (!target) throw new TypeError('A published list is required to pin it.');
+  return pinned.some(item => item.shareId === target.shareId)
+    ? unpinListEntry(pinned, target.shareId)
+    : pinListEntry(pinned, target);
 }
 
 /**

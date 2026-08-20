@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { InvalidHandleError } from '../utils/userHandle.js';
+import { PUBLIC_LIST_LIMITS } from './publicListPayload.js';
 import {
   HandleUnavailableError,
   PINNABLE_LISTS_PAGE_SIZE,
@@ -22,6 +23,7 @@ import {
   sanitizeUserProfile,
   savePinnedLists,
   savePublicProfilePhoto,
+  togglePinnedList,
   unpinListEntry,
   updateUserProfile,
   PROFILE_VISIBILITY,
@@ -605,7 +607,40 @@ test('the pin ceiling matches the expression budget in the rules', () => {
 });
 
 test('a pinned card cannot claim more papers than a public list can hold', () => {
-  assert.equal(sanitizePinnedList({ shareId: SHARE_ID, title: 'x', paperCount: 500 }).paperCount, 12);
+  assert.equal(
+    sanitizePinnedList({ shareId: SHARE_ID, title: 'x', paperCount: 500 }).paperCount,
+    PUBLIC_LIST_LIMITS.papers,
+  );
+});
+
+test('the pin-card cap IS the public-list cap, in code and in rules', async () => {
+  // Not two numbers that happen to agree: the same number. This sat at a
+  // literal 12 while F11 raised PUBLIC_LIST_LIMITS.papers to 50, and every
+  // card for a bigger list showed "12 papers" — the editor said 12, the
+  // public list said 19, and the real list said 19.
+  assert.equal(USER_PROFILE_LIMITS.listPaperCount, PUBLIC_LIST_LIMITS.papers);
+  // The rules carry the same cap as a literal (they cannot import), so the
+  // drift guard lives here: this fails the moment either side moves alone.
+  const rules = await loadRules();
+  assert.match(rules, new RegExp(`entry\\.paperCount <= ${PUBLIC_LIST_LIMITS.papers}\\b`));
+});
+
+test('toggling through togglePinnedList drops pins with no published backing', () => {
+  const published = [{ shareId: SHARE_ID, title: 'Live', paperCount: 19 }];
+  const stale = { shareId: OTHER_SHARE_ID, title: 'Unpublished', paperCount: 3 };
+
+  // Pinning the live list while a stale pin lingers: the stale entry must not
+  // ride along, because the rules refuse the whole write over it.
+  const pinned = togglePinnedList([stale], published[0], published);
+  assert.deepEqual(pinned.map(item => item.shareId), [SHARE_ID]);
+
+  // Unpinning drops the stale entry too, not just the toggled one.
+  const unpinned = togglePinnedList([stale, published[0]], published[0], published);
+  assert.deepEqual(unpinned, []);
+
+  // A picker that has not answered refuses rather than treating every pin as
+  // stale — guessing here would silently wipe the profile's pins.
+  assert.throws(() => togglePinnedList([stale], published[0], null), TypeError);
 });
 
 // --- the public avatar -----------------------------------------------------
@@ -879,4 +914,24 @@ test('an empty pin list and hidden pins are different states', () => {
   assert.equal(pinnedListsAreVisible({ pinnedLists: [] }), true);
   assert.equal(pinnedListsAreVisible({ pinnedLists: [], showPinnedLists: false }), false);
   assert.equal(pinnedListsAreVisible({ showPinnedLists: true }), true);
+});
+
+// --- the editor's write paths must not carry stale pins ---------------------
+
+test('SOURCE: the profile editor routes pin writes through the stale-dropping paths', async () => {
+  // togglePinnedList and partitionStalePins are only fixes while the editor
+  // actually calls them: a stale pin in a write makes the rules refuse the
+  // whole thing, so the raw entry helpers must not be reachable from here.
+  // This is the same convention as the feed's SOURCE tests — the invariant
+  // breaks with an import, so the import is what gets pinned.
+  const source = await readFile(
+    new URL('../components/Profile/ProfilePage.jsx', import.meta.url),
+    'utf8',
+  );
+  assert.match(source, /togglePinnedList\(previous, list, pinnableLists\)/,
+    'the Pin button must toggle through togglePinnedList');
+  assert.match(source, /partitionStalePins\(profile\?\.pinnedLists, pinnableLists\)\.pinned/,
+    '"Save changes" must drop stale pins from its payload');
+  assert.doesNotMatch(source, /\bpinListEntry\b|\bunpinListEntry\b/,
+    'the raw entry helpers skip the stale filter and must stay out of the editor');
 });

@@ -168,7 +168,11 @@ service cloud.firestore {
           || entry.emoji is string && entry.emoji.size() <= 40)
         && entry.paperCount is int
         && entry.paperCount >= 0
-        && entry.paperCount <= 12
+        // Mirrors PUBLIC_LIST_LIMITS.papers, the cap on the public list the
+        // card denormalizes. F11 raised that cap from 12 to 50 and this
+        // literal was left behind, so every card sat capped at "12 papers".
+        // A test in userProfileService.test.js holds the two numbers together.
+        && entry.paperCount <= 50
         && ownsPinnedShare(entry.shareId);
     }
 
