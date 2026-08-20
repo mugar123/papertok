@@ -320,6 +320,35 @@
   }
 }
 
+/* ── Sign-in methods (F5) ── */
+.settings-row-status {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 12px;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+  border-radius: 8px;
+  color: #73d8bb;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.settings-link-feedback {
+  margin-top: 11px;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  line-height: var(--lh-normal);
+}
+
+.settings-link-feedback.is-success {
+  color: #73d8bb;
+}
+
+.settings-link-feedback.is-error {
+  color: #f18a9a;
+}
+
 .settings-follow-summary,
 .settings-interest-summary {
   display: flex;

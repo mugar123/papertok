@@ -1,7 +1,13 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useState, useEffect } from 'react';
-import { IS_DEMO, auth, googleProvider, db } from '../services/firebase';
-import { getAdditionalUserInfo, onAuthStateChanged, signInWithPopup, signOut as firebaseSignOut } from 'firebase/auth';
+import { IS_DEMO, auth, db } from '../services/firebase';
+import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
+import {
+  SIGN_IN_PROVIDERS,
+  linkSignInProvider,
+  providerIdsOf,
+  signInWithProvider,
+} from '../services/authIdentityService';
 import { deleteField, doc, getDoc, getDocFromCache, setDoc } from 'firebase/firestore';
 import {
   DEFAULT_READING_PREFERENCES,
@@ -36,6 +42,11 @@ export function AuthProvider({ children }) {
   const [readingPreferences, setReadingPreferences] = useState(DEFAULT_READING_PREFERENCES);
   const [profilePhoto, setProfilePhoto] = useState(null);
   const [profileLoadError, setProfileLoadError] = useState(null);
+  // Which doors this account has (F5). Kept in state rather than read from
+  // `user.providerData` at render time because linking does not always
+  // re-emit an auth state change, and a settings row that still says
+  // "Connect" right after connecting is a row nobody trusts.
+  const [signInProviders, setSignInProviders] = useState([]);
   const [profileReloadKey, setProfileReloadKey] = useState(0);
 
   useEffect(() => {
@@ -50,6 +61,7 @@ export function AuthProvider({ children }) {
           setFollowedAuthors(demoGet('followedAuthors', []));
           setReadingPreferences(normalizeReadingPreferences(demoGet('readingPreferences', {})));
           setProfilePhoto(normalizeProfilePhoto(demoGet('profilePhoto', null)));
+          setSignInProviders(providerIdsOf(demoUser));
         }
         setLoading(false);
       }, 0);
@@ -68,6 +80,7 @@ export function AuthProvider({ children }) {
       setFollowedAuthors([]);
       setReadingPreferences(DEFAULT_READING_PREFERENCES);
       setProfilePhoto(null);
+      setSignInProviders(providerIdsOf(currentUser));
 
       if (currentUser) {
         const userRef = doc(db, 'users', currentUser.uid);
@@ -123,7 +136,7 @@ export function AuthProvider({ children }) {
     setProfileReloadKey(key => key + 1);
   };
 
-  const signInWithGoogle = async () => {
+  const signInWith = async (providerId) => {
     setError(null);
     if (IS_DEMO) {
       setTimeout(() => {
@@ -131,20 +144,37 @@ export function AuthProvider({ children }) {
           uid: 'demo-user-123',
           displayName: 'Demo User',
           email: 'demo@papertok.app',
-          photoURL: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix'
+          photoURL: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Felix',
+          providerData: [{ providerId }],
         };
         setUser(demoUser);
+        setSignInProviders(providerIdsOf(demoUser));
         demoSet('user', demoUser);
       }, 500);
-      return { isNewUser: false };
+      return { isNewUser: false, providerId };
     }
     try {
-      const result = await signInWithPopup(auth, googleProvider);
-      return { isNewUser: Boolean(getAdditionalUserInfo(result)?.isNewUser) };
+      return await signInWithProvider(providerId);
     } catch (err) {
       setError(err?.code || 'AUTH_FAILED');
       throw err;
     }
+  };
+
+  const signInWithGoogle = () => signInWith(SIGN_IN_PROVIDERS.google);
+  const signInWithGitHub = () => signInWith(SIGN_IN_PROVIDERS.github);
+
+  /**
+   * Attaches a second sign-in method to the account already in session (F5).
+   * Both providers open the same uid afterwards, so nothing in Firestore moves
+   * and nothing needs migrating. Errors are classified by the service and
+   * thrown on: the caller shows them next to the button that was pressed,
+   * rather than in the page-wide banner meant for a failed sign-in.
+   */
+  const linkGitHubAccount = async () => {
+    const result = await linkSignInProvider(SIGN_IN_PROVIDERS.github);
+    setSignInProviders(providerIdsOf(result.user || auth.currentUser));
+    return result;
   };
 
   const signOut = async () => {
@@ -156,6 +186,7 @@ export function AuthProvider({ children }) {
       setFollowedAuthors([]);
       setReadingPreferences(DEFAULT_READING_PREFERENCES);
       setProfilePhoto(null);
+      setSignInProviders([]);
       localStorage.removeItem('papertok_user');
       return;
     }
@@ -276,7 +307,10 @@ export function AuthProvider({ children }) {
     readingPreferences,
     profilePhoto,
     profileLoadError,
+    signInProviders,
     signInWithGoogle,
+    signInWithGitHub,
+    linkGitHubAccount,
     signOut,
     completeOnboarding,
     updatePreferences,

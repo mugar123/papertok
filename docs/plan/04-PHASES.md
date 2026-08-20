@@ -137,20 +137,32 @@ para que nada social entre en el grafo de módulos del feed.
   manual de anclaje por cita.
 - **Despliegue**: seguro.
 
-## F5 — Login con GitHub
+## F5 — Login con GitHub — **HECHA** (2026-08-20)
 
-### P9 — GitHub + vinculación ⛔ BLOQUEADA por acción humana
-- **Necesita antes**: OAuth App creada en GitHub y proveedor activado en la
-  consola de Firebase (`03-AUTH.md`, acciones 1). Exactamente eso; sin ello
-  no se puede ni probar.
+Desbloqueada: la OAuth App y el proveedor ya estaban puestos. Detalle y
+desviaciones en `STATE.md`. Una nota al plan: `03-AUTH.md` daba por hecho que
+existía login de correo/contraseña, y no existe — los métodos eran Google y
+navegación de invitado, así que la única colisión posible es Google↔GitHub.
+
+### P9 — GitHub + vinculación — **HECHA**
+- **Necesitaba antes**: OAuth App creada en GitHub y proveedor activado en la
+  consola de Firebase (`03-AUTH.md`, acciones 1). Hecho por el usuario.
 - **Entra**: botón GitHub en login; manejo de
   `account-exists-with-different-credential`; "vincular GitHub" en ajustes
   (`linkWithPopup`); política de cuenta-accidental-vacía (`03-AUTH.md`).
 - **Toca**: `AuthContext.jsx`, `firebase.js`, pantalla de login, ajustes.
 - **Depende de**: independiente de F1–F4.
-- **Tests**: manual con una cuenta GitHub de prueba: alta nueva, colisión de
-  email, vinculación, ambos proveedores → mismo uid y mismos datos.
-- **Despliegue**: seguro (aditivo al login).
+- **Tests**: 21 unitarios con inyección de dependencias (alta, login,
+  colisión en sus tres formas, vinculación, identidad ocupada, y estructurales
+  que fijan que entrar no escribe perfil y que la credencial pendiente no se
+  guarda). La pasada manual con cuenta GitHub real queda para el usuario:
+  requiere autenticarse.
+- **Fuera**: el borrado de la cuenta accidental vacía. Se detecta la colisión
+  de identidad y se explica, pero liberar la identidad exige borrar esa cuenta
+  y **la app no tiene borrado de cuenta**; sería una fase propia. Razonado en
+  `STATE.md`.
+- **Despliegue**: solo la app. **Cero cambios en `firestore.rules`**: F5 vive
+  entera en Firebase Auth.
 
 ## Infraestructura para F6/F7
 
@@ -342,7 +354,7 @@ análisis de por qué buscar es enumerar, y qué se le concede a cambio, está e
 P1 → P2 → P3 → P4                    (F1, F2)
 P5 ─┐
 P2 ─┴→ P6 → P7 → P8                  (F3, F4)
-P9                                    (F5, independiente)
+P9 ✔                                  (F5, hecha)
 P10 → P11 → P12                       (F6 núcleo)
 P10 → P13                             (F6 afiliación)
 P10 + P3 → P14                        (F7)
@@ -350,5 +362,6 @@ P1 + P3 + P4 → P15                    (F8, hecha)
 P3 + P15 → P16                        (F9, paralelizable con F3)
 ```
 
-Bloqueadas por humano: **P9** (OAuth App GitHub), **P10** (service account),
-**P11** (cliente ORCID). Todo lo demás está listo para empezar.
+Bloqueadas por humano: **P10** (service account), **P11** (cliente ORCID).
+P9 ya no: su bloqueo se levantó y F5 está hecha. Todo lo demás está listo para
+empezar.

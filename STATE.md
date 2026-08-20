@@ -1,5 +1,205 @@
 # Estado / pendientes
 
+## Login con GitHub — F5 / P9 (2026-08-20)
+
+**Implementado. `firestore.rules` NO se toca: F5 vive entera en Firebase Auth,
+así que no hay despliegue de rules ni índices en esta fase.** El proveedor ya
+estaba activado en la consola con su OAuth App; lo que faltaba era conectarlo.
+
+Corrección al punto de partida: **no hay login de correo/contraseña en el
+repo** (cero referencias a `signInWithEmailAndPassword`). Los métodos de hoy
+son Google por popup y navegación como invitado, así que la única colisión
+posible es Google↔GitHub.
+
+### Qué entró
+
+| Pieza | Archivo |
+| --- | --- |
+| `GithubAuthProvider` con scope `user:email` explícito | `src/services/firebase.js` |
+| `authIdentityService`: `signInWithProvider`, `linkSignInProvider`, `providerIdsOf`, y tres errores clasificados; inyección de dependencias como el resto de servicios | `src/services/authIdentityService.js` (+21 tests) |
+| `signInWithGitHub`, `linkGitHubAccount` y `signInProviders` en el contexto; Google pasa por el mismo camino | `src/context/AuthContext.jsx` |
+| Botón "Continuar con GitHub" y el aviso de colisión de correo | `src/components/Auth/LoginPage.{jsx,css}` |
+| Sección "Formas de entrar" con "Conectar", y la insignia de la cuenta que ya no dice siempre Google | `src/components/Settings/SettingsPage.{jsx,css}` |
+| `AUTH_LINK_FAILED`, `AUTH_EMAIL_ALREADY_USED`, `AUTH_IDENTITY_TAKEN`, `auth/cancelled-popup-request` | `src/utils/errorMessages.js` |
+
+### Decisiones tomadas al implementar (y por qué)
+
+- **Se pide el scope `user:email`.** Sin él GitHub solo entrega el perfil
+  público, y una cuenta con el correo en privado llega **sin correo**: una
+  identidad sin correo no puede colisionar con nada, así que Firebase acuñaría
+  un segundo `uid` en silencio en lugar de lanzar
+  `account-exists-with-different-credential`. Es decir: sin el scope, el único
+  caso que esta fase existe para atrapar deja de existir. Es de solo lectura.
+- **La credencial pendiente NO se guarda.** El patrón habitual es quedarse la
+  credencial que viaja en el error de colisión y hacer `linkWithCredential`
+  después del login. `03-AUTH.md` pide otra cosa por su nombre —"entra con el
+  original y vincula desde ajustes"— y guardar una credencial OAuth viva
+  cruzando un cambio de sesión es estado que esta fase no necesita. Hay un test
+  estructural que veta `credentialFromError`/`linkWithCredential`, para que
+  revisar esa decisión sea un acto deliberado y no un descuido.
+- **El mensaje de colisión no nombra al otro proveedor**, y no por prudencia
+  sino porque no se puede: el error no dice cuál es, y con la protección contra
+  enumeración de correos `fetchSignInMethodsForEmail` tampoco. Dice "usa el
+  método que ya tienes", que es verdad y es demostrable. `03-AUTH.md` ya avisaba
+  de esto como cuidado verificable; queda verificado por el lado del código.
+- **Vincular algo ya vinculado es éxito, no error.** Y si la carrera se pierde
+  contra otra pestaña (`provider-already-linked`), también. Pedir algo que ya
+  es cierto no es un fallo que enseñar a nadie.
+- **La elección de privacidad de P15 no se toca, y por eso se dispara igual.**
+  La puerta y el perfil son actos separados: entrar no escribe nada en
+  Firestore, y `createUserProfile` sigue exigiendo la elección. Un alta por
+  GitHub se encuentra exactamente la misma puerta que una por Google. Está
+  fijado con un test estructural doble (el módulo de identidades no importa
+  `firebase/firestore` ni sabe qué es `userProfiles`; y el `throw` de
+  `createUserProfile` sigue en su sitio) en vez de con un comentario.
+- **`signInProviders` es estado, no `user.providerData` leído al pintar**:
+  vincular no siempre re-emite un cambio de estado de Auth, y una fila que
+  sigue diciendo "Conectar" justo después de conectar es una fila en la que
+  nadie vuelve a confiar.
+
+### Costes
+
+**La carga de feed sigue costando 1 lectura.** Nada de F5 entra en su camino
+—el test SOURCE de esta fase lo veta en los cinco módulos del feed— y el test
+COST sigue verde. Entrar o vincular no añade ninguna lectura de Firestore: son
+llamadas a Auth.
+
+### Tests
+
+- **21 nuevos** en `authIdentityService.test.js`: alta nueva por GitHub
+  (`isNewUser` → onboarding), login de cuenta existente, Google intacto por el
+  mismo camino, colisión de correo con dirección / sin dirección / en el campo
+  antiguo, el resto de fallos de popup sin traducir, vinculación correcta,
+  ya-vinculado sin popup, carrera perdida, identidad ocupada por sus dos
+  códigos, vinculación sin sesión, y los tres estructurales.
+- `npm test`: **635**, todos verdes. Lint y build limpios.
+
+### Verificación en vivo (2026-08-20, panel visible)
+
+Hasta donde llega sin autenticarse, que era el trato:
+
+| | |
+| --- | --- |
+| Botón GitHub en la pantalla de entrada | pintado bajo el de Google, mismo ancho, sin desbordes |
+| Pulsarlo | llega a Firebase de verdad: el navegador del panel bloquea el popup y sale `auth/popup-blocked` con su copy localizada; el botón se recupera y no se queda colgado |
+| Aviso de colisión | inyectado en el DOM para inspeccionarlo: todas las variables resuelven a valores reales (`--bg-glass`, `--accent-save`, `--radius-lg`), ninguna inventada |
+| Móvil (375) | los dos botones apilados, sin scroll horizontal |
+| Consola | sin errores nuevos |
+
+**Pendiente de tu sesión** (necesita autenticarse, y eso lo haces tú):
+
+1. Alta nueva por GitHub con una cuenta que no exista en PaperTok → debe caer
+   en onboarding, y al crear el perfil público debe pedir la elección de
+   privacidad sin preselección.
+2. Cerrar sesión y volver a entrar por GitHub → misma cuenta, mismo `uid`.
+3. Con @mugar (Google) → Ajustes → Formas de entrar → Conectar GitHub. Después,
+   salir y entrar por GitHub: debe abrir @mugar, con sus datos.
+4. Colisión: una cuenta de GitHub cuyo correo sea el de una cuenta Google que
+   ya exista → debe salir el aviso, no un segundo `uid`. **Este es el que
+   confirma la pregunta abierta de `03-AUTH.md`**: si con la protección de
+   enumeración activada Firebase no lanza el error y crea la cuenta igual, el
+   aviso no aparecerá y habría que replantear (la alternativa sería detectarlo
+   ya dentro, comparando el correo). Los tests cubren la rama; lo que no se
+   puede probar sin credenciales es cuál de las dos ramas toma Firebase.
+5. Google sigue entrando como siempre.
+
+### Fuera, a propósito
+
+- **Borrar la cuenta accidental.** `03-AUTH.md` dice que se puede vincular al
+  `uid` bueno "solo si la cuenta accidental está vacía", y eso choca con dos
+  cosas que el plan no menciona: desde la cuenta buena **no se puede** mirar si
+  la otra está vacía (las rules lo deniegan, y con razón), y liberar la
+  identidad de GitHub exige borrar esa cuenta — **PaperTok no tiene borrado de
+  cuenta hoy** (cero referencias a `deleteUser`), así que sería construir el
+  borrado entero, con su reautenticación y su limpieza de Firestore. Lo que sí
+  entró es la mitad honesta: la colisión se detecta, se explica que las dos
+  cuentas no se fusionan y se dice que hay que elegir cuál se conserva. La otra
+  mitad necesita una fase de borrado de cuenta.
+- **Desvincular un proveedor.** No lo pide el plan, y desvincular el último que
+  queda deja a alguien fuera de su propia cuenta.
+- **Vinculación automática tras el login** (la credencial guardada). Razón
+  arriba.
+
+---
+
+## Pasada de fiabilidad — sin fase (2026-08-20)
+
+Trabajo hecho hoy en otras sesiones que se quedó sin anotar aquí para no
+chocar con este archivo. El botón de comentarios en el feed **ya estaba
+anotado** (sección "Botón de comentarios en el feed", 2026-08-19); lo que
+faltaba es esto.
+
+### Respuestas vacías de caché que se hacían pasar por respuestas (`c09b1ad`)
+
+Toda fila de "Me gusta" podía quedarse en "Untitled paper" tras un momento de
+mala conexión, y la página no se recuperaba sin recargar. La causa: con el
+backend inalcanzable `getDocs` **no rechaza**, resuelve contra la caché en
+memoria —que en una página recién cargada está vacía— y devuelve un éxito
+vacío con `fromCache: true`. Tratarlo como ausencia confirmada asentaba los 40
+ids como definitivos y ya nadie volvía a preguntar. Ahora **una ausencia solo
+se asienta si el servidor la confirmó**: `fetchLibraryRecords` devuelve
+`{ records, fromCache }`, `pendingIdRequests` suelta lo no autoritativo y
+reintenta con backoff exponencial sin rendirse, y la biblioteca personal deja
+de latchear `'ready'` sobre una respuesta de caché (que además borraba un
+falso "no tienes nada guardado"). Datos en mano sí asientan, vengan de donde
+vengan: la caché con datos es datos.
+
+En la misma pasada, las pantallas que se montan y desmontan sin parar (perfil
+↔ ajustes, la hoja de comentarios en cada apertura) dejaron de reiniciar desde
+esqueleto: siembran de `sessionCache` y revalidan detrás de una vista ya
+pintada, con clave por uid o handle para que ninguna cuenta vea la de otra.
+Una revalidación fallida deja en pie la vista buena en lugar de sustituirla
+por un error.
+
+### Toda espera acotada, y ninguna espera anunciada de más (`4de16c6`)
+
+Las lecturas de Firestore **no tienen timeout de cliente**: contra una conexión
+parada —no caída, donde el SDK rechaza al instante, sino abierta y sin
+contestar— la promesa no se resuelve nunca, y una pantalla cuyo estado de carga
+solo termina en `.then`/`.catch` se queda ahí hasta que recargas.
+`withReadTimeout` (`src/utils/boundedRead.js`) la acota, y **un timeout no es
+una respuesta**: es fallo reintentable, jamás ausencia confirmada. El esqueleto
+de la hoja de comentarios espera 320 ms antes de aparecer (en CSS, sin salir
+del DOM, para que `aria-busy` siga diciendo la verdad a un lector de pantalla),
+porque el hilo contesta en ~150 ms y casi ningún paper tiene stub: estaba
+anunciando una espera ya terminada. La pantalla de perfil ganó el estado de
+error que no tenía —un fallo de carga caía en el formulario con todas las ramas
+`ready` apagadas— y `null` (no preguntado) dejó de ser lo mismo que `[]`
+(preguntado, y no hay).
+
+### Paciencia en lecturas lentas: culpar al servidor solo si falló (`5b5b948`)
+
+La guillotina de 6 s de la pasada anterior convertía una conexión silenciosa en
+"no se pudieron cargar los comentarios", tiraba la respuesta tardía y no
+reintentaba sola — y el "Reintentar" que funcionaba al instante era la prueba
+de que quien se rindió fuimos nosotros, no el SDK. `patientRead` la sustituye:
+cada timeout lanza otro intento mientras los anteriores siguen corriendo, gana
+el primero que conteste, la interfaz dice "está tardando más de lo normal"
+(que es verdad) en vez de "no se pudo cargar" (que no lo era), y cuando todos
+han expirado la respuesta tardía **se entrega igual**, así que un parón que
+acaba a los nueve segundos cura la hoja a los nueve segundos sin tocar nada.
+Los fallos deterministas —permiso denegado, no soportado— siguen fallando al
+instante con su copy honesta. El `count()` dejó de bloquear la apertura: es una
+insignia de cabecera, y un hilo ya en mano no debe esperar por ella.
+
+### Aire en el perfil y la hoja de comentarios (`5b3ed5c`)
+
+La cabecera del perfil arrancaba pegada a la navbar; ahora baja un paso
+completo en los dos breakpoints. La hoja de comentarios compartía una sola
+curva para entrar y salir, y su fondo se desvanecía antes que ella (destello
+contra la página desnuda): entrada y salida son transiciones distintas, con el
+fondo cronometrado para sobrevivir a la hoja.
+
+### Sigue abierto
+
+**Las cuentas antiguas no pueden escribir su propio `users/{uid}`** (el bug que
+encontró P15). Verificado hoy: `userProfileKeys()` en `firestore.rules` sigue
+sin `email`, `displayName`, `photoURL` ni `createdAt`, y como todas las
+escrituras son `merge`, la lista blanca ve el documento entero y deniega.
+Ninguna de las pasadas de hoy lo toca.
+
+---
+
 ## Red social — F3 (P5+P6+P7): comentarios en papers (2026-08-19)
 
 **Implementado; rules e índices DESPLEGADOS en `papertok-168df`; verificado en

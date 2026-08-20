@@ -134,6 +134,14 @@
   margin-right: auto;
 }
 
+/* ── Sign-in methods ── */
+.login-methods {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 /* ── Google Button ── */
 .login-google-btn {
   display: inline-flex;
@@ -197,6 +205,49 @@
   flex-shrink: 0;
 }
 
+/* ── GitHub Button ── */
+.login-provider-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-8);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-xl);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  font-family: var(--font-body);
+  min-height: 52px;
+  min-width: 260px;
+  transition: all var(--transition-base);
+  box-shadow: var(--shadow-md);
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .login-provider-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    border-color: var(--text-tertiary);
+    background: var(--bg-glass-hover);
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+.login-provider-btn:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.login-provider-btn--loading {
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.login-provider-icon {
+  flex-shrink: 0;
+}
+
 /* ── Spinner ── */
 .login-spinner {
   width: 24px;
@@ -207,11 +258,48 @@
   animation: spin 0.8s linear infinite;
 }
 
+.login-spinner--onDark {
+  border-color: var(--border-strong);
+  border-top-color: var(--accent-secondary);
+}
+
 /* ── Error ── */
 .login-error {
   margin-top: var(--space-4);
   color: var(--accent-danger);
   font-size: var(--fs-sm);
+}
+
+/* ── Email collision (F5) ── */
+.login-collision {
+  margin: var(--space-5) auto 0;
+  max-width: 380px;
+  padding: var(--space-4) var(--space-5);
+  text-align: left;
+  background: var(--bg-glass);
+  border: 1px solid var(--border-default);
+  border-left: 3px solid var(--accent-save);
+  border-radius: var(--radius-lg);
+}
+
+.login-collision h2 {
+  font-family: var(--font-heading);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.login-collision p {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--text-secondary);
+}
+
+.login-collision strong {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
 }
 
 /* ── Footer ── */

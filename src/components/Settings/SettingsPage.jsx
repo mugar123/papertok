@@ -7,11 +7,13 @@ import {
   Building2,
   BriefcaseBusiness,
   Camera,
+  Check,
   ChevronRight,
   Code2,
   ExternalLink,
   FlaskConical,
   GraduationCap,
+  KeyRound,
   Languages,
   LoaderCircle,
   LogOut,
@@ -35,6 +37,7 @@ import { AI_EXPLANATION_LEVELS } from '../../services/aiExplanationService';
 import { CATEGORIES } from '../../data/categories';
 import { PUBLIC_AVATAR_PRESET, prepareProfileImage } from '../../utils/profileImage';
 import { savePublicProfilePhoto } from '../../services/userProfileService';
+import { SIGN_IN_PROVIDERS } from '../../services/authIdentityService';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import EditInterestsModal from './EditInterestsModal';
 import EmailNotificationModal from '../Following/EmailNotificationModal';
@@ -82,6 +85,9 @@ const SETTINGS_COPY = {
     account: 'Cuenta',
     defaultUser: 'Usuario de PaperTok',
     googleAccount: 'Cuenta gestionada con Google',
+    githubAccount: 'Cuenta gestionada con GitHub',
+    accountBothProviders: 'Entras con Google y con GitHub',
+    genericAccount: 'Cuenta de PaperTok',
     changePhoto: 'Cambiar foto',
     restoreGooglePhoto: 'Restaurar foto de Google',
     removePhoto: 'Quitar foto de perfil',
@@ -144,6 +150,16 @@ const SETTINGS_COPY = {
     session: 'Sesión',
     sessionDescription: 'La información personalizada permanece asociada a esta cuenta.',
     signOut: 'Cerrar sesión',
+    signInMethods: 'Formas de entrar',
+    signInMethodsDescription: 'Distintas puertas, la misma cuenta y los mismos datos.',
+    githubMethod: 'Entrar con GitHub',
+    githubLinked: 'Conectado. Ya puedes entrar con GitHub.',
+    githubUnlinked: 'Conéctalo y podrás entrar con GitHub además de como entras hoy.',
+    connect: 'Conectar',
+    connecting: 'Conectando...',
+    connected: 'Conectado',
+    linkSuccess: 'GitHub conectado. La próxima vez puedes entrar con cualquiera de los dos.',
+    linkTaken: 'Esa cuenta de GitHub ya abre otra cuenta de PaperTok. Las dos no se fusionan: entra en la otra si es la que quieres conservar, o conecta una cuenta de GitHub distinta.',
   },
   en: {
     eyebrow: 'User settings',
@@ -152,6 +168,9 @@ const SETTINGS_COPY = {
     account: 'Account',
     defaultUser: 'PaperTok user',
     googleAccount: 'Account managed with Google',
+    githubAccount: 'Account managed with GitHub',
+    accountBothProviders: 'You sign in with Google and GitHub',
+    genericAccount: 'PaperTok account',
     changePhoto: 'Change photo',
     restoreGooglePhoto: 'Restore Google photo',
     removePhoto: 'Remove profile photo',
@@ -214,6 +233,16 @@ const SETTINGS_COPY = {
     session: 'Session',
     sessionDescription: 'Your personalized information remains linked to this account.',
     signOut: 'Sign out',
+    signInMethods: 'Ways to sign in',
+    signInMethodsDescription: 'Different doors, the same account and the same data.',
+    githubMethod: 'Sign in with GitHub',
+    githubLinked: 'Connected. You can sign in with GitHub now.',
+    githubUnlinked: 'Connect it and you can sign in with GitHub as well as the way you sign in today.',
+    connect: 'Connect',
+    connecting: 'Connecting...',
+    connected: 'Connected',
+    linkSuccess: 'GitHub connected. Next time you can sign in with either one.',
+    linkTaken: 'That GitHub account already opens a different PaperTok account. The two are not merged: sign in to the other one if that is the account you want to keep, or connect a different GitHub account.',
   },
 };
 
@@ -266,6 +295,8 @@ export default function SettingsPage() {
     profilePhoto,
     updateReadingPreferences,
     updateProfilePhoto,
+    signInProviders,
+    linkGitHubAccount,
     signOut,
   } = useAuth();
   const {
@@ -286,6 +317,40 @@ export default function SettingsPage() {
   const [photoFeedback, setPhotoFeedback] = useState(null);
   const [savingLanguage, setSavingLanguage] = useState(false);
   const [languageFeedback, setLanguageFeedback] = useState(null);
+  const [linkingGitHub, setLinkingGitHub] = useState(false);
+  const [linkFeedback, setLinkFeedback] = useState(null);
+
+  const gitHubLinked = signInProviders.includes(SIGN_IN_PROVIDERS.github);
+  const googleLinked = signInProviders.includes(SIGN_IN_PROVIDERS.google);
+  const accountBadge = gitHubLinked && googleLinked
+    ? copy.accountBothProviders
+    : gitHubLinked ? copy.githubAccount
+      : googleLinked ? copy.googleAccount
+        : copy.genericAccount;
+
+  const handleLinkGitHub = async () => {
+    setLinkingGitHub(true);
+    setLinkFeedback(null);
+    try {
+      const result = await linkGitHubAccount();
+      setLinkFeedback({ tone: 'success', text: result.alreadyLinked ? copy.githubLinked : copy.linkSuccess });
+    } catch (linkError) {
+      // The GitHub identity already opens a different uid. Two Firestore trees
+      // are never merged behind somebody's back (03-AUTH.md), so the honest
+      // move is to say so and let them decide which account they keep.
+      if (linkError?.code === 'AUTH_IDENTITY_TAKEN') {
+        setLinkFeedback({ tone: 'error', text: copy.linkTaken });
+      } else if (linkError?.code === 'auth/popup-closed-by-user'
+        || linkError?.code === 'auth/cancelled-popup-request') {
+        setLinkFeedback(null);
+      } else {
+        console.error('Error linking GitHub:', linkError);
+        setLinkFeedback({ tone: 'error', text: getUiErrorMessage(linkError, language, 'AUTH_LINK_FAILED') });
+      }
+    } finally {
+      setLinkingGitHub(false);
+    }
+  };
 
   const selectedAreas = useMemo(() => {
     const selected = new Set(userPreferences || []);
@@ -449,7 +514,7 @@ export default function SettingsPage() {
               <small>{copy.account}</small>
               <h2 id="settings-account-title">{user?.displayName || copy.defaultUser}</h2>
               <p>{user?.email}</p>
-              <span><ShieldCheck size={14} /> {copy.googleAccount}</span>
+              <span><ShieldCheck size={14} /> {accountBadge}</span>
             </div>
 
             <div className="settings-profile-actions">
@@ -762,6 +827,49 @@ export default function SettingsPage() {
                 </a>
               </div>
             </div>
+          </section>
+
+          <section className="settings-section" aria-labelledby="methods-heading">
+            <div className="settings-section-heading">
+              <KeyRound size={18} />
+              <div>
+                <h2 id="methods-heading">{copy.signInMethods}</h2>
+                <p>{copy.signInMethodsDescription}</p>
+              </div>
+            </div>
+
+            <div className="settings-list">
+              <div className="settings-row" style={{ '--settings-index': 6 }}>
+                <span className="settings-row-icon settings-row-icon--github"><Code2 size={20} /></span>
+                <div className="settings-row-content">
+                  <h3>{copy.githubMethod}</h3>
+                  <p>{gitHubLinked ? copy.githubLinked : copy.githubUnlinked}</p>
+                </div>
+                {gitHubLinked ? (
+                  <span className="settings-row-status"><Check size={16} /> {copy.connected}</span>
+                ) : (
+                  <button
+                    type="button"
+                    className="settings-row-action"
+                    onClick={handleLinkGitHub}
+                    disabled={linkingGitHub}
+                  >
+                    {linkingGitHub ? copy.connecting : copy.connect}
+                    {!linkingGitHub && <ChevronRight size={17} />}
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {linkFeedback && (
+              <p
+                className={`settings-link-feedback is-${linkFeedback.tone}`}
+                role="status"
+                aria-live="polite"
+              >
+                {linkFeedback.text}
+              </p>
+            )}
           </section>
 
           <section className="settings-section settings-section--session" aria-labelledby="session-heading">
