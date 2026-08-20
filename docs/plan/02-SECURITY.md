@@ -297,3 +297,82 @@ costes: el precio (04-PHASES) y el problema estructural de sync — sin Cloud
 Functions no hay trigger, el Worker no ve las escrituras de perfil, y
 sincronizar desde el cliente exige exponer una clave de escritura del índice,
 que es esta misma sección otra vez pero en un servicio sin rules.
+
+## 8. F10 — Privacidad granular: lo que cada interruptor esconde, y lo que no
+
+Tres interruptores (`04-PHASES.md` P17): me gusta públicos, guardados
+públicos, lista de seguidores pública. Los dos primeros ABREN datos que hoy
+son privados; el tercero CIERRA un dato que hoy es público. Esta sección fija
+qué promete cada uno, porque prometer de más aquí es mentir con rules
+delante.
+
+### Me gusta / guardados: proyección, no apertura
+
+Las colecciones de origen (`users/{uid}/interactions`, `savedPapers`) llevan
+telemetría de comportamiento y notas; no se abren ni condicionalmente
+(seguridad por campo no existe — la misma razón del stash de pines de F8).
+Lo público es una proyección acotada (`01-DATA-MODEL.md`) cuya existencia es
+el interruptor:
+
+- **Dirección crítica, en rules**: la estantería no puede existir con el
+  perfil privado (la escritura exige `visibility == 'public'` explícito tras
+  el batch), y volverse privado o borrar el perfil exige `!existsAfter` de
+  las dos estanterías. Apagar = borrar el doc: instantáneo, atómico y
+  verificable. El emulador cubre las seis denegaciones y el ciclo completo
+  (`tests/p17-measure.test.js`, a promover a la suite al implementar).
+- **Dirección abierta, aceptada**: las rules no verifican que las tarjetas
+  sean tus me gusta REALES (costaría un acceso a documento por tarjeta; no
+  cabe y no hace falta). Autoinventarse la estantería es mentir en la propia
+  bio: sin víctima tercera. El caso CON víctima — indexarte con el nombre de
+  otro para colarte en sus búsquedas — es el de F9 y sigue cerrado allí.
+- **Frescura**: proyección perezosa. Quitar un like desde el feed persiste
+  en la estantería hasta el próximo refresco (la visita al propio perfil);
+  la retirada TOTAL — apagar el interruptor, volverse privado — sí es
+  inmediata y por rules. El mismo trato que la deriva abierta de F9, y dicho
+  en la copy del interruptor.
+- Quien enumera con sesión gana: las últimas ≤6 tarjetas de quien ELIGIÓ
+  publicarlas. Sin foto, sin bio, sin totales y sin timestamps por tarjeta.
+
+### Seguidores: se cierra la puerta, no el grafo
+
+La arista de follow es un dato COMPARTIDO entre dos cuentas, y eso pone el
+límite de lo prometible:
+
+- **Lo que cierra** (matriz medida contra el emulador): la query "quién
+  sigue a X" — lista y `count()` — y el `get` de una arista ajena hacia X se
+  deniegan a extraños cuando X apaga `showFollowers`. El propio X lo sigue
+  viendo todo; cada seguidor sigue viendo su propia arista; seguir a X sigue
+  permitido.
+- **Lo que NO cierra, dicho en la copy**: cada seguidor tuyo sigue mostrando
+  "a quién sigo" en SU perfil, y esa dirección queda abierta — con sesión y
+  paciencia, un tercero puede reconstruir parte de tu lista paseando las
+  listas de seguidos de candidatos. Cerrarlo exigiría que TU flag gobernara
+  las queries sobre OTROS perfiles: o un `get` por arista pintada o
+  denormalizar tu flag en N aristas ajenas — las dos cosas que este proyecto
+  no paga, y la segunda es además el sitio exacto donde un bug rompe la
+  sincronía. La promesa honesta: "tu lista de seguidores deja de poder
+  consultarse desde tu perfil".
+- **El mecanismo de la doble dirección en una sola rule de `list`**: la
+  igualdad de la query sobre `followerUid` permite al motor probar
+  `resource.data.followerUid is string`, así que la rama de "siguiendo"
+  queda abierta sin abrir la de seguidores (verificado contra el emulador —
+  no era obvio que el solver lo probara). Efecto colateral aceptado: una
+  query de `follows/` sin filtro por ninguno de los dos uids pasa de
+  permitida (solo el techo de `limit`) a denegada; ningún camino de la app
+  la hace.
+- El flag vive en el perfil y es legible con él: "este perfil oculta sus
+  seguidores" es observable, igual que el propio rechazo de la query.
+  Meta-privacidad revelada y asumida — el killswitch de §3 sentó el
+  precedente ("refusal itself is observable").
+- Coste del cierre: +1 lectura de rules (el `get` del flag) por query de
+  seguidores de terceros. La dirección "siguiendo" no paga nada.
+
+### El presupuesto mandó sobre la forma
+
+El límite de 1000 expresiones por evaluación gobernó el diseño entero: los
+interruptores de me gusta/guardados NO son campos del perfil porque la
+variante con campos más cláusula de coherencia perfil↔doc bajaba el tope de
+pines de 6 a 5 (medida y descartada); la embarcada deja el techo en 6/6/6 —
+guardado, renombre y salida a privado con todo vivo — y cada estantería
+aguanta 8 tarjetas por evaluación (tope 6, holgura 2). Números y método en
+`tests/p17-measure.test.js`.

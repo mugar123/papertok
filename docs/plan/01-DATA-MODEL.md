@@ -162,6 +162,58 @@ Límite asumido: es búsqueda por **prefijo desde el inicio del campo**
 typos. La escalada sin motor externo y el análisis de enumeración están en
 `02-SECURITY.md` §7.
 
+### `profileShowcase/{uid}/shelves/{likes|saved}` — estanterías públicas (F10)
+
+Hoy "mis me gusta" y "mis guardados" viven en `users/{uid}/interactions` y
+`users/{uid}/savedPapers`: owner-only, y mezclados con telemetría (viewTime,
+skips, notas privadas) que no debe ser pública nunca. Firestore no tiene
+seguridad por campo, así que hacerlos públicos no puede ser abrir esas
+colecciones ni condicionar su lectura: es publicar una **proyección** — un
+documento acotado por estantería con las últimas tarjetas, del que una fila
+de pestaña se pinta sin tocar nada privado. **La existencia del documento ES
+el interruptor**: no hay flag en el perfil que pueda discrepar del artefacto,
+y el guardado de perfil no gasta presupuesto de expresiones en el camino
+público (la restricción que gobernó el diseño entero, `04-PHASES.md` P17).
+
+```
+entries    list ≤6 de { id ≤300, title ≤500, authorsLine? ≤200, year? int }
+updatedAt  timestamp == request.time
+```
+
+Tarjeta deliberadamente más ligera que `validPublicPaper` (línea de autores
+preformateada, sin abstract, sin regexes): la validación de tarjetas es lo
+que come el presupuesto de la evaluación. Medido: una estantería aguanta 8
+tarjetas y 10 no; dos estanterías de 6 en un mismo doc lo revientan. De ahí
+el doc por estantería y el tope en 6 con holgura de dos.
+
+| | |
+| --- | --- |
+| Lee | `get`: cualquiera — la pestaña pública se pinta sin sesión, como el perfil. `list`: nadie; no hay directorio de estanterías. |
+| Escribe | Solo el dueño, `shelfId in ['likes','saved']`, con el perfil **explícitamente** público tras el batch (`getAfter`; la forma endurecida de la pasada hostil de F9, no público-por-ausencia). Delete: el dueño, incondicional — salir tiene que poder ir en el mismo batch que apaga el perfil. |
+| Fail-safe | En `userProfiles/`: toda escritura que deje el perfil privado, y el delete, exigen `!existsAfter` de ambas estanterías. Evaluado SOLO en la rama privada del ternario, así que el guardado público ordinario no lo paga. |
+| Patrón de acceso | 1 `getDoc` al abrir la pestaña de un perfil ajeno. El dueño refresca la proyección perezosamente al visitar su propio perfil — nunca desde el camino del feed. |
+| Índices | Ninguno. Acceso por ruta. |
+| Cota | ~2 KB por doc. |
+
+Lo que las rules NO validan aquí, con motivo: que las tarjetas sean de veras
+tus últimos me gusta. Costaría un acceso a documento por tarjeta contra
+`interactions` y no compra nada — inventarte tu propia estantería es mentir
+en tu propia bio, sin tercero perjudicado. La superficie que sí importa (lo
+privado saliendo, o quedarse expuesto tras apagar) está cerrada por
+construcción. Análisis en `02-SECURITY.md` §8.
+
+Dos piezas acompañan a la colección:
+
+- Campo nuevo en `userProfiles/{uid}`: `showFollowers` (bool, opcional,
+  **ausencia = pública**, que es el comportamiento pre-fase). Gobierna la
+  lectura ajena de `follows/` en la dirección "quién sigue a X"; el grafo no
+  se toca ni se borra. Vive en el perfil porque las rules de `follows/` lo
+  leen con `get()`.
+- Doc nuevo en el stash de F8: `users/{uid}/profileStash/showcase`
+  `{ shelves: { likes?: bool, saved?: bool }, updatedAt }`, owner-only — la
+  intención de los interruptores mientras el perfil está privado, para que
+  volver a público restaure lo que había. El mismo contrato que los pines.
+
 ### `follows/{followerUid}_{targetUid}` — seguimiento entre usuarios (F2)
 
 **No** se mete en `users/{uid}/following`: esa subcolección es privada,
@@ -279,3 +331,5 @@ enviar y no lo persiste en ningún sitio legible. El opt-in es
 | Página de lista pública | Sin cambio: 1 |
 | Seguir / dejar de seguir | 1 write / 1 delete |
 | Búsqueda de usuarios (una búsqueda ejecutada) | 2 queries acotadas: 2–20 lecturas, típicamente <6; 0 por fila (nombre y handle viajan en el doc del índice) |
+| Pestaña pública Me gusta/Guardados de un perfil ajeno | 1 (la proyección; 0 si el interruptor está apagado — el doc no existe) |
+| Lista o `count()` de seguidores de un tercero | coste F2 + 1 lectura de rules (el `get` del flag); la dirección "siguiendo" no paga nada |
