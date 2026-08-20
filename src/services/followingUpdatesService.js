@@ -1,3 +1,4 @@
+import { mapWithConcurrency } from '../utils/mapWithConcurrency.js';
 import { fetchPapersByIds, getAuthorPapers } from './arxivService.js';
 import { fetchPapersByDois, getWorksByEntity } from './openAlexService.js';
 import { getPapersByProject } from './openAireService.js';
@@ -87,26 +88,6 @@ async function fetchUpdatesForFollow(follow, options = {}) {
   if (follow.type === 'institution') return fetchInstitutionUpdates(follow);
   if (follow.type === 'project') return fetchProjectUpdates(follow);
   return [];
-}
-
-async function mapWithConcurrency(items, concurrency, mapper) {
-  const results = new Array(items.length);
-  let nextIndex = 0;
-
-  async function worker() {
-    while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
-      try {
-        results[index] = { status: 'fulfilled', value: await mapper(items[index], index) };
-      } catch (reason) {
-        results[index] = { status: 'rejected', reason };
-      }
-    }
-  }
-
-  await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
-  return results;
 }
 
 export async function fetchFollowingUpdates(followedEntities = [], options = {}) {

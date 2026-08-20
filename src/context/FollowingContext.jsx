@@ -16,6 +16,29 @@ import {
 const FollowingContext = createContext(null);
 const EMPTY_LOCALIZED_INSTITUTION_NAMES = Object.freeze({});
 
+/**
+ * How long the app waits for the first snapshot of `following` before it stops
+ * blocking on it. Long enough that a healthy connection never sees it.
+ */
+const FIRST_SNAPSHOT_GRACE_MS = 6500;
+
+/**
+ * The follow list has not arrived yet, and the app has stopped waiting for it.
+ *
+ * Not a failure: the listener is still attached and Firestore reconnects on its
+ * own. It exists so consumers can tell "we do not know what this account
+ * follows" from "this account follows nobody" — a distinction that decides
+ * whether it is safe to write notification preferences derived from the list.
+ */
+export class FollowsUnavailableError extends Error {
+  constructor() {
+    super('The follow list has not arrived yet.');
+    this.name = 'FollowsUnavailableError';
+    this.code = 'FOLLOWS_UNAVAILABLE';
+    this.retryable = true;
+  }
+}
+
 function readDemoFollowing(userId) {
   try {
     return JSON.parse(localStorage.getItem(getFollowingStorageKey(userId)) || '[]');
@@ -41,6 +64,16 @@ export function FollowingProvider({ children }) {
   });
   const legacyMigrationAttempted = useRef(false);
   const institutionLocalizationPending = useRef(new Set());
+  // The legacy authors, reachable from inside the subscription without being a
+  // dependency of it. See the two effects below.
+  const followedAuthorsRef = useRef(followedAuthors);
+  // Mirrored in an effect, like the other stale-closure guards in this app
+  // (see FeedContext): a ref must not be written during render.
+  useEffect(() => { followedAuthorsRef.current = followedAuthors; }, [followedAuthors]);
+  // True once a snapshot for the account below has actually arrived. A ref, not
+  // state: the migration effect only needs to read it, and writing it from the
+  // snapshot callback keeps it correct before the re-render it triggers.
+  const followsArrived = useRef(false);
   const localizedInstitutionNames = institutionLocalizationState.userId === user?.uid
     ? institutionLocalizationState.names
     : EMPTY_LOCALIZED_INSTITUTION_NAMES;
@@ -52,7 +85,7 @@ export function FollowingProvider({ children }) {
 
     if (IS_DEMO) {
       const stored = readDemoFollowing(user.uid);
-      const migrated = migrateLegacyAuthors(followedAuthors);
+      const migrated = migrateLegacyAuthors(followedAuthorsRef.current);
       const merged = [...stored];
       migrated.forEach((legacy) => {
         if (!followsEntity(merged, legacy)) merged.push(legacy);
@@ -66,49 +99,91 @@ export function FollowingProvider({ children }) {
       return () => clearTimeout(timeoutId);
     }
 
+    followsArrived.current = false;
+    legacyMigrationAttempted.current = false;
     const followsCollection = collection(db, 'users', user.uid, 'following');
+    /**
+     * The grace period before the app stops waiting for the first snapshot.
+     *
+     * It has to exist: FeedContext will not load a feed while `loading` is
+     * true, so a listener that never delivers would leave the app on an empty
+     * screen. But clearing `loading` on a timer and saying nothing else was a
+     * timeout presented as an answer — an account that follows fifty people
+     * rendered as an account that follows nobody, and the settings screen
+     * offered to help them start following someone.
+     *
+     * So it clears `loading` *and* raises `error`. The listener stays attached
+     * and Firestore reconnects on its own, so the first real snapshot clears
+     * the error and the screen heals with no user action.
+     */
     const loadingTimeout = window.setTimeout(() => {
       setLoading(false);
-    }, 6500);
-    const unsubscribe = onSnapshot(followsCollection, async (snapshot) => {
-      const current = snapshot.docs.map((item) => ({ ...item.data(), followKey: item.id }));
-      const shouldMigrateLegacy = followedAuthors.length > 0 && !legacyMigrationAttempted.current;
-      const missingLegacy = shouldMigrateLegacy
-        ? migrateLegacyAuthors(followedAuthors).filter((legacy) => !followsEntity(current, legacy))
-        : [];
+      setError(new FollowsUnavailableError());
+    }, FIRST_SNAPSHOT_GRACE_MS);
 
+    const unsubscribe = onSnapshot(followsCollection, (snapshot) => {
       window.clearTimeout(loadingTimeout);
-      setFollowedEntities(current);
+      followsArrived.current = true;
+      setFollowedEntities(snapshot.docs.map((item) => ({ ...item.data(), followKey: item.id })));
+      // Whatever went wrong before, this is the server's own answer.
+      setError(null);
       setLoading(false);
-
-      if (shouldMigrateLegacy) {
-        legacyMigrationAttempted.current = true;
-        try {
-          await Promise.all(missingLegacy.map((legacy) => setDoc(
-            doc(followsCollection, createFollowKey(legacy.type, legacy.canonicalId)),
-            { ...legacy, followedAt: serverTimestamp() },
-            { merge: true },
-          )));
-          await setDoc(doc(db, 'users', user.uid), {
-            followedAuthors: [],
-            followingMigratedAt: serverTimestamp(),
-          }, { merge: true });
-        } catch (migrationError) {
-          console.warn('No se pudieron migrar todos los seguimientos', migrationError);
-        }
-      }
     }, (snapshotError) => {
       window.clearTimeout(loadingTimeout);
       console.error('Error loading follows', snapshotError);
       setError(snapshotError);
-      setFollowedEntities(migrateLegacyAuthors(followedAuthors));
+      setFollowedEntities(migrateLegacyAuthors(followedAuthorsRef.current));
       setLoading(false);
     });
     return () => {
       window.clearTimeout(loadingTimeout);
       unsubscribe();
     };
-  }, [user?.uid, followedAuthors]);
+    // Keyed on the account and nothing else. `followedAuthors` used to be a
+    // dependency, and it is a fresh array on every profile apply — which
+    // AuthContext does twice per sign-in, once from cache and once from the
+    // server. That tore down and rebuilt the only Firestore listener in the app
+    // at least twice per sign-in, re-reading the whole collection each time.
+    // The migration below is what actually needs those authors, so it reads
+    // them itself.
+  }, [user?.uid]);
+
+  /**
+   * One-off migration of the pre-`following` author list.
+   *
+   * Split out of the subscription on purpose: it is the only thing that needed
+   * `followedAuthors`, and keeping it here means the listener no longer
+   * restarts every time that array is replaced by an identical one. It waits
+   * for a real snapshot, because migrating against an empty placeholder would
+   * re-create follows the user had already removed.
+   */
+  useEffect(() => {
+    const userId = user?.uid;
+    if (!userId || IS_DEMO) return;
+    if (!followsArrived.current || legacyMigrationAttempted.current) return;
+    if (followedAuthors.length === 0) return;
+
+    legacyMigrationAttempted.current = true;
+    const followsCollection = collection(db, 'users', userId, 'following');
+    const missingLegacy = migrateLegacyAuthors(followedAuthors)
+      .filter((legacy) => !followsEntity(followedEntities, legacy));
+
+    (async () => {
+      try {
+        await Promise.all(missingLegacy.map((legacy) => setDoc(
+          doc(followsCollection, createFollowKey(legacy.type, legacy.canonicalId)),
+          { ...legacy, followedAt: serverTimestamp() },
+          { merge: true },
+        )));
+        await setDoc(doc(db, 'users', userId), {
+          followedAuthors: [],
+          followingMigratedAt: serverTimestamp(),
+        }, { merge: true });
+      } catch (migrationError) {
+        console.warn('No se pudieron migrar todos los seguimientos', migrationError);
+      }
+    })();
+  }, [user?.uid, followedAuthors, followedEntities]);
 
   useEffect(() => {
     if (!user?.uid) return undefined;

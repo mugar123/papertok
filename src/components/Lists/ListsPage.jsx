@@ -12,6 +12,7 @@ import {
   deleteDoc,
   updateDoc,
   arrayRemove,
+  limit,
 } from 'firebase/firestore';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
@@ -31,6 +32,8 @@ import {
   updatePublicList,
 } from '../../services/publicListService.js';
 import { getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
+import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService.js';
+import { snapshotIsAuthoritative } from '../../utils/ownLists.js';
 import './ListsPage.css';
 
 const LISTS_LOAD_DEADLINE_MS = 2_500;
@@ -155,11 +158,24 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         setLoading(true);
         setError(null);
       }
+      /**
+       * Returns false when the snapshot is not worth believing.
+       *
+       * The deadline below covers a slow read. It does not cover a read that
+       * answers instantly with nothing: with the backend unreachable `getDocs`
+       * resolves against the in-memory cache, so `settleWithin` sees a
+       * perfectly `fulfilled` empty success and this painted an account's
+       * custom lists out of existence — measured at 0 documents in 0.3 ms,
+       * with no error state shown at all. Records in hand are records; an
+       * *absence* only counts when the server is the one reporting it.
+       */
       const applySnapshot = (snapshot) => {
-        if (!active) return;
+        if (!active) return false;
+        if (!snapshotIsAuthoritative(snapshot)) return false;
         const customLists = [];
         snapshot.forEach((item) => customLists.push({ id: item.id, ...item.data() }));
         setLists(customLists);
+        return true;
       };
 
       try {
@@ -168,7 +184,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
           return;
         }
 
-        const listsRef = collection(db, 'users', user.uid, 'lists');
+        // A bounded page, never the whole collection: this and the save modal
+        // were the last two raw `collection(...)` reads in the client.
+        const listsRef = query(
+          collection(db, 'users', user.uid, 'lists'),
+          limit(OWN_LISTS_PAGE_SIZE),
+        );
 
         // FeedContext already owns Favorites, Read and Read later. Custom lists
         // paint from IndexedDB first while one network refresh runs behind them.
@@ -187,15 +208,18 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
             // the cards without making the user press Retry.
             networkRequest.then((lateSnapshot) => {
               if (!active) return;
-              applySnapshot(lateSnapshot);
-              setError(null);
+              if (applySnapshot(lateSnapshot)) setError(null);
             }).catch(() => {});
           }
           throw snapshot.status === 'timed_out'
             ? new Error('The list request exceeded its deadline.')
             : (snapshot.reason || new Error('Custom lists could not be loaded.'));
         }
-        applySnapshot(snapshot.value);
+        if (!applySnapshot(snapshot.value)) {
+          // Answered, but only by the cache, and with nothing in it. That is
+          // "could not load", not "you have no lists".
+          throw new Error('Custom lists could not be loaded.');
+        }
         if (active) setError(null);
       } catch (err) {
         console.error('Error loading lists:', err);

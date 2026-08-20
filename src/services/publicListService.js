@@ -14,6 +14,7 @@
 import { doc, getDoc } from 'firebase/firestore';
 import { db, IS_DEMO } from './firebase.js';
 import { authenticatedWorkerFetch } from './workerApiClient.js';
+import { documentIsAuthoritative } from '../utils/cacheAuthority.js';
 import {
   PUBLIC_LIST_LIMITS,
   sanitizePublicList,
@@ -31,6 +32,24 @@ export class PublicListUnsupportedError extends Error {
     super('Public lists are unavailable in demo mode.');
     this.name = 'PublicListUnsupportedError';
     this.code = 'PUBLIC_LISTS_UNSUPPORTED_IN_DEMO';
+  }
+}
+
+/**
+ * The read reached the local cache and nothing else, so "this list does not
+ * exist" is a guess, not an answer.
+ *
+ * Distinct from a plain failure because it is retryable and because the list
+ * on the other end is almost certainly fine — telling a visitor that somebody's
+ * shared list does not exist, when the truth is that this tab could not reach
+ * the backend, is the worst of the three things this page can say.
+ */
+export class PublicListUnavailableError extends Error {
+  constructor() {
+    super('The public list could not be read from the server.');
+    this.name = 'PublicListUnavailableError';
+    this.code = 'PUBLIC_LIST_UNAVAILABLE';
+    this.retryable = true;
   }
 }
 
@@ -143,5 +162,10 @@ export async function readPublicList(shareId, overrides) {
   requireSupported(api);
   const normalizedShareId = validateShareId(shareId);
   const snapshot = await api.getDocument(api.document(api.database, 'publicLists', normalizedShareId));
+  // `getDoc` resolves against the in-memory cache when the backend is
+  // unreachable, so a missing document is only really missing if the server is
+  // the one saying so. Without this, a shared list that exists rendered as
+  // "this list is not available" for anyone whose connection had stalled.
+  if (!documentIsAuthoritative(snapshot)) throw new PublicListUnavailableError();
   return snapshot.exists() ? { shareId: snapshot.id, ...snapshot.data() } : null;
 }

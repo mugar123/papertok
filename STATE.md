@@ -2023,3 +2023,143 @@ con rate limiting.
 
 **No estaba en el encargo** del agregado de interacciones; se detectó al
 investigarlo.
+
+## Hecho: la ausencia servida de caché deja de contar como respuesta
+
+**Síntoma:** el modal "Save and organize" decía *"You do not have any lists
+yet. Create one."* a una cuenta con cuatro listas, y a veces se quedaba fijo en
+"Loading lists...".
+
+**Medido, no razonado.** Instrumentando `firebase/firestore` en dev
+(`scripts/diagnostics/firestore-probe-plugin.mjs`, no cableado por defecto;
+Firestore va por WebChannel y el panel de red no ve nada de esto):
+
+| Condición | ms | docs | `fromCache` | ¿rechaza? |
+|---|---|---|---|---|
+| Con red | 172,9 | 1 | false | — |
+| Sin red, target ya cacheado | 0,6 | 1 | true | no |
+| **Sin red, target fresco** | **0,5** | **0** | **true** | **no** |
+
+Un target fresco es el estado de cualquier pestaña recién cargada. `getDocs`
+devuelve un **éxito vacío en medio milisegundo**. Reproducido de punta a punta:
+el modal pintó "no tienes listas" en 42 ms con 4 listas en la cuenta.
+
+**El mismo fallo estaba en `ListsPage`**, que sí tenía la mitad de tiempo
+(`settleWithin`, petición tardía viva) pero no la de autoridad: `settleWithin`
+veía un `fulfilled` perfecto y la lista personalizada desaparecía de la
+cuadrícula **sin ningún estado de error**.
+
+**Arreglo.** La regla vive una vez en [src/utils/ownLists.js](src/utils/ownLists.js):
+*los registros en mano son registros; una ausencia solo cuenta si la confirma el
+servidor*. Más `patientRead` en el modal para el estancamiento, un estado
+`unavailable` con Reintentar que no se confunde con una cuenta vacía, y
+`limit(OWN_LISTS_PAGE_SIZE)` en las **dos últimas lecturas de colección sin
+tope** que quedaban en el cliente. El techo se comparte desde
+`userProfileService`.
+
+Sin regresión: A/B intercalado n=20 de la misma lectura, sin límite p50 65,7 /
+max 121,1 ms contra con límite p50 52,1 / max 77,0 ms.
+
+**Abanico de la biblioteca acotado.** `fetchLibraryRecords` lanzaba
+`ceil(N/10)` consultas con `Promise.all` — hasta **60 a la vez** en el único
+WebChannel de la app, con las lecturas de la pantalla haciendo cola detrás.
+Ahora pasan por `mapWithConcurrency` (extraído de `followingUpdatesService`, que
+ya acotaba así) con `LIBRARY_READ_CONCURRENCY = 6`.
+
+## No reproducido: la degradación progresiva por uso
+
+Se buscó y **no aparece**. Queda escrito para que nadie repita la búsqueda.
+
+La primera medición *parecía* confirmarla — 10 guardados seguidos dieron
+`533 (frío), 200, 155, 327, 174, 179, 196, 191, 210, 244 ms`. Pero la
+distribución de control de la misma lectura con el estado fijo (n=25) es
+`min 43,2 · p50 71,5 · p90 110,4 · max 147,1`: **la tendencia cae entera dentro
+del ruido**.
+
+Contadores internos del SDK sobre 8 ciclos de abrir/cerrar el modal, todos
+planos: targets remotos 1→1, vistas de consulta 1→1, targets locales 6→6,
+listeners del event manager 0→0, nodos DOM 4642→4642, lecturas exactamente
++2 por ciclo (×2 por StrictMode en dev), heap sin monotonía.
+
+**Ni listeners sin limpiar, ni suscripciones duplicadas, ni peticiones en vuelo
+acumuladas, ni estado que crece.** Los dos grupos de síntomas no son la misma
+causa.
+
+Los tres costes proporcionales al tamaño sí son reales pero estaban **dormidos**
+en la cuenta medida (`interactionCount 1442`, pero curados en
+`liked 40 / saved 17 / read 1 / readLater 0` → 18 ids → 2 lotes, no 60). El
+agregado ocupa 12,7 KB, 4,1% del tope de 320 KB, de los cuales 10,5 KB son
+`affinities`.
+
+**Cabo suelto, y no es Firestore:** OpenAlex devolvía 429 con `retryAfterMs` de
+~8 horas durante toda la sesión de medición, y cada guardado llama a
+`traverseAndExpandNetwork`. Es un candidato independiente a "guardar va lento"
+que ningún arreglo de los de arriba cubre.
+
+## Hecho: el resto de la familia, de una pasada
+
+Cerrados los cinco puntos que quedaban del barrido, ya con la regla extraída a
+[src/utils/cacheAuthority.js](src/utils/cacheAuthority.js) — que ahora cubre
+consultas (`queryIsAuthoritative`) y documentos sueltos
+(`documentIsAuthoritative`).
+
+**1. El temporizador que declaraba cargada la lista de seguidos.**
+`FollowingContext` apagaba `loading` a los 6,5 s sin datos, así que una cuenta
+que sigue a gente se renderizaba como una que no sigue a nadie. El plazo tiene
+que existir — `FeedContext` no carga feed mientras `loading` sea true — así que
+ahora apaga `loading` **y** levanta `FollowsUnavailableError`. El listener sigue
+enganchado y Firestore reconecta solo, de modo que el primer snapshot real
+limpia el error. `EmailNotificationsContext` ya calculaba
+`notificationDataReady = !followsLoading && !followsError`, así que hereda lo
+correcto: no escribe preferencias derivadas de una lista que no conoce.
+
+**2. La resuscripción del único listener de la app.** `followedAuthors` era
+dependencia del efecto que abre el `onSnapshot`, y `AuthContext` lo reemplaza
+por un array nuevo en cada `applyProfile` — dos veces por inicio de sesión
+(caché y servidor). Medido con la sonda contando suscripciones por target:
+**3 → 2 por recarga en caliente** (el ×2 es StrictMode en dev). El efecto va
+keyed solo en `user?.uid`; la migración de autores legacy, que era lo único que
+necesitaba ese array, vive ahora en su propio efecto y espera a que haya llegado
+un snapshot real antes de escribir nada.
+
+**3. La lista pública que existía y se veía como inexistente.**
+`readPublicList` devolvía `null` tanto para "el servidor dice que no existe"
+como para "nadie contestó". Ahora lanza `PublicListUnavailableError` en el
+segundo caso, que la página ya sabía pintar como error con Reintentar.
+Verificado en vivo: *"The list could not be loaded"* en vez de *"This list is
+not available"*, y el Reintentar cura en **87 ms**.
+
+**4. La hoja de seguidores sin cota.** `readPage` podía quedarse pendiente para
+siempre con la hoja en "Loading...". Ahora pasa por `patientRead`, igual que la
+hoja de comentarios; el estado de error que ya existía le da salida.
+`PublicListPage` recibió la misma cota.
+
+**5. `--bg-hover` no existía.** `.lists-retry-btn:hover` se quedaba sin fondo y
+nadie lo notaba: la declaración se descarta en silencio. Ahora usa
+`--bg-glass-hover`, como el resto de la app. Con eso `ListsPage.css` entra en la
+lista `OWNED` de `profileStyles.test.js`, que además estrena una lista de
+excepciones para las propiedades que un componente inyecta por elemento
+(`--stagger-index`) — con un test que comprueba que cada excepción la inyecta de
+verdad el componente que dice inyectarla, para que la lista no se convierta en
+una forma de callar la comprobación.
+
+Tests: 735 → 753. Los guardas nuevos se verificaron por mutación: al deshacer
+cada arreglo, fallan.
+
+## Pendiente: `--text-muted` en SearchPage.css
+
+`SearchPage.css` usa `var(--text-muted)` siete veces y el token no está
+definido en `src/styles/variables.css`, así que esas siete declaraciones se
+descartan en silencio. Es la misma familia que `--bg-hover`, que sí se arregló.
+
+**Se deja a propósito.** El buscador está pendiente de reintegrarse en el
+general, y el token toca cómo se ve la página: arreglarlo ahora significa
+cambiar el aspecto de una pantalla que va a rehacerse igualmente. Mejor
+resolverlo dentro de esa reintegración, con el diseño delante.
+
+Por eso `SearchPage.css` **no** está en la lista `OWNED` de
+`profileStyles.test.js`. Es un agujero conocido, no un descuido: la nota que ya
+había en ese fichero explica que `UserSearchPage.css` estuvo en la lista hasta
+que la búsqueda de personas se plegó dentro de `SearchPage`, y que añadir
+`SearchPage.css` es un cambio de una línea **una vez que el token esté
+resuelto**.

@@ -281,3 +281,20 @@
 .save-modal-create-btn:disabled {
   opacity: 0.4;
 }
+
+/* The retry beside "your lists could not be loaded". A read that did not
+   answer is a retryable state, not an empty account, so it needs a way out
+   that is not reloading the page. */
+.save-modal-retry {
+  display: block;
+  margin: var(--space-3) auto 0;
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-glass);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+.save-modal-retry:hover { background: var(--bg-glass-hover); color: var(--text-primary); }

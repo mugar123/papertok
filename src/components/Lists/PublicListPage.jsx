@@ -7,6 +7,7 @@ import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import { readPublicList } from '../../services/publicListService.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
 import { getPublicListPath, getPublicPaperPath } from '../../utils/publicNavigation.js';
+import { patientRead } from '../../utils/boundedRead.js';
 import './PublicListPage.css';
 
 function arxivUrl(arxivId) {
@@ -67,12 +68,20 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
 
   useEffect(() => {
     let active = true;
-    readPublicList(shareId)
-      .then(result => {
-        if (!active) return;
-        setPublicList(result);
-        setStatus(result ? 'ready' : 'not-found');
-      })
+
+    const apply = (result) => {
+      if (!active) return;
+      setPublicList(result);
+      // `readPublicList` throws rather than returning null when the backend
+      // never answered, so a null here really is the server saying "no such
+      // list" — this branch can be trusted again.
+      setStatus(result ? 'ready' : 'not-found');
+    };
+
+    // A share link is the whole page: with no bound, a stalled read left a
+    // visitor on the spinner forever with nothing to press.
+    patientRead(() => readPublicList(shareId), { attempts: 2, label: 'public list', onLateResult: apply })
+      .then(apply)
       .catch(error => {
         console.error('Error loading public list:', error);
         if (active) setStatus(error?.code === 'PUBLIC_LISTS_UNSUPPORTED_IN_DEMO' ? 'unsupported' : 'error');

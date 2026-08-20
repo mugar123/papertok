@@ -243,3 +243,57 @@ test('Firestore rules keep public lists readable and shut to every client', asyn
   assert.match(rules, /function publicShareIdUntouched\(\)/);
   assert.match(rules, /allow delete: if ownsUserTree\(userId\)\s*\n\s*&& !\('publicShareId' in resource\.data\)/);
 });
+
+/**
+ * A share link is somebody else's list. Telling a visitor it does not exist,
+ * when the truth is that this tab never reached the backend, is the worst of
+ * the three things the page can say — and it is what happened: `getDoc`
+ * resolves against the in-memory cache instead of rejecting, so a missing
+ * document and an unreachable backend were the same value.
+ */
+function readerReturning(snapshot) {
+  return {
+    database: 'db',
+    isDemo: false,
+    apiBase: 'https://worker.test',
+    document: (...parts) => parts.join('/'),
+    getDocument: async () => snapshot,
+  };
+}
+
+const SHARE_ID = '07070707070707070707070707070707';
+
+test('a public list the server confirmed is missing really is not found', async () => {
+  const result = await readPublicList(SHARE_ID, readerReturning({
+    exists: () => false,
+    metadata: { fromCache: false },
+  }));
+
+  assert.equal(result, null, 'the server said so, so null is the answer');
+});
+
+test('THE BUG: a cache-served miss is not a missing list', async () => {
+  await assert.rejects(
+    () => readPublicList(SHARE_ID, readerReturning({
+      exists: () => false,
+      metadata: { fromCache: true },
+    })),
+    (error) => {
+      assert.equal(error.code, 'PUBLIC_LIST_UNAVAILABLE');
+      assert.equal(error.retryable, true);
+      return true;
+    },
+    'nobody confirmed this list is gone — the backend never answered',
+  );
+});
+
+test('a list served from the cache is still a list', async () => {
+  const result = await readPublicList(SHARE_ID, readerReturning({
+    exists: () => true,
+    id: SHARE_ID,
+    metadata: { fromCache: true },
+    data: () => ({ title: 'Shared', papers: [] }),
+  }));
+
+  assert.equal(result.title, 'Shared', 'data in hand is data, cached or not');
+});

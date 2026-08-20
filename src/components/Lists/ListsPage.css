@@ -83,7 +83,7 @@
 @media (hover: hover) and (pointer: fine) {
   .lists-retry-btn:hover {
     border-color: var(--accent-primary);
-    background: var(--bg-hover);
+    background: var(--bg-glass-hover);
   }
 }
 

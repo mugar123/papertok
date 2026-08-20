@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { IS_DEMO, db } from '../../services/firebase';
-import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, setDoc } from 'firebase/firestore';
+import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, setDoc, limit, query } from 'firebase/firestore';
+import { patientRead } from '../../utils/boundedRead';
+import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService';
+import { readOwnLists } from '../../utils/ownLists';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -38,7 +41,11 @@ export default function SaveToListModal({ paper, onClose }) {
   const [paperLists, setPaperLists] = useState(new Set());
   const [newListName, setNewListName] = useState('');
   const [newListIcon, setNewListIcon] = useState('Folder');
-  const [loading, setLoading] = useState(true);
+  // Three outcomes, three states. 'loading' and 'unavailable' are deliberately
+  // not the same thing as an empty 'ready': "we could not find out" must never
+  // render as "you have no lists", which is the lie this modal used to tell.
+  const [listsStatus, setListsStatus] = useState('loading');
+  const [listsAttempt, setListsAttempt] = useState(0);
   const initialRecord = personalLibrary[paper.id] || {};
   const [note, setNote] = useState(initialRecord.note || '');
   const [tags, setTags] = useState((initialRecord.tags || []).join(', '));
@@ -46,42 +53,74 @@ export default function SaveToListModal({ paper, onClose }) {
   const dialogRef = useRef(null);
   const libraryRecord = personalLibrary[paper.id] || {};
 
+  /**
+   * The account's custom lists.
+   *
+   * This read used to be the only one in the client with none of the three
+   * guards the rest of the app grew, and it failed in both directions that
+   * cost this app a bug before:
+   *
+   * - No bound. A stalled connection leaves `getDocs` pending forever and the
+   *   modal sits on "Loading lists..." with no way out but a reload. Measured:
+   *   a healthy read answers in 43-147 ms (p50 72), a stalled one never.
+   * - No cache authority. With the backend unreachable, `getDocs` does not
+   *   reject — it resolves against the in-memory cache, and on a fresh page
+   *   that is an empty *success*. Measured: 0 documents, `fromCache: true`, in
+   *   0.5 ms. Rendering that emptied the list picker for an account with four
+   *   lists and invited the user to create one they already had.
+   * - No ceiling. `collection(...)` raw, so an account with thousands of lists
+   *   read all of them.
+   *
+   * So: a bounded page, `patientRead` for the stall, and an emptiness that is
+   * only believed when the server is the one saying it.
+   */
   useEffect(() => {
-    if (!user) return;
+    if (!user) return undefined;
+    let active = true;
 
-    const loadLists = async () => {
-      try {
-        let userLists = [];
-        const inLists = new Set();
-
-        if (IS_DEMO) {
-          userLists = demoGet('lists', []);
-          userLists.forEach((list) => {
-            if (list.paperIds && list.paperIds.includes(paper.id)) {
-              inLists.add(list.id);
-            }
-          });
-        } else {
-          const listsRef = collection(db, 'users', user.uid, 'lists');
-          const snapshot = await getDocs(listsRef);
-          snapshot.forEach((doc) => {
-            const data = doc.data();
-            userLists.push({ id: doc.id, ...data });
-            if (data.paperIds && data.paperIds.includes(paper.id)) {
-              inLists.add(doc.id);
-            }
-          });
-        }
-        setLists(userLists);
-        setPaperLists(inLists);
-      } catch (err) {
-        console.error('Error loading lists:', err);
-      } finally {
-        setLoading(false);
-      }
+    const fromDemo = () => {
+      const stored = demoGet('lists', []);
+      const inLists = new Set(stored
+        .filter((list) => list.paperIds?.includes(paper.id))
+        .map((list) => list.id));
+      return { lists: stored, inLists, authoritative: true };
     };
-    loadLists();
-  }, [user, paper.id]);
+
+    const fromFirestore = async () => readOwnLists(
+      await getDocs(query(
+        collection(db, 'users', user.uid, 'lists'),
+        limit(OWN_LISTS_PAGE_SIZE),
+      )),
+      paper.id,
+    );
+
+    const apply = ({ lists: userLists, inLists, authoritative }) => {
+      if (!active) return;
+      if (!authoritative) {
+        setListsStatus('unavailable');
+        return;
+      }
+      setLists(userLists);
+      setPaperLists(inLists);
+      setListsStatus('ready');
+    };
+
+    // No reset to 'loading' here: the state already starts there, and the retry
+    // button is what puts it back before bumping the attempt counter.
+    patientRead(IS_DEMO ? fromDemo : fromFirestore, {
+      attempts: 2,
+      label: 'lists',
+      // A late answer still heals the picker with no user action.
+      onLateResult: apply,
+    })
+      .then(apply)
+      .catch((err) => {
+        console.error('Error loading lists:', err);
+        if (active) setListsStatus('unavailable');
+      });
+
+    return () => { active = false; };
+  }, [user, paper.id, listsAttempt]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -256,8 +295,20 @@ export default function SaveToListModal({ paper, onClose }) {
           </div>
         </section>
 
-        {loading ? (
+        {listsStatus === 'loading' ? (
           <div className="save-modal-loading">{isEnglish ? 'Loading lists...' : 'Cargando listas...'}</div>
+        ) : listsStatus === 'unavailable' ? (
+          <div className="save-modal-loading" role="status">
+            {isEnglish
+              ? 'Your lists could not be loaded. They are still there.'
+              : 'No se pudieron cargar tus listas. Siguen ahí.'}
+            <button
+              className="save-modal-retry"
+              onClick={() => { setListsStatus('loading'); setListsAttempt((n) => n + 1); }}
+            >
+              {isEnglish ? 'Try again' : 'Reintentar'}
+            </button>
+          </div>
         ) : (
           <div className="save-modal-lists">
             <p className="save-modal-section-title">{isEnglish ? 'Custom lists' : 'Listas personalizadas'}</p>

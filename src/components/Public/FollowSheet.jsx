@@ -9,6 +9,7 @@ import {
 } from '../../services/followUserService.js';
 import { readUserProfile } from '../../services/userProfileService.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
+import { patientRead } from '../../utils/boundedRead.js';
 import './FollowSheet.css';
 
 /**
@@ -150,10 +151,23 @@ export default function FollowSheet({
 
   useEffect(() => {
     let active = true;
-    readPage(null)
-      .then((result) => {
-        if (active) setPage({ mode, ...result, status: 'ready' });
-      })
+
+    const apply = (result) => {
+      if (active) setPage({ mode, ...result, status: 'ready' });
+    };
+
+    // One attempt is the whole first page: the bounded edge query plus the
+    // profile behind each row. Unbounded, a stalled read left this sheet on
+    // "Loading..." for as long as it stayed open, with no way out — the same
+    // shape as the comment sheet, which is why it takes the same helper. The
+    // error state below already has a Try again, so a timeout lands somewhere
+    // the reader can act on.
+    patientRead(() => readPage(null), {
+      attempts: 2,
+      label: 'follow list',
+      onLateResult: apply,
+    })
+      .then(apply)
       .catch((error) => {
         console.error('Error loading the follow list:', error);
         if (active) setPage({ ...EMPTY_PAGE, mode, status: 'error' });

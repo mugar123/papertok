@@ -51,11 +51,19 @@ export const USER_PROFILE_LIMITS = Object.freeze({
 });
 
 /**
- * The pin picker reads the owner's own lists. It is a bounded page, never the
- * whole collection: an account with thousands of lists must not turn opening
- * the profile editor into an unbounded read.
+ * The ceiling for every screen that reads an account's own `lists` collection.
+ * A bounded page, never the whole collection: an account with thousands of
+ * lists must not turn opening a screen into an unbounded read.
+ *
+ * The pin picker was the only reader that honoured this. The save-and-organize
+ * modal and the lists page both read `collection(users/{uid}/lists)` raw — the
+ * only two unbounded collection reads left in the client — so they take the
+ * same ceiling from here rather than inventing their own.
  */
-export const PINNABLE_LISTS_PAGE_SIZE = 60;
+export const OWN_LISTS_PAGE_SIZE = 60;
+
+/** The pin picker's name for the same ceiling. */
+export const PINNABLE_LISTS_PAGE_SIZE = OWN_LISTS_PAGE_SIZE;
 
 /** Fields only the service identity may ever write (F6). */
 const SERVICE_ONLY_FIELDS = Object.freeze(['orcid', 'verified']);

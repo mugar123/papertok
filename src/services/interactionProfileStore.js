@@ -28,6 +28,7 @@ import {
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { serializeInteractionProfile } from '../utils/interactionProfile.js';
+import { mapWithConcurrency } from '../utils/mapWithConcurrency.js';
 
 export const INTERACTION_PROFILE_COLLECTION = 'aggregates';
 export const INTERACTION_PROFILE_DOC_ID = 'interactions';
@@ -37,6 +38,17 @@ export const INTERACTION_PROFILE_DOC_ID = 'interactions';
 // in-memory profile is updated synchronously, so nothing the user sees waits.
 const FLUSH_DELAY_MS = 4000;
 const LIBRARY_BATCH_SIZE = 10;
+/**
+ * How many library batches may be in flight at once.
+ *
+ * The batch size is fixed by the `in` operator; the number of batches is not —
+ * it scales with the account, up to PERSONAL_LIBRARY_MAX_RECORDS / 10 = 60. All
+ * sixty used to start together on the one WebChannel the app has, and the reads
+ * belonging to whatever screen asked for the library queued behind them. Six at
+ * a time keeps a large library from monopolising the connection while still
+ * covering the common case (an account with sixty saved papers) in one round.
+ */
+export const LIBRARY_READ_CONCURRENCY = 6;
 
 const pendingFlushes = new Map();
 
@@ -177,7 +189,7 @@ export async function fetchLibraryRecords(userId, paperIds) {
     batches.push(paperIds.slice(index, index + LIBRARY_BATCH_SIZE));
   }
 
-  const results = await Promise.all(batches.map(async (batch) => {
+  const settled = await mapWithConcurrency(batches, LIBRARY_READ_CONCURRENCY, async (batch) => {
     const snapshot = await getDocs(
       query(interactionsRef(userId), where(documentId(), 'in', batch)),
     );
@@ -185,7 +197,14 @@ export async function fetchLibraryRecords(userId, paperIds) {
       fromCache: snapshot.metadata.fromCache,
       records: snapshot.docs.map(item => ({ id: item.id, data: item.data() })),
     };
-  }));
+  });
+  // A bounded pool cannot abandon its in-flight workers the way Promise.all
+  // does, so failures arrive settled. The caller's contract is unchanged: one
+  // failed batch means the answer is not trustworthy, and it must reject rather
+  // than hand back a partial library that looks complete.
+  const failure = settled.find(result => result.status === 'rejected');
+  if (failure) throw failure.reason;
+  const results = settled.map(result => result.value);
   const records = results.flatMap(result => result.records);
   countReads('library', records.length);
   return { records, fromCache: results.some(result => result.fromCache) };
