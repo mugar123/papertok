@@ -88,6 +88,20 @@
   padding: var(--space-3);
 }
 
+/* Most papers have no thread at all and answer in a couple of hundred
+   milliseconds. Holding the placeholder back means that common open shows the
+   sheet and its composer with nothing flashing grey, and the skeleton appears
+   only when there is genuinely a wait to describe. It stays in the DOM
+   throughout, so `aria-busy` still announces the load to a screen reader. */
+.comments-sheet-loading {
+  opacity: 0;
+  animation: comments-skeleton-reveal 140ms ease-out 320ms forwards;
+}
+
+@keyframes comments-skeleton-reveal {
+  to { opacity: 1; }
+}
+
 .comments-sheet-loading {
   display: flex;
   flex-direction: column;

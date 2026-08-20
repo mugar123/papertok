@@ -145,12 +145,16 @@ export async function resolveThreadAnchor(paper, overrides) {
   const primaryKey = keyFromIdentity(primaryIdentity);
   const primarySnapshot = await api.getDocument(stubReference(api, primaryKey));
 
-  const alternates = [];
-  for (const identity of alternateIdentities) {
+  // Concurrently: the alternates are independent documents, and awaiting them
+  // one at a time made a dual-identity paper pay two round trips end to end
+  // before its sheet could show anything.
+  const alternateSnapshots = await Promise.all(alternateIdentities.map(async (identity) => {
     const key = keyFromIdentity(identity);
-    const snapshot = await api.getDocument(stubReference(api, key));
-    if (snapshot?.exists()) alternates.push({ key, identity, stub: snapshot.data() });
-  }
+    return { key, identity, snapshot: await api.getDocument(stubReference(api, key)) };
+  }));
+  const alternates = alternateSnapshots
+    .filter(entry => entry.snapshot?.exists())
+    .map(entry => ({ key: entry.key, identity: entry.identity, stub: entry.snapshot.data() }));
 
   return {
     key: primaryKey,

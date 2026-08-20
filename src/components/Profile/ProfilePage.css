@@ -397,6 +397,58 @@
   font-size: var(--fs-sm);
 }
 
+/* A read can fail or time out; saying so beats a form built on nothing. */
+.profile-load-error {
+  margin: var(--space-16) auto 0;
+  max-width: 34rem;
+  text-align: center;
+}
+
+.profile-load-error h1 {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-heading);
+  font-size: var(--fs-xl);
+  color: var(--text-primary);
+}
+
+.profile-load-error p {
+  margin: 0 0 var(--space-5);
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+}
+
+/* An empty pinnable list is a dead end unless it offers the way out, so the
+   bare "/lists" path becomes the action it was standing in for. */
+.profile-empty-lists {
+  margin: var(--space-4) 0 0;
+}
+
+.profile-empty-lists .profile-empty {
+  margin: 0;
+}
+
+.profile-empty-action {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.profile-empty-action:hover,
+.profile-empty-action:focus-visible {
+  border-color: var(--accent-primary);
+  background: var(--bg-glass-hover);
+}
+
 .profile-pin-list {
   list-style: none;
   margin: var(--space-4) 0 0;
@@ -443,6 +495,14 @@
   gap: var(--space-3);
   color: var(--text-secondary);
   padding-top: clamp(48px, 12vh, 120px);
+  /* Held back, so a load that answers quickly never flashes a spinner for a
+     wait that does not happen. */
+  opacity: 0;
+  animation: profile-loading-reveal 140ms ease-out 320ms forwards;
+}
+
+@keyframes profile-loading-reveal {
+  to { opacity: 1; }
 }
 
 .profile-spin {

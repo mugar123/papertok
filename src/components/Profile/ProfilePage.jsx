@@ -2,9 +2,17 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, Check, ExternalLink, Loader2, Pin, PinOff, ShieldCheck,
+  ArrowLeft, ArrowRight, Check, ExternalLink, FolderOpen, Loader2, Pin, PinOff, ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { isReadTimeout, withReadTimeout } from '../../utils/boundedRead.js';
+import {
+  forgetOwnProfile,
+  ownProfileCache,
+  ownProfileKey,
+  pinnableListsCache,
+  rememberOwnProfile,
+} from '../../utils/profileSessionCaches.js';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import {
   HandleUnavailableError,
@@ -75,9 +83,22 @@ export default function ProfilePage() {
   const { user, profilePhoto } = useAuth();
   const { isEnglish } = useLanguage();
 
-  const [profile, setProfile] = useState(null);
-  const [pinnableLists, setPinnableLists] = useState([]);
-  const [status, setStatus] = useState('loading');
+  // Seeded from the cache the public profile page fills (and fills for it), so
+  // the crossing between the two screens paints instead of spinning.
+  const seededKey = ownProfileKey(user?.uid);
+  const seeded = seededKey ? ownProfileCache.get(seededKey) : undefined;
+  const [profile, setProfile] = useState(seeded ? seeded.profile : null);
+  // `null` is "not asked yet", `[]` is "asked, and there are none". Decoupling
+  // this read from the profile means the section can render before its answer
+  // arrives, and only the second of those two states may claim the account has
+  // published nothing.
+  const [pinnableLists, setPinnableLists] = useState(
+    () => (user?.uid ? pinnableListsCache.get(user.uid) ?? null : null),
+  );
+  const [status, setStatus] = useState(() => {
+    if (!seeded) return 'loading';
+    return seeded.profile ? 'ready' : 'new';
+  });
   const [handleDraft, setHandleDraft] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [bio, setBio] = useState('');
@@ -92,6 +113,7 @@ export default function ProfilePage() {
   const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [pinsBusy, setPinsBusy] = useState(false);
   const [promptDismissed, setPromptDismissed] = useState(false);
+  const [reloadToken, setReloadToken] = useState(0);
 
   const copy = isEnglish ? {
     back: 'Back',
@@ -130,6 +152,8 @@ export default function ProfilePage() {
     pinned: 'Lists on my profile',
     pinnedHint: 'Only lists you have already published can be pinned. Pinning is what puts your name on a list.',
     noLists: 'You have not published any lists yet.',
+    goToLists: 'Go to My lists',
+    loadingLists: 'Looking for your published lists...',
     pin: 'Pin',
     unpin: 'Unpin',
     viewPublic: 'View public profile',
@@ -137,6 +161,9 @@ export default function ProfilePage() {
     handleTaken: 'That handle is already taken.',
     genericError: 'Something went wrong. Try again.',
     loading: 'Loading your profile...',
+    loadError: 'Your profile could not be loaded.',
+    loadErrorHint: 'Check your connection and try again — nothing has been changed.',
+    retry: 'Try again',
     nameRequired: 'A display name is required.',
     pinLimit: `You can pin at most ${USER_PROFILE_LIMITS.pinnedLists} lists.`,
     staleTitle: 'Some pinned lists are no longer published',
@@ -185,6 +212,8 @@ export default function ProfilePage() {
     pinned: 'Listas en mi perfil',
     pinnedHint: 'Solo puedes fijar listas que ya hayas publicado. Fijar una lista es lo que le pone tu nombre.',
     noLists: 'Todavía no has publicado ninguna lista.',
+    goToLists: 'Ir a Mis listas',
+    loadingLists: 'Buscando tus listas publicadas...',
     pin: 'Fijar',
     unpin: 'Quitar',
     viewPublic: 'Ver perfil público',
@@ -192,6 +221,9 @@ export default function ProfilePage() {
     handleTaken: 'Ese handle ya está ocupado.',
     genericError: 'Algo ha ido mal. Inténtalo de nuevo.',
     loading: 'Cargando tu perfil...',
+    loadError: 'No se ha podido cargar tu perfil.',
+    loadErrorHint: 'Revisa tu conexión y vuelve a intentarlo — no se ha cambiado nada.',
+    retry: 'Reintentar',
     nameRequired: 'El nombre visible es obligatorio.',
     pinLimit: `Puedes fijar como mucho ${USER_PROFILE_LIMITS.pinnedLists} listas.`,
     staleTitle: 'Algunas listas fijadas ya no están publicadas',
@@ -208,11 +240,18 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!user) return undefined;
     let active = true;
-    Promise.all([readOwnUserProfile(), readPinnableLists()])
-      .then(([ownProfile, lists]) => {
+    const uid = user.uid;
+
+    // Two independent reads, no longer joined by `Promise.all`: the form only
+    // needs the profile, and pairing them made the whole screen wait on the
+    // slower of the two. Both are bounded, because a read against a stalled
+    // connection never settles and this screen used to sit on "Loading your
+    // profile..." for as long as that lasted.
+    withReadTimeout(readOwnUserProfile(), { label: 'own profile' })
+      .then(ownProfile => {
+        rememberOwnProfile(uid, ownProfile);
         if (!active) return;
         setProfile(ownProfile);
-        setPinnableLists(lists);
         setDisplayName(ownProfile?.displayName || user.displayName || '');
         setBio(ownProfile?.bio || '');
         setAllowContact(ownProfile?.allowContact === true);
@@ -222,11 +261,41 @@ export default function ProfilePage() {
         setStatus(ownProfile ? 'ready' : 'new');
       })
       .catch(error => {
-        console.error('Error loading own profile:', error);
-        if (active) setStatus('error');
+        if (isReadTimeout(error)) console.warn('The profile did not answer in time', error);
+        else console.error('Error loading own profile:', error);
+        if (!active) return;
+        // A failed refresh behind an already-seeded view keeps the view; only
+        // a first load with nothing to show reports the failure.
+        if (seeded) return;
+        setStatus('error');
       });
+
+    // The pinnable lists are a secondary section. They fill in when they
+    // arrive and their failure is not the screen's failure.
+    withReadTimeout(readPinnableLists(), { label: 'pinnable lists' })
+      .then(lists => {
+        pinnableListsCache.set(uid, lists);
+        if (active) setPinnableLists(lists);
+      })
+      .catch(error => {
+        if (isReadTimeout(error)) console.warn('The pinnable lists did not answer in time', error);
+        else console.error('Error loading pinnable lists:', error);
+      });
+
     return () => { active = false; };
-  }, [user]);
+    // `seeded` is read once to decide whether a failure is reportable; it is
+    // derived from this same uid, so it adds nothing to re-run on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, reloadToken]);
+
+  // Write-through for every edit this screen makes. There are a dozen places
+  // that move `profile` — save, rename, visibility, pinning, unpublish — and
+  // chasing each one would leave the shared view stale the day a thirteenth is
+  // added; watching the value covers them all.
+  useEffect(() => {
+    if (!user?.uid || status === 'loading' || status === 'error') return;
+    rememberOwnProfile(user.uid, profile);
+  }, [profile, status, user?.uid]);
 
   // The tab keeps saying which screen this is; restored on the way out so the
   // pages that manage their own metadata are not affected.
@@ -240,14 +309,17 @@ export default function ProfilePage() {
   const handleError = handleDraft && !handleCheck.valid
     ? HANDLE_ERROR_COPY[isEnglish ? 'en' : 'es'][handleCheck.code]
     : '';
+  const settledPins = pinnableLists ?? [];
   const pinnedIds = useMemo(
     () => new Set((profile?.pinnedLists || []).map(list => list.shareId)),
     [profile],
   );
   // `pinnableLists` is exactly the set of still-published lists, so the stale
   // pins fall out of it without another read.
+  // Stale pins are only knowable once the published lists have actually been
+  // read; before that, every pin would look stale.
   const stalePins = useMemo(
-    () => partitionStalePins(profile?.pinnedLists, pinnableLists).stale,
+    () => (pinnableLists === null ? [] : partitionStalePins(profile?.pinnedLists, pinnableLists).stale),
     [pinnableLists, profile],
   );
   const publicPath = profile ? getPublicProfilePath(profile.handle) : null;
@@ -313,6 +385,9 @@ export default function ProfilePage() {
       } else {
         if (handleCheck.handle !== profile.handle) {
           await changeUserHandle(handleCheck.handle, profile.handle);
+          // The public profile page files entries under the handle too, so the
+          // name just given up must not keep serving this profile.
+          forgetOwnProfile(null, profile.handle);
         }
         const updated = await updateUserProfile(payload);
         // Sanitization drops an empty photo from the update payload, which
@@ -394,7 +469,7 @@ export default function ProfilePage() {
     setFeedback(null);
     const previous = profile.pinnedLists || [];
     try {
-      const next = partitionStalePins(previous, pinnableLists).pinned;
+      const next = partitionStalePins(previous, settledPins).pinned;
       setProfile(current => ({ ...current, pinnedLists: next }));
       await savePinnedLists(next);
       setFeedback({ state: 'saved', message: copy.saved });
@@ -438,7 +513,9 @@ export default function ProfilePage() {
     setDeleting(true);
     setFeedback(null);
     try {
+      const unpublishedHandle = profile?.handle;
       await deleteOwnUserProfile();
+      forgetOwnProfile(user.uid, unpublishedHandle);
       setProfile(null);
       setStatus('new');
       setShowPhoto(true);
@@ -459,6 +536,31 @@ export default function ProfilePage() {
       <main className="profile-page">
         <div className="profile-shell">
           <p className="profile-loading"><Loader2 size={18} className="profile-spin" /> {copy.loading}</p>
+        </div>
+      </main>
+    );
+  }
+  // Before this existed, a failed load fell through to the form below with
+  // every `status === 'ready'` branch switched off: a half-built editor for a
+  // profile that had not been read.
+  if (status === 'error') {
+    return (
+      <main className="profile-page">
+        <div className="profile-shell">
+          <div className="profile-load-error" role="alert">
+            <h1>{copy.loadError}</h1>
+            <p>{copy.loadErrorHint}</p>
+            <button
+              type="button"
+              className="profile-empty-action"
+              onClick={() => {
+                setStatus('loading');
+                setReloadToken(token => token + 1);
+              }}
+            >
+              {copy.retry}
+            </button>
+          </div>
         </div>
       </main>
     );
@@ -692,10 +794,20 @@ export default function ProfilePage() {
           <section className="profile-section profile-pinned" aria-labelledby="profile-pinned-title">
             <h2 id="profile-pinned-title">{copy.pinned}</h2>
             <p className="profile-hint">{copy.pinnedHint}</p>
-            {pinnableLists.length === 0 ? (
-              <p className="profile-empty">
-                {copy.noLists} <Link to="/lists">/lists</Link>
-              </p>
+            {pinnableLists === null ? (
+              // Not asked yet. Saying "you have published none" here would be
+              // a guess, and the answer is usually a few hundred milliseconds
+              // away, so the section simply holds its place.
+              <p className="profile-empty" aria-busy="true">{copy.loadingLists}</p>
+            ) : pinnableLists.length === 0 ? (
+              <div className="profile-empty-lists">
+                <p className="profile-empty">{copy.noLists}</p>
+                <Link className="profile-empty-action" to="/lists">
+                  <FolderOpen size={15} aria-hidden="true" />
+                  <span>{copy.goToLists}</span>
+                  <ArrowRight size={14} aria-hidden="true" />
+                </Link>
+              </div>
             ) : (
               <ul className="profile-pin-list">
                 {pinnableLists.map(list => {

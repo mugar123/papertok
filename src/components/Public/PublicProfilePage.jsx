@@ -33,7 +33,14 @@ import {
   createPendingIdRequests,
   requestMissingRecords,
 } from '../../utils/pendingIdRequests.js';
-import { createSessionCache } from '../../utils/sessionCache.js';
+import {
+  handleProfileKey,
+  likedExtraCache,
+  ownListsCache,
+  ownProfileCache,
+  ownProfileKey,
+  rememberOwnProfile,
+} from '../../utils/profileSessionCaches.js';
 import { cleanPaperText, displayAuthorName } from '../../utils/paperText.js';
 import { getIcon } from '../../utils/icons.js';
 import { normalizeHandle } from '../../utils/userHandle.js';
@@ -76,15 +83,6 @@ const PROFILE_TAB_ROW_LIMIT = 60;
 // the moment the backend answers again.
 const LIKED_RETRY_BASE_MS = 600;
 const LIKED_RETRY_MAX_MS = 60_000;
-
-// Session caches, so profile ⇄ settings does not restart from a skeleton and
-// re-read everything it showed two seconds earlier. Seeded into state on
-// mount, revalidated by the same effects that always ran, written back on
-// every fresh answer. Keyed by uid (or handle for visitors): a different
-// account can never be served another account's view.
-const profileCache = createSessionCache({ maxEntries: 8 });
-const ownListsCache = createSessionCache({ maxEntries: 4 });
-const likedExtraCache = createSessionCache({ maxEntries: 4 });
 
 function authorLine(authors) {
   const names = (Array.isArray(authors) ? authors : [])
@@ -186,10 +184,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
 
   // `{ profile }` wrappers, because "this account has no public profile yet"
   // (a null) is itself a cacheable answer on one's own page.
-  const profileCacheKey = selfMode
-    ? (user?.uid ? `own:${user.uid}` : null)
-    : (handle ? `handle:${handle}` : null);
-  const seededProfile = profileCacheKey ? profileCache.get(profileCacheKey) : undefined;
+  const profileCacheKey = selfMode ? ownProfileKey(user?.uid) : handleProfileKey(handle);
+  const seededProfile = profileCacheKey ? ownProfileCache.get(profileCacheKey) : undefined;
   const [profile, setProfile] = useState(seededProfile ? seededProfile.profile : null);
   const [status, setStatus] = useState(seededProfile ? 'ready' : 'loading');
   const [reloadToken, setReloadToken] = useState(0);
@@ -238,8 +234,9 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
         if (profileCacheKey) {
           // A visitor's not-found is not cached: the profile could be created
           // a moment later, and 'not-found' must stay a fresh answer.
-          if (result || selfMode) profileCache.set(profileCacheKey, { profile: result });
-          else profileCache.delete(profileCacheKey);
+          if (selfMode) rememberOwnProfile(user?.uid, result);
+          else if (result) ownProfileCache.set(profileCacheKey, { profile: result });
+          else ownProfileCache.delete(profileCacheKey);
         }
         if (!active) return;
         setProfile(result);
@@ -253,11 +250,11 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
         // A failed revalidation must not replace a perfectly good cached view
         // with an error page; the page keeps what it is showing and the next
         // mount tries again.
-        if (profileCacheKey && profileCache.get(profileCacheKey)) return;
+        if (profileCacheKey && ownProfileCache.get(profileCacheKey)) return;
         setStatus(error?.code === 'USER_PROFILES_UNSUPPORTED_IN_DEMO' ? 'unsupported' : 'error');
       });
     return () => { active = false; };
-  }, [handle, selfMode, reloadToken, profileCacheKey]);
+  }, [handle, selfMode, reloadToken, profileCacheKey, user?.uid]);
 
   // Owner data. Each effect is gated on `view.isOwner`, which is the privacy
   // boundary: a visitor's render never even asks for these.

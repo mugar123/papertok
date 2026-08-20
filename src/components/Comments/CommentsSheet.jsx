@@ -21,6 +21,7 @@ import {
 import { profileIsPublic, readOwnUserProfile } from '../../services/userProfileService.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
+import { isReadTimeout, withReadTimeout } from '../../utils/boundedRead.js';
 import './CommentsSheet.css';
 
 // Opening the sheet used to start from nothing every time: anchor, pages and
@@ -273,7 +274,9 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   useEffect(() => {
     let active = true;
     (async () => {
-      const resolved = await resolveThreadAnchor(paper);
+      // Bounded: a read against a stalled connection never settles, and this
+      // sheet used to sit on its skeleton for as long as that lasted.
+      const resolved = await withReadTimeout(resolveThreadAnchor(paper), { label: 'comment thread' });
       if (!active) return;
       if (!resolved) {
         setStatus('error');
@@ -285,9 +288,9 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         ...(resolved.stubExists ? [resolved.key] : []),
         ...resolved.alternates.map(alternate => alternate.key),
       ];
-      const pages = await Promise.all(keys.map(async key => ({
+      const pages = await withReadTimeout(Promise.all(keys.map(async key => ({
         key, ...(await fetchThreadPage(key)),
-      })));
+      }))), { label: 'comment pages' });
       if (!active) return;
       const merged = pages
         .flatMap(page => page.comments.map(comment => ({ ...comment, paperKey: page.key })))
@@ -301,11 +304,14 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       setCount({ count: total, capped: counts.some(entry => entry?.capped) });
       setStatus('ready');
     })().catch((error) => {
-      console.error('The comment thread could not be loaded', error);
+      if (isReadTimeout(error)) console.warn('The comment thread did not answer in time', error);
+      else console.error('The comment thread could not be loaded', error);
       if (!active) return;
       // A failed refresh behind an already-visible cached thread stays quiet
       // (the cached view keeps standing); an explicit retry reports honestly.
       if (openedSeeded.current && attempt === 0) return;
+      // Never 'ready': a timeout says nothing about whether comments exist, so
+      // it must not be allowed to render "nobody has commented yet".
       setStatus('error');
     });
     return () => { active = false; };
