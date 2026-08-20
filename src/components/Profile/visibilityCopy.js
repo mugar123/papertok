@@ -10,9 +10,9 @@ export function visibilityCopy(isEnglish) {
   return isEnglish ? {
     legend: 'Who can see your profile?',
     publicTitle: 'Public profile',
-    publicBody: 'Anyone with the link sees your name, bio and pinned lists. Your profile can be followed.',
+    publicBody: 'Anyone with the link sees your name, bio and pinned lists. Your profile can be followed, and it appears when signed-in people search for users by handle or name.',
     privateTitle: 'Private profile',
-    privateBody: 'Only you see your profile. Its page does not open for anyone else, signed in or not.',
+    privateBody: 'Only you see your profile. Its page does not open for anyone else, signed in or not, and you do not appear in the user search.',
     notProtectedTitle: 'What going private does not cover',
     notProtected: [
       'Lists you already published stay public and reachable by their link — going private removes your name from them, not the lists. You unpublish them in My lists.',
@@ -23,9 +23,9 @@ export function visibilityCopy(isEnglish) {
   } : {
     legend: '¿Quién puede ver tu perfil?',
     publicTitle: 'Perfil público',
-    publicBody: 'Cualquiera con el enlace ve tu nombre, tu biografía y tus listas fijadas. Tu perfil se puede seguir.',
+    publicBody: 'Cualquiera con el enlace ve tu nombre, tu biografía y tus listas fijadas. Tu perfil se puede seguir y aparece cuando alguien con sesión busca usuarios por handle o por nombre.',
     privateTitle: 'Perfil privado',
-    privateBody: 'Solo tú ves tu perfil. Su página no se abre para nadie más, con sesión o sin ella.',
+    privateBody: 'Solo tú ves tu perfil. Su página no se abre para nadie más, con sesión o sin ella, y no apareces en la búsqueda de usuarios.',
     notProtectedTitle: 'Lo que ser privado no cubre',
     notProtected: [
       'Las listas que ya publicaste siguen siendo públicas y accesibles por su enlace — ser privado les quita tu nombre, no las retira. Se despublican en Mis listas.',

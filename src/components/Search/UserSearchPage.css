@@ -1,0 +1,278 @@
+/* Finding people (F9). A result row is a name, a handle and a monogram — the
+   index holds nothing else, so there is nothing else to lay out. */
+
+.user-search-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-4) var(--space-16);
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+.user-search-header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
+
+.user-search-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.user-search-back:hover,
+.user-search-back:focus-visible {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.user-search-heading h1 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-bold);
+  line-height: var(--lh-tight);
+  color: var(--text-primary);
+}
+
+.user-search-heading p {
+  margin: var(--space-1) 0 0;
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--text-secondary);
+}
+
+/* --- the box ------------------------------------------------------------- */
+
+.user-search-form {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.user-search-field {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  transition: border-color var(--transition-fast);
+}
+
+.user-search-field:focus-within {
+  border-color: var(--accent-primary);
+}
+
+.user-search-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: var(--space-3) 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--fs-base);
+}
+
+.user-search-input:focus {
+  outline: none;
+}
+
+.user-search-input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.user-search-submit {
+  flex: 0 0 auto;
+  padding: 0 var(--space-5);
+  border: none;
+  border-radius: var(--radius-full);
+  background: var(--gradient-brand);
+  color: var(--text-inverse);
+  font-family: var(--font-heading);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: opacity var(--transition-fast);
+}
+
+.user-search-submit:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.user-search-submit:not(:disabled):hover {
+  background: var(--gradient-brand-hover);
+}
+
+/* --- what comes back ----------------------------------------------------- */
+
+.user-search-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 120px;
+}
+
+.user-search-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.user-search-note--busy {
+  color: var(--text-tertiary);
+}
+
+.user-search-note--error {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+}
+
+.user-search-note--error p {
+  margin: 0;
+  color: var(--accent-danger);
+}
+
+.user-search-retry {
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+
+.user-search-spinner {
+  animation: user-search-spin 1s linear infinite;
+}
+
+@keyframes user-search-spin {
+  to { transform: rotate(360deg); }
+}
+
+.user-search-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-10) var(--space-4);
+  border: 1px dashed var(--border-subtle);
+  border-radius: var(--radius-xl);
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.user-search-empty p {
+  margin: 0;
+  font-size: var(--fs-base);
+}
+
+.user-search-empty-hint {
+  max-width: 420px;
+  font-size: var(--fs-sm) !important;
+  line-height: var(--lh-relaxed);
+  color: var(--text-tertiary);
+}
+
+.user-search-results {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.user-search-result {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.user-search-result:hover,
+.user-search-result:focus-visible {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.user-search-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: var(--font-heading);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+}
+
+.user-search-identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.user-search-name {
+  overflow: hidden;
+  font-size: var(--fs-base);
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-search-handle {
+  font-size: var(--fs-sm);
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 640px) {
+  .user-search-page {
+    padding: var(--space-5) var(--space-3) var(--space-20);
+  }
+
+  .user-search-heading h1 {
+    font-size: var(--fs-xl);
+  }
+}

@@ -30,6 +30,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { auth, db, IS_DEMO } from './firebase.js';
+import { userSearchEntry, userSearchReference } from './userSearchService.js';
 import { normalizeHandle, requireHandle } from '../utils/userHandle.js';
 
 export const USER_PROFILE_LIMITS = Object.freeze({
@@ -300,6 +301,42 @@ function handleReference(api, handle) {
   return api.document(api.database, 'handles', handle);
 }
 
+function searchReference(api, uid) {
+  return userSearchReference(api.database, uid, api.document);
+}
+
+/**
+ * Keeps the search index (F9) in step with the profile, inside the caller's
+ * batch: a profile that is EXPLICITLY public after the write has an entry, and
+ * anything else has none.
+ *
+ * `firestore.rules` refuses any other outcome — a write that leaves the profile
+ * private while an entry survives is denied, and so is one that renames out from
+ * under an entry still serving the old name — so this is not a courtesy the
+ * client extends, it is the shape the database accepts.
+ *
+ * "Explicitly" is the part that is easy to get wrong. A profile written before
+ * F8 has no `visibility` field and reads as public everywhere else, because its
+ * page always was public. Being listed in a searchable index is a different
+ * question, and that account was never asked it: the one-time prompt F8 shows
+ * is where the answer comes from, and until it arrives the account stays out.
+ * The rules enforce the same thing, so this is not a filter a modified client
+ * could skip — but doing it here too means such an account is never denied a
+ * save for attempting a write the rules were going to refuse.
+ *
+ * The delete branch is a no-op when there is nothing to delete, and it is what
+ * keeps the switch usable in both directions — and what lets an account that
+ * was indexed before the choice existed leave the index on its next save.
+ */
+function syncSearchEntry(api, batch, uid, { handle, displayName, visibility }) {
+  const reference = searchReference(api, uid);
+  if (visibility !== PROFILE_VISIBILITY.public) {
+    batch.delete(reference);
+    return;
+  }
+  batch.set(reference, userSearchEntry({ handle, displayName }));
+}
+
 /**
  * A rejected reservation is indistinguishable from any other denied write at
  * the SDK level, so a batch that claims a handle reports the collision the way
@@ -338,6 +375,11 @@ export async function createUserProfile(input, overrides) {
     updatedAt: timestamp,
   });
   batch.set(handleReference(api, handle), { uid, createdAt: timestamp });
+  syncSearchEntry(api, batch, uid, {
+    handle,
+    displayName: payload.displayName,
+    visibility: input.visibility,
+  });
   await commitHandleClaim(batch, handle);
   return { uid, handle, ...payload, visibility: input.visibility };
 }
@@ -355,8 +397,19 @@ export async function saveProfileVisibility(visibility, overrides) {
   if (!isVisibilityChoice(visibility)) {
     throw new TypeError('Visibility must be either public or private.');
   }
+  // One read, on a deliberate privacy action: the entry has to carry the
+  // handle and name the profile really holds, and the rules check that against
+  // the post-batch profile. Trusting a value the caller passed in would write a
+  // stale entry on the way out of privacy, or fail the write outright.
+  const current = await api.getDocument(profileReference(api, uid));
+  const profile = current?.data?.() || {};
   const batch = api.batch(api.database);
   batch.update(profileReference(api, uid), { visibility, updatedAt: api.now() });
+  syncSearchEntry(api, batch, uid, {
+    handle: profile.handle,
+    displayName: profile.displayName,
+    visibility,
+  });
   await batch.commit();
   return { uid, visibility };
 }
@@ -422,9 +475,22 @@ export async function updateUserProfile(patch, overrides) {
   requireSupported(api);
   const uid = requireOwner(api);
   const payload = sanitizeUserProfile(patch);
+  // Read rather than trust the caller: this runs immediately after
+  // `changeUserHandle` in the editor's save, so the handle in hand may be one
+  // commit out of date, and the index entry must agree with the stored profile
+  // or the rules refuse it.
+  const current = await api.getDocument(profileReference(api, uid));
+  const profile = current?.data?.() || {};
   const batch = api.batch(api.database);
 
   batch.update(profileReference(api, uid), { ...payload, updatedAt: api.now() });
+  if (profile.handle) {
+    syncSearchEntry(api, batch, uid, {
+      handle: profile.handle,
+      displayName: payload.displayName,
+      visibility: profile.visibility,
+    });
+  }
   await batch.commit();
   return { uid, ...payload };
 }
@@ -484,12 +550,21 @@ export async function changeUserHandle(nextHandle, currentHandle, overrides) {
   if (!previous) throw new TypeError('The current handle is required to change it.');
   if (previous === handle) return { uid, handle, changed: false };
 
+  const current = await api.getDocument(profileReference(api, uid));
+  const profile = current?.data?.() || {};
   const timestamp = api.now();
   const batch = api.batch(api.database);
 
   batch.delete(handleReference(api, previous));
   batch.set(handleReference(api, handle), { uid, createdAt: timestamp });
   batch.update(profileReference(api, uid), { handle, updatedAt: timestamp });
+  // The index is keyed by uid precisely so a rename is an update in place here
+  // rather than a fourth document changing hands in this batch.
+  syncSearchEntry(api, batch, uid, {
+    handle,
+    displayName: profile.displayName,
+    visibility: profile.visibility,
+  });
   await commitHandleClaim(batch, handle);
   return { uid, handle, changed: true };
 }
@@ -593,6 +668,10 @@ export async function deleteOwnUserProfile(overrides) {
   const batch = api.batch(api.database);
   batch.delete(profileReference(api, uid));
   if (handle) batch.delete(handleReference(api, handle));
+  // Unconditional, like the reservation: the rules refuse the profile delete
+  // while a search entry survives it, so an unpublished profile can never be
+  // left behind as a searchable name.
+  batch.delete(searchReference(api, uid));
   await batch.commit();
   return true;
 }

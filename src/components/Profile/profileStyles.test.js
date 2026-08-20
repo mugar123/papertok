@@ -20,6 +20,7 @@ const OWNED = [
   '../Comments/CommentsSheet.css',
   '../Settings/MyCommentsPage.css',
   '../Admin/ModerationPage.css',
+  '../Search/UserSearchPage.css',
 ];
 
 test('every design token used by the profile screens is actually defined', async () => {

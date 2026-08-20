@@ -1,5 +1,270 @@
 # Estado / pendientes
 
+## Endurecimiento de F9 — pasada hostil sobre P16 (2026-08-20)
+
+**Rules desplegadas en `papertok-168df`. La app NO necesita despliegue todavía**
+— la de F9 nunca se desplegó, así que ningún cliente vivo escribe en el índice.
+No es fase nueva del plan: es la corrección de P16 contra su propia revisión
+hostil, hecha antes de tocar la integración de los buscadores.
+
+### De dónde sale: cuatro agujeros, todos reproducidos contra las rules reales
+
+Los ataques se escribieron para **tener éxito si el agujero existe**. Los cinco
+lo tuvieron. Están en el scratchpad de la sesión (`f9-attacks.test.js`); lo que
+quedó en el repo son los tests de emulador que los cierran.
+
+| Hallazgo | Qué permitía |
+| --- | --- |
+| **Relleno de nombres en dos pasos** | La igualdad `nameLower == displayName.lower()` solo se comprobaba **al escribir la entrada**. Ponte "Taylor Swift", indéxate legalmente, renombra el perfil sin tocar la entrada: el índice sigue anunciando un nombre que el perfil no tiene, de forma duradera e invisible desde el perfil. Es exactamente el agujero que la igualdad existe para cerrar, ejecutado en dos escrituras en vez de una. |
+| **La misma deriva, en el handle** | Renombrar el handle dejaba la fila anunciando el viejo. En cuanto otra cuenta reclama ese handle libre, la fila **abre el perfil de otra persona**. |
+| **Entrada que nadie podía borrar** | `userSearch` no tenía borrado de admin. Un perfil retirado por moderación dejaba su entrada sirviendo nombre y handle para siempre, y la única cuenta que podía quitarla era la que acababan de moderar. |
+| **`createdAt` era un reloj de última edición** | Las rules exigían `createdAt == request.time` en create *y* update, y el cliente reescribía la entrada en cada guardado. Cualquiera con sesión podía `orderBy('createdAt','desc')` y obtener un listado de **quién tocó su perfil más recientemente**, que el producto no ofrece por ningún sitio. Nada lo leía. |
+
+Más el consentimiento heredado, que no es un agujero de rules sino una decisión
+de producto: un perfil anterior a F8 no tiene `visibility`, cuenta como público,
+y el índice se escribía en *cualquier* guardado. Editar la bio te metía en un
+índice buscable sin que nadie te lo hubiera preguntado.
+
+### Qué entró
+
+| Pieza | Archivo |
+| --- | --- |
+| `searchIndexCoherentAfter(uid)` y `profileSearchStateValid(uid)` (antes `profilePublicOrDelisted`): una escritura pública tiene que dejar la entrada, si existe, cuadrando con el perfil que produce — nombre **y** handle | `firestore.rules` |
+| `allow delete` de `userSearch` gana `\|\| isAdmin()` | `firestore.rules` |
+| La entrada pierde `createdAt`: forma `{handle, nameLower}` y las rules rechazan cualquier sello | `firestore.rules`, `userSearchService.js` |
+| `validUserSearchEntry` exige perfil **explícitamente** público, no público-por-ausencia | `firestore.rules` |
+| `syncSearchEntry` invierte la condición: indexa solo si `visibility === 'public'`, y en cualquier otro caso **borra** | `src/services/userProfileService.js` |
+
+### La medición que decidía el tope de pines
+
+La pregunta era si cerrar el agujero bajaba el tope de 6 a 5. **No lo baja.**
+
+| variante | tope, guardado normal | tope, renombrar handle | vinculante |
+| --- | --- | --- | --- |
+| rules de P16 | 7 | 7 | **7** |
+| solo la mitad del nombre | 7 | 6 | **6** |
+| las dos mitades | 6 | 6 | **6** |
+
+Cerrar las dos mitades cuesta **lo mismo** que cerrar solo la del nombre, porque
+el camino de renombrar handle ya baja a 6 por sí solo: no había intercambio que
+hacer. El tope se queda en 6 y todo guardado legítimo al tope pasa, medido.
+
+**Lo que sí se acabó es el margen.** F1 eligió 6 dejando una entrada libre "para
+la próxima cláusula"; ésta es esa cláusula. Seis es ahora techo y tope a la vez,
+y **la siguiente cláusula que se añada a `userProfiles/` baja el tope a 5** — lo
+cual afecta directamente a P17, que está en marcha en otra sesión.
+
+Dos trampas de método, anotadas porque volverán a morder a quien re-mida:
+
+1. Sondear con 7 pines mide el **tope** (`entries.size() <= 6`), no el
+   presupuesto. Hay que subir el tope para medir.
+2. Subir el tope solo **no cambia nada**: `validPinnedLists` desenrolla
+   exactamente seis comprobaciones, así que las entradas 7 en adelante ni se
+   validan ni cuestan. Hay que extender el desenrollado también.
+3. Y la única señal fiable es `allowed`: las trazas de denegación del emulador
+   mencionan "1000 expressions" por motivos ajenos a la cláusula que de verdad
+   decidió, así que clasificar denegaciones por su mensaje miente.
+
+### Tests
+
+- **131 contra el emulador** (10 nuevos), y varios existentes **invertidos**
+  porque afirmaban lo contrario de lo que ahora es cierto: un perfil heredado ya
+  no se indexa solo, y renombrar sin llevarse la entrada ya no pasa.
+- **659 unitarios** (4 nuevos de consentimiento heredado y coherencia).
+- **Pasada de mutación: 15 mutantes, 12 muertos, 3 supervivientes**, los tres
+  demostrados redundantes y anotados en las rules:
+  - `hasAll` — el caso ya documentado en `validFollowEdge`.
+  - `'visibility' in searchProfileAfter(uid)` — la igualdad de abajo
+    desreferencia una clave ausente, lo que ya revienta y deniega. Quitar **las
+    dos** líneas muere; quitar solo la igualdad muere. Se queda porque lo que
+    protege es un refactor, no un llamante: el día que `searchProfileAfter`
+    gane un `.get('visibility', 'public')`, el error desaparece y el
+    público-por-ausencia vuelve en silencio.
+  - La misma pareja al revés.
+
+### Verificación en vivo tras el despliegue
+
+Por REST sin cabecera de auth contra `papertok-168df`: `list` de `userSearch`
+403, `get` de una entrada 403, `runQuery` de prefijo con `limit` 403, y
+`orderBy('createdAt')` 403. Sin mover nada de lo anterior: `list` de
+`userProfiles` 403, perfil público 200, `handles/mugar` 200,
+`config/moderation` legible, `config/other` 403, `reports` 403.
+
+### Consecuencia en producción hasta que se despliegue la app
+
+Las dos cuentas reales se indexaron durante la verificación de P16. Con la
+cláusula de coherencia puesta y el bundle desplegado (que es anterior a F9 y no
+escribe el índice), **esas dos cuentas no pueden cambiar su nombre visible ni su
+handle desde el sitio en vivo** hasta que la app de F9 aterrice: la entrada se
+quedaría rancia y la escritura se deniega en la dirección segura. No poder
+ponerse en privado ya pasaba antes de esta fase, por la misma razón. Se arregla
+solo con el despliegue de la app que trae la integración.
+
+### Sigue abierto, a propósito
+
+- **Enumerar el índice entero, 20 filas por consulta.** Verificado: 45 cuentas
+  en 3 consultas, con `orderBy('handle') + startAfter`, sin prefijo. Las rules
+  acotan `request.query.limit` y nada más — ni la forma, ni el `orderBy`. Es la
+  contrapartida aceptada en `02-SECURITY.md` §7 y lo que sale es solo handle y
+  nombre de gente que eligió ser pública. **La consecuencia operativa es que
+  este índice no puede ganar un campo nunca**: una foto o una bio aquí
+  convierten una enumeración documentada en el volcado que F1 cerró.
+- **El mínimo de 2 caracteres es solo del cliente.** Prefijo vacío y de una
+  letra pasan en rules. Controla la factura, no es una defensa.
+- **Suplantar por nombre visible sigue siendo posible**: llamarte "Taylor
+  Swift" y dejarlo así siempre fue legal, y el perfil público muestra la misma
+  mentira. La igualdad nunca impidió la suplantación, solo la divergencia.
+- **Liberar tu propio handle sin soltar el perfil.** `handles/{h}` delete solo
+  pide que seas el dueño de la reserva, así que un perfil puede seguir
+  reclamando un handle que ya no tiene. Es un hueco preexistente de F1; la
+  cláusula de coherencia le quita la mitad visible (el índice ya no puede
+  derivar), pero cerrarlo del todo es tocar el delete de `handles/`.
+
+## Búsqueda de usuarios — F9 / P16 (2026-08-20)
+
+**Implementado y con las rules ya desplegadas en `papertok-168df`.** Falta
+desplegar la app. `list` en `userProfiles/` y `handles/` **sigue cerrado**: la
+búsqueda no lo reabre, lee una colección aparte.
+
+### Qué entró
+
+| Pieza | Archivo |
+| --- | --- |
+| Colección `userSearch/{uid}`: `get` cerrado, `list` con sesión y `limit <= 20`, escritura solo del dueño y coherente con su perfil vía `getAfter` | `firestore.rules` |
+| Cláusula a prueba de fallos en `userProfiles/`: toda escritura que deje el perfil privado —y el delete— exige `!existsAfter(userSearch/{uid})` | `firestore.rules` |
+| `userSearchService`: dos queries de prefijo acotadas, fusión y dedupe por uid, mínimo 2 caracteres, debounce 400 ms | `src/services/userSearchService.js` (+17 tests) |
+| Los cinco caminos de escritura de perfil mantienen el índice en el mismo batch | `src/services/userProfileService.js` |
+| Página `/search/users` con filas nombre+handle+monograma | `src/components/Search/UserSearchPage.{jsx,css}` |
+| Punto de entrada provisional "Buscar personas en PaperTok" | `src/components/Search/SearchPage.{jsx,css}` |
+| Ruta protegida | `src/App.jsx` |
+| La copy de privacidad dice que un perfil público aparece en la búsqueda, y que uno privado no | `src/components/Profile/visibilityCopy.js` |
+
+### Dos desvíos del diseño escrito, y por qué
+
+- **La ruta es `/search/users`, no `/search`.** `04-PHASES.md` pedía `/search`,
+  pero esa ruta ya es la búsqueda de papers (OpenAlex). Consultado antes de
+  tocar nada; la búsqueda de papers no se toca.
+- **`.lower()` de las rules es solo ASCII.** Medido contra el emulador, no
+  asumido: `"Nicolás MUÑOZ"` baja a `"nicolás muÑoz"` ahí, conservando la Ñ,
+  mientras `toLowerCase()` de JavaScript dice `"muñoz"`. Derivar `nameLower`
+  de la forma obvia habría hecho fallar la igualdad `nameLower ==
+  displayName.lower()` y **dejado sin poder guardar su perfil a cualquier
+  cuenta con una mayúscula acentuada en el nombre** — `@nick_mugar` entre
+  ellas. `toIndexedName` replica el motor (solo A–Z), y el test de emulador
+  ejecuta **la función que se envía** contra **las rules que se despliegan**,
+  así que las dos no pueden separarse sin que salte.
+
+  Consecuencia visible, aceptada: el índice guarda solo el nombre en
+  minúsculas (es lo que dice `01-DATA-MODEL.md`), así que una fila pinta
+  "nicolás muñoz garcía". Y buscar `"ñoño"` no encuentra a "Ñoño", porque su
+  `nameLower` empieza por `Ñ`. Si algún día molesta, la salida barata es un
+  campo `name` con el `displayName` real y `name == getAfter(...).displayName`
+  en rules: no revela nada nuevo — ese nombre ya se sirve por `allow get` del
+  perfil — pero se sale del modelo escrito, así que no se ha hecho aquí.
+
+### Lo que las rules imponen (121 tests de emulador, 21 nuevos)
+
+- Un perfil privado **no puede tener documento** en el índice.
+- Volverse privado dejando el documento vivo: **denegado**. Salir del índice
+  en el mismo batch: permitido. Lo mismo para el delete del perfil y para un
+  perfil que nace privado.
+- `nameLower` tiene que ser el `displayName` real en minúsculas y el handle el
+  handle real, ambos comprobados **después** del batch: nadie se indexa con el
+  nombre de otro para colarse en sus búsquedas.
+- Sin sesión no se busca. Sin `limit` no se busca. Con `limit(21)` tampoco.
+- `get` de un documento suelto: cerrado. Escribir o borrar el de otro: cerrado.
+
+### El presupuesto de expresiones: el tope de pines sigue en 6
+
+Obligatorio re-medirlo y se ha re-medido. **No baja a 5.** Seis pines pasan y
+siete siguen fallando con la cláusula nueva puesta, y el peor caso que esta
+fase crea —seis pines **y** volverse privado **y** salir del índice en un solo
+batch— también pasa. El truco es el cortocircuito: `profileIsPublic(...) ||
+!existsAfter(...)`, así que un guardado público normal ni llega a evaluar el
+`existsAfter`.
+
+### Pasada de mutación: 17 cláusulas nuevas, 14 muertas, 3 vivas
+
+Las tres supervivientes son **redundantes, no huecos**, y están anotadas como
+tales en las rules:
+
+- `hasAll` — lo cubre `hasOnly` más las desreferencias de abajo (una clave que
+  falta revienta la evaluación y deniega). El mismo caso ya documentado en
+  `validFollowEdge`.
+- `validString(handle, 40)` y `validString(nameLower, 80)` — implicados por
+  las dos igualdades de coherencia, porque los campos del perfil con los que
+  se comparan ya están acotados por `validPublicProfile`. Dejan de ser
+  redundantes en cuanto un perfil llegue por un camino que no pase por esas
+  cláusulas: la identidad de servicio de F6.
+
+### Costes
+
+- Una búsqueda ejecutada = **2 queries acotadas**, 2–20 lecturas, normalmente
+  <6. **Cero lecturas por fila pintada**: nombre y handle viajan en el doc.
+- Cada guardado de perfil gana **1 lectura de cliente** (leer el perfil para
+  que la entrada cuadre con lo que hay guardado, en vez de fiarse de lo que
+  pase el llamante — que es justo lo que se rompe en la secuencia
+  `changeUserHandle` → `updateUserProfile`) más ~1 lectura de rules.
+- **La carga del feed sigue costando 1 documento.** Test de coste re-ejecutado
+  y test estructural ampliado: `userSearchService` se suma a la lista de
+  servicios sociales que ningún módulo del camino del feed puede importar.
+
+### Migración: perezosa, y ya probada en vivo
+
+Los perfiles públicos anteriores a la fase no tienen documento de búsqueda.
+Cualquier guardado de perfil —incluido tocar el interruptor de privacidad— lo
+escribe, porque la rama pública siempre hace `set`. No hace falta backfill: las
+dos cuentas reales se indexaron así durante la verificación.
+
+### Verificación en vivo (2026-08-20, panel visible)
+
+Contra las rules desplegadas, con las dos cuentas:
+
+| | |
+| --- | --- |
+| Buscar por REST **sin cabecera de auth** | **403 PERMISSION_DENIED** |
+| Guardar el perfil escribe la entrada del índice (migración perezosa) | sí, en las dos cuentas |
+| `@nick_mugar` busca "mug" | encuentra a **@mugar** (la otra cuenta) |
+| `@nick_mugar` busca "nicolás" | encuentra por **nombre** — el handle no empieza por ahí |
+| `@nick_mugar` busca "nick" | encuentra por **handle** |
+| `@mugar` a privado, buscar "mug" | **desaparece de los resultados** |
+| `@mugar` de vuelta a público | **vuelve a aparecer** |
+| Pulsar una fila | abre el perfil público |
+| Fila de resultado | nombre + handle + monograma, **sin foto** |
+
+Las dos cuentas quedan **públicas**, como estaban antes de empezar.
+
+### Qué desplegar
+
+1. **Rules — ya desplegadas** (2026-08-20, `firebase deploy --only
+   firestore:rules`). Un solo despliegue: el bloque `userSearch/` es aditivo e
+   inerte, y la cláusula nueva de `userProfiles/` no rompe a un bundle
+   cacheado — mientras una cuenta no tenga documento de búsqueda,
+   `!existsAfter` es verdadero y sus escrituras de siempre pasan tal cual.
+2. **La app** (`npm run build` + tu despliegue habitual de GitHub Pages).
+
+El único choque posible sigue siendo una cuenta que ya creó su documento con
+el bundle nuevo y guarda en privado desde uno viejo: se deniega en la
+dirección segura y se arregla recargando.
+
+### Fuera, a propósito
+
+- **El icono en la Navbar.** `Navbar.jsx` es de la rama del compañero y sigue
+  intacto; la entrada vive en la página de búsqueda de papers hasta que esa
+  rama aterrice.
+- **Prefijo, no substring ni typos.** "muñoz" no encuentra a "Nicolás Muñoz".
+  La escalada sin motor externo (`nameTokens` con `array-contains`) está en
+  `02-SECURITY.md` §7 y sigue sin hacer falta.
+- **El delete de admin no exige salir del índice.** La rama `isAdmin()` del
+  delete de perfil sigue sin restricciones, igual que ya pasaba con la reserva
+  del handle: un perfil borrado por moderación puede dejar su entrada
+  huérfana. Coherente con lo que ya había, y anotado aquí para que no se
+  descubra por sorpresa.
+- **La frescura en la dirección abierta.** Si un guardado renombrara el
+  `displayName` sin tocar el índice, la entrada serviría un nombre rancio. El
+  servicio siempre hace las dos cosas en un batch; la dirección que importa
+  (privado ⇒ fuera) sí está en rules. Ya estaba decidido en `02-SECURITY.md` §7.
+
 ## Login con GitHub — F5 / P9 (2026-08-20)
 
 **Implementado. `firestore.rules` NO se toca: F5 vive entera en Firebase Auth,

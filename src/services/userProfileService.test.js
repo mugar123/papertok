@@ -191,10 +191,89 @@ test('creating a profile reserves the handle in the same batch', async () => {
   const { api, calls } = fakeApi();
   await createUserProfile({ handle: '  @Ada  ', displayName: 'Ada Lovelace', visibility: 'public' }, api);
 
-  assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1', 'db/handles/ada']);
-  assert.equal(calls.at(-1)[0], 'commit', 'both writes must land in one commit');
+  assert.deepEqual(
+    writtenPaths(calls),
+    ['db/userProfiles/user-1', 'db/handles/ada', 'db/userSearch/user-1'],
+  );
+  assert.equal(calls.at(-1)[0], 'commit', 'every write must land in one commit');
   assert.equal(calls[0][2].handle, 'ada');
   assert.deepEqual(calls[1][2], { uid: 'user-1', createdAt: 'SERVER_TIME' });
+  // F9: a public profile is born searchable, in the same batch, carrying
+  // exactly what the rules recompute from the profile — and no timestamp, which
+  // would only have been an orderable record of when the account last saved.
+  assert.deepEqual(calls[2][2], { handle: 'ada', nameLower: 'ada lovelace' });
+});
+
+test('F9: a profile created private is never indexed', async () => {
+  const { api, calls } = fakeApi();
+  await createUserProfile({ handle: 'ada', displayName: 'Ada Lovelace', visibility: 'private' }, api);
+  const sets = calls.filter(([kind]) => kind === 'set').map(([, reference]) => reference);
+  assert.equal(sets.includes('db/userSearch/user-1'), false, 'a private profile writes no entry');
+  // The delete rides along so that an entry left over from an earlier public
+  // life — or from an admin delete — cannot make this create unwritable.
+  assert.deepEqual(
+    calls.filter(([kind]) => kind === 'delete').map(([, reference]) => reference),
+    ['db/userSearch/user-1'],
+  );
+});
+
+test('F9: an account that never answered the privacy prompt is not indexed', async () => {
+  // A profile written before F8 has no `visibility` field. Everywhere else that
+  // reads as public, correctly — its page always was public. Being listed in a
+  // searchable index is a separate question that account was never asked, so
+  // editing a bio must not answer it on their behalf.
+  const legacy = { handle: 'ada', displayName: 'Ada Lovelace' };
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({ exists: () => true, id: 'user-1', data: () => legacy }),
+  });
+  await updateUserProfile({ displayName: 'Ada L' }, api);
+
+  const entry = calls.find(([, reference]) => reference === 'db/userSearch/user-1');
+  assert.equal(entry[0], 'delete', 'silence is not consent, so silence is not an entry');
+});
+
+test('F9: and one that was indexed before the choice existed leaves on its next save', async () => {
+  // The same delete is the repair. Two accounts were indexed during the F9
+  // verification; if either of them never made the choice, this is how their
+  // entry goes away rather than becoming a document they can neither keep
+  // coherent nor rewrite.
+  const legacy = { handle: 'ada', displayName: 'Ada Lovelace' };
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({ exists: () => true, id: 'user-1', data: () => legacy }),
+  });
+  await saveProfileVisibility('private', api);
+  assert.deepEqual(
+    calls.filter(([kind]) => kind === 'delete').map(([, reference]) => reference),
+    ['db/userSearch/user-1'],
+  );
+});
+
+test('F9: answering the prompt with "public" is what puts an account in the index', async () => {
+  const chosen = { handle: 'ada', displayName: 'Ada Lovelace', visibility: 'public' };
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({ exists: () => true, id: 'user-1', data: () => chosen }),
+  });
+  await updateUserProfile({ displayName: 'Ada Lovelace' }, api);
+  const entry = calls.find(([, reference]) => reference === 'db/userSearch/user-1');
+  assert.deepEqual(entry.slice(0, 2), ['set', 'db/userSearch/user-1']);
+  assert.deepEqual(entry[2], { handle: 'ada', nameLower: 'ada lovelace' });
+});
+
+test('F9: a rename always carries the entry, so the two can never drift', async () => {
+  // The rules refuse a public profile write that leaves the entry serving a name
+  // or a handle the profile no longer holds. This is the client half: every path
+  // that can change either field goes through syncSearchEntry.
+  const chosen = { handle: 'ada', displayName: 'Ada Lovelace', visibility: 'public' };
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({ exists: () => true, id: 'user-1', data: () => chosen }),
+  });
+  await updateUserProfile({ displayName: 'Taylor Swift' }, api);
+  const entry = calls.find(([, reference]) => reference === 'db/userSearch/user-1');
+  assert.deepEqual(
+    entry[2],
+    { handle: 'ada', nameLower: 'taylor swift' },
+    'the entry follows the profile — it cannot be left behind advertising the old name',
+  );
 });
 
 test('an invalid or reserved handle never reaches Firestore', async () => {
@@ -226,14 +305,36 @@ test('a taken handle surfaces as a collision, not a generic failure', async () =
 });
 
 test('changing a handle frees the old one and claims the new one in one batch', async () => {
-  const { api, calls } = fakeApi();
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({
+      exists: () => true,
+      id: 'user-1',
+      data: () => ({ handle: 'ada', displayName: 'Ada Lovelace', visibility: 'public' }),
+    }),
+  });
   await changeUserHandle('Grace', 'ada', api);
 
-  assert.deepEqual(calls.map(([kind]) => kind), ['delete', 'set', 'update', 'commit']);
+  assert.deepEqual(calls.map(([kind]) => kind), ['delete', 'set', 'update', 'set', 'commit']);
   assert.deepEqual(writtenPaths(calls), [
-    'db/handles/ada', 'db/handles/grace', 'db/userProfiles/user-1',
+    'db/handles/ada', 'db/handles/grace', 'db/userProfiles/user-1', 'db/userSearch/user-1',
   ]);
   assert.equal(calls[2][2].handle, 'grace');
+  // F9: the index is keyed by uid, so a rename is an update in place — the new
+  // handle, the name untouched, and no fourth document changing hands.
+  assert.deepEqual(calls[3][2], { handle: 'grace', nameLower: 'ada lovelace' });
+});
+
+test('F9: renaming the handle of a private profile indexes nothing', async () => {
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({
+      exists: () => true,
+      id: 'user-1',
+      data: () => ({ handle: 'ada', displayName: 'Ada Lovelace', visibility: 'private' }),
+    }),
+  });
+  await changeUserHandle('Grace', 'ada', api);
+  assert.deepEqual(calls.map(([kind]) => kind), ['delete', 'set', 'update', 'delete', 'commit']);
+  assert.equal(calls[3][1], 'db/userSearch/user-1');
 });
 
 test('changing a handle to the same handle writes nothing', async () => {
@@ -578,8 +679,13 @@ test('deleting the profile frees the handle in the same batch', async () => {
   });
   assert.equal(await deleteOwnUserProfile(api), true);
   const deletes = calls.filter(([kind]) => kind === 'delete').map(([, reference]) => reference);
-  assert.deepEqual(deletes.sort(), ['db/handles/ada', 'db/userProfiles/user-1']);
-  assert.deepEqual(calls.at(-1), ['commit'], 'both deletes ride one batch');
+  // F9 joins hardening C: the search entry falls with the profile too, or the
+  // index keeps serving a name whose page no longer exists.
+  assert.deepEqual(
+    deletes.sort(),
+    ['db/handles/ada', 'db/userProfiles/user-1', 'db/userSearch/user-1'],
+  );
+  assert.deepEqual(calls.at(-1), ['commit'], 'every delete rides one batch');
 });
 
 test('deleting without a profile is a no-op, not an error', async () => {
@@ -708,16 +814,26 @@ test('an absent visibility field reads as public, and asks for a choice', () => 
   assert.equal(isVisibilityChoice('followers'), false);
 });
 
-test('switching visibility touches the profile only, never the handle', async () => {
+test('switching visibility touches the profile and the index, never the handle', async () => {
   // Going private keeps the reservation: the switch has to be reversible, and
   // it is not reversible if somebody can take the handle while you are away.
-  const { api, calls } = fakeApi();
+  const profile = { handle: 'ada', displayName: 'Ada Lovelace', visibility: 'public' };
+  const stored = async () => ({ exists: () => true, id: 'user-1', data: () => profile });
+  const { api, calls } = fakeApi({ getDocument: stored });
   await saveProfileVisibility('private', api);
-  assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1']);
+  assert.deepEqual(writtenPaths(calls), ['db/userProfiles/user-1', 'db/userSearch/user-1']);
   assert.equal(calls[0][2].visibility, 'private');
   assert.equal(calls[0][2].updatedAt, 'SERVER_TIME');
+  // F9: going private leaves the index in the same batch. The rules refuse the
+  // profile write otherwise, so these two can never come apart.
+  assert.equal(calls[1][0], 'delete', 'going private deletes the search entry');
 
-  const rejected = fakeApi();
+  const back = fakeApi({ getDocument: stored });
+  await saveProfileVisibility('public', back.api);
+  assert.deepEqual(back.calls[1].slice(0, 2), ['set', 'db/userSearch/user-1']);
+  assert.deepEqual(back.calls[1][2], { handle: 'ada', nameLower: 'ada lovelace' });
+
+  const rejected = fakeApi({ getDocument: stored });
   await assert.rejects(() => saveProfileVisibility('secret', rejected.api), TypeError);
   assert.deepEqual(rejected.calls, []);
 });

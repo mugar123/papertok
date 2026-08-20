@@ -19,6 +19,7 @@ import PDFViewer from './components/PDF/PDFViewer'
 import SaveToListModal from './components/Lists/SaveToListModal'
 import CommentsSheet from './components/Comments/CommentsSheet'
 import SearchPage from './components/Search/SearchPage'
+import UserSearchPage from './components/Search/UserSearchPage'
 import EntityExplorer from './components/Explorer/EntityExplorer'
 import ScientificReport from './components/Report/ScientificReport'
 import FollowingFeedPage from './components/Following/FollowingFeedPage'
@@ -157,6 +158,18 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition><SearchPage onSaveToList={setSaveModalPaper} /></PageTransition>
+              </ProtectedRoute>
+            }
+          />
+          {/* Finding people (F9), a separate page from the paper search above:
+              that one searches the literature through OpenAlex, this one
+              searches PaperTok accounts through `userSearch/`. Behind a
+              session, which the rules also require of the query itself. */}
+          <Route
+            path="/search/users"
+            element={
+              <ProtectedRoute>
+                <PageTransition><UserSearchPage /></PageTransition>
               </ProtectedRoute>
             }
           />

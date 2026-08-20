@@ -19,6 +19,7 @@ import {
   assertSucceeds,
   initializeTestEnvironment,
 } from '@firebase/rules-unit-testing';
+import { toIndexedName } from '../src/services/userSearchService.js';
 import {
   deleteDoc,
   deleteField,
@@ -816,6 +817,22 @@ test('F8: what going private does NOT hide, asserted so the UI cannot lie', asyn
   await assertSucceeds(getDoc(doc(guest, 'publicLists', ALICE_SHARE)));
 });
 
+test('F8+F9: and what it DOES hide — the search index, as absence', async () => {
+  // The complement of the test above, and the reason it can be stated as a
+  // fact: a private profile is not filtered out of search results, it has no
+  // document to filter. Asserted as a real query by a real caller, so a client
+  // that ignored the app entirely would see the same nothing.
+  await resetSearch({
+    visibility: { [ALICE]: 'private', [BOB]: 'public' },
+    indexed: [BOB],
+    names: { [ALICE]: 'Alicia', [BOB]: 'Alicio' },
+  });
+  const found = await getDocs(prefixQuery(asCarol(), 'nameLower', 'alici'));
+  assert.deepEqual(found.docs.map(entry => entry.id), [BOB], 'only the public profile is there');
+  // And the owner cannot put themselves back in without leaving privacy.
+  await assertFails(setDoc(doc(asAlice(), 'userSearch', ALICE), searchEntry('alice', 'alicia')));
+});
+
 test('F8: a private profile keeps its handle, and nobody else can take it', async () => {
   await resetVisibility({ visibility: { [ALICE]: 'private' } });
   // Going private must not free the reservation: the switch has to be
@@ -1606,4 +1623,514 @@ test('the key allowlist still bites on a legacy document', async () => {
   await assertFails(setDoc(ref, { nickname: 'alice' }, { merge: true }));
   await assertFails(setDoc(ref, { onboardingComplete: 'yes' }, { merge: true }));
   await assertFails(setDoc(ref, { profilePhoto: 'x'.repeat(280_001) }, { merge: true }));
+});
+
+// =========================================================================
+// F9 — User search index
+//
+// Searching is enumerating: the rules see a query's limit, never the values of
+// its `where`. So what is asserted here is not "nobody can enumerate" — that
+// would be a promise the database cannot keep — but what enumeration yields
+// (handle and lowercased name of people who chose to be public), what it costs
+// (a session, a server-imposed ceiling), and the property F8 sold: a private
+// profile has no entry, in a direction that fails safe.
+// =========================================================================
+
+/** Seeds profiles plus, for the uids listed in `indexed`, their search entry. */
+async function resetSearch({ visibility = {}, indexed = [], names = {} } = {}) {
+  await testEnv.clearFirestore();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    for (const [uid, handle] of [[ALICE, 'alice'], [BOB, 'bob'], [CAROL, 'carol']]) {
+      const chosen = visibility[uid];
+      await setDoc(doc(db, 'userProfiles', uid), {
+        handle,
+        displayName: names[uid] || handle,
+        pinnedLists: [],
+        ...(chosen ? { visibility: chosen } : {}),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      await setDoc(doc(db, 'handles', handle), { uid, createdAt: new Date() });
+      if (indexed.includes(uid)) {
+        await setDoc(doc(db, 'userSearch', uid), {
+          handle,
+          nameLower: (names[uid] || handle).toLowerCase(),
+        });
+      }
+    }
+  });
+}
+
+const searchEntry = (handle, nameLower) => ({ handle, nameLower });
+
+/** The two prefix queries the client issues, as the rules see them. */
+const prefixQuery = (database, field, term, rows = 10) => query(
+  collection(database, 'userSearch'),
+  where(field, '>=', term),
+  where(field, '<=', `${term}\uf8ff`),
+  limit(rows),
+);
+
+// --- reading --------------------------------------------------------------
+
+test('F9: a signed-in account can search, one bounded page at a time', async () => {
+  await resetSearch({ indexed: [ALICE, BOB] });
+  await assertSucceeds(getDocs(prefixQuery(asCarol(), 'handle', 'al')));
+  await assertSucceeds(getDocs(prefixQuery(asCarol(), 'nameLower', 'al')));
+});
+
+test('F9: a search without a session is refused', async () => {
+  // The friction that makes scraping cost a real, blockable account. The app
+  // never issues this — the route is behind a session — so the only caller
+  // that reaches it is one that went around the app.
+  await resetSearch({ indexed: [ALICE] });
+  await assertFails(getDocs(prefixQuery(asGuest(), 'handle', 'al')));
+  await assertFails(getDocs(prefixQuery(asGuest(), 'nameLower', 'al')));
+});
+
+test('F9: a query without a limit does not run', async () => {
+  await resetSearch({ indexed: [ALICE] });
+  await assertFails(getDocs(collection(asCarol(), 'userSearch')));
+  await assertFails(getDocs(query(
+    collection(asCarol(), 'userSearch'),
+    where('handle', '>=', 'a'),
+    where('handle', '<=', 'a'),
+  )));
+});
+
+test('F9: no caller can ask the index for more than the ceiling', async () => {
+  await resetSearch({ indexed: [ALICE] });
+  const db = asCarol();
+  await assertSucceeds(getDocs(prefixQuery(db, 'handle', 'a', 20)));
+  await assertFails(getDocs(prefixQuery(db, 'handle', 'a', 21)));
+  await assertFails(getDocs(query(collection(db, 'userSearch'), limit(1000))));
+});
+
+test('F9: a single entry cannot be fetched by id', async () => {
+  // `get` buys nothing the profile does not already serve, and leaving it open
+  // would add a second oracle for "does this uid have a public profile".
+  await resetSearch({ indexed: [ALICE] });
+  await assertFails(getDoc(doc(asCarol(), 'userSearch', ALICE)));
+  await assertFails(getDoc(doc(asGuest(), 'userSearch', ALICE)));
+  await assertFails(getDoc(doc(asAlice(), 'userSearch', ALICE)));
+});
+
+// --- who may write what ---------------------------------------------------
+
+test('F9: a private profile cannot have an entry in the index', async () => {
+  await resetSearch({ visibility: { [ALICE]: 'private' } });
+  await assertFails(setDoc(
+    doc(asAlice(), 'userSearch', ALICE),
+    searchEntry('alice', 'alice'),
+  ));
+});
+
+test('F9: a public profile indexes itself — but only after it said so', async () => {
+  await resetSearch({ visibility: { [ALICE]: 'public' } });
+  await assertSucceeds(setDoc(
+    doc(asAlice(), 'userSearch', ALICE),
+    searchEntry('alice', 'alice'),
+  ));
+  // BOB has no `visibility` field: written before F8, public by absence. That
+  // absence is enough to open his page — it always was public — and NOT enough
+  // to list him in a searchable index, which is a question he was never asked.
+  // He answers F8's one-time prompt and then he is indexable; until then an
+  // unrelated profile edit cannot answer it for him.
+  await assertFails(setDoc(doc(asBob(), 'userSearch', BOB), searchEntry('bob', 'bob')));
+});
+
+test('F9: answering the prompt is what makes an account indexable', async () => {
+  await resetSearch();
+  const db = asBob();
+  // The whole migration, as the client performs it: choose, and index in the
+  // same batch. Before the choice the entry is refused; after it, allowed.
+  await assertFails(setDoc(doc(db, 'userSearch', BOB), searchEntry('bob', 'bob')));
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'userProfiles', BOB), {
+    visibility: 'public', updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(db, 'userSearch', BOB), searchEntry('bob', 'bob'));
+  await assertSucceeds(batch.commit());
+});
+
+test('F9: choosing private explicitly keeps an account out, same as never choosing', async () => {
+  await resetSearch({ visibility: { [ALICE]: 'private' } });
+  await assertFails(setDoc(doc(asAlice(), 'userSearch', ALICE), searchEntry('alice', 'alice')));
+});
+
+test('F9: nobody can write somebody else\'s entry', async () => {
+  await resetSearch({ visibility: { [BOB]: 'public' } });
+  await assertFails(setDoc(doc(asAlice(), 'userSearch', BOB), searchEntry('bob', 'bob')));
+  await resetSearch({ visibility: { [BOB]: 'public' }, indexed: [BOB] });
+  await assertFails(deleteDoc(doc(asAlice(), 'userSearch', BOB)));
+});
+
+test('F9: an entry cannot carry a name its profile does not hold', async () => {
+  // The name-stuffing surface every client-maintained index has, closed by an
+  // equality the rules can recompute: index yourself as "taylor swift" and you
+  // surface in searches for her.
+  await resetSearch({ visibility: { [ALICE]: 'public' }, names: { [ALICE]: 'Alice Ada' } });
+  const db = asAlice();
+  await assertFails(setDoc(doc(db, 'userSearch', ALICE), searchEntry('alice', 'taylor swift')));
+  await assertFails(setDoc(doc(db, 'userSearch', ALICE), searchEntry('alice', 'Alice Ada')));
+  await assertFails(setDoc(doc(db, 'userSearch', ALICE), searchEntry('alice', 'alice ada extra')));
+  await assertSucceeds(setDoc(doc(db, 'userSearch', ALICE), searchEntry('alice', 'alice ada')));
+});
+
+test('F9: an entry cannot carry a handle its profile does not hold', async () => {
+  await resetSearch({ visibility: { [ALICE]: 'public' } });
+  await assertFails(setDoc(doc(asAlice(), 'userSearch', ALICE), searchEntry('bob', 'alice')));
+});
+
+test('F9: the client derives the indexed name the way the rules recompute it', async () => {
+  // `nameLower == displayName.lower()` is only safe while the rules engine and
+  // the client agree on what lowercase means, and they do NOT agree by default:
+  // the engine's `.lower()` is ASCII-only, so it lowers "MUÑOZ" to "muÑoz"
+  // while JavaScript's `toLowerCase()` says "muñoz". Get that wrong and a real
+  // account called "Nicolás MUÑOZ García" cannot save its profile at all.
+  //
+  // So this runs the shipping function against the shipping rules rather than
+  // restating either one: whichever moves, this fails.
+  const name = 'Nicolás MUÑOZ García';
+  await resetSearch({ visibility: { [ALICE]: 'public' }, names: { [ALICE]: name } });
+  const db = asAlice();
+  await assertSucceeds(setDoc(
+    doc(db, 'userSearch', ALICE),
+    { handle: 'alice', nameLower: toIndexedName(name) },
+  ));
+  // And the trap it exists to avoid, pinned as a denial.
+  await assertFails(setDoc(
+    doc(db, 'userSearch', ALICE),
+    { handle: 'alice', nameLower: name.toLowerCase() },
+  ));
+});
+
+test('F9: the entry holds two fields, no photo, and no clock', async () => {
+  await resetSearch({ visibility: { [ALICE]: 'public' } });
+  const db = asAlice();
+  const ref = doc(db, 'userSearch', ALICE);
+  await assertFails(setDoc(ref, { ...searchEntry('alice', 'alice'), photo: 'data:image/png;base64,AA' }));
+  await assertFails(setDoc(ref, { ...searchEntry('alice', 'alice'), bio: 'about me' }));
+  await assertFails(setDoc(ref, { handle: 'alice' }));
+  await assertFails(setDoc(ref, { ...searchEntry('alice', 'alice'), nameLower: 'x'.repeat(81) }));
+  // No timestamp of any kind, server-stamped or otherwise. The entry used to
+  // carry `createdAt == request.time`, rewritten on every profile save, so the
+  // field tracked the last edit rather than the creation — and any signed-in
+  // caller could orderBy it for a "who touched their profile most recently"
+  // listing the product does not offer. Nothing read it.
+  await assertFails(setDoc(ref, { ...searchEntry('alice', 'alice'), createdAt: serverTimestamp() }));
+  await assertSucceeds(setDoc(ref, searchEntry('alice', 'alice')));
+});
+
+test('F9: and no caller can order the index by a clock that is not there', async () => {
+  await resetSearch({ visibility: { [ALICE]: 'public', [BOB]: 'public' }, indexed: [ALICE, BOB] });
+  // The rules constrain a query's ceiling and nothing else — not its shape, not
+  // its orderBy — so the defence cannot be "refuse that ordering". It is that
+  // the field does not exist, which is why removing it was the fix rather than
+  // freezing it.
+  const ordered = await getDocs(query(
+    collection(asCarol(), 'userSearch'), orderBy('createdAt', 'desc'), limit(20),
+  ));
+  assert.equal(ordered.size, 0, 'no document carries the field to be ordered by');
+});
+
+test('F9: an entry cannot exist without a profile behind it', async () => {
+  await testEnv.clearFirestore();
+  // DAVE is signed in and has never created a profile.
+  await assertFails(setDoc(doc(asDave(), 'userSearch', DAVE), searchEntry('dave', 'dave')));
+});
+
+// --- the fail-safe direction ----------------------------------------------
+
+test('F9: going private while staying in the index is refused', async () => {
+  // The direction that matters. Not "unlikely to happen": a write Firestore
+  // rejects, so the promise F8 makes on screen cannot come apart from the data.
+  await resetSearch({ visibility: { [ALICE]: 'public' }, indexed: [ALICE] });
+  await assertFails(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    visibility: 'private', updatedAt: serverTimestamp(),
+  }));
+});
+
+test('F9: going private and leaving the index in one batch is allowed', async () => {
+  await resetSearch({ visibility: { [ALICE]: 'public' }, indexed: [ALICE] });
+  const db = asAlice();
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'userProfiles', ALICE), {
+    visibility: 'private', updatedAt: serverTimestamp(),
+  });
+  batch.delete(doc(db, 'userSearch', ALICE));
+  await assertSucceeds(batch.commit());
+});
+
+test('F9: coming back to public and re-indexing in one batch is allowed', async () => {
+  await resetSearch({ visibility: { [ALICE]: 'private' } });
+  const db = asAlice();
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'userProfiles', ALICE), {
+    visibility: 'public', updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(db, 'userSearch', ALICE), searchEntry('alice', 'alice'));
+  await assertSucceeds(batch.commit());
+});
+
+test('F9: a profile cannot be created private while an entry survives', async () => {
+  await testEnv.clearFirestore();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'userSearch', DAVE), {
+      handle: 'dave', nameLower: 'dave', createdAt: new Date(),
+    });
+  });
+  const db = asDave();
+  const create = (extra = {}) => {
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'userProfiles', DAVE), {
+      handle: 'dave', displayName: 'Dave', pinnedLists: [], visibility: 'private',
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+    });
+    batch.set(doc(db, 'handles', 'dave'), { uid: DAVE, createdAt: serverTimestamp() });
+    if (extra.delist) batch.delete(doc(db, 'userSearch', DAVE));
+    return batch.commit();
+  };
+  await assertFails(create());
+  await assertSucceeds(create({ delist: true }));
+});
+
+test('F9: deleting a profile without leaving the index is refused', async () => {
+  await resetSearch({ visibility: { [ALICE]: 'public' }, indexed: [ALICE] });
+  const db = asAlice();
+  const unpublish = ({ delist }) => {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'userProfiles', ALICE));
+    batch.delete(doc(db, 'handles', 'alice'));
+    if (delist) batch.delete(doc(db, 'userSearch', ALICE));
+    return batch.commit();
+  };
+  await assertFails(unpublish({ delist: false }));
+  await assertSucceeds(unpublish({ delist: true }));
+});
+
+test('F9: renaming a handle must carry the index along', async () => {
+  await resetSearch({ visibility: { [ALICE]: 'public' }, indexed: [ALICE] });
+  const db = asAlice();
+  const rename = ({ reindex }) => {
+    const batch = writeBatch(db);
+    batch.delete(doc(db, 'handles', 'alice'));
+    batch.set(doc(db, 'handles', 'ada'), { uid: ALICE, createdAt: serverTimestamp() });
+    batch.update(doc(db, 'userProfiles', ALICE), { handle: 'ada', updatedAt: serverTimestamp() });
+    if (reindex) batch.set(doc(db, 'userSearch', ALICE), searchEntry('ada', 'alice'));
+    return batch.commit();
+  };
+  // Both halves are now refused. Leaving the entry behind used to be allowed —
+  // "the fail-safe direction is privacy, not freshness" — and that was the hole:
+  // the row kept advertising @alice, and once somebody claimed the freed handle
+  // it opened their profile instead.
+  await assertFails(rename({ reindex: false }));
+  await assertSucceeds(rename({ reindex: true }));
+});
+
+// --- the two-step the first version of F9 left open ------------------------
+
+test('F9: a public profile cannot rename out from under its own index entry', async () => {
+  // The attack the coherence clause exists to stop, in the two ordinary writes
+  // it actually takes:
+  //
+  //   1. set displayName to "Taylor Swift" — free text, always allowed — and
+  //      index yourself. The equality holds, so the entry is legal.
+  //   2. rename the profile to anything at all, leaving the entry alone.
+  //
+  // Step 2 used to pass, and the index went on serving a name the profile did
+  // not hold: the name-stuffing that equality exists to close, executed in two
+  // writes instead of one. It is durable and invisible from the profile page.
+  await resetSearch({
+    visibility: { [ALICE]: 'public' },
+    names: { [ALICE]: 'Taylor Swift' },
+    indexed: [ALICE],
+  });
+  const db = asAlice();
+  await assertFails(updateDoc(doc(db, 'userProfiles', ALICE), {
+    displayName: 'Alice Ada', updatedAt: serverTimestamp(),
+  }));
+
+  // The same write with the entry carried along is the one the client sends.
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'userProfiles', ALICE), {
+    displayName: 'Alice Ada', updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(db, 'userSearch', ALICE), searchEntry('alice', 'alice ada'));
+  await assertSucceeds(batch.commit());
+});
+
+test('F9: an account with no entry is untouched by the coherence clause', async () => {
+  // What keeps this deployable without waiting for the app, and what keeps every
+  // profile written before F9 saveable: no entry, nothing to keep coherent.
+  await resetSearch({ visibility: { [ALICE]: 'public' } });
+  await assertSucceeds(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    displayName: 'Anything At All', updatedAt: serverTimestamp(),
+  }));
+});
+
+test('F9: leaving the index is always a way out of an incoherent entry', async () => {
+  // An account whose entry disagrees with its profile — legacy, or written
+  // before this phase — must not be locked out of its own profile. Deleting the
+  // entry is unconditional, so the batch that repairs it always exists.
+  await resetSearch({
+    visibility: { [ALICE]: 'public' }, names: { [ALICE]: 'Taylor Swift' }, indexed: [ALICE],
+  });
+  const db = asAlice();
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'userProfiles', ALICE), {
+    displayName: 'Alice Ada', updatedAt: serverTimestamp(),
+  });
+  batch.delete(doc(db, 'userSearch', ALICE));
+  await assertSucceeds(batch.commit());
+});
+
+// --- the entry nobody could remove ----------------------------------------
+
+test('F9: the admin can clear the entry of a profile it moderated away', async () => {
+  // The admin branch of the profile delete carries no delisting requirement, by
+  // decision. Without an admin delete HERE that made the entry unreachable: a
+  // moderated-away account stayed in the index, still serving its name and
+  // handle to every searcher, still linking to a profile that no longer exists,
+  // and the only account that could clear it was the one just moderated away.
+  await resetSearch({ visibility: { [ALICE]: 'public' }, indexed: [ALICE] });
+  await assertSucceeds(deleteDoc(doc(asAdmin(), 'userProfiles', ALICE)));
+  await assertSucceeds(deleteDoc(doc(asAdmin(), 'userSearch', ALICE)));
+  const left = await getDocs(prefixQuery(asCarol(), 'handle', 'al'));
+  assert.equal(left.size, 0, 'the moderated account is out of the index');
+});
+
+test('F9: the admin delete is the only new power — writes stay owner-only', async () => {
+  await resetSearch({ visibility: { [ALICE]: 'public' }, indexed: [ALICE] });
+  await assertFails(setDoc(doc(asAdmin(), 'userSearch', ALICE), searchEntry('alice', 'alice')));
+  await assertFails(deleteDoc(doc(asCarol(), 'userSearch', ALICE)));
+});
+
+// --- the budget this phase was warned about -------------------------------
+
+test('F9: the pin ceiling is still six with the new clause in place', async () => {
+  // P16 spends the expression headroom F1 measured and left. Re-running the
+  // measurement is mandatory, not a formality: if six pins stop passing, the
+  // cap drops to five in this phase.
+  await reset();
+  await seedOwnedLists(7);
+  await assertSucceeds(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    pinnedLists: ownedPins(6), updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    pinnedLists: ownedPins(7), updatedAt: serverTimestamp(),
+  }));
+});
+
+test('F9: the heaviest legitimate write there is, at the cap, with an entry', async () => {
+  // Six pins AND a handle rename AND the index carried along, on a profile that
+  // is public throughout — so the coherence branch is evaluated rather than
+  // short-circuited. This is the write that decides whether the cap can stay at
+  // six, and it is the one the editor sends when somebody with a full profile
+  // changes their handle.
+  await resetSearch({ visibility: { [ALICE]: 'public' }, indexed: [ALICE] });
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    for (let index = 0; index < 6; index += 1) {
+      await setDoc(doc(db, 'publicListOwners', index.toString(16).padStart(32, '0')), {
+        ownerId: ALICE, listId: `l${index}`, createdAt: new Date(),
+      });
+    }
+  });
+  const db = asAlice();
+  const batch = writeBatch(db);
+  batch.delete(doc(db, 'handles', 'alice'));
+  batch.set(doc(db, 'handles', 'ada'), { uid: ALICE, createdAt: serverTimestamp() });
+  batch.update(doc(db, 'userProfiles', ALICE), {
+    handle: 'ada', pinnedLists: ownedPins(6), updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(db, 'userSearch', ALICE), searchEntry('ada', 'alice'));
+  await assertSucceeds(batch.commit());
+});
+
+test('F9: the slack above the cap is GONE, and that is the measured number', async () => {
+  // F1 chose six so that one entry of headroom stayed free for the next clause
+  // added to this ruleset. The coherence clause is that next clause, and it
+  // spends exactly one entry: measured on this emulator, the heaviest profile
+  // write tops out at seven pins without it and six with it.
+  //
+  // So six is now the ceiling AND the cap, and the next clause added to
+  // userProfiles/ takes the cap to five. Measuring that needs the cap raised out
+  // of the way AND validPinnedLists extended to genuinely validate the extra
+  // entries — probing at seven against the shipped file measures `size() <= 6`
+  // and nothing else, and the emulator's denial traces mention the expression
+  // limit for reasons unrelated to the clause that actually decided. The only
+  // trustworthy signal is that a write was allowed.
+  //
+  // This test pins the consequence rather than the measurement: at the cap the
+  // heaviest write passes, and one entry above it never lands.
+  await reset();
+  await seedOwnedLists(8);
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    // `reset()` builds a profile of the pre-F8 vintage, with no `visibility`.
+    // The choice has to be on it or the entry write below is refused for the
+    // right reason but the wrong one for this test.
+    await setDoc(doc(db, 'userProfiles', ALICE), { visibility: 'public' }, { merge: true });
+    await setDoc(doc(db, 'userSearch', ALICE), { handle: 'alice', nameLower: 'alice' });
+  });
+  const attempt = async (count) => {
+    const db = asAlice();
+    const batch = writeBatch(db);
+    batch.update(doc(db, 'userProfiles', ALICE), {
+      pinnedLists: ownedPins(count), updatedAt: serverTimestamp(),
+    });
+    batch.set(doc(db, 'userSearch', ALICE), searchEntry('alice', 'alice'));
+    try {
+      await batch.commit();
+      return 'allowed';
+    } catch {
+      return 'refused';
+    }
+  };
+  assert.equal(await attempt(6), 'allowed', 'a write at the cap must still land');
+  assert.equal(await attempt(7), 'refused', 'and one above it must not');
+});
+
+test('F9: the worst case — six pins, going private, leaving the index', async () => {
+  // The most expensive write this ruleset accepts: the full pinned array, the
+  // ownership get() per pin, the visibility clause AND the existsAfter that
+  // only a private write reaches.
+  await resetSearch({ visibility: { [ALICE]: 'public' }, indexed: [ALICE] });
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    for (let index = 0; index < 6; index += 1) {
+      await setDoc(doc(db, 'publicListOwners', index.toString(16).padStart(32, '0')), {
+        ownerId: ALICE, listId: `l${index}`, createdAt: new Date(),
+      });
+    }
+  });
+  const db = asAlice();
+  const batch = writeBatch(db);
+  batch.update(doc(db, 'userProfiles', ALICE), {
+    pinnedLists: ownedPins(6), visibility: 'private', updatedAt: serverTimestamp(),
+  });
+  batch.delete(doc(db, 'userSearch', ALICE));
+  await assertSucceeds(batch.commit());
+});
+
+test('F9: a feed load is STILL one document read', async () => {
+  // Unchanged by this phase, asserted again because the phase touched the
+  // profile write path and the invariant is the one thing that must not move.
+  await resetFollows({ edges: [[BOB, ALICE]] });
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'users', ALICE, 'aggregates', 'interactions'), {
+      version: 1, updatedAt: new Date(), sourceDocCount: 3, payload: '{}',
+    });
+    await setDoc(doc(db, 'userSearch', ALICE), {
+      handle: 'alice', nameLower: 'alice', createdAt: new Date(),
+    });
+  });
+  let documentsRead = 0;
+  const aggregate = await getDoc(doc(asAlice(), 'users', ALICE, 'aggregates', 'interactions'));
+  documentsRead += aggregate.exists() ? 1 : 0;
+  assert.equal(documentsRead, 1, 'the search index must not enter the feed path');
+  assert.equal(aggregate.data().sourceDocCount, 3);
 });

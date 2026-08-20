@@ -299,7 +299,7 @@ test('SOURCE: nothing on the feed path imports any social service', async () => 
     const source = await readFile(new URL(path, import.meta.url), 'utf8');
     assert.doesNotMatch(
       source,
-      /followUserService|commentService|paperStubService|reportService/,
+      /followUserService|commentService|paperStubService|reportService|userSearchService/,
       `${path} must stay off the social collections`,
     );
   }

@@ -265,7 +265,7 @@ esta fase deshace esa suposición sin romper nada de lo que F1/F2 construyeron.
 
 ## F9 — Búsqueda de usuarios
 
-### P16 `[rules]`+UI — Buscar usuarios sin abrir el volcado
+### P16 `[rules]`+UI — Buscar usuarios sin abrir el volcado — **HECHA** (2026-08-20)
 
 F1 cerró `list` en `userProfiles/` y `handles/` a propósito (revisión de
 seguridad: nadie vuelca el directorio con sus fotos, a tu cuota), y esta fase
@@ -288,7 +288,8 @@ análisis de por qué buscar es enumerar, y qué se le concede a cambio, está e
   la dirección a prueba de fallos; `userSearchService` (dos queries de
   prefijo —handle y nombre— fusionadas y deduplicadas por uid en cliente,
   mínimo 2 caracteres, disparo al enviar o con debounce ≥400 ms, nunca por
-  tecla); ruta `/search` con filas nombre+handle+monograma — sin foto: la
+  tecla); ruta `/search/users` —`/search` ya es la búsqueda de papers— con filas
+  nombre+handle+monograma — sin foto: la
   foto es exactamente lo que la revisión de F1 cerró — que navegan al perfil
   público, donde la privacidad ya la imponen las rules de F8.
 - **Motor de búsqueda**: **ninguno**, y no solo por ahorrar sino porque no
@@ -315,6 +316,10 @@ análisis de por qué buscar es enumerar, y qué se le concede a cambio, está e
   compañero, STATE.md); el icono en la Navbar llega cuando esa rama aterrice.
 - **Depende de**: P3, P15. Paralelizable con F3: no comparte ficheros con
   P6–P8 salvo `firestore.rules`, que es aditivo.
+- **Medido al implementar**: `.lower()` del motor de rules es **solo ASCII**
+  (`"MUÑOZ"` → `"muÑoz"`), así que la derivación del cliente tiene que ser
+  también solo ASCII o la igualdad falla y el perfil deja de poder guardarse.
+  El tope de pines se re-midió y **sigue en 6**.
 - **Presupuesto de expresiones**: la cláusula nueva de `userProfiles/` gasta
   el margen que F1 dejó medido (7 pines pasan, 8 fallan; el tope de 6 "deja
   una entrada de margen para la próxima cláusula" — esta fase ES esa
@@ -346,6 +351,33 @@ análisis de por qué buscar es enumerar, y qué se le concede a cambio, está e
   dirección segura y se resuelve recargando; no hace falta el despliegue en
   dos fases de F8.
 
+#### Pasada hostil sobre P16 — **HECHA** (2026-08-20), rules re-desplegadas
+
+La revisión con ojos hostiles encontró cuatro agujeros reales, reproducidos
+contra las rules desplegadas y cerrados en una pasada aparte. El detalle está
+en `STATE.md`; lo que importa para el plan:
+
+- **La igualdad `nameLower == displayName.lower()` no bastaba.** Se comprobaba
+  al escribir la entrada, así que se satisfacía una vez y se abandonaba: indexar
+  un nombre legal y luego renombrar el perfil dejaba el índice anunciando un
+  nombre que el perfil no tenía. Lo mismo con el handle, y ahí la fila acababa
+  abriendo el perfil de otra persona. Ahora una escritura pública de perfil
+  tiene que dejar la entrada cuadrando con el perfil que produce.
+- **`userSearch` no tenía borrado de admin**, así que un perfil retirado por
+  moderación dejaba una entrada que nadie podía quitar.
+- **La entrada pierde `createdAt`**: las rules lo exigían igual a `request.time`
+  en cada escritura y el cliente la reescribía en cada guardado, así que era un
+  reloj de última edición, legible y **ordenable** por cualquiera con sesión.
+- **El índice exige elección explícita de privacidad.** Público-por-ausencia
+  abre tu página, que siempre fue pública; no te mete en un índice buscable.
+  Una cuenta anterior a F8 se indexa cuando responde al prompt de F8, no cuando
+  edita su bio.
+- **El tope de pines sigue en 6** — medido, no supuesto — pero **el margen de
+  una entrada que F1 dejó está gastado**: seis es ahora techo y tope a la vez, y
+  la siguiente cláusula que se añada a `userProfiles/` lo baja a 5. Quien
+  re-mida: subir el tope no basta, hay que extender el desenrollado de
+  `validPinnedLists`, y la única señal fiable es `allowed`.
+
 ---
 
 ## Mapa de dependencias
@@ -359,7 +391,7 @@ P10 → P11 → P12                       (F6 núcleo)
 P10 → P13                             (F6 afiliación)
 P10 + P3 → P14                        (F7)
 P1 + P3 + P4 → P15                    (F8, hecha)
-P3 + P15 → P16                        (F9, paralelizable con F3)
+P16 ✔                                 (F9, hecha)
 ```
 
 Bloqueadas por humano: **P10** (service account), **P11** (cliente ORCID).

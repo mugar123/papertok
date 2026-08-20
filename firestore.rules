@@ -294,6 +294,58 @@ service cloud.firestore {
       return !('visibility' in data) || data.visibility == 'public';
     }
 
+    // The search index (F9) and the profile it mirrors are kept coherent from
+    // both sides. This is the fail-safe side: a profile that is private after
+    // the write must have no index document after the write either, so going
+    // private cannot leave a stale entry behind. `existsAfter` looks at the
+    // post-batch state, which is what makes "leave and delist in one batch"
+    // the only accepted shape.
+    function searchIndexAbsentAfter(uid) {
+      return !existsAfter(/databases/$(database)/documents/userSearch/$(uid));
+    }
+
+    // And this is the other side, which the first version of F9 left open.
+    //
+    // `validUserSearchEntry` checks `nameLower == displayName.lower()` when the
+    // ENTRY is written. On its own that is a gate you walk through once and then
+    // walk away from: index yourself legally as "taylor swift" while your
+    // profile really says it, then rename the profile without touching the
+    // entry. Nothing refused either write, and the index kept advertising a name
+    // the profile no longer held — the exact name-stuffing the equality exists
+    // to stop, executed in two writes instead of one. The same two-step drifted
+    // the handle, leaving a row that opens somebody else's profile once the
+    // freed handle is claimed.
+    //
+    // So a public write now has to leave the entry agreeing with the profile it
+    // produces. The comparison is `displayName.lower()`, byte for byte the one
+    // already inside validUserSearchEntry: no second derivation exists that
+    // could disagree with toIndexedName.
+    //
+    // An account with no entry is untouched — `existsAfter` is false and the
+    // clause passes — which is what keeps every profile written before F9
+    // saveable, and what makes this deployable without waiting for the app.
+    function searchIndexCoherentAfter(uid) {
+      return !existsAfter(/databases/$(database)/documents/userSearch/$(uid))
+        || (getAfter(/databases/$(database)/documents/userSearch/$(uid)).data.nameLower
+              == request.resource.data.displayName.lower()
+            && getAfter(/databases/$(database)/documents/userSearch/$(uid)).data.handle
+              == request.resource.data.handle);
+    }
+
+    // Measured, because this is where the expression budget goes. With the
+    // coherence branch in place the heaviest legitimate profile write — rename
+    // the handle, six pins, entry carried along — tops out at SIX pinned lists;
+    // without it, seven. The cap stays at six and every legitimate write at the
+    // cap still passes, but the one entry of slack F1 deliberately left is now
+    // spent: the next clause added here takes the cap to five.
+    // `tests/firestore.rules.test.js` measures both numbers so neither can move
+    // unnoticed.
+    function profileSearchStateValid(uid) {
+      return profileIsPublic(request.resource.data)
+        ? searchIndexCoherentAfter(uid)
+        : searchIndexAbsentAfter(uid);
+    }
+
     function validPublicProfile() {
       return request.resource.data.keys().hasOnly([
           'handle', 'displayName', 'bio', 'photo', 'orcid', 'verified',
@@ -371,11 +423,18 @@ service cloud.firestore {
         // claims a handle nobody holds.
         && existsAfter(
           /databases/$(database)/documents/handles/$(request.resource.data.handle)
-        );
+        )
+        // A profile born private must not be born indexed, and one born public
+        // must not inherit an entry that says something else (F9).
+        && profileSearchStateValid(profileUid);
       allow update: if request.auth != null
         && request.auth.uid == profileUid
         && validPublicProfile()
         && publicProfileServiceFieldsUnchanged()
+        // Going private and staying in the search index is not an unlikely
+        // bug: it is a write this database refuses. Neither is renaming out
+        // from under an entry that keeps serving the old name (F9).
+        && profileSearchStateValid(profileUid)
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.updatedAt == request.time
         && (
@@ -400,7 +459,10 @@ service cloud.firestore {
           && request.auth.uid == profileUid
           && !existsAfter(
             /databases/$(database)/documents/handles/$(resource.data.handle)
-          ))
+          )
+          // ...and takes its search entry with it, or the index keeps serving
+          // a name whose profile no longer exists (F9).
+          && searchIndexAbsentAfter(profileUid))
         || isAdmin();
     }
 
@@ -424,6 +486,111 @@ service cloud.firestore {
         ).data.handle == handle;
       allow delete: if (request.auth != null
           && resource.data.uid == request.auth.uid)
+        || isAdmin();
+    }
+
+    // ---------------------------------------------------------------------
+    // User search index (F9). Additive: nothing above this line changes
+    // except the two `profilePublicOrDelisted` clauses on userProfiles/.
+    // ---------------------------------------------------------------------
+    //
+    // Searching is enumerating — rules see a query's `limit` and `orderBy`, never
+    // the values of its `where` — so this collection is designed around what an
+    // enumerator walks away with, not around pretending they cannot walk. The
+    // prize here is handle + lowercased name of people who chose to be public,
+    // which `allow get` on the profile already serves one by one. No photo, no
+    // bio: those are exactly what the F1 review closed `list` on userProfiles/
+    // to protect, and they stay closed.
+    //
+    // Keyed by uid rather than by handle so the coherence checks below address
+    // userProfiles/$(uid) through the same path segment, and so renaming a
+    // handle is an update in place instead of a third delete+create in a batch
+    // that already touches three documents.
+
+    function searchProfileAfter(uid) {
+      return getAfter(/databases/$(database)/documents/userProfiles/$(uid)).data;
+    }
+
+    function validUserSearchEntry(uid) {
+      // The mutation pass is explicit about which clauses here carry weight
+      // today. `hasOnly` does — deleting it lets a photo back in. `hasAll` does
+      // not: it is covered by `hasOnly` plus the dereferences below (a missing
+      // key errors and denies, the same belt-and-braces noted on
+      // validFollowEdge). Neither do the two size checks, which are implied by
+      // the equalities at the bottom — the profile fields they are compared
+      // against are themselves bounded by validPublicProfile. The redundant ones
+      // stay because they stop being redundant the moment a document arrives by
+      // any path that did not go through those clauses: the service identity of
+      // F6 writes profiles this ruleset does not validate.
+      //
+      // Two fields, and no timestamp. The entry used to carry `createdAt ==
+      // request.time`, which the client rewrote on every profile save: a field
+      // named for creation that actually moved on every edit, readable and
+      // ORDERABLE by anyone who can query the collection. That is a
+      // "who edited their profile most recently" listing the product never
+      // offers, handed out for free. Nothing read it — `readRow` takes the
+      // handle and the name — so it is gone rather than frozen.
+      return request.resource.data.keys().hasOnly(['handle', 'nameLower'])
+        && request.resource.data.keys().hasAll(['handle', 'nameLower'])
+        && validString(request.resource.data.handle, 40)
+        && validString(request.resource.data.nameLower, 80)
+        // Only public profiles are in the index, checked after the batch: this
+        // is the direction that makes "a private profile does not appear in
+        // results" a property of the data instead of a filter a modified client
+        // could skip. `getAfter` on a profile that does not exist yields null
+        // and denies the write, so an entry can never outlive its profile.
+        //
+        // Explicitly public, not public-by-absence. A profile written before F8
+        // has no `visibility` field and reads as public — correct for opening
+        // its page, which was always public, and wrong for this: being listed in
+        // a searchable index is a thing to be asked about, and that account was
+        // never asked. It answers the one-time prompt F8 already shows, and then
+        // it is indexed. Silence is not consent, so silence is not an entry.
+        //
+        // The presence check is redundant today and the mutation pass says so:
+        // on a profile with no `visibility`, the equality below dereferences a
+        // key that is not there, which errors and denies on its own. Removing
+        // BOTH lines is killed, and removing only the equality is killed; only
+        // this line is a free-standing survivor. It stays because the thing it
+        // guards against is a refactor rather than a caller — the day
+        // `searchProfileAfter` grows a `.get('visibility', 'public')` default,
+        // the error disappears and public-by-absence walks silently back in.
+        && 'visibility' in searchProfileAfter(uid)
+        && searchProfileAfter(uid).visibility == 'public'
+        && request.resource.data.handle == searchProfileAfter(uid).handle
+        // The one clause without which this whole collection would be a
+        // name-stuffing surface: the indexed name has to BE the real display
+        // name, lowercased. Otherwise anyone could index themselves under
+        // somebody else's name and surface in searches for them.
+        && request.resource.data.nameLower == searchProfileAfter(uid).displayName.lower();
+    }
+
+    match /userSearch/{searchUid} {
+      // `get` buys nothing: the profile itself is the document to read, by uid
+      // or through handles/. Leaving it open would only add a second oracle for
+      // "does this uid have a public profile".
+      allow get: if false;
+      // `list` IS the feature, and it is the only read here. A session is
+      // required — it makes scraping cost a real account, which is blockable by
+      // uid — and the server imposes the ceiling, the follows/ pattern, so no
+      // caller can page the index at this project's expense.
+      allow list: if request.auth != null
+        && request.query.limit <= 20;
+      allow create, update: if request.auth != null
+        && request.auth.uid == searchUid
+        && validUserSearchEntry(searchUid);
+      // Always available to the owner, unconditionally: leaving the index has
+      // to be possible in the same batch that takes the profile private, and a
+      // delete that could be refused would make that batch unwritable.
+      //
+      // And to the admin, which the first version of F9 forgot. The admin
+      // branch of the profile delete carries no delisting requirement, so a
+      // profile removed by moderation left its entry behind — still serving
+      // that account's name and handle to every searcher, still linking to a
+      // profile that no longer exists. With no admin delete here, the only
+      // account that could clear it was the one that had just been moderated
+      // away. Same shape as the admin delete already on handles/.
+      allow delete: if (request.auth != null && request.auth.uid == searchUid)
         || isAdmin();
     }
 

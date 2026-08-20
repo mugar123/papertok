@@ -15,6 +15,7 @@ import {
   LoaderCircle,
   AlertCircle,
   RotateCw,
+  UserRound,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
@@ -502,6 +503,20 @@ export default function SearchPage({ onSaveToList = () => {} }) {
             );
           })}
         </div>
+
+        {/* Finding PaperTok accounts is a different search from this one: the
+            pills above search the literature through OpenAlex, where "Autores"
+            means the author of a paper, not somebody with an account here. The
+            provisional home for this entry point — the Navbar icon arrives with
+            the branch that owns that file. */}
+        <button
+          type="button"
+          className="search-people-link"
+          onClick={() => navigate('/search/users')}
+        >
+          <UserRound size={15} aria-hidden="true" />
+          <span>{isEnglish ? 'Find people on PaperTok' : 'Buscar personas en PaperTok'}</span>
+        </button>
       </div>
 
       <div className="search-results custom-scrollbar">
