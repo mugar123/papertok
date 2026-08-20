@@ -1,5 +1,254 @@
 # Estado / pendientes
 
+## F11 implementada: publicar listas pasa por el Worker (2026-08-20)
+
+**Implementado, todo verde, SIN commitear y SIN desplegar.** Cierra la
+regresión de la entrada de abajo. El bloqueo humano se levantó: service account
+`papertok-worker` con rol Cloud Datastore User y los dos secrets cargados.
+
+**El orden es Worker → app → rules**, y con ese orden no hay ninguna ventana
+rota:
+
+1. **Worker** (`npm run worker:deploy`). Nadie lo llama todavía: inerte.
+2. **App** (push a `main`, que dispara `deploy.yml`). La app nueva llama al
+   Worker y **publicar empieza a funcionar ya**. Las rules viejas siguen
+   permitiendo escritura de cliente, pero nadie la usa.
+3. **Rules** (`firebase deploy --only firestore:rules`). Cierra la escritura de
+   cliente. La app nueva ni se entera: escribe por el Worker.
+
+El orden Worker → **rules** → app, que es el que parecía natural, sí abre una
+ventana: entre rules y app, una sesión con la app vieja en caché pierde
+despublicar y borrar listas publicadas, cosas que hoy sí puede hacer. La app
+nueva, en cambio, funciona con las rules viejas **y** con las nuevas: borra
+llamando primero a despublicar, que deja el estado que ambas redacciones de la
+regla de borrado aceptan. Por eso la app va en medio.
+
+### Qué entró
+
+- **`worker/firestore-admin.js`** (P18, = la vieja P10). Firma RS256 con
+  WebCrypto, canje del grant `jwt-bearer` por token OAuth2, cache del token en
+  el isolate, códec de valores tipados del REST de Firestore, `commit()`
+  atómico. Alcance `datastore` y nada más. **21 tests**, incluida la
+  verificación real de la firma contra la clave pública de un par generado en
+  el propio test — no una firma con forma de firma.
+- **`worker/public-list-api.js`** (P19). `POST /lists/publish`,
+  `/lists/update`, `/lists/unpublish`. **24 tests**.
+- **`src/services/publicListPayload.js`** (nuevo). El saneado y los topes, puro
+  y sin dependencias, importado por el navegador **y** por el Worker. Una sola
+  definición de lista pública válida; duplicarlo en `worker/` con un test de
+  deriva era la forma silenciosa de reintroducir este fallo.
+- **`firestore.rules`** (P20). `publicLists` y `publicListOwners` cierran a
+  cliente. Fuera `validPublicPaper`, `validPublicPapers`, `validPublicList`,
+  `ownsPublicList`, `ownsPublicListAfter`. `validBoundedStringList` **se queda**:
+  la usa `savedPapers`, que es privado y paga una llamada por documento.
+- **`src/services/publicListService.js`** (P21). Las tres mutaciones llaman al
+  Worker con el ID token. **Leer no cambia**: un `getDoc` directo, una lectura,
+  sin sesión y sin pasar por el Worker.
+
+### El tope de papers sube de 12 a 50
+
+Con la validación en código real desaparece el techo de 1000 expresiones. El
+único freno duro es el 1 MiB por documento: un paper en su peor caso ocupa
+~11 KB, así que 50 son ~550 KB. Debajo hay un **guardia de bytes**
+(`PUBLIC_LIST_MAX_BYTES`, 700 KB) medido sobre el documento serializado, para
+que el tope no se esquive con papers inflados por ninguna ruta.
+
+Y el Worker **rechaza en vez de truncar**: quien mande 51 papers recibe
+`PAPERS_REJECTED`, no una lista publicada con 50 y sin avisar.
+
+### Dos agujeros cerrados de paso
+
+- **`publicLists` era enumerable, y lo era antes de esto.** `allow read: if true`
+  cubre `get` **y** `list`: cualquiera podía paginar la colección y cosechar
+  todas las listas publicadas, un directorio que el producto no ofrece. Ahora
+  `allow get: if true; allow list: if false;`. Nadie paginaba.
+- **`publicShareId` pasa a ser inmutable para el cliente.** Sin eso la nueva
+  regla de borrado era esquivable: el dueño borraba el campo de su lista privada
+  y luego la lista, dejando los dos documentos públicos huérfanos e
+  inalcanzables para siempre.
+
+### La trampa que encontré midiendo, y que era el riesgo real de esta fase
+
+La regla de borrado de `users/{uid}/lists/{listId}` exigía
+`!existsAfter(publicLists/…) && !existsAfter(publicListOwners/…)`, satisfecha
+por el cliente borrando los tres documentos en un batch. **Al cerrar la
+escritura de cliente, esa redacción habría dejado toda lista publicada
+imposible de borrar, para siempre.** Ahora pregunta lo equivalente al documento
+privado: `!('publicShareId' in resource.data)` — despublica primero (el Worker
+limpia el puntero en el mismo commit que borra los públicos) y luego borra. Dos
+tests lo fijan por los dos lados.
+
+### Tests
+
+- **143 rules** (12 nuevos de F11) y **723 unitarios** (45 nuevos del Worker).
+  `npm run check` completo en verde: secretos, lint, tests, build y dry-run del
+  Worker.
+- Los 12 tests nuevos de emulador ejercitan el **CREATE DE CLIENTE** con el
+  batch real y papers reales — la cobertura cuya ausencia dejó pasar el bug.
+- **Pasada de mutación**: 10 mutantes sobre las cláusulas nuevas, **9 muertos**.
+  El superviviente es la comprobación de formato del share id en la escritura de
+  `lists/`, inalcanzable mientras `publicShareIdUntouched()` aguante; se queda
+  por el mismo motivo que las tres vivas de P16 — el Worker escribe ese
+  documento por fuera de estas rules, y ahí deja de ser redundante.
+  `tests/firestore.rules.test.js` acepta `PAPERTOK_RULES_PATH` para poder
+  repetir la pasada.
+- **`tests/p18-measure.test.js`** se conserva, ahora **autocontenido**: lleva
+  dentro una fixture de las rules del día que se rompió, así que sigue
+  ejecutándose aunque el fichero real ya no contenga nada de eso. Reproduce los
+  mismos números que las rules originales. Existe para que la pregunta "¿y no
+  bastaba con adelgazar el validador?" se responda con números en dos minutos.
+
+### Plan Spark: por qué cabe en el tier gratuito
+
+Publicar cuesta 1 lectura y 1 commit de 3 escrituras. Los topes del Worker
+(60 por usuario y día, 2000 globales) acotan la ruta en ~6000 escrituras y
+~2000 lecturas diarias, frente a las 20 000 y 50 000 de Spark. El ledger de
+cuota **falla cerrado**: sin cablear responde 503 en vez de quedarse sin tope,
+porque en el tier gratuito el tope es lo que protege la cuota. Ni el REST de
+Firestore ni el canje de token ni `accounts:lookup` exigen facturación.
+
+### Efecto lateral: P11, P13 y P14 se desbloquean
+
+P10 era el prerrequisito de infraestructura de F6 (ORCID) y F7 (relay de
+correo), y acaba de entrar como P18. P13 y P14 pasan a estar listas para
+empezar; P11 solo espera al registro del cliente público de ORCID.
+
+### Listas ya publicadas
+
+Sin migración: la forma del documento no cambia, solo cambia quién lo escribe.
+La lista que quedó a medias se arregla republicándola por el endpoint nuevo.
+Sus documentos de `publicListOwners` y su `publicShareId` siguen donde estaban,
+así que editar y despublicar funcionan desde el primer día.
+
+---
+
+## Publicar listas está roto en producción y no se arregla en las rules (2026-08-20)
+
+**Diagnosticado y medido. NADA desplegado, `firestore.rules` sin tocar ni una
+línea.** El arreglo está bloqueado por una acción humana (la service account de
+`03-AUTH.md`, acción 3). Publicar una lista **sigue roto hasta entonces**, coste
+asumido de forma explícita: dos usuarios, ninguna lista publicada en uso.
+
+### El diagnóstico heredado no encajaba
+
+La sesión anterior dejó escrito que fallaba a partir de 2 papers y que bastaba
+con adelgazar `validPublicPaper`. **Las dos mitades son falsas.** Midiendo el
+batch real de tres escrituras que comete `publishPublicList()`, con papers tal
+y como los deja `sanitizePublicPaper()`:
+
+| payload por paper | papers que llegan a publicarse |
+|---|---|
+| 20 autores, 12 conceptos, todos los campos (lo que escribe la app) | **0** |
+| 5 autores, 3 conceptos, todos los campos | 1 |
+| id + título + 1 autor, nada más | 2 |
+
+Un paper real **no publica ni solo**. La lista de un paper que sobrevivió en
+producción lo hizo porque ese paper era barato, no porque uno quepa.
+
+### Dónde se va el presupuesto
+
+El tamaño del dato es irrelevante: un abstract de 10 caracteres y otro de 1200
+dan exactamente el mismo techo. Se pagan cláusulas, no bytes. El sumidero son
+las dos llamadas a `validBoundedStringList`, y cuestan ~140 expresiones
+**aunque la lista tenga un solo elemento**, porque `values.size()` se reevalúa
+en las 20 líneas desenrolladas aunque cortocircuiten. Quitar el chequeo de
+autores en un paper de un autor sube el techo de 1 a 2.
+
+### Por qué adelgazar no vale: la frontera
+
+A 12 papers el presupuesto es de ~76 expresiones por paper. Subiendo desde la
+parte gratis (payload rico, 20 autores y 12 conceptos):
+
+| validación por paper | papers que caben |
+|---|---|
+| `hasOnly`(12 claves) + `hasAll` | 12 |
+| + tipos (`is string` / `is list`) | 12 |
+| + topes de longitud de id/title | 11 |
+| + tope de nº de autores | 10 |
+| + tope de longitud de abstract | 8 |
+| + regex https de openUrl | 7 |
+| + validación por elemento de autores | 0–2 |
+
+Se midieron y se descartaron tres escapes:
+
+- **Cambiar listas por cadenas pre-unidas** (`authorsLine`, el patrón que ya usa
+  la ficha de P17): 2 de 12.
+- **`map.get(clave, defecto)`** en vez de `!('x' in paper) || …`: **peor**, pierde
+  el cortocircuito (4 → 2 con papers dispersos).
+- **Guardar solo lo que la página pinta**, todo acotado: tope en **6**, no en 10.
+  El coste fijo por paper (indexar `papers[k]`, la guarda del desenrollado,
+  `is map`, `hasOnly`, `hasAll`, acotar id y title) ya se come casi todo el
+  presupuesto; el número de campos es secundario.
+
+**Ningún recorte honesto deja el tope de producto por encima de 6.** Decisión
+tomada: no se acepta un tope artificial de 5 papers en una feature cuyo sentido
+es compartir bibliografías. La escritura sale del cliente y se va al Worker.
+Fase escrita entera en `04-PHASES.md` como **F11** (P18=P10, P19, P20, P21).
+
+### Lo que se descubrió mirando el render, y que cambia la fase
+
+- **`date` se escribe y no se pinta nunca.** Peso muerto en un documento de
+  lectura pública.
+- **`doi` y `arxivId` son redundantes con `id`** para el enlace: `stablePaperId`
+  ya escribe `id` como `doi:…`/`arxiv:…` y `getPaperIdentity` lo parsea de ahí.
+- **El render re-sanea las URLs en lectura** (`safeExternalUrl`, `safeDoiUrl`),
+  así que las regex de las rules son segunda línea, no la única.
+- **BibTeX/RIS no toca `publicLists`**: exporta desde la lista privada del dueño
+  (`list.paperIds.map(getPaper)`). Encoger el documento público no lo afecta.
+- **Trampa que P20 no puede obviar**: la regla de borrado de
+  `users/{userId}/lists/{listId}` exige hoy que los dos documentos públicos no
+  existan después del batch, y el cliente lo cumple borrando los tres a la vez.
+  Cuando el cliente ya no pueda borrar los públicos, **borrar una lista privada
+  publicada quedaría bloqueado para siempre** si no se rehace esa regla.
+
+### Con el Worker, cuál es el tope real
+
+Deja de ser técnico. El único freno duro es el 1 MiB por documento de Firestore.
+Con los topes actuales un paper en su peor caso ocupa ~11 KB, o sea **~90
+papers** antes de tocar el límite y varios cientos con papers de tamaño real
+(~1,8 KB). La fase fija **50** como tope explícito aplicado en el Worker, más un
+guardia duro sobre el documento serializado (~700 KB) para que no se esquive con
+papers inflados. **La lectura sigue costando 1**: es el mismo documento único.
+
+### Tests
+
+- **`tests/p18-measure.test.js`** (nuevo, 3 tests): reproduce el fallo contra el
+  **CREATE DE CLIENTE** de `publicLists` con el batch real de tres escrituras y
+  papers reales. Esto es exactamente lo que no cubría ningún test: los 131
+  existentes siembran todos con `withSecurityRulesDisabled`, y por ahí se coló.
+  Afirma que un paper full-fat no publica ni solo, que el tamaño del payload no
+  importa, y que ninguna regla que acote los campos gruesos llega al tope de 12.
+- La pasada de mutación **es** la medición: la sección B quita una cláusula cada
+  vez y mide. No se tocó ninguna cláusula de `firestore.rules`, así que no hay
+  cláusulas nuevas que mutar.
+- Suites completas en verde: **131 rules + 674 unitarios**.
+- Los cuatro arreglos de la pasada hostil de P16 verificados presentes
+  (`searchIndexCoherentAfter`, `isAdmin()` en el delete de `userSearch`,
+  `createdAt` fuera del allowlist, consentimiento explícito). `firestore.rules`
+  es byte a byte igual a HEAD.
+
+### Qué hace falta de tu parte para desbloquear
+
+Es la acción 3 de `03-AUTH.md`, sin cambios:
+
+1. Service account en Google Cloud, en el proyecto de Firebase, rol **Cloud
+   Datastore User** (`roles/datastore.user`) — lee y escribe documentos y nada
+   más: ni IAM, ni Auth, ni gestión de rules.
+2. Crear y descargar su clave JSON.
+3. Cargar dos secrets del Worker (los ejecutas tú, no el agente):
+   `FIREBASE_SERVICE_ACCOUNT_EMAIL` y `FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY`
+   (el PEM del campo `private_key`). `FIREBASE_PROJECT_ID` va como var en claro
+   en `wrangler.toml`, no es secreto.
+
+### Orden de despliegue, que importa
+
+P19 (endpoints) **antes** que P20 (cerrar la escritura de cliente). Al revés,
+publicar pasa de roto a imposible. Las listas ya publicadas no necesitan
+migración: la forma del documento no cambia, solo cambia quién lo escribe. La
+lista que quedó a medias se arregla republicándola por el endpoint nuevo.
+
+---
+
 ## Un solo buscador: las personas entran donde ya se buscan papers (2026-08-20)
 
 **Implementado, tests verdes, SIN commitear y SIN desplegar.** No toca

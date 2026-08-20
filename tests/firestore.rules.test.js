@@ -54,10 +54,16 @@ if (!process.env.FIRESTORE_EMULATOR_HOST) {
   );
 }
 
+// PAPERTOK_RULES_PATH lets the mutation pass point this suite at a deliberately
+// broken copy of the rules; unset, it is the file that ships.
+const RULES_PATH = process.env.PAPERTOK_RULES_PATH
+  ? new URL(`file://${process.env.PAPERTOK_RULES_PATH}`)
+  : new URL('../firestore.rules', import.meta.url);
+
 const testEnv = await initializeTestEnvironment({
   projectId: 'papertok-rules-test',
   firestore: {
-    rules: await readFile(new URL('../firestore.rules', import.meta.url), 'utf8'),
+    rules: await readFile(RULES_PATH, 'utf8'),
     host: process.env.FIRESTORE_EMULATOR_HOST.split(':')[0],
     port: Number(process.env.FIRESTORE_EMULATOR_HOST.split(':')[1]),
   },
@@ -2133,4 +2139,195 @@ test('F9: a feed load is STILL one document read', async () => {
   documentsRead += aggregate.exists() ? 1 : 0;
   assert.equal(documentsRead, 1, 'the search index must not enter the feed path');
   assert.equal(aggregate.data().sourceDocCount, 3);
+});
+
+// =========================================================================
+// Public lists after F11: server-written, client-readable
+//
+// This is the coverage whose absence let publishing ship broken. Every test
+// above seeds `publicLists` with the rules switched off; none of them ever
+// asked the rules engine what a CLIENT is allowed to do to that collection.
+// =========================================================================
+
+/** Papers as sanitizePublicPaper() leaves them — the payload that broke. */
+const publicPapers = count => Array.from({ length: count }, (_, i) => ({
+  id: `arxiv:2608.${18000 + i}`,
+  title: `Paper ${i}`,
+  authors: Array.from({ length: 20 }, (_, a) => `Author ${a}`),
+  abstract: 'x'.repeat(1200),
+  year: 2026,
+  category: 'cs.LG',
+  concepts: Array.from({ length: 12 }, (_, c) => `concept ${c}`),
+  citations: 42,
+  doi: `10.1234/papertok.${i}`,
+  arxivId: `2608.${18000 + i}`,
+  openUrl: `https://arxiv.org/abs/2608.${18000 + i}`,
+}));
+
+const publicListBody = papers => ({
+  title: 'Mi bibliografía',
+  language: 'es',
+  paperCount: papers.length,
+  papers,
+  createdAt: serverTimestamp(),
+  updatedAt: serverTimestamp(),
+});
+
+/** Seeds a live public list plus the owner's private list pointing at it. */
+async function seedPublished({ shareId = ALICE_SHARE, listId = 'l1', papers = 3 } = {}) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'publicLists', shareId), {
+      ...publicListBody(publicPapers(papers)),
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    });
+    await setDoc(doc(db, 'users', ALICE, 'lists', listId), {
+      id: listId, name: 'Mi lista', emoji: '📚', paperIds: [], createdAt: new Date(),
+      publicShareId: shareId,
+    });
+  });
+}
+
+test('anyone, signed in or not, can still read a share link in one document', async () => {
+  await reset();
+  await seedPublished();
+  for (const db of [asGuest(), asAlice(), asBob()]) {
+    const snapshot = await assertSucceeds(getDoc(doc(db, 'publicLists', ALICE_SHARE)));
+    assert.equal(snapshot.data().papers.length, 3);
+  }
+});
+
+test('the owner cannot write their own public list from the client', async () => {
+  await reset();
+  const db = asAlice();
+  // The exact batch publishPublicList() used to commit, with one paper.
+  await assertFails((() => {
+    const batch = writeBatch(db);
+    batch.set(doc(db, 'publicListOwners', GHOST_SHARE), {
+      ownerId: ALICE, listId: 'l1', createdAt: serverTimestamp(),
+    });
+    batch.set(doc(db, 'publicLists', GHOST_SHARE), publicListBody(publicPapers(1)));
+    return batch.commit();
+  })());
+  // And each document on its own, so no path is left open.
+  await assertFails(setDoc(doc(db, 'publicLists', GHOST_SHARE), publicListBody(publicPapers(1))));
+  await assertFails(setDoc(doc(db, 'publicListOwners', GHOST_SHARE), {
+    ownerId: ALICE, listId: 'l1', createdAt: serverTimestamp(),
+  }));
+});
+
+test('the owner cannot edit or delete a live public list from the client', async () => {
+  await reset();
+  await seedPublished();
+  const db = asAlice();
+  await assertFails(updateDoc(doc(db, 'publicLists', ALICE_SHARE), {
+    title: 'Cambiado', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(deleteDoc(doc(db, 'publicLists', ALICE_SHARE)));
+  await assertFails(deleteDoc(doc(db, 'publicListOwners', ALICE_SHARE)));
+});
+
+test('the owner table is not readable, so share ids do not map to accounts', async () => {
+  await reset();
+  for (const db of [asGuest(), asAlice(), asBob()]) {
+    await assertFails(getDoc(doc(db, 'publicListOwners', ALICE_SHARE)));
+    await assertFails(getDocs(collection(db, 'publicListOwners')));
+  }
+});
+
+test('nobody can page the public list collection, only fetch a known share', async () => {
+  await reset();
+  await seedPublished();
+  await assertFails(getDocs(query(collection(asGuest(), 'publicLists'), limit(10))));
+});
+
+// -------------------------------------------------------------------------
+// The pointer, and the delete rule that leans on it.
+// -------------------------------------------------------------------------
+
+test('a published private list cannot be deleted while it is published', async () => {
+  await reset();
+  await seedPublished();
+  // The public documents are still standing; deleting the private one would
+  // orphan them beyond anyone's reach.
+  await assertFails(deleteDoc(doc(asAlice(), 'users', ALICE, 'lists', 'l1')));
+});
+
+test('once unpublished, the private list deletes normally', async () => {
+  await reset();
+  await seedPublished();
+  // What the Worker's unpublish commit leaves behind.
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await deleteDoc(doc(db, 'publicLists', ALICE_SHARE));
+    await deleteDoc(doc(db, 'publicListOwners', ALICE_SHARE));
+    await updateDoc(doc(db, 'users', ALICE, 'lists', 'l1'), { publicShareId: deleteField() });
+  });
+  await assertSucceeds(deleteDoc(doc(asAlice(), 'users', ALICE, 'lists', 'l1')));
+});
+
+test('the client cannot clear the pointer to escape the delete rule', async () => {
+  await reset();
+  await seedPublished();
+  const db = asAlice();
+  // Dropping the field would make the list deletable while its public copy
+  // still stands: the exact orphan the delete rule exists to prevent.
+  await assertFails(updateDoc(doc(db, 'users', ALICE, 'lists', 'l1'), {
+    publicShareId: deleteField(),
+  }));
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'lists', 'l1'), {
+    id: 'l1', name: 'Mi lista', emoji: '📚', paperIds: [], createdAt: new Date(),
+  }));
+});
+
+test('the client cannot forge or repoint a pointer at somebody else share', async () => {
+  await reset();
+  const db = asAlice();
+  // Inventing one on a fresh list.
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'lists', 'brand-new'), {
+    id: 'brand-new', name: 'Nueva', emoji: '📚', paperIds: [], createdAt: new Date(),
+    publicShareId: BOB_SHARE,
+  }));
+  // Repointing an existing one.
+  await seedPublished();
+  await assertFails(updateDoc(doc(db, 'users', ALICE, 'lists', 'l1'), {
+    publicShareId: BOB_SHARE,
+  }));
+});
+
+test('an ordinary edit of a published list still works, pointer carried along', async () => {
+  await reset();
+  await seedPublished();
+  const db = asAlice();
+  await assertSucceeds(updateDoc(doc(db, 'users', ALICE, 'lists', 'l1'), {
+    name: 'Otro nombre', paperIds: ['arxiv:2608.18000'],
+  }));
+  // Including a full set that repeats the pointer unchanged, which is what a
+  // whole-document save from the client looks like.
+  await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'lists', 'l1'), {
+    id: 'l1', name: 'Tercero', emoji: '📚', paperIds: [], createdAt: new Date(),
+    publicShareId: ALICE_SHARE,
+  }));
+});
+
+test('an unpublished list is created and deleted freely, as before', async () => {
+  await reset();
+  const db = asAlice();
+  await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'lists', 'plain'), {
+    id: 'plain', name: 'Sin publicar', emoji: '📚', paperIds: [], createdAt: new Date(),
+  }));
+  await assertSucceeds(deleteDoc(doc(db, 'users', ALICE, 'lists', 'plain')));
+});
+
+test('pinning a share still works: the rules read the owner table themselves', async () => {
+  await reset();
+  await seedPublished();
+  await assertSucceeds(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    pinnedLists: [pin(ALICE_SHARE)], updatedAt: serverTimestamp(),
+  }));
+  // And pinning somebody else's share is still forgery.
+  await assertFails(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    pinnedLists: [pin(BOB_SHARE)], updatedAt: serverTimestamp(),
+  }));
 });

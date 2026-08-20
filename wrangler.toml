@@ -16,6 +16,13 @@ KIMI_PROMPT_USD_PER_MILLION = "3"
 KIMI_CACHED_PROMPT_USD_PER_MILLION = "0.3"
 KIMI_OUTPUT_USD_PER_MILLION = "15"
 FIREBASE_WEB_API_KEY = "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0"
+# Not a secret: the project id is in every client bundle already. The service
+# account email and its private key are wrangler secrets, never in this file.
+FIREBASE_PROJECT_ID = "papertok-168df"
+# Publishing a list costs one read and three writes. These caps keep the route
+# far under the Firebase Spark daily allowance (20k writes, 50k reads).
+PUBLIC_LIST_USER_DAILY_LIMIT = "60"
+PUBLIC_LIST_GLOBAL_DAILY_LIMIT = "2000"
 WORKER_PUBLIC_URL = "https://papertok-report-api.papertok-mugar123.workers.dev"
 EMAIL_PROVIDER = "brevo"
 EMAIL_DAILY_SEND_LIMIT = "290"

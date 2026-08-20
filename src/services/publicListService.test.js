@@ -2,8 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import {
+  PUBLIC_LIST_LIMITS,
+  PublicListRequestError,
   PublicListUnsupportedError,
-  createPublicListShareId,
   publishPublicList,
   readPublicList,
   sanitizePublicList,
@@ -32,31 +33,34 @@ const privatePaper = {
   saved: true,
 };
 
+/**
+ * Reading still goes to Firestore; writing goes to the Worker. The double
+ * covers both so a test can assert on whichever half it cares about.
+ */
 function fakeApi(overrides = {}) {
-  const calls = [];
-  const batch = {
-    set: (...args) => calls.push(['set', ...args]),
-    update: (...args) => calls.push(['update', ...args]),
-    delete: (...args) => calls.push(['delete', ...args]),
-    commit: async () => calls.push(['commit']),
-  };
+  const requests = [];
+  const responses = overrides.responses || [];
   return {
-    calls,
+    requests,
     api: {
       database: 'db',
-      currentUser: { uid: 'owner-1' },
-      cryptoApi: { getRandomValues: bytes => bytes.fill(7) },
+      isDemo: false,
+      apiBase: 'https://worker.test',
       document: (...parts) => parts.join('/'),
-      batch: () => batch,
-      deleteValue: () => 'DELETE_FIELD',
-      now: () => 'SERVER_TIME',
       getDocument: async () => ({
         exists: () => true,
         id: '07070707070707070707070707070707',
         data: () => ({ title: 'Shared', papers: [] }),
       }),
-      isDemo: false,
-      ...overrides,
+      request: async (url, init) => {
+        requests.push({ url, init, body: JSON.parse(init.body) });
+        const next = responses.shift();
+        if (next) return next;
+        return new Response(JSON.stringify({
+          shareId: '07070707070707070707070707070707',
+        }), { status: 200 });
+      },
+      ...overrides.api,
     },
   };
 }
@@ -101,98 +105,141 @@ test('sanitizes public lists to the bounded public contract', () => {
 });
 
 test('drops invalid papers and bounds paper arrays', () => {
-  const papers = Array.from({ length: 45 }, (_, index) => ({
+  // One over the cap, and a first entry with no title so the drop is visible.
+  const size = PUBLIC_LIST_LIMITS.papers + 2;
+  const papers = Array.from({ length: size }, (_, index) => ({
     id: `paper-${index}`,
     title: index === 0 ? '' : `Paper ${index}`,
   }));
   const result = sanitizePublicList({ title: 'Bounded', papers });
-  assert.equal(result.papers.length, 12);
-  assert.equal(result.paperCount, 12);
+  assert.equal(result.papers.length, PUBLIC_LIST_LIMITS.papers);
+  assert.equal(result.paperCount, PUBLIC_LIST_LIMITS.papers);
   assert.equal(result.papers[0].id, 'paper-1');
 });
 
-test('creates 128-bit lowercase hexadecimal share IDs with Web Crypto', () => {
-  const id = createPublicListShareId({
-    getRandomValues(bytes) {
-      bytes.forEach((_, index) => { bytes[index] = index; });
-      return bytes;
-    },
-  });
-  assert.equal(id, '000102030405060708090a0b0c0d0e0f');
-});
+test('publishing posts the sanitized list to the Worker, never to Firestore', async () => {
+  const { api, requests } = fakeApi();
+  const published = await publishPublicList(
+    { listId: 'list-1', title: 'Shared', papers: [privatePaper] }, api,
+  );
 
-test('publishes and updates without allowing owner mutation', async () => {
-  const { api, calls } = fakeApi();
-  const published = await publishPublicList({ listId: 'list-1', title: 'Shared', papers: [privatePaper] }, api);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].url, 'https://worker.test/lists/publish');
+  assert.equal(requests[0].init.method, 'POST');
+  assert.equal(requests[0].body.listId, 'list-1');
+  assert.equal(requests[0].body.title, 'Shared');
+  // The share id is the Worker's to mint: the browser must not choose it, or a
+  // caller could aim a publish at somebody else's link.
+  assert.equal('shareId' in requests[0].body, false);
+  assert.equal('ownerId' in requests[0].body, false);
   assert.equal(published.shareId, '07070707070707070707070707070707');
-  assert.equal(calls[0][1], 'db/publicListOwners/07070707070707070707070707070707');
-  assert.equal(calls[0][2].ownerId, 'owner-1');
-  assert.equal(calls[0][2].createdAt, 'SERVER_TIME');
-  assert.equal(calls[1][1], 'db/publicLists/07070707070707070707070707070707');
-  assert.equal('ownerId' in calls[1][2], false);
-  assert.deepEqual(calls[2], [
-    'update',
-    'db/users/owner-1/lists/list-1',
-    { publicShareId: published.shareId },
-  ]);
-  assert.deepEqual(calls[3], ['commit']);
 
-  await updatePublicList(published.shareId, { listId: 'list-1', title: 'Updated', papers: [] }, api);
-  assert.equal(calls[4][0], 'update');
-  assert.equal(calls[4][1], 'db/publicLists/07070707070707070707070707070707');
-  assert.equal('ownerId' in calls[4][2], false);
-  assert.equal('createdAt' in calls[4][2], false);
-  assert.equal(calls[4][2].updatedAt, 'SERVER_TIME');
-  assert.deepEqual(calls[5][2], { publicShareId: published.shareId });
-  assert.deepEqual(calls[6], ['commit']);
+  // Private fields are stripped before the payload ever leaves the browser.
+  const serialized = JSON.stringify(requests[0].body);
+  for (const privateValue of ['private note', 'private-tag', 'owner@example.test']) {
+    assert.equal(serialized.includes(privateValue), false);
+  }
 });
 
-test('reads public snapshots and deletes only with an authenticated caller', async () => {
-  const { api, calls } = fakeApi();
+test('updating names the share it is editing and sends no timestamps', async () => {
+  const shareId = '07070707070707070707070707070707';
+  const { api, requests } = fakeApi();
+  await updatePublicList(shareId, { listId: 'list-1', title: 'Updated', papers: [] }, api);
+
+  assert.equal(requests[0].url, 'https://worker.test/lists/update');
+  assert.equal(requests[0].body.shareId, shareId);
+  assert.equal(requests[0].body.title, 'Updated');
+  // createdAt and updatedAt are the server's business, not the browser's.
+  assert.equal('createdAt' in requests[0].body, false);
+  assert.equal('updatedAt' in requests[0].body, false);
+});
+
+test('unpublishing sends the share and the private list it belongs to', async () => {
+  const shareId = '07070707070707070707070707070707';
+  const { api, requests } = fakeApi();
+  await unpublishPublicList(shareId, 'list-1', api);
+  assert.equal(requests[0].url, 'https://worker.test/lists/unpublish');
+  assert.deepEqual(requests[0].body, { shareId, listId: 'list-1' });
+});
+
+test('the Worker error code reaches the UI instead of a blank failure', async () => {
+  const { api } = fakeApi({
+    responses: [new Response(JSON.stringify({ code: 'PUBLISH_QUOTA_EXCEEDED' }), { status: 429 })],
+  });
+  await assert.rejects(
+    () => publishPublicList({ listId: 'list-1', title: 'T', papers: [] }, api),
+    error => error instanceof PublicListRequestError
+      && error.code === 'PUBLISH_QUOTA_EXCEEDED'
+      && error.status === 429,
+  );
+});
+
+test('an unconfigured Worker origin is reported, not silently swallowed', async () => {
+  const { api } = fakeApi({ api: { apiBase: '' } });
+  await assert.rejects(
+    () => publishPublicList({ listId: 'list-1', title: 'T', papers: [] }, api),
+    error => error.code === 'PUBLISHING_NOT_CONFIGURED' && error.status === 503,
+  );
+});
+
+test('reading a share link is still one Firestore document, with no session', async () => {
+  const { api, requests } = fakeApi();
   const shareId = '07070707070707070707070707070707';
   assert.deepEqual(await readPublicList(shareId, api), {
     shareId,
     title: 'Shared',
     papers: [],
   });
-  await unpublishPublicList(shareId, 'list-1', api);
-  assert.deepEqual(calls.slice(-4), [
-    ['delete', `db/publicLists/${shareId}`],
-    ['delete', `db/publicListOwners/${shareId}`],
-    ['update', 'db/users/owner-1/lists/list-1', { publicShareId: 'DELETE_FIELD' }],
-    ['commit'],
-  ]);
-
-  await assert.rejects(
-    () => unpublishPublicList(shareId, 'list-1', { ...api, currentUser: null }),
-    /Authentication is required/,
-  );
+  assert.equal(requests.length, 0, 'reading must not go through the Worker');
 });
 
-test('returns a clear unsupported error in demo mode', async () => {
-  const { api } = fakeApi({ isDemo: true });
-  await assert.rejects(
-    () => readPublicList('07070707070707070707070707070707', api),
-    error => error instanceof PublicListUnsupportedError
-      && error.code === 'PUBLIC_LISTS_UNSUPPORTED_IN_DEMO',
-  );
+test('a malformed share id or list id never reaches the network', async () => {
+  const { api, requests } = fakeApi();
+  await assert.rejects(() => updatePublicList('nope', { listId: 'l1', title: 'T' }, api), TypeError);
+  await assert.rejects(() => unpublishPublicList('a'.repeat(32), 'a/b', api), TypeError);
+  assert.equal(requests.length, 0);
 });
 
-test('Firestore rules expose reads but keep owner identity and timestamps immutable', async () => {
+test('returns a clear unsupported error in demo mode, on every path', async () => {
+  const shareId = '07070707070707070707070707070707';
+  const isUnsupported = error => error instanceof PublicListUnsupportedError
+    && error.code === 'PUBLIC_LISTS_UNSUPPORTED_IN_DEMO';
+  const { api, requests } = fakeApi({ api: { isDemo: true } });
+
+  await assert.rejects(() => readPublicList(shareId, api), isUnsupported);
+  await assert.rejects(
+    () => publishPublicList({ listId: 'l1', title: 'T', papers: [] }, api), isUnsupported,
+  );
+  await assert.rejects(
+    () => updatePublicList(shareId, { listId: 'l1', title: 'T', papers: [] }, api), isUnsupported,
+  );
+  await assert.rejects(() => unpublishPublicList(shareId, 'l1', api), isUnsupported);
+  assert.equal(requests.length, 0, 'demo mode must not reach the Worker either');
+});
+
+test('Firestore rules keep public lists readable and shut to every client', async () => {
   const rules = await readFile(new URL('../../firestore.rules', import.meta.url), 'utf8');
   const publicListRule = rules.match(/match \/publicLists\/\{shareId\}[\s\S]*?\n\s{4}}/)?.[0] || '';
   const ownerRule = rules.match(/match \/publicListOwners\/\{shareId\}[\s\S]*?\n\s{4}}/)?.[0] || '';
-  assert.match(rules, /match \/publicLists\/\{shareId\}/);
-  assert.match(publicListRule, /allow read: if true/);
-  assert.doesNotMatch(publicListRule, /ownerId/);
-  assert.match(rules, /match \/publicListOwners\/\{shareId\}/);
-  assert.match(rules, /request\.resource\.data\.ownerId == request\.auth\.uid/);
-  assert.match(rules, /ownsPublicList\(shareId\)/);
-  assert.doesNotMatch(ownerRule, /allow read/);
-  assert.match(publicListRule, /request\.resource\.data\.createdAt == resource\.data\.createdAt/);
-  assert.match(rules, /papers\.size\(\) <= 12/);
-  assert.match(rules, /request\.resource\.data\.paperCount == request\.resource\.data\.papers\.size\(\)/);
-  assert.match(rules, /'createdAt', 'publicShareId'/);
-  assert.match(rules, /publicShareId\.matches\('\^\[a-f0-9\]\{32\}\$'\)/);
-  assert.match(rules, /allow delete: if ownsUserTree\(userId\)[\s\S]*?!existsAfter\([\s\S]*?publicLists/);
+
+  // A share link stays public and stays one document.
+  assert.match(publicListRule, /allow get: if true/);
+  // Paging it is not a feature, and never was.
+  assert.match(publicListRule, /allow list: if false/);
+  // Every write comes from the Worker now.
+  assert.match(publicListRule, /allow write: if false/);
+  assert.match(ownerRule, /allow read: if false/);
+  assert.match(ownerRule, /allow write: if false/);
+
+  // The per-paper validators are gone; leaving them would be dead weight that
+  // reads like a live guarantee.
+  assert.doesNotMatch(rules, /function validPublicPaper/);
+  assert.doesNotMatch(rules, /function validPublicList/);
+  // But the shared helper stays: savedPapers still uses it.
+  assert.match(rules, /function validBoundedStringList/);
+  assert.match(rules, /validBoundedStringList\(request\.resource\.data\.authors, 20, 160\)/);
+
+  // The pointer is the Worker's, and the delete rule leans on that.
+  assert.match(rules, /function publicShareIdUntouched\(\)/);
+  assert.match(rules, /allow delete: if ownsUserTree\(userId\)\s*\n\s*&& !\('publicShareId' in resource\.data\)/);
 });

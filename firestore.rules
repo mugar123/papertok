@@ -35,84 +35,25 @@ service cloud.firestore {
         && (values.size() < 20 || validString(values[19], maximumLength));
     }
 
-    function validPublicPaper(paper) {
-      return paper is map
-        && paper.keys().hasOnly([
-          'id', 'title', 'authors', 'abstract', 'year', 'date', 'category',
-          'concepts', 'citations', 'doi', 'arxivId', 'openUrl'
-        ])
-        && paper.keys().hasAll(['id', 'title', 'authors'])
-        && validString(paper.id, 300) && paper.id.size() > 0
-        && validString(paper.title, 500) && paper.title.size() > 0
-        && validBoundedStringList(paper.authors, 20, 160)
-        && (!('abstract' in paper) || validString(paper.abstract, 3000))
-        && (!('year' in paper) || paper.year is int && paper.year >= 1000 && paper.year <= 3000)
-        && (!('date' in paper) || validString(paper.date, 40))
-        && (!('category' in paper) || validString(paper.category, 120))
-        && (!('concepts' in paper) || validBoundedStringList(paper.concepts, 12, 120))
-        && (!('citations' in paper)
-          || paper.citations is int && paper.citations >= 0 && paper.citations <= 1000000000)
-        && (!('doi' in paper)
-          || validString(paper.doi, 300) && paper.doi.matches('^10\\.[0-9]{4,9}/.+$'))
-        && (!('arxivId' in paper)
-          || validString(paper.arxivId, 100)
-            && paper.arxivId.matches('^([A-Za-z-]+(\\.[A-Z]{2})?/[0-9]{7}|[0-9]{4}\\.[0-9]{4,5})(v[0-9]+)?$'))
-        && (!('openUrl' in paper)
-          || validString(paper.openUrl, 2000) && paper.openUrl.matches('^https://[^[:space:]]+$'));
-    }
-
-    function validPublicPapers(papers) {
-      return papers is list
-        && papers.size() <= 12
-        && (papers.size() < 1 || validPublicPaper(papers[0]))
-        && (papers.size() < 2 || validPublicPaper(papers[1]))
-        && (papers.size() < 3 || validPublicPaper(papers[2]))
-        && (papers.size() < 4 || validPublicPaper(papers[3]))
-        && (papers.size() < 5 || validPublicPaper(papers[4]))
-        && (papers.size() < 6 || validPublicPaper(papers[5]))
-        && (papers.size() < 7 || validPublicPaper(papers[6]))
-        && (papers.size() < 8 || validPublicPaper(papers[7]))
-        && (papers.size() < 9 || validPublicPaper(papers[8]))
-        && (papers.size() < 10 || validPublicPaper(papers[9]))
-        && (papers.size() < 11 || validPublicPaper(papers[10]))
-        && (papers.size() < 12 || validPublicPaper(papers[11]));
-    }
-
-    function validPublicList() {
-      return request.resource.data.keys().hasOnly([
-          'title', 'description', 'language', 'paperCount',
-          'papers', 'createdAt', 'updatedAt'
-        ])
-        && request.resource.data.keys().hasAll([
-          'title', 'language', 'paperCount', 'papers',
-          'createdAt', 'updatedAt'
-        ])
-        && validString(request.resource.data.title, 120)
-        && request.resource.data.title.size() > 0
-        && (!('description' in request.resource.data)
-          || validString(request.resource.data.description, 600))
-        && request.resource.data.language in ['es', 'en']
-        && request.resource.data.paperCount is int
-        && request.resource.data.paperCount == request.resource.data.papers.size()
-        && validPublicPapers(request.resource.data.papers)
-        && request.resource.data.createdAt is timestamp
-        && request.resource.data.updatedAt is timestamp;
-    }
-
-    function ownsPublicList(shareId) {
-      return request.auth != null
-        && exists(/databases/$(database)/documents/publicListOwners/$(shareId))
-        && get(/databases/$(database)/documents/publicListOwners/$(shareId)).data.ownerId
-          == request.auth.uid;
-    }
-
-    function ownsPublicListAfter(shareId) {
-      return request.auth != null
-        && existsAfter(/databases/$(database)/documents/publicListOwners/$(shareId))
-        && getAfter(/databases/$(database)/documents/publicListOwners/$(shareId)).data.ownerId
-          == request.auth.uid;
-    }
-
+    // ---------------------------------------------------------------------
+    // Public lists (F11). Server-written, and that is the whole design.
+    //
+    // These documents used to be validated here, per paper, from the client.
+    // They cannot be: the rules engine stops at 1000 evaluated expressions per
+    // request and ONE realistic paper already exceeded that budget, so
+    // publishing was refused outright in production. Measured in
+    // tests/p18-measure.test.js, with the ceiling for every trimmed variant —
+    // no honest trim left the product cap above six papers.
+    //
+    // So the write moved to the Worker, which validates in real code with the
+    // service identity (`worker/public-list-api.js`) and holds the single
+    // definition of a valid public list in `src/services/publicListPayload.js`,
+    // the same module the browser imports. Here, only two things remain true:
+    // anyone may read a share link, and nobody may write one.
+    //
+    // `publicListOwners` stays unreadable and unwritable from the client. It is
+    // still read by these rules themselves — `ownsPinnedShare` below — because a
+    // rules-internal get() is not an `allow read`.
     function userProfileKeys() {
       return [
         'onboardingComplete',
@@ -151,29 +92,20 @@ service cloud.firestore {
     }
 
     match /publicLists/{shareId} {
-      allow read: if true;
-      allow create: if ownsPublicListAfter(shareId)
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.updatedAt == request.time
-        && validPublicList();
-      allow update: if ownsPublicList(shareId)
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.updatedAt == request.time
-        && validPublicList();
-      allow delete: if ownsPublicList(shareId);
+      // A share link is public, as it always was: one document, one read.
+      allow get: if true;
+      // Paging is not. `allow read` covered both, so anyone could have walked
+      // the whole collection and harvested every list ever published — a
+      // directory the product never offers. Nothing reads it that way: the page
+      // fetches one share id, and profile pins render from the profile.
+      allow list: if false;
+      // Every write comes from the Worker, past these rules entirely.
+      allow write: if false;
     }
 
     match /publicListOwners/{shareId} {
-      allow create: if request.auth != null
-        && request.resource.data.keys().hasOnly(['ownerId', 'listId', 'createdAt'])
-        && request.resource.data.ownerId == request.auth.uid
-        && validString(request.resource.data.listId, 160)
-        && request.resource.data.listId.size() > 0
-        && request.resource.data.createdAt == request.time
-        && getAfter(
-          /databases/$(database)/documents/users/$(request.auth.uid)/lists/$(request.resource.data.listId)
-        ).data.publicShareId == shareId;
-      allow delete: if ownsPublicList(shareId);
+      allow read: if false;
+      allow write: if false;
     }
 
     // ---------------------------------------------------------------------
@@ -211,8 +143,8 @@ service cloud.firestore {
 
     // Ownership of a pinned share, in ONE document access.
     //
-    // `ownsPublicList` above spends two (exists + get); at eight pinned lists
-    // that would be sixteen and blow the ten-call ceiling for a single-document
+    // The obvious form spends two (exists + get); at eight pinned lists that
+    // would be sixteen and blow the ten-call ceiling for a single-document
     // request. A missing owner document makes `get()` return null, and reading
     // `.data` off null denies the write — which is the outcome we want for a
     // share id that does not exist.
@@ -807,16 +739,32 @@ service cloud.firestore {
           && request.resource.data.seenIds.size() <= 500;
       }
 
+      // `publicShareId` is the pointer from a private list to its public copy,
+      // and after F11 only the Worker may move it: it sets the field in the same
+      // commit that creates both public documents, and clears it in the same
+      // commit that deletes them. That makes "the field is present" and "the
+      // public documents exist" the same fact, which is what the delete rule
+      // below leans on. Same shape as legacyUserFieldsUntouched() above.
+      function publicShareIdUntouched() {
+        return resource == null
+          ? !('publicShareId' in request.resource.data)
+          : !request.resource.data.diff(resource.data).affectedKeys()
+            .hasAny(['publicShareId']);
+      }
+
       match /lists/{listId} {
         allow read: if ownsUserTree(userId);
+        // Deleting a published list still has to be impossible — an orphaned
+        // public document is unreachable and uneditable forever.
+        //
+        // It used to be spelled with two existsAfter() calls, satisfied by the
+        // client deleting all three documents in one batch. The client can no
+        // longer delete the public two, so that spelling would have locked
+        // every published list in place permanently. This asks the equivalent
+        // question of the private document alone: unpublish first (the Worker
+        // clears the pointer), then delete.
         allow delete: if ownsUserTree(userId)
-          && (!('publicShareId' in resource.data)
-            || (!existsAfter(
-                /databases/$(database)/documents/publicLists/$(resource.data.publicShareId)
-              )
-              && !existsAfter(
-                /databases/$(database)/documents/publicListOwners/$(resource.data.publicShareId)
-              )));
+          && !('publicShareId' in resource.data);
         allow create, update: if ownsUserTree(userId)
           && request.resource.data.keys().hasOnly([
             'id', 'name', 'emoji', 'paperIds', 'createdAt', 'publicShareId'
@@ -825,6 +773,9 @@ service cloud.firestore {
           && validString(request.resource.data.emoji, 40)
           && request.resource.data.paperIds is list
           && request.resource.data.paperIds.size() <= 500
+          && publicShareIdUntouched()
+          // Belt and braces: the value can only have come from the Worker, but
+          // a document of unknown vintage still has to look like a share id.
           && (!('publicShareId' in request.resource.data)
             || validString(request.resource.data.publicShareId, 32)
               && request.resource.data.publicShareId.matches('^[a-f0-9]{32}$'));

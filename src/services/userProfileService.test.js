@@ -499,19 +499,25 @@ test('RULES: followerCount is service-only, like orcid and verified', async () =
   assert.match(rules, /function publicProfileServiceFieldsUnchanged\(\) \{[\s\S]*?request\.resource\.data\.followerCount == resource\.data\.followerCount/);
 });
 
-test('RULES: the publicLists and publicListOwners blocks are byte-for-byte untouched', async () => {
-  // F1 attributes lists by pinning, so neither block may change: public lists
-  // stay anonymous, and no existing document grows an owner field. These are
-  // the two blocks exactly as they stood before this phase.
+test('RULES: public lists stay anonymous, and no client can write them', async () => {
+  // F1 attributes lists by pinning, so the public document must never grow an
+  // owner field — that part has not changed. What did change is F11: both
+  // blocks are now server-written, because the per-paper validation they used
+  // to carry could not fit the rules engine's expression budget.
   const rules = await loadRules();
-  assert.equal(
-    ruleBlock(rules, '/publicLists/{shareId}'),
-    "match /publicLists/{shareId} {\n      allow read: if true;\n      allow create: if ownsPublicListAfter(shareId)\n        && request.resource.data.createdAt == request.time\n        && request.resource.data.updatedAt == request.time\n        && validPublicList();\n      allow update: if ownsPublicList(shareId)\n        && request.resource.data.createdAt == resource.data.createdAt\n        && request.resource.data.updatedAt == request.time\n        && validPublicList();\n      allow delete: if ownsPublicList(shareId);\n    }",
-  );
-  assert.equal(
-    ruleBlock(rules, '/publicListOwners/{shareId}'),
-    "match /publicListOwners/{shareId} {\n      allow create: if request.auth != null\n        && request.resource.data.keys().hasOnly(['ownerId', 'listId', 'createdAt'])\n        && request.resource.data.ownerId == request.auth.uid\n        && validString(request.resource.data.listId, 160)\n        && request.resource.data.listId.size() > 0\n        && request.resource.data.createdAt == request.time\n        && getAfter(\n          /databases/$(database)/documents/users/$(request.auth.uid)/lists/$(request.resource.data.listId)\n        ).data.publicShareId == shareId;\n      allow delete: if ownsPublicList(shareId);\n    }",
-  );
+  const publicLists = ruleBlock(rules, '/publicLists/{shareId}');
+  const owners = ruleBlock(rules, '/publicListOwners/{shareId}');
+
+  assert.doesNotMatch(publicLists, /ownerId/, 'a share link must not name its owner');
+  assert.match(publicLists, /allow get: if true/);
+  assert.match(publicLists, /allow list: if false/);
+  assert.match(publicLists, /allow write: if false/);
+  assert.match(owners, /allow read: if false/);
+  assert.match(owners, /allow write: if false/);
+
+  // Attribution still runs through pinning, which reads the owner table from
+  // inside the rules — a get() there is not an `allow read`.
+  assert.match(rules, /function ownsPinnedShare\(shareId\) \{[\s\S]*?publicListOwners/);
 });
 
 // --- the pin picker's read -------------------------------------------------

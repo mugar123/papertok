@@ -22,6 +22,12 @@ import {
   normalizeCitationRows,
 } from '../src/utils/citationGraph.js';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.js';
+import {
+  handlePublicListRequest,
+  PUBLIC_LIST_PATHS,
+  PublicListApiError,
+} from './public-list-api.js';
+import { isServiceAccountConfigured } from './firestore-admin.js';
 import { reserveRequestQuota } from './request-quota-ledger.js';
 
 export { KimiBudgetLedger } from './kimi-budget-ledger.js';
@@ -1180,6 +1186,26 @@ export default {
         });
       }
     }
+    if (PUBLIC_LIST_PATHS.has(url.pathname)) {
+      // Writes to a world-readable collection: an unknown Origin is refused
+      // outright rather than merely left without CORS headers.
+      if (!origin || !allowedOrigins(env).has(origin)) {
+        return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
+      }
+      try {
+        const payload = await handlePublicListRequest(request, env, url.pathname);
+        return json(payload, 200, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'private, no-store',
+        });
+      } catch (error) {
+        const known = error instanceof PublicListApiError || error instanceof WorkerAuthError;
+        return json({ code: known ? error.code : 'PUBLISH_FAILED' }, known ? error.status : 502, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'no-store',
+        });
+      }
+    }
     if (url.pathname === '/ai/explain') {
       if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -1221,6 +1247,7 @@ export default {
           env.NOTIFICATION_STORE
           && ((env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) || env.RESEND_API_KEY),
         ),
+        publishingConfigured: isServiceAccountConfigured(env),
       }, 200, corsHeaders(origin, env));
     }
     if (url.pathname === '/health/email') {
