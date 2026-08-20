@@ -192,11 +192,10 @@ fondo cronometrado para sobrevivir a la hoja.
 
 ### Sigue abierto
 
-**Las cuentas antiguas no pueden escribir su propio `users/{uid}`** (el bug que
-encontró P15). Verificado hoy: `userProfileKeys()` en `firestore.rules` sigue
-sin `email`, `displayName`, `photoURL` ni `createdAt`, y como todas las
-escrituras son `merge`, la lista blanca ve el documento entero y deniega.
-Ninguna de las pasadas de hoy lo toca.
+Nada de esta pasada. Lo que aquí quedaba anotado como abierto —**las cuentas
+antiguas no pueden escribir su propio `users/{uid}`**, el bug que encontró
+P15— **se arregló y se desplegó el 2026-08-20**: ver la sección
+"`users/{uid}` inescribible en cuentas antiguas" más abajo.
 
 ---
 
@@ -345,15 +344,16 @@ rastro, colección `papers`).
 2. **La app** (`npm run build` + push a `main` para GitHub Pages), cuando
    quieras exponer la UI. No hay ventana de incompatibilidad: la UI vieja
    no toca las colecciones nuevas.
-3. **⚠️ FUSIÓN MANUAL de `firestore.rules`**: la otra sesión (worktree
-   `brave-keller-ea1633`) también lo toca. Todo lo de F3 está **al final del
-   archivo** (desde el separador "F3: paper stubs…" hasta antes del
-   catch-all global), aposta para que la fusión sea coger ese bloque entero;
-   el único cambio fuera del bloque es el uid real en `isAdmin()` (línea de
-   `REPLACE_WITH_ADMIN_UID`). Si su rama redefine `userProfileKeys()` o el
-   bloque `users/`, no colisiona con nada de F3 — el match de `rateLimits`
-   es top-level aparte precisamente por eso. **Tras fusionar: re-desplegar
-   rules y volver a correr `npm run test:rules`.**
+3. **FUSIÓN MANUAL de `firestore.rules`: HECHA** (2026-08-20, merge
+   `371662c`). La rama `brave-keller-ea1633` traía el arreglo del bug de
+   `users/{uid}`. La previsión se cumplió y de más: `firestore.rules` fusionó
+   **sin un solo conflicto** —el bloque de F3 vive al final del archivo justo
+   para eso, y el match de `rateLimits` es top-level aparte—, así que los
+   conflictos reales cayeron en los otros dos archivos, `STATE.md` y
+   `tests/firestore.rules.test.js`, donde ambas ramas añadían al final. Se
+   resolvieron **conservando los dos lados**, comprobado comparando el
+   resultado contra cada padre. Rules re-desplegadas en `papertok-168df` y
+   `npm run test:rules` en verde: **98 tests** (93 de F3 + 5 del arreglo).
 
 ### Botón de comentarios en el feed (2026-08-19, pasada posterior)
 
@@ -406,8 +406,9 @@ nuevo** en PaperCard).
 
 ## `users/{uid}` inescribible en cuentas antiguas — arreglado (2026-08-19)
 
-**Arreglado en rules, probado contra el emulador, pendiente de desplegar.** Bug
-preexistente, encontrado y diagnosticado durante F8; esta es su resolución.
+**Arreglado en rules, probado contra el emulador y DESPLEGADO en
+`papertok-168df` (2026-08-20).** Bug preexistente, encontrado y diagnosticado
+durante F8; esta es su resolución. Llegó a `main` por el merge `371662c`.
 
 ### El fallo
 
@@ -451,8 +452,9 @@ fuente de verdad.
 
 ### Tests
 
-- **66 contra el emulador** (5 nuevos), más el test de F8 que asertaba que el
-  documento padre era inescribible, ahora invertido.
+- **98 contra el emulador ya fusionado con F3** (5 nuevos; 66 eran en la rama
+  aislada), más el test de F8 que asertaba que el documento padre era
+  inescribible, ahora invertido.
 - **Pasada de mutación: 5 mutantes, 5 muertos** — quitar el `concat`, quitar la
   llamada a `legacyUserFieldsUntouched()`, forzar a `true` cada una de las dos
   ramas del ternario, e intercambiar las ramas.
@@ -474,10 +476,18 @@ aparte.
 
 ### Qué desplegar
 
-`firebase deploy --only firestore:rules` desde `HEAD`. Es el mismo archivo que
-la fase 2 de F8, así que va con ella o después. **No necesita despliegue de
+**Ya desplegado** (`firebase deploy --only firestore:rules`, 2026-08-20, sobre
+`papertok-168df`, con la fusión de F3 dentro). **No necesitó despliegue de
 app**: ningún cliente, viejo o nuevo, cambia de comportamiento salvo dejando de
 recibir `permission-denied`.
+
+Comprobado por REST sin auth que la fusión llegó entera a producción: `papers`
+por id 200 y `list` 403, `reports` 403, `config/moderation` legible y
+`config/other` 403 — es decir, F3 sigue vivo bajo las rules nuevas.
+
+**Pendiente de tu sesión** (necesita entrar con una cuenta de las antiguas, y
+esa autenticación es tuya): con `@mugar`, Ajustes → **Editar intereses** →
+guardar. Antes se lo tragaba en silencio; ahora debe persistir tras recargar.
 
 ## Privacidad del perfil — F8 / P15 (2026-08-19)
 
