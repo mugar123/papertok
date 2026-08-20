@@ -5,7 +5,7 @@ import {
   ArrowLeft, ArrowRight, Check, ExternalLink, FolderOpen, Loader2, Pin, PinOff, ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { isReadTimeout, withReadTimeout } from '../../utils/boundedRead.js';
+import { isReadTimeout, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
 import {
   forgetOwnProfile,
   ownProfileCache,
@@ -162,6 +162,7 @@ export default function ProfilePage() {
     genericError: 'Something went wrong. Try again.',
     loading: 'Loading your profile...',
     loadError: 'Your profile could not be loaded.',
+    loadSlow: 'Your profile is taking longer than usual.',
     loadErrorHint: 'Check your connection and try again — nothing has been changed.',
     retry: 'Try again',
     nameRequired: 'A display name is required.',
@@ -222,6 +223,7 @@ export default function ProfilePage() {
     genericError: 'Algo ha ido mal. Inténtalo de nuevo.',
     loading: 'Cargando tu perfil...',
     loadError: 'No se ha podido cargar tu perfil.',
+    loadSlow: 'Tu perfil está tardando más de lo normal.',
     loadErrorHint: 'Revisa tu conexión y vuelve a intentarlo — no se ha cambiado nada.',
     retry: 'Reintentar',
     nameRequired: 'El nombre visible es obligatorio.',
@@ -244,25 +246,38 @@ export default function ProfilePage() {
 
     // Two independent reads, no longer joined by `Promise.all`: the form only
     // needs the profile, and pairing them made the whole screen wait on the
-    // slower of the two. Both are bounded, because a read against a stalled
-    // connection never settles and this screen used to sit on "Loading your
-    // profile..." for as long as that lasted.
-    withReadTimeout(readOwnUserProfile(), { label: 'own profile' })
-      .then(ownProfile => {
-        rememberOwnProfile(uid, ownProfile);
-        if (!active) return;
-        setProfile(ownProfile);
-        setDisplayName(ownProfile?.displayName || user.displayName || '');
-        setBio(ownProfile?.bio || '');
-        setAllowContact(ownProfile?.allowContact === true);
-        // The toggle reflects reality: public photo = the field exists.
-        setShowPhoto(ownProfile ? Boolean(ownProfile.photo) : true);
-        setHandleDraft(ownProfile?.handle || '');
-        setStatus(ownProfile ? 'ready' : 'new');
-      })
+    // slower of the two. The profile read gets patience rather than a
+    // guillotine: a slow answer is announced as slow, retried, and accepted
+    // whenever it lands — "could not be loaded" is reserved for a read that
+    // actually failed.
+    const applyProfile = (ownProfile) => {
+      rememberOwnProfile(uid, ownProfile);
+      if (!active) return;
+      setProfile(ownProfile);
+      setDisplayName(ownProfile?.displayName || user.displayName || '');
+      setBio(ownProfile?.bio || '');
+      setAllowContact(ownProfile?.allowContact === true);
+      // The toggle reflects reality: public photo = the field exists.
+      setShowPhoto(ownProfile ? Boolean(ownProfile.photo) : true);
+      setHandleDraft(ownProfile?.handle || '');
+      setStatus(ownProfile ? 'ready' : 'new');
+    };
+    patientRead(() => readOwnUserProfile(), {
+      attempts: 2,
+      label: 'own profile',
+      onSlow: () => {
+        if (active && !seeded) setStatus('slow');
+      },
+      onLateResult: applyProfile,
+    })
+      .then(applyProfile)
       .catch(error => {
-        if (isReadTimeout(error)) console.warn('The profile did not answer in time', error);
-        else console.error('Error loading own profile:', error);
+        if (isReadTimeout(error)) {
+          // Already showing 'slow'; the late answer stays armed above.
+          console.warn('The profile did not answer in time', error);
+          return;
+        }
+        console.error('Error loading own profile:', error);
         if (!active) return;
         // A failed refresh behind an already-seeded view keeps the view; only
         // a first load with nothing to show reports the failure.
@@ -543,12 +558,12 @@ export default function ProfilePage() {
   // Before this existed, a failed load fell through to the form below with
   // every `status === 'ready'` branch switched off: a half-built editor for a
   // profile that had not been read.
-  if (status === 'error') {
+  if (status === 'error' || status === 'slow') {
     return (
       <main className="profile-page">
         <div className="profile-shell">
-          <div className="profile-load-error" role="alert">
-            <h1>{copy.loadError}</h1>
+          <div className="profile-load-error" role="alert" aria-busy={status === 'slow'}>
+            <h1>{status === 'slow' ? copy.loadSlow : copy.loadError}</h1>
             <p>{copy.loadErrorHint}</p>
             <button
               type="button"

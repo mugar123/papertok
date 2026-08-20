@@ -21,7 +21,7 @@ import {
 import { profileIsPublic, readOwnUserProfile } from '../../services/userProfileService.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
-import { isReadTimeout, withReadTimeout } from '../../utils/boundedRead.js';
+import { isReadTimeout, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
 import './CommentsSheet.css';
 
 // Opening the sheet used to start from nothing every time: anchor, pages and
@@ -57,6 +57,10 @@ const COPY = {
   loading: { es: 'Cargando...', en: 'Loading...' },
   empty: { es: 'Nadie ha comentado todavía. Abre la conversación.', en: 'Nobody has commented yet. Start the conversation.' },
   loadError: { es: 'No se pudieron cargar los comentarios.', en: 'The comments could not be loaded.' },
+  slowLoad: {
+    es: 'Está tardando más de lo normal. Seguimos intentándolo.',
+    en: 'This is taking longer than usual. Still trying.',
+  },
   retry: { es: 'Reintentar', en: 'Try again' },
   more: { es: 'Cargar más', en: 'Load more' },
   placeholder: { es: 'Añade un comentario...', en: 'Add a comment...' },
@@ -273,47 +277,85 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   // its own handler — no synchronous setState in the effect.
   useEffect(() => {
     let active = true;
-    (async () => {
-      // Bounded: a read against a stalled connection never settles, and this
-      // sheet used to sit on its skeleton for as long as that lasted.
-      const resolved = await withReadTimeout(resolveThreadAnchor(paper), { label: 'comment thread' });
-      if (!active) return;
-      if (!resolved) {
-        setStatus('error');
-        return;
-      }
-      setAnchor(resolved);
 
+    // One attempt = the whole pipeline the thread needs: anchor, then its
+    // pages. Timing belongs to `patientRead`, not to the stages — measured,
+    // a healthy attempt completes in 60-390 ms and a stalled one never does,
+    // so what matters is retrying and accepting late answers, not slicing.
+    const loadThread = async () => {
+      const resolved = await resolveThreadAnchor(paper);
+      if (!resolved) return { resolved: null };
       const keys = [
         ...(resolved.stubExists ? [resolved.key] : []),
         ...resolved.alternates.map(alternate => alternate.key),
       ];
-      const pages = await withReadTimeout(Promise.all(keys.map(async key => ({
+      const pages = await Promise.all(keys.map(async key => ({
         key, ...(await fetchThreadPage(key)),
-      }))), { label: 'comment pages' });
+      })));
+      return { resolved, keys, pages };
+    };
+
+    const apply = ({ resolved, keys, pages }) => {
       if (!active) return;
+      if (!resolved) {
+        // No identity to converge on — a data condition, not a slow read.
+        setStatus('error');
+        return;
+      }
+      setAnchor(resolved);
       const merged = pages
         .flatMap(page => page.comments.map(comment => ({ ...comment, paperKey: page.key })))
         .sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
       setRows(merged);
       setSources(pages.map(page => ({ key: page.key, cursor: page.cursor, hasMore: page.hasMore })));
-
-      const counts = await Promise.all(keys.map(key => fetchCommentCount(key).catch(() => null)));
-      if (!active) return;
-      const total = counts.reduce((sum, entry) => sum + (entry?.count ?? 0), 0);
-      setCount({ count: total, capped: counts.some(entry => entry?.capped) });
+      // Ready on the thread alone. The count is a header badge, and an
+      // aggregation is server-only with no cache fallback — it must never
+      // stand between the reader and comments already in hand.
       setStatus('ready');
-    })().catch((error) => {
-      if (isReadTimeout(error)) console.warn('The comment thread did not answer in time', error);
-      else console.error('The comment thread could not be loaded', error);
-      if (!active) return;
-      // A failed refresh behind an already-visible cached thread stays quiet
-      // (the cached view keeps standing); an explicit retry reports honestly.
-      if (openedSeeded.current && attempt === 0) return;
-      // Never 'ready': a timeout says nothing about whether comments exist, so
-      // it must not be allowed to render "nobody has commented yet".
-      setStatus('error');
-    });
+      if (keys.length === 0) {
+        // No stub means no thread: zero is knowledge already in hand, not a
+        // number worth an aggregation read.
+        setCount({ count: 0, capped: false });
+        return;
+      }
+      Promise.all(keys.map(key => withReadTimeout(fetchCommentCount(key), { label: 'comment count' })
+        .catch(() => null)))
+        .then(counts => {
+          if (!active || counts.every(entry => entry === null)) return;
+          const total = counts.reduce((sum, entry) => sum + (entry?.count ?? 0), 0);
+          setCount({ count: total, capped: counts.some(entry => entry?.capped) });
+        });
+    };
+
+    patientRead(loadThread, {
+      attempts: 2,
+      label: 'comment thread',
+      // The truth at the first timeout is "slow", not "failed": the interface
+      // says so, keeps the retry racing, and any answer replaces the notice.
+      onSlow: () => {
+        if (!active) return;
+        if (openedSeeded.current && attempt === 0) return;
+        setStatus('slow');
+      },
+      // A stall that ends at nine seconds heals the sheet at nine seconds.
+      onLateResult: apply,
+    })
+      .then(apply)
+      .catch((error) => {
+        if (isReadTimeout(error)) {
+          // Already showing 'slow', and onLateResult stays armed. Saying
+          // "could not be loaded" here blamed the server for a slow answer —
+          // disproved by the instant success on the next tap.
+          console.warn('The comment thread did not answer in time', error);
+          return;
+        }
+        console.error('The comment thread could not be loaded', error);
+        if (!active) return;
+        // A failed refresh behind an already-visible cached thread stays quiet
+        // (the cached view keeps standing); an explicit retry reports honestly.
+        if (openedSeeded.current && attempt === 0) return;
+        setStatus('error');
+      });
     return () => { active = false; };
   }, [paper, attempt]);
 
@@ -633,9 +675,9 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               <div className="comment-row-skeleton" />
             </div>
           )}
-          {status === 'error' && (
-            <div className="comments-sheet-state">
-              <p>{text(COPY.loadError)}</p>
+          {(status === 'error' || status === 'slow') && (
+            <div className="comments-sheet-state" aria-busy={status === 'slow'}>
+              <p>{text(status === 'slow' ? COPY.slowLoad : COPY.loadError)}</p>
               <button
                 type="button"
                 className="comments-sheet-more"
