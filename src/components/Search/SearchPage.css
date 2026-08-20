@@ -815,29 +815,114 @@
   }
 }
 
-/* The way into the user search (F9). A quiet row rather than a pill in the
-   filter bar: those filter these results, and this one leaves for another
-   page — searching PaperTok accounts, not the literature. */
-.search-people-link {
-  display: inline-flex;
+/* ─── People (F9) ───
+   The rows themselves reuse .search-item and .search-item-avatar, which
+   already paint a monogram for OpenAlex authors — so a person costs no new row
+   styling at all. What is new is only what a person section can say when it has
+   nothing to list: sign in, that failed, or "this searches from the start". */
+.search-users-note {
+  display: flex;
   align-items: center;
-  gap: var(--space-2);
-  align-self: flex-start;
-  margin-top: var(--space-2);
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--bg-glass);
+  gap: 12px;
+  min-height: 58px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.025);
   color: var(--text-secondary);
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast);
+  animation: searchSectionIn 0.2s ease-out both;
 }
 
-.search-people-link:hover,
-.search-people-link:focus-visible {
-  border-color: var(--border-strong);
+.search-users-note > svg {
+  flex-shrink: 0;
+  /* --text-secondary and not --text-muted: the latter is used seven times in
+     this file and defined nowhere, so every one of those declarations is
+     dropped in silence. Pre-existing, not this section's to fix — but not
+     something to add an eighth instance of either. */
+  color: var(--text-secondary);
+}
+
+.search-users-note--error {
+  border-color: rgba(248, 113, 113, 0.22);
+  background: rgba(127, 29, 29, 0.12);
+  color: #fca5a5;
+}
+
+.search-users-note--error > svg {
+  color: #fca5a5;
+}
+
+.search-users-note-copy {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.search-users-note-copy strong {
   color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 650;
+}
+
+.search-users-note-copy span {
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.search-users-action,
+.search-users-more {
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 0 16px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+
+.search-users-more {
+  align-self: flex-start;
+  margin-top: 2px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .search-users-action:hover,
+  .search-users-more:hover {
+    border-color: rgba(167, 139, 250, 0.34);
+    background: rgba(255, 255, 255, 0.1);
+  }
+}
+
+.search-users-action:focus-visible,
+.search-users-more:focus-visible {
+  outline: 2px solid rgba(167, 139, 250, 0.9);
+  outline-offset: 2px;
+}
+
+.search-users-spinner {
+  animation: searchInputSpin 720ms linear infinite;
+}
+
+@media (max-width: 520px) {
+  .search-users-note {
+    flex-wrap: wrap;
+  }
+
+  .search-users-action {
+    margin-left: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .search-users-note,
+  .search-users-spinner {
+    animation: none;
+  }
 }

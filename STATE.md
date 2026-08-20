@@ -1,5 +1,162 @@
 # Estado / pendientes
 
+## Un solo buscador: las personas entran donde ya se buscan papers (2026-08-20)
+
+**Implementado, tests verdes, SIN commitear y SIN desplegar.** No toca
+`firestore.rules` ni una línea, así que no hay despliegue de rules. La pasada
+con sesión está pendiente — lista de pasos al final.
+
+La búsqueda de personas deja de ser una página aparte (`/search/users`) y pasa
+a ser una sección más del buscador de `/search`, con su píldora **"Users" /
+"Usuarios"** como filtro. La página antigua se **borra**, sin redirect: la UI de
+F9 nunca llegó a desplegarse, así que no existe ni un enlace a esa ruta en
+ninguna parte. Comprobado en vivo: `/search/users` cae al feed por el catch-all,
+sin pantalla en blanco.
+
+### Cómo se mezclan los dos buscadores
+
+**No se mezclan fila a fila, y esa es la decisión.** OpenAlex devuelve su propio
+ranking de relevancia y Firestore devuelve orden lexicográfico sobre un prefijo;
+no hay forma honesta de comparar la puntuación de un paper con la de un handle.
+Inventar una puntuación global sería mentir. Así que las personas son una
+sección como las otras cinco.
+
+| Pregunta | Respuesta |
+| --- | --- |
+| Orden **dentro** de la sección | El contrato que ya existía y ya estaba testeado: `mergeUserSearchResults` pone las coincidencias de handle antes que las de nombre, deduplicadas por uid. Sin tocar. |
+| Orden **entre** secciones | El mismo heurístico que ya ordenaba las cinco. `users` entra en `DEFAULT_SECTION_ORDER` en segunda posición y **el primero** en `exactPriority`. |
+| Cuándo mandan las personas | Una coincidencia exacta con handle o nombre, o un término que empieza por `@`. |
+| Por qué segundas y no primeras | Un prefijo de dos letras coincide con alguien por accidente, así que una sección de personas no vacía no es por sí sola prueba de intención. Primera pondría desconocidos por encima de la literatura en cada búsqueda. |
+
+**Detalle que muerde:** `getSearchSectionOrder` puntúa 99 a las secciones
+desconocidas. Una sección pintada por la página pero ausente de
+`DEFAULT_SECTION_ORDER` queda la última en todas las búsquedas, en silencio y
+para siempre. Hay un test que lo fija.
+
+### Dos relojes, una caja de texto
+
+El abanico externo mantiene su debounce de 320 ms. La consulta de personas va en
+**un efecto aparte con los 400 ms que fijó P16** y su mínimo de 2 caracteres, así
+que una palabra tecleada cuesta una búsqueda y dos lecturas, no una por letra.
+La razón de la asimetría: OpenAlex y OpenAIRE son cuota de otro, Firestore es
+nuestra factura.
+
+Y la píldora es **puerta de gasto además de filtro**: con cualquier filtro que
+no sea "Todo" o "Usuarios", no se emite ninguna consulta a Firestore. Elegir
+"Usuarios" con un término ya escrito dispara la búsqueda.
+
+### Qué pasa si uno responde y el otro no
+
+Las cinco fuentes externas siguen en `settleSearch`, que nunca rechaza, y el
+banner de siempre distingue "Resultados parciales" de "La búsqueda no está
+disponible". **Las personas no entran en ese banner**, y hay un test que lo
+impide, por dos razones:
+
+1. El botón de reintentar del banner relanza las cinco fuentes externas —
+   gastar cuota de OpenAlex no arregla un tropiezo de Firestore.
+2. `openAlexUnavailable` dice literalmente "OpenAlex no está disponible". Si un
+   fallo nuestro entrara ahí, la página estaría atribuyendo a un tercero un
+   fallo propio. Misma familia de mentira que la guillotina de 6 s que ya se
+   corrigió en la pasada de fiabilidad.
+
+La sección lleva **su propio estado en línea**, con `patientRead`: reintentos
+acotados sin abandonar los anteriores, gana el primero que conteste, "está
+tardando más de lo normal" en vez de "ha fallado", y **la respuesta tardía se
+entrega igual** por `onLateResult`. Un parón que acaba a los nueve segundos cura
+la sección a los nueve segundos sin tocar nada.
+
+### Sin sesión
+
+La píldora **se queda visible y seleccionable** — esconderla deja "¿por qué no
+encuentro a nadie?" sin respuesta. En su lugar aparece una fila que dice lo que
+es verdad: encontrar personas necesita cuenta, con el botón que abre el
+`AuthPrompt` que ya existe, y una línea aclarando que papers, instituciones y
+proyectos siguen abiertos a todo el mundo. **Cero consultas a Firestore.**
+
+Lo importante es el mapeo: `UserSearchAuthRequiredError` va a ese estado y
+**nunca** al banner de error. Sin eso, un visitante leería "la búsqueda no está
+disponible temporalmente", que es falso — no está rota, está cerrada para él.
+
+**Hoy esto es una rama latente**: `/search` está detrás de `ProtectedRoute`, así
+que ningún visitante sin sesión llega. Se construye igual porque el servicio
+rechaza antes de la red pase lo que pase, y porque abrir el buscador de papers a
+invitados es la dirección natural del viaje — cuando pase, degrada solo.
+
+### Lo demás que entró
+
+- **La arroba.** `normalizeUserSearchTerm('@nick')` devolvía `'@nick'` y los
+  handles se guardan sin ella, así que buscar `@nick` no encontraba a nadie —
+  la búsqueda más segura que hace nadie, teclear el handle que ya conoce.
+  Ahora se quita. **Solo del lado de la consulta**: `toIndexedName`, que espeja
+  el `.lower()` del motor de rules, no se toca.
+- **Fila de persona**: reutiliza `.search-item` y `.search-item-avatar`, que ya
+  pintaban monograma para los autores de OpenAlex — **cero CSS nuevo de fila**.
+  Sin foto (el índice no la guarda) y **sin botón de seguir**: seguir a una
+  persona es el grafo `follows/` de F2, y saber si ya la sigues sería una
+  lectura por fila, la familia de bug de R7. Vive en el perfil que la fila abre.
+- **El aviso de prefijo sobrevive**, y ahora hace más falta: una sección de
+  personas vacía al lado de diez papers se lee como "esta persona no está en
+  PaperTok", y casi siempre es falso.
+- En la vista "Todo" se muestran **5 personas** como mucho, con un "ver las N"
+  que cambia a la píldora Usuarios; bajo la píldora salen todas.
+- El título de sección desambigua: "Usuarios de PaperTok" frente a "Autores",
+  que son los que firman papers en OpenAlex. La píldora se queda corta.
+
+### Costes
+
+**La carga de feed sigue costando 1 lectura, y el test estructural pasa sin
+tocarlo.** `SearchPage` no está entre los cinco módulos que vigila, y la
+dirección del import es `SearchPage → PaperCard`, nunca al revés. Una búsqueda
+de personas ejecutada sigue siendo 2 queries acotadas; cero lecturas por fila
+pintada.
+
+### Tests
+
+- **670 unitarios** (11 nuevos): `searchRelevance.test.js` nace de cero — el
+  orden de secciones no tenía tests —, `searchIntegration.test.js` fija los
+  cuatro invariantes que un refactor rompería en silencio, y los de la arroba.
+- Lint y build limpios.
+
+### Bug preexistente encontrado, no arreglado aquí
+
+**`--text-muted` no está definido en ninguna parte**, y `SearchPage.css` lo usa
+**7 veces**. Las siete declaraciones se caen en silencio y esos elementos
+heredan el color del padre en vez de atenuarse. Es exactamente la clase de bug
+que `profileStyles.test.js` existe para cazar — se destapó al intentar apuntar
+ese test al fichero nuevo.
+
+No se arregla aquí porque definirlo **cambia cómo se ve la página de búsqueda**,
+y eso no es de esta fase. El CSS nuevo usa `--text-secondary` para no añadir una
+octava instancia. `profileStyles.test.js` documenta el hueco con su motivo, y
+añadir `SearchPage.css` a su lista es una línea en cuanto se decida el token.
+
+### Pendiente de tu sesión
+
+`/search` exige sesión, así que la pasada visual es tuya. Servidor de dev
+levantado en esta sesión si lo quieres. Qué mirar:
+
+1. La píldora **Usuarios** en segunda posición, y que seleccionarla deje solo
+   personas.
+2. Buscar `mug` y `nicolás` → las dos cuentas, con monograma, nombre y @handle,
+   sin foto y sin botón de seguir. Pulsar una abre su perfil público.
+3. Buscar `@mugar` → la sección de personas **sube arriba del todo**.
+4. Buscar `mugar` a secas (coincidencia exacta de handle) → también arriba.
+5. Buscar `CRISPR` → sección de personas ausente, papers arriba, y el resto del
+   buscador exactamente como estaba.
+6. Con el filtro Usuarios, escribir una sola letra → "escribe al menos 2
+   caracteres", no "sin resultados".
+7. Un término que no encuentre a nadie → el aviso de prefijo, no un vacío mudo.
+
+### Fuera, a propósito
+
+- **El icono en la Navbar.** Sigue siendo de la rama del compañero.
+- **Abrir `/search` a invitados.** El estado sin sesión está construido y
+  probado, pero quitar el `ProtectedRoute` es un cambio de alcance que no
+  pediste.
+- **Prefijo, no substring ni typos.** Sin cambios: sigue en `02-SECURITY.md` §7.
+- **La nota en `04-PHASES.md`.** Otra sesión tiene ese fichero con cambios sin
+  commitear (P17); anotarlo ahí ahora sería pisarla.
+
 ## Endurecimiento de F9 — pasada hostil sobre P16 (2026-08-20)
 
 **Rules desplegadas en `papertok-168df`. La app NO necesita despliegue todavía**

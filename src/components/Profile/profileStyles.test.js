@@ -20,7 +20,13 @@ const OWNED = [
   '../Comments/CommentsSheet.css',
   '../Settings/MyCommentsPage.css',
   '../Admin/ModerationPage.css',
-  '../Search/UserSearchPage.css',
+  // `../Search/UserSearchPage.css` was here until the standalone people search
+  // was folded into SearchPage. SearchPage.css does NOT replace it in this
+  // list, and that is a deliberate hole with a date on it: pointing the check
+  // at that file today reports `--text-muted`, used there seven times and
+  // defined nowhere — a real instance of exactly the bug this test exists to
+  // catch, but a pre-existing one whose fix changes how the search page looks.
+  // Adding the file is a one-line change once that token is dealt with.
 ];
 
 test('every design token used by the profile screens is actually defined', async () => {

@@ -32,7 +32,17 @@ import { PaperBuilder } from '../../services/PaperBuilder';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { useAuth } from '../../context/AuthContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
+import {
+  USER_SEARCH_DEBOUNCE_MS,
+  USER_SEARCH_MIN_LENGTH,
+  UserSearchAuthRequiredError,
+  isSearchableTerm,
+  normalizeUserSearchTerm,
+  searchUsers,
+} from '../../services/userSearchService';
+import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
@@ -51,15 +61,30 @@ const SEARCH_DEBOUNCE_MS = 320;
 const SEARCH_TIMEOUT_MS = 6000;
 const SEARCH_MIN_LOADING_MS = 180;
 const SEARCH_INITIAL_REVEAL_MS = 520;
+const USER_SEARCH_TIMEOUT_MS = 6000;
+/** How many people the combined view shows before the Users pill takes over. */
+const USER_ROWS_IN_ALL = 5;
 
+// `users` sits second: the pill has to be findable, and putting it next to
+// `authors` is exactly where the two get confused. They are different things —
+// `authors` is whoever wrote a paper, from OpenAlex; `users` is somebody with an
+// account here — so they are kept apart in the bar and the section titles say
+// which is which.
 const SEARCH_FILTER_OPTIONS = [
   { id: 'all', labelEs: 'Todo', labelEn: 'All', Icon: Search },
+  { id: 'users', labelEs: 'Usuarios', labelEn: 'Users', Icon: UserRound },
   { id: 'papers', labelEs: 'Papers', labelEn: 'Papers', Icon: FileText },
   { id: 'institutions', labelEs: 'Instituciones', labelEn: 'Institutions', Icon: Building2 },
   { id: 'authors', labelEs: 'Autores', labelEn: 'Authors', Icon: Users },
   { id: 'projects', labelEs: 'Proyectos', labelEn: 'Projects', Icon: Briefcase },
   { id: 'topics', labelEs: 'Temas', labelEn: 'Topics', Icon: Lightbulb },
 ];
+
+/** The monogram a result row paints. The index holds no photo, by design. */
+function initialOf(name, handle) {
+  const source = (name || handle || '?').trim();
+  return source.charAt(0).toUpperCase() || '?';
+}
 
 const wait = (delayMs) => new Promise(resolve => setTimeout(resolve, delayMs));
 
@@ -128,10 +153,11 @@ function formatPaperDate(paper, locale) {
   return paper.year ? String(paper.year) : null;
 }
 
-export default function SearchPage({ onSaveToList = () => {} }) {
+export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = () => {} }) {
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const { language, isEnglish, locale } = useLanguage();
+  const { user } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
@@ -151,6 +177,16 @@ export default function SearchPage({ onSaveToList = () => {} }) {
   const [institutionResults, setInstitutionResults] = useState([]);
   const [conceptResults, setConceptResults] = useState([]);
   const [projectResults, setProjectResults] = useState([]);
+  // People are kept out of the five arrays above and out of `searchIssue` on
+  // purpose. Those five are OpenAlex and OpenAIRE — somebody else's quota,
+  // reached over HTTP, and the banner that reports them says "OpenAlex is
+  // unavailable". This one is our own Firestore, on our own bill, and a
+  // Firestore hiccup announced under a third party's name is the same class of
+  // lie as telling a signed-out visitor the search is broken. It gets its own
+  // state, reported inside its own section, with its own action.
+  const [userResults, setUserResults] = useState([]);
+  // idle | searching | slow | done | failed | needs-session
+  const [userStatus, setUserStatus] = useState('idle');
   
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaper, setPdfPaper] = useState(null);
@@ -160,6 +196,7 @@ export default function SearchPage({ onSaveToList = () => {} }) {
   const timeoutRef = useRef(null);
   const requestAbortRef = useRef(null);
   const searchIdRef = useRef(0);
+  const userSearchIdRef = useRef(0);
   const getInteractionState = useCallback((paper) => ({
     isLiked: likedPaperIds.has(paper.id),
     isSaved: savedPaperIds.has(paper.id),
@@ -171,6 +208,11 @@ export default function SearchPage({ onSaveToList = () => {} }) {
     setInstitutionResults([]);
     setConceptResults([]);
     setProjectResults([]);
+    // Invalidates whatever user search is in flight, so a late answer cannot
+    // repopulate a list the typing has already moved past.
+    userSearchIdRef.current += 1;
+    setUserResults([]);
+    setUserStatus('idle');
   }, []);
 
   const performSearch = useCallback(async (searchTerm) => {
@@ -320,6 +362,77 @@ export default function SearchPage({ onSaveToList = () => {} }) {
     };
   }, [clearResults, query, performSearch]);
 
+  // People are only looked up when a section is going to show them. The other
+  // five sources are somebody else's quota and cost nothing to over-ask; this
+  // one is two Firestore reads on a free tier whose daily quota is the real
+  // backstop, so the pill is a spend gate as much as a filter.
+  const usersRequested = activeSearchFilter === 'all' || activeSearchFilter === 'users';
+
+  const performUserSearch = useCallback(async (term) => {
+    const searchId = ++userSearchIdRef.current;
+    const isCurrent = () => searchId === userSearchIdRef.current;
+
+    // Checked before the request, not after it fails: the service refuses a
+    // signed-out search before the network, and a visitor being told the search
+    // is broken when it is only closed to them is a lie the UI would be telling
+    // on its own.
+    if (!user) {
+      setUserResults([]);
+      setUserStatus('needs-session');
+      return;
+    }
+
+    setUserStatus('searching');
+    try {
+      // Firestore has no client timeout: against a connection that is open but
+      // silent the promise never settles. `patientRead` bounds the wait without
+      // throwing the answer away — later attempts run alongside the first, the
+      // quickest wins, and an answer that arrives after everything expired is
+      // still delivered, so a stall that ends at nine seconds heals the section
+      // at nine seconds with nobody touching anything.
+      const found = await patientRead(() => searchUsers(term), {
+        attempts: 2,
+        ms: USER_SEARCH_TIMEOUT_MS,
+        label: 'user search',
+        onSlow: () => { if (isCurrent()) setUserStatus('slow'); },
+        onLateResult: (rows) => {
+          if (!isCurrent()) return;
+          setUserResults(rows);
+          setUserStatus('done');
+        },
+      });
+      if (!isCurrent()) return;
+      setUserResults(found);
+      setUserStatus('done');
+    } catch (error) {
+      if (!isCurrent()) return;
+      if (error instanceof UserSearchAuthRequiredError) {
+        setUserResults([]);
+        setUserStatus('needs-session');
+        return;
+      }
+      setUserResults([]);
+      // A timeout is not a failure, it is a wait that is still running: the
+      // late answer may still land through onLateResult.
+      if (isReadTimeout(error)) {
+        setUserStatus('slow');
+        return;
+      }
+      console.error('User search failed:', error);
+      setUserStatus('failed');
+    }
+  }, [user]);
+
+  // The second clock. The fan-out above debounces at 320 ms against APIs that
+  // do not bill us; this one waits the 400 ms the design fixed, and never fires
+  // per keystroke, so one typed word costs one search and two reads.
+  useEffect(() => {
+    const term = normalizeUserSearchTerm(query);
+    if (!usersRequested || !isSearchableTerm(term)) return undefined;
+    const timer = setTimeout(() => performUserSearch(term), USER_SEARCH_DEBOUNCE_MS);
+    return () => clearTimeout(timer);
+  }, [query, usersRequested, performUserSearch]);
+
   const handleToggleFollow = async (e, entity) => {
     e.stopPropagation();
     try {
@@ -332,6 +445,25 @@ export default function SearchPage({ onSaveToList = () => {} }) {
   const orcidMatch = query.match(/\b(\d{4}-\d{4}-\d{4}-\d{3}[\dX])\b/i);
   const cleanOrcid = orcidMatch ? orcidMatch[1].toUpperCase() : null;
 
+  // The users section speaks for itself even with nothing to list: it has to be
+  // able to say "sign in", "that did not work", or "this searches from the
+  // start of a name". An empty people section next to ten papers would
+  // otherwise read as "this person is not on PaperTok", which is usually false.
+  // Below the minimum no query is issued at all, so the section would stay
+  // silent and the page would fall through to "No results found for n" — which
+  // is not what happened. Only under the Users pill: in the combined view a
+  // one-letter term is just a search still being typed.
+  const typedUserTerm = normalizeUserSearchTerm(query);
+  const userTermTooShort = activeSearchFilter === 'users'
+    && typedUserTerm.length > 0
+    && typedUserTerm.length < USER_SEARCH_MIN_LENGTH;
+  const usersHaveSomethingToSay = usersRequested
+    && (userStatus !== 'idle' || userTermTooShort);
+  const visibleUserRows = activeSearchFilter === 'users'
+    ? userResults
+    : userResults.slice(0, USER_ROWS_IN_ALL);
+  const userRowsTruncated = userResults.length > visibleUserRows.length;
+
   const hasSearchSectionResults = paperResults.length > 0
     || authorResults.length > 0
     || institutionResults.length > 0
@@ -339,22 +471,27 @@ export default function SearchPage({ onSaveToList = () => {} }) {
     || projectResults.length > 0;
   const hasResults = hasSearchSectionResults || !!cleanOrcid;
   const hasVisibleResults = activeSearchFilter === 'all'
-    ? hasResults
-    : activeSearchFilter === 'papers'
-      ? paperResults.length > 0
-      : activeSearchFilter === 'institutions'
-        ? institutionResults.length > 0
-        : activeSearchFilter === 'authors'
-          ? authorResults.length > 0 || !!cleanOrcid
-          : activeSearchFilter === 'projects'
-            ? projectResults.length > 0
-            : conceptResults.length > 0;
+    ? hasResults || usersHaveSomethingToSay
+    : activeSearchFilter === 'users'
+      ? usersHaveSomethingToSay
+      : activeSearchFilter === 'papers'
+        ? paperResults.length > 0
+        : activeSearchFilter === 'institutions'
+          ? institutionResults.length > 0
+          : activeSearchFilter === 'authors'
+            ? authorResults.length > 0 || !!cleanOrcid
+            : activeSearchFilter === 'projects'
+              ? projectResults.length > 0
+              : conceptResults.length > 0;
   const activeFilterOption = SEARCH_FILTER_OPTIONS.find(option => option.id === activeSearchFilter)
     || SEARCH_FILTER_OPTIONS[0];
   const preferredSection = resolvePreferredSearchSection({
     query,
     hint: searchIntent,
     sectionValues: {
+      // Both fields: an exact handle and an exact display name are each the
+      // strongest evidence available that a person was meant.
+      users: userResults.flatMap(person => [person.handle, person.name]),
       papers: paperResults.map(paper => paper.title),
       topics: conceptResults.flatMap(concept => [
         concept.display_name,
@@ -504,19 +641,6 @@ export default function SearchPage({ onSaveToList = () => {} }) {
           })}
         </div>
 
-        {/* Finding PaperTok accounts is a different search from this one: the
-            pills above search the literature through OpenAlex, where "Autores"
-            means the author of a paper, not somebody with an account here. The
-            provisional home for this entry point — the Navbar icon arrives with
-            the branch that owns that file. */}
-        <button
-          type="button"
-          className="search-people-link"
-          onClick={() => navigate('/search/users')}
-        >
-          <UserRound size={15} aria-hidden="true" />
-          <span>{isEnglish ? 'Find people on PaperTok' : 'Buscar personas en PaperTok'}</span>
-        </button>
       </div>
 
       <div className="search-results custom-scrollbar">
@@ -644,6 +768,136 @@ export default function SearchPage({ onSaveToList = () => {} }) {
                 )}
 
                 <OrderedSearchSections preferredSection={preferredSection}>
+            {usersHaveSomethingToSay && (
+              <div className="search-section" data-section="users">
+                {/* "Users" on the pill, but the heading says which users: the
+                    Authors section right below is OpenAlex paper authors, and
+                    the two are genuinely different things. */}
+                <h3 className="search-section-title">
+                  {isEnglish ? 'PaperTok users' : 'Usuarios de PaperTok'}
+                </h3>
+
+                {userTermTooShort && (
+                  <div className="search-users-note" role="status">
+                    <UserRound size={18} aria-hidden="true" />
+                    <div className="search-users-note-copy">
+                      <span>{isEnglish
+                        ? `Type at least ${USER_SEARCH_MIN_LENGTH} characters to search people.`
+                        : `Escribe al menos ${USER_SEARCH_MIN_LENGTH} caracteres para buscar personas.`}</span>
+                    </div>
+                  </div>
+                )}
+
+                {!userTermTooShort && userStatus === 'needs-session' && (
+                  <div className="search-users-note" role="status">
+                    <UserRound size={18} aria-hidden="true" />
+                    <div className="search-users-note-copy">
+                      <strong>{isEnglish
+                        ? 'Finding people needs an account'
+                        : 'Encontrar personas necesita una cuenta'}</strong>
+                      <span>{isEnglish
+                        ? 'Papers, institutions and projects stay open to everyone.'
+                        : 'Los papers, las instituciones y los proyectos siguen abiertos a todo el mundo.'}</span>
+                    </div>
+                    <button type="button" className="search-users-action" onClick={onAuthRequired}>
+                      {isEnglish ? 'Sign in' : 'Iniciar sesión'}
+                    </button>
+                  </div>
+                )}
+
+                {(userStatus === 'searching' || userStatus === 'slow') && (
+                  <div className="search-users-note" role="status">
+                    <LoaderCircle size={18} className="search-users-spinner" aria-hidden="true" />
+                    <div className="search-users-note-copy">
+                      <span>{userStatus === 'slow'
+                        ? (isEnglish
+                          ? 'This is taking longer than usual.'
+                          : 'Está tardando más de lo normal.')
+                        : (isEnglish ? 'Searching people…' : 'Buscando personas…')}</span>
+                    </div>
+                  </div>
+                )}
+
+                {userStatus === 'failed' && (
+                  <div className="search-users-note search-users-note--error" role="alert">
+                    <AlertCircle size={18} aria-hidden="true" />
+                    <div className="search-users-note-copy">
+                      <span>{isEnglish
+                        ? 'People could not be loaded.'
+                        : 'No se han podido cargar las personas.'}</span>
+                    </div>
+                    {/* Retries only this, never the five external sources: the
+                        banner's retry spends OpenAlex quota, which cannot fix
+                        a Firestore hiccup. */}
+                    <button
+                      type="button"
+                      className="search-users-action"
+                      onClick={() => performUserSearch(normalizeUserSearchTerm(query))}
+                    >
+                      {isEnglish ? 'Try again' : 'Reintentar'}
+                    </button>
+                  </div>
+                )}
+
+                {userStatus === 'done' && userResults.length === 0 && (
+                  <div className="search-users-note" role="status">
+                    <UserRound size={18} aria-hidden="true" />
+                    <div className="search-users-note-copy">
+                      <strong>{isEnglish ? 'Nobody matches that.' : 'No hay nadie con ese nombre.'}</strong>
+                      {/* The prefix limit said out loud. Without it an empty
+                          people section beside a full page of papers reads as
+                          "this person is not on PaperTok", which is usually
+                          false — it only searches from the start. */}
+                      <span>{isEnglish
+                        ? 'It searches from the start of the handle or the name, so "nico" finds "Nicolás" but "muñoz" does not.'
+                        : 'Busca desde el principio del handle o del nombre, así que "nico" encuentra "Nicolás" pero "muñoz" no.'}</span>
+                    </div>
+                  </div>
+                )}
+
+                {visibleUserRows.map((person, index) => (
+                  <div
+                    key={person.uid}
+                    className="search-item search-item-enter"
+                    style={{ '--search-item-index': Math.min(index, 6) }}
+                    role="link"
+                    tabIndex={0}
+                    onClick={() => navigate(`/public/user/${person.handle}`)}
+                    onKeyDown={event => handleSearchItemKeyDown(
+                      event,
+                      () => navigate(`/public/user/${person.handle}`),
+                    )}
+                  >
+                    {/* A monogram, not a photo: the index carries no photo, and
+                        that is the point rather than an omission — the picture
+                        is exactly what the F1 review closed the directory on.
+                        No follow button either: following a person is the F2
+                        graph, and knowing whether you already do would be one
+                        read per row. It lives on the profile this opens. */}
+                    <div className="search-item-avatar">
+                      {initialOf(person.name, person.handle)}
+                    </div>
+                    <div className="search-item-info">
+                      <h4>{person.name || person.handle}</h4>
+                      <p>@{person.handle}</p>
+                    </div>
+                  </div>
+                ))}
+
+                {userRowsTruncated && (
+                  <button
+                    type="button"
+                    className="search-users-more"
+                    onClick={() => handleSearchFilterChange('users')}
+                  >
+                    {isEnglish
+                      ? `See all ${userResults.length} people`
+                      : `Ver las ${userResults.length} personas`}
+                  </button>
+                )}
+              </div>
+            )}
+
             {institutionResults.length > 0 && (activeSearchFilter === 'all' || activeSearchFilter === 'institutions') && (
               <div className="search-section" data-section="institutions">
                 <h3 className="search-section-title">{isEnglish ? 'Universities and institutions' : 'Universidades e instituciones'}</h3>

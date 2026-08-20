@@ -123,9 +123,23 @@ test('the entry lives under the uid, matching its profile', () => {
 
 test('a term is trimmed, collapsed and lowercased before it is sent', () => {
   assert.equal(normalizeUserSearchTerm('  Nico   Muñoz '), 'nico muñoz');
-  assert.equal(normalizeUserSearchTerm('@NICK'), '@nick');
   assert.equal(normalizeUserSearchTerm(null), '');
   assert.equal(normalizeUserSearchTerm('x'.repeat(200)).length, 80, 'bounded like the field');
+});
+
+test('a leading @ is dropped, because handles are stored without one', () => {
+  // Typing the exact handle you already know is the most confident search
+  // anybody makes, and with the sigil left on it returned nobody. It matters
+  // more now that this shares a box with paper search, where the @ is how you
+  // say "a person, not a paper".
+  assert.equal(normalizeUserSearchTerm('@NICK'), 'nick');
+  assert.equal(normalizeUserSearchTerm('  @nick_mugar '), 'nick_mugar');
+  assert.equal(normalizeUserSearchTerm('@@nick'), 'nick', 'a slip of the finger still searches');
+  // Only leading, and only the sigil: an @ inside a term is a character like
+  // any other, and the minimum length is measured after it goes.
+  assert.equal(normalizeUserSearchTerm('nick@home'), 'nick@home');
+  assert.equal(isSearchableTerm('@n'), false, 'one letter behind a sigil is still one letter');
+  assert.equal(isSearchableTerm('@ni'), true);
 });
 
 test('below the minimum, a search costs nothing at all', async () => {

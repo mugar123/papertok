@@ -143,10 +143,19 @@ export function userSearchReference(database, uid, document = doc) {
  */
 export function normalizeUserSearchTerm(value) {
   const term = typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+  // A leading @ is how people write a handle, and handles are stored without
+  // one. Left in place it turns the most confident search anybody makes —
+  // typing the exact handle they already know — into zero results. It matters
+  // more now that this shares a box with paper search, where an @ is the only
+  // way to say "I mean a person, not a paper".
+  //
+  // Query side only. `toIndexedName` below is the derivation the rules
+  // recompute with `.lower()`, and it is not touched here.
+  const withoutSigil = term.replace(/^@+/, '');
   // The same ASCII-only lowering the stored fields went through, or the query
   // would speak a case the index does not hold: "MUÑOZ" is stored as "muÑoz",
   // so a term lowered all the way to "muñoz" would match nothing.
-  return toIndexedName(term.slice(0, NAME_MAX));
+  return toIndexedName(withoutSigil.slice(0, NAME_MAX));
 }
 
 /** True when a term is worth spending two queries on. */

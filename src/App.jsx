@@ -19,7 +19,6 @@ import PDFViewer from './components/PDF/PDFViewer'
 import SaveToListModal from './components/Lists/SaveToListModal'
 import CommentsSheet from './components/Comments/CommentsSheet'
 import SearchPage from './components/Search/SearchPage'
-import UserSearchPage from './components/Search/UserSearchPage'
 import EntityExplorer from './components/Explorer/EntityExplorer'
 import ScientificReport from './components/Report/ScientificReport'
 import FollowingFeedPage from './components/Following/FollowingFeedPage'
@@ -153,26 +152,27 @@ function AppContent() {
               </ProtectedRoute>
             }
           />
+          {/* One search box. Papers, institutions, topics and projects come
+              from OpenAlex and OpenAIRE over HTTP; people come from
+              `userSearch/` in Firestore, behind a session the rules require of
+              the query itself. The Users pill filters this page rather than
+              leaving it, and it is also the spend gate: with any other filter
+              selected, no Firestore query is issued. */}
           <Route
             path="/search"
             element={
               <ProtectedRoute>
-                <PageTransition><SearchPage onSaveToList={setSaveModalPaper} /></PageTransition>
+                <PageTransition>
+                  <SearchPage
+                    onSaveToList={setSaveModalPaper}
+                    onAuthRequired={requestAuthentication}
+                  />
+                </PageTransition>
               </ProtectedRoute>
             }
           />
-          {/* Finding people (F9), a separate page from the paper search above:
-              that one searches the literature through OpenAlex, this one
-              searches PaperTok accounts through `userSearch/`. Behind a
-              session, which the rules also require of the query itself. */}
-          <Route
-            path="/search/users"
-            element={
-              <ProtectedRoute>
-                <PageTransition><UserSearchPage /></PageTransition>
-              </ProtectedRoute>
-            }
-          />
+          {/* The standalone /search/users page is gone, not redirected: F9's UI
+              was never deployed, so no link to it exists anywhere. */}
           {/* The user's own profile: the same page as /public/user/:handle,
               in owner mode. It renders even before a public profile exists. */}
           <Route
