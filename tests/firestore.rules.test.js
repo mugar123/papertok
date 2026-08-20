@@ -21,6 +21,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   deleteDoc,
+  deleteField,
   doc,
   getCountFromServer,
   getDoc,
@@ -914,27 +915,14 @@ test('F8: hiding pinned lists is a state the profile can carry', async () => {
 });
 
 test('F8: the stash works on an account whose user document is legacy', async () => {
-  // Accounts created by early versions carry fields (`email`, `displayName`,
-  // `photoURL`, `createdAt`) that the users/{uid} key allowlist never covered,
-  // so every merge write to that document is denied — a pre-existing bug this
-  // feature must not inherit. The stash is a subcollection precisely so it
-  // stays writable on those accounts.
+  // The stash is a subcollection partly because the parent document used to be
+  // unwritable on accounts of this vintage. That bug is fixed (see the section
+  // below), so both documents must now take a write — the parent because the
+  // fix works, the stash because the fix did not disturb it.
   await reset();
-  await testEnv.withSecurityRulesDisabled(async (context) => {
-    await setDoc(doc(context.firestore(), 'users', ALICE), {
-      onboardingComplete: true,
-      preferences: ['astro-ph.GA'],
-      email: 'alice@example.test',
-      displayName: 'Alice',
-      photoURL: 'https://example.test/a.png',
-      createdAt: new Date(),
-    });
-  });
+  await seedLegacyUserDoc();
   const db = asAlice();
-  // The parent document is indeed unwritable — that is the bug, asserted so
-  // its eventual fix is visible here too.
-  await assertFails(setDoc(doc(db, 'users', ALICE), { onboardingComplete: true }, { merge: true }));
-  // The stash is unaffected.
+  await assertSucceeds(setDoc(doc(db, 'users', ALICE), { onboardingComplete: true }, { merge: true }));
   await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'profileStash', 'pinnedLists'), {
     pinnedLists: [pin(ALICE_SHARE, 'Hidden')], updatedAt: serverTimestamp(),
   }));
@@ -961,4 +949,116 @@ test('F8: hiding pins writes both documents the way the client does', async () =
     pinnedLists: [], showPinnedLists: false, updatedAt: serverTimestamp(),
   });
   await assertSucceeds(batch.commit());
+});
+
+// =========================================================================
+// The legacy users/{uid} document
+//
+// An early version of the app wrote `email`, `displayName`, `photoURL` and
+// `createdAt` into users/{uid}. The key allowlist there never named them, and
+// every write the app makes to that document is a merge — so the allowlist
+// sees the whole merged document, finds four keys it does not know, and
+// denies. Confirmed in production: on an account of that vintage even an
+// idempotent `{ onboardingComplete: true }` came back permission-denied, which
+// took preferences, AI level, profile photo and the follows migration with it.
+//
+// The four keys are now tolerated but frozen: a write may carry them along, it
+// may not add, edit or drop one.
+// =========================================================================
+
+/** The Auth-copy fields an account of that vintage carries. */
+const LEGACY_FIELDS = {
+  email: 'alice@example.test',
+  displayName: 'Alice',
+  photoURL: 'https://example.test/a.png',
+  createdAt: new Date(2020, 0, 1),
+};
+
+/** Seeds users/{ALICE} as an old account, past the rules. Call after reset(). */
+async function seedLegacyUserDoc(extra = {}) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE), {
+      onboardingComplete: true,
+      preferences: ['astro-ph.GA'],
+      ...LEGACY_FIELDS,
+      ...extra,
+    });
+  });
+}
+
+test('an old account can make every write the app makes to its user document', async () => {
+  // One case per call site that was broken: completeOnboarding,
+  // updatePreferences, updateReadingPreferences, updateProfilePhoto and the
+  // followedAuthors migration in FollowingContext.
+  await reset();
+  await seedLegacyUserDoc();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE);
+  const writes = [
+    { onboardingComplete: true, preferences: ['cs.LG'] },
+    { preferences: ['math.AP', 'cs.CL'] },
+    { readingPreferences: { aiExplanationLevel: 'researcher', language: 'en', languagePreferenceSet: true } },
+    { profilePhoto: 'data:image/webp;base64,AAAA' },
+    { followedAuthors: [], followingMigratedAt: serverTimestamp() },
+  ];
+  for (const write of writes) {
+    await assertSucceeds(setDoc(ref, write, { merge: true }));
+  }
+});
+
+test('a legacy field cannot be given a new value', async () => {
+  // The reason the four keys are frozen rather than simply allowlisted: this
+  // document is owner-only, but `email` in it reads like identity, and an
+  // allowlist that admits the key hands the account holder a writable one.
+  await reset();
+  await seedLegacyUserDoc();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE);
+  const forgeries = [
+    { email: 'someone.else@example.test' },
+    { displayName: 'Administrator' },
+    { photoURL: 'https://example.test/other.png' },
+    { createdAt: new Date(1999, 0, 1) },
+  ];
+  for (const forgery of forgeries) {
+    await assertFails(setDoc(ref, forgery, { merge: true }));
+  }
+  // Rewriting a legacy field with the value it already holds is not a change,
+  // so it goes through — which is exactly what every merge write does.
+  await assertSucceeds(setDoc(ref, { email: LEGACY_FIELDS.email }, { merge: true }));
+});
+
+test('a user document without the legacy fields can never grow them', async () => {
+  // So the old shape is terminal: no document that lacks them acquires them.
+  await reset();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE);
+  // On create, where there is no previous value to compare against.
+  await assertFails(setDoc(ref, { onboardingComplete: true, email: 'new@example.test' }));
+  await assertSucceeds(setDoc(ref, { onboardingComplete: true }));
+  // And on a later write to the document that create produced.
+  await assertFails(setDoc(ref, { displayName: 'Alice' }, { merge: true }));
+});
+
+test('a legacy field cannot be dropped by the client either', async () => {
+  // Deleting them is the backfill's job (P10), and a backfill runs with a
+  // service identity, past these rules. Leaving the door open here would mean
+  // a client could remove `createdAt` from its own document on a whim.
+  await reset();
+  await seedLegacyUserDoc();
+  const db = asAlice();
+  await assertFails(updateDoc(doc(db, 'users', ALICE), { createdAt: deleteField() }));
+  await assertFails(updateDoc(doc(db, 'users', ALICE), { email: deleteField() }));
+});
+
+test('the key allowlist still bites on a legacy document', async () => {
+  // Tolerating four known keys is not the same as giving up on the allowlist:
+  // an unknown key and a wrongly typed value must still be refused there.
+  await reset();
+  await seedLegacyUserDoc();
+  const db = asAlice();
+  const ref = doc(db, 'users', ALICE);
+  await assertFails(setDoc(ref, { nickname: 'alice' }, { merge: true }));
+  await assertFails(setDoc(ref, { onboardingComplete: 'yes' }, { merge: true }));
+  await assertFails(setDoc(ref, { profilePhoto: 'x'.repeat(280_001) }, { merge: true }));
 });

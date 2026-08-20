@@ -1,5 +1,80 @@
 # Estado / pendientes
 
+## `users/{uid}` inescribible en cuentas antiguas — arreglado (2026-08-19)
+
+**Arreglado en rules, probado contra el emulador, pendiente de desplegar.** Bug
+preexistente, encontrado y diagnosticado durante F8; esta es su resolución.
+
+### El fallo
+
+Los documentos `users/{uid}` creados por una versión temprana llevan `email`,
+`displayName`, `photoURL` y `createdAt`. La lista blanca `userProfileKeys()` no
+los nombraba, y **todas** las escrituras de la app a ese documento son `merge`,
+así que `request.resource.data` es el documento entero ya fusionado: la lista
+blanca veía cuatro claves que no conocía y denegaba. Confirmado en producción
+sobre `@mugar` con una escritura idempotente (`{ onboardingComplete: true }`):
+`permission-denied`.
+
+Se llevaba por delante todo lo que escribe ese documento: `completeOnboarding`,
+`updatePreferences`, `updateReadingPreferences`, `updateProfilePhoto` y la
+migración de `followedAuthors` de `FollowingContext`.
+
+### La decisión: tolerar las cuatro claves, pero congeladas
+
+| Opción | Por qué |
+| --- | --- |
+| (a) Meterlas en `userProfileKeys()` y ya | Una línea, pero deja `email`, `displayName` y `photoURL` **escribibles por el cliente** en un documento que se lee como identidad, y permite que documentos nuevos adquieran la forma antigua: la haría permanente en vez de terminal. |
+| (b) Migrar los documentos y dejar la lista estrecha | Es el estado final correcto, pero necesita un backfill con identidad de servicio (P10, bloqueado en una acción humana). Mientras tanto ninguna cuenta antigua puede guardar nada. |
+| **(c) Tolerarlas y congelarlas** | Desbloquea hoy todas las escrituras, la lista blanca sigue siendo verdad (las cuatro claves se **toleran**, no se escriben) y la forma antigua queda **terminal**: un documento que no las tiene no puede adquirirlas. |
+
+Elegida **(c)**, y no cierra la puerta a (b): un backfill corre con identidad de
+servicio, por encima de las rules, y cuando los campos desaparezcan las
+cláusulas se quedan inertes solas.
+
+**Congelado** significa: una escritura puede arrastrar los campos con el valor
+que ya tienen — que es exactamente lo que hace un `merge` —, pero no puede
+**añadir, cambiar ni borrar** ninguno. Borrarlos es trabajo del backfill.
+
+| Archivo | Qué cambió |
+| --- | --- |
+| `firestore.rules` | `legacyUserKeys()` y `legacyUserFieldsUntouched()`; el `hasOnly` de `users/{uid}` pasa a `userProfileKeys().concat(legacyUserKeys())` |
+
+**Ni una línea de app**: la app dejó de escribir esos cuatro campos hace tiempo
+y nadie los lee — `AuthContext` solo mira `onboardingComplete`, `preferences`,
+`selectedCategories`, `followedAuthors`, `readingPreferences` y `profilePhoto`.
+Los cuatro son copias del registro de Firebase Auth, que sigue siendo la
+fuente de verdad.
+
+### Tests
+
+- **66 contra el emulador** (5 nuevos), más el test de F8 que asertaba que el
+  documento padre era inescribible, ahora invertido.
+- **Pasada de mutación: 5 mutantes, 5 muertos** — quitar el `concat`, quitar la
+  llamada a `legacyUserFieldsUntouched()`, forzar a `true` cada una de las dos
+  ramas del ternario, e intercambiar las ramas.
+- 531 unitarios y lint, sin cambios.
+
+### Cómo se manifestaba en pantalla (revisado, no tocado aquí)
+
+| Camino | Qué veía la persona |
+| --- | --- |
+| `updatePreferences` (Editar intereses) | **Se lo tragaba**: el estado local ya estaba puesto, el `catch` solo hacía `console.error` y el modal se quedaba abierto sin decir nada. Los intereses parecían guardados hasta recargar. |
+| `completeOnboarding` (alta) | **Se lo tragaba a medias**: `console.error` y se queda en el último paso, sin navegar y sin explicar por qué. |
+| Migración de `followedAuthors` | `console.warn`. Las aristas nuevas sí se escribían, pero `followingMigratedAt` no, así que la migración se reintentaba entera en cada sesión. |
+| Nivel de IA e idioma (Ajustes) | Correctos: `updateReadingPreferences` revierte el estado local y relanza, y la página pinta el error. |
+| Foto de perfil | Correcto: revierte y pinta el error. |
+
+Con las rules arregladas ninguno falla ya por este motivo, pero los tres
+primeros **seguirían tragándose cualquier otro fallo de escritura**. Trabajo
+aparte.
+
+### Qué desplegar
+
+`firebase deploy --only firestore:rules` desde `HEAD`. Es el mismo archivo que
+la fase 2 de F8, así que va con ella o después. **No necesita despliegue de
+app**: ningún cliente, viejo o nuevo, cambia de comportamiento salvo dejando de
+recibir `permission-denied`.
+
 ## Privacidad del perfil — F8 / P15 (2026-08-19)
 
 **Implementado, fase 1 de rules desplegada, verificado en vivo.** Fase escrita
@@ -112,8 +187,9 @@ Afecta a preferencias, nivel de IA, foto de perfil y la migración de
 seguimientos — conviene revisar si alguno lo traga en silencio. Hay una tarea
 aparte con el diagnóstico y tres opciones de arreglo. Esta fase **no lo
 arregla ni lo esquiva a medias**: guarda los pines en una subcolección, que no
-depende de esa lista blanca. Hay un test que asterta que el documento padre
-hoy es inescribible, para que el arreglo se note ahí también.
+depende de esa lista blanca. Hay un test que asertaba que el documento padre
+era inescribible, para que el arreglo se notase ahí también — y así fue:
+**arreglado**, ver la sección de arriba.
 
 ### Qué desplegar, en este orden
 
@@ -135,7 +211,8 @@ hoy es inescribible, para que el arreglo se note ahí también.
   intentando registrarlo.
 - Ocultar el grafo de seguidores de un perfil privado: costaría un `get()` por
   fila en una query de lista. Las aristas guardan solo uids.
-- Arreglar el bug de `users/{uid}` (tarea aparte, decisión de producto).
+- Arreglar el bug de `users/{uid}`: era tarea aparte y **ya está hecha**, en
+  la sección de arriba.
 
 ## Rediseño integral de perfil y ajustes — séptima pasada (2026-08-19)
 

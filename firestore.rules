@@ -125,6 +125,31 @@ service cloud.firestore {
       ];
     }
 
+    // Fields an early version of the app wrote into users/{uid} and nothing has
+    // written since; every one of them is a copy of the Firebase Auth record,
+    // which stays the source of truth. They are here because every write the
+    // app makes to that document is a merge, so `request.resource.data` is the
+    // whole merged document: an allowlist that does not name them denies every
+    // write on an account of that vintage, which is what it did.
+    //
+    // Tolerated, not writable — see legacyUserFieldsUntouched().
+    function legacyUserKeys() {
+      return ['email', 'displayName', 'photoURL', 'createdAt'];
+    }
+
+    // A write may carry the legacy fields along unchanged; it may not add, edit
+    // or drop one. So an account that has them keeps exactly the values it has,
+    // an account that does not can never acquire them, and tolerating the four
+    // keys above does not hand the account holder a writable `email` in a
+    // document that reads like identity. Deleting them is the backfill's job,
+    // and a backfill runs with a service identity, past these rules.
+    function legacyUserFieldsUntouched() {
+      return resource == null
+        ? !request.resource.data.keys().hasAny(legacyUserKeys())
+        : !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(legacyUserKeys());
+    }
+
     match /publicLists/{shareId} {
       allow read: if true;
       allow create: if ownsPublicListAfter(shareId)
@@ -475,7 +500,8 @@ service cloud.firestore {
     match /users/{userId} {
       allow read, delete: if ownsUserTree(userId);
       allow create, update: if ownsUserTree(userId)
-        && request.resource.data.keys().hasOnly(userProfileKeys())
+        && request.resource.data.keys().hasOnly(userProfileKeys().concat(legacyUserKeys()))
+        && legacyUserFieldsUntouched()
         && (!('onboardingComplete' in request.resource.data)
           || request.resource.data.onboardingComplete is bool)
         && (!('preferences' in request.resource.data)
@@ -507,12 +533,12 @@ service cloud.firestore {
       //
       // Firestore has no field-level security: hiding the pins means the array
       // cannot stay in the world-readable profile document at all, so it is
-      // parked here. A subcollection rather than a field on users/{uid}, for a
-      // concrete reason — accounts created by early versions carry fields
-      // (`email`, `displayName`, `photoURL`, `createdAt`) that the allowlist on
-      // that document does not include, which makes every merge write to it
-      // fail. That is a pre-existing bug of its own; this feature routes around
-      // it instead of widening an allowlist to accommodate it.
+      // parked here. It is a subcollection rather than a field on users/{uid}
+      // because when it was written that document was unwritable on every
+      // account of an early vintage — the legacy-key bug fixed just above.
+      // That second reason has expired. The shape stays: it is owner-only
+      // either way, and moving a working, already-deployed store would gain
+      // nothing.
       match /profileStash/{stashId} {
         allow read, delete: if ownsUserTree(userId);
         allow create, update: if ownsUserTree(userId)
