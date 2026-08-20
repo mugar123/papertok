@@ -195,8 +195,8 @@ function withPinCap(rules, size) {
       `        && (entries.size() < ${i + 1} || validPinnedList(entries[${i}]))`
     )),
     '    }',
-  ].join('\n').replace(/\)\)\n    }$/, '));\n    }');
-  const pattern = /    function validPinnedLists\(entries\) \{[\s\S]*?\n    \}/;
+  ].join('\n').replace(/\)\)\n {4}}$/, '));\n    }');
+  const pattern = / {4}function validPinnedLists\(entries\) \{[\s\S]*?\n {4}\}/;
   assert.match(rules, pattern, 'validPinnedLists must have been found');
   return rules.replace(pattern, body);
 }
@@ -211,8 +211,8 @@ function withShelfCap(rules, size) {
       `        && (entries.size() < ${i + 1} || validShowcaseCard(entries[${i}]))`
     )),
     '    }',
-  ].join('\n').replace(/\)\)\n    }$/, '));\n    }');
-  const pattern = /    function validShowcaseShelf\(entries\) \{[\s\S]*?\n    \}/;
+  ].join('\n').replace(/\)\)\n {4}}$/, '));\n    }');
+  const pattern = / {4}function validShowcaseShelf\(entries\) \{[\s\S]*?\n {4}\}/;
   assert.match(rules, pattern, 'validShowcaseShelf must have been found');
   return rules.replace(pattern, body);
 }
