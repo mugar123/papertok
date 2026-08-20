@@ -218,6 +218,14 @@ test('a merge names its fields, so createdAt is untouched without reading it', (
   assert.ok(!('createdAt' in write.update.fields));
 });
 
+test('a merge pinned to a version trades the exists check for that version', () => {
+  // One precondition or the other, never both: a version match already
+  // implies existence, and Firestore rejects a currentDocument with two keys.
+  const write = mergeWrite('n', { a: 1 }, { updateTime: '2026-08-20T19:00:00.123456Z' });
+  assert.deepEqual(write.currentDocument, { updateTime: '2026-08-20T19:00:00.123456Z' });
+  assert.deepEqual(write.updateMask, { fieldPaths: ['a'] });
+});
+
 test('clearing a field sends the mask and no value', () => {
   const write = clearFieldsWrite('n', ['publicShareId']);
   assert.deepEqual(write.updateMask, { fieldPaths: ['publicShareId'] });
@@ -257,6 +265,23 @@ test('a document reads back decoded, with the bearer token attached', async () =
   ));
   assert.deepEqual(await admin.getDocument(['publicListOwners', 'abc']), { ownerId: 'alice' });
   assert.equal(calls[0].init.headers.authorization, 'Bearer tok');
+});
+
+test('withMeta pairs the data with the version a precondition needs', async () => {
+  const { admin } = adminWith(async () => new Response(
+    JSON.stringify({
+      fields: { handle: { stringValue: 'alice' } },
+      updateTime: '2026-08-20T19:00:00.123456Z',
+    }),
+    { status: 200 },
+  ));
+  assert.deepEqual(await admin.getDocument(['userProfiles', 'u1'], { withMeta: true }), {
+    data: { handle: 'alice' },
+    updateTime: '2026-08-20T19:00:00.123456Z',
+  });
+  // Absence stays null in both shapes — no `{ data: null }` to trip over.
+  const missing = adminWith(async () => new Response('{}', { status: 404 }));
+  assert.equal(await missing.admin.getDocument(['userProfiles', 'u1'], { withMeta: true }), null);
 });
 
 test('a failed precondition is a 409 for the caller, not a 502 outage', async () => {

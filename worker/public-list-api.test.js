@@ -6,7 +6,7 @@ import {
   handlePublicListRequest,
   PublicListApiError,
 } from './public-list-api.js';
-import { decodeFields } from './firestore-admin.js';
+import { decodeFields, FirestoreAdminError } from './firestore-admin.js';
 
 const UID = 'alice-uid';
 const OTHER = 'mallory-uid';
@@ -44,18 +44,35 @@ function envWith(overrides = {}) {
   };
 }
 
-/** An in-memory stand-in for the Firestore admin client. */
-function fakeAdmin(documents = {}) {
+/**
+ * An in-memory stand-in for the Firestore admin client.
+ *
+ * `failOn` lists 1-based commit attempts that reject with the 409 the real
+ * client raises on a lost precondition; a failed attempt records nothing,
+ * like the real thing. `commits` keeps only the successes.
+ */
+function fakeAdmin(documents = {}, { updateTimes = {}, failOn = [] } = {}) {
   const commits = [];
+  let attempts = 0;
   return {
     commits,
     documents,
     projectId: 'papertok-168df',
     name: segments => `projects/papertok-168df/databases/(default)/documents/${segments.join('/')}`,
-    async getDocument(segments) {
-      return documents[segments.join('/')] ?? null;
+    async getDocument(segments, { withMeta = false } = {}) {
+      const data = documents[segments.join('/')] ?? null;
+      if (!withMeta) return data;
+      if (data === null) return null;
+      return {
+        data,
+        updateTime: updateTimes[segments.join('/')] ?? '2026-08-20T00:00:00.000000Z',
+      };
     },
     async commit(writes) {
+      attempts += 1;
+      if (failOn.includes(attempts)) {
+        throw new FirestoreAdminError('FIRESTORE_PRECONDITION_FAILED', 409);
+      }
       commits.push(writes);
       return {};
     },
@@ -384,6 +401,137 @@ test('unpublishing someone else share is a 403', async () => {
     error => error.code === 'NOT_THE_OWNER',
   );
   assert.equal(admin.commits.length, 0);
+});
+
+// ---------------------------------------------------------------------------
+// The pinned card follows the list.
+// ---------------------------------------------------------------------------
+
+const OTHER_SHARE = 'f'.repeat(32);
+
+/** Documents for an owner whose profile pins SHARE (plus one other list). */
+function pinnedFixture(profileOverrides = {}) {
+  return {
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`userProfiles/${UID}`]: {
+      handle: 'alice',
+      displayName: 'Alice',
+      pinnedLists: [
+        { shareId: OTHER_SHARE, title: 'Otra', paperCount: 2 },
+        { shareId: SHARE, title: 'Vieja', emoji: 'Folder', paperCount: 12 },
+      ],
+      ...profileOverrides,
+    },
+  };
+}
+
+test('updating a pinned list refreshes its card: count, title, and nothing else', async () => {
+  stubIdentity();
+  const admin = fakeAdmin(pinnedFixture(), {
+    updateTimes: { [`userProfiles/${UID}`]: '2026-08-20T19:00:00.123456Z' },
+  });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Relatividad numérica', papers: listOf(19),
+  }, { admin });
+
+  assert.equal(result.pinCard, 'refreshed');
+  assert.equal(admin.commits.length, 2, 'the list commit and the card commit are separate');
+  const [write] = admin.commits[1];
+  assert.match(write.update.name, new RegExp(`userProfiles/${UID}$`));
+  assert.deepEqual(write.updateMask, { fieldPaths: ['pinnedLists', 'updatedAt'] });
+  // The refresh must lose a race against a concurrent pin toggle, not win it.
+  assert.deepEqual(write.currentDocument, { updateTime: '2026-08-20T19:00:00.123456Z' });
+  const pins = fieldsOf(write).pinnedLists;
+  assert.deepEqual(pins[0], { shareId: OTHER_SHARE, title: 'Otra', paperCount: 2 }, 'other pins ride along untouched');
+  assert.deepEqual(pins[1], {
+    shareId: SHARE, title: 'Relatividad numérica', emoji: 'Folder', paperCount: 19,
+  }, 'count and title follow the list; the emoji is the pin\'s own and stays');
+});
+
+test('updating a list nobody pinned costs one profile read and no extra write', async () => {
+  stubIdentity();
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`userProfiles/${UID}`]: { handle: 'alice', pinnedLists: [] },
+  });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'T', papers: [],
+  }, { admin });
+  assert.equal(result.pinCard, 'not-pinned');
+  assert.equal(admin.commits.length, 1);
+});
+
+test('an update that changes nothing the card shows writes nothing', async () => {
+  stubIdentity();
+  const admin = fakeAdmin(pinnedFixture({
+    pinnedLists: [{ shareId: SHARE, title: 'Igual', paperCount: 3 }],
+  }));
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Igual', papers: listOf(3),
+  }, { admin });
+  assert.equal(result.pinCard, 'unchanged');
+  assert.equal(admin.commits.length, 1);
+});
+
+test('hidden pins are refreshed in the stash, where F8 parked them', async () => {
+  stubIdentity();
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`userProfiles/${UID}`]: { handle: 'alice', pinnedLists: [], showPinnedLists: false },
+    [`users/${UID}/profileStash/pinnedLists`]: {
+      pinnedLists: [{ shareId: SHARE, title: 'Vieja', paperCount: 12 }],
+    },
+  });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Nueva', papers: listOf(19),
+  }, { admin });
+  assert.equal(result.pinCard, 'refreshed');
+  const [write] = admin.commits[1];
+  assert.match(write.update.name, new RegExp(`users/${UID}/profileStash/pinnedLists$`));
+  assert.equal(fieldsOf(write).pinnedLists[0].paperCount, 19);
+});
+
+test('unpublishing a pinned list removes its card and keeps the others', async () => {
+  stubIdentity();
+  const admin = fakeAdmin(pinnedFixture());
+  const result = await run('/lists/unpublish', { shareId: SHARE, listId: 'l1' }, { admin });
+  assert.equal(result.pinCard, 'removed');
+  const pins = fieldsOf(admin.commits[1][0]).pinnedLists;
+  assert.deepEqual(pins, [{ shareId: OTHER_SHARE, title: 'Otra', paperCount: 2 }],
+    'the orphan is gone at its source; no stale card is left to veto profile writes');
+});
+
+test('losing the race against a pin toggle retries once from a fresh read', async () => {
+  stubIdentity();
+  const admin = fakeAdmin(pinnedFixture(), { failOn: [2] });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'T', papers: listOf(5),
+  }, { admin });
+  assert.equal(result.pinCard, 'refreshed');
+  assert.equal(admin.commits.length, 2, 'main write plus the retried card write');
+});
+
+test('the card is a courtesy: when every refresh attempt fails, the update still lands', async () => {
+  stubIdentity();
+  const admin = fakeAdmin(pinnedFixture(), { failOn: [2, 3] });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'T', papers: listOf(5),
+  }, { admin });
+  assert.equal(result.pinCard, 'skipped');
+  assert.equal(admin.commits.length, 1, 'the list update committed; the card kept its staleness');
+});
+
+test('a broken profile read cannot break the unpublish that already committed', async () => {
+  stubIdentity();
+  const admin = fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' } });
+  admin.getDocument = async (segments, options) => {
+    if (segments[0] === 'userProfiles') throw new FirestoreAdminError('FIRESTORE_READ_FAILED', 502);
+    if (options?.withMeta) return null;
+    return admin.documents[segments.join('/')] ?? null;
+  };
+  const result = await run('/lists/unpublish', { shareId: SHARE, listId: 'l1' }, { admin });
+  assert.equal(result.unpublished, true);
+  assert.equal(result.pinCard, 'skipped');
 });
 
 // ---------------------------------------------------------------------------

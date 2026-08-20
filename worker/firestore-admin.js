@@ -231,8 +231,15 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
     projectId,
     name: segments => documentName(projectId, segments),
 
-    /** Returns the decoded document, or null when it does not exist. */
-    async getDocument(segments) {
+    /**
+     * Returns the decoded document, or null when it does not exist.
+     *
+     * With `withMeta` it returns `{ data, updateTime }` instead, `updateTime`
+     * being the RFC3339 string the REST API reports — the value a
+     * `currentDocument.updateTime` precondition needs, so a read-modify-write
+     * can refuse to clobber a document that moved under it.
+     */
+    async getDocument(segments, { withMeta = false } = {}) {
       const url = `https://firestore.googleapis.com/v1/${documentName(projectId, segments)}`;
       const response = await authorizedFetch(url, { method: 'GET' });
       if (response.status === 404) return null;
@@ -240,7 +247,8 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
       if (!response.ok) {
         throw new FirestoreAdminError('FIRESTORE_READ_FAILED', 502, payload?.error?.status || '');
       }
-      return decodeFields(payload.fields);
+      const data = decodeFields(payload.fields);
+      return withMeta ? { data, updateTime: payload.updateTime } : data;
     },
 
     /**
@@ -294,12 +302,20 @@ export function replaceWrite(name, data) {
  * Touches only the named fields. The mask is what keeps `createdAt` out of an
  * update: the field is never sent, so it cannot be moved, and no read is
  * needed to carry its old value forward.
+ *
+ * `updateTime` narrows the precondition from "the document exists" to "the
+ * document has not moved since this exact version" — the commit then fails
+ * with FAILED_PRECONDITION (409 here) instead of overwriting a concurrent
+ * write. Firestore accepts one precondition, so it replaces `mustExist`
+ * rather than joining it; a version match implies existence anyway.
  */
-export function mergeWrite(name, data, { mustExist = true } = {}) {
+export function mergeWrite(name, data, { mustExist = true, updateTime = null } = {}) {
   return {
     update: { name, fields: encodeFields(data) },
     updateMask: { fieldPaths: Object.keys(data) },
-    ...(mustExist ? { currentDocument: { exists: true } } : {}),
+    ...(updateTime
+      ? { currentDocument: { updateTime } }
+      : mustExist ? { currentDocument: { exists: true } } : {}),
   };
 }
 

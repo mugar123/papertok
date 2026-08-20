@@ -17,6 +17,10 @@
  * Firestore stays on the free tier deliberately: a publish costs one read and
  * one atomic commit of three writes, and the daily quotas below cap the whole
  * route far under the Spark allowance of 20k writes and 50k reads a day.
+ * Update and unpublish add the pinned-card refresh (refreshPinnedCard below):
+ * +1 read always, +1 more only when pins are hidden, +1 write only when the
+ * list was actually pinned and the card changed — bounded by the same daily
+ * quotas, so the worst day stays far inside the allowance.
  */
 import {
   assertPublicListWithinLimits,
@@ -149,6 +153,78 @@ async function requireOwnedShare(admin, uid, shareId) {
   return owner;
 }
 
+/**
+ * Keeps the profile's pinned card in step with the list it denormalizes.
+ *
+ * The card (`{shareId, title, emoji?, paperCount}` in `userProfiles/{uid}`)
+ * used to be a snapshot taken when the owner clicked Pin: grow the list from
+ * 12 papers to 19 and the profile kept saying 12 until a manual re-pin. Now
+ * `/lists/update` refreshes the card's title and count, and `/lists/unpublish`
+ * removes the card outright — an unpublished share id fails the ownership
+ * check in the rules, so a card left behind would veto every later profile
+ * write from the client (the "something went wrong" family).
+ *
+ * Pins hidden by the owner are parked verbatim in
+ * `users/{uid}/profileStash/pinnedLists` (F8), so when the profile does not
+ * hold the card and says `showPinnedLists: false`, the stash is checked too —
+ * otherwise flipping the switch back would resurrect the stale card.
+ *
+ * Strictly best-effort, and the failure direction is chosen: the list
+ * operation has already committed, so nothing here may throw past it. The
+ * write carries an `updateTime` precondition — a pin toggled in the same
+ * instant wins and the refresh retries once from a fresh read, then gives up
+ * as 'skipped', which leaves exactly the staleness we have today, never a
+ * clobbered pin. Cost when the list is not pinned: 1 read (+1 with pins
+ * hidden), no writes.
+ */
+export async function refreshPinnedCard(admin, uid, shareId, card, { now }) {
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const profile = await admin.getDocument(['userProfiles', uid], { withMeta: true });
+      if (!profile) return 'not-pinned';
+
+      let segments = ['userProfiles', uid];
+      let holder = profile;
+      let entries = Array.isArray(profile.data.pinnedLists) ? profile.data.pinnedLists : [];
+      if (!entries.some(entry => entry?.shareId === shareId)) {
+        if (profile.data.showPinnedLists !== false) return 'not-pinned';
+        const stash = await admin.getDocument(['users', uid, 'profileStash', 'pinnedLists'], { withMeta: true });
+        const stashed = Array.isArray(stash?.data?.pinnedLists) ? stash.data.pinnedLists : [];
+        if (!stashed.some(entry => entry?.shareId === shareId)) return 'not-pinned';
+        segments = ['users', uid, 'profileStash', 'pinnedLists'];
+        holder = stash;
+        entries = stashed;
+      }
+
+      const current = entries.find(entry => entry?.shareId === shareId);
+      if (card && current.title === card.title && current.paperCount === card.paperCount) {
+        return 'unchanged';
+      }
+      const next = card
+        ? entries.map(entry => (entry?.shareId === shareId
+          ? { ...entry, title: card.title, paperCount: card.paperCount }
+          : entry))
+        : entries.filter(entry => entry?.shareId !== shareId);
+
+      try {
+        await admin.commit([
+          mergeWrite(admin.name(segments), { pinnedLists: next, updatedAt: new Date(now()) }, {
+            updateTime: holder.updateTime,
+          }),
+        ]);
+        return card ? 'refreshed' : 'removed';
+      } catch (error) {
+        // Lost the race against a concurrent pin toggle: read again and retry
+        // once. Anything else falls through to 'skipped' below.
+        if (!(error instanceof FirestoreAdminError && error.status === 409)) throw error;
+      }
+    }
+    return 'skipped';
+  } catch {
+    return 'skipped';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The three operations.
 // ---------------------------------------------------------------------------
@@ -187,10 +263,16 @@ async function update(admin, uid, body, { now }) {
     fieldPaths: [...new Set([...Object.keys(fields), 'description'])],
   };
   await admin.commit([write]);
-  return { shareId, ...payload };
+  // After, not inside, the commit above: the card is a courtesy and the list
+  // update must never fail over it. (Publish needs no counterpart — a freshly
+  // minted share id cannot be pinned yet.)
+  const pinCard = await refreshPinnedCard(admin, uid, shareId, {
+    title: payload.title, paperCount: payload.paperCount,
+  }, { now });
+  return { shareId, ...payload, pinCard };
 }
 
-async function unpublish(admin, uid, body) {
+async function unpublish(admin, uid, body, { now }) {
   const shareId = requireShareId(body.shareId);
   const listId = requireListId(body.listId);
   await requireOwnedShare(admin, uid, shareId);
@@ -203,7 +285,11 @@ async function unpublish(admin, uid, body) {
     deleteWrite(admin.name(['publicListOwners', shareId])),
     clearFieldsWrite(admin.name(['users', uid, 'lists', listId]), ['publicShareId']),
   ]);
-  return { shareId, unpublished: true };
+  // The owners document this share id had is gone, so a card pointing at it
+  // would fail ownsPinnedShare() and veto every profile write the client
+  // tries next. Unpinning here closes the orphan at its source.
+  const pinCard = await refreshPinnedCard(admin, uid, shareId, null, { now });
+  return { shareId, unpublished: true, pinCard };
 }
 
 const OPERATIONS = {
