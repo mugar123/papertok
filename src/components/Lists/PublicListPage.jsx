@@ -1,13 +1,16 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { BookOpen, ExternalLink, Quote, RefreshCw } from 'lucide-react';
+import { BookOpen, Check, Quote, RefreshCw, Share2 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
+import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import { readPublicList } from '../../services/publicListService.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
-import { getPublicListPath, getPublicPaperPath } from '../../utils/publicNavigation.js';
+import { getPublicListPath, getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import { patientRead } from '../../utils/boundedRead.js';
+import { shareOrCopyLink } from '../../utils/shareLink.js';
+import { copyText } from '../../utils/clipboard.js';
 import './PublicListPage.css';
 
 function arxivUrl(arxivId) {
@@ -61,10 +64,19 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
   const params = useParams();
   const shareId = shareIdProp || params.shareId;
   const { isEnglish, locale } = useLanguage();
-  const { user } = useAuth();
+  const { user, onboardingComplete, profileLoadError } = useAuth();
+  const { trackEvent } = useAnalyticsConsent();
   const [publicList, setPublicList] = useState(null);
   const [status, setStatus] = useState('loading');
   const [reloadToken, setReloadToken] = useState(0);
+  const [shareState, setShareState] = useState(null);
+  const shareTimer = useRef(null);
+
+  // Signed in, the app Navbar owns the top of the screen (App.jsx shows it for
+  // /public/list/* too); signed out this is the standalone shared-link page and
+  // keeps its own brand header. The condition has to track App.jsx's `showNavbar`
+  // or the page ends up with two headers, or with none.
+  const hasAppChrome = Boolean(user) && Boolean(onboardingComplete) && !profileLoadError;
 
   useEffect(() => {
     let active = true;
@@ -93,6 +105,40 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     () => formatDate(publicList?.updatedAt, locale),
     [locale, publicList?.updatedAt],
   );
+
+  useEffect(() => () => clearTimeout(shareTimer.current), []);
+
+  // The share sheet where there is one, the clipboard where there is not —
+  // same helper the owner's Lists page uses, so a link shared from here and a
+  // link shared from there are produced the same way. A dismissed sheet ends
+  // silently: closing it was a decision, not a failure.
+  const handleShare = async () => {
+    const url = getPublicListUrl(shareId);
+    if (!url) return;
+
+    clearTimeout(shareTimer.current);
+    const restingState = () => {
+      shareTimer.current = setTimeout(() => setShareState(null), 2400);
+    };
+
+    try {
+      const outcome = await shareOrCopyLink({ url, title: publicList?.title, copy: copyText });
+      if (outcome === 'shared') {
+        trackEvent('share', { method: 'native', content_type: 'list', surface: 'lists' });
+        setShareState(null);
+      } else if (outcome === 'copied') {
+        trackEvent('share', { method: 'clipboard', content_type: 'list', surface: 'lists' });
+        setShareState('copied');
+        restingState();
+      } else {
+        setShareState(null);
+      }
+    } catch (error) {
+      console.error('Public list link could not be shared:', error);
+      setShareState('error');
+      restingState();
+    }
+  };
 
   const metadata = useMemo(() => {
     const fallbackDescription = {
@@ -135,6 +181,9 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     open: title => `Open ${title}`,
     empty: 'This public list does not contain any papers yet.',
     authCta: user ? 'Open my lists' : 'Sign in to create a list',
+    share: 'Share',
+    shareCopied: 'Link copied',
+    shareError: 'Could not copy the link',
   } : {
     brand: 'PaperTok',
     publicList: 'Lista pública de lectura',
@@ -152,7 +201,12 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     open: title => `Abrir ${title}`,
     empty: 'Esta lista pública aún no contiene papers.',
     authCta: user ? 'Abrir mis listas' : 'Inicia sesión para crear una lista',
+    share: 'Compartir',
+    shareCopied: 'Enlace copiado',
+    shareError: 'No se pudo copiar el enlace',
   };
+
+  const pageClass = `public-list-page${hasAppChrome ? ' public-list-page--app' : ''}`;
 
   if (status !== 'ready') {
     const stateCopy = status === 'not-found'
@@ -163,11 +217,13 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
           ? [copy.errorTitle, copy.errorBody]
           : [copy.loading, ''];
     return (
-      <main className="public-list-page">
-        <header className="public-list-brand">
-          <Link to="/">{copy.brand}</Link>
-          <AuthCta user={user} onAuthRequired={onAuthRequired} label={copy.authCta} />
-        </header>
+      <main className={pageClass}>
+        {!hasAppChrome && (
+          <header className="public-list-brand">
+            <Link to="/">{copy.brand}</Link>
+            <AuthCta user={user} onAuthRequired={onAuthRequired} label={copy.authCta} />
+          </header>
+        )}
         <section className="public-list-status" aria-live="polite">
           {status === 'loading' ? <span className="public-list-spinner" aria-hidden="true" /> : <BookOpen size={30} />}
           <h1>{stateCopy[0]}</h1>
@@ -186,14 +242,16 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
   }
 
   return (
-    <main className="public-list-page">
-      <header className="public-list-brand">
-        <Link to="/">{copy.brand}</Link>
-        <div className="public-list-brand-actions">
-          <span>{copy.publicList}</span>
-          <AuthCta user={user} onAuthRequired={onAuthRequired} label={copy.authCta} />
-        </div>
-      </header>
+    <main className={pageClass}>
+      {!hasAppChrome && (
+        <header className="public-list-brand">
+          <Link to="/">{copy.brand}</Link>
+          <div className="public-list-brand-actions">
+            <span>{copy.publicList}</span>
+            <AuthCta user={user} onAuthRequired={onAuthRequired} label={copy.authCta} />
+          </div>
+        </header>
+      )}
 
       <div className="public-list-content">
         <section className="public-list-heading">
@@ -203,6 +261,24 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
           <div className="public-list-meta">
             <span>{copy.papers(publicList.paperCount)}</span>
             {updatedAt && <span>{copy.updated(updatedAt)}</span>}
+          </div>
+          <div className="public-list-actions">
+            <button
+              type="button"
+              className="public-list-share"
+              onClick={handleShare}
+              data-state={shareState || 'idle'}
+            >
+              {shareState === 'copied' ? <Check size={16} /> : <Share2 size={16} />}
+              {copy.share}
+            </button>
+            {/* The confirmation is a sibling, not the button's own label: a
+                button whose text changes under the cursor moves the thing you
+                just pressed, and screen readers re-announce the control rather
+                than the outcome. */}
+            <span className="public-list-share-feedback" role="status" aria-live="polite">
+              {shareState === 'copied' ? copy.shareCopied : shareState === 'error' ? copy.shareError : ''}
+            </span>
           </div>
         </section>
 
@@ -235,11 +311,6 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
                     {paper.concepts?.slice(0, 3).map(concept => <span key={concept}>{concept}</span>)}
                   </div>
                 </div>
-                {destination && (
-                  <PaperLink destination={destination} label={copy.open(paper.title)}>
-                    <span className="public-list-open-icon"><ExternalLink size={18} /></span>
-                  </PaperLink>
-                )}
               </article>
             );
           })}

@@ -41,6 +41,11 @@ const OWNED = [
   // exactly this bug, found by the sweep rather than by looking at the page.
   // It now uses `--bg-glass-hover`, like every other hover in the app.
   '../Lists/ListsPage.css',
+  // Added when the public list page gained the share button and the navbar
+  // offsets: the file was already clean, and the tokens the new rules reach for
+  // (`--nav-height`, `--accent-success`, `--accent-danger`) are exactly the kind
+  // that get typed from memory and silently dropped.
+  '../Lists/PublicListPage.css',
   // `../Search/UserSearchPage.css` was here until the standalone people search
   // was folded into SearchPage. SearchPage.css does NOT replace it in this
   // list, and that is a deliberate hole with a date on it: pointing the check

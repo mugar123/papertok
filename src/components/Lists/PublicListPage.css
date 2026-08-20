@@ -5,6 +5,18 @@
   color: var(--text-primary);
 }
 
+/* Signed in the app Navbar is fixed over the top of the page, so the content
+   starts below it instead of behind it. Signed out there is no navbar and the
+   page's own brand header does the job. */
+.public-list-page--app .public-list-content {
+  padding-top: calc(var(--nav-height) + var(--space-10));
+}
+
+.public-list-page--app .public-list-status {
+  min-height: calc(100dvh - var(--nav-height));
+  padding-top: var(--nav-height);
+}
+
 .public-list-brand {
   min-height: 58px;
   padding: 0 clamp(20px, 5vw, 72px);
@@ -105,7 +117,7 @@
 
 .public-list-paper {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) 36px;
+  grid-template-columns: 42px minmax(0, 1fr);
   gap: var(--space-4);
   padding: var(--space-6) 0;
   border-bottom: 1px solid var(--border-subtle);
@@ -179,15 +191,43 @@
   padding-right: var(--space-2);
 }
 
-.public-list-open-icon {
-  width: 36px;
-  height: 36px;
+.public-list-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-6);
+}
+
+.public-list-share {
+  min-height: 38px;
+  padding: 9px 16px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  color: var(--text-secondary);
+  gap: var(--space-2);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.public-list-share[data-state='copied'] {
+  border-color: var(--accent-success);
+  color: var(--accent-success);
+}
+
+.public-list-share-feedback {
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+}
+
+.public-list-share[data-state='error'] + .public-list-share-feedback {
+  color: var(--accent-danger);
 }
 
 .public-list-empty,
@@ -248,7 +288,7 @@
 @media (hover: hover) and (pointer: fine) {
   .public-list-brand .public-list-auth-cta:hover { border-color: var(--accent-primary); color: var(--text-primary); }
   .public-list-paper h2 a:hover { color: var(--accent-secondary); }
-  .public-list-open-icon:hover,
+  .public-list-share:not([data-state='copied']):hover,
   .public-list-status button:hover { border-color: var(--accent-primary); color: var(--text-primary); }
 }
 
@@ -257,8 +297,12 @@
   .public-list-brand span { display: none; }
   .public-list-brand .public-list-auth-cta { max-width: 210px; text-align: center; }
   .public-list-content { width: calc(100% - 32px); padding-top: 40px; }
+  .public-list-page--app .public-list-content { padding-top: calc(var(--nav-height-mobile) + var(--space-6)); }
+  .public-list-page--app .public-list-status {
+    min-height: calc(100dvh - var(--nav-height-mobile));
+    padding-top: var(--nav-height-mobile);
+  }
   .public-list-paper { grid-template-columns: 28px minmax(0, 1fr); gap: var(--space-2); }
-  .public-list-paper > a { display: none; }
   .public-list-paper h2 { font-size: var(--fs-lg); }
 }
 

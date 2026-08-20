@@ -52,13 +52,14 @@ function AppContent() {
   const { isEnglish } = useLanguage()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
   const navbarRoutes = ['/', '/lists', '/research', '/following', '/profile', '/settings', '/settings/following', '/settings/profile', '/settings/comments']
-  // The paper and profile pages keep the app chrome for a signed-in user —
-  // reaching a paper from Liked, or a profile from the follow sheet, must not
-  // feel like leaving the app. Signed-out visitors on a shared link still get
-  // the standalone page (`user` gates below).
+  // The paper, profile and list pages keep the app chrome for a signed-in user —
+  // reaching a paper from Liked, a profile from the follow sheet, or a list from
+  // someone's shared link, must not feel like leaving the app. Signed-out
+  // visitors on a shared link still get the standalone page (`user` gates below).
   const showNavbar = (navbarRoutes.includes(normalizedPathname)
     || normalizedPathname.startsWith('/public/paper/')
-    || normalizedPathname.startsWith('/public/user/'))
+    || normalizedPathname.startsWith('/public/user/')
+    || normalizedPathname.startsWith('/public/list/'))
     && Boolean(user)
     && !authLoading
     && onboardingComplete
