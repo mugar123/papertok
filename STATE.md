@@ -1,5 +1,80 @@
 # Estado / pendientes
 
+## El sync borraba papers publicados. Arreglado y desplegado (2026-08-21)
+
+**Worker y app desplegados** (`3b5ef60`, `e1db338`). @nick_mugar tenía 12
+papers en "Papers de sugar" y el enlace público mostraba 10 — y la tarjeta del
+escaparate, que escribe el Worker, también decía 10: no era pintado, es que
+solo se publicaron 10. Peor: comparando el documento de las 14:16 con el de
+las 15:30, **un paper que YA estaba publicado había desaparecido**
+(`doi:10.1038/s41467-025-67163-z`). Regresión mía, de P25.
+
+### Las dos causas
+
+**La membresía que mandaba el cliente no era la verdad.** El commit `9ef21f5`
+hizo que el modal de guardar pinte desde una cache de sesión y **se salte
+Firestore durante 30 s** (`ownListsAreFresh`). Mi sync mandaba ese `paperIds`
+cacheado como autoridad y el Worker borraba del documento público todo lo que
+no estuviera en él. Cualquier cambio hecho fuera del modal era invisible.
+
+**El emparejamiento era una conjetura, y fallar significaba borrar.**
+`buildMergedPayload` buscaba cada id privado en `id`/`doi`/`arxivId` del paper
+publicado. Con la deriva de ids (R8) a veces no casa, y entonces `continue`:
+el paper se caía del documento. Desde el modal solo va **un** paper hidratado,
+así que en cada guardado los demás pasaban enteros por ese filtro.
+
+### El arreglo
+
+1. **`/lists/update` lee `users/{uid}/lists/{listId}`** y usa SU `paperIds`.
+   El del cuerpo queda como respaldo, así que ni el orden de despliegue ni un
+   cliente viejo pueden encoger una lista. +1 lectura, la misma que ya hace
+   publicar.
+2. **`sourceId`**: cada paper público guarda el id con el que la lista privada
+   lo archiva. El emparejamiento deja de adivinarse.
+3. **El tope trunca en vez de rechazar** — con la membresía en el Worker,
+   rechazar dejaría una lista de 60 sin sincronizar nunca más.
+4. **El cliente deja de filtrar** los papers hidratados contra su propia idea
+   de la membresía: el mismo error una capa más arriba.
+5. **Mis listas lee el documento público al abrir una lista publicada**. Repara
+   una lista que un sync malo dejó corta —el sello sucio no puede, porque un
+   sync malo se marca como hecho— y pinta el aviso: «2 de 12 papers aún no
+   están en el enlace público».
+
+### El fallo que solo salió verificando en producción
+
+El payload se sanea **dos veces**, en el navegador y en el Worker, y la segunda
+pasada ve la salida de la primera. `sourceId` solo se leía de su nombre de
+entrada (`listPaperId`), así que la pasada del Worker lo tiraba: el cliente
+mandó 19 papers con la clave y el documento volvió con **cero**. El merge
+seguía funcionando, pero por las claves viejas — justo las que fallan en el
+caso que pierde papers. Arreglado en `e1db338`; **sanear es idempotente y hay
+un test que lo fija**. Es el segundo fallo de esta forma hoy: `arxivId` se
+perdió igual por la mañana.
+
+### Verificado contra producción (@mugar, "Relatividad numérica", 20 papers)
+
+- **La reproducción del fallo**: sync con membresía de 3 ids y **cero** papers
+  hidratados → **20 papers, 0 descartados**. Antes habría publicado 3.
+- **El caso que solo `sourceId` salva**: membresía de 1 id, cero papers, y
+  `openalex:W1903990541` —publicado como `arxiv:openalex:W1903990541`, sin doi
+  ni arxivId, invisible para toda clave heredada— **sobrevive**.
+- **La reparación**: dejé la lista con la copia pública corta y el sello
+  diciendo «al día» (el estado exacto de @nick_mugar); abrirla la reparó sola,
+  19 → 20.
+- **El camino del modal, con la cache caliente**: desmarcar → 19, volver a
+  marcar → 20. Mismos papers, `createdAt` intacto, orden restaurado.
+- `sourceId` presente en 19/20 (el 20º no lo necesita: su id derivado ya es el
+  de la lista privada).
+
+### Pendiente
+
+- **"Papers de sugar" sigue en 10.** La reparación es una escritura
+  autenticada que solo su dueño puede hacer: hay que entrar como
+  **@nick_mugar** y abrir la lista en Mis listas. Con el código desplegado se
+  repara sola al abrirla.
+- El aviso de «N de M papers» no se ha visto en pantalla todavía: las listas de
+  @mugar están completas, así que no hay nada que avisar.
+
 ## El buscador: un solo asentamiento y un aviso que nombra a quien falla (2026-08-21)
 
 **Implementado, verificado en vivo, commiteado y desplegado** (`e93fcfc`).
