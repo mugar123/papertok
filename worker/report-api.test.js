@@ -141,6 +141,122 @@ test('validates and batches NIH iCite PubMed identifiers', async () => {
   assert.deepEqual(await response.json(), { data: [{ pmid: 123, citation_count: 7 }] });
 });
 
+test('reports Scopus as unconfigured without contacting Elsevier', async () => {
+  const response = await withWorkerFetchMock(async () => {
+    throw new Error('No upstream request should be made');
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/health/scopus',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), {}));
+
+  assert.equal(response.status, 503);
+  const health = await response.json();
+  assert.equal(health.configured, false);
+  assert.equal(health.available, false);
+  assert.equal(health.code, 'SCOPUS_NOT_CONFIGURED');
+});
+
+test('names the Elsevier error code when the key is refused from this network', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response(
+      JSON.stringify({ 'service-error': { status: { statusCode: 'AUTHENTICATION_ERROR', statusText: 'Invalid API Key' } } }),
+      { status: 401 },
+    ),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/scopus',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { ELSEVIER_API_KEY: 'test-key' }),
+  );
+
+  assert.equal(response.status, 503);
+  const health = await response.json();
+  assert.equal(health.available, false);
+  assert.equal(health.status, 401);
+  assert.equal(health.code, 'AUTHENTICATION_ERROR');
+  assert.equal(health.message, 'Invalid API Key');
+  assert.equal(health.insttoken, false);
+});
+
+test('falls back to the STANDARD view and reports that the abstract is missing', async () => {
+  const requestedViews = [];
+  const response = await withWorkerFetchMock(
+    async url => {
+      const view = new URL(url).searchParams.get('view');
+      requestedViews.push(view);
+      if (view === 'COMPLETE') return new Response('{}', { status: 403 });
+      return new Response(
+        JSON.stringify({
+          'search-results': {
+            'opensearch:totalResults': '1234',
+            entry: [{ 'dc:title': 'A result without an abstract' }],
+          },
+        }),
+        { status: 200, headers: { 'X-RateLimit-Remaining': '19998' } },
+      );
+    },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/scopus',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { ELSEVIER_API_KEY: 'test-key', ELSEVIER_INST_TOKEN: 'test-token' }),
+  );
+
+  assert.deepEqual(requestedViews, ['COMPLETE', 'STANDARD']);
+  assert.equal(response.status, 200);
+  const health = await response.json();
+  assert.equal(health.available, true);
+  assert.equal(health.view, 'STANDARD');
+  assert.equal(health.hasAbstract, false);
+  assert.equal(health.results, 1234);
+  assert.equal(health.insttoken, true);
+  assert.equal(health.quota.remaining, 19998);
+  assert.deepEqual(health.attempts.map(attempt => [attempt.view, attempt.status]), [['COMPLETE', 403], ['STANDARD', 200]]);
+});
+
+test('records what every view answered when Scopus refuses both of them', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response(
+      JSON.stringify({ 'service-error': { status: { statusCode: 'GENERAL_SYSTEM_ERROR', statusText: 'System Error Occurred' } } }),
+      { status: 500, headers: { 'X-ELS-ReqId': 'req-42' } },
+    ),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/scopus',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { ELSEVIER_API_KEY: 'test-key' }),
+  );
+
+  assert.equal(response.status, 503);
+  const health = await response.json();
+  assert.equal(health.available, false);
+  assert.equal(health.view, null);
+  assert.equal(health.code, 'GENERAL_SYSTEM_ERROR');
+  assert.deepEqual(health.attempts.map(attempt => attempt.view), ['COMPLETE', 'STANDARD', 'DEFAULT']);
+  assert.equal(health.attempts[0].requestId, 'req-42');
+});
+
+test('reports a COMPLETE view that carries the abstract', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response(
+      JSON.stringify({
+        'search-results': {
+          'opensearch:totalResults': '7',
+          entry: [{ 'dc:title': 'A complete result', 'dc:description': 'The abstract Scopus returned.' }],
+        },
+      }),
+      { status: 200 },
+    ),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/scopus',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { ELSEVIER_API_KEY: 'test-key' }),
+  );
+
+  assert.equal(response.status, 200);
+  const health = await response.json();
+  assert.equal(health.available, true);
+  assert.equal(health.view, 'COMPLETE');
+  assert.equal(health.hasAbstract, true);
+});
+
 test('requires Firebase authentication before a secret-backed source can be used', async () => {
   const response = await withWorkerFetchMock(async () => {
     throw new Error('No upstream request should be made');

@@ -13,6 +13,8 @@ npx wrangler secret put MODAL_PROXY_TOKEN_SECRET
 npx wrangler secret put MODAL_KIMI_BASE_URL
 npx wrangler secret put CORE_API_KEY # optional, raises CORE rate limits
 npx wrangler secret put NASA_ADS_API_TOKEN # optional; INSPIRE is used until configured
+npx wrangler secret put ELSEVIER_API_KEY # Scopus search; the browser flow stays dark without it
+npx wrangler secret put ELSEVIER_INST_TOKEN # institutional token; required for the COMPLETE view and for non-subscribing networks
 npx wrangler secret put BREVO_API_KEY
 npx wrangler secret put BREVO_FROM_EMAIL
 npx wrangler secret put RESEND_API_KEY
@@ -31,7 +33,18 @@ After deployment, set the GitHub Actions repository variable `VITE_PAPER_API_BAS
 https://papertok-report-api.<account>.workers.dev
 ```
 
-Available routes are `/locale`, `/report/trends`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/explain`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/health/email`, `/health/ai`, and `/health`. `/locale` returns only Cloudflare's country code for the automatic Spanish/English interface choice and is never cached. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback.
+Available routes are `/locale`, `/report/trends`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/explain`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/health/email`, `/health/ai`, `/health/scopus`, and `/health`. `/locale` returns only Cloudflare's country code for the automatic Spanish/English interface choice and is never cached. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback.
+
+`/health/scopus` answers the only question that decides whether Scopus can ship: does
+`ELSEVIER_API_KEY` authenticate from Cloudflare's network, and which view does it grant? It runs
+one minimal search and reports whether the key is configured, whether an institutional token is
+present, the upstream status, Elsevier's own error code, the view that answered, whether that view
+carried an abstract, and the remaining provider quota — never the key or the token themselves. It
+tries `COMPLETE`, then `STANDARD`, then the endpoint default, and records what each one answered,
+so a failure names which view was refused and why. The probe costs one upstream call, so it is
+served from the edge cache for ten minutes: hammering the route cannot drain the weekly Scopus
+allowance. Only `COMPLETE` returns `dc:description`, so an account limited to `STANDARD` produces
+papers without abstracts.
 
 The AI route requires a valid PaperTok Firebase ID token and keeps provider credentials exclusively in the Worker. Gemini 3.5 Flash remains the primary provider. PDF acquisition and Gemini model attempts use bounded latency budgets; a slow open PDF degrades to the available abstract, and malformed structured output can retry once with Gemini Flash Lite without exceeding the browser deadline. The response parser preserves LaTeX commands even when a provider returns raw JSON backslashes. When Gemini explicitly reports that its daily provider quota is exhausted, `AI_FALLBACK_PROVIDER = "modal-kimi"` routes abstract-based explanations to Modal's OpenAI-compatible Kimi K3 Shared API. Modal authentication requires the complete proxy-token pair (`wk-...` ID plus `ws-...` secret) and the Shared API base URL shown in the Modal dashboard.
 

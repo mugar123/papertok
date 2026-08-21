@@ -1,8 +1,8 @@
 import { BaseAdapter } from './BaseAdapter.js';
 
-export class ElsevierAdapter extends BaseAdapter {
+export class SemanticScholarAdapter extends BaseAdapter {
   constructor() {
-    super('elsevier'); // Keep name for downstream compatibility
+    super('semanticscholar');
   }
 
   async search(query, page = 1, filters = {}) {
@@ -63,7 +63,7 @@ export class ElsevierAdapter extends BaseAdapter {
       } catch (e) {
         attempts++;
         if (attempts >= maxAttempts) {
-          console.error("Error fetching from S2 fallback (ElsevierAdapter):", e);
+          console.error("Error fetching from Semantic Scholar:", e);
           return { papers: [], total: 0 };
         }
         await new Promise(resolve => setTimeout(resolve, delay));
@@ -80,6 +80,7 @@ export class ElsevierAdapter extends BaseAdapter {
     const isPreprint = raw.publicationTypes?.some(t => t.toLowerCase().includes('review') || t === 'preprint');
     return {
       id: raw.paperId,
+      sources: { primary: 'semanticscholar', enrichedBy: [] },
       doi: null,
       title: raw.title || 'Untitled',
       abstract: raw.abstract || 'No abstract available.',

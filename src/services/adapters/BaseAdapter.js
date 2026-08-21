@@ -46,7 +46,7 @@ export class BaseAdapter {
    *   pdfUrl: string | null,
    *   landingPageUrl: string | null,
    *   citationsCount: number,
-   *   provider: string, // ej: 'elsevier', 'arxiv'
+   *   provider: string, // ej: 'semanticscholar', 'arxiv'
    *   raw: Object // Original provider object
    * }
    */

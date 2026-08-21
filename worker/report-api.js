@@ -44,6 +44,7 @@ const RELATED_CACHE_SECONDS = 24 * 60 * 60;
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const ARXIV_CACHE_SECONDS = 10 * 60;
+const SCOPUS_HEALTH_CACHE_SECONDS = 10 * 60;
 const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
   europepmc: 30 * 60,
@@ -75,6 +76,7 @@ const CACHE_PARAMS_BY_PATH = Object.freeze({
   '/sources/huggingface': ['q', 'page', 'limit', 'sort'],
   '/enrich/icite': ['pmids'],
   '/resources/huggingface': ['arxiv_id'],
+  '/health/scopus': [],
 });
 const PROTECTED_PROVIDER_PATHS = new Set([
   '/report/trends',
@@ -1078,6 +1080,158 @@ async function handlePhysicsLiterature(request, env, identity) {
   }, identity);
 }
 
+// Scopus only serves `dc:description` -- the abstract -- through the COMPLETE
+// view, and COMPLETE depends on the subscription behind the key. Both the search
+// route and the health probe go through this helper so the probe measures the
+// path production actually takes, view fallback included.
+// Richest view first. The empty rung omits the parameter entirely: some Scopus
+// accounts reject an explicit view but answer the endpoint default.
+const SCOPUS_VIEWS = ['COMPLETE', 'STANDARD', ''];
+const SCOPUS_VIEW_FALLBACK_STATUSES = [400, 403, 406, 500];
+
+async function scopusFailure(response, view) {
+  let payload;
+  try {
+    payload = JSON.parse(await response.text());
+  } catch {
+    payload = null;
+  }
+  const detail = scopusErrorDetail(payload);
+  return {
+    view,
+    status: response.status,
+    code: detail.code || `SCOPUS_HTTP_${response.status}`,
+    message: detail.message,
+    requestId: boundedText(response.headers.get('X-ELS-ReqId'), 64),
+  };
+}
+
+async function fetchScopusSearch(env, { query, start = 0, count = 1 }) {
+  const url = new URL('https://api.elsevier.com/content/search/scopus');
+  url.searchParams.set('query', query);
+  url.searchParams.set('start', String(start));
+  url.searchParams.set('count', String(count));
+
+  const headers = {
+    accept: 'application/json',
+    'X-ELS-APIKey': env.ELSEVIER_API_KEY,
+    'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
+  };
+  if (env.ELSEVIER_INST_TOKEN) headers['X-ELS-Insttoken'] = env.ELSEVIER_INST_TOKEN;
+
+  // Every attempt is recorded so a failure names which view Elsevier refused and
+  // why. The body of a failed attempt is consumed here; only a successful
+  // response is handed back unread.
+  const attempts = [];
+  let response = null;
+  let view = '';
+  for (const candidate of SCOPUS_VIEWS) {
+    if (candidate) url.searchParams.set('view', candidate);
+    else url.searchParams.delete('view');
+    response = await fetch(url, { headers });
+    view = candidate || 'DEFAULT';
+    if (response.ok) {
+      attempts.push({ view, status: response.status, code: '', message: '', requestId: '' });
+      break;
+    }
+    attempts.push(await scopusFailure(response, view));
+    if (!SCOPUS_VIEW_FALLBACK_STATUSES.includes(response.status)) break;
+  }
+  return { response, view, attempts };
+}
+
+function scopusQuota(response) {
+  return {
+    limit: Number(response.headers.get('X-RateLimit-Limit')) || null,
+    remaining: Number(response.headers.get('X-RateLimit-Remaining')) || null,
+    resetAt: response.headers.get('X-RateLimit-Reset') || null,
+  };
+}
+
+function boundedText(value, maxLength) {
+  return [...String(value || '')]
+    .map(character => (character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127 ? ' ' : character))
+    .join('')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
+function scopusErrorDetail(payload) {
+  const code = payload?.['service-error']?.status?.statusCode
+    || payload?.['error-response']?.['error-code']
+    || payload?.['service-error']?.statusCode
+    || '';
+  const message = payload?.['service-error']?.status?.statusText
+    || payload?.['error-response']?.['error-message']
+    || '';
+  return {
+    code: boundedText(code, 80),
+    message: boundedText(message, 160),
+  };
+}
+
+// Reports whether the configured key authenticates from Cloudflare's network and
+// which view it grants, without ever echoing the key or the institutional token.
+export async function checkScopusHealth(env) {
+  const base = {
+    provider: 'scopus',
+    configured: Boolean(env.ELSEVIER_API_KEY),
+    insttoken: Boolean(env.ELSEVIER_INST_TOKEN),
+    status: null,
+    view: null,
+    hasAbstract: false,
+    results: 0,
+    quota: null,
+  };
+  if (!base.configured) {
+    return { ...base, available: false, code: 'SCOPUS_NOT_CONFIGURED', message: '', attempts: [] };
+  }
+
+  try {
+    const { response, view, attempts } = await fetchScopusSearch(env, {
+      query: 'TITLE-ABS-KEY("photosynthesis")',
+      count: 1,
+    });
+    if (!response.ok) {
+      const last = attempts[attempts.length - 1] || {};
+      return {
+        ...base,
+        available: false,
+        status: last.status ?? response.status,
+        code: last.code || `SCOPUS_HTTP_${response.status}`,
+        message: last.message || '',
+        attempts,
+        quota: scopusQuota(response),
+      };
+    }
+
+    const payload = await response.json().catch(() => null);
+    const results = payload?.['search-results'] || {};
+    const entry = Array.isArray(results.entry) ? results.entry[0] : null;
+    return {
+      ...base,
+      available: Boolean(entry?.['dc:title']),
+      status: response.status,
+      code: entry?.['dc:title'] ? '' : 'SCOPUS_EMPTY_RESULT',
+      message: '',
+      view,
+      hasAbstract: Boolean(boundedText(entry?.['dc:description'], 1)),
+      results: Number(results['opensearch:totalResults']) || 0,
+      attempts,
+      quota: scopusQuota(response),
+    };
+  } catch (error) {
+    return {
+      ...base,
+      available: false,
+      code: 'SCOPUS_UNREACHABLE',
+      message: boundedText(error?.message, 160),
+      attempts: [],
+    };
+  }
+}
+
 async function handleScopus(request, env, identity) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
@@ -1095,26 +1249,11 @@ async function handleScopus(request, env, identity) {
   if (!query) return json({ error: 'Missing Scopus query' }, 400, corsHeaders(context.origin, env));
 
   return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.scopus, async () => {
-    const url = new URL('https://api.elsevier.com/content/search/scopus');
-    url.searchParams.set('query', query);
-    url.searchParams.set('start', String((context.page - 1) * context.limit));
-    url.searchParams.set('count', String(context.limit));
-    url.searchParams.set('view', 'COMPLETE');
-
-    const headers = {
-      accept: 'application/json',
-      'X-ELS-APIKey': env.ELSEVIER_API_KEY,
-      'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
-    };
-    if (env.ELSEVIER_INST_TOKEN) headers['X-ELS-Insttoken'] = env.ELSEVIER_INST_TOKEN;
-
-    let response = await fetch(url, { headers });
-    let selectedView = 'COMPLETE';
-    if (!response.ok && [400, 403, 406, 500].includes(response.status)) {
-      url.searchParams.set('view', 'STANDARD');
-      response = await fetch(url, { headers });
-      selectedView = 'STANDARD';
-    }
+    const { response, view } = await fetchScopusSearch(env, {
+      query,
+      start: (context.page - 1) * context.limit,
+      count: context.limit,
+    });
     if (!response.ok) {
       const error = new Error(`Scopus error: ${response.status}`);
       error.status = response.status;
@@ -1127,12 +1266,8 @@ async function handleScopus(request, env, identity) {
       ...data,
       _papertok: {
         source: 'scopus',
-        view: selectedView,
-        quota: {
-          limit: Number(response.headers.get('X-RateLimit-Limit')) || null,
-          remaining: Number(response.headers.get('X-RateLimit-Remaining')) || null,
-          resetAt: response.headers.get('X-RateLimit-Reset') || null,
-        },
+        view,
+        quota: scopusQuota(response),
       },
     };
   }, identity);
@@ -1261,6 +1396,25 @@ export default {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
       });
+    }
+    if (url.pathname === '/health/scopus') {
+      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      // The probe costs one upstream Scopus call, so it is served from the edge
+      // cache: hammering the route cannot drain the weekly provider allowance.
+      const cacheKey = canonicalCacheKey(request, origin);
+      const cached = await caches.default.match(cacheKey);
+      if (cached) return cached;
+      const health = await checkScopusHealth(env);
+      const response = json(health, health.available ? 200 : 503, {
+        ...corsHeaders(origin, env),
+        'cache-control': `public, max-age=60, s-maxage=${SCOPUS_HEALTH_CACHE_SECONDS}`,
+      });
+      try {
+        await caches.default.put(cacheKey, response.clone());
+      } catch {
+        // An uncacheable health response is still a valid answer.
+      }
+      return response;
     }
     if (url.pathname === '/health/ai') {
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);

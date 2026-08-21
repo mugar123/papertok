@@ -1,12 +1,18 @@
 import { BaseAdapter } from './BaseAdapter.js';
+import { PaperBuilder } from '../PaperBuilder.js';
+import { auth } from '../firebase.js';
 import { authenticatedWorkerFetch } from '../workerApiClient.js';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const SCOPUS_ENABLED = import.meta.env?.VITE_SCOPUS_ENABLED === 'true';
 const REQUEST_TIMEOUT_MS = 12_000;
 
+// The Worker route is credential-backed and rejects anonymous callers, so
+// `authenticatedWorkerFetch` throws before any request leaves the browser when
+// there is no session. Reporting Scopus as unavailable keeps callers from
+// queueing a call that cannot succeed.
 export function isScopusEnabled() {
-  return SCOPUS_ENABLED && Boolean(PAPER_API_BASE);
+  return SCOPUS_ENABLED && Boolean(PAPER_API_BASE) && Boolean(auth?.currentUser);
 }
 
 function normalizeText(value) {
@@ -85,7 +91,14 @@ export class ScopusAdapter extends BaseAdapter {
         signal: controller.signal,
         headers: { accept: 'application/json' },
       });
-      if (!response.ok) throw new Error(`Scopus source returned ${response.status}`);
+      // A Worker without an Elsevier key is a configuration state, not a
+      // failure: the caller drops the source instead of logging an error.
+      if (response.status === 503) return { papers: [], total: 0, unavailable: true };
+      if (!response.ok) {
+        const error = new Error(`Scopus source returned ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
       const data = await response.json();
       const searchResults = data?.['search-results'] || {};
       const entries = Array.isArray(searchResults.entry) ? searchResults.entry : [];
@@ -124,7 +137,10 @@ export class ScopusAdapter extends BaseAdapter {
     const openAccess = String(raw.openaccess || '') === '1' || String(raw.openaccessFlag || '').toLowerCase() === 'true';
     const selectedCategory = selectRequestedCategory(raw, requestedCategories);
 
-    return {
+    // Every other source mapper hands the builder its data; doing the same here
+    // normalizes the citation field, applies the shared defaults, and leaves the
+    // full Scopus record behind instead of carrying it through the feed.
+    return PaperBuilder.create({
       id: scopusId ? `scopus:${scopusId}` : doi ? `scopus:doi:${doi}` : `scopus:title:${normalizeText(raw['dc:title']).toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 100)}`,
       sources: { primary: 'scopus', enrichedBy: [] },
       scopusId: scopusId || undefined,
@@ -133,25 +149,22 @@ export class ScopusAdapter extends BaseAdapter {
       scopusCitationCount: hasAttributedCitations ? rawCitationCount : undefined,
       doi: doi || undefined,
       title: normalizeText(raw['dc:title']),
-      abstract: normalizeText(raw['dc:description'] || raw['prism:teaser']) || 'No abstract available.',
+      abstract: normalizeText(raw['dc:description'] || raw['prism:teaser']),
       authors,
-      publishedDate: published || undefined,
       published,
       year,
-      sourceName: normalizeText(raw['prism:publicationName']),
       journal: normalizeText(raw['prism:publicationName']),
       sourceType: /conference/i.test(raw.subtypeDescription || raw['prism:aggregationType'] || '') ? 'conference' : 'journal',
       publicationType: normalizeText(raw.subtypeDescription) || 'article',
       publicationStatus: 'published',
       openAccess,
       landingPageUrl: links.scopus || (doi ? `https://doi.org/${doi}` : safeUrl(raw['prism:url'])),
-      citationsCount: hasAttributedCitations ? rawCitationCount : 0,
+      citationCount: hasAttributedCitations ? rawCitationCount : 0,
       citationCountKnown: hasAttributedCitations,
       categories: selectedCategory ? [selectedCategory] : [],
       allCategories: selectedCategory ? [selectedCategory] : [],
       primaryCategory: selectedCategory,
       provider: this.name,
-      raw,
-    };
+    });
   }
 }

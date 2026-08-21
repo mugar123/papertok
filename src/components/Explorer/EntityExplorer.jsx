@@ -4,7 +4,7 @@ import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, Ext
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
 import { fetchPapersByIds, getAuthorPapers } from '../../services/arxivService';
-import { ElsevierAdapter, isScopusEnabled, PubmedAdapter, ScopusAdapter } from '../../services/adapters';
+import { isScopusEnabled, PubmedAdapter, ScopusAdapter, SemanticScholarAdapter } from '../../services/adapters';
 import { getPapersByProject, getProjectDetails } from '../../services/openAireService';
 import { PaperBuilder } from '../../services/PaperBuilder';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService';
@@ -575,10 +575,10 @@ export default function EntityExplorer({
             let papersFromOA = [];
             let arxPapersFromNative = [];
             let primaryError = null;
-            const elsevierAdapter = new ElsevierAdapter();
+            const semanticScholarAdapter = new SemanticScholarAdapter();
             const pubmedAdapter = new PubmedAdapter();
             const supplementalPromises = [
-              elsevierAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }),
+              semanticScholarAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }),
               pubmedAdapter.search(`"${entity.display_name}"`, page, { type: 'author' }),
               isScopusEnabled()
                 ? new ScopusAdapter().search(entity.display_name, page, { type: 'author', limit: 8 })
@@ -605,9 +605,9 @@ export default function EntityExplorer({
               primaryError = primaryResult.reason || new Error('La fuente principal tardó demasiado en responder.');
             }
 
-            const [els, pub, scopus] = supplementalResults.map(result => result.status === 'fulfilled' ? result.value?.papers || [] : []);
+            const [semanticScholar, pub, scopus] = supplementalResults.map(result => result.status === 'fulfilled' ? result.value?.papers || [] : []);
             
-            fetchedPapers.push(...papersFromOA, ...arxPapersFromNative, ...els, ...pub, ...scopus);
+            fetchedPapers.push(...papersFromOA, ...arxPapersFromNative, ...semanticScholar, ...pub, ...scopus);
 
             const supplementalError = supplementalResults.find(result => result.status === 'rejected')?.reason;
             if (fetchedPapers.length === 0 && (primaryError || supplementalError)) {

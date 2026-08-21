@@ -1,5 +1,97 @@
 # Estado / pendientes
 
+## Scopus: la clave autentica, pero Scopus la rechaza (2026-08-22)
+
+**Bloqueado a la espera de un token institucional de Elsevier.** La integración
+estaba entera desde hace tiempo y **nunca se había ejecutado**: en el bundle
+desplegado `VITE_SCOPUS_ENABLED` estaba compilado a `false` (`var uL=!1`), así que
+`isScopusEnabled()` devolvía `false` y ese camino no se tomaba jamás. La clave sí
+estaba puesta — `/health` decía `scopusConfigured: true`— pero nadie había
+comprobado que sirviera.
+
+### El sondeo
+
+Nuevo `GET /health/scopus` en el Worker. Una búsqueda mínima que informa de si la
+clave autentica desde la red de Cloudflare, qué vista concede, si esa vista trae
+abstract y cuánta cuota queda. Nunca devuelve la clave ni el token. Prueba
+`COMPLETE`, luego `STANDARD`, luego el endpoint sin `view`, y **registra qué
+contestó cada intento**, así que un fallo dice qué vista se rechazó y por qué.
+Cuesta una llamada upstream, así que se sirve desde la caché de borde diez
+minutos: martillear la ruta no puede vaciar la cuota semanal.
+
+### Lo que devuelve, medido
+
+Las tres vistas fallan igual: **HTTP 500, `GENERAL_SYSTEM_ERROR`, «System Error
+Occurred»**, con `quota` a `null` en las tres — la petición ni siquiera llega al
+servicio medido. `insttoken: false`.
+
+### La causa, aislada con un grupo de control
+
+No es la vista, ni la consulta, ni las cabeceras, ni la clave. Lo aislé mandando
+desde el propio Worker la misma petición **sin ninguna clave** y con una clave
+inventada:
+
+| Desde | Credencial | Respuesta |
+| --- | --- | --- |
+| Cloudflare Worker | clave real | `500 GENERAL_SYSTEM_ERROR` |
+| Cloudflare Worker | clave inventada | `500 GENERAL_SYSTEM_ERROR` |
+| Cloudflare Worker | **sin clave** | `500 GENERAL_SYSTEM_ERROR` |
+| Portátil (misma URL, mismo user-agent) | sin clave | `401 AUTHENTICATION_ERROR` |
+
+Y ningún endpoint de Elsevier responde desde el Worker: `serial/title`,
+`search/sciencedirect`, `abstract/doi` y `search/author` dan los cinco el mismo
+500.
+
+**La red es la única variable.** Elsevier contesta correctamente a mi portátil y
+devuelve 500 a todo lo que sale de Cloudflare, haya credencial o no. Coincide con
+lo que documenta Elsevier: la clave va atada al rango de IPs de la institución y
+no sirve fuera de él. Para eso existe `X-ELS-Insttoken`, que aquí no hay.
+
+**Una clave nueva no arregla esto**, y está comprobado: @mugar creó una segunda
+(`Papertok`, website `https://mugar123.github.io/papertok`), la puse como secreto
+del Worker, y devuelve exactamente el mismo 500 en las tres vistas.
+
+Identificadores de petición que pedirá el soporte de Elsevier si se les escribe:
+`3810ef7613bc4a9b`, `bf9f1709bba08220`, `af7ae2e99a17fd56`.
+
+### Lo que sí quedó hecho
+
+- `fetchScopusSearch` compartido: el sondeo recorre **el mismo camino** que
+  producción, fallback de vista incluido, en vez de imitarlo.
+- `ScopusAdapter.mapToStandard` pasa por `PaperBuilder.create`, como todos los
+  demás mappers. Antes devolvía `citationsCount` (no `citationCount`, que es lo que
+  lee PaperCard) y arrastraba el registro `COMPLETE` entero en `raw`. Funcionaba
+  solo porque los dos llamantes deduplican después. Ya no depende de esa suerte.
+- `isScopusEnabled()` exige sesión: la ruta del Worker rechaza anónimos, así que
+  sin sesión la petición moría en el navegador. Ahora la fuente se salta.
+- Un `503 SCOPUS_NOT_CONFIGURED` es un estado de configuración, no un error:
+  devuelve `unavailable` en vez de lanzar.
+- `ElsevierAdapter` **consultaba Semantic Scholar**. Renombrado a
+  `SemanticScholarAdapter`, con su `provider` y su `sources.primary` de verdad.
+  Con el Scopus real entrando, el repo tenía dos «Elsevier» y uno era mentira.
+
+### Lo que falta
+
+`VITE_SCOPUS_ENABLED` sigue en `false`, **y así debe quedarse** hasta que
+`/health/scopus` devuelva `available: true`. Encenderlo ahora solo añadiría
+peticiones que fallan.
+
+**Lo que falta no es código.** Desde un servidor —cualquiera, no solo
+Cloudflare— la vía sancionada por Elsevier es el token institucional: la
+institución tiene que estar suscrita a Scopus *y a su API*, y hay que pedirlo a
+`integrationsupport@elsevier.com` para una clave concreta. Si llega:
+
+```bash
+npx wrangler secret put ELSEVIER_INST_TOKEN
+curl -s -H "origin: https://mugar123.github.io" https://papertok-report-api.papertok-mugar123.workers.dev/health/scopus
+gh variable set VITE_SCOPUS_ENABLED --body true   # solo si el sondeo dice available: true
+```
+
+Queda por confirmar con Elsevier si un insttoken levanta un 500 que hoy salta
+**antes** de mirar la credencial. Y si sirve para un feed público: sus términos
+de API son de uso investigador, y PaperTok es un sitio abierto. Merece la pena
+preguntarlo en el mismo correo, antes de construir nada encima.
+
 ## El sync borraba papers publicados. Arreglado y desplegado (2026-08-21)
 
 **Worker y app desplegados** (`3b5ef60`, `e1db338`). @nick_mugar tenía 12

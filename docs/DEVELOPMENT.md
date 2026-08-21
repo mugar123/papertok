@@ -28,7 +28,7 @@ Frontend variables are public in the built JavaScript:
 | `VITE_GA_MEASUREMENT_ID` | Public GA4 measurement ID; analytics remains consent-gated |
 | `VITE_PAPER_API_BASE_URL` | Cloudflare Worker base URL |
 | `VITE_REPORT_API_URL` | Legacy report API alias |
-| `VITE_SCOPUS_ENABLED` | Enables Scopus-backed browser flows when the Worker is configured |
+| `VITE_SCOPUS_ENABLED` | Enables Scopus-backed browser flows. Check `/health/scopus` on the Worker before setting it to `true`: with the flag on and the key refused, the feed queues calls that only ever fail |
 | `VITE_UNPAYWALL_EMAIL` | Public contact email required by Unpaywall |
 
 Never put secret provider tokens in a `VITE_*` variable. See `worker/README.md` for Worker
