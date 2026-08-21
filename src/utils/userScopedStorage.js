@@ -1,6 +1,7 @@
 const LEGACY_SEEN_PAPERS_KEY = 'papertok_seenIds';
 const SEEN_PAPERS_KEY_PREFIX = 'papertok_seenIds:';
 const DRIFT_CHECK_KEY_PREFIX = 'papertok_profileDriftCheckedAt:';
+const FOLLOW_STATS_KEY_PREFIX = 'papertok_followStats:';
 
 function getStorage(storage) {
   if (storage) return storage;
@@ -74,6 +75,62 @@ export function saveProfileDriftCheckedAt(userId, timestamp, storage) {
   }
 }
 
+export function getFollowStatsStorageKey(userId) {
+  if (!userId) return null;
+  return `${FOLLOW_STATS_KEY_PREFIX}${encodeURIComponent(userId)}`;
+}
+
+/**
+ * The follower / following counters of your own profile, as this device last
+ * saw them.
+ *
+ * The session cache already spares every re-entry within a tab, but it dies on
+ * reload, and the first visit after one showed an ellipsis for a full round
+ * trip — a `count()` aggregation is server-only, so there is no local answer to
+ * fall back on. Remembering the last pair here means the header opens on the
+ * number instead of on a placeholder, and the aggregation corrects it behind.
+ *
+ * The cost is honest and small: if somebody followed you while the tab was
+ * closed, the old number stands for as long as the read takes. A counter that
+ * self-corrects in a few hundred milliseconds beats a counter that admits to
+ * knowing nothing.
+ */
+export function readStoredFollowStats(userId, storage) {
+  const key = getFollowStatsStorageKey(userId);
+  const target = getStorage(storage);
+  if (!key || !target) return null;
+
+  try {
+    const parsed = JSON.parse(target.getItem(key) || 'null');
+    if (!parsed || typeof parsed !== 'object') return null;
+    const stat = value => (value && typeof value === 'object' && Number.isFinite(value.count)
+      ? { count: value.count, capped: value.capped === true }
+      : null);
+    const followers = stat(parsed.followers);
+    const followed = stat(parsed.followed);
+    return followers || followed ? { followers, followed } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveStoredFollowStats(userId, stats, storage) {
+  const key = getFollowStatsStorageKey(userId);
+  const target = getStorage(storage);
+  if (!key || !target || !stats) return;
+
+  try {
+    const stat = value => (value && Number.isFinite(value.count)
+      ? { count: value.count, capped: value.capped === true }
+      : null);
+    const payload = { followers: stat(stats.followers), followed: stat(stats.followed) };
+    if (!payload.followers && !payload.followed) return;
+    target.setItem(key, JSON.stringify(payload));
+  } catch {
+    // A counter that cannot be remembered simply waits for its read again.
+  }
+}
+
 export function removeLegacySeenPaperIds(storage) {
   const target = getStorage(storage);
   if (!target) return;
@@ -93,6 +150,7 @@ export function clearUserScopedStorage(userId, storage) {
   const exactKeys = new Set([
     getSeenPapersStorageKey(userId),
     getDriftCheckStorageKey(userId),
+    getFollowStatsStorageKey(userId),
     `papertok_following_${safeUserId}`,
     `papertok_following_updates_${safeUserId}`,
     `papertok_readingLibrary_${userId}`,

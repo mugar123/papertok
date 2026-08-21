@@ -122,6 +122,18 @@
   flex-direction: column;
   gap: var(--space-2);
   padding: var(--space-2) var(--space-2) 0;
+  /* Held back like every other placeholder in the app (see .profile-loading):
+     the edge query usually answers well inside 320ms, and a skeleton that
+     appears and leaves inside a fifth of a second is a flicker announcing a
+     wait that was already over. Deliberately NOT disabled under reduced
+     motion — this is a delay, not decoration, and cancelling it would leave
+     the skeleton at opacity 0 for good. */
+  opacity: 0;
+  animation: follow-sheet-loading-reveal 140ms ease-out 320ms forwards;
+}
+
+@keyframes follow-sheet-loading-reveal {
+  to { opacity: 1; }
 }
 
 .follow-row-skeleton {
@@ -257,6 +269,32 @@
   font-size: var(--fs-xs);
 }
 
+/* A row whose edge has landed and whose account has not. The avatar sets the
+   row height either way, so this holds exactly the geometry the real row will
+   have: the name arriving replaces a shape with a shape and moves nothing. */
+.follow-row-link--pending {
+  pointer-events: none;
+}
+
+.follow-row-pending-block,
+.follow-row-pending-line {
+  background: var(--bg-secondary);
+  animation: follow-sheet-pulse 1.4s ease-in-out infinite;
+}
+
+.follow-row-pending-line {
+  width: 132px;
+  max-width: 45vw;
+  height: 11px;
+  border-radius: var(--radius-full);
+}
+
+.follow-row-pending-line--short {
+  width: 84px;
+  height: 9px;
+  margin-top: 6px;
+}
+
 .follow-sheet-more {
   display: block;
   width: 100%;
@@ -301,7 +339,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .follow-row-skeleton {
+  .follow-row-skeleton,
+  .follow-row-pending-block,
+  .follow-row-pending-line {
     animation: none;
   }
 }

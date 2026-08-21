@@ -26,6 +26,41 @@ export const likedExtraCache = createSessionCache({ maxEntries: 4 });
 // tab costs, keyed by uid so remounts repaint instead of re-reading.
 export const showcaseCache = createSessionCache({ maxEntries: 8 });
 
+/**
+ * The two follow counters of a profile, keyed by uid.
+ *
+ * They were the last thing on the profile header still arriving from the
+ * network on every single mount. The reason is not slowness, it is the shape of
+ * the read: a `count()` aggregation is server-only — Firestore never serves one
+ * from the local cache, however warm the channel — so re-entering your own
+ * profile paid a full round trip to redraw two numbers that had not moved,
+ * while the rest of the header painted instantly from the caches above. Cached,
+ * the counters paint with everything else and the aggregation revalidates
+ * behind them.
+ */
+export const followStatsCache = createSessionCache({ maxEntries: 8 });
+
+/**
+ * What the follow sheet has loaded for one tab, keyed `{uid}:{mode}`.
+ *
+ * The sheet unmounts every time it closes, so each open re-read the edge query
+ * and every profile behind it — for a list the reader had just been looking at.
+ * Rows are stored as uids and re-hydrated from `followRowProfileCache` on the
+ * way back in, so a name read once is never awaited again.
+ */
+export const followListCache = createSessionCache({ maxEntries: 8 });
+
+/**
+ * The public profile behind one row of those lists, keyed by uid.
+ *
+ * Bigger than the other slots because it is the one people actually accumulate:
+ * both tabs overlap on mutuals, paging adds thirty at a time, and the same
+ * accounts come back on every profile you open. `undefined` is "never asked",
+ * `null` is "asked, and that account is gone" — the row renders those two very
+ * differently.
+ */
+export const followRowProfileCache = createSessionCache({ maxEntries: 64 });
+
 export function ownProfileKey(uid) {
   return uid ? `own:${uid}` : null;
 }
@@ -97,6 +132,54 @@ export function forgetOwnLists(uid) {
   ownListsReadAt.delete(uid);
 }
 
+/**
+ * A counter is worth remembering only when it is a real number. The header
+ * uses `{ count: null }` as its "the read failed" sentinel, and caching that
+ * would turn one bad moment into a dash that outlives it.
+ */
+function usableStat(stat) {
+  return stat && typeof stat.count === 'number' && Number.isFinite(stat.count) ? stat : null;
+}
+
+/**
+ * Folds whichever counters have landed into the cached pair. Partial by design:
+ * the two aggregations are no longer awaited together, so each one writes
+ * through the moment it answers.
+ */
+export function rememberFollowStats(uid, stats) {
+  if (!uid || !stats) return;
+  const next = { ...(followStatsCache.get(uid) || {}) };
+  const followers = usableStat(stats.followers);
+  const followed = usableStat(stats.followed);
+  if (followers) next.followers = followers;
+  if (followed) next.followed = followed;
+  if (!next.followers && !next.followed) return;
+  followStatsCache.set(uid, next);
+}
+
+export function forgetFollowStats(uid) {
+  if (!uid) return;
+  followStatsCache.delete(uid);
+  followListCache.delete(`${uid}:followers`);
+  followListCache.delete(`${uid}:following`);
+}
+
+export function followListKey(uid, mode) {
+  return uid && mode ? `${uid}:${mode}` : null;
+}
+
+/** One tab's first page, kept so reopening the sheet repaints instead of reading. */
+export function rememberFollowList(uid, mode, page) {
+  const key = followListKey(uid, mode);
+  if (!key || !page || !Array.isArray(page.rows)) return;
+  followListCache.set(key, page);
+}
+
+export function readFollowList(uid, mode) {
+  const key = followListKey(uid, mode);
+  return key ? followListCache.get(key) : undefined;
+}
+
 export function forgetOwnProfile(uid, handle) {
   const key = ownProfileKey(uid);
   if (key) ownProfileCache.delete(key);
@@ -104,5 +187,6 @@ export function forgetOwnProfile(uid, handle) {
   if (uid) {
     forgetOwnLists(uid);
     pinnableListsCache.delete(uid);
+    forgetFollowStats(uid);
   }
 }

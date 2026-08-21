@@ -36,14 +36,17 @@ import {
   requestMissingRecords,
 } from '../../utils/pendingIdRequests.js';
 import {
+  followStatsCache,
   handleProfileKey,
   likedExtraCache,
   ownListsCache,
   ownProfileCache,
   ownProfileKey,
+  rememberFollowStats,
   rememberOwnProfile,
   showcaseCache,
 } from '../../utils/profileSessionCaches.js';
+import { readStoredFollowStats, saveStoredFollowStats } from '../../utils/userScopedStorage.js';
 import { cleanPaperText, displayAuthorName } from '../../utils/paperText.js';
 import { getIcon } from '../../utils/icons.js';
 import { normalizeHandle } from '../../utils/userHandle.js';
@@ -171,6 +174,20 @@ function seedPaperFor(id, storedPaper, title, authors, category) {
   };
 }
 
+/**
+ * The counters this page can paint before asking anybody.
+ *
+ * The session cache first — this tab has almost certainly had them already —
+ * and then, for your own profile only, what this device remembered from a
+ * previous session. Other people's counters are deliberately not carried across
+ * a reload: you re-enter your own profile constantly and somebody else's once,
+ * so the staleness would buy nothing.
+ */
+function readSeededFollowStats(uid, selfMode) {
+  if (!uid) return null;
+  return followStatsCache.get(uid) || (selfMode ? readStoredFollowStats(uid) : null);
+}
+
 export default function PublicProfilePage({ handle: handleProp, selfMode = false, onAuthRequired }) {
   const params = useParams();
   const handle = selfMode ? '' : normalizeHandle(handleProp || params.handle);
@@ -206,10 +223,16 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   // Releasing a claim mutates a ref, which schedules no render. This token is
   // what turns "these ids are askable again" into an effect that actually runs.
   const [likedRetry, setLikedRetry] = useState(0);
-  // Follows (F2). `null` means "not asked yet", which is what keeps the header
-  // from flashing a zero before the real number lands.
-  const [followerStats, setFollowerStats] = useState(null);
-  const [followedStats, setFollowedStats] = useState(null);
+  // Follows (F2). `null` still means "not asked yet" — what keeps the header
+  // from flashing a zero before the real number lands — but starting there on a
+  // page you were looking at two seconds ago announces a wait that need not
+  // happen. These two were the last state here with no seed, and the only ones
+  // that cannot borrow one from Firestore: a `count()` aggregation is
+  // server-only, so a warm channel buys them nothing.
+  const seedStatsUid = selfMode ? (user?.uid || '') : (seededProfile?.profile?.uid || '');
+  const seededStats = readSeededFollowStats(seedStatsUid, selfMode);
+  const [followerStats, setFollowerStats] = useState(seededStats?.followers ?? null);
+  const [followedStats, setFollowedStats] = useState(seededStats?.followed ?? null);
   const [following, setFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followError, setFollowError] = useState(false);
@@ -327,32 +350,65 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
    * single `get` that answers "do I already follow this person" — the owner
    * skips that one. On one's own page the uid works even before a public
    * profile exists: follows are keyed by uid, not by handle.
+   *
+   * Deliberately not one `Promise.all` any more. Three answers the header uses
+   * separately have no business waiting for each other: each counter paints the
+   * moment its own aggregation lands, and a visitor's Follow button stops being
+   * held hostage by two numbers it does not need.
    */
   const statsUid = profile?.uid || (selfMode ? user?.uid || '' : '');
   useEffect(() => {
     if (!statsUid || IS_DEMO) return undefined;
     let active = true;
-    Promise.all([
-      countFollowers(statsUid),
-      countFollowedUsers(statsUid),
-      view.isOwner ? Promise.resolve(false) : readIsFollowing(statsUid),
-    ])
-      .then(([followers, followed, viewerFollows]) => {
-        if (!active) return;
-        setFollowerStats(followers);
-        setFollowedStats(followed);
-        setFollowing(viewerFollows);
-      })
-      .catch(error => {
-        // Rules not deployed yet, offline, or a genuine denial: the header must
-        // say "unknown", not sit on a spinner forever or claim zero followers.
-        console.error('Error loading follow counters:', error);
-        if (!active) return;
-        setFollowerStats({ count: null, capped: false });
-        setFollowedStats({ count: null, capped: false });
-      });
+
+    // A failed revalidation must not replace a good cached number with a dash —
+    // the same rule the profile and lists reads above follow. `null` here means
+    // "this read failed"; the setter below decides whether there is anything
+    // worth keeping instead.
+    const settle = (read, apply) => {
+      read
+        .then(value => { if (active) apply(value); })
+        .catch(error => {
+          console.error('Error loading follow counters:', error);
+          if (active) apply(null);
+        });
+    };
+
+    settle(countFollowers(statsUid), value => {
+      if (value) rememberFollowStats(statsUid, { followers: value });
+      setFollowerStats(current => value ?? current ?? { count: null, capped: false });
+    });
+    settle(countFollowedUsers(statsUid), value => {
+      if (value) rememberFollowStats(statsUid, { followed: value });
+      setFollowedStats(current => value ?? current ?? { count: null, capped: false });
+    });
+    if (!view.isOwner) {
+      readIsFollowing(statsUid)
+        .then(viewerFollows => { if (active) setFollowing(viewerFollows); })
+        .catch(error => console.error('Error reading the follow edge:', error));
+    }
+
     return () => { active = false; };
   }, [statsUid, user?.uid, view.isOwner, reloadToken]);
+
+  /**
+   * What the counters look like right now, cache included.
+   *
+   * A visitor jumping from one profile to the next gets `statsUid` only when the
+   * new profile document lands — after this component's state was initialised —
+   * so the seed above cannot have caught it. Consulting the cache at render time
+   * covers that case, exactly as `showcaseView` does further down.
+   */
+  const cachedStats = statsUid ? followStatsCache.get(statsUid) : undefined;
+  const followersView = followerStats ?? cachedStats?.followers ?? null;
+  const followedView = followedStats ?? cachedStats?.followed ?? null;
+
+  // Write-through to the device, own profile only: the next cold start opens on
+  // these numbers instead of on an ellipsis. Nothing else is persisted.
+  useEffect(() => {
+    if (!selfMode || !user?.uid || IS_DEMO) return;
+    saveStoredFollowStats(user.uid, { followers: followersView, followed: followedView });
+  }, [selfMode, user?.uid, followersView, followedView]);
 
   /**
    * Follow / unfollow. The service is idempotent — the composite edge id makes
@@ -370,9 +426,17 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     // The label must land on its resting state ("Following", quiet), not on
     // the hover state ("Unfollow", danger) the pointer happens to be over.
     setFollowHover(false);
-    setFollowerStats(current => (current
-      ? { ...current, count: Math.max(0, current.count + (wasFollowing ? -1 : 1)) }
-      : current));
+    // The ±1 is written through to the cache as well, so leaving the page and
+    // coming back shows the number you just changed rather than the one before.
+    const shift = (stats, delta) => (stats
+      ? { ...stats, count: Math.max(0, stats.count + delta) }
+      : null);
+    const applyCount = (stats) => {
+      if (!stats) return;
+      setFollowerStats(stats);
+      rememberFollowStats(statsUid, { followers: stats });
+    };
+    applyCount(shift(followersView, wasFollowing ? -1 : 1));
     try {
       const result = wasFollowing
         ? await unfollowUser(statsUid)
@@ -380,14 +444,12 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       // `changed: false` means the edge was already in the requested state, so
       // the optimistic ±1 counted something that had already been counted.
       if (!result.changed) {
-        setFollowerStats(await countFollowers(statsUid));
+        applyCount(await countFollowers(statsUid));
       }
     } catch (error) {
       console.error('Error updating follow:', error);
       setFollowing(wasFollowing);
-      setFollowerStats(current => (current
-        ? { ...current, count: Math.max(0, current.count + (wasFollowing ? 1 : -1)) }
-        : current));
+      applyCount(shift(followersView, wasFollowing ? 1 : -1));
       setFollowError(true);
     } finally {
       setFollowBusy(false);
@@ -698,6 +760,10 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const likesCount = likedPaperIds?.size ?? 0;
 
   const statValue = value => (typeof value === 'number' ? value.toLocaleString() : value);
+  // Held back 320ms in CSS, so an aggregation that answers quickly never flashes
+  // a placeholder for a wait that did not happen. The slot keeps its space
+  // either way, so nothing jumps when the number lands.
+  const pendingCount = <span className="profile-stat-pending" aria-hidden="true">…</span>;
   // Past the aggregation cap the counter says "1000+" rather than a number it
   // did not actually count. See FOLLOW_COUNT_CAP.
   const followCount = (stats) => {
@@ -887,7 +953,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   disabled={!statsUid}
                   title={copy.openFollowing}
                 >
-                  <strong>{followedStats ? followCount(followedStats) : '…'}</strong>
+                  <strong>{followedView ? followCount(followedView) : pendingCount}</strong>
                   <span>{copy.stats.following}</span>
                 </button>
               </li>
@@ -899,7 +965,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   disabled={!statsUid}
                   title={copy.openFollowers}
                 >
-                  <strong>{followerStats ? followCount(followerStats) : '…'}</strong>
+                  <strong>{followersView ? followCount(followersView) : pendingCount}</strong>
                   <span>{copy.stats.followers}</span>
                 </button>
               </li>
@@ -1116,8 +1182,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
             uid={statsUid}
             mode={followSheet}
             counts={{
-              followers: followerStats ? followCount(followerStats) : null,
-              following: followedStats ? followCount(followedStats) : null,
+              followers: followersView ? followCount(followersView) : null,
+              following: followedView ? followCount(followedView) : null,
             }}
             isEnglish={isEnglish}
             onModeChange={setFollowSheet}

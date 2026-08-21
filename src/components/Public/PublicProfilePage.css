@@ -179,6 +179,21 @@ button.profile-stat:focus-visible:not(:disabled) {
   font-size: var(--fs-xs);
 }
 
+/* The counter that has not answered yet. Held back like every other placeholder
+   in the app (see .profile-loading): the two aggregations behind these numbers
+   usually land well inside 320ms, and announcing a wait that is already over is
+   what made the header feel like it was catching up with itself. The slot keeps
+   its space throughout, so the number lands without moving anything. */
+.profile-stat-pending {
+  display: inline-block;
+  opacity: 0;
+  animation: profile-stat-pending-reveal 140ms ease-out 320ms forwards;
+}
+
+@keyframes profile-stat-pending-reveal {
+  to { opacity: 1; }
+}
+
 /* --- Header actions ---------------------------------------------------------
    One slot, whoever is looking: the owner gets Edit + the followed-content
    chip, a visitor gets Follow. The header keeps one shape. */

@@ -3,9 +3,17 @@ import assert from 'node:assert/strict';
 
 import {
   OWN_LISTS_FRESH_MS,
+  followListKey,
+  followRowProfileCache,
+  followStatsCache,
+  forgetFollowStats,
   forgetOwnLists,
+  forgetOwnProfile,
   ownListsAreFresh,
   ownListsCache,
+  readFollowList,
+  rememberFollowList,
+  rememberFollowStats,
   rememberOwnLists,
   reviseOwnLists,
 } from './profileSessionCaches.js';
@@ -59,4 +67,92 @@ test('rubbish is refused rather than cached', () => {
   rememberOwnLists(null, [{ id: 'l1' }]);
   assert.equal(ownListsCache.get('uid-f'), undefined);
   assert.equal(ownListsAreFresh('uid-f', Date.now()), false);
+});
+
+/**
+ * The follow counters and the follow lists. Both exist because a `count()`
+ * aggregation is server-only and a closed sheet forgets everything: without a
+ * seed, re-entering a profile you were just looking at paid the network again
+ * and said so on screen.
+ */
+
+test('a counter is remembered per account, and one account never sees another', () => {
+  rememberFollowStats('uid-g', { followers: { count: 43, capped: false } });
+  rememberFollowStats('uid-h', { followers: { count: 2, capped: false } });
+
+  assert.deepEqual(followStatsCache.get('uid-g').followers, { count: 43, capped: false });
+  assert.deepEqual(followStatsCache.get('uid-h').followers, { count: 2, capped: false });
+  assert.equal(followStatsCache.get('uid-unknown'), undefined);
+  forgetFollowStats('uid-g');
+  forgetFollowStats('uid-h');
+});
+
+test('each counter writes through on its own without wiping the other', () => {
+  // The two aggregations are no longer awaited together, so the second to land
+  // must fold into the first rather than replace the pair.
+  rememberFollowStats('uid-i', { followers: { count: 43, capped: false } });
+  rememberFollowStats('uid-i', { followed: { count: 7, capped: false } });
+
+  assert.deepEqual(followStatsCache.get('uid-i'), {
+    followers: { count: 43, capped: false },
+    followed: { count: 7, capped: false },
+  });
+  forgetFollowStats('uid-i');
+});
+
+test('a failed read is never cached as a number', () => {
+  // `{ count: null }` is the header's "this read failed" sentinel. Caching it
+  // would turn one bad moment into a dash that outlives the moment.
+  rememberFollowStats('uid-j', { followers: { count: 43, capped: false } });
+  rememberFollowStats('uid-j', { followers: { count: null, capped: false } });
+
+  assert.deepEqual(followStatsCache.get('uid-j').followers, { count: 43, capped: false });
+  rememberFollowStats('uid-k', { followers: { count: null, capped: false } });
+  assert.equal(followStatsCache.get('uid-k'), undefined, 'nothing worth keeping, nothing kept');
+  forgetFollowStats('uid-j');
+});
+
+test('forgetting a profile takes its counters and both of its lists with it', () => {
+  rememberFollowStats('uid-l', { followers: { count: 1, capped: false } });
+  rememberFollowList('uid-l', 'followers', { rows: [{ uid: 'uid-m' }], cursor: null, hasMore: false });
+  rememberFollowList('uid-l', 'following', { rows: [], cursor: null, hasMore: false });
+
+  forgetOwnProfile('uid-l', 'someone');
+
+  assert.equal(followStatsCache.get('uid-l'), undefined);
+  assert.equal(readFollowList('uid-l', 'followers'), undefined);
+  assert.equal(readFollowList('uid-l', 'following'), undefined);
+});
+
+test('the two tabs of a profile are separate entries, and so are two profiles', () => {
+  rememberFollowList('uid-n', 'followers', { rows: [{ uid: 'a' }], cursor: null, hasMore: false });
+  rememberFollowList('uid-n', 'following', { rows: [{ uid: 'b' }, { uid: 'c' }], cursor: null, hasMore: false });
+  rememberFollowList('uid-o', 'followers', { rows: [], cursor: null, hasMore: false });
+
+  assert.deepEqual(readFollowList('uid-n', 'followers').rows, [{ uid: 'a' }]);
+  assert.deepEqual(readFollowList('uid-n', 'following').rows, [{ uid: 'b' }, { uid: 'c' }]);
+  assert.deepEqual(readFollowList('uid-o', 'followers').rows, []);
+  assert.equal(readFollowList('uid-o', 'following'), undefined, 'a tab never opened is not an empty tab');
+  forgetFollowStats('uid-n');
+  forgetFollowStats('uid-o');
+});
+
+test('a row profile that is confirmed gone is remembered as gone, not as unasked', () => {
+  // The sheet renders those two very differently: `undefined` is a placeholder
+  // row, `null` says the account is unavailable.
+  followRowProfileCache.set('uid-p', null);
+  assert.equal(followRowProfileCache.get('uid-p'), null);
+  assert.equal(followRowProfileCache.get('uid-q'), undefined);
+  followRowProfileCache.delete('uid-p');
+});
+
+test('rubbish is refused rather than cached by the follow slots too', () => {
+  rememberFollowStats(null, { followers: { count: 3, capped: false } });
+  rememberFollowStats('uid-r', null);
+  rememberFollowList('uid-r', 'followers', { rows: 'not an array' });
+  rememberFollowList(null, 'followers', { rows: [] });
+
+  assert.equal(followStatsCache.get('uid-r'), undefined);
+  assert.equal(readFollowList('uid-r', 'followers'), undefined);
+  assert.equal(followListKey('uid-r', null), null);
 });

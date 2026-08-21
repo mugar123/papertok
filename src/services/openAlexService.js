@@ -125,6 +125,18 @@ export function mapOpenAlexEnrichmentWork(work) {
   };
 }
 
+// OpenAlex ORs *values* of one filter, not filters. `openalex:W1|openalex:W2`
+// is refused with «It looks like you're trying to do an OR query between filters
+// and it's not supported», so the key goes once and the ids are joined. This
+// used to be written out by hand at each call site, and the two copies drifted:
+// one of them had always been returning 400.
+export function buildOpenAlexIdFilter(ids) {
+  const values = [...new Set((Array.isArray(ids) ? ids : [])
+    .map(id => String(id || '').trim())
+    .filter(Boolean))];
+  return values.length > 0 ? `openalex:${encodeURIComponent(values.join('|'))}` : '';
+}
+
 async function fetchWithTimeout(url, timeoutMs = 8000) {
   let hostname = '';
   try {
@@ -269,8 +281,7 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
 
   for (let i = 0; i < openAlexIds.length; i += CHUNK_SIZE) {
     const chunk = openAlexIds.slice(i, i + CHUNK_SIZE);
-    const filterIds = chunk.join('|');
-    chunkRequests.push(fetchChunk(`openalex:${encodeURIComponent(filterIds)}`));
+    chunkRequests.push(fetchChunk(buildOpenAlexIdFilter(chunk)));
   }
 
   await Promise.all(chunkRequests);
@@ -304,8 +315,7 @@ export async function getArxivIdsForOpenAlexWorks(openAlexUrls) {
   // Randomize and limit to 40 candidates to avoid massive queries
   const candidates = toFetch.sort(() => 0.5 - Math.random()).slice(0, 40);
   
-  const filterIds = candidates.map(id => `openalex:${id}`).join('|');
-  const url = `https://api.openalex.org/works?filter=${filterIds}&per-page=50&select=id,ids`;
+  const url = `https://api.openalex.org/works?filter=${buildOpenAlexIdFilter(candidates)}&per-page=50&select=id,ids`;
   
   try {
      const response = await fetchWithTimeout(url, 10000);

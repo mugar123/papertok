@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.js';
 import {
+  buildOpenAlexIdFilter,
   buildRecentImpactUrl,
   dedupeAuthors,
   enrichAuthorInstitutionLocalization,
@@ -296,4 +297,18 @@ test('maps Crossref institution fallback records into PaperTok papers', () => {
     provider: 'crossref',
     sources: { primary: 'crossref', enrichedBy: [] },
   });
+});
+
+test('ORs OpenAlex identifiers as values of one filter, not as several filters', () => {
+  // `openalex:W1|openalex:W2` is refused: «It looks like you're trying to do an
+  // OR query between filters and it's not supported». One call site wrote it
+  // that way and had always been getting a 400 in production.
+  assert.equal(buildOpenAlexIdFilter(['W1', 'W2', 'W3']), 'openalex:W1%7CW2%7CW3');
+  assert.doesNotMatch(buildOpenAlexIdFilter(['W1', 'W2']), /openalex:.*openalex:/);
+});
+
+test('drops blanks and duplicates instead of sending an empty filter', () => {
+  assert.equal(buildOpenAlexIdFilter(['W1', '', '  ', 'W1', 'W2']), 'openalex:W1%7CW2');
+  assert.equal(buildOpenAlexIdFilter([]), '');
+  assert.equal(buildOpenAlexIdFilter(null), '');
 });
