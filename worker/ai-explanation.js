@@ -160,6 +160,40 @@ function buildResponseSchema(language = 'es') {
   };
 }
 
+/**
+ * Gemini receives `buildResponseSchema` as a structural constraint, so it
+ * cannot misname a field. Modal's OpenAI-compatible endpoint only guarantees
+ * syntactically valid JSON, so Kimi needs the same contract written out.
+ * Deriving it from `buildResponseSchema` is what keeps the two providers from
+ * drifting apart the next time a field is added.
+ */
+function describeSchemaType(property, isEnglish) {
+  if (property.type !== 'ARRAY') return isEnglish ? 'string' : 'texto';
+  const items = property.items || {};
+  const inner = items.type === 'OBJECT'
+    ? `${isEnglish ? 'objects with' : 'objetos con'} ${Object.keys(items.properties || {}).map(key => `"${key}"`).join(isEnglish ? ' and ' : ' y ')}`
+    : isEnglish ? 'strings' : 'textos';
+  const cap = property.maxItems ? `${isEnglish ? ', at most ' : ', máximo '}${property.maxItems}` : '';
+  return `${isEnglish ? 'array of' : 'lista de'} ${inner}${cap}`;
+}
+
+export function buildJsonContractInstruction(language = 'es') {
+  const isEnglish = normalizeExplanationLanguage(language) === 'en';
+  const schema = buildResponseSchema(language);
+  const required = new Set(schema.required);
+  const fields = Object.entries(schema.properties).map(([key, property]) => {
+    const presence = required.has(key)
+      ? (isEnglish ? 'required' : 'obligatoria')
+      : (isEnglish ? 'optional' : 'opcional');
+    const description = property.description ? ` — ${property.description}` : '';
+    return `- "${key}" (${describeSchemaType(property, isEnglish)}, ${presence})${description}`;
+  }).join('\n');
+
+  return isEnglish
+    ? `Return a single JSON object with exactly these keys, copied verbatim in English:\n${fields}\nDo not rename, translate, nest, or omit keys, and do not add any others.`
+    : `Devuelve un único objeto JSON con exactamente estas claves, copiadas literalmente en inglés aunque el texto que va dentro esté en español:\n${fields}\nNo renombres, traduzcas, anides ni omitas claves, y no añadas ninguna otra.`;
+}
+
 export class AIExplanationError extends Error {
   constructor(code, status = 500, message = code, quota = null) {
     super(message);
@@ -775,7 +809,10 @@ async function explainWithKimi({ paper, level, language, env }) {
     model,
     messages: [
       { role: 'system', content: buildSystemInstruction(language) },
-      { role: 'user', content: buildPaperExplanationPrompt(paper, level, 'abstract', language) },
+      {
+        role: 'user',
+        content: `${buildPaperExplanationPrompt(paper, level, 'abstract', language)}\n\n${buildJsonContractInstruction(language)}`,
+      },
     ],
     response_format: { type: 'json_object' },
     reasoning_effort: level === 'researcher' ? 'high' : 'low',
