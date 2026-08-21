@@ -14,7 +14,7 @@ npx wrangler secret put MODAL_KIMI_BASE_URL
 npx wrangler secret put CORE_API_KEY # optional, raises CORE rate limits
 npx wrangler secret put NASA_ADS_API_TOKEN # optional; INSPIRE is used until configured
 npx wrangler secret put ELSEVIER_API_KEY # Scopus search; the browser flow stays dark without it
-npx wrangler secret put ELSEVIER_INST_TOKEN # institutional token; required for the COMPLETE view and for non-subscribing networks
+npx wrangler secret put ELSEVIER_INST_TOKEN # institutional token; required for the COMPLETE view and for non-subscribing networks (request it at service.elsevier.com/app/contact/supporthub/dataasaservice/)
 npx wrangler secret put BREVO_API_KEY
 npx wrangler secret put BREVO_FROM_EMAIL
 npx wrangler secret put RESEND_API_KEY

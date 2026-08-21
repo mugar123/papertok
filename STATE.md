@@ -42,10 +42,14 @@ Y ningún endpoint de Elsevier responde desde el Worker: `serial/title`,
 `search/sciencedirect`, `abstract/doi` y `search/author` dan los cinco el mismo
 500.
 
-**La red es la única variable.** Elsevier contesta correctamente a mi portátil y
-devuelve 500 a todo lo que sale de Cloudflare, haya credencial o no. Coincide con
-lo que documenta Elsevier: la clave va atada al rango de IPs de la institución y
-no sirve fuera de él. Para eso existe `X-ELS-Insttoken`, que aquí no hay.
+**La red es la única variable**, y no es «servidor sí, servidor no». Muestreé sin
+credencial desde un tercer sitio —el datacenter de `r.jina.ai`, en dos endpoints
+distintos— y Elsevier devuelve el mismo `401 AUTHENTICATION_ERROR` limpio que a mi
+portátil. O sea: **Elsevier no rechaza a los servidores; rechaza a este Worker.**
+
+Con el matiz honesto de que no conseguí una muestra limpia de un Worker de
+Cloudflare ajeno (el proxy público que probé estaba caído con un 1027 propio de
+Cloudflare), así que lo demostrado es «nuestro Worker», no «todo Cloudflare».
 
 **Una clave nueva no arregla esto**, y está comprobado: @mugar creó una segunda
 (`Papertok`, website `https://mugar123.github.io/papertok`), la puse como secreto
@@ -76,21 +80,37 @@ Identificadores de petición que pedirá el soporte de Elsevier si se les escrib
 `/health/scopus` devuelva `available: true`. Encenderlo ahora solo añadiría
 peticiones que fallan.
 
-**Lo que falta no es código.** Desde un servidor —cualquiera, no solo
-Cloudflare— la vía sancionada por Elsevier es el token institucional: la
-institución tiene que estar suscrita a Scopus *y a su API*, y hay que pedirlo a
-`integrationsupport@elsevier.com` para una clave concreta. Si llega:
+**Lo que falta no es código, y la siguiente medida la tiene que hacer @mugar**,
+porque es la única que no puedo tomar yo: correr la consulta con la clave real
+desde una red normal. Yo no puedo —el clasificador me impide mandar credenciales
+a servicios externos, y meterlas por un proxy público sería peor todavía.
 
 ```bash
-npx wrangler secret put ELSEVIER_INST_TOKEN
-curl -s -H "origin: https://mugar123.github.io" https://papertok-report-api.papertok-mugar123.workers.dev/health/scopus
-gh variable set VITE_SCOPUS_ENABLED --body true   # solo si el sondeo dice available: true
+curl -s -H "accept: application/json" -H "X-ELS-APIKey: <la clave>" \
+  'https://api.elsevier.com/content/search/scopus?query=TITLE-ABS-KEY%28%22photosynthesis%22%29&count=1'
 ```
 
-Queda por confirmar con Elsevier si un insttoken levanta un 500 que hoy salta
-**antes** de mirar la credencial. Y si sirve para un feed público: sus términos
-de API son de uso investigador, y PaperTok es un sitio abierto. Merece la pena
-preguntarlo en el mismo correo, antes de construir nada encima.
+Dos ramas, y son muy distintas:
+
+- **Si devuelve papers** — la clave sirve desde redes normales y lo único que
+  sobra es la salida por Cloudflare. Se arregla sin depender de Elsevier: mover
+  esa llamada a otra salida (Modal ya está montado en este proyecto para Kimi),
+  dejando en el Worker la auth, la cuota y la caché.
+- **Si devuelve 401/403** — hace falta acceso institucional de verdad, y ahí el
+  camino es el token: la institución suscrita a Scopus *y a su API*, y pedirlo por
+  el formulario de soporte. **El buzón `integrationsupport@elsevier.com` ya no se
+  atiende** (rebota); ahora es
+  <https://service.elsevier.com/app/contact/supporthub/dataasaservice/>.
+
+En cualquiera de las dos ramas, cuando el sondeo diga `available: true`:
+
+```bash
+gh variable set VITE_SCOPUS_ENABLED --body true
+```
+
+Queda por confirmar, además, si sus términos de API admiten un feed público:
+son de uso investigador y PaperTok es un sitio abierto. Merece la pena
+preguntarlo antes de construir nada encima.
 
 ## El sync borraba papers publicados. Arreglado y desplegado (2026-08-21)
 
