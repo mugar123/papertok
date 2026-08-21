@@ -22,10 +22,11 @@ const CORPUS_CACHE = new Map();
 const MAX_CORPUS_CACHE_ENTRIES = 24;
 const CACHE_TTL = 60 * 60 * 1000; // 1 hour in ms
 const DEGRADED_CACHE_TTL = 5 * 60 * 1000;
-// Must exceed the arXiv fallback cascade's worst case (worker 4s + proxy 4.5s in
-// prod; dev direct 5s + proxy 4.5s), or this deadline marks the source
-// "unavailable" while a later fallback layer was about to succeed and the
-// degraded status then gets pinned in the corpus cache.
+// Must exceed the arXiv chain's worst case (worker 4s in prod; worker 4s + direct
+// 5s in dev, where the Vite proxy still backs the Worker up), or this deadline
+// marks the source "unavailable" while a later layer was about to succeed and the
+// degraded status then gets pinned in the corpus cache. The proxy cascade that
+// used to add 4.5s to both numbers is gone.
 const REPORT_SOURCE_TIMEOUT_MS = 10_000;
 
 const DEFAULT_ARXIV_REPORT_CATEGORIES = ['cs.AI', 'quant-ph', 'q-bio.NC', 'stat.ML', 'math.PR', 'eess.SP'];

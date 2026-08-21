@@ -1,18 +1,32 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assignRequestedCategories, toAbsoluteArxivUrl } from './arxivService.js';
+import { assignRequestedCategories, clearCache, fetchPapers } from './arxivService.js';
 
-test('rewrites the relative dev proxy URL to the real arXiv endpoint', () => {
-  assert.equal(
-    toAbsoluteArxivUrl('/api/arxiv?search_query=cat:cs.AI&max_results=5'),
-    'https://export.arxiv.org/api/query?search_query=cat:cs.AI&max_results=5',
-  );
-});
+// Under node the module sees no import.meta.env, so neither the Worker route nor
+// the dev proxy is configured -- exactly the state in which the dead corsproxy.io
+// and allorigins cascade used to run. It has to fail without calling anything.
+test('fails without reaching for a third-party proxy when no arXiv route exists', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  const requested = [];
+  globalThis.fetch = (input) => {
+    requested.push(String(input?.url || input));
+    return Promise.resolve(new Response('', { status: 200 }));
+  };
+  console.error = () => {};
 
-test('leaves absolute arXiv URLs untouched', () => {
-  const absolute = 'https://export.arxiv.org/api/query?search_query=cat:quant-ph';
-  assert.equal(toAbsoluteArxivUrl(absolute), absolute);
-  assert.equal(toAbsoluteArxivUrl(''), '');
+  try {
+    clearCache();
+    await assert.rejects(
+      fetchPapers(['cs.AI'], 0, 5),
+      /No se pudo conectar con arXiv/,
+    );
+    assert.deepEqual(requested, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+    console.error = originalError;
+    clearCache();
+  }
 });
 
 test('keeps an exact arXiv subcategory selected by the user', () => {

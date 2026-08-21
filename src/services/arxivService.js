@@ -1,6 +1,6 @@
 /**
  * arXiv API Service
- * Uses Vite proxy in dev, CORS proxy in production (GitHub Pages).
+ * Uses the Vite proxy in dev and the Worker's /arxiv route in production.
  */
 
 const isDev = import.meta.env?.DEV === true;
@@ -11,16 +11,6 @@ const ARXIV_DEV = '/api/arxiv';
 const ARXIV_PROD = 'https://export.arxiv.org/api/query';
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
 
-/**
- * The dev path is a relative Vite-proxy URL; public CORS proxies cannot resolve
- * a relative URL, so every proxy fallback silently failed in dev. Rewrite it to
- * the real arXiv endpoint before handing it to a third-party proxy.
- */
-export function toAbsoluteArxivUrl(url) {
-  const value = String(url || '');
-  if (value.startsWith(ARXIV_DEV)) return ARXIV_PROD + value.slice(ARXIV_DEV.length);
-  return value;
-}
 const cache = new Map();
 const CACHE_TTL = 5 * 60 * 1000;
 const ARXIV_PREFIXES = ['cs', 'math', 'physics', 'eess', 'q-bio', 'q-fin', 'stat', 'econ', 'astro-ph', 'cond-mat', 'gr-qc', 'hep-ex', 'hep-lat', 'hep-ph', 'hep-th', 'nlin', 'nucl-ex', 'nucl-th', 'quant-ph', 'math-ph'];
@@ -205,22 +195,28 @@ async function fetchArxivData(url) {
 }
 
 /**
- * Helper to fetch and parse arXiv XML or JSON using cascading proxies in production
+ * Helper to fetch and parse arXiv XML through the Worker in production.
  */
 async function fetchArxivDataNow(url) {
-  // The PaperTok Worker avoids depending on unreliable public CORS proxies in production.
-  // Measured latency of the route is ~0.3s, so 4s is generous headroom; keeping the
-  // whole cascade under the report's per-source deadline is what makes the
-  // availability flag truthful.
+  let lastError;
+
+  // The Worker is the only browser-reachable route to arXiv in production:
+  // export.arxiv.org answers without any access-control-allow-origin header, so a
+  // direct fetch from the page is blocked however it is spelled. Measured latency
+  // of the route is ~0.3s, so 4s is generous headroom; staying under the report's
+  // per-source deadline is what makes the availability flag truthful.
   if (PAPER_API_BASE) {
     try {
       const query = new URL(url, 'https://export.arxiv.org').search;
       const response = await fetchWithTimeout(`${PAPER_API_BASE}/arxiv${query}`, 4_000);
       if (!response.ok) throw new Error(`PaperTok arXiv API error: ${response.status}`);
-      const parsed = parseArxivXml(await response.text());
-      if (parsed.length > 0) return parsed;
+      // The Worker only answers 200 once it has checked the body is a real Atom feed,
+      // so an empty parse here means arXiv matched nothing. That is an answer, not a
+      // failure: paging past the end of a category has to return [] rather than raise.
+      return parseArxivXml(await response.text());
     } catch (error) {
-      console.warn('PaperTok arXiv API failed, using fallback', error);
+      lastError = error;
+      console.warn('PaperTok arXiv API failed', error);
     }
   }
 
@@ -228,45 +224,20 @@ async function fetchArxivDataNow(url) {
     try {
       const response = await fetchWithTimeout(url, 5_000);
       if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-      const xmlText = await response.text();
-      return parseArxivXml(xmlText);
-    } catch (e) {
-      console.warn('Dev fetch failed', e);
+      return parseArxivXml(await response.text());
+    } catch (error) {
+      lastError = error;
+      console.warn('Dev fetch failed', error);
     }
   }
 
-  const absoluteUrl = toAbsoluteArxivUrl(url);
-  const fallbackRequests = [
-    (async () => {
-      const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(absoluteUrl)}`;
-      const response = await fetchWithTimeout(proxyUrl, 4_500);
-      if (!response.ok) throw new Error(`corsproxy error: ${response.status}`);
-      const parsed = parseArxivXml(await response.text());
-      if (parsed.length === 0) throw new Error('corsproxy returned no arXiv entries');
-      return parsed;
-    })(),
-    (async () => {
-      const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(absoluteUrl)}`;
-      const response = await fetchWithTimeout(proxyUrl, 4_500);
-      if (!response.ok) throw new Error(`allorigins error: ${response.status}`);
-      const data = await response.json();
-      if (!data.contents) throw new Error('allorigins returned no content');
-      let xmlText = data.contents;
-      if (xmlText.startsWith('data:')) {
-        const base64Data = xmlText.split(',')[1];
-        xmlText = atob(base64Data);
-      }
-      const parsed = parseArxivXml(xmlText);
-      if (parsed.length === 0) throw new Error('allorigins returned no arXiv entries');
-      return parsed;
-    })(),
-  ];
-
-  const fallbackResults = await Promise.allSettled(fallbackRequests);
-  const successfulFallback = fallbackResults.find(result => result.status === 'fulfilled');
-  if (successfulFallback) return successfulFallback.value;
-
-  const cause = fallbackResults.find(result => result.status === 'rejected')?.reason;
+  // There used to be a cascade through corsproxy.io and allorigins here. Both are
+  // gone -- corsproxy.io now answers "Server-side requests are not allowed on your
+  // plan" and allorigins returns a 520 -- and the /arxiv route already covers the
+  // one thing they were there for, which was arXiv's missing CORS header. A failure
+  // is a failure: there is no third-party route left to try behind the Worker.
+  const cause = lastError
+    || new Error('No arXiv route available: VITE_PAPER_API_BASE_URL is unset');
   console.error('All arXiv routes failed', cause);
   throw new Error('No se pudo conectar con arXiv. Inténtalo de nuevo en unos segundos.', { cause });
 }
