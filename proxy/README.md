@@ -59,7 +59,7 @@ openssl rand -hex 32
 Then point the Worker at it:
 
 ```bash
-npx wrangler secret put SCOPUS_PROXY_URL     # https://<project>.deno.dev
+npx wrangler secret put SCOPUS_PROXY_URL     # https://<project>.deno.net (playgrounds serve from .deno.net)
 npx wrangler secret put SCOPUS_PROXY_SECRET  # the same value
 npx wrangler secret delete ELSEVIER_API_KEY  # it does nothing in Cloudflare
 npm run worker:deploy
@@ -73,7 +73,7 @@ The egress answers its own health route without a secret, and says nothing about
 the key beyond whether one is present:
 
 ```bash
-curl -s https://<project>.deno.dev/health
+curl -s https://<project>.deno.net/health
 ```
 
 Then confirm the whole chain — browser to Worker to egress to Scopus — through the

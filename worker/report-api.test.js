@@ -262,6 +262,56 @@ test('reports a COMPLETE view that carries the abstract', async () => {
   assert.equal(health.hasAbstract, true);
 });
 
+test('falls past a view the account is not entitled to, which Scopus refuses with 401', async () => {
+  const requestedViews = [];
+  const response = await withWorkerFetchMock(
+    async url => {
+      const view = new URL(url).searchParams.get('view');
+      requestedViews.push(view);
+      if (view === 'COMPLETE') {
+        return new Response(
+          JSON.stringify({ 'service-error': { status: { statusCode: 'AUTHORIZATION_ERROR' } } }),
+          { status: 401 },
+        );
+      }
+      return new Response(
+        JSON.stringify({ 'search-results': { entry: [{ 'dc:title': 'A STANDARD result' }] } }),
+        { status: 200 },
+      );
+    },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/scopus',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), SCOPUS_EGRESS),
+  );
+
+  assert.deepEqual(requestedViews, ['COMPLETE', 'STANDARD']);
+  assert.equal(response.status, 200);
+  const health = await response.json();
+  assert.equal(health.available, true);
+  assert.equal(health.view, 'STANDARD');
+  assert.equal(health.hasAbstract, false);
+});
+
+test('spends a single upstream call when the answering view is pinned', async () => {
+  const requestedViews = [];
+  await withWorkerFetchMock(
+    async url => {
+      requestedViews.push(new URL(url).searchParams.get('view'));
+      return new Response(
+        JSON.stringify({ 'search-results': { entry: [{ 'dc:title': 'A STANDARD result' }] } }),
+        { status: 200 },
+      );
+    },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/scopus',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { ...SCOPUS_EGRESS, SCOPUS_VIEW: 'STANDARD' }),
+  );
+
+  assert.deepEqual(requestedViews, ['STANDARD']);
+});
+
 test('reaches Scopus through the egress and never contacts Elsevier itself', async () => {
   let upstreamUrl = '';
   let sentHeaders = null;

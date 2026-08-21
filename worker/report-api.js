@@ -1087,7 +1087,21 @@ async function handlePhysicsLiterature(request, env, identity) {
 // Richest view first. The empty rung omits the parameter entirely: some Scopus
 // accounts reject an explicit view but answer the endpoint default.
 const SCOPUS_VIEWS = ['COMPLETE', 'STANDARD', ''];
-const SCOPUS_VIEW_FALLBACK_STATUSES = [400, 403, 406, 500];
+// 401 belongs here. An account without COMPLETE entitlement is refused with
+// `401 AUTHORIZATION_ERROR -- the requestor is not authorized to access the
+// requested view`, which is a statement about the view, not about the key.
+// Reading it as a dead end stops the ladder on its first rung and fails every
+// search on an account that STANDARD would have served.
+const SCOPUS_VIEW_FALLBACK_STATUSES = [400, 401, 403, 406, 500];
+
+// Trying a view the account cannot have costs a doomed upstream call on every
+// cache miss, so once `/health/scopus` names the view that answers, pinning it
+// here halves what a search spends against the weekly Scopus allowance.
+function scopusViewLadder(env) {
+  const pinned = String(env.SCOPUS_VIEW || '').trim().toUpperCase();
+  if (pinned === 'DEFAULT') return [''];
+  return SCOPUS_VIEWS.includes(pinned) && pinned ? [pinned] : SCOPUS_VIEWS;
+}
 
 async function scopusFailure(response, view) {
   let payload;
@@ -1133,7 +1147,7 @@ async function fetchScopusSearch(env, { query, start = 0, count = 1 }) {
   const attempts = [];
   let response = null;
   let view = '';
-  for (const candidate of SCOPUS_VIEWS) {
+  for (const candidate of scopusViewLadder(env)) {
     if (candidate) url.searchParams.set('view', candidate);
     else url.searchParams.delete('view');
     response = await fetch(url, { headers });
