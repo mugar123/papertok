@@ -9,7 +9,7 @@ import {
 } from '../../services/followUserService.js';
 import { readUserProfile } from '../../services/userProfileService.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
-import { patientRead } from '../../utils/boundedRead.js';
+import { isTransientReadError, patientRead } from '../../utils/boundedRead.js';
 import './FollowSheet.css';
 
 /**
@@ -74,6 +74,12 @@ function Row({ uid, profile, unavailableLabel, onNavigate }) {
   );
 }
 
+/**
+ * States where the page is still on its way. 'slow' and 'offline' keep the
+ * skeleton and the read behind it: only 'error' is the sheet giving up.
+ */
+const FOLLOW_WAITING = ['loading', 'slow', 'offline'];
+
 const EMPTY_PAGE = Object.freeze({
   mode: null, rows: [], cursor: null, hasMore: false, status: 'loading',
 });
@@ -133,6 +139,8 @@ export default function FollowSheet({
       : 'Users this account follows will show up here.',
     more: 'Load more',
     loading: 'Loading...',
+    slow: 'This is taking longer than usual. Still trying.',
+    offline: 'There seems to be no connection. Still trying.',
     error: 'This list could not be loaded.',
     retry: 'Try again',
     unavailable: 'Account unavailable',
@@ -146,6 +154,8 @@ export default function FollowSheet({
       : 'Aquí aparecerán los usuarios que siga esta cuenta.',
     more: 'Cargar más',
     loading: 'Cargando...',
+    slow: 'Está tardando más de lo normal. Seguimos intentándolo.',
+    offline: 'Parece que no hay conexión. Seguimos intentándolo.',
     error: 'No se pudo cargar esta lista.',
     retry: 'Reintentar',
     unavailable: 'Cuenta no disponible',
@@ -173,6 +183,8 @@ export default function FollowSheet({
 
   useEffect(() => {
     let active = true;
+    // The retry loop outlives the promise; closing the sheet must end it.
+    const controller = new AbortController();
 
     const apply = (result) => {
       if (active) setPage({ mode, ...result, status: 'ready' });
@@ -187,14 +199,27 @@ export default function FollowSheet({
     patientRead(() => readPage(null), {
       attempts: 2,
       label: 'follow list',
+      signal: controller.signal,
+      onSlow: (attemptNumber, info) => {
+        if (active) setPage({ ...EMPTY_PAGE, mode, status: info?.offline ? 'offline' : 'slow' });
+      },
       onLateResult: apply,
     })
       .then(apply)
       .catch((error) => {
+        // A mute connection answers as a rejection ten seconds later. That is
+        // still a wait, and the retry behind it is still running.
+        if (isTransientReadError(error)) {
+          console.warn('The follow list did not answer in time', error);
+          return;
+        }
         console.error('Error loading the follow list:', error);
         if (active) setPage({ ...EMPTY_PAGE, mode, status: 'error' });
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [readPage, mode, attempt]);
 
   const loadMore = async () => {
@@ -306,11 +331,14 @@ export default function FollowSheet({
         </header>
 
         <div className="follow-sheet-body">
-          {current.status === 'loading' && (
+          {FOLLOW_WAITING.includes(current.status) && (
             <div className="follow-sheet-loading" aria-label={copy.loading} aria-busy="true">
               <div className="follow-row-skeleton" />
               <div className="follow-row-skeleton" />
               <div className="follow-row-skeleton" />
+              {current.status !== 'loading' && (
+                <p role="status">{current.status === 'offline' ? copy.offline : copy.slow}</p>
+              )}
             </div>
           )}
           {current.status === 'error' && (

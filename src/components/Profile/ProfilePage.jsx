@@ -6,7 +6,7 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { isReadTimeout, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
+import { isTransientReadError, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
 import {
   forgetOwnProfile,
   ownProfileCache,
@@ -174,6 +174,8 @@ export default function ProfilePage() {
     loading: 'Loading your profile...',
     loadError: 'Your profile could not be loaded.',
     loadSlow: 'Your profile is taking longer than usual.',
+    loadOffline: 'There seems to be no connection.',
+    loadSlowHint: 'Still trying — nothing has been changed.',
     loadErrorHint: 'Check your connection and try again — nothing has been changed.',
     retry: 'Try again',
     nameRequired: 'A display name is required.',
@@ -238,6 +240,8 @@ export default function ProfilePage() {
     loading: 'Cargando tu perfil...',
     loadError: 'No se ha podido cargar tu perfil.',
     loadSlow: 'Tu perfil está tardando más de lo normal.',
+    loadOffline: 'Parece que no hay conexión.',
+    loadSlowHint: 'Seguimos intentándolo — no se ha cambiado nada.',
     loadErrorHint: 'Revisa tu conexión y vuelve a intentarlo — no se ha cambiado nada.',
     retry: 'Reintentar',
     nameRequired: 'El nombre visible es obligatorio.',
@@ -253,6 +257,8 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!user) return undefined;
     let active = true;
+    // The retry loop outlives the promise; leaving must end it.
+    const controller = new AbortController();
     const uid = user.uid;
 
     // Two independent reads, no longer joined by `Promise.all`: the form only
@@ -276,14 +282,15 @@ export default function ProfilePage() {
     patientRead(() => readOwnUserProfile(), {
       attempts: 2,
       label: 'own profile',
-      onSlow: () => {
-        if (active && !seeded) setStatus('slow');
+      signal: controller.signal,
+      onSlow: (attemptNumber, info) => {
+        if (active && !seeded) setStatus(info?.offline ? 'offline' : 'slow');
       },
       onLateResult: applyProfile,
     })
       .then(applyProfile)
       .catch(error => {
-        if (isReadTimeout(error)) {
+        if (isTransientReadError(error)) {
           // Already showing 'slow'; the late answer stays armed above.
           console.warn('The profile did not answer in time', error);
           return;
@@ -304,11 +311,14 @@ export default function ProfilePage() {
         if (active) setPinnableLists(lists);
       })
       .catch(error => {
-        if (isReadTimeout(error)) console.warn('The pinnable lists did not answer in time', error);
+        if (isTransientReadError(error)) console.warn('The pinnable lists did not answer in time', error);
         else console.error('Error loading pinnable lists:', error);
       });
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+      controller.abort();
+    };
     // `seeded` is read once to decide whether a failure is reportable; it is
     // derived from this same uid, so it adds nothing to re-run on.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -643,13 +653,17 @@ export default function ProfilePage() {
   // Before this existed, a failed load fell through to the form below with
   // every `status === 'ready'` branch switched off: a half-built editor for a
   // profile that had not been read.
-  if (status === 'error' || status === 'slow') {
+  if (status === 'error' || status === 'slow' || status === 'offline') {
+    // 'slow' and 'offline' are waits with a read still running behind them;
+    // only 'error' is the screen giving up. The Try again is offered in all
+    // three, because pressing it is never wrong.
+    const waiting = status !== 'error';
     return (
       <main className="profile-page">
         <div className="profile-shell">
-          <div className="profile-load-error" role="alert" aria-busy={status === 'slow'}>
-            <h1>{status === 'slow' ? copy.loadSlow : copy.loadError}</h1>
-            <p>{copy.loadErrorHint}</p>
+          <div className="profile-load-error" role="alert" aria-busy={waiting}>
+            <h1>{status === 'offline' ? copy.loadOffline : status === 'slow' ? copy.loadSlow : copy.loadError}</h1>
+            <p>{waiting ? copy.loadSlowHint : copy.loadErrorHint}</p>
             <button
               type="button"
               className="profile-empty-action"

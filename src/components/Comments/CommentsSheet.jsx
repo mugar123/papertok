@@ -21,7 +21,7 @@ import {
 import { profileIsPublic, readOwnUserProfile } from '../../services/userProfileService.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
-import { isReadTimeout, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
+import { isTransientReadError, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
 import './CommentsSheet.css';
 
 // Opening the sheet used to start from nothing every time: anchor, pages and
@@ -62,6 +62,10 @@ const COPY = {
     es: 'Está tardando más de lo normal. Seguimos intentándolo.',
     en: 'This is taking longer than usual. Still trying.',
   },
+  noConnection: {
+    es: 'Parece que no hay conexión. Seguimos intentándolo.',
+    en: 'There seems to be no connection. Still trying.',
+  },
   retry: { es: 'Reintentar', en: 'Try again' },
   more: { es: 'Cargar más', en: 'Load more' },
   placeholder: { es: 'Añade un comentario...', en: 'Add a comment...' },
@@ -101,6 +105,17 @@ const COPY = {
   throttled: { es: 'Vas demasiado rápido. Espera unos segundos y vuelve a intentarlo.', en: 'Too fast. Wait a few seconds and try again.' },
   writeError: { es: 'No se pudo publicar. Revisa tu conexión.', en: 'It could not be posted. Check your connection.' },
   deleteError: { es: 'No se pudo borrar. Vuelve a intentarlo.', en: 'It could not be deleted. Try again.' },
+};
+
+/**
+ * What the body says while it is not showing a thread. Three of the four are
+ * waits, not failures: only `error` is the sheet giving up, and it is reached
+ * solely by an error that retrying cannot fix.
+ */
+const WAITING_COPY = {
+  slow: COPY.slowLoad,
+  offline: COPY.noConnection,
+  error: COPY.loadError,
 };
 
 const RELATIVE_STEPS = [
@@ -278,6 +293,10 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   // its own handler — no synchronous setState in the effect.
   useEffect(() => {
     let active = true;
+    // `patientRead` keeps re-reading behind a backoff for as long as the
+    // connection stays mute, and that loop outlives the promise on purpose.
+    // Aborting on cleanup is what stops a closed sheet from reading forever.
+    const controller = new AbortController();
 
     // One attempt = the whole pipeline the thread needs: anchor, then its
     // pages. Timing belongs to `patientRead`, not to the stages — measured,
@@ -331,22 +350,27 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     patientRead(loadThread, {
       attempts: 2,
       label: 'comment thread',
+      signal: controller.signal,
       // The truth at the first timeout is "slow", not "failed": the interface
       // says so, keeps the retry racing, and any answer replaces the notice.
-      onSlow: () => {
+      // A mute connection and a missing one are different truths, and the
+      // reader can act on the second one.
+      onSlow: (attemptNumber, info) => {
         if (!active) return;
         if (openedSeeded.current && attempt === 0) return;
-        setStatus('slow');
+        setStatus(info?.offline ? 'offline' : 'slow');
       },
       // A stall that ends at nine seconds heals the sheet at nine seconds.
       onLateResult: apply,
     })
       .then(apply)
       .catch((error) => {
-        if (isReadTimeout(error)) {
+        if (isTransientReadError(error)) {
           // Already showing 'slow', and onLateResult stays armed. Saying
           // "could not be loaded" here blamed the server for a slow answer —
-          // disproved by the instant success on the next tap.
+          // disproved by the instant success on the next tap. Firestore's own
+          // ten-second verdict arrives here as `unavailable`, which is the
+          // same non-answer wearing a rejection's clothes.
           console.warn('The comment thread did not answer in time', error);
           return;
         }
@@ -357,7 +381,10 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         if (openedSeeded.current && attempt === 0) return;
         setStatus('error');
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [paper, attempt]);
 
   // Write-through, and not only after loads: local mutations (post, edit,
@@ -676,9 +703,11 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               <div className="comment-row-skeleton" />
             </div>
           )}
-          {(status === 'error' || status === 'slow') && (
-            <div className="comments-sheet-state" aria-busy={status === 'slow'}>
-              <p>{text(status === 'slow' ? COPY.slowLoad : COPY.loadError)}</p>
+          {WAITING_COPY[status] && (
+            // 'slow' and 'offline' are still waits — they keep `aria-busy` and
+            // the retry loop behind them. Only 'error' is a verdict.
+            <div className="comments-sheet-state" aria-busy={status !== 'error'}>
+              <p>{text(WAITING_COPY[status])}</p>
               <button
                 type="button"
                 className="comments-sheet-more"

@@ -42,7 +42,7 @@ import {
   normalizeUserSearchTerm,
   searchUsers,
 } from '../../services/userSearchService';
-import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
+import { isTransientReadError, patientRead } from '../../utils/boundedRead.js';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
@@ -394,6 +394,8 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
         attempts: 2,
         ms: USER_SEARCH_TIMEOUT_MS,
         label: 'user search',
+        // `isCurrent()` already ends the loop's effect on the screen when the
+        // term changes; the loop itself stops with the next search's own read.
         onSlow: () => { if (isCurrent()) setUserStatus('slow'); },
         onLateResult: (rows) => {
           if (!isCurrent()) return;
@@ -414,7 +416,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
       setUserResults([]);
       // A timeout is not a failure, it is a wait that is still running: the
       // late answer may still land through onLateResult.
-      if (isReadTimeout(error)) {
+      if (isTransientReadError(error)) {
         setUserStatus('slow');
         return;
       }
