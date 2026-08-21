@@ -549,6 +549,30 @@
   margin-left: auto;
 }
 
+/* Two answers stacked at the banner's edge (the hidden-pins migration). */
+.profile-stale-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.profile-stale-actions button {
+  margin-left: 0;
+}
+
+/* A list row carries two controls now (F12): the attribution switch and,
+   once attributed, the pin. They wrap as a pair on narrow screens. */
+.profile-pin-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
 /* The avatar is read-only here: it mirrors the account picture, which is
    changed in the general settings screen. Two pickers for one image was the
    confusing part. */

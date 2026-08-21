@@ -53,6 +53,10 @@ export const USER_PROFILE_LIMITS = Object.freeze({
   // a test holds the two together.
   listPaperCount: PUBLIC_LIST_LIMITS.papers,
   shareId: 32,
+  // F12: the pin is an order over the showcase, not a card — three share id
+  // strings, validated without a single document access. firestore.rules
+  // carries the same number in validPinnedShareIds.
+  pinnedShareIds: 3,
 });
 
 /**
@@ -232,6 +236,77 @@ export function partitionStalePins(pinnedLists, publishedLists) {
     pinned: pins.filter(pin => live.has(pin.shareId)),
     stale: pins.filter(pin => !live.has(pin.shareId)),
   };
+}
+
+/**
+ * The pin as F12 leaves it: an ordered list of at most three share ids. No
+ * ownership anywhere — the profile renders `showcase ∩ pins`, so an id that
+ * is not in the account's own showcase pins nothing, and the validation cost
+ * that sank the old card pins simply does not exist.
+ */
+export function sanitizePinnedShareIds(ids) {
+  const seen = new Set();
+  const result = [];
+  for (const value of Array.isArray(ids) ? ids : []) {
+    const shareId = cleanString(value, 64).toLowerCase();
+    if (!/^[a-f0-9]{32}$/.test(shareId) || seen.has(shareId)) continue;
+    seen.add(shareId);
+    result.push(shareId);
+    if (result.length >= USER_PROFILE_LIMITS.pinnedShareIds) break;
+  }
+  return result;
+}
+
+/** A showcase entry as `profileLists/{uid}` holds it, made safe to render. */
+function sanitizeShowcaseCard(entry) {
+  const card = sanitizePinnedList(entry);
+  if (!card) return null;
+  return {
+    ...card,
+    publishedAtMillis: createdAtMillis(entry?.publishedAt ?? entry?.publishedAtMillis),
+  };
+}
+
+/**
+ * The cards a profile's Listas tab should paint, in order, given the three
+ * sources the transition has: the Worker-written showcase, the legacy pinned
+ * CARDS still embedded in unmigrated profiles, and the new pin order.
+ *
+ * Legacy cards count as pinned — pinning WAS the attribution act, so they
+ * keep both their visibility and their placement until their owner migrates.
+ * Everything else follows by publication date, newest first. Duplicates
+ * resolve in favour of the showcase, whose card the Worker keeps in step
+ * with the list it mirrors.
+ */
+export function mergeShowcaseCards({ showcase, legacyPins, pinnedShareIds } = {}) {
+  const byShareId = new Map();
+  for (const entry of Array.isArray(showcase) ? showcase : []) {
+    const card = sanitizeShowcaseCard(entry);
+    if (card && !byShareId.has(card.shareId)) byShareId.set(card.shareId, card);
+  }
+  const legacyIds = [];
+  for (const entry of Array.isArray(legacyPins) ? legacyPins : []) {
+    const card = sanitizeShowcaseCard(entry);
+    if (!card) continue;
+    legacyIds.push(card.shareId);
+    if (!byShareId.has(card.shareId)) byShareId.set(card.shareId, card);
+  }
+
+  const result = [];
+  const used = new Set();
+  const take = (shareId, pinned) => {
+    const card = byShareId.get(shareId);
+    if (!card || used.has(shareId)) return;
+    used.add(shareId);
+    result.push({ ...card, pinned });
+  };
+  for (const shareId of sanitizePinnedShareIds(pinnedShareIds)) take(shareId, true);
+  for (const shareId of legacyIds) take(shareId, true);
+  [...byShareId.values()]
+    .filter(card => !used.has(card.shareId))
+    .sort((first, second) => second.publishedAtMillis - first.publishedAtMillis)
+    .forEach(card => take(card.shareId, false));
+  return result;
 }
 
 /**
@@ -552,6 +627,144 @@ export async function savePinnedLists(pinnedLists, overrides) {
   return payload;
 }
 
+/** The F12 pin write: one field, one document, no reads. */
+export async function savePinnedShareIds(shareIds, overrides) {
+  const api = operations(overrides);
+  requireSupported(api);
+  const uid = requireOwner(api);
+  const payload = sanitizePinnedShareIds(shareIds);
+  const batch = api.batch(api.database);
+
+  batch.update(profileReference(api, uid), { pinnedShareIds: payload, updatedAt: api.now() });
+  await batch.commit();
+  return payload;
+}
+
+function profileListsReference(api, uid) {
+  return api.document(api.database, 'profileLists', uid);
+}
+
+/**
+ * The showcase (F12): the cards of an account's published-and-attributed
+ * lists, one world-gated read. The document is written only by the Worker;
+ * its read rule follows the profile's own visibility, and a denial renders
+ * as "no lists" rather than an error — a private profile's tab was already
+ * unreachable, so the only caller who can hit the denial is a stale one.
+ */
+export async function readProfileLists(uid, overrides) {
+  const api = operations(overrides);
+  requireSupported(api);
+  const normalized = cleanString(uid, 128);
+  if (!normalized) return null;
+  let snapshot;
+  try {
+    snapshot = await api.getDocument(profileListsReference(api, normalized));
+  } catch (error) {
+    if (error?.code === 'permission-denied') return null;
+    throw error;
+  }
+  if (!snapshot?.exists()) return null;
+  const cards = Array.isArray(snapshot.data()?.lists) ? snapshot.data().lists : [];
+  return cards.map(sanitizeShowcaseCard).filter(Boolean);
+}
+
+/**
+ * True while the profile still carries F12's predecessors: legacy pinned
+ * CARDS, or the showPinnedLists flag whose job the per-list attribution
+ * switch took over.
+ */
+export function needsLegacyPinMigration(profile) {
+  if (!profile) return false;
+  return sanitizePinnedLists(profile.pinnedLists).length > 0
+    || profile.showPinnedLists !== undefined;
+}
+
+/**
+ * Migrates visible legacy pins into the F12 model: every pinned card becomes
+ * an attributed list (consent was given by the pin itself — the card WAS
+ * public attribution), the first three stay pinned as ids, and the legacy
+ * artifacts leave the profile.
+ *
+ * `attribute` is injected (publicListService.attributePublicList) and called
+ * once per pin BEFORE the profile write: it is idempotent, so a migration
+ * that dies halfway is simply run again whole on the next visit.
+ */
+export async function migrateLegacyPins({ attribute }, overrides) {
+  if (typeof attribute !== 'function') throw new TypeError('An attribute function is required.');
+  const api = operations(overrides);
+  requireSupported(api);
+  const uid = requireOwner(api);
+
+  const snapshot = await api.getDocument(profileReference(api, uid));
+  const profile = snapshot?.data?.() || null;
+  if (!profile) return { migrated: 0, pinnedShareIds: [] };
+  const pins = sanitizePinnedLists(profile.pinnedLists);
+
+  for (const pin of pins) {
+    await attribute(pin.shareId, true);
+  }
+
+  const pinnedShareIds = pins
+    .slice(0, USER_PROFILE_LIMITS.pinnedShareIds)
+    .map(pin => pin.shareId);
+  const batch = api.batch(api.database);
+  batch.update(profileReference(api, uid), {
+    pinnedLists: [],
+    pinnedShareIds,
+    showPinnedLists: api.deleteValue(),
+    updatedAt: api.now(),
+  });
+  await batch.commit();
+  return {
+    migrated: pins.length,
+    pinnedShareIds,
+    attributedShareIds: pins.map(pin => pin.shareId),
+  };
+}
+
+/**
+ * Migrates HIDDEN legacy pins — the F8 stash. Hiding was an explicit choice,
+ * so unlike the visible path this one never attributes on its own: the owner
+ * answers a prompt, and `showOnProfile` carries the answer. Either way the
+ * stash empties and the flag retires; declining leaves every list published
+ * but anonymous, recoverable list by list from the attribution switch.
+ */
+export async function migrateHiddenPins({ attribute, showOnProfile }, overrides) {
+  if (typeof attribute !== 'function') throw new TypeError('An attribute function is required.');
+  const api = operations(overrides);
+  requireSupported(api);
+  const uid = requireOwner(api);
+
+  const stashed = await api.getDocument(stashReference(api, uid));
+  const pins = sanitizePinnedLists(stashed?.data?.()?.pinnedLists);
+
+  let pinnedShareIds = [];
+  if (showOnProfile === true) {
+    for (const pin of pins) {
+      await attribute(pin.shareId, true);
+    }
+    pinnedShareIds = pins
+      .slice(0, USER_PROFILE_LIMITS.pinnedShareIds)
+      .map(pin => pin.shareId);
+  }
+
+  const batch = api.batch(api.database);
+  batch.update(profileReference(api, uid), {
+    pinnedLists: [],
+    pinnedShareIds,
+    showPinnedLists: api.deleteValue(),
+    updatedAt: api.now(),
+  });
+  batch.set(stashReference(api, uid), { pinnedLists: [], updatedAt: api.now() });
+  await batch.commit();
+  return {
+    migrated: showOnProfile === true ? pins.length : 0,
+    discarded: showOnProfile === true ? 0 : pins.length,
+    pinnedShareIds,
+    attributedShareIds: showOnProfile === true ? pins.map(pin => pin.shareId) : [],
+  };
+}
+
 /**
  * Mirrors the app avatar into the public profile. One document, one field.
  *
@@ -617,6 +830,7 @@ function readProfileSnapshot(snapshot) {
     uid: snapshot.id,
     ...data,
     pinnedLists: sanitizePinnedLists(data.pinnedLists),
+    pinnedShareIds: sanitizePinnedShareIds(data.pinnedShareIds),
   };
 }
 
@@ -672,12 +886,17 @@ export async function readPinnableLists(overrides) {
 
   return (Array.isArray(lists) ? lists : [])
     .slice(0, PINNABLE_LISTS_PAGE_SIZE)
-    .map(list => sanitizePinnedList({
-      shareId: list?.publicShareId,
-      title: list?.name || list?.title,
-      emoji: list?.emoji,
-      paperCount: Array.isArray(list?.paperIds) ? list.paperIds.length : list?.paperCount,
-    }))
+    .map(list => {
+      const card = sanitizePinnedList({
+        shareId: list?.publicShareId,
+        title: list?.name || list?.title,
+        emoji: list?.emoji,
+        paperCount: Array.isArray(list?.paperIds) ? list.paperIds.length : list?.paperCount,
+      });
+      // The attribution mirror the Worker stamps on the private list (F12),
+      // so this screen renders "on my profile" without reading the showcase.
+      return card ? { ...card, onProfile: list?.onProfile === true } : null;
+    })
     .filter(Boolean);
 }
 
@@ -755,6 +974,7 @@ export async function readOwnLists(overrides) {
       emoji: cleanString(list?.emoji, USER_PROFILE_LIMITS.listEmoji),
       paperCount: Array.isArray(list?.paperIds) ? list.paperIds.length : 0,
       isPublished: Boolean(cleanString(list?.publicShareId, USER_PROFILE_LIMITS.shareId)),
+      onProfile: list?.onProfile === true,
       createdAtMillis: createdAtMillis(list?.createdAt),
     }))
     .filter(entry => entry.id && entry.title)

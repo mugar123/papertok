@@ -2388,3 +2388,144 @@ test('pinning a share still works: the rules read the owner table themselves', a
     pinnedLists: [pin(BOB_SHARE)], updatedAt: serverTimestamp(),
   }));
 });
+
+// =========================================================================
+// F12: the showcase of attributed lists, and the pin as an order
+//
+// `profileLists/{uid}` is Worker-written; the rules' whole job is to refuse
+// every client write and to gate reads on the profile's own visibility.
+// `pinnedShareIds` replaces the card pins: three ids, no ownership get() —
+// a forged id points at nothing in the caller's own showcase, so it pins
+// nothing, and that is asserted here rather than assumed.
+// =========================================================================
+
+/** Seeds a showcase document for `uid`, as only the Worker can. */
+async function seedShowcase(uid, cards = [{ shareId: ALICE_SHARE, title: 'Mi lista', paperCount: 3, publishedAt: new Date() }]) {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'profileLists', uid), {
+      lists: cards, updatedAt: new Date(),
+    });
+  });
+}
+
+/** Flips ALICE's seeded profile to explicit private, rules off. */
+async function makeAlicePrivate() {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await updateDoc(doc(context.firestore(), 'userProfiles', ALICE), {
+      visibility: 'private',
+    });
+  });
+}
+
+test('F12: the showcase of a public profile is readable by anyone', async () => {
+  await reset();
+  await seedShowcase(ALICE);
+  await assertSucceeds(getDoc(doc(asGuest(), 'profileLists', ALICE)));
+  await assertSucceeds(getDoc(doc(asBob(), 'profileLists', ALICE)));
+});
+
+test('F12: a private profile hides its showcase from everyone but its owner', async () => {
+  await reset();
+  await seedShowcase(ALICE);
+  await makeAlicePrivate();
+  await assertFails(getDoc(doc(asGuest(), 'profileLists', ALICE)));
+  await assertFails(getDoc(doc(asBob(), 'profileLists', ALICE)));
+  await assertSucceeds(getDoc(doc(asAlice(), 'profileLists', ALICE)));
+});
+
+test('F12: a showcase with no profile behind it reads as denied to strangers', async () => {
+  // get() of the missing profile returns null and null.data denies — the
+  // same fail-closed shape ownsPinnedShare documents. The owner branch does
+  // not need the profile and short-circuits first.
+  await reset({ aliceProfile: false });
+  await seedShowcase(ALICE);
+  await assertFails(getDoc(doc(asGuest(), 'profileLists', ALICE)));
+  await assertFails(getDoc(doc(asBob(), 'profileLists', ALICE)));
+  await assertSucceeds(getDoc(doc(asAlice(), 'profileLists', ALICE)));
+});
+
+test('F12: nobody lists showcases, and no client writes one — the owner included', async () => {
+  await reset();
+  await seedShowcase(ALICE);
+  await assertFails(getDocs(query(collection(asGuest(), 'profileLists'), limit(5))));
+  await assertFails(getDocs(query(collection(asAlice(), 'profileLists'), limit(5))));
+  await assertFails(setDoc(doc(asAlice(), 'profileLists', ALICE), {
+    lists: [{ shareId: ALICE_SHARE, title: 'Forjada', paperCount: 1, publishedAt: new Date() }],
+    updatedAt: new Date(),
+  }));
+  await assertFails(updateDoc(doc(asAlice(), 'profileLists', ALICE), { updatedAt: new Date() }));
+  await assertFails(deleteDoc(doc(asAlice(), 'profileLists', ALICE)));
+});
+
+test('F12: three pinned share ids pass, a fourth is refused', async () => {
+  await reset();
+  await assertSucceeds(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    pinnedShareIds: ['a'.repeat(32), 'b'.repeat(32), 'c'.repeat(32)],
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    pinnedShareIds: ['a'.repeat(32), 'b'.repeat(32), 'c'.repeat(32), 'd'.repeat(32)],
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('F12: a pinned share id must look like a share id', async () => {
+  await reset();
+  const db = asAlice();
+  await assertFails(updateDoc(doc(db, 'userProfiles', ALICE), {
+    pinnedShareIds: ['not-a-share-id'], updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, 'userProfiles', ALICE), {
+    pinnedShareIds: [42], updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(db, 'userProfiles', ALICE), {
+    pinnedShareIds: 'a'.repeat(32), updatedAt: serverTimestamp(),
+  }));
+});
+
+test('F12: pinning an id you do not own is allowed and harmless', async () => {
+  // Deliberate, and the inverse of FIX A: there is no ownership get() on the
+  // new pins because the render is showcase ∩ pins — an id that is not in
+  // the caller's OWN showcase paints nothing. The forgery loses its prize
+  // instead of costing a document access per entry.
+  await reset();
+  await assertSucceeds(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    pinnedShareIds: [BOB_SHARE], updatedAt: serverTimestamp(),
+  }));
+});
+
+test('F12 transition: six legacy card pins and three id pins coexist in one write', async () => {
+  // The migration window has both validations live, and P16 left the legacy
+  // ceiling exactly at six — so the heaviest legitimate transition write is
+  // measured here, not assumed. `attempt` distinguishes a clean allow from
+  // an expression-limit blowup, which is the only reliable signal.
+  await reset();
+  await seedOwnedLists(6);
+  await assertSucceeds(updateDoc(doc(asAlice(), 'userProfiles', ALICE), {
+    pinnedLists: ownedPins(6),
+    pinnedShareIds: ['0'.repeat(32), '1'.padStart(32, '0'), '2'.padStart(32, '0')],
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('F12: a private list carries the sync and attribution stamps', async () => {
+  await reset();
+  const db = asAlice();
+  await assertSucceeds(setDoc(doc(db, 'users', ALICE, 'lists', 'l9'), {
+    id: 'l9', name: 'Con sellos', emoji: '📌', paperIds: [],
+    createdAt: new Date(), onProfile: true, updatedAt: new Date(),
+    publicSyncedAt: new Date(),
+  }));
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'lists', 'l10'), {
+    id: 'l10', name: 'Mal sello', emoji: '📌', paperIds: [],
+    createdAt: new Date(), onProfile: 'yes',
+  }));
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'lists', 'l11'), {
+    id: 'l11', name: 'Mal sello', emoji: '📌', paperIds: [],
+    createdAt: new Date(), updatedAt: 'ayer',
+  }));
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'lists', 'l12'), {
+    id: 'l12', name: 'Mal sello', emoji: '📌', paperIds: [],
+    createdAt: new Date(), publicSyncedAt: 'nunca',
+  }));
+});

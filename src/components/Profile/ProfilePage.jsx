@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, ArrowRight, Check, ExternalLink, FolderOpen, Loader2, Pin, PinOff, ShieldCheck,
+  ArrowLeft, ArrowRight, Check, ExternalLink, FolderOpen, Globe2, Loader2, Lock, Pin, PinOff,
+  ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { isReadTimeout, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
@@ -21,20 +22,21 @@ import {
   changeUserHandle,
   createUserProfile,
   deleteOwnUserProfile,
+  migrateHiddenPins,
+  migrateLegacyPins,
+  needsLegacyPinMigration,
   needsVisibilityChoice,
   partitionStalePins,
-  pinnedListsAreVisible,
   profileIsPublic,
   publicAvatarFrom,
   readOwnUserProfile,
   readPinnableLists,
-  savePinnedLists,
+  savePinnedShareIds,
   saveProfileVisibility,
   savePublicProfilePhoto,
-  setPinnedListsVisible,
-  togglePinnedList,
   updateUserProfile,
 } from '../../services/userProfileService.js';
+import { attributePublicList } from '../../services/publicListService.js';
 import VisibilityChoice from './VisibilityChoice.jsx';
 import { visibilityCopy } from './visibilityCopy.js';
 import VisibilityPrompt from './VisibilityPrompt.jsx';
@@ -113,6 +115,10 @@ export default function ProfilePage() {
   const [pinsBusy, setPinsBusy] = useState(false);
   const [promptDismissed, setPromptDismissed] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  // F12 migration of the legacy pin model. 'idle' until the profile answers;
+  // 'prompt' when hidden pins need the owner's decision; 'failed' leaves the
+  // legacy artifacts untouched for the next visit's retry.
+  const [migration, setMigration] = useState('idle');
 
   const copy = isEnglish ? {
     back: 'Back',
@@ -131,13 +137,10 @@ export default function ProfilePage() {
     visibilityLabel: 'Public profile',
     visibilityHintPublic: 'Anyone with the link can open your profile.',
     visibilityHintPrivate: 'Only you can open your profile. Its page does not exist for anyone else.',
-    pinsLabel: 'Show my pinned lists',
-    pinsHint: 'Off: the lists leave your public profile and wait here. Turning it back on puts them back.',
-    pinsHintPrivate: 'Applies when your profile is public.',
     visibilityFailed: 'The visibility could not be saved. Try again.',
     privateNotice: 'Your profile is private: only you can open it.',
     publicNow: 'Public on your page',
-    publicItems: ['Handle and display name', 'Bio', 'Account photo (only if enabled below)', 'Pinned lists'],
+    publicItems: ['Handle and display name', 'Bio', 'Account photo (only if enabled below)', 'Published lists shown on your profile'],
     neverPublic: 'Never public',
     neverItems: ['Email address', 'Saved papers and likes', 'Reading history', 'Unpublished lists', 'Who and what you follow'],
     showPhoto: 'Show my account photo',
@@ -149,12 +152,21 @@ export default function ProfilePage() {
     saving: 'Saving...',
     saved: 'Saved',
     pinned: 'Lists on my profile',
-    pinnedHint: 'Only lists you have already published can be pinned. Pinning is what puts your name on a list.',
+    pinnedHint: 'Publishing a list shows it on your profile. Here you choose which ones appear and which stay pinned on top.',
     noLists: 'You have not published any lists yet.',
     goToLists: 'Go to My lists',
     loadingLists: 'Looking for your published lists...',
     pin: 'Pin',
     unpin: 'Unpin',
+    onProfile: 'On my profile',
+    offProfile: 'Not on my profile',
+    showcaseFull: 'Your profile already shows the maximum number of lists.',
+    migrating: 'Updating your pinned lists to the new model…',
+    migrationFailed: 'Your pinned lists could not be updated to the new model. Nothing changed; it will retry on your next visit.',
+    hiddenPinsTitle: 'You had hidden pinned lists',
+    hiddenPinsBody: 'Lists no longer hide as a group: each published list now has its own "On my profile" switch. Do you want those lists shown on your profile?',
+    hiddenPinsShow: 'Show them',
+    hiddenPinsKeep: 'Keep them off',
     viewPublic: 'View public profile',
     papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
     handleTaken: 'That handle is already taken.',
@@ -165,10 +177,7 @@ export default function ProfilePage() {
     loadErrorHint: 'Check your connection and try again — nothing has been changed.',
     retry: 'Try again',
     nameRequired: 'A display name is required.',
-    pinLimit: `You can pin at most ${USER_PROFILE_LIMITS.pinnedLists} lists.`,
-    staleTitle: 'Some pinned lists are no longer published',
-    staleBody: 'They cannot stay on your profile. Remove them to save any other change.',
-    staleAction: 'Remove them',
+    pinLimit: `You can pin at most ${USER_PROFILE_LIMITS.pinnedShareIds} lists.`,
     sectionDanger: 'Unpublish',
     unpublishTitle: 'Unpublish my profile',
     unpublishBody: handle => `Deletes your public page and frees @${handle}. Published lists stay published but stop carrying your name. You can create a profile again whenever you want.`,
@@ -192,13 +201,10 @@ export default function ProfilePage() {
     visibilityLabel: 'Perfil público',
     visibilityHintPublic: 'Cualquiera con el enlace puede abrir tu perfil.',
     visibilityHintPrivate: 'Solo tú puedes abrir tu perfil. Su página no existe para nadie más.',
-    pinsLabel: 'Mostrar mis listas fijadas',
-    pinsHint: 'Apagado: las listas salen de tu perfil público y se quedan aquí guardadas. Al encenderlo vuelven.',
-    pinsHintPrivate: 'Se aplica cuando tu perfil es público.',
     visibilityFailed: 'No se pudo guardar la visibilidad. Inténtalo de nuevo.',
     privateNotice: 'Tu perfil es privado: solo tú puedes abrirlo.',
     publicNow: 'Público en tu página',
-    publicItems: ['Handle y nombre visible', 'Biografía', 'Foto de cuenta (solo si la activas abajo)', 'Listas fijadas'],
+    publicItems: ['Handle y nombre visible', 'Biografía', 'Foto de cuenta (solo si la activas abajo)', 'Listas publicadas que muestras en tu perfil'],
     neverPublic: 'Nunca es público',
     neverItems: ['Tu correo', 'Guardados y me gusta', 'Historial de lectura', 'Listas sin publicar', 'A quién y qué sigues'],
     showPhoto: 'Mostrar mi foto de cuenta',
@@ -210,12 +216,21 @@ export default function ProfilePage() {
     saving: 'Guardando...',
     saved: 'Guardado',
     pinned: 'Listas en mi perfil',
-    pinnedHint: 'Solo puedes fijar listas que ya hayas publicado. Fijar una lista es lo que le pone tu nombre.',
+    pinnedHint: 'Publicar una lista la muestra en tu perfil. Aquí eliges cuáles aparecen y cuáles quedan destacadas arriba.',
     noLists: 'Todavía no has publicado ninguna lista.',
     goToLists: 'Ir a Mis listas',
     loadingLists: 'Buscando tus listas publicadas...',
     pin: 'Fijar',
     unpin: 'Quitar',
+    onProfile: 'En mi perfil',
+    offProfile: 'Fuera de mi perfil',
+    showcaseFull: 'Tu perfil ya muestra el máximo de listas.',
+    migrating: 'Actualizando tus listas fijadas al modelo nuevo…',
+    migrationFailed: 'No se pudieron actualizar tus listas fijadas al modelo nuevo. No ha cambiado nada; se reintentará en tu próxima visita.',
+    hiddenPinsTitle: 'Tenías listas fijadas ocultas',
+    hiddenPinsBody: 'Las listas ya no se ocultan en bloque: cada lista publicada tiene ahora su propio interruptor "En mi perfil". ¿Quieres que esas listas se muestren en tu perfil?',
+    hiddenPinsShow: 'Mostrarlas',
+    hiddenPinsKeep: 'No mostrarlas',
     viewPublic: 'Ver perfil público',
     papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
     handleTaken: 'Ese handle ya está ocupado.',
@@ -226,10 +241,7 @@ export default function ProfilePage() {
     loadErrorHint: 'Revisa tu conexión y vuelve a intentarlo — no se ha cambiado nada.',
     retry: 'Reintentar',
     nameRequired: 'El nombre visible es obligatorio.',
-    pinLimit: `Puedes fijar como mucho ${USER_PROFILE_LIMITS.pinnedLists} listas.`,
-    staleTitle: 'Algunas listas fijadas ya no están publicadas',
-    staleBody: 'No pueden seguir en tu perfil. Quítalas para poder guardar cualquier otro cambio.',
-    staleAction: 'Quitarlas',
+    pinLimit: `Puedes fijar como mucho ${USER_PROFILE_LIMITS.pinnedShareIds} listas.`,
     sectionDanger: 'Despublicar',
     unpublishTitle: 'Despublicar mi perfil',
     unpublishBody: handle => `Borra tu página pública y libera @${handle}. Las listas publicadas siguen publicadas, pero dejan de llevar tu nombre. Puedes volver a crear el perfil cuando quieras.`,
@@ -323,22 +335,9 @@ export default function ProfilePage() {
   const handleError = handleDraft && !handleCheck.valid
     ? HANDLE_ERROR_COPY[isEnglish ? 'en' : 'es'][handleCheck.code]
     : '';
-  const settledPins = pinnableLists ?? [];
-  const pinnedIds = useMemo(
-    () => new Set((profile?.pinnedLists || []).map(list => list.shareId)),
-    [profile],
-  );
-  // `pinnableLists` is exactly the set of still-published lists, so the stale
-  // pins fall out of it without another read.
-  // Stale pins are only knowable once the published lists have actually been
-  // read; before that, every pin would look stale.
-  const stalePins = useMemo(
-    () => (pinnableLists === null ? [] : partitionStalePins(profile?.pinnedLists, pinnableLists).stale),
-    [pinnableLists, profile],
-  );
+  const pinnedShareIds = profile?.pinnedShareIds || [];
   const publicPath = profile ? getPublicProfilePath(profile.handle) : null;
   const isPublicProfile = profileIsPublic(profile);
-  const pinsVisible = pinnedListsAreVisible(profile);
   const caveats = visibilityCopy(isEnglish);
   // Asked here as well as on the profile page: both screens have already read
   // the profile, so the question costs nothing extra on either.
@@ -463,70 +462,145 @@ export default function ProfilePage() {
     }
   };
 
-  const togglePinnedListsVisible = async (visible) => {
-    if (!profile || pinsBusy) return;
+  /** Applies a finished migration's result to the screen's state. */
+  const applyMigrationResult = (result) => {
+    setProfile(current => {
+      const next = { ...current, pinnedLists: [], pinnedShareIds: result.pinnedShareIds };
+      delete next.showPinnedLists;
+      return next;
+    });
+    // The Worker just stamped `onProfile` on the migrated lists; the picker
+    // rows and their cache follow without a re-read.
+    setPinnableLists(current => {
+      const updated = (current || []).map(item => (
+        result.attributedShareIds.includes(item.shareId)
+          ? { ...item, onProfile: true }
+          : item
+      ));
+      if (user?.uid) pinnableListsCache.set(user.uid, updated);
+      return updated;
+    });
+  };
+
+  // The hidden-pins decision (the F8 stash) is the owner's, so it renders as
+  // a banner instead of migrating on its own; answering it removes the
+  // retired flag, which is what makes this condition disappear.
+  const hiddenPinsPrompt = status === 'ready'
+    && profile?.showPinnedLists === false
+    && migration !== 'running';
+
+  /**
+   * F12 migration, run once per visit when the profile still carries the
+   * legacy pin model with the pins VISIBLE. The pinned card WAS public
+   * attribution, so attributing the list widens nothing and no question is
+   * needed. Attribution goes through the Worker and is idempotent; a failure
+   * leaves everything as it was for the next visit's retry.
+   */
+  const migrationStarted = useRef(false);
+  useEffect(() => {
+    if (status !== 'ready' || !profile || migrationStarted.current) return undefined;
+    if (!needsLegacyPinMigration(profile) || profile.showPinnedLists === false) return undefined;
+    migrationStarted.current = true;
+    let active = true;
+    Promise.resolve()
+      .then(() => {
+        if (active) setMigration('running');
+        return migrateLegacyPins({ attribute: attributePublicList });
+      })
+      .then(result => {
+        if (!active) return;
+        applyMigrationResult(result);
+        setMigration('done');
+      })
+      .catch(error => {
+        console.error('The pin migration failed; the legacy pins stay for a retry:', error);
+        if (active) setMigration('failed');
+      });
+    return () => { active = false; };
+    // `applyMigrationResult` only wraps state setters; listing it would re-run
+    // this on every render for nothing — the ref guard makes reruns no-ops
+    // anyway.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [status, profile]);
+
+  /** The hidden-pins banner's answer. */
+  const resolveHiddenPins = async (showOnProfile) => {
+    if (migration === 'running') return;
+    setMigration('running');
+    setFeedback(null);
+    try {
+      const result = await migrateHiddenPins({
+        attribute: attributePublicList, showOnProfile,
+      });
+      applyMigrationResult(result);
+      setMigration('done');
+      setFeedback({ state: 'saved', message: copy.saved });
+    } catch (error) {
+      reportError(error);
+      setMigration('idle');
+    }
+  };
+
+  /**
+   * The per-list attribution switch: the Worker moves the showcase card and
+   * the `onProfile` mirror together. Taking a list off the profile also
+   * unpins it — a pin over a card that no longer exists paints nothing, but
+   * leaving it stored would resurrect the pin on a later re-attribution the
+   * owner never asked to restore.
+   */
+  const toggleAttribution = async (list) => {
+    if (pinsBusy || migration === 'running') return;
+    const next = !list.onProfile;
     setPinsBusy(true);
     setFeedback(null);
     try {
-      // The service moves the entries between the public document and the
-      // owner-only stash, so the result is what the profile now really holds.
-      const result = await setPinnedListsVisible(visible);
-      setProfile(current => ({
-        ...current,
-        pinnedLists: result.pinnedLists,
-        showPinnedLists: result.showPinnedLists,
-      }));
+      await attributePublicList(list.shareId, next);
+      setPinnableLists(current => {
+        const updated = (current || []).map(item => (
+          item.shareId === list.shareId ? { ...item, onProfile: next } : item
+        ));
+        if (user?.uid) pinnableListsCache.set(user.uid, updated);
+        return updated;
+      });
+      if (!next && pinnedShareIds.includes(list.shareId)) {
+        const remaining = pinnedShareIds.filter(id => id !== list.shareId);
+        await savePinnedShareIds(remaining);
+        setProfile(current => ({ ...current, pinnedShareIds: remaining }));
+      }
       setFeedback({ state: 'saved', message: copy.saved });
     } catch (error) {
-      console.error('Error saving pinned-list visibility:', error);
-      setFeedback({ state: 'error', message: copy.genericError });
+      if (error?.code === 'PROFILE_LISTS_FULL') {
+        setFeedback({ state: 'error', message: copy.showcaseFull });
+      } else {
+        reportError(error);
+      }
     } finally {
       setPinsBusy(false);
     }
   };
 
-  const dropStalePins = async () => {
-    if (!profile || saving) return;
-    setSaving(true);
+  /** The pin, as F12 leaves it: an order of at most three ids, one write. */
+  const togglePin = async (shareId) => {
+    if (!profile || pinsBusy) return;
+    const previous = pinnedShareIds;
+    const isPinned = previous.includes(shareId);
+    if (!isPinned && previous.length >= USER_PROFILE_LIMITS.pinnedShareIds) {
+      setFeedback({ state: 'error', message: copy.pinLimit });
+      return;
+    }
+    const next = isPinned
+      ? previous.filter(id => id !== shareId)
+      : [...previous, shareId];
+    setPinsBusy(true);
     setFeedback(null);
-    const previous = profile.pinnedLists || [];
+    setProfile(current => ({ ...current, pinnedShareIds: next }));
     try {
-      const next = partitionStalePins(previous, settledPins).pinned;
-      setProfile(current => ({ ...current, pinnedLists: next }));
-      await savePinnedLists(next);
-      setFeedback({ state: 'saved', message: copy.saved });
+      await savePinnedShareIds(next);
     } catch (error) {
-      setProfile(current => ({ ...current, pinnedLists: previous }));
+      setProfile(current => ({ ...current, pinnedShareIds: previous }));
       reportError(error);
     } finally {
-      setSaving(false);
-    }
-  };
-
-  const togglePin = async (list) => {
-    if (!profile || saving) return;
-    setSaving(true);
-    setFeedback(null);
-    const previous = profile.pinnedLists || [];
-    try {
-      // Routed through the stale-dropping toggle: the rules refuse any write
-      // that keeps a pin whose owner document is gone, and unpublishing (or
-      // republishing, which changes the share id) deletes exactly that
-      // document. Toggling through the raw entry helpers used to carry the
-      // orphan along and turn "pin the republished list" into a permission
-      // error dressed as "something went wrong".
-      const next = togglePinnedList(previous, list, pinnableLists);
-      setProfile(current => ({ ...current, pinnedLists: next }));
-      await savePinnedLists(next);
-    } catch (error) {
-      setProfile(current => ({ ...current, pinnedLists: previous }));
-      if (error instanceof RangeError) {
-        setFeedback({ state: 'error', message: copy.pinLimit });
-      } else {
-        reportError(error);
-      }
-    } finally {
-      setSaving(false);
+      setPinsBusy(false);
     }
   };
 
@@ -608,19 +682,26 @@ export default function ProfilePage() {
           )}
         </header>
 
-        {stalePins.length > 0 && (
+        {/* The one decision the F12 migration cannot take alone: pins the
+            owner had explicitly hidden. Everything else migrates silently. */}
+        {hiddenPinsPrompt && (
           <div className="profile-stale" role="alert">
             <div>
-              <strong>{copy.staleTitle}</strong>
-              <p>{copy.staleBody}</p>
-              <ul>
-                {stalePins.map(pin => <li key={pin.shareId}>{pin.title}</li>)}
-              </ul>
+              <strong>{copy.hiddenPinsTitle}</strong>
+              <p>{copy.hiddenPinsBody}</p>
             </div>
-            <button type="button" className="profile-secondary" onClick={dropStalePins} disabled={saving}>
-              {copy.staleAction}
-            </button>
+            <div className="profile-stale-actions">
+              <button type="button" className="profile-secondary" onClick={() => resolveHiddenPins(true)}>
+                {copy.hiddenPinsShow}
+              </button>
+              <button type="button" className="profile-secondary" onClick={() => resolveHiddenPins(false)}>
+                {copy.hiddenPinsKeep}
+              </button>
+            </div>
           </div>
+        )}
+        {migration === 'failed' && (
+          <p className="profile-hint" role="alert">{copy.migrationFailed}</p>
         )}
 
         <form className="profile-form" onSubmit={onSubmit}>
@@ -722,25 +803,6 @@ export default function ProfilePage() {
                   </span>
                 </label>
 
-                <label className="profile-switch">
-                  <span className="profile-switch-copy">
-                    <span className="profile-switch-label">{copy.pinsLabel}</span>
-                    <span className="profile-switch-hint">
-                      {isPublicProfile ? copy.pinsHint : copy.pinsHintPrivate}
-                    </span>
-                  </span>
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    checked={pinsVisible}
-                    disabled={pinsBusy}
-                    onChange={event => togglePinnedListsVisible(event.target.checked)}
-                  />
-                  <span className="profile-switch-track" aria-hidden="true">
-                    <span className="profile-switch-thumb" />
-                  </span>
-                </label>
-
                 {/* The limits of the promise, on the screen that makes it. */}
                 <div className="visibility-caveats">
                   <p className="visibility-caveats-title">{caveats.notProtectedTitle}</p>
@@ -835,31 +897,54 @@ export default function ProfilePage() {
                 </Link>
               </div>
             ) : (
-              <ul className="profile-pin-list">
-                {pinnableLists.map(list => {
-                  const isPinned = pinnedIds.has(list.shareId);
-                  // `emoji` holds a lucide icon name, not a literal emoji.
-                  const Icon = getIcon(list.emoji);
-                  return (
-                    <li key={list.shareId}>
-                      <span className="profile-pin-emoji" aria-hidden="true"><Icon size={20} /></span>
-                      <span className="profile-pin-copy">
-                        <span className="profile-pin-title">{list.title}</span>
-                        <span className="profile-pin-count">{copy.papers(list.paperCount)}</span>
-                      </span>
-                      <button
-                        type="button"
-                        className={`profile-pin-toggle${isPinned ? ' is-pinned' : ''}`}
-                        onClick={() => togglePin(list)}
-                        disabled={saving}
-                      >
-                        {isPinned ? <PinOff size={16} /> : <Pin size={16} />}
-                        {isPinned ? copy.unpin : copy.pin}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
+              <>
+                {migration === 'running' && (
+                  <p className="profile-hint" aria-busy="true">{copy.migrating}</p>
+                )}
+                <ul className="profile-pin-list">
+                  {pinnableLists.map(list => {
+                    const attributed = list.onProfile === true;
+                    const isPinned = attributed && pinnedShareIds.includes(list.shareId);
+                    const pinsFull = !isPinned
+                      && pinnedShareIds.length >= USER_PROFILE_LIMITS.pinnedShareIds;
+                    // `emoji` holds a lucide icon name, not a literal emoji.
+                    const Icon = getIcon(list.emoji);
+                    return (
+                      <li key={list.shareId}>
+                        <span className="profile-pin-emoji" aria-hidden="true"><Icon size={20} /></span>
+                        <span className="profile-pin-copy">
+                          <span className="profile-pin-title">{list.title}</span>
+                          <span className="profile-pin-count">{copy.papers(list.paperCount)}</span>
+                        </span>
+                        <span className="profile-pin-actions">
+                          <button
+                            type="button"
+                            className={`profile-pin-toggle${attributed ? ' is-pinned' : ''}`}
+                            onClick={() => toggleAttribution(list)}
+                            disabled={pinsBusy || migration === 'running'}
+                            aria-pressed={attributed}
+                          >
+                            {attributed ? <Globe2 size={16} /> : <Lock size={16} />}
+                            {attributed ? copy.onProfile : copy.offProfile}
+                          </button>
+                          {attributed && (
+                            <button
+                              type="button"
+                              className={`profile-pin-toggle${isPinned ? ' is-pinned' : ''}`}
+                              onClick={() => togglePin(list.shareId)}
+                              disabled={pinsBusy || migration === 'running' || pinsFull}
+                              aria-pressed={isPinned}
+                            >
+                              {isPinned ? <PinOff size={16} /> : <Pin size={16} />}
+                              {isPinned ? copy.unpin : copy.pin}
+                            </button>
+                          )}
+                        </span>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </>
             )}
           </section>
         )}

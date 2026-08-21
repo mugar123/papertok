@@ -33,6 +33,13 @@ import {
   profileIsPublic,
   saveProfileVisibility,
   setPinnedListsVisible,
+  mergeShowcaseCards,
+  migrateHiddenPins,
+  migrateLegacyPins,
+  needsLegacyPinMigration,
+  readProfileLists,
+  sanitizePinnedShareIds,
+  savePinnedShareIds,
 } from './userProfileService.js';
 
 const SHARE_ID = 'a'.repeat(32);
@@ -541,8 +548,8 @@ test('the pin picker reads a bounded page of published lists only', async () => 
   assert.deepEqual(requested, [{ database: 'db', uid: 'user-1', pageSize: PINNABLE_LISTS_PAGE_SIZE }]);
   assert.ok(Number.isInteger(PINNABLE_LISTS_PAGE_SIZE) && PINNABLE_LISTS_PAGE_SIZE > 0);
   assert.deepEqual(pinnable, [
-    { shareId: SHARE_ID, title: 'Reading', emoji: '📚', paperCount: 2 },
-    { shareId: OTHER_SHARE_ID, title: 'Second', paperCount: 0 },
+    { shareId: SHARE_ID, title: 'Reading', emoji: '📚', paperCount: 2, onProfile: false },
+    { shareId: OTHER_SHARE_ID, title: 'Second', paperCount: 0, onProfile: false },
   ]);
 });
 
@@ -918,20 +925,195 @@ test('an empty pin list and hidden pins are different states', () => {
 
 // --- the editor's write paths must not carry stale pins ---------------------
 
-test('SOURCE: the profile editor routes pin writes through the stale-dropping paths', async () => {
-  // togglePinnedList and partitionStalePins are only fixes while the editor
-  // actually calls them: a stale pin in a write makes the rules refuse the
-  // whole thing, so the raw entry helpers must not be reachable from here.
-  // This is the same convention as the feed's SOURCE tests — the invariant
-  // breaks with an import, so the import is what gets pinned.
+test('SOURCE: the profile editor writes pins as ids and never as cards (F12)', async () => {
+  // The F12 pin is an order of share ids; the card-writing helpers are the
+  // legacy model, kept only for the migration window, and reaching them from
+  // the editor would resurrect the stale-pin veto the id model dissolved.
+  // Same convention as the feed's SOURCE tests: the invariant breaks with an
+  // import, so the import is what gets pinned.
   const source = await readFile(
     new URL('../components/Profile/ProfilePage.jsx', import.meta.url),
     'utf8',
   );
-  assert.match(source, /togglePinnedList\(previous, list, pinnableLists\)/,
-    'the Pin button must toggle through togglePinnedList');
+  assert.match(source, /savePinnedShareIds\(/,
+    'the Pin button must write the id order');
   assert.match(source, /partitionStalePins\(profile\?\.pinnedLists, pinnableLists\)\.pinned/,
-    '"Save changes" must drop stale pins from its payload');
-  assert.doesNotMatch(source, /\bpinListEntry\b|\bunpinListEntry\b/,
-    'the raw entry helpers skip the stale filter and must stay out of the editor');
+    '"Save changes" must still drop stale LEGACY cards until the migration window closes');
+  assert.doesNotMatch(source, /\btogglePinnedList\b|\bsavePinnedLists\b|\bpinListEntry\b|\bunpinListEntry\b/,
+    'the card-pin write paths must stay out of the editor');
+  assert.match(source, /migrateLegacyPins\(/,
+    'the editor is where the legacy model migrates');
+});
+
+// --- F12: pins as an order, the showcase, and the migration ----------------
+
+test('sanitizePinnedShareIds keeps three well-formed ids, deduped, in order', () => {
+  const third = 'c'.repeat(32);
+  assert.deepEqual(sanitizePinnedShareIds([
+    SHARE_ID, 'nonsense', OTHER_SHARE_ID, SHARE_ID, 42, third, 'd'.repeat(32),
+  ]), [SHARE_ID, OTHER_SHARE_ID, third]);
+  assert.deepEqual(sanitizePinnedShareIds(SHARE_ID), []);
+  assert.deepEqual(sanitizePinnedShareIds(null), []);
+});
+
+test('savePinnedShareIds writes the one field and nothing else', async () => {
+  const { api, calls } = fakeApi();
+  const saved = await savePinnedShareIds([SHARE_ID, 'junk'], api);
+  assert.deepEqual(saved, [SHARE_ID]);
+  const [kind, reference, payload] = calls[0];
+  assert.equal(kind, 'update');
+  assert.equal(reference, 'db/userProfiles/user-1');
+  assert.deepEqual(payload, { pinnedShareIds: [SHARE_ID], updatedAt: 'SERVER_TIME' });
+});
+
+test('mergeShowcaseCards: pins first in pin order, legacy cards count as pinned, rest newest first', () => {
+  const third = 'c'.repeat(32);
+  const fourth = 'd'.repeat(32);
+  const cards = mergeShowcaseCards({
+    showcase: [
+      { shareId: SHARE_ID, title: 'Vieja', paperCount: 3, publishedAt: 1000 },
+      { shareId: OTHER_SHARE_ID, title: 'Nueva', paperCount: 5, publishedAt: 3000 },
+      { shareId: third, title: 'Media', paperCount: 1, publishedAt: 2000 },
+    ],
+    legacyPins: [{ shareId: fourth, title: 'Sin migrar', paperCount: 2 }],
+    pinnedShareIds: [third],
+  });
+  assert.deepEqual(cards.map(card => [card.shareId, card.pinned]), [
+    [third, true],       // the id pin, first
+    [fourth, true],      // the unmigrated card, still pinned
+    [OTHER_SHARE_ID, false], // then the rest, newest first
+    [SHARE_ID, false],
+  ]);
+});
+
+test('mergeShowcaseCards: the showcase card wins a duplicate — the Worker keeps it fresh', () => {
+  const cards = mergeShowcaseCards({
+    showcase: [{ shareId: SHARE_ID, title: 'Al día', paperCount: 19, publishedAt: 1000 }],
+    legacyPins: [{ shareId: SHARE_ID, title: 'Rancia', paperCount: 12 }],
+    pinnedShareIds: [],
+  });
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].title, 'Al día');
+  assert.equal(cards[0].pinned, true);
+});
+
+test('readProfileLists renders a denial as absence, never as an error', async () => {
+  const denied = Object.assign(new Error('denied'), { code: 'permission-denied' });
+  const { api } = fakeApi({ getDocument: async () => { throw denied; } });
+  assert.equal(await readProfileLists('someone', api), null);
+
+  const { api: broken } = fakeApi({ getDocument: async () => { throw new Error('offline'); } });
+  await assert.rejects(() => readProfileLists('someone', broken), /offline/);
+});
+
+test('readProfileLists sanitizes the cards it hands to the renderer', async () => {
+  const { api } = fakeApi({
+    getDocument: async () => ({
+      exists: () => true,
+      data: () => ({
+        lists: [
+          { shareId: SHARE_ID, title: 'Buena', paperCount: 3, publishedAt: 2000 },
+          { shareId: 'not-a-share', title: 'Rota', paperCount: 1 },
+        ],
+      }),
+    }),
+  });
+  const cards = await readProfileLists('someone', api);
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].shareId, SHARE_ID);
+  assert.equal(cards[0].publishedAtMillis, 2000);
+});
+
+test('needsLegacyPinMigration fires on cards or on the retired flag, not on a clean profile', () => {
+  assert.equal(needsLegacyPinMigration(null), false);
+  assert.equal(needsLegacyPinMigration({ pinnedLists: [], pinnedShareIds: [] }), false);
+  assert.equal(needsLegacyPinMigration({
+    pinnedLists: [{ shareId: SHARE_ID, title: 'Pin', paperCount: 1 }],
+  }), true);
+  assert.equal(needsLegacyPinMigration({ pinnedLists: [], showPinnedLists: true }), true);
+  assert.equal(needsLegacyPinMigration({ pinnedLists: [], showPinnedLists: false }), true);
+});
+
+test('migrateLegacyPins attributes every card, keeps three as pins, and clears the artifacts', async () => {
+  const third = 'c'.repeat(32);
+  const fourth = 'd'.repeat(32);
+  const attributions = [];
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({
+      exists: () => true,
+      data: () => ({
+        pinnedLists: [
+          { shareId: SHARE_ID, title: 'Uno', paperCount: 1 },
+          { shareId: OTHER_SHARE_ID, title: 'Dos', paperCount: 2 },
+          { shareId: third, title: 'Tres', paperCount: 3 },
+          { shareId: fourth, title: 'Cuatro', paperCount: 4 },
+        ],
+        showPinnedLists: true,
+      }),
+    }),
+  });
+  const result = await migrateLegacyPins({
+    attribute: async (shareId, attributed) => attributions.push([shareId, attributed]),
+  }, api);
+
+  // All four attributed — the pin was already public attribution, so consent
+  // is not being widened; only the first three stay pinned.
+  assert.deepEqual(attributions, [
+    [SHARE_ID, true], [OTHER_SHARE_ID, true], [third, true], [fourth, true],
+  ]);
+  assert.deepEqual(result, {
+    migrated: 4,
+    pinnedShareIds: [SHARE_ID, OTHER_SHARE_ID, third],
+    attributedShareIds: [SHARE_ID, OTHER_SHARE_ID, third, fourth],
+  });
+  const [kind, reference, payload] = calls[0];
+  assert.equal(kind, 'update');
+  assert.equal(reference, 'db/userProfiles/user-1');
+  assert.deepEqual(payload, {
+    pinnedLists: [],
+    pinnedShareIds: [SHARE_ID, OTHER_SHARE_ID, third],
+    showPinnedLists: 'DELETE_FIELD',
+    updatedAt: 'SERVER_TIME',
+  });
+});
+
+test('migrateLegacyPins stops before the profile write if an attribution fails', async () => {
+  const { api, calls } = fakeApi({
+    getDocument: async () => ({
+      exists: () => true,
+      data: () => ({ pinnedLists: [{ shareId: SHARE_ID, title: 'Uno', paperCount: 1 }] }),
+    }),
+  });
+  await assert.rejects(() => migrateLegacyPins({
+    attribute: async () => { throw new Error('worker down'); },
+  }, api), /worker down/);
+  assert.equal(calls.length, 0, 'the legacy pins must survive for the retry');
+});
+
+test('migrateHiddenPins only attributes when the owner said to show', async () => {
+  const stash = {
+    exists: () => true,
+    data: () => ({ pinnedLists: [{ shareId: SHARE_ID, title: 'Oculta', paperCount: 1 }] }),
+  };
+  const attributions = [];
+  const attribute = async (shareId, attributed) => attributions.push([shareId, attributed]);
+
+  const { api: showApi, calls: showCalls } = fakeApi({ getDocument: async () => stash });
+  const shown = await migrateHiddenPins({ attribute, showOnProfile: true }, showApi);
+  assert.deepEqual(attributions, [[SHARE_ID, true]]);
+  assert.deepEqual(shown, {
+    migrated: 1, discarded: 0, pinnedShareIds: [SHARE_ID], attributedShareIds: [SHARE_ID],
+  });
+  const profileWrite = showCalls.find(([kind, ref]) => kind === 'update' && ref.includes('userProfiles'));
+  assert.equal(profileWrite[2].showPinnedLists, 'DELETE_FIELD');
+  const stashWrite = showCalls.find(([kind, ref]) => kind === 'set' && ref.includes('profileStash'));
+  assert.deepEqual(stashWrite[2], { pinnedLists: [], updatedAt: 'SERVER_TIME' });
+
+  attributions.length = 0;
+  const { api: hideApi } = fakeApi({ getDocument: async () => stash });
+  const hidden = await migrateHiddenPins({ attribute, showOnProfile: false }, hideApi);
+  assert.deepEqual(attributions, [], 'declining must not attribute anything');
+  assert.deepEqual(hidden, {
+    migrated: 0, discarded: 1, pinnedShareIds: [], attributedShareIds: [],
+  });
 });

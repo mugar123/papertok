@@ -11,10 +11,12 @@ import { useFeed } from '../../context/FeedContext.jsx';
 import { useFollowing } from '../../context/FollowingContext.jsx';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import {
+  mergeShowcaseCards,
   needsVisibilityChoice,
   profileIsPublic,
   readOwnLists,
   readOwnUserProfile,
+  readProfileLists,
   readUserProfileByHandle,
 } from '../../services/userProfileService.js';
 import VisibilityPrompt from '../Profile/VisibilityPrompt.jsx';
@@ -40,6 +42,7 @@ import {
   ownProfileCache,
   ownProfileKey,
   rememberOwnProfile,
+  showcaseCache,
 } from '../../utils/profileSessionCaches.js';
 import { cleanPaperText, displayAuthorName } from '../../utils/paperText.js';
 import { getIcon } from '../../utils/icons.js';
@@ -213,6 +216,13 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const [followHover, setFollowHover] = useState(false);
   const [followSheet, setFollowSheet] = useState(null);
   const [promptDismissed, setPromptDismissed] = useState(false);
+  // The showcase (F12): the visitor's Listas tab reads `profileLists/{uid}`,
+  // one document. `null` is "not answered yet" — while it is null the tab
+  // paints the legacy pinned cards embedded in the profile, which cost
+  // nothing, and the merged view fills in when the read lands.
+  const [showcase, setShowcase] = useState(
+    () => (profile?.uid ? showcaseCache.get(profile.uid) ?? null : null),
+  );
 
   const view = resolveProfileView({
     viewerUid: user?.uid,
@@ -255,6 +265,26 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       });
     return () => { active = false; };
   }, [handle, selfMode, reloadToken, profileCacheKey, user?.uid]);
+
+  // The showcase read, for the visitor tab only: the owner tab renders the
+  // account's own lists. Seeded from the session cache, revalidated behind
+  // the painted view; a failure keeps whatever is showing (worst case, the
+  // legacy pins) rather than replacing it with an error.
+  useEffect(() => {
+    const uid = profile?.uid;
+    if (!uid || view.isOwner) return undefined;
+    let active = true;
+    readProfileLists(uid)
+      .then(cards => {
+        const settled = cards ?? [];
+        showcaseCache.set(uid, settled);
+        if (active) setShowcase(settled);
+      })
+      .catch(error => {
+        console.warn('The showcase could not be read:', error);
+      });
+    return () => { active = false; };
+  }, [profile?.uid, view.isOwner, reloadToken]);
 
   // Owner data. Each effect is gated on `view.isOwner`, which is the privacy
   // boundary: a visitor's render never even asks for these.
@@ -526,15 +556,15 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     unfollow: 'Unfollow',
     followingState: 'Following',
     followFailed: 'That did not go through. Try again.',
-    pinnedHeading: 'Pinned lists',
+    pinnedHeading: 'Lists',
     papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
     open: title => `Open ${title}`,
     manageLists: 'Manage in My lists',
     publicBadge: 'Public',
     ownListsNote: 'Unpublished lists are only visible to you.',
     ownListsError: 'Your lists could not be loaded. Open My lists to retry.',
-    emptyPinnedTitle: 'No pinned lists yet',
-    emptyPinnedHint: 'This profile has not pinned any reading lists.',
+    emptyPinnedTitle: 'No lists yet',
+    emptyPinnedHint: 'This profile has not published any reading lists.',
     emptyOwnListsTitle: 'No lists yet',
     emptyOwnListsHint: 'Save a paper to a list and it will show up here.',
     emptySavedTitle: 'Nothing saved yet',
@@ -574,15 +604,15 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     unfollow: 'Dejar de seguir',
     followingState: 'Siguiendo',
     followFailed: 'No se pudo completar. Inténtalo de nuevo.',
-    pinnedHeading: 'Listas fijadas',
+    pinnedHeading: 'Listas',
     papers: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
     open: title => `Abrir ${title}`,
     manageLists: 'Gestionar en Mis listas',
     publicBadge: 'Pública',
     ownListsNote: 'Las listas no publicadas solo las ves tú.',
     ownListsError: 'No se pudieron cargar tus listas. Ábrelas en Mis listas para reintentar.',
-    emptyPinnedTitle: 'Sin listas fijadas',
-    emptyPinnedHint: 'Este perfil todavía no ha fijado ninguna lista de lectura.',
+    emptyPinnedTitle: 'Sin listas',
+    emptyPinnedHint: 'Este perfil todavía no ha publicado ninguna lista de lectura.',
     emptyOwnListsTitle: 'Todavía no hay listas',
     emptyOwnListsHint: 'Guarda un paper en una lista y aparecerá aquí.',
     emptySavedTitle: 'Nada guardado todavía',
@@ -687,7 +717,18 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     ? (followHover && !followBusy ? UserX : UserCheck)
     : UserPlus;
 
-  const pinnedLists = profile?.pinnedLists || [];
+  // What the visitor tab paints (F12): the Worker-written showcase merged
+  // with any legacy pinned cards still embedded in an unmigrated profile,
+  // pins floated first. One extra read per profile visit, paid above; the
+  // session cache is consulted at render time so a remount repaints without
+  // waiting on the revalidation.
+  const showcaseView = showcase
+    ?? (profile?.uid ? showcaseCache.get(profile.uid) ?? null : null);
+  const visitorLists = mergeShowcaseCards({
+    showcase: showcaseView ?? [],
+    legacyPins: profile?.pinnedLists,
+    pinnedShareIds: profile?.pinnedShareIds,
+  });
 
   const listCards = (lists, own) => (
     <ul className="public-profile-list-grid">
@@ -1029,13 +1070,17 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
         ) : (
           <section className="profile-visitor-lists" aria-label={copy.pinnedHeading}>
             <h2 className="profile-visitor-heading">{copy.pinnedHeading}</h2>
-            {pinnedLists.length === 0 ? (
-              <EmptyState
-                Icon={FolderOpen}
-                title={copy.emptyPinnedTitle}
-                hint={copy.emptyPinnedHint}
-              />
-            ) : listCards(pinnedLists, false)}
+            {visitorLists.length === 0 ? (
+              // The empty state waits for the showcase to answer: claiming
+              // "no lists" while the read is in flight would be a guess.
+              showcaseView !== null && (
+                <EmptyState
+                  Icon={FolderOpen}
+                  title={copy.emptyPinnedTitle}
+                  hint={copy.emptyPinnedHint}
+                />
+              )
+            ) : listCards(visitorLists, false)}
           </section>
         )}
 

@@ -1,7 +1,7 @@
 /**
  * Publishing a list (P19).
  *
- * These three routes exist because `firestore.rules` cannot validate a public
+ * These routes exist because `firestore.rules` cannot validate a public
  * list: the rules engine stops at 1000 evaluated expressions per request and a
  * single realistic paper already exceeds that, which is why publishing was
  * broken outright. `publicLists` and `publicListOwners` are closed to clients
@@ -24,7 +24,9 @@
  */
 import {
   assertPublicListWithinLimits,
+  PUBLIC_LIST_LIMITS,
   sanitizePublicList,
+  sanitizePublicPaper,
 } from '../src/services/publicListPayload.js';
 import { verifyFirebaseIdentity } from './firebase-auth.js';
 import {
@@ -38,12 +40,22 @@ import {
 } from './firestore-admin.js';
 import { reserveRequestQuota } from './request-quota-ledger.js';
 
-export const PUBLIC_LIST_PATHS = new Set(['/lists/publish', '/lists/update', '/lists/unpublish']);
+export const PUBLIC_LIST_PATHS = new Set([
+  '/lists/publish', '/lists/update', '/lists/unpublish', '/lists/attribute',
+]);
 
 const MAX_BODY_BYTES = 1_000_000;
 const DEFAULT_USER_DAILY_LIMIT = 60;
 const DEFAULT_GLOBAL_DAILY_LIMIT = 2_000;
 const SHARE_ID_PATTERN = /^[a-f0-9]{32}$/;
+
+/**
+ * How many attributed lists one showcase holds (F12). A product cap, not a
+ * technical one — thirty cards is ~8 KB of a document whose hard ceiling is
+ * 1 MiB — but the showcase renders as one read and must stay that way.
+ * Publishing past it still works with `attributed: false`.
+ */
+export const PROFILE_LISTS_LIMIT = 30;
 
 export class PublicListApiError extends Error {
   constructor(code, status = 400) {
@@ -118,6 +130,114 @@ export function buildPublicListPayload(body) {
     throw new PublicListApiError(`INVALID_PAYLOAD_${failures[0]}`, 400);
   }
   return payload;
+}
+
+/**
+ * Merge semantics for /lists/update (F12): the client sends the authoritative
+ * `paperIds` — order and removals included — plus whatever papers it could
+ * hydrate, and papers already in the public document survive for the ids it
+ * could not.
+ *
+ * This exists because the browser builds its payload from papers hydrated in
+ * memory; a background sync (P25) built the same way would silently SHRINK
+ * the public copy to whatever happened to be loaded. Removals still
+ * propagate: an id absent from `paperIds` is gone whatever the client sent.
+ *
+ * The join key is the raw app id the client sent, the same namespace as
+ * `paperIds` — `sanitizePublicPaper` rewrites ids to `doi:`/`arxiv:` form, so
+ * the sanitized id cannot be the key. Published papers are indexed under
+ * their sanitized id AND their bare doi/arxiv spellings, which absorbs most
+ * of the legacy id drift (R8). An unhydrated paper that matches nothing is
+ * dropped — exactly what the manual update button already did to it.
+ */
+export function buildMergedPayload(body, existing) {
+  let header;
+  try {
+    header = sanitizePublicList({ ...body, papers: [] });
+  } catch {
+    throw new PublicListApiError('TITLE_REQUIRED', 400);
+  }
+
+  const ids = body.paperIds
+    .map(id => (typeof id === 'string' ? id.trim() : ''))
+    .filter(Boolean);
+  if (ids.length !== body.paperIds.length || ids.length > 500) {
+    throw new PublicListApiError('INVALID_BODY', 400);
+  }
+
+  // Refused rather than coerced, like buildPublicListPayload: a paper the
+  // sanitizer would drop is a caller that must be told.
+  const byRawId = new Map();
+  for (const raw of Array.isArray(body.papers) ? body.papers : []) {
+    const clean = sanitizePublicPaper(raw);
+    if (!clean) throw new PublicListApiError('PAPERS_REJECTED', 400);
+    byRawId.set(String(raw?.id ?? '').trim(), clean);
+  }
+
+  const byPublishedKey = new Map();
+  for (const paper of Array.isArray(existing?.papers) ? existing.papers : []) {
+    if (!paper || typeof paper.id !== 'string') continue;
+    for (const key of [
+      paper.id,
+      paper.doi, paper.doi && `doi:${paper.doi}`,
+      paper.arxivId, paper.arxivId && `arxiv:${paper.arxivId}`,
+    ]) {
+      if (key && !byPublishedKey.has(key)) byPublishedKey.set(key, paper);
+    }
+  }
+
+  const seen = new Set();
+  const papers = [];
+  for (const id of ids) {
+    const paper = byRawId.get(id)
+      || byPublishedKey.get(id)
+      || byPublishedKey.get(id.toLowerCase());
+    if (!paper || seen.has(paper.id)) continue;
+    seen.add(paper.id);
+    papers.push(paper);
+  }
+  if (papers.length > PUBLIC_LIST_LIMITS.papers) {
+    throw new PublicListApiError('PAPERS_REJECTED', 400);
+  }
+
+  const payload = { ...header, paperCount: papers.length, papers };
+  const failures = assertPublicListWithinLimits(payload);
+  if (failures.length) {
+    throw new PublicListApiError(`INVALID_PAYLOAD_${failures[0]}`, 400);
+  }
+  return payload;
+}
+
+/**
+ * The showcase (F12): `profileLists/{uid}`, the one document a profile's
+ * Listas tab reads. Only this Worker writes it — `firestore.rules` refuses
+ * every client write — and always inside the same commit as the list
+ * operation it mirrors, so a card can never disagree with the list it
+ * denormalizes the way the old best-effort pin refresh could.
+ */
+function projectionEntries(projection) {
+  return Array.isArray(projection?.data?.lists) ? projection.data.lists : [];
+}
+
+/**
+ * A concurrent write to the showcase (two publishes racing, say) fails the
+ * whole commit with 409 instead of silently dropping a card; the caller
+ * retries. `mustExist: false` lets the first attributed publish create it.
+ */
+function projectionWrite(admin, uid, lists, timestamp, projection) {
+  return mergeWrite(
+    admin.name(['profileLists', uid]),
+    { lists, updatedAt: timestamp },
+    projection ? { updateTime: projection.updateTime } : { mustExist: false },
+  );
+}
+
+function cleanEmoji(value) {
+  return typeof value === 'string' ? value.trim().slice(0, 40) : '';
+}
+
+function showcaseCard(shareId, { title, emoji, paperCount, publishedAt }) {
+  return { shareId, title, ...(emoji ? { emoji } : {}), paperCount, publishedAt };
 }
 
 async function reservePublishQuota(env, uid) {
@@ -231,41 +351,99 @@ export async function refreshPinnedCard(admin, uid, shareId, card, { now }) {
 
 async function publish(admin, uid, body, { cryptoApi, now }) {
   const listId = requireListId(body.listId);
+  // Attributed by default (F12): publishing puts the list on your profile,
+  // and the UI says so before the click. `attributed: false` is the per-list
+  // escape hatch that keeps "share by link, no showcase" possible.
+  const attributed = body.attributed !== false;
   const payload = buildPublicListPayload(body);
   const list = await requireOwnedList(admin, uid, listId);
   if (list.publicShareId) throw new PublicListApiError('ALREADY_PUBLISHED', 409);
 
   const shareId = createShareId(cryptoApi);
   const timestamp = new Date(now());
-  await admin.commit([
+  const writes = [
     createWrite(admin.name(['publicListOwners', shareId]), {
       ownerId: uid, listId, createdAt: timestamp,
     }),
     createWrite(admin.name(['publicLists', shareId]), {
       ...payload, createdAt: timestamp, updatedAt: timestamp,
     }),
-    mergeWrite(admin.name(['users', uid, 'lists', listId]), { publicShareId: shareId }),
-  ]);
-  return { shareId, ...payload };
+    // `onProfile` mirrors the showcase so Mis listas renders the badge from
+    // the document it already reads; `publicSyncedAt` marks the copy as in
+    // step with the list as of this commit (the dirty check of P25).
+    mergeWrite(admin.name(['users', uid, 'lists', listId]), {
+      publicShareId: shareId, onProfile: attributed, publicSyncedAt: timestamp,
+    }),
+  ];
+  if (attributed) {
+    const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
+    const entries = projectionEntries(projection);
+    if (entries.length >= PROFILE_LISTS_LIMIT) {
+      throw new PublicListApiError('PROFILE_LISTS_FULL', 409);
+    }
+    const card = showcaseCard(shareId, {
+      title: payload.title,
+      emoji: cleanEmoji(list.emoji),
+      paperCount: payload.paperCount,
+      publishedAt: timestamp,
+    });
+    writes.push(projectionWrite(admin, uid, [...entries, card], timestamp, projection));
+  }
+  await admin.commit(writes);
+  return { shareId, attributed, ...payload };
 }
 
 async function update(admin, uid, body, { now }) {
   const shareId = requireShareId(body.shareId);
-  const payload = buildPublicListPayload(body);
-  await requireOwnedShare(admin, uid, shareId);
+  const owner = await requireOwnedShare(admin, uid, shareId);
 
+  // With `paperIds` the update is a merge against the published copy (see
+  // buildMergedPayload); without it, the legacy whole-payload replace.
+  let payload;
+  if (Array.isArray(body.paperIds)) {
+    const existing = await admin.getDocument(['publicLists', shareId]);
+    if (!existing) throw new PublicListApiError('SHARE_NOT_FOUND', 404);
+    payload = buildMergedPayload(body, existing);
+  } else {
+    payload = buildPublicListPayload(body);
+  }
+
+  const timestamp = new Date(now());
   // `description` is always in the mask and only sometimes in the fields: a
   // list that drops its description must lose it from the public document
   // rather than keep the old one. `createdAt` is in neither, so it cannot move.
-  const fields = { ...payload, updatedAt: new Date(now()) };
+  const fields = { ...payload, updatedAt: timestamp };
   const write = mergeWrite(admin.name(['publicLists', shareId]), fields);
   write.updateMask = {
     fieldPaths: [...new Set([...Object.keys(fields), 'description'])],
   };
-  await admin.commit([write]);
-  // After, not inside, the commit above: the card is a courtesy and the list
-  // update must never fail over it. (Publish needs no counterpart — a freshly
-  // minted share id cannot be pinned yet.)
+
+  const writes = [
+    write,
+    mergeWrite(admin.name(['users', uid, 'lists', owner.listId]), {
+      publicSyncedAt: timestamp,
+    }),
+  ];
+  // The showcase card travels in the SAME commit as the list it mirrors —
+  // the atomicity the best-effort pin refresh below never had.
+  const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
+  const entries = projectionEntries(projection);
+  const held = entries.find(entry => entry?.shareId === shareId);
+  if (held && (held.title !== payload.title || held.paperCount !== payload.paperCount)) {
+    writes.push(projectionWrite(
+      admin,
+      uid,
+      entries.map(entry => (entry?.shareId === shareId
+        ? { ...entry, title: payload.title, paperCount: payload.paperCount }
+        : entry)),
+      timestamp,
+      projection,
+    ));
+  }
+  await admin.commit(writes);
+  // Transitional (F12 migration window): profiles that still hold legacy
+  // pinned CARDS get them refreshed best-effort, exactly as before. Retired
+  // with rules v2, when no profile holds cards any more.
   const pinCard = await refreshPinnedCard(admin, uid, shareId, {
     title: payload.title, paperCount: payload.paperCount,
   }, { now });
@@ -277,25 +455,99 @@ async function unpublish(admin, uid, body, { now }) {
   const listId = requireListId(body.listId);
   await requireOwnedShare(admin, uid, shareId);
 
-  // The private list loses its pointer in the same commit. Without that the
-  // owner would be left with a list that claims to be published and a delete
-  // rule that refuses to let it go.
-  await admin.commit([
+  const timestamp = new Date(now());
+  // The private list loses its pointer in the same commit — and its F12
+  // stamps with it: an unpublished list is not on any profile and has no
+  // public copy to be in step with. Without the pointer cleanup the owner
+  // would be left with a list that claims to be published and a delete rule
+  // that refuses to let it go.
+  const writes = [
     deleteWrite(admin.name(['publicLists', shareId])),
     deleteWrite(admin.name(['publicListOwners', shareId])),
-    clearFieldsWrite(admin.name(['users', uid, 'lists', listId]), ['publicShareId']),
-  ]);
-  // The owners document this share id had is gone, so a card pointing at it
-  // would fail ownsPinnedShare() and veto every profile write the client
-  // tries next. Unpinning here closes the orphan at its source.
+    clearFieldsWrite(admin.name(['users', uid, 'lists', listId]), [
+      'publicShareId', 'onProfile', 'publicSyncedAt',
+    ]),
+  ];
+  const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
+  const entries = projectionEntries(projection);
+  if (entries.some(entry => entry?.shareId === shareId)) {
+    writes.push(projectionWrite(
+      admin,
+      uid,
+      entries.filter(entry => entry?.shareId !== shareId),
+      timestamp,
+      projection,
+    ));
+  }
+  await admin.commit(writes);
+  // Transitional, like update's: a legacy pinned CARD pointing at the dead
+  // share id would fail ownsPinnedShare() and veto every profile write the
+  // client tries next. Unpinning here closes the orphan at its source.
   const pinCard = await refreshPinnedCard(admin, uid, shareId, null, { now });
   return { shareId, unpublished: true, pinCard };
+}
+
+/**
+ * Turns attribution on or off for an already-published list (F12): the
+ * showcase card and the private list's `onProfile` mirror move together, in
+ * one commit, without touching the published content. This is also the
+ * migration path — a legacy pinned card becomes an attributed list through
+ * this exact door, consent having been given by the pin itself.
+ */
+async function attribute(admin, uid, body, { now }) {
+  const shareId = requireShareId(body.shareId);
+  if (typeof body.attributed !== 'boolean') throw new PublicListApiError('INVALID_BODY', 400);
+  const owner = await requireOwnedShare(admin, uid, shareId);
+
+  const timestamp = new Date(now());
+  const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
+  const entries = projectionEntries(projection);
+  const held = entries.some(entry => entry?.shareId === shareId);
+
+  const mirror = mergeWrite(admin.name(['users', uid, 'lists', owner.listId]), {
+    onProfile: body.attributed,
+  });
+
+  // Asking for what is already true is success, not an error — but the
+  // mirror is still stamped, so a missing badge heals on the same call.
+  if (body.attributed === held) {
+    await admin.commit([mirror]);
+    return { shareId, attributed: body.attributed, unchanged: true };
+  }
+
+  const writes = [mirror];
+  if (body.attributed) {
+    if (entries.length >= PROFILE_LISTS_LIMIT) {
+      throw new PublicListApiError('PROFILE_LISTS_FULL', 409);
+    }
+    const publicList = await admin.getDocument(['publicLists', shareId]);
+    if (!publicList) throw new PublicListApiError('SHARE_NOT_FOUND', 404);
+    const privateList = await admin.getDocument(['users', uid, 'lists', owner.listId]);
+    const card = showcaseCard(shareId, {
+      title: publicList.title,
+      emoji: cleanEmoji(privateList?.emoji),
+      paperCount: publicList.paperCount,
+      publishedAt: publicList.createdAt instanceof Date ? publicList.createdAt : timestamp,
+    });
+    writes.push(projectionWrite(admin, uid, [...entries, card], timestamp, projection));
+  } else {
+    writes.push(projectionWrite(
+      admin,
+      uid,
+      entries.filter(entry => entry?.shareId !== shareId),
+      timestamp,
+      projection,
+    ));
+  }
+  await admin.commit(writes);
+  return { shareId, attributed: body.attributed };
 }
 
 const OPERATIONS = {
   '/lists/publish': publish,
   '/lists/update': update,
   '/lists/unpublish': unpublish,
+  '/lists/attribute': attribute,
 };
 
 export async function handlePublicListRequest(request, env, pathname, options = {}) {

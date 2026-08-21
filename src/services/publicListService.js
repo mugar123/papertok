@@ -147,6 +147,23 @@ export async function updatePublicList(shareId, input, overrides) {
   return { ...payload, ...result };
 }
 
+/**
+ * Turns attribution on or off for an already-published list (F12): whether it
+ * appears, as a card, in the owner's public showcase (`profileLists/{uid}`).
+ * The Worker owns both artifacts — the card and the `onProfile` mirror on the
+ * private list — and moves them in one commit; asking for what is already
+ * true succeeds. The published content and its share link are untouched.
+ */
+export async function attributePublicList(shareId, attributed, overrides) {
+  const api = operations(overrides);
+  requireSupported(api);
+  const normalizedShareId = validateShareId(shareId);
+  if (typeof attributed !== 'boolean') throw new TypeError('Attribution must be true or false.');
+  return callWorker(api, '/lists/attribute', {
+    shareId: normalizedShareId, attributed,
+  });
+}
+
 export async function unpublishPublicList(shareId, listId, overrides) {
   const api = operations(overrides);
   requireSupported(api);

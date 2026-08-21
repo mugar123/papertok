@@ -196,6 +196,28 @@ service cloud.firestore {
         && (entries.size() < 6 || validPinnedList(entries[5]));
     }
 
+    // F12: the pin is an ORDER, not a card. At most three share ids; the
+    // cards they point at live in profileLists/{uid}, which only the Worker
+    // writes, and the profile renders the intersection of the two. That is
+    // why there is no ownership get() here: a forged or stale id points at
+    // nothing in the caller's own showcase, so it pins nothing — the forgery
+    // loses its prize instead of costing an ownership check per entry. This
+    // is what retires the expression-budget spiral of validPinnedLists.
+    //
+    // `is string` survives mutation: without it, .matches() on a non-string
+    // blows the evaluation and denies anyway. Kept as house style — the same
+    // documented redundancy as validFollowEdge's hasAll.
+    function validPinnedShareIds(entries) {
+      return entries is list
+        && entries.size() <= 3
+        && (entries.size() < 1
+          || entries[0] is string && entries[0].matches('^[a-f0-9]{32}$'))
+        && (entries.size() < 2
+          || entries[1] is string && entries[1].matches('^[a-f0-9]{32}$'))
+        && (entries.size() < 3
+          || entries[2] is string && entries[2].matches('^[a-f0-9]{32}$'));
+    }
+
     // orcid, verified and followerCount are written only by the service
     // identity (F6/F2), which bypasses rules. Declaring them untouchable for
     // clients here is the guarantee that a user cannot mark themselves verified
@@ -286,6 +308,7 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly([
           'handle', 'displayName', 'bio', 'photo', 'orcid', 'verified',
           'allowContact', 'visibility', 'showPinnedLists', 'pinnedLists',
+          'pinnedShareIds',
           'followerCount',
           'createdAt', 'updatedAt'
         ])
@@ -316,6 +339,12 @@ service cloud.firestore {
         && (!('showPinnedLists' in request.resource.data)
           || request.resource.data.showPinnedLists is bool)
         && validPinnedLists(request.resource.data.pinnedLists)
+        // F12 transition: legacy card pins above, the new order-only pins
+        // here. Both are accepted until every profile has migrated; rules v2
+        // then retires validPinnedLists and the pinnedLists key. Absent on
+        // every pre-F12 write, so this costs those writes two expressions.
+        && (!('pinnedShareIds' in request.resource.data)
+          || validPinnedShareIds(request.resource.data.pinnedShareIds))
         && (!('followerCount' in request.resource.data)
           || request.resource.data.followerCount is int
             && request.resource.data.followerCount >= 0)
@@ -771,12 +800,25 @@ service cloud.firestore {
           && !('publicShareId' in resource.data);
         allow create, update: if ownsUserTree(userId)
           && request.resource.data.keys().hasOnly([
-            'id', 'name', 'emoji', 'paperIds', 'createdAt', 'publicShareId'
+            'id', 'name', 'emoji', 'paperIds', 'createdAt', 'publicShareId',
+            // F12: `onProfile` and `publicSyncedAt` are stamped by the Worker
+            // (attribution mirror and last-sync marker); `updatedAt` by the
+            // client on each edit. They are tolerated rather than protected:
+            // faking any of them only miscolors the owner's own badges and
+            // mutes the owner's own stale-link indicator — self-harm, and a
+            // freeze clause here would spend lists/ budget buying nothing.
+            'onProfile', 'updatedAt', 'publicSyncedAt'
           ])
           && validString(request.resource.data.name, 120)
           && validString(request.resource.data.emoji, 40)
           && request.resource.data.paperIds is list
           && request.resource.data.paperIds.size() <= 500
+          && (!('onProfile' in request.resource.data)
+            || request.resource.data.onProfile is bool)
+          && (!('updatedAt' in request.resource.data)
+            || request.resource.data.updatedAt is timestamp)
+          && (!('publicSyncedAt' in request.resource.data)
+            || request.resource.data.publicSyncedAt is timestamp)
           && publicShareIdUntouched()
           // Belt and braces: the value can only have come from the Worker, but
           // a document of unknown vintage still has to look like a share id.
@@ -1127,6 +1169,33 @@ service cloud.firestore {
         && (!('updatedAt' in request.resource.data)
           || request.resource.data.updatedAt == request.time);
       allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------------
+    // F12: the showcase of attributed lists. Additive: nothing above this
+    // line changes. Kept at the end of the file on purpose, like F3's block.
+    // ---------------------------------------------------------------------
+
+    match /profileLists/{profileUid} {
+      // The cards of this account's published-and-attributed lists, written
+      // ONLY by the Worker in the same commit that publishes, updates,
+      // attributes or unpublishes — which is why writes cost these rules
+      // nothing and why no validation of the cards lives here.
+      //
+      // Reading follows the profile's own visibility: the owner always may
+      // (that branch short-circuits before the get), anyone else only while
+      // the profile is public. The get() is billed as one read per fetch;
+      // it is what lets going private hide the showcase with zero writes and
+      // zero new clauses on the profile write path — the client cannot be
+      // asked to delete in its batch a document it cannot write.
+      allow get: if (request.auth != null && request.auth.uid == profileUid)
+        || profileIsPublic(
+          get(/databases/$(database)/documents/userProfiles/$(profileUid)).data
+        );
+      // No directory of showcases: the only path in is a profile you can
+      // already read.
+      allow list: if false;
+      allow write: if false;
     }
 
     match /{document=**} {

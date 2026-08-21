@@ -5,6 +5,7 @@ import {
   PUBLIC_LIST_LIMITS,
   PublicListRequestError,
   PublicListUnsupportedError,
+  attributePublicList,
   publishPublicList,
   readPublicList,
   sanitizePublicList,
@@ -296,4 +297,19 @@ test('a list served from the cache is still a list', async () => {
   }));
 
   assert.equal(result.title, 'Shared', 'data in hand is data, cached or not');
+});
+
+test('F12: attribution posts the share and the boolean, nothing else', async () => {
+  const shareId = '07070707070707070707070707070707';
+  const { api, requests } = fakeApi();
+  await attributePublicList(shareId, true, api);
+  assert.equal(requests[0].url, 'https://worker.test/lists/attribute');
+  assert.deepEqual(requests[0].body, { shareId, attributed: true });
+
+  await attributePublicList(shareId, false, api);
+  assert.deepEqual(requests[1].body, { shareId, attributed: false });
+
+  await assert.rejects(() => attributePublicList(shareId, 'yes', api), TypeError);
+  await assert.rejects(() => attributePublicList('nonsense', true, api), TypeError);
+  assert.equal(requests.length, 2, 'a refused call must never reach the network');
 });

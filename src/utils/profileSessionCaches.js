@@ -22,6 +22,9 @@ export const ownProfileCache = createSessionCache({ maxEntries: 8 });
 export const ownListsCache = createSessionCache({ maxEntries: 4 });
 export const pinnableListsCache = createSessionCache({ maxEntries: 4 });
 export const likedExtraCache = createSessionCache({ maxEntries: 4 });
+// The showcase (F12): the one `profileLists/{uid}` read a visitor's Listas
+// tab costs, keyed by uid so remounts repaint instead of re-reading.
+export const showcaseCache = createSessionCache({ maxEntries: 8 });
 
 export function ownProfileKey(uid) {
   return uid ? `own:${uid}` : null;

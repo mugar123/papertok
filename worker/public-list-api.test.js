@@ -208,17 +208,18 @@ test('over the daily cap the caller gets 429 and nothing is written', async () =
 // Publish.
 // ---------------------------------------------------------------------------
 
-test('publishing writes owner, list and the private pointer in ONE commit', async () => {
+test('publishing writes owner, list, pointer and showcase card in ONE commit', async () => {
   stubIdentity();
-  const admin = fakeAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista' } });
+  const admin = fakeAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista', emoji: 'Folder' } });
   const result = await run('/lists/publish', {
     listId: 'l1', title: 'Mi lista', language: 'es', papers: listOf(12),
   }, { admin });
 
   assert.equal(admin.commits.length, 1, 'a publish must be atomic, as the client batch was');
-  const [ownerWrite, listWrite, pointerWrite] = admin.commits[0];
+  const [ownerWrite, listWrite, pointerWrite, cardWrite] = admin.commits[0];
 
   assert.match(result.shareId, /^[a-f0-9]{32}$/);
+  assert.equal(result.attributed, true, 'attributed by default (F12)');
   assert.deepEqual(fieldsOf(ownerWrite), {
     ownerId: UID, listId: 'l1', createdAt: new Date(NOW),
   });
@@ -230,8 +231,61 @@ test('publishing writes owner, list and the private pointer in ONE commit', asyn
   assert.equal(published.createdAt.getTime(), NOW);
   assert.equal(published.updatedAt.getTime(), NOW);
 
-  assert.deepEqual(fieldsOf(pointerWrite), { publicShareId: result.shareId });
-  assert.deepEqual(pointerWrite.updateMask, { fieldPaths: ['publicShareId'] });
+  // The pointer now carries the F12 stamps: the attribution mirror and the
+  // in-step marker, born in the same commit as the copy they describe.
+  assert.deepEqual(fieldsOf(pointerWrite), {
+    publicShareId: result.shareId, onProfile: true, publicSyncedAt: new Date(NOW),
+  });
+  assert.deepEqual(pointerWrite.updateMask, {
+    fieldPaths: ['publicShareId', 'onProfile', 'publicSyncedAt'],
+  });
+
+  // And the showcase card is part of the SAME commit, not a courtesy after it.
+  assert.match(cardWrite.update.name, new RegExp(`profileLists/${UID}$`));
+  const showcase = fieldsOf(cardWrite);
+  assert.deepEqual(showcase.lists, [{
+    shareId: result.shareId, title: 'Mi lista', emoji: 'Folder',
+    paperCount: 12, publishedAt: new Date(NOW),
+  }]);
+  assert.equal(cardWrite.currentDocument, undefined, 'a first card may create the document');
+});
+
+test('publishing with attributed:false skips the showcase and mirrors it', async () => {
+  stubIdentity();
+  const admin = fakeAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista' } });
+  const result = await run('/lists/publish', {
+    listId: 'l1', title: 'Anónima', papers: listOf(2), attributed: false,
+  }, { admin });
+
+  assert.equal(result.attributed, false);
+  assert.equal(admin.commits.length, 1);
+  assert.equal(admin.commits[0].length, 3, 'no showcase write for an anonymous publish');
+  const pointer = fieldsOf(admin.commits[0][2]);
+  assert.equal(pointer.onProfile, false);
+});
+
+test('a full showcase refuses the 31st attributed publish, not the anonymous one', async () => {
+  stubIdentity();
+  const fullShowcase = {
+    lists: Array.from({ length: 30 }, (_, i) => ({
+      shareId: String(i).padStart(32, '0'), title: `L${i}`, paperCount: 1,
+      publishedAt: new Date(NOW),
+    })),
+  };
+  const documents = {
+    [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista' },
+    [`profileLists/${UID}`]: fullShowcase,
+  };
+  await assert.rejects(
+    () => run('/lists/publish', { listId: 'l1', title: 'T', papers: listOf(1) }, { admin: fakeAdmin(documents) }),
+    error => error.code === 'PROFILE_LISTS_FULL' && error.status === 409,
+  );
+  const admin = fakeAdmin(documents);
+  const result = await run('/lists/publish', {
+    listId: 'l1', title: 'T', papers: listOf(1), attributed: false,
+  }, { admin });
+  assert.equal(result.attributed, false);
+  assert.equal(admin.commits.length, 1);
 });
 
 test('the 12-paper ceiling is gone: 50 papers publish', async () => {
@@ -387,9 +441,12 @@ test('unpublishing removes both public documents AND the private pointer', async
   assert.match(dropList.delete, /publicLists\/a{32}$/);
   assert.match(dropOwner.delete, /publicListOwners\/a{32}$/);
   // Without this the owner keeps a list that claims to be published and a
-  // delete rule that will not let it go.
+  // delete rule that will not let it go. The F12 stamps leave with the
+  // pointer: an unpublished list is on no profile and in step with nothing.
   assert.match(clearPointer.update.name, new RegExp(`users/${UID}/lists/l1$`));
-  assert.deepEqual(clearPointer.updateMask, { fieldPaths: ['publicShareId'] });
+  assert.deepEqual(clearPointer.updateMask, {
+    fieldPaths: ['publicShareId', 'onProfile', 'publicSyncedAt'],
+  });
   assert.deepEqual(clearPointer.update.fields, {});
 });
 
@@ -558,4 +615,190 @@ test('a well-formed list passes the gate untouched', () => {
 test('share ids are 128 bits of lowercase hex, the shape the app already reads', () => {
   const id = createShareId({ getRandomValues: bytes => bytes.forEach((_, i) => { bytes[i] = i; }) });
   assert.equal(id, '000102030405060708090a0b0c0d0e0f');
+});
+
+// ---------------------------------------------------------------------------
+// F12: the showcase travels in the list's own commit, and /lists/attribute.
+// ---------------------------------------------------------------------------
+
+/** Documents for an owner whose showcase already holds SHARE and one more. */
+function showcaseFixture(extra = {}) {
+  return {
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista', emoji: 'Folder' },
+    [`profileLists/${UID}`]: {
+      lists: [
+        { shareId: OTHER_SHARE, title: 'Otra', paperCount: 2, publishedAt: new Date(NOW - 1000) },
+        { shareId: SHARE, title: 'Vieja', emoji: 'Folder', paperCount: 12, publishedAt: new Date(NOW - 500) },
+      ],
+      updatedAt: new Date(NOW - 500),
+    },
+    ...extra,
+  };
+}
+
+test('F12: updating an attributed list refreshes its showcase card in the SAME commit', async () => {
+  stubIdentity();
+  const admin = fakeAdmin(showcaseFixture(), {
+    updateTimes: { [`profileLists/${UID}`]: '2026-08-20T19:00:00.123456Z' },
+  });
+  await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Relatividad', papers: listOf(19),
+  }, { admin });
+
+  const writes = admin.commits[0];
+  assert.equal(writes.length, 3, 'public doc + sync stamp + showcase, one commit');
+
+  const stamp = writes[1];
+  assert.match(stamp.update.name, new RegExp(`users/${UID}/lists/l1$`));
+  assert.deepEqual(fieldsOf(stamp), { publicSyncedAt: new Date(NOW) });
+
+  const showcase = writes[2];
+  assert.match(showcase.update.name, new RegExp(`profileLists/${UID}$`));
+  const cards = fieldsOf(showcase).lists;
+  assert.deepEqual(cards.map(card => [card.shareId, card.title, card.paperCount]), [
+    [OTHER_SHARE, 'Otra', 2],
+    [SHARE, 'Relatividad', 19],
+  ]);
+  assert.deepEqual(showcase.currentDocument, {
+    updateTime: '2026-08-20T19:00:00.123456Z',
+  }, 'a racing showcase write must fail the commit, not lose a card');
+});
+
+test('F12: updating an unattributed list stamps the sync and leaves the showcase alone', async () => {
+  stubIdentity();
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista' },
+  });
+  await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Anónima', papers: listOf(2),
+  }, { admin });
+  assert.equal(admin.commits[0].length, 2, 'no showcase write when no card is held');
+});
+
+test('F12 merge: unhydrated papers survive from the published copy, removals still land', async () => {
+  stubIdentity();
+  const published = {
+    title: 'Vieja', paperCount: 3, papers: [
+      { id: 'arxiv:2608.18000', title: 'Paper 0', authors: ['A'] },
+      { id: 'arxiv:2608.18001', title: 'Paper 1', authors: ['A'] },
+      { id: 'arxiv:2608.18002', title: 'Paper 2', authors: ['A'] },
+    ],
+  };
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1' },
+    [`publicLists/${SHARE}`]: published,
+  });
+  // The list now holds 0, 1 and a new paper; 2 was removed. The client could
+  // hydrate only the new one. (No doi on it, so its sanitized id keeps the
+  // arxiv spelling — the join key is the RAW id either way.)
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Vieja',
+    paperIds: ['arxiv:2608.18000', 'arxiv:2608.18001', 'arxiv:2608.18099'],
+    papers: [paper(99, { doi: undefined })],
+  }, { admin });
+
+  assert.deepEqual(result.papers.map(p => p.id), [
+    'arxiv:2608.18000', 'arxiv:2608.18001', 'arxiv:2608.18099',
+  ]);
+  assert.equal(result.paperCount, 3);
+});
+
+test('F12 merge: an id that matches nothing is dropped, never invented', async () => {
+  stubIdentity();
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1' },
+    [`publicLists/${SHARE}`]: { title: 'Vieja', paperCount: 0, papers: [] },
+  });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Vieja',
+    paperIds: ['arxiv:2608.19999'], papers: [],
+  }, { admin });
+  assert.deepEqual(result.papers, []);
+  assert.equal(result.paperCount, 0);
+});
+
+test('F12: unpublishing an attributed list removes its showcase card in the SAME commit', async () => {
+  stubIdentity();
+  const admin = fakeAdmin(showcaseFixture());
+  await run('/lists/unpublish', { shareId: SHARE, listId: 'l1' }, { admin });
+
+  const writes = admin.commits[0];
+  assert.equal(writes.length, 4, 'two deletes + pointer clear + showcase');
+  const cards = fieldsOf(writes[3]).lists;
+  assert.deepEqual(cards.map(card => card.shareId), [OTHER_SHARE]);
+});
+
+test('F12: attributing a published list adds its card and mirrors onProfile', async () => {
+  stubIdentity();
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1', name: 'Mi lista', emoji: 'Star' },
+    [`publicLists/${SHARE}`]: {
+      title: 'Relatividad', paperCount: 19, papers: [], createdAt: new Date(NOW - 9000),
+    },
+  });
+  const result = await run('/lists/attribute', { shareId: SHARE, attributed: true }, { admin });
+
+  assert.deepEqual(result, { shareId: SHARE, attributed: true });
+  const [mirror, showcase] = admin.commits[0];
+  assert.deepEqual(fieldsOf(mirror), { onProfile: true });
+  assert.deepEqual(fieldsOf(showcase).lists, [{
+    shareId: SHARE, title: 'Relatividad', emoji: 'Star', paperCount: 19,
+    publishedAt: new Date(NOW - 9000),
+  }]);
+});
+
+test('F12: de-attributing removes the card and flips the mirror', async () => {
+  stubIdentity();
+  const admin = fakeAdmin(showcaseFixture());
+  const result = await run('/lists/attribute', { shareId: SHARE, attributed: false }, { admin });
+
+  assert.deepEqual(result, { shareId: SHARE, attributed: false });
+  const [mirror, showcase] = admin.commits[0];
+  assert.deepEqual(fieldsOf(mirror), { onProfile: false });
+  assert.deepEqual(fieldsOf(showcase).lists.map(card => card.shareId), [OTHER_SHARE]);
+});
+
+test('F12: asking for what is already true is success and heals the mirror', async () => {
+  stubIdentity();
+  const admin = fakeAdmin(showcaseFixture());
+  const result = await run('/lists/attribute', { shareId: SHARE, attributed: true }, { admin });
+
+  assert.deepEqual(result, { shareId: SHARE, attributed: true, unchanged: true });
+  assert.equal(admin.commits.length, 1);
+  assert.equal(admin.commits[0].length, 1, 'only the mirror; the showcase is untouched');
+  assert.deepEqual(fieldsOf(admin.commits[0][0]), { onProfile: true });
+});
+
+test('F12: attributing somebody else\'s share is a 403, a full showcase a 409, a non-bool a 400', async () => {
+  stubIdentity();
+  await assert.rejects(
+    () => run('/lists/attribute', { shareId: SHARE, attributed: true }, {
+      admin: fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: OTHER, listId: 'l1' } }),
+    }),
+    error => error.code === 'NOT_THE_OWNER' && error.status === 403,
+  );
+  await assert.rejects(
+    () => run('/lists/attribute', { shareId: SHARE, attributed: true }, {
+      admin: fakeAdmin({
+        [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+        [`profileLists/${UID}`]: {
+          lists: Array.from({ length: 30 }, (_, i) => ({
+            shareId: String(i).padStart(32, '0'), title: `L${i}`, paperCount: 1,
+          })),
+        },
+      }),
+    }),
+    error => error.code === 'PROFILE_LISTS_FULL' && error.status === 409,
+  );
+  await assert.rejects(
+    () => run('/lists/attribute', { shareId: SHARE, attributed: 'yes' }, {
+      admin: fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' } }),
+    }),
+    error => error.code === 'INVALID_BODY' && error.status === 400,
+  );
 });
