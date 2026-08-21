@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { IS_DEMO, db } from '../../services/firebase';
-import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, setDoc, limit, query } from 'firebase/firestore';
-import { patientRead } from '../../utils/boundedRead';
+import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc, limit, query } from 'firebase/firestore';
+import { isTransientReadError, patientRead } from '../../utils/boundedRead';
 import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService';
 import { readOwnLists } from '../../utils/ownLists';
+import { queuePublicListSync } from '../../services/publicListSync.js';
+import { publicListSyncKey } from '../../utils/publicListFreshness.js';
 import {
   commitTagInput,
   diffListSelection,
@@ -19,6 +21,12 @@ import ScientificText from '../ScientificText.js';
 import { BookOpen, Check, Download, Plus, StickyNote, Tags, X } from 'lucide-react';
 import { downloadCitationFile } from '../../utils/readingLibrary';
 import './SaveToListModal.css';
+
+/**
+ * States where the lists are still on their way. 'slow' and 'offline' keep the
+ * skeleton and the read behind it: only 'unavailable' is the screen giving up.
+ */
+const LISTS_WAITING = ['loading', 'slow', 'offline'];
 
 // Demo storage helpers
 function demoGet(key, fallback) {
@@ -49,7 +57,7 @@ function demoSet(key, value) {
  */
 export default function SaveToListModal({ paper, onClose }) {
   const { user } = useAuth();
-  const { isEnglish } = useLanguage();
+  const { language, isEnglish } = useLanguage();
   const { trackEvent, markActivation } = useAnalyticsConsent();
   const {
     markSaved, personalLibrary, ensurePersonalLibrary, toggleReadLater, saveReadingMetadata,
@@ -116,6 +124,8 @@ export default function SaveToListModal({ paper, onClose }) {
   useEffect(() => {
     if (!user) return undefined;
     let active = true;
+    // The retry loop outlives the promise; closing the modal must end it.
+    const controller = new AbortController();
 
     const fromDemo = () => {
       const stored = demoGet('lists', []);
@@ -150,15 +160,29 @@ export default function SaveToListModal({ paper, onClose }) {
     patientRead(IS_DEMO ? fromDemo : fromFirestore, {
       attempts: 2,
       label: 'lists',
+      signal: controller.signal,
+      // A mute connection is a wait, not a verdict: saying the lists could not
+      // be loaded, while the read behind it is still going, is the one thing
+      // this screen must never do to somebody's own data.
+      onSlow: (attemptNumber, info) => {
+        if (active) setListsStatus(info?.offline ? 'offline' : 'slow');
+      },
       onLateResult: apply,
     })
       .then(apply)
       .catch((err) => {
+        if (isTransientReadError(err)) {
+          console.warn('The lists did not answer in time', err);
+          return;
+        }
         console.error('Error loading lists:', err);
         if (active) setListsStatus('unavailable');
       });
 
-    return () => { active = false; };
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [user, paper.id, listsAttempt]);
 
   useEffect(() => {
@@ -332,11 +356,21 @@ export default function SaveToListModal({ paper, onClose }) {
         // Sequential and retry-safe: arrayUnion of a present id and
         // arrayRemove of an absent one are no-ops, so a partial failure needs
         // no bookkeeping — pressing Save again redoes only what is missing.
+        //
+        // `updatedAt` rides along on every one of them. It is what tells a
+        // later visit that an edit happened here, so a sync lost to a closed
+        // tab or a dead connection can still be found and replayed (P25).
         for (const listId of toAdd) {
-          await updateDoc(doc(db, 'users', user.uid, 'lists', listId), { paperIds: arrayUnion(paper.id) });
+          await updateDoc(doc(db, 'users', user.uid, 'lists', listId), {
+            paperIds: arrayUnion(paper.id),
+            updatedAt: serverTimestamp(),
+          });
         }
         for (const listId of toRemove) {
-          await updateDoc(doc(db, 'users', user.uid, 'lists', listId), { paperIds: arrayRemove(paper.id) });
+          await updateDoc(doc(db, 'users', user.uid, 'lists', listId), {
+            paperIds: arrayRemove(paper.id),
+            updatedAt: serverTimestamp(),
+          });
         }
         if (toAdd.length > 0) {
           markSaved(paper);
@@ -354,6 +388,40 @@ export default function SaveToListModal({ paper, onClose }) {
             landingPageUrl: paper.landingPageUrl || null,
             savedAt: new Date().toISOString(),
           }, { merge: true });
+        }
+
+        /**
+         * Published lists rebuild their public copy from here, with no button
+         * and no visit to Mis listas (P25).
+         *
+         * This modal has exactly one paper hydrated, which is why the sync
+         * sends the membership separately: the ids are authoritative, and the
+         * Worker keeps every other paper from the published document. A
+         * whole-payload update from this screen would have published a list
+         * of one and called it an update.
+         *
+         * Fire-and-forget on purpose — the queue lives outside React, so it
+         * survives this dialog closing a moment from now.
+         */
+        for (const listId of [...toAdd, ...toRemove]) {
+          const list = lists.find((entry) => entry.id === listId);
+          if (!list?.publicShareId) continue;
+          const added = toAdd.includes(listId);
+          queuePublicListSync({
+            key: publicListSyncKey(user.uid, listId),
+            shareId: list.publicShareId,
+            listId,
+            title: list.name,
+            description: list.description,
+            language,
+            paperIds: added
+              ? [...new Set([...(list.paperIds || []), paper.id])]
+              : (list.paperIds || []).filter((id) => id !== paper.id),
+            // `listPaperId` is what the Worker joins on, and it is the id
+            // this modal just wrote into `paperIds`. Explicit rather than
+            // implied: the paper's own id must survive sanitizing intact.
+            papers: added ? [{ ...paper, listPaperId: paper.id }] : [],
+          });
         }
       }
 
@@ -383,6 +451,8 @@ export default function SaveToListModal({ paper, onClose }) {
     readLaterOnHint: 'Kept in your personal queue',
     readLaterOffHint: 'Keep this paper for another time',
     loadingLists: 'Loading lists...',
+    listsSlow: 'This is taking longer than usual. Still trying.',
+    listsOffline: 'There seems to be no connection. Still trying.',
     listsUnavailable: 'Your lists could not be loaded. They are still there.',
     retry: 'Try again',
     noLists: 'No lists yet — create the first one right below.',
@@ -418,6 +488,8 @@ export default function SaveToListModal({ paper, onClose }) {
     readLaterOnHint: 'Guardado en tu cola personal',
     readLaterOffHint: 'Reserva este paper para otro momento',
     loadingLists: 'Cargando listas...',
+    listsSlow: 'Está tardando más de lo normal. Seguimos intentándolo.',
+    listsOffline: 'Parece que no hay conexión. Seguimos intentándolo.',
     listsUnavailable: 'No se pudieron cargar tus listas. Siguen ahí.',
     retry: 'Reintentar',
     noLists: 'Aún no tienes listas: crea la primera aquí debajo.',
@@ -488,10 +560,15 @@ export default function SaveToListModal({ paper, onClose }) {
             </span>
           </button>
 
-          {listsStatus === 'loading' ? (
+          {LISTS_WAITING.includes(listsStatus) ? (
             <div className="save-modal-lists" aria-busy="true" aria-label={copy.loadingLists}>
               <div className="save-modal-list-skeleton" />
               <div className="save-modal-list-skeleton" />
+              {listsStatus !== 'loading' && (
+                <p className="save-modal-loading" role="status">
+                  {listsStatus === 'offline' ? copy.listsOffline : copy.listsSlow}
+                </p>
+              )}
             </div>
           ) : listsStatus === 'unavailable' ? (
             <div className="save-modal-loading" role="status">

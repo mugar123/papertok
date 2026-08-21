@@ -19,6 +19,8 @@ import {
   PUBLIC_LIST_LIMITS,
   sanitizePublicList,
   sanitizePublicPaper,
+  sanitizePublicPaperForSync,
+  sanitizeSyncPaperIds,
 } from './publicListPayload.js';
 
 // The shape of a public list lives in publicListPayload.js, which the Worker
@@ -135,16 +137,50 @@ export async function publishPublicList(input, overrides) {
   return { ...payload, ...result };
 }
 
-export async function updatePublicList(shareId, input, overrides) {
+/**
+ * The background sync (P25): the public copy rebuilt from the private list,
+ * with no button anywhere.
+ *
+ * It uses the merge half of `/lists/update` rather than the whole-payload
+ * replace, and that distinction is the whole reason the sync is safe to fire
+ * from screens that only ever hold part of a list in memory. The caller sends:
+ *
+ *  - `paperIds`: the membership, authoritative. Order and removals come from
+ *    here, so a paper dropped from the private list leaves the public one even
+ *    if nothing about it was hydrated.
+ *  - `papers`: whatever it could hydrate, keyed by those same ids. The Worker
+ *    keeps the already-published paper for every id the caller left out.
+ *
+ * The save-and-organize modal has exactly one paper in hand and can still sync
+ * a fifty-paper list correctly. A whole-payload replace from there would have
+ * published a list of one.
+ */
+export async function syncPublicList(shareId, input, overrides) {
   const api = operations(overrides);
   requireSupported(api);
   const listId = validatePrivateListId(input?.listId);
   const normalizedShareId = validateShareId(shareId);
-  const payload = sanitizePublicList(input);
+
+  // The header only — sanitizing with `papers: []` keeps the paper sanitizer
+  // from rewriting the ids the merge joins on. `paperCount` is the Worker's to
+  // compute from the merge, so it is not ours to send.
+  const clean = sanitizePublicList({ ...input, papers: [] });
+  const header = {
+    title: clean.title,
+    ...(clean.description ? { description: clean.description } : {}),
+    language: clean.language,
+  };
+
+  const paperIds = sanitizeSyncPaperIds(input?.paperIds);
+  const wanted = new Set(paperIds);
+  const papers = (Array.isArray(input?.papers) ? input.papers : [])
+    .map(sanitizePublicPaperForSync)
+    .filter(paper => paper && wanted.has(paper.id));
+
   const result = await callWorker(api, '/lists/update', {
-    shareId: normalizedShareId, listId, ...payload,
+    shareId: normalizedShareId, listId, ...header, paperIds, papers,
   });
-  return { ...payload, ...result };
+  return { ...header, paperIds, ...result };
 }
 
 /**

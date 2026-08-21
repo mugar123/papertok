@@ -10,6 +10,7 @@ import {
   documentId,
   doc,
   deleteDoc,
+  serverTimestamp,
   setDoc,
   updateDoc,
   arrayRemove,
@@ -23,7 +24,7 @@ import { getCategoryLabel } from '../../data/categories';
 import { getIcon, AVAILABLE_ICONS } from '../../utils/icons';
 import ScientificText from '../ScientificText.js';
 import { paperLegacyAdapter } from '../../models/Paper';
-import { Download, Globe2, Library, Lock, Pencil, Plus, RefreshCw, Share2, Unlink, X } from 'lucide-react';
+import { AlertTriangle, Check, Download, Globe2, Library, Lock, Pencil, Plus, Share2, Unlink, X } from 'lucide-react';
 import { shareOrCopyLink } from '../../utils/shareLink.js';
 import { downloadCitationFile } from '../../utils/readingLibrary';
 import { settleWithin } from '../../utils/asyncTiming';
@@ -32,8 +33,18 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import {
   publishPublicList,
   unpublishPublicList,
-  updatePublicList,
 } from '../../services/publicListService.js';
+import {
+  cancelPublicListSync,
+  queuePublicListSync,
+  retryPublicListSync,
+  subscribeToPublicListSync,
+} from '../../services/publicListSync.js';
+import {
+  listNeedsPublicSync,
+  publicListSyncKey,
+  toEpochMillis,
+} from '../../utils/publicListFreshness.js';
 import { getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService.js';
 import { snapshotIsAuthoritative } from '../../utils/ownLists.js';
@@ -73,6 +84,22 @@ async function copyText(value) {
 }
 
 
+/**
+ * The Public badge doubles as the sync indicator, and that is the whole
+ * replacement for the Update button.
+ *
+ * The button answered one question — is the public link current? — by making
+ * the owner press it and find out. The badge answers the same question without
+ * ever asking for a click: it says what the background sync is doing, and goes
+ * quiet again when there is nothing to say.
+ */
+function publicBadgeState(status) {
+  if (status === 'pending' || status === 'syncing') return 'syncing';
+  if (status === 'synced') return 'synced';
+  if (status === 'error') return 'stale';
+  return 'public';
+}
+
 
 export default function ListsPage({ onOpenPdf, onEditPaper }) {
   const { user } = useAuth();
@@ -109,6 +136,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   const [error, setError] = useState(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [shareFeedback, setShareFeedback] = useState(null);
+  // What the sync engine is doing, keyed by list. It is not this page's state
+  // to own: the save-and-organize modal queues syncs too, and they have to
+  // outlive whichever screen started them, so the page subscribes instead.
+  const [syncStates, setSyncStates] = useState({});
   // The inline create form on the index: nothing else in the app can create a
   // list outside the save modal, and an index of lists needs its own door.
   const [creating, setCreating] = useState(false);
@@ -136,7 +167,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     ];
   }, [isEnglish, likedPaperIds, lists, personalLibrary, readPaperIds]);
 
-  const getPaper = (paperId) => {
+  const getPaper = useCallback((paperId) => {
     const libraryPaper = personalLibrary[paperId]?.paper;
     const savedPaper = savedPapers[paperId];
     if (!libraryPaper) return savedPaper;
@@ -154,7 +185,32 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       concepts: libraryPaper.concepts?.length ? libraryPaper.concepts : savedPaper.concepts,
     };
     return mergedPaper.sources ? mergedPaper : paperLegacyAdapter(mergedPaper);
-  };
+  }, [personalLibrary, savedPapers]);
+
+  useEffect(() => subscribeToPublicListSync((key, state) => {
+    setSyncStates((current) => {
+      if (!state) {
+        if (!(key in current)) return current;
+        const next = { ...current };
+        delete next[key];
+        return next;
+      }
+      if (current[key]?.status === state.status && current[key]?.code === state.code) {
+        return current;
+      }
+      return { ...current, [key]: state };
+    });
+    // Record the sync on the local copy of the list. `publicSyncedAt` is the
+    // Worker's field and the Worker has just written it — reading it back
+    // would cost a document. Stamping it here keeps the freshness check
+    // comparing two times from the SAME clock for the rest of the session,
+    // instead of one from Firestore against one from Cloudflare.
+    if (state?.status === 'synced' && state.listId) {
+      setLists((current) => current.map((entry) => (
+        entry.id === state.listId ? { ...entry, publicSyncedAt: new Date() } : entry
+      )));
+    }
+  }), []);
 
   useEffect(() => {
     let active = true;
@@ -543,6 +599,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     } else {
       if (list?.publicShareId) {
         await unpublishPublicList(list.publicShareId, list.id);
+        cancelPublicListSync(publicListSyncKey(user.uid, listId));
       }
       await deleteDoc(doc(db, 'users', user.uid, 'lists', listId));
     }
@@ -574,6 +631,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
 
   const handleRemoveFromCustomList = async (e, listId, paperId) => {
     e.stopPropagation();
+    // Only a write the server accepted may claim an edit time. Stamping the
+    // local copy after a failed write would tell the freshness check that a
+    // removal happened, and the sync would publish a list the account never
+    // agreed to.
+    let editedAt = null;
     if (IS_DEMO) {
       const allLists = demoGet('lists', []);
       const idx = allLists.findIndex((l) => l.id === listId);
@@ -584,23 +646,34 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     } else {
       try {
         const listRef = doc(db, 'users', user.uid, 'lists', listId);
-        await updateDoc(listRef, { paperIds: arrayRemove(paperId) });
+        await updateDoc(listRef, {
+          paperIds: arrayRemove(paperId),
+          // The mark the background sync looks for (P25). Every edit leaves
+          // it; nothing else here decides when the public copy is rebuilt.
+          updatedAt: serverTimestamp(),
+        });
+        editedAt = new Date();
       } catch (err) {
         console.error('Error removing paper from custom list:', err);
       }
     }
     setLists((prev) => prev.map((list) => {
-      if (list.id === listId) {
-        return { ...list, paperIds: list.paperIds.filter((id) => id !== paperId) };
-      }
-      return list;
+      if (list.id !== listId) return list;
+      return {
+        ...list,
+        paperIds: list.paperIds.filter((id) => id !== paperId),
+        ...(editedAt ? { updatedAt: editedAt } : {}),
+      };
     }));
   };
 
   const setListShareId = (listId, publicShareId) => {
     setLists(current => current.map(list => {
       if (list.id !== listId) return list;
-      if (publicShareId) return { ...list, publicShareId };
+      // `publicSyncedAt` too: publishing wrote the public document in the same
+      // commit, so without it the freshness check would read a fresh
+      // `updatedAt` against nothing and queue a sync of what was just written.
+      if (publicShareId) return { ...list, publicShareId, publicSyncedAt: new Date() };
       const privateList = { ...list };
       delete privateList.publicShareId;
       return privateList;
@@ -642,9 +715,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     };
 
     try {
-      const result = list.publicShareId
-        ? await updatePublicList(list.publicShareId, input)
-        : await publishPublicList(input);
+      // Publishing only. Keeping an already-published list current is not a
+      // button any more: it is the sync engine, driven by `updatedAt` (P25).
+      const result = await publishPublicList(input);
       setListShareId(list.id, result.shareId);
       try {
         await shareListLink(list.id, result.shareId, list.name);
@@ -688,6 +761,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     setShareFeedback({ listId: list.id, state: 'loading' });
     try {
       await unpublishPublicList(list.publicShareId, list.id);
+      // Whatever was queued for this list is about a share id that no longer
+      // exists; letting it fire would report a failure for a decision the
+      // owner has already made.
+      if (user) cancelPublicListSync(publicListSyncKey(user.uid, list.id));
       setListShareId(list.id, null);
       setShareFeedback({ listId: list.id, state: 'unpublished' });
     } catch (unpublishError) {
@@ -695,6 +772,63 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       setShareFeedback({ listId: list.id, state: 'error' });
     }
   };
+
+  /**
+   * The only thing that starts a sync, and the reason the Update button could
+   * go away without leaving a hole.
+   *
+   * Every edit does one thing: stamp `updatedAt`. This asks the list itself
+   * whether the last edit is newer than the last sync the Worker committed,
+   * and rebuilds the public copy when it is. That indirection is what makes
+   * recovery free — a sync lost to a closed tab, a dead connection or a spent
+   * daily quota leaves the list dirty in Firestore, and simply opening it
+   * later reconciles it, which is exactly the job the button used to do by
+   * hand.
+   *
+   * It waits for the papers and refuses to run on a metadata failure. The
+   * Worker's merge preserves an already-published paper for every id the
+   * payload does not hydrate — but only an already-published one, so syncing a
+   * half-loaded list would quietly drop whatever was added while the load was
+   * broken.
+   */
+  const queuedSyncs = useRef(new Map());
+  useEffect(() => {
+    if (IS_DEMO || !user || !expandedList) return;
+    const list = lists.find((entry) => entry.id === expandedList);
+    if (!listNeedsPublicSync(list)) return;
+    if (metadataLoadingListId === list.id || metadataError) return;
+
+    // One request per edit, however many renders that edit causes.
+    const editedAt = toEpochMillis(list.updatedAt);
+    if (queuedSyncs.current.get(list.id) === editedAt) return;
+    queuedSyncs.current.set(list.id, editedAt);
+
+    queuePublicListSync({
+      key: publicListSyncKey(user.uid, list.id),
+      shareId: list.publicShareId,
+      listId: list.id,
+      title: list.name,
+      description: list.description,
+      language: language === 'en' ? 'en' : 'es',
+      paperIds: list.paperIds || [],
+      papers: (list.paperIds || [])
+        .map((paperId) => {
+          const paper = getPaper(paperId);
+          // `listPaperId` ALONGSIDE the paper's own id, never over it: the
+          // membership and the published copy are joined on the stored id
+          // (R8), but the paper's identity lives in its own id — the legacy
+          // adapter folds the arXiv id in there and emits no `arxivId`, so
+          // overwriting it strips the paper's identity on the way out. A
+          // paper whose metadata never arrived has no title to publish and is
+          // left to the merge.
+          return paper?.title && paper.title !== paperId
+            ? { ...paper, listPaperId: paperId }
+            : null;
+        })
+        .filter(Boolean),
+    });
+  }, [expandedList, getPaper, language, lists, metadataError, metadataLoadingListId, user]);
+
   const papersCount = (count) => `${count} ${count === 1 ? 'paper' : 'papers'}`;
 
   // One motion vocabulary for the two views of this page: the index and an
@@ -757,6 +891,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
             const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
             const listShareFeedback = shareFeedback?.listId === list.id ? shareFeedback : null;
             const shareBusy = listShareFeedback?.state === 'loading';
+            const syncKey = user && isCustomList ? publicListSyncKey(user.uid, list.id) : null;
+            const syncState = syncKey ? syncStates[syncKey] : null;
+            const badgeState = publicBadgeState(syncState?.status);
+            const badgeLabel = {
+              public: isEnglish ? 'Public' : 'Pública',
+              syncing: isEnglish ? 'Updating…' : 'Actualizando…',
+              synced: isEnglish ? 'Up to date' : 'Al día',
+              stale: isEnglish ? 'Out of date' : 'Sin actualizar',
+            }[badgeState];
             return (
               <>
                 <header className="lists-expanded-header">
@@ -772,8 +915,18 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                       <p className="lists-expanded-meta">
                         <span>{papersCount((list.paperIds || []).length)}</span>
                         {isCustomList && !IS_DEMO && (list.publicShareId ? (
-                          <span className="lists-badge lists-badge--public">
-                            <Globe2 size={11} aria-hidden="true" /> {isEnglish ? 'Public' : 'Pública'}
+                          <span
+                            className={`lists-badge lists-badge--public is-${badgeState}`}
+                            aria-live="polite"
+                          >
+                            {badgeState === 'syncing'
+                              ? <span className="lists-badge-spinner" aria-hidden="true" />
+                              : badgeState === 'synced'
+                                ? <Check size={11} aria-hidden="true" />
+                                : badgeState === 'stale'
+                                  ? <AlertTriangle size={11} aria-hidden="true" />
+                                  : <Globe2 size={11} aria-hidden="true" />}
+                            {' '}{badgeLabel}
                           </span>
                         ) : (
                           <span className="lists-badge">
@@ -786,24 +939,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                   {isCustomList && !IS_DEMO && (
                     <div className="lists-share-actions">
                       {list.publicShareId ? (
-                        <>
-                          <button
-                            type="button"
-                            className="is-primary"
-                            onClick={() => handleShareList(list)}
-                            disabled={shareBusy}
-                          >
-                            <Share2 size={16} /> {isEnglish ? 'Share' : 'Compartir'}
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handlePublishList(list, publicPapers)}
-                            disabled={shareBusy || metadataLoadingListId === list.id}
-                            title={isEnglish ? 'Push the latest changes to the public link' : 'Lleva los últimos cambios al enlace público'}
-                          >
-                            <RefreshCw size={16} /> {isEnglish ? 'Update' : 'Actualizar'}
-                          </button>
-                        </>
+                        // Share, and nothing else. There is no Update button
+                        // because there is nothing left for it to do: the
+                        // public copy follows the list on its own (P25).
+                        <button
+                          type="button"
+                          className="is-primary"
+                          onClick={() => handleShareList(list)}
+                          disabled={shareBusy}
+                        >
+                          <Share2 size={16} /> {isEnglish ? 'Share' : 'Compartir'}
+                        </button>
                       ) : (
                         <button
                           type="button"
@@ -852,8 +998,20 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                       <span>{isEnglish ? 'The list is private again.' : 'La lista vuelve a ser privada.'}</span>
                     )}
                     {listShareFeedback.state === 'error' && (
-                      <span>{isEnglish ? 'The public link could not be updated. Try again.' : 'No se pudo actualizar el enlace público. Inténtalo de nuevo.'}</span>
+                      <span>{isEnglish ? 'The public link could not be changed. Try again.' : 'No se pudo cambiar el enlace público. Inténtalo de nuevo.'}</span>
                     )}
+                  </div>
+                )}
+                {/* A sync only surfaces once it has already retried itself.
+                    Nothing was lost when it does: the edit is in Firestore and
+                    the list stays marked dirty, so opening it later would fix
+                    this on its own — the button is here to save the wait. */}
+                {list.publicShareId && syncState?.status === 'error' && (
+                  <div className="lists-share-status is-error" role="alert">
+                    <span>{getUiErrorMessage(syncState.code, language, 'PUBLIC_LIST_SYNC_FAILED')}</span>
+                    <button className="lists-retry-btn" onClick={() => retryPublicListSync(syncKey)}>
+                      {isEnglish ? 'Try again' : 'Reintentar'}
+                    </button>
                   </div>
                 )}
                 {isCustomList && ((list.paperIds || []).length > 20 || publicPapers.length < (list.paperIds || []).length) && (

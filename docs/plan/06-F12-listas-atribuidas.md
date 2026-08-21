@@ -242,7 +242,7 @@ Referencia (arriba). Efectos:
 
 | El dueño… | La guardada del otro |
 | --- | --- |
-| Edita la lista | Ve la versión viva al abrirla (con P25, al día; sin P25, la última actualizada). Tarjeta congelada hasta abrir. |
+| Edita la lista | Ve la versión viva al abrirla. Con P25 (hecha) la copia pública se reconstruye sola tras cada edición, y la tarjeta del escaparate viaja en el mismo commit. |
 | La despublica o la borra | Abrirla da ausencia ⇒ "Ya no está disponible" + quitar. La referencia muerta no rompe nada ni se limpia en cascada (sería un fan-out sobre árboles ajenos que las rules prohíben con razón). |
 | Se vuelve privado | La lista sigue pública por enlace (contrato de P15): la guardada sigue funcionando; solo la atribución visible desaparece. |
 
@@ -416,10 +416,17 @@ listas con sus estados (viva/no disponible). Independiente de P22 y P23
 `ListsPage.jsx` y `PublicListPage.jsx`, los archivos de la fase del modal de
 guardar en curso — no arrancar hasta que esa fase aterrice.
 
-### P25 — Sincronizar al editar
-Motor de debounce + flush + estado sucio persistente + botón manual como
-indicador. Necesita el merge de P22. Última a propósito: es la que menos
-duele si se retrasa (el botón manual sigue funcionando mientras tanto).
+### P25 — Sincronizar al editar `[hecha 2026-08-21]`
+Motor de debounce + fusión por lista + estado sucio persistente
+(`updatedAt` > `publicSyncedAt`). Usa el merge de P22, así que **no toca el
+Worker ni las rules**.
+
+Se desvió del boceto en una cosa: el botón manual **no** se queda como
+indicador, se va. Lo pidió el usuario y encaja mejor — el papel de indicador
+lo hace la chapa "Pública" de la lista abierta, y el único botón que sobrevive
+es un Reintentar que solo aparece cuando un sync ya ha fallado dos veces.
+Detalle completo, incluida la decisión de no meter tolerancia en la
+comparación de fechas, en la entrada de `STATE.md`.
 
 Orden: P22 → P23 → (P24 ∥ P25). P24 puede adelantarse a P23 si se acepta
 guardar listas aún anónimas (funciona: la referencia no depende de la
@@ -555,5 +562,6 @@ commiteado.**
 5. **Rules v2**: retirar `validPinnedLists`/`ownsPinnedShare`/`pinnedLists`
    del perfil y la forma del stash; retirar `refreshPinnedCard` del Worker;
    re-medición y mutación. Fase corta, tras confirmar la migración.
-6. **P24** (guardar listas de otros) cuando aterrice la fase del modal; **P25**
-   (sync al editar) cuando se quiera — el Worker ya tiene el merge y el sello.
+6. **P24** (guardar listas de otros) cuando aterrice la fase del modal.
+   **P25** (sync al editar) **hecha el 2026-08-21**: usó el merge y el sello
+   que P22 dejó puestos, sin desplegar Worker ni rules.

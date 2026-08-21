@@ -1,5 +1,255 @@
 # Estado / pendientes
 
+## P25: las listas públicas se actualizan solas y el botón desaparece (2026-08-21)
+
+**Implementado, `npm run check` en verde, y verificado de punta a punta
+contra producción con la cuenta @mugar.** No toca `worker/` ni
+`firestore.rules`: **solo hay que desplegar la app**.
+
+- **Worker: verificado en producción.** `POST /lists/attribute` con un origen
+  permitido responde `AUTH_REQUIRED` (401), no 405, así que el
+  `public-list-api.js` de F12 —el que trae la semántica de merge que esto
+  usa— está desplegado.
+- **Rules: no verificado directamente** (no hay forma de leerlas sin
+  credenciales de admin). `firestore.rules` en el árbol ya permite `updatedAt`
+  en `users/{uid}/lists` desde F12 y no lo he tocado; el bundle de producción
+  lleva `pinnedShareIds`, que solo funciona con las rules v1 de F12, así que
+  todo apunta a que están desplegadas. **Si el paso 1 de la pasada falla con
+  un error de permisos, es esto**: `firebase deploy --only firestore:rules`.
+
+El botón **Actualizar** de una lista publicada ya no existe. Editar la lista
+—añadir un paper desde el modal de guardar, quitar uno desde Mis listas— lleva
+el cambio al enlace público sin que nadie pulse nada.
+
+### Por qué se podía hacer sin tocar el Worker
+
+Porque P22 ya dejó puestas las dos piezas que esto necesitaba: la **semántica
+de merge** de `/lists/update` (el cliente manda `paperIds` como verdad y los
+papers que haya podido hidratar; los que no, sobreviven del documento
+publicado) y el sello **`publicSyncedAt`**. El comentario de
+`buildMergedPayload` decía literalmente para qué existía. Esta fase es la que
+lo usa.
+
+Eso es lo que hace que el **modal de guardar pueda sincronizar una lista de
+cincuenta papers teniendo uno solo en memoria**. Un `update` de payload
+completo desde esa pantalla habría publicado una lista de un paper y lo habría
+llamado actualizar.
+
+### Cómo se dispara
+
+Una sola regla, y ninguna pantalla decide por su cuenta:
+
+1. **Toda edición sella `updatedAt`** (cliente) y no hace nada más.
+2. `listNeedsPublicSync(list)` compara ese sello con `publicSyncedAt` (Worker,
+   escrito en el mismo commit que el documento público).
+3. Al abrir una lista publicada en Mis listas, si está sucia, se encola.
+   El modal de guardar encola además directamente, porque Mis listas puede no
+   estar montada.
+
+**La recuperación sale gratis de ahí.** Un sync perdido —pestaña cerrada, sin
+conexión, cuota diaria agotada— deja la lista sucia en Firestore, y abrirla
+más tarde la reconcilia sin pulsar nada. Es exactamente el trabajo que hacía
+el botón, hecho por la comparación de dos fechas.
+
+### La decisión incómoda: nada de tolerancia en la comparación
+
+Los dos sellos vienen de **relojes distintos** (Firestore vs Cloudflare), así
+que una diferencia de milisegundos no prueba nada y da la tentación de meter
+un margen. **No lo lleva**, a propósito: con un margen de 2 s, una edición
+hecha medio segundo después de un sync se leería como limpia y **la copia
+pública se quedaría atrás para siempre**. Sin margen, el peor caso de desfase
+de relojes es un sync redundante al abrir; con margen, el peor caso es una
+edición que no se publica nunca. Se falla por el lado de sincronizar de más.
+
+Dentro de la sesión ni eso: al confirmarse un sync, la página sella
+`publicSyncedAt` en su copia local, así que las dos fechas que se comparan
+salen del **mismo** reloj hasta la siguiente carga.
+
+### El motor (`services/publicListSync.js`)
+
+Singleton de módulo, no estado de React, y esa es la restricción que manda: la
+edición que más necesita sincronizarse se hace en el modal de guardar, que se
+cierra en cuanto guarda. Un sync que viviera en ese componente lo cancelaría
+su propio éxito.
+
+- **Debounce de 900 ms y fusión por lista.** Quitar cuatro papers son cuatro
+  ediciones y **un** sync. Los papers hidratados se **acumulan**: el payload
+  parcial del modal y el completo de Mis listas se suman en vez de pisarse.
+- **Reintento.** El primer fallo se reintenta solo a los 4 s y no llega a la
+  interfaz. Solo el segundo se cuenta.
+- **Cancelación.** Despublicar o borrar una lista tira el trabajo encolado: su
+  share id ya no existe, y dejarlo salir sería reportar un fallo sobre una
+  decisión que el dueño ya tomó.
+
+Cada sync gasta **una unidad de la cuota diaria de publicación** (60 por
+cuenta). Por eso el debounce es real y por eso ninguna transición de estado
+dispara una petición.
+
+### Lo que ve el dueño
+
+La chapa **Pública** pasa a ser el indicador, porque ya no hay botón que lo
+cuente: `Pública` → `Actualizando…` (gris, con spinner) → `Al día` (verde,
+2,5 s) y luego se calla. Si falla dos veces, `Sin actualizar` en ámbar y una
+línea con el motivo localizado y un **Reintentar** — el único botón que queda,
+y solo aparece cuando algo ya ha fallado; lo que hace es ahorrar la espera,
+porque abrir la lista más tarde lo arreglaría igual.
+
+Copys nuevas en `errorMessages.js`: `PUBLIC_LIST_SYNC_FAILED`,
+`PUBLISH_UNREACHABLE`, `PUBLISH_QUOTA_EXCEEDED`. Ninguna dice que se haya
+perdido nada, porque no se pierde nada: la edición está en Firestore.
+
+### Dónde se puso el límite de honestidad
+
+El sync **no corre con la carga de metadatos a medias ni tras un
+`metadataError`**. El merge del Worker conserva un paper por id solo si **ya
+está publicado**, así que sincronizar una lista medio cargada habría tirado en
+silencio lo que se hubiera añadido mientras la carga estaba rota.
+
+Y `handleRemoveFromCustomList` solo sella `updatedAt` **si la escritura salió
+bien**. Sellarlo tras un fallo le diría al comparador que hubo una edición que
+Firestore no aceptó, y el sync publicaría una lista que la cuenta nunca acordó.
+
+### Qué entró
+
+| Qué | Dónde |
+| --- | --- |
+| `syncPublicList()` (rama de merge); fuera `updatePublicList()`, sin llamantes | `src/services/publicListService.js` |
+| `sanitizePublicPaperForSync()`, `sanitizeSyncPaperIds()` | `src/services/publicListPayload.js` |
+| Motor de cola: debounce, fusión, reintento, cancelación, suscripción | `src/services/publicListSync.js` (nuevo) |
+| `listNeedsPublicSync()`, `toEpochMillis()`, `publicListSyncKey()` | `src/utils/publicListFreshness.js` (nuevo) |
+| Fuera el botón Actualizar; chapa-indicador, efecto de sync, sellos, cancelación | `src/components/Lists/ListsPage.jsx` (+`.css`) |
+| Sellos `updatedAt` y encolado tras guardar | `src/components/Lists/SaveToListModal.jsx` |
+| El abstract pasa por `ScientificText` (LaTeX) | `src/components/Lists/PublicListPage.jsx` |
+
+### La trampa del id, que NO se evitó a la primera
+
+`sanitizePublicPaper` **reescribe el id** a su forma estable (`doi:…`,
+`arxiv:…`), y el merge del Worker une `papers` con `paperIds` por el id crudo
+de la app. Mandar papers ya saneados como claves no casa con nada: cada sync
+publicaría una lista **sin papers**, en silencio. Eso lo vi al escribirlo.
+
+Lo que no vi, y salió en la pasada en vivo: la primera versión mandaba
+`{ ...paper, id: paperId }`, o sea **pisaba el id del paper con el de la
+lista antes de sanear**. Y resulta que `paperLegacyAdapter`
+(`src/models/Paper.js:64`) mete el id de arXiv **dentro de `id`** como
+`arxiv:…` y **no emite campo `arxivId`**: para un paper hidratado, el id es el
+único sitio donde vive su identidad. Pisarlo la destruía.
+
+Medido en la lista real de @mugar ("Relatividad numérica", 20 papers): tras el
+primer sync los 20 papers públicos perdieron `arxivId` y sus ids se quedaron
+en crudo (`2608.19135` en vez de `arxiv:2608.19135`). El documento público
+seguía completo y la página seguía pintando —los enlaces salen de `openUrl`—
+pero el Worker ya no podía reconstruir la forma estable del id.
+
+Arreglo: la clave de unión viaja **al lado** del id, en `listPaperId`, y el
+paper se sanea con su propio id intacto. Verificado en vivo: el sync siguiente
+devolvió los 20 ids a `arxiv:…` y 18 de 20 recuperaron `arxivId` (los otros dos
+—`openalex:W1903990541` y `0910.3197`— nunca fueron ids de arXiv válidos y se
+quedan en su forma honesta). Hay un test `P25 REGRESSION` que lo fija.
+
+**La lección**: un test unitario con un paper de fixture no habría cazado esto
+nunca, porque el fixture llevaba `arxivId` y los papers reales de la app no.
+
+La otra trampa, esta sí evitada de entrada: `paperIds` se corta a 50 en el
+cliente. El Worker **rechaza** un merge que resuelva a más de 50, así que una
+lista de 60 sin cortar no habría vuelto a sincronizar nunca.
+
+### Tests
+
+- **836 unitarios** (26 nuevos: 14 del motor, 8 del chequeo de frescura, 4 del
+  payload de sync, 1 de regresión del id + 1 test viejo reapuntado). Lint y
+  build limpios.
+- Dos tests **SOURCE**: que el botón no vuelve (`updatePublicList` y
+  `RefreshCw` fuera de `ListsPage.jsx`) y que **toda** escritura de pertenencia
+  sella `updatedAt` en las dos pantallas — un `arrayUnion` sin sello dejaría
+  el chequeo de recuperación ciego y el test lo cuenta.
+- **Verificado en vivo, sin sesión, contra los módulos reales** (dev server en
+  `localhost:5173`, importando por URL de Vite):
+  - El motor completo: dos ediciones seguidas → **una** petición con los dos
+    papers acumulados; la tercera edición → segunda petición con la membresía
+    recortada y **cero** papers (el merge conserva el resto).
+  - El ciclo de fallo: primer fallo callado → reintento → segundo fallo sale
+    como `error:PUBLISH_QUOTA_EXCEEDED` con su `listId` → `retry()` → `synced`
+    → la chapa se calla sola.
+  - `listNeedsPublicSync` y `publicListSyncKey` en el navegador, y que
+    `ListsPage.jsx` y `SaveToListModal.jsx` siguen evaluando.
+  - La página pública de una lista real (`33230ae5…`, "Papers de sugar" de
+    @nick_mugar, 4 papers) pinta bien, y las cuatro variantes de la chapa
+    resuelven a colores distintos con **todas** sus variables CSS definidas
+    (la familia de bug de `--text-muted`).
+
+### Verificado en producción con @mugar
+
+Sesión iniciada por el usuario en `localhost:5173` (código nuevo, Worker y
+Firestore de **producción**). Lista real: "Relatividad numérica",
+`d48442d1…`, 20 papers.
+
+1. **La lista abierta ya no tiene botón Actualizar.** Solo Compartir, la
+   chapa `Public` y Dejar de compartir.
+2. **Quitar un paper sincroniza solo.** Cronología medida por el propio motor:
+   `pending` → `syncing` a los **901 ms** (el debounce) → `synced` **1 038 ms**
+   después (la petición) → la chapa se calla a los **2 503 ms**. Exactamente
+   los tiempos de diseño.
+3. **El documento público lo confirma**: 20 → 19 papers, `updatedAt` de
+   11:18:40 a 14:51:36, `createdAt` **intacto** (la máscara de update
+   funciona).
+4. **La recuperación por sello sucio funciona.** Escribí `paperIds` de vuelta
+   por REST dejando `updatedAt` > `publicSyncedAt` —o sea, una edición cuyo
+   sync nunca corrió— y **abrir la lista la reconcilió sola**: 18 → 20 papers,
+   en el orden original, sin pulsar nada. Esto es lo que sustituye al botón.
+5. **La lista quedó restaurada**: 20 papers, mismo orden, `createdAt` intacto.
+   El único campo distinto a como estaba es el id del paper de OpenAlex
+   (`arxiv:openalex:W1903990541` → `openalex:W1903990541`); los dos resuelven
+   a `null` en `getPublicPaperPath`, así que ni antes ni ahora era enlazable, y
+   el nuevo es el que la lista privada guarda de verdad.
+
+Gasto: 4 de las 60 unidades de cuota diaria de @mugar.
+
+### Detalle que conviene saber: el debounce lo estrangula el navegador
+
+Medido en la pasada: en una pestaña en segundo plano Chrome limita los
+`setTimeout` encadenados a ~1/s, y a ~1/min tras cinco minutos oculta. Así que
+los 900 ms del debounce pueden estirarse si el usuario cambia de pestaña justo
+después de editar. No rompe nada —el sync sale cuando salte el temporizador, y
+si la pestaña muere el sello sucio lo recupera— pero explica por qué no hay
+que fiarse de medir el debounce con el panel oculto.
+
+### LaTeX en las listas: el abstract de la página pública
+
+Arreglado en la misma pasada. `PublicListPage` pintaba el abstract **en
+crudo**: era el único abstract de la app fuera de `ScientificText` (la tarjeta
+del feed, el explorador y el informe lo envuelven todos). Una lista compartida
+de papers de matemáticas enseñaba `$G_{2}$-invariant` a sus lectores.
+
+Medido antes y después en la lista pública real de @nick_mugar: **0 → 10 nodos
+KaTeX** dentro de los abstracts, y el recorte a 3 líneas
+(`-webkit-line-clamp`) sigue intacto (67 px = 3 × 22 px).
+
+Lo que **no** era un fallo, comprobado en vivo:
+
+- **Mis listas ya renderiza bien**: los títulos con `$q$-Series` y `$p$-adic`
+  salen con su nodo KaTeX.
+- **Queda un `$\eps$` sin renderar** en un abstract. No es cableado: `\eps` es
+  una macro que define el autor y KaTeX no conoce, y `ScientificText` cae al
+  texto fuente a propósito en vez de adivinar. Pasa igual en el feed.
+
+### Pendiente / decisiones no tomadas aquí
+
+- **La reconciliación solo corre al ABRIR la lista** en Mis listas, no al
+  cargar el índice: fuera de la lista abierta no hay papers hidratados y un
+  sync parcial podría podar la copia pública. Consecuencia asumida: una lista
+  publicada que nunca se abre puede quedarse atrás si su sync falló.
+- **Sin comprobar**: el camino del modal de guardar contra producción (el
+  código es el mismo `queuePublicListSync`, y el merge quedó demostrado por el
+  paso 4, pero el `handleSave` del modal no se ejecutó en vivo), y la cuenta
+  **@nick_mugar** (toda la pasada fue con @mugar).
+- **`cleanPaperText` no se aplica en las listas.** `PublicProfilePage` lo usa
+  para limpiar `<sub>` literales de los títulos; `ListsPage` y
+  `PublicListPage` no. En estas dos listas no había suciedad HTML, así que no
+  lo he tocado: es otro arreglo, no el de LaTeX.
+- **`docs/plan/01-DATA-MODEL.md` sigue describiendo `pinnedLists` como
+  tarjetas**: quedó pendiente desde F12, no de esto.
+
 ## F11 implementada: publicar listas pasa por el Worker (2026-08-20)
 
 **Implementado, todo verde, SIN commitear y SIN desplegar.** Cierra la

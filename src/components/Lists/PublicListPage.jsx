@@ -10,7 +10,7 @@ import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import { readPublicList } from '../../services/publicListService.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
 import { getPublicListPath, getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
-import { patientRead } from '../../utils/boundedRead.js';
+import { isTransientReadError, patientRead } from '../../utils/boundedRead.js';
 import { shareOrCopyLink } from '../../utils/shareLink.js';
 import { copyText } from '../../utils/clipboard.js';
 import './PublicListPage.css';
@@ -82,6 +82,8 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
 
   useEffect(() => {
     let active = true;
+    // The retry loop outlives the promise, so leaving the page must stop it.
+    const controller = new AbortController();
 
     const apply = (result) => {
       if (!active) return;
@@ -93,14 +95,32 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     };
 
     // A share link is the whole page: with no bound, a stalled read left a
-    // visitor on the spinner forever with nothing to press.
-    patientRead(() => readPublicList(shareId), { attempts: 2, label: 'public list', onLateResult: apply })
+    // visitor on the spinner forever with nothing to press. And a bound alone
+    // is not enough — a mute connection comes back as a rejection, not as a
+    // silence, so "the list could not be loaded" used to appear for a list
+    // that was perfectly fine. It stays a wait until an error says otherwise.
+    patientRead(() => readPublicList(shareId), {
+      attempts: 2,
+      label: 'public list',
+      signal: controller.signal,
+      onSlow: (attemptNumber, info) => {
+        if (active) setStatus(info?.offline ? 'offline' : 'slow');
+      },
+      onLateResult: apply,
+    })
       .then(apply)
       .catch(error => {
+        if (isTransientReadError(error)) {
+          console.warn('The public list did not answer in time', error);
+          return;
+        }
         console.error('Error loading public list:', error);
         if (active) setStatus(error?.code === 'PUBLIC_LISTS_UNSUPPORTED_IN_DEMO' ? 'unsupported' : 'error');
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [reloadToken, shareId]);
 
   const updatedAt = useMemo(
@@ -174,6 +194,10 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     notFoundBody: 'It may have been unpublished or the link may be incomplete.',
     errorTitle: 'The list could not be loaded',
     errorBody: 'Check your connection and try again.',
+    slowTitle: 'Still opening this list',
+    slowBody: 'This is taking longer than usual. Still trying.',
+    offlineTitle: 'Still opening this list',
+    offlineBody: 'There seems to be no connection. It will open on its own when it comes back.',
     unsupportedTitle: 'Public lists are unavailable in demo mode',
     unsupportedBody: 'Open this link in the full PaperTok app.',
     retry: 'Try again',
@@ -194,6 +218,10 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     notFoundBody: 'Puede que se haya dejado de compartir o que el enlace esté incompleto.',
     errorTitle: 'No se pudo cargar la lista',
     errorBody: 'Comprueba tu conexión e inténtalo de nuevo.',
+    slowTitle: 'Seguimos abriendo la lista',
+    slowBody: 'Está tardando más de lo normal. Seguimos intentándolo.',
+    offlineTitle: 'Seguimos abriendo la lista',
+    offlineBody: 'Parece que no hay conexión. Se abrirá sola en cuanto vuelva.',
     unsupportedTitle: 'Las listas públicas no están disponibles en el modo demo',
     unsupportedBody: 'Abre este enlace en la aplicación completa de PaperTok.',
     retry: 'Reintentar',
@@ -211,13 +239,21 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
   const pageClass = `public-list-page${hasAppChrome ? ' public-list-page--app' : ''}`;
 
   if (status !== 'ready') {
+    // 'loading', 'slow' and 'offline' are all still waits: they keep the
+    // spinner and the read behind them running. Only the other three are
+    // outcomes, and only 'error' is worth a Try again.
+    const waiting = status === 'loading' || status === 'slow' || status === 'offline';
     const stateCopy = status === 'not-found'
       ? [copy.notFoundTitle, copy.notFoundBody]
       : status === 'unsupported'
         ? [copy.unsupportedTitle, copy.unsupportedBody]
         : status === 'error'
           ? [copy.errorTitle, copy.errorBody]
-          : [copy.loading, ''];
+          : status === 'offline'
+            ? [copy.offlineTitle, copy.offlineBody]
+            : status === 'slow'
+              ? [copy.slowTitle, copy.slowBody]
+              : [copy.loading, ''];
     return (
       <main className={pageClass}>
         {!hasAppChrome && (
@@ -226,8 +262,8 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
             <AuthCta user={user} onAuthRequired={onAuthRequired} label={copy.authCta} />
           </header>
         )}
-        <section className="public-list-status" aria-live="polite">
-          {status === 'loading' ? <span className="public-list-spinner" aria-hidden="true" /> : <BookOpen size={30} />}
+        <section className="public-list-status" aria-live="polite" aria-busy={waiting}>
+          {waiting ? <span className="public-list-spinner" aria-hidden="true" /> : <BookOpen size={30} />}
           <h1>{stateCopy[0]}</h1>
           {stateCopy[1] && <p>{stateCopy[1]}</p>}
           {status === 'error' && (
@@ -307,7 +343,17 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
                       {paper.authors.slice(0, 5).join(', ')}{paper.authors.length > 5 ? ' et al.' : ''}
                     </p>
                   )}
-                  {paper.abstract && <p className="public-list-paper-abstract">{paper.abstract}</p>}
+                  {/* Through the same KaTeX pass as the title above, and as
+                      every other abstract in the app (the feed card, the
+                      explorer, the report). This was the one that rendered
+                      raw: a shared list of maths papers showed its readers
+                      "$G_{2}$-invariant" where every other screen showed the
+                      formula. */}
+                  {paper.abstract && (
+                    <p className="public-list-paper-abstract">
+                      <ScientificText>{paper.abstract}</ScientificText>
+                    </p>
+                  )}
                   <div className="public-list-paper-footer">
                     {/* "0 citations" on every row is noise, not information. */}
                     {Number.isInteger(paper.citations) && paper.citations > 0 && (

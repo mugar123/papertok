@@ -21,6 +21,12 @@ const ERROR_MESSAGES = {
     REPORT_LOAD_FAILED: 'No se pudo cargar la edición. Inténtalo de nuevo.',
     LISTS_LOAD_FAILED: 'No se pudieron actualizar tus listas personalizadas.',
     LIST_METADATA_LOAD_FAILED: 'No se pudieron cargar todos los datos de esta lista.',
+    // P25: the public copy is rebuilt in the background, so its failures are
+    // never "your edit was lost" — the edit is safe in Firestore and the list
+    // stays marked dirty until a later open reconciles it.
+    PUBLIC_LIST_SYNC_FAILED: 'Tus cambios están guardados, pero el enlace público aún no los tiene. Se reintentará al abrir la lista.',
+    PUBLISH_UNREACHABLE: 'Tus cambios están guardados. El enlace público se pondrá al día cuando vuelva la conexión.',
+    PUBLISH_QUOTA_EXCEEDED: 'Has llegado al límite diario de cambios en enlaces públicos. El enlace se pondrá al día mañana.',
     PROFILE_PHOTO_SAVE_FAILED: 'No se pudo guardar la foto de perfil.',
   },
   en: {
@@ -45,6 +51,9 @@ const ERROR_MESSAGES = {
     REPORT_LOAD_FAILED: 'The edition could not be loaded. Try again.',
     LISTS_LOAD_FAILED: 'Your custom lists could not be updated.',
     LIST_METADATA_LOAD_FAILED: 'Some metadata for this list could not be loaded.',
+    PUBLIC_LIST_SYNC_FAILED: 'Your changes are saved, but the public link does not have them yet. It will retry when you open the list.',
+    PUBLISH_UNREACHABLE: 'Your changes are saved. The public link will catch up when the connection is back.',
+    PUBLISH_QUOTA_EXCEEDED: 'You have reached the daily limit for public link changes. The link will catch up tomorrow.',
     PROFILE_PHOTO_SAVE_FAILED: 'The profile photo could not be saved.',
   },
 };

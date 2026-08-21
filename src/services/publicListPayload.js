@@ -217,3 +217,49 @@ export function assertPublicListWithinLimits(payload) {
 
   return failures;
 }
+
+/**
+ * The same sanitized paper, but keyed by the id the PRIVATE list uses.
+ *
+ * The background sync (P25) sends `paperIds` — the authoritative membership,
+ * in the app's own id namespace — alongside the papers it managed to hydrate,
+ * and the Worker joins the two by that id. `sanitizePublicPaper` rewrites ids
+ * to their stable `doi:`/`arxiv:` spelling, so the sanitized id is the wrong
+ * key: a list holding `2401.12345` would find nothing under `arxiv:2401.12345`
+ * and the paper would be dropped from the public copy on every sync.
+ *
+ * The join key therefore arrives as `listPaperId`, NOT by overwriting `id`,
+ * and that distinction is load-bearing. `paperLegacyAdapter` folds the arXiv
+ * id into `id` as `arxiv:…` and emits no `arxivId` field at all, so for most
+ * hydrated papers **the id is the only carrier of the paper's identity**.
+ * Sanitizing a paper whose id had already been swapped for the bare list id
+ * measurably stripped `arxivId` from every paper in a real published list and
+ * left the public ids bare. Sanitize first, swap the emitted id after: the
+ * `doi`/`arxivId` recovered here travel with the paper, so when the Worker
+ * sanitizes it again `stablePaperId` lands on exactly the public id it had.
+ */
+export function sanitizePublicPaperForSync(paper) {
+  const clean = sanitizePublicPaper(paper);
+  if (!clean) return null;
+  const key = cleanString(paper?.listPaperId, PUBLIC_LIST_LIMITS.id) || clean.id;
+  return key === clean.id ? clean : { ...clean, id: key };
+}
+
+/**
+ * The membership the sync declares: deduplicated, in order, and cut to the
+ * published cap. The cut is the point — the Worker refuses a merge that
+ * resolves to more than `PUBLIC_LIST_LIMITS.papers`, so a 60-paper list has to
+ * arrive already trimmed or nothing about it would ever sync again.
+ */
+export function sanitizeSyncPaperIds(paperIds) {
+  const seen = new Set();
+  const ids = [];
+  for (const value of Array.isArray(paperIds) ? paperIds : []) {
+    const id = cleanString(value, PUBLIC_LIST_LIMITS.id);
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    if (ids.length >= PUBLIC_LIST_LIMITS.papers) break;
+  }
+  return ids;
+}

@@ -20,10 +20,13 @@ entity pages. Actions that create personal state (likes, follows, saved papers, 
 preferences) keep their visible controls but open the sign-in prompt instead of writing shared
 guest data.
 
-Custom lists can be published as deliberately reduced Firestore snapshots. They contain at
-most 20 sanitized papers and never include owner identity, private notes, tags, preferences,
-or interaction state. Removing a shared list deletes its public snapshot before the private
-list can be removed.
+Custom lists can be published as deliberately reduced Firestore documents. They contain at
+most 50 sanitized papers and never include private notes, tags, preferences, or interaction
+state. The public document carries no owner field; attribution is a separate, per-list and
+reversible choice that puts a card on the owner's public profile (F12). The public copy is
+not a snapshot: editing a published list rebuilds it in the background, with no manual step
+(P25). Removing a shared list deletes its public document before the private list can be
+removed.
 
 Path identifiers are encoded as individual URL segments. Paper keys are base64url-encoded
 payloads with an explicit `doi:` or `arxiv:` prefix. They are reversible URL-safe encodings,

@@ -9,8 +9,8 @@ import {
   publishPublicList,
   readPublicList,
   sanitizePublicList,
+  syncPublicList,
   unpublishPublicList,
-  updatePublicList,
 } from './publicListService.js';
 
 const privatePaper = {
@@ -142,17 +142,111 @@ test('publishing posts the sanitized list to the Worker, never to Firestore', as
   }
 });
 
-test('updating names the share it is editing and sends no timestamps', async () => {
+test('P25: a sync names the share, the membership, and no timestamps', async () => {
   const shareId = '07070707070707070707070707070707';
   const { api, requests } = fakeApi();
-  await updatePublicList(shareId, { listId: 'list-1', title: 'Updated', papers: [] }, api);
+  await syncPublicList(shareId, {
+    listId: 'list-1',
+    title: 'Updated',
+    paperIds: ['arxiv:2401.00001'],
+    papers: [{ id: 'arxiv:2401.00001', title: 'One', arxivId: '2401.00001' }],
+  }, api);
 
   assert.equal(requests[0].url, 'https://worker.test/lists/update');
   assert.equal(requests[0].body.shareId, shareId);
   assert.equal(requests[0].body.title, 'Updated');
-  // createdAt and updatedAt are the server's business, not the browser's.
+  assert.deepEqual(requests[0].body.paperIds, ['arxiv:2401.00001']);
+  // createdAt and updatedAt are the server's business, not the browser's, and
+  // paperCount is the merge's to compute — sending it would be a second, and
+  // disagreeing, opinion about how long the list is.
   assert.equal('createdAt' in requests[0].body, false);
   assert.equal('updatedAt' in requests[0].body, false);
+  assert.equal('paperCount' in requests[0].body, false);
+});
+
+test('P25 REGRESSION: re-keying must not strip the paper of its identity', async () => {
+  // Measured in production, not imagined. `paperLegacyAdapter` folds the arXiv
+  // id into `id` as `arxiv:…` and emits NO `arxivId` field, so for a hydrated
+  // paper the id is the only carrier of what the paper is. The first version
+  // of this sent `{ ...paper, id: listPaperId }`, which sanitized a paper that
+  // had already lost its identity: every paper in a real 20-paper public list
+  // came out with no `arxivId` and a bare id, and the Worker could no longer
+  // rebuild the stable `arxiv:` spelling. The key travels beside the id now.
+  const shareId = '07070707070707070707070707070707';
+  const { api, requests } = fakeApi();
+  const adapted = {
+    id: 'arxiv:2608.19135',
+    title: 'Autonomous Cyber Defense in Connected Vehicles',
+    authors: [{ name: 'Krishna Teja Medam' }],
+    landingPageUrl: 'https://arxiv.org/abs/2608.19135',
+  };
+  await syncPublicList(shareId, {
+    listId: 'list-1',
+    title: 'Relatividad numérica',
+    paperIds: ['2608.19135'],
+    papers: [{ ...adapted, listPaperId: '2608.19135' }],
+  }, api);
+
+  const [sent] = requests[0].body.papers;
+  assert.equal(sent.id, '2608.19135', 'the join key is the id the private list stores');
+  assert.equal(sent.arxivId, '2608.19135',
+    'and the identity survives, so the Worker can rebuild the public arxiv: id');
+  assert.equal('listPaperId' in sent, false, 'the key is a join hint, not a public field');
+});
+
+test('P25: papers keep the id the private list files them under', async () => {
+  // THE BUG this shape exists to avoid: sanitizePublicPaper rewrites ids to
+  // their stable doi:/arxiv: spelling, and the Worker joins `papers` against
+  // `paperIds` by the raw id. Sanitized keys would match nothing, and every
+  // sync would quietly publish a list with no papers in it.
+  const shareId = '07070707070707070707070707070707';
+  const { api, requests } = fakeApi();
+  await syncPublicList(shareId, {
+    listId: 'list-1',
+    title: 'Updated',
+    paperIds: ['legacy-2401.00001'],
+    papers: [{ ...privatePaper, listPaperId: 'legacy-2401.00001' }],
+  }, api);
+
+  assert.deepEqual(requests[0].body.papers.map(paper => paper.id), ['legacy-2401.00001']);
+  // Sanitizing still happened: the private fields are gone and the doi that
+  // will become the public id travels with the paper.
+  assert.equal(requests[0].body.papers[0].doi, '10.1000/Example');
+  assert.equal(JSON.stringify(requests[0].body).includes('private note'), false);
+});
+
+test('P25: the membership is deduplicated and cut to the published cap', async () => {
+  // Over the cap the Worker refuses the whole merge, so a 60-paper list that
+  // arrived untrimmed would never sync again — silently, and forever.
+  const shareId = '07070707070707070707070707070707';
+  const { api, requests } = fakeApi();
+  await syncPublicList(shareId, {
+    listId: 'list-1',
+    title: 'Long',
+    paperIds: ['dup', 'dup', '', null, ...Array.from({ length: 60 }, (_, i) => `p${i}`)],
+    papers: [],
+  }, api);
+
+  const ids = requests[0].body.paperIds;
+  assert.equal(ids.length, PUBLIC_LIST_LIMITS.papers);
+  assert.equal(new Set(ids).size, ids.length);
+  assert.equal(ids[0], 'dup');
+});
+
+test('P25: a paper the membership no longer names is not sent at all', async () => {
+  const shareId = '07070707070707070707070707070707';
+  const { api, requests } = fakeApi();
+  await syncPublicList(shareId, {
+    listId: 'list-1',
+    title: 'Updated',
+    paperIds: ['keep'],
+    papers: [
+      { id: 'keep', title: 'Kept', listPaperId: 'keep' },
+      { id: 'removed', title: 'Removed', listPaperId: 'removed' },
+    ],
+  }, api);
+
+  assert.deepEqual(requests[0].body.papers.map(paper => paper.id), ['keep']);
 });
 
 test('unpublishing sends the share and the private list it belongs to', async () => {
@@ -196,7 +290,7 @@ test('reading a share link is still one Firestore document, with no session', as
 
 test('a malformed share id or list id never reaches the network', async () => {
   const { api, requests } = fakeApi();
-  await assert.rejects(() => updatePublicList('nope', { listId: 'l1', title: 'T' }, api), TypeError);
+  await assert.rejects(() => syncPublicList('nope', { listId: 'l1', title: 'T' }, api), TypeError);
   await assert.rejects(() => unpublishPublicList('a'.repeat(32), 'a/b', api), TypeError);
   assert.equal(requests.length, 0);
 });
@@ -212,7 +306,7 @@ test('returns a clear unsupported error in demo mode, on every path', async () =
     () => publishPublicList({ listId: 'l1', title: 'T', papers: [] }, api), isUnsupported,
   );
   await assert.rejects(
-    () => updatePublicList(shareId, { listId: 'l1', title: 'T', papers: [] }, api), isUnsupported,
+    () => syncPublicList(shareId, { listId: 'l1', title: 'T', paperIds: [] }, api), isUnsupported,
   );
   await assert.rejects(() => unpublishPublicList(shareId, 'l1', api), isUnsupported);
   assert.equal(requests.length, 0, 'demo mode must not reach the Worker either');
