@@ -56,7 +56,14 @@ export function createPublicListSyncEngine(options = {}) {
     // `listId` rides along so a subscriber can act on the list itself — the
     // lists page marks it synced locally, which keeps the freshness check
     // comparing two stamps from the same clock for the rest of the session.
-    return { status: job.status, code: job.code || null, listId: job.listId };
+    // `result` carries what the Worker actually published, which is the only
+    // honest answer to "does the public copy match the list?".
+    return {
+      status: job.status,
+      code: job.code || null,
+      listId: job.listId,
+      result: job.result || null,
+    };
   }
 
   function announce(key) {
@@ -108,7 +115,7 @@ export function createPublicListSyncEngine(options = {}) {
     setStatus(job, 'syncing');
 
     try {
-      await sync(job.shareId, {
+      const outcome = await sync(job.shareId, {
         listId: job.listId,
         title: job.title,
         description: job.description,
@@ -116,6 +123,11 @@ export function createPublicListSyncEngine(options = {}) {
         paperIds: job.paperIds,
         papers: [...job.papers.values()],
       });
+      job.result = {
+        paperCount: Number.isInteger(outcome?.paperCount) ? outcome.paperCount : null,
+        listCount: Number.isInteger(outcome?.listCount) ? outcome.listCount : null,
+        skipped: Number.isInteger(outcome?.skipped) ? outcome.skipped : null,
+      };
       job.running = false;
       if (job.cancelled) return;
       job.attempts = 0;
@@ -165,6 +177,7 @@ export function createPublicListSyncEngine(options = {}) {
         running: false,
         dirty: false,
         timer: null,
+        result: null,
       };
       jobs.set(key, job);
     }

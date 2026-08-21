@@ -19,7 +19,6 @@ import {
   PUBLIC_LIST_LIMITS,
   sanitizePublicList,
   sanitizePublicPaper,
-  sanitizePublicPaperForSync,
   sanitizeSyncPaperIds,
 } from './publicListPayload.js';
 
@@ -171,11 +170,16 @@ export async function syncPublicList(shareId, input, overrides) {
     language: clean.language,
   };
 
+  // Advisory. The Worker reads the real membership from the private list; this
+  // only travels so an older Worker keeps working.
   const paperIds = sanitizeSyncPaperIds(input?.paperIds);
-  const wanted = new Set(paperIds);
+  // Every paper the caller hydrated, NOT only those in `paperIds`. Filtering
+  // against that list is what turned a stale client cache into deletions: a
+  // paper genuinely in the list but missing from the cached ids would have
+  // been dropped on the way out, before the Worker ever saw it.
   const papers = (Array.isArray(input?.papers) ? input.papers : [])
-    .map(sanitizePublicPaperForSync)
-    .filter(paper => paper && wanted.has(paper.id));
+    .map(sanitizePublicPaper)
+    .filter(Boolean);
 
   const result = await callWorker(api, '/lists/update', {
     shareId: normalizedShareId, listId, ...header, paperIds, papers,

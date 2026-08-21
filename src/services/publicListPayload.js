@@ -103,6 +103,23 @@ function stablePaperId(paper, doi, arxivId) {
   return rawId;
 }
 
+/**
+ * The id the PRIVATE list files this paper under, kept on the public paper so
+ * the two can be joined again later.
+ *
+ * `stablePaperId` rewrites ids to their `doi:`/`arxiv:` spelling, and a private
+ * list may file the same paper under a different one (a bare DOI, a legacy
+ * provider id — R8). Without this the background sync had to guess the join
+ * from `id`/`doi`/`arxivId`, and when the guess missed, `buildMergedPayload`
+ * DELETED an already-published paper from the public document. That is not a
+ * hypothetical: it removed "Observation of perfect absorption…" from a real
+ * shared list. The join key is data now, not a guess.
+ */
+function sourcePaperId(paper, id) {
+  const raw = cleanString(paper?.listPaperId, PUBLIC_LIST_LIMITS.id);
+  return raw && raw !== id ? raw : '';
+}
+
 export function sanitizePublicPaper(paper) {
   if (!paper || typeof paper !== 'object') return null;
 
@@ -145,6 +162,8 @@ export function sanitizePublicPaper(paper) {
   if (doi) result.doi = doi;
   if (arxivId) result.arxivId = arxivId;
   if (openUrl) result.openUrl = openUrl;
+  const sourceId = sourcePaperId(paper, id);
+  if (sourceId) result.sourceId = sourceId;
   return result;
 }
 
@@ -203,6 +222,10 @@ export function assertPublicListWithinLimits(payload) {
       && paper.openUrl.startsWith('https://')), 'PAPER_URL');
     check(!('doi' in paper) || paper.doi.length <= PUBLIC_LIST_LIMITS.doi, 'PAPER_DOI');
     check(!('arxivId' in paper) || paper.arxivId.length <= PUBLIC_LIST_LIMITS.arxivId, 'PAPER_ARXIV');
+    // Same namespace as the paper id it stands in for, so the same bound.
+    check(!('sourceId' in paper) || (typeof paper.sourceId === 'string'
+      && paper.sourceId.length > 0
+      && paper.sourceId.length <= PUBLIC_LIST_LIMITS.id), 'PAPER_SOURCE_ID');
     check(!('category' in paper) || paper.category.length <= PUBLIC_LIST_LIMITS.category, 'PAPER_CATEGORY');
     check(!('date' in paper) || paper.date.length <= PUBLIC_LIST_LIMITS.date, 'PAPER_DATE');
     check(!('year' in paper) || (Number.isInteger(paper.year)
@@ -219,37 +242,26 @@ export function assertPublicListWithinLimits(payload) {
 }
 
 /**
- * The same sanitized paper, but keyed by the id the PRIVATE list uses.
+ * The key a paper is joined on: the id the private list files it under, or its
+ * own public id when the two already agree.
  *
- * The background sync (P25) sends `paperIds` — the authoritative membership,
- * in the app's own id namespace — alongside the papers it managed to hydrate,
- * and the Worker joins the two by that id. `sanitizePublicPaper` rewrites ids
- * to their stable `doi:`/`arxiv:` spelling, so the sanitized id is the wrong
- * key: a list holding `2401.12345` would find nothing under `arxiv:2401.12345`
- * and the paper would be dropped from the public copy on every sync.
- *
- * The join key therefore arrives as `listPaperId`, NOT by overwriting `id`,
- * and that distinction is load-bearing. `paperLegacyAdapter` folds the arXiv
- * id into `id` as `arxiv:…` and emits no `arxivId` field at all, so for most
- * hydrated papers **the id is the only carrier of the paper's identity**.
- * Sanitizing a paper whose id had already been swapped for the bare list id
- * measurably stripped `arxivId` from every paper in a real published list and
- * left the public ids bare. Sanitize first, swap the emitted id after: the
- * `doi`/`arxivId` recovered here travel with the paper, so when the Worker
- * sanitizes it again `stablePaperId` lands on exactly the public id it had.
+ * One helper rather than two call sites doing it by hand, because getting it
+ * wrong is silent: keying by the public id makes the Worker fail to recognise
+ * a paper it published itself and drop it.
  */
-export function sanitizePublicPaperForSync(paper) {
-  const clean = sanitizePublicPaper(paper);
-  if (!clean) return null;
-  const key = cleanString(paper?.listPaperId, PUBLIC_LIST_LIMITS.id) || clean.id;
-  return key === clean.id ? clean : { ...clean, id: key };
+export function publicPaperJoinKey(paper) {
+  if (!paper || typeof paper !== 'object') return '';
+  return cleanString(paper.sourceId, PUBLIC_LIST_LIMITS.id)
+    || cleanString(paper.id, PUBLIC_LIST_LIMITS.id);
 }
 
 /**
- * The membership the sync declares: deduplicated, in order, and cut to the
- * published cap. The cut is the point — the Worker refuses a merge that
- * resolves to more than `PUBLIC_LIST_LIMITS.papers`, so a 60-paper list has to
- * arrive already trimmed or nothing about it would ever sync again.
+ * The membership as the sync declares it: deduplicated, in order, cut to the
+ * published cap.
+ *
+ * Advisory now, not authoritative — the Worker reads the private list itself
+ * and only falls back to this. It stays because a client that cannot be
+ * re-deployed still sends it, and because the trimming keeps the request small.
  */
 export function sanitizeSyncPaperIds(paperIds) {
   const seen = new Set();

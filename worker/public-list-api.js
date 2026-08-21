@@ -25,6 +25,7 @@
 import {
   assertPublicListWithinLimits,
   PUBLIC_LIST_LIMITS,
+  publicPaperJoinKey,
   sanitizePublicList,
   sanitizePublicPaper,
 } from '../src/services/publicListPayload.js';
@@ -133,24 +134,30 @@ export function buildPublicListPayload(body) {
 }
 
 /**
- * Merge semantics for /lists/update (F12): the client sends the authoritative
- * `paperIds` — order and removals included — plus whatever papers it could
- * hydrate, and papers already in the public document survive for the ids it
- * could not.
+ * Merge semantics for /lists/update: the MEMBERSHIP is read from the private
+ * list, the papers are whatever the caller could hydrate, and papers already
+ * in the public document survive for every id the caller left out.
  *
- * This exists because the browser builds its payload from papers hydrated in
- * memory; a background sync (P25) built the same way would silently SHRINK
- * the public copy to whatever happened to be loaded. Removals still
- * propagate: an id absent from `paperIds` is gone whatever the client sent.
+ * `membership` is the caller-independent half and that is the whole point. It
+ * used to be `body.paperIds`, and trusting it cost a real shared list two
+ * papers: the save-and-organize modal paints from a 30-second session cache,
+ * so the ids it sends are a client-side reconstruction, and anything missing
+ * from that reconstruction was deleted from the public copy. A list is what
+ * `users/{uid}/lists/{listId}` says it is.
  *
- * The join key is the raw app id the client sent, the same namespace as
- * `paperIds` — `sanitizePublicPaper` rewrites ids to `doi:`/`arxiv:` form, so
- * the sanitized id cannot be the key. Published papers are indexed under
- * their sanitized id AND their bare doi/arxiv spellings, which absorbs most
- * of the legacy id drift (R8). An unhydrated paper that matches nothing is
- * dropped — exactly what the manual update button already did to it.
+ * The join key is the id the private list files a paper under — `sourceId` on
+ * the published paper, recorded when it was published. Before that field
+ * existed the join had to guess from `id`/`doi`/`arxivId`, and a miss did not
+ * degrade, it DELETED: `continue` dropped an already-published paper because
+ * the client happened not to hydrate it this time. Legacy documents have no
+ * `sourceId`, so the old spellings stay in the index behind it and the first
+ * full sync writes the field.
+ *
+ * An id that matches nothing is a paper with no metadata anywhere; it is
+ * skipped and counted, so the owner can be told rather than left comparing
+ * numbers between two accounts.
  */
-export function buildMergedPayload(body, existing) {
+export function buildMergedPayload(body, existing, membership) {
   let header;
   try {
     header = sanitizePublicList({ ...body, papers: [] });
@@ -158,12 +165,12 @@ export function buildMergedPayload(body, existing) {
     throw new PublicListApiError('TITLE_REQUIRED', 400);
   }
 
-  const ids = body.paperIds
+  const source = Array.isArray(membership) ? membership : body.paperIds;
+  if (!Array.isArray(source)) throw new PublicListApiError('INVALID_BODY', 400);
+  const ids = source
     .map(id => (typeof id === 'string' ? id.trim() : ''))
     .filter(Boolean);
-  if (ids.length !== body.paperIds.length || ids.length > 500) {
-    throw new PublicListApiError('INVALID_BODY', 400);
-  }
+  if (ids.length > 500) throw new PublicListApiError('INVALID_BODY', 400);
 
   // Refused rather than coerced, like buildPublicListPayload: a paper the
   // sanitizer would drop is a caller that must be told.
@@ -171,13 +178,16 @@ export function buildMergedPayload(body, existing) {
   for (const raw of Array.isArray(body.papers) ? body.papers : []) {
     const clean = sanitizePublicPaper(raw);
     if (!clean) throw new PublicListApiError('PAPERS_REJECTED', 400);
-    byRawId.set(String(raw?.id ?? '').trim(), clean);
+    byRawId.set(publicPaperJoinKey(clean), clean);
   }
 
   const byPublishedKey = new Map();
   for (const paper of Array.isArray(existing?.papers) ? existing.papers : []) {
     if (!paper || typeof paper.id !== 'string') continue;
+    // `sourceId` first: it is the recorded truth. The rest are the guesses
+    // that carry documents published before the field existed.
     for (const key of [
+      paper.sourceId,
       paper.id,
       paper.doi, paper.doi && `doi:${paper.doi}`,
       paper.arxivId, paper.arxivId && `arxiv:${paper.arxivId}`,
@@ -188,16 +198,25 @@ export function buildMergedPayload(body, existing) {
 
   const seen = new Set();
   const papers = [];
+  let skipped = 0;
   for (const id of ids) {
+    // The cap TRUNCATES rather than rejecting. The membership is the Worker's
+    // now, so refusing it would leave a 60-paper list unable to sync anything,
+    // for ever, instead of publishing the 50 it is allowed.
+    if (papers.length >= PUBLIC_LIST_LIMITS.papers) {
+      skipped += 1;
+      continue;
+    }
     const paper = byRawId.get(id)
       || byPublishedKey.get(id)
       || byPublishedKey.get(id.toLowerCase());
-    if (!paper || seen.has(paper.id)) continue;
+    if (!paper) {
+      skipped += 1;
+      continue;
+    }
+    if (seen.has(paper.id)) continue;
     seen.add(paper.id);
     papers.push(paper);
-  }
-  if (papers.length > PUBLIC_LIST_LIMITS.papers) {
-    throw new PublicListApiError('PAPERS_REJECTED', 400);
   }
 
   const payload = { ...header, paperCount: papers.length, papers };
@@ -205,7 +224,9 @@ export function buildMergedPayload(body, existing) {
   if (failures.length) {
     throw new PublicListApiError(`INVALID_PAYLOAD_${failures[0]}`, 400);
   }
-  return payload;
+  // `skipped` never reaches the document; it rides the response so the owner
+  // can be told why the public copy is shorter than the list.
+  return { payload, listCount: ids.length, skipped };
 }
 
 /**
@@ -397,14 +418,26 @@ async function update(admin, uid, body, { now }) {
   const shareId = requireShareId(body.shareId);
   const owner = await requireOwnedShare(admin, uid, shareId);
 
-  // With `paperIds` the update is a merge against the published copy (see
-  // buildMergedPayload); without it, the legacy whole-payload replace.
+  // The membership comes from the private list, not from the request. One
+  // extra read — the same document `publish` already reads — and in exchange
+  // no client version, present or past, can shrink a published list by
+  // sending a stale idea of what is in it.
+  const list = await admin.getDocument(['users', uid, 'lists', owner.listId]);
+  const membership = Array.isArray(list?.paperIds) ? list.paperIds : null;
+
   let payload;
-  if (Array.isArray(body.paperIds)) {
+  let listCount = null;
+  let skipped = 0;
+  if (membership || Array.isArray(body.paperIds)) {
     const existing = await admin.getDocument(['publicLists', shareId]);
     if (!existing) throw new PublicListApiError('SHARE_NOT_FOUND', 404);
-    payload = buildMergedPayload(body, existing);
+    const merged = buildMergedPayload(body, existing, membership);
+    payload = merged.payload;
+    listCount = merged.listCount;
+    skipped = merged.skipped;
   } else {
+    // No membership anywhere to merge against: the legacy whole-payload
+    // replace, kept for a caller that sends neither.
     payload = buildPublicListPayload(body);
   }
 
@@ -447,7 +480,14 @@ async function update(admin, uid, body, { now }) {
   const pinCard = await refreshPinnedCard(admin, uid, shareId, {
     title: payload.title, paperCount: payload.paperCount,
   }, { now });
-  return { shareId, ...payload, pinCard };
+  return {
+    shareId,
+    ...payload,
+    pinCard,
+    // What the owner needs to understand a count that does not match: how many
+    // papers the list holds, and how many of them had nothing to publish.
+    ...(listCount === null ? {} : { listCount, skipped }),
+  };
 }
 
 async function unpublish(admin, uid, body, { now }) {

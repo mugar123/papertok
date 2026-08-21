@@ -188,17 +188,18 @@ test('P25 REGRESSION: re-keying must not strip the paper of its identity', async
   }, api);
 
   const [sent] = requests[0].body.papers;
-  assert.equal(sent.id, '2608.19135', 'the join key is the id the private list stores');
-  assert.equal(sent.arxivId, '2608.19135',
-    'and the identity survives, so the Worker can rebuild the public arxiv: id');
-  assert.equal('listPaperId' in sent, false, 'the key is a join hint, not a public field');
+  assert.equal(sent.id, 'arxiv:2608.19135', 'the public id keeps its stable spelling');
+  assert.equal(sent.arxivId, '2608.19135', 'and the identity that produced it survives');
+  assert.equal(sent.sourceId, '2608.19135',
+    'while the id the private list files it under is recorded, not guessed at later');
+  assert.equal('listPaperId' in sent, false, 'the input hint is not a public field');
 });
 
-test('P25: papers keep the id the private list files them under', async () => {
+test('P25: papers record the id the private list files them under', async () => {
   // THE BUG this shape exists to avoid: sanitizePublicPaper rewrites ids to
-  // their stable doi:/arxiv: spelling, and the Worker joins `papers` against
-  // `paperIds` by the raw id. Sanitized keys would match nothing, and every
-  // sync would quietly publish a list with no papers in it.
+  // their stable doi:/arxiv: spelling, and the Worker joins the membership
+  // against the papers. Without `sourceId` the join is a guess, and a miss
+  // does not degrade — it DELETES an already-published paper.
   const shareId = '07070707070707070707070707070707';
   const { api, requests } = fakeApi();
   await syncPublicList(shareId, {
@@ -208,9 +209,10 @@ test('P25: papers keep the id the private list files them under', async () => {
     papers: [{ ...privatePaper, listPaperId: 'legacy-2401.00001' }],
   }, api);
 
-  assert.deepEqual(requests[0].body.papers.map(paper => paper.id), ['legacy-2401.00001']);
+  assert.deepEqual(requests[0].body.papers.map(paper => paper.sourceId), ['legacy-2401.00001']);
+  assert.deepEqual(requests[0].body.papers.map(paper => paper.id), ['doi:10.1000/example']);
   // Sanitizing still happened: the private fields are gone and the doi that
-  // will become the public id travels with the paper.
+  // became the public id travels with the paper.
   assert.equal(requests[0].body.papers[0].doi, '10.1000/Example');
   assert.equal(JSON.stringify(requests[0].body).includes('private note'), false);
 });
@@ -233,7 +235,11 @@ test('P25: the membership is deduplicated and cut to the published cap', async (
   assert.equal(ids[0], 'dup');
 });
 
-test('P25: a paper the membership no longer names is not sent at all', async () => {
+test('P25: every hydrated paper is sent, not only the ones the client thinks are members', async () => {
+  // The membership belongs to the Worker now. Filtering here against the
+  // client's own idea of it is exactly how a stale session cache turned into
+  // deletions: a paper genuinely in the list, but missing from the cached ids,
+  // would never have reached the Worker to be kept.
   const shareId = '07070707070707070707070707070707';
   const { api, requests } = fakeApi();
   await syncPublicList(shareId, {
@@ -242,11 +248,14 @@ test('P25: a paper the membership no longer names is not sent at all', async () 
     paperIds: ['keep'],
     papers: [
       { id: 'keep', title: 'Kept', listPaperId: 'keep' },
-      { id: 'removed', title: 'Removed', listPaperId: 'removed' },
+      { id: 'not-in-the-stale-cache', title: 'Also real', listPaperId: 'not-in-the-stale-cache' },
     ],
   }, api);
 
-  assert.deepEqual(requests[0].body.papers.map(paper => paper.id), ['keep']);
+  assert.deepEqual(
+    requests[0].body.papers.map(paper => paper.sourceId ?? paper.id),
+    ['keep', 'not-in-the-stale-cache'],
+  );
 });
 
 test('unpublishing sends the share and the private list it belongs to', async () => {

@@ -31,7 +31,9 @@ import { settleWithin } from '../../utils/asyncTiming';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import {
+  PUBLIC_LIST_LIMITS,
   publishPublicList,
+  readPublicList,
   unpublishPublicList,
 } from '../../services/publicListService.js';
 import {
@@ -141,6 +143,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // to own: the save-and-organize modal queues syncs too, and they have to
   // outlive whichever screen started them, so the page subscribes instead.
   const [syncStates, setSyncStates] = useState({});
+  // What visitors actually see, per list. One read of the public document when
+  // a published list is opened, and it earns its place twice: it is the only
+  // honest source for "N papers are not in the public link yet", and it is
+  // what lets a list damaged by an earlier sync repair itself on open — the
+  // dirty stamp cannot, because a bad sync marks itself as done.
+  const [publicSnapshots, setPublicSnapshots] = useState({});
   // The inline create form on the index: nothing else in the app can create a
   // list outside the save modal, and an index of lists needs its own door.
   const [creating, setCreating] = useState(false);
@@ -210,6 +218,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       setLists((current) => current.map((entry) => (
         entry.id === state.listId ? { ...entry, publicSyncedAt: new Date() } : entry
       )));
+      // Straight from the Worker, so the note and the mismatch check do not
+      // need a second read of the document that was just written.
+      if (Number.isInteger(state.result?.paperCount)) {
+        setPublicSnapshots((current) => ({
+          ...current, [state.listId]: { paperCount: state.result.paperCount },
+        }));
+      }
     }
   }), []);
 
@@ -701,12 +716,20 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   };
 
   const setListShareId = (listId, publicShareId) => {
+    setPublicSnapshots((current) => {
+      if (!(listId in current)) return current;
+      const next = { ...current };
+      delete next[listId];
+      return next;
+    });
     setLists(current => current.map(list => {
       if (list.id !== listId) return list;
       // `publicSyncedAt` too: publishing wrote the public document in the same
       // commit, so without it the freshness check would read a fresh
       // `updatedAt` against nothing and queue a sync of what was just written.
       if (publicShareId) return { ...list, publicShareId, publicSyncedAt: new Date() };
+      // Falls through to the private branch below; either way what we knew
+      // about the public copy no longer describes anything.
       const privateList = { ...list };
       delete privateList.publicShareId;
       return privateList;
@@ -824,17 +847,80 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
    * half-loaded list would quietly drop whatever was added while the load was
    * broken.
    */
+  /**
+   * What the public copy actually holds, read once when a published list is
+   * opened. Best-effort: a failed read leaves the check to the dirty stamp.
+   */
+  useEffect(() => {
+    if (IS_DEMO || !expandedList) return undefined;
+    const list = lists.find((entry) => entry.id === expandedList);
+    if (!list?.publicShareId || expandedList in publicSnapshots) return undefined;
+
+    let active = true;
+    readPublicList(list.publicShareId)
+      .then((document) => {
+        if (!active) return;
+        setPublicSnapshots((current) => ({
+          ...current,
+          [list.id]: { paperCount: Number.isInteger(document?.paperCount) ? document.paperCount : null },
+        }));
+      })
+      .catch((readError) => {
+        // Not knowing is not the same as knowing it is wrong: leave the entry
+        // absent so the check falls back to the dirty stamp alone.
+        console.warn('The public copy of this list could not be checked:', readError);
+      });
+    return () => { active = false; };
+  }, [expandedList, lists, publicSnapshots]);
+
+  /**
+   * The two things that start a sync.
+   *
+   * **The edit stamp.** Every edit sets `updatedAt` and stops there; this
+   * compares it with the `publicSyncedAt` the Worker wrote and rebuilds the
+   * public copy when the edit is newer. That is what makes recovery free: a
+   * sync lost to a closed tab, a dead connection or a spent daily quota is
+   * replayed the next time the list is opened, with no click.
+   *
+   * **The count.** The stamp alone is not enough, and that gap cost a real
+   * shared list two papers: a sync that published the WRONG thing still marks
+   * itself done, so the list looks clean for ever. When the public copy holds
+   * fewer papers than this screen could publish, it is rebuilt. Holding more
+   * is fine — those are papers published earlier that this device cannot
+   * hydrate right now, and the merge keeps them.
+   *
+   * It waits for the papers and refuses to run on a metadata failure: syncing
+   * a half-loaded list would republish it short.
+   */
   const queuedSyncs = useRef(new Map());
   useEffect(() => {
     if (IS_DEMO || !user || !expandedList) return;
     const list = lists.find((entry) => entry.id === expandedList);
-    if (!listNeedsPublicSync(list)) return;
+    if (!list?.publicShareId) return;
     if (metadataLoadingListId === list.id || metadataError) return;
 
-    // One request per edit, however many renders that edit causes.
-    const editedAt = toEpochMillis(list.updatedAt);
-    if (queuedSyncs.current.get(list.id) === editedAt) return;
-    queuedSyncs.current.set(list.id, editedAt);
+    // `listPaperId` ALONGSIDE the paper's own id, never over it: the public
+    // copy is joined on the stored id (R8), but the paper's identity lives in
+    // its own id — the legacy adapter folds the arXiv id in there and emits no
+    // `arxivId`, so overwriting it strips the identity on the way out. A paper
+    // whose metadata never arrived has no title to publish.
+    const papers = (list.paperIds || [])
+      .map((paperId) => {
+        const paper = getPaper(paperId);
+        return paper?.title && paper.title !== paperId
+          ? { ...paper, listPaperId: paperId }
+          : null;
+      })
+      .filter(Boolean);
+
+    const publishedCount = publicSnapshots[list.id]?.paperCount;
+    const behind = Number.isInteger(publishedCount) && publishedCount < papers.length;
+    if (!listNeedsPublicSync(list) && !behind) return;
+
+    // One request per state of the list, however many renders it causes.
+    const signature = `${toEpochMillis(list.updatedAt)}:${publishedCount ?? '?'}:${papers.length}`;
+    if (queuedSyncs.current.get(list.id) === signature) return;
+    queuedSyncs.current.set(list.id, signature);
 
     queuePublicListSync({
       key: publicListSyncKey(user.uid, list.id),
@@ -843,24 +929,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       title: list.name,
       description: list.description,
       language: language === 'en' ? 'en' : 'es',
+      // Advisory only — the Worker reads the membership from the private list.
       paperIds: list.paperIds || [],
-      papers: (list.paperIds || [])
-        .map((paperId) => {
-          const paper = getPaper(paperId);
-          // `listPaperId` ALONGSIDE the paper's own id, never over it: the
-          // membership and the published copy are joined on the stored id
-          // (R8), but the paper's identity lives in its own id — the legacy
-          // adapter folds the arXiv id in there and emits no `arxivId`, so
-          // overwriting it strips the paper's identity on the way out. A
-          // paper whose metadata never arrived has no title to publish and is
-          // left to the merge.
-          return paper?.title && paper.title !== paperId
-            ? { ...paper, listPaperId: paperId }
-            : null;
-        })
-        .filter(Boolean),
+      papers,
     });
-  }, [expandedList, getPaper, language, lists, metadataError, metadataLoadingListId, user]);
+  }, [
+    expandedList, getPaper, language, lists, metadataError, metadataLoadingListId,
+    publicSnapshots, user,
+  ]);
 
   const papersCount = (count) => `${count} ${count === 1 ? 'paper' : 'papers'}`;
 
@@ -924,16 +1000,29 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
             const list = displayLists.find((l) => l.id === expandedList);
             if (!list) return null;
             const exportPapers = (list.paperIds || []).map(getPaper).filter(Boolean);
+            // `listPaperId` from the first publish onwards: it becomes
+            // `sourceId` on the public paper, and it is what lets every later
+            // sync recognise this paper as one it already published.
             const publicPapers = (list.paperIds || [])
               .map(paperId => ({ paperId, paper: getPaper(paperId) }))
               .filter(({ paperId, paper }) => paper?.title && paper.title !== paperId)
-              .map(({ paper }) => paper);
+              .map(({ paperId, paper }) => ({ ...paper, listPaperId: paperId }));
             const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
             const listShareFeedback = shareFeedback?.listId === list.id ? shareFeedback : null;
             const shareBusy = listShareFeedback?.state === 'loading';
             const syncKey = user && isCustomList ? publicListSyncKey(user.uid, list.id) : null;
             const syncState = syncKey ? syncStates[syncKey] : null;
             const badgeState = publicBadgeState(syncState?.status);
+            // How many papers of this list the public link does NOT carry.
+            // The Worker's own count when we have it, the hydration gap when
+            // we do not — never a guess dressed as a fact.
+            const listTotal = (list.paperIds || []).length;
+            const publishedCount = publicSnapshots[list.id]?.paperCount;
+            const missingFromPublic = list.publicShareId
+              ? Math.max(0, listTotal - (Number.isInteger(publishedCount)
+                ? publishedCount
+                : publicPapers.length))
+              : 0;
             const badgeLabel = {
               public: isEnglish ? 'Public' : 'Pública',
               syncing: isEnglish ? 'Updating…' : 'Actualizando…',
@@ -1054,13 +1143,27 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     </button>
                   </div>
                 )}
-                {isCustomList && ((list.paperIds || []).length > 20 || publicPapers.length < (list.paperIds || []).length) && (
-                  <p className="lists-share-limit-note">
-                    {isEnglish
-                      ? 'Public links include up to 50 papers with available details.'
-                      : 'Los enlaces públicos incluyen hasta 50 papers con datos disponibles.'}
-                  </p>
-                )}
+                {/* The number the owner had to open a second account to
+                    discover. A public copy shorter than the list is a fact
+                    worth saying out loud, not a discrepancy to be found. */}
+                {isCustomList && (list.publicShareId
+                  ? missingFromPublic > 0 && (
+                    <p className="lists-share-limit-note">
+                      {isEnglish
+                        ? `${missingFromPublic} of ${listTotal} papers are not in the public link yet.`
+                        : `${missingFromPublic} de ${listTotal} papers aún no están en el enlace público.`}
+                      {listTotal > PUBLIC_LIST_LIMITS.papers && (isEnglish
+                        ? ` Public links include up to ${PUBLIC_LIST_LIMITS.papers} papers.`
+                        : ` Los enlaces públicos incluyen hasta ${PUBLIC_LIST_LIMITS.papers} papers.`)}
+                    </p>
+                  )
+                  : publicPapers.length < listTotal && (
+                    <p className="lists-share-limit-note">
+                      {isEnglish
+                        ? `Publishing would include ${publicPapers.length} of ${listTotal} papers: the rest have no details saved yet.`
+                        : `Al publicarla entrarían ${publicPapers.length} de ${listTotal} papers: del resto aún no hay datos guardados.`}
+                    </p>
+                  ))}
                 {(exportPapers.length > 0 || (isCustomList && !IS_DEMO && list.publicShareId)) && (
                   <div className="lists-expanded-tools">
                     {exportPapers.length > 0 && (

@@ -688,7 +688,10 @@ test('F12 merge: unhydrated papers survive from the published copy, removals sti
   };
   const admin = fakeAdmin({
     [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
-    [`users/${UID}/lists/l1`]: { id: 'l1' },
+    [`users/${UID}/lists/l1`]: {
+      id: 'l1',
+      paperIds: ['arxiv:2608.18000', 'arxiv:2608.18001', 'arxiv:2608.18099'],
+    },
     [`publicLists/${SHARE}`]: published,
   });
   // The list now holds 0, 1 and a new paper; 2 was removed. The client could
@@ -696,8 +699,7 @@ test('F12 merge: unhydrated papers survive from the published copy, removals sti
   // arxiv spelling — the join key is the RAW id either way.)
   const result = await run('/lists/update', {
     shareId: SHARE, listId: 'l1', title: 'Vieja',
-    paperIds: ['arxiv:2608.18000', 'arxiv:2608.18001', 'arxiv:2608.18099'],
-    papers: [paper(99, { doi: undefined })],
+    papers: [paper(99, { doi: undefined, listPaperId: 'arxiv:2608.18099' })],
   }, { admin });
 
   assert.deepEqual(result.papers.map(p => p.id), [
@@ -710,15 +712,144 @@ test('F12 merge: an id that matches nothing is dropped, never invented', async (
   stubIdentity();
   const admin = fakeAdmin({
     [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
-    [`users/${UID}/lists/l1`]: { id: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1', paperIds: ['arxiv:2608.19999'] },
     [`publicLists/${SHARE}`]: { title: 'Vieja', paperCount: 0, papers: [] },
   });
   const result = await run('/lists/update', {
-    shareId: SHARE, listId: 'l1', title: 'Vieja',
-    paperIds: ['arxiv:2608.19999'], papers: [],
+    shareId: SHARE, listId: 'l1', title: 'Vieja', papers: [],
   }, { admin });
   assert.deepEqual(result.papers, []);
   assert.equal(result.paperCount, 0);
+  // Counted, not hidden: the owner is told rather than left comparing numbers
+  // between two accounts.
+  assert.deepEqual({ listCount: result.listCount, skipped: result.skipped },
+    { listCount: 1, skipped: 1 });
+});
+
+/* --- The membership is the private list's, not the caller's ---------------
+   THE BUG this whole group exists for: the save-and-organize modal paints
+   from a 30-second session cache, so the `paperIds` it sent were a client-side
+   reconstruction. Trusting them deleted two papers from a real shared list —
+   including one that was already published — because they were missing from
+   that reconstruction. */
+
+test('THE BUG: a stale membership from the client cannot shrink a published list', async () => {
+  stubIdentity();
+  // Twelve papers in the list, ten already published, two hydrated by the
+  // caller. The caller ALSO sends a three-id membership it read minutes ago.
+  const ids = Array.from({ length: 12 }, (_, i) => `arxiv:2608.${18000 + i}`);
+  const published = {
+    title: 'Papers de sugar',
+    paperCount: 10,
+    papers: ids.slice(0, 10).map((id, i) => ({
+      id, title: `Paper ${i}`, authors: ['A'], sourceId: id,
+    })),
+  };
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1', paperIds: ids },
+    [`publicLists/${SHARE}`]: published,
+  });
+
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Papers de sugar',
+    paperIds: ids.slice(0, 3),
+    papers: [
+      paper(10, { doi: undefined, listPaperId: ids[10] }),
+      paper(11, { doi: undefined, listPaperId: ids[11] }),
+    ],
+  }, { admin });
+
+  assert.equal(result.paperCount, 12, 'the list has twelve; the public copy must too');
+  assert.deepEqual(result.papers.map(entry => entry.sourceId ?? entry.id), ids);
+  assert.equal(result.skipped, 0);
+});
+
+test('a paper published under a derived id is found again by the id the list files it under', async () => {
+  stubIdentity();
+  // The exact shape that lost "Observation of perfect absorption…": the public
+  // document keys it `doi:…`, the private list keys it by the bare DOI, and no
+  // client hydrated it this time round.
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1', paperIds: ['10.1038/s41467-025-67163-z'] },
+    [`publicLists/${SHARE}`]: {
+      title: 'Vieja',
+      paperCount: 1,
+      papers: [{
+        id: 'doi:10.1038/s41467-025-67163-z',
+        title: 'Observation of perfect absorption',
+        authors: ['A'],
+        doi: '10.1038/s41467-025-67163-z',
+        sourceId: '10.1038/s41467-025-67163-z',
+      }],
+    },
+  });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Vieja', papers: [],
+  }, { admin });
+  assert.equal(result.paperCount, 1);
+  assert.equal(result.skipped, 0);
+});
+
+test('a document published before sourceId existed still joins on its old spellings', async () => {
+  stubIdentity();
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1', paperIds: ['10.1234/legacy', '2608.18000'] },
+    [`publicLists/${SHARE}`]: {
+      title: 'Vieja',
+      paperCount: 2,
+      papers: [
+        { id: 'doi:10.1234/legacy', title: 'Legacy', authors: [], doi: '10.1234/legacy' },
+        { id: 'arxiv:2608.18000', title: 'Old', authors: [], arxivId: '2608.18000' },
+      ],
+    },
+  });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Vieja', papers: [],
+  }, { admin });
+  assert.equal(result.paperCount, 2, 'no backfill needed for the merge to keep them');
+});
+
+test('a list over the cap truncates instead of refusing to sync ever again', async () => {
+  stubIdentity();
+  const ids = Array.from({ length: 60 }, (_, i) => `arxiv:2608.${18000 + i}`);
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1', paperIds: ids },
+    [`publicLists/${SHARE}`]: {
+      title: 'Larga',
+      paperCount: 60,
+      papers: ids.map((id, i) => ({ id, title: `P${i}`, authors: [], sourceId: id })),
+    },
+  });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Larga', papers: [],
+  }, { admin });
+  assert.equal(result.paperCount, 50);
+  assert.deepEqual({ listCount: result.listCount, skipped: result.skipped },
+    { listCount: 60, skipped: 10 });
+});
+
+test('a private list with no paperIds still falls back to what the caller sent', async () => {
+  stubIdentity();
+  // An older client against the new Worker, or a list document that predates
+  // the field: the merge still has something to work from.
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1' },
+    [`publicLists/${SHARE}`]: {
+      title: 'Vieja',
+      paperCount: 1,
+      papers: [{ id: 'arxiv:2608.18000', title: 'Old', authors: [] }],
+    },
+  });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Vieja',
+    paperIds: ['arxiv:2608.18000'], papers: [],
+  }, { admin });
+  assert.equal(result.paperCount, 1);
 });
 
 test('F12: unpublishing an attributed list removes its showcase card in the SAME commit', async () => {
