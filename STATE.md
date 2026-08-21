@@ -69,19 +69,40 @@ cascada en `arxivService.js`, apuntada aparte.
 convertida en dinero, ese número merece consultarse en vez de deducirse de que el
 feed dejó de funcionar.
 
-### El orden importa
+### El orden importaba, y se respetó
 
-**El cliente no debe desplegarse antes que la clave.** Hoy cada navegador tiene su
-propio presupuesto anónimo; al centralizar por el Worker lo compartirían todos. Sin
-clave eso sería *peor* que ahora, no mejor. La secuencia es:
+El cliente no podía desplegarse antes que la clave: hasta ahora cada navegador
+tenía su propio presupuesto anónimo, y al centralizar por el Worker lo
+compartirían todos. Sin clave eso habría sido *peor* que antes. La secuencia fue
+clave → sondeo → frontend.
 
-```bash
-# 1. @mugar: cuenta en openalex.org y clave en openalex.org/settings/api (gratis)
-npx wrangler secret put OPENALEX_API_KEY
-npm run worker:deploy
-curl -s -H "origin: https://mugar123.github.io" https://papertok-report-api.papertok-mugar123.workers.dev/health/openalex
-# 2. solo con budget.limitUsd = 1, desplegar el frontend
+**Antes** (presupuesto anónimo, desde la red del Worker):
+
+```json
+{"configured": false, "status": 429,
+ "budget": {"limitUsd": 0.1, "remainingUsd": 0, "resetSeconds": 2811}}
 ```
+
+**Después** (clave puesta):
+
+```json
+{"configured": true, "available": true, "status": 200,
+ "budget": {"limitUsd": 1, "remainingUsd": 0.999, "remainingCalls": 9990}}
+```
+
+Verificado además contra la ruta en producción: una consulta real devuelve datos
+(`W4417200107`, 2 citas) con caché de borde de 6 h; una entidad fuera de la lista
+blanca da `400`; una travesía codificada (`%2e%2e%2f`) da `400`; y un
+`api_key=robada` en la query no rompe nada porque se descarta antes de salir.
+Con el presupuesto agotado, la ruta relaya el `429` con su `retry-after: 2796`
+real y las cabeceras expuestas, en vez de aplanarlo.
+
+### Cabo suelto
+
+**Scopus sigue apagado.** `VITE_SCOPUS_ENABLED` está en `false`: funciona de punta
+a punta por la salida de Deno, pero sin entitlement de `COMPLETE` cada paper llega
+sin abstract, y esa decisión de producto quedó abierta cuando el hilo se movió a
+OpenAlex.
 
 ## Scopus funciona, por una salida fuera de Cloudflare y sin abstract (2026-08-22)
 
