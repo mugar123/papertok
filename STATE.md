@@ -97,6 +97,27 @@ blanca da `400`; una travesía codificada (`%2e%2e%2f`) da `400`; y un
 Con el presupuesto agotado, la ruta relaya el `429` con su `retry-after: 2796`
 real y las cabeceras expuestas, en vez de aplanarlo.
 
+### Verificado en vivo, y lo que salió de paso
+
+Con el bundle desplegado y el feed de invitado cargado: **5 llamadas a OpenAlex
+por el Worker, 0 directas, las cinco a 200**. `PAPER_API_BASE` compila a la URL
+del Worker en el bundle, así que la reescritura está activa de verdad.
+
+En la primera pasada **una de cuatro devolvía 400**, y no era de la ruta: era de
+OpenAlex, con el cuerpo diciendo «It looks like you're trying to do an OR query
+between filters and it's not supported». `getArxivIdsForOpenAlexWorks` construía
+`openalex:W1|openalex:W2|…`, que es un OR entre *filtros*; la forma que acepta es
+la clave una vez y los valores OR'd, y esa ya estaba escrita cuarenta líneas más
+arriba en `enrichPapersBatch`. Las dos copias se escribieron a mano y divergieron.
+**La rota llevaba fallando desde siempre**, así que las recomendaciones por
+trabajos relacionados que alimenta nunca llegaban.
+
+Extraído a `buildOpenAlexIdFilter` y usado en los dos sitios para que no puedan
+volver a divergir. Solo salió a la luz porque la ruta nueva **relaya el estado del
+upstream en vez de aplanarlo**; con un 502 genérico habría seguido invisible.
+
+Tras el tráfico real: `0.9929 / 1 USD`, 9.929 llamadas restantes.
+
 ### Cabo suelto
 
 **Scopus sigue apagado.** `VITE_SCOPUS_ENABLED` está en `false`: funciona de punta
