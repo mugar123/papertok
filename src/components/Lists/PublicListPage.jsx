@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BookOpen, Check, Quote, RefreshCw, Share2 } from 'lucide-react';
 import { getCategoryLabel } from '../../data/categories';
+import ScientificText from '../ScientificText.js';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
@@ -298,7 +299,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
                   </div>
                   <h2>
                     <PaperLink destination={destination} label={copy.open(paper.title)}>
-                      {paper.title}
+                      <ScientificText>{paper.title}</ScientificText>
                     </PaperLink>
                   </h2>
                   {paper.authors?.length > 0 && (

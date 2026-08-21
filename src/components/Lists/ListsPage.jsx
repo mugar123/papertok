@@ -21,6 +21,7 @@ import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getCategoryLabel } from '../../data/categories';
 import { getIcon, AVAILABLE_ICONS } from '../../utils/icons';
+import ScientificText from '../ScientificText.js';
 import { paperLegacyAdapter } from '../../models/Paper';
 import { Download, Globe2, Library, Lock, Pencil, Plus, RefreshCw, Share2, Unlink, X } from 'lucide-react';
 import { shareOrCopyLink } from '../../utils/shareLink.js';
@@ -929,7 +930,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                           {paper.categories && paper.categories.length > 0 && (
                             <span className="lists-paper-cat">{getCategoryLabel(paper.categories[0], language)}</span>
                           )}
-                          <p className="lists-paper-title">{paper.title}</p>
+                          <p className="lists-paper-title"><ScientificText>{paper.title}</ScientificText></p>
                           {paper.authors && (
                             <p className="lists-paper-authors">
                               {paper.authors.slice(0, 3).map(a => typeof a === 'string' ? a : a.name).filter(Boolean).join(', ')}{paper.authors.length > 3 && ' et al.'}
@@ -944,7 +945,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                           {record?.note && <p className="lists-paper-note">{record.note}</p>}
                         </div>
                         <div className="lists-paper-actions">
-                          <button className="lists-paper-edit-btn" onClick={(e) => { e.stopPropagation(); onEditPaper?.(paper); }} title={isEnglish ? 'Edit note and tags' : 'Editar nota y etiquetas'}>
+                          {/* The stored id, not the merged paper's: the list
+                              and the library key this paper by `paperId`, and
+                              the modal's membership check and note record
+                              must look under the same key (R8: ids differ by
+                              entry route). */}
+                          <button className="lists-paper-edit-btn" onClick={(e) => { e.stopPropagation(); onEditPaper?.({ ...paper, id: paperId }); }} title={isEnglish ? 'Edit note and tags' : 'Editar nota y etiquetas'}>
                             <Pencil size={17} />
                           </button>
                           <button
@@ -1040,7 +1046,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                       .map((paperId) => getPaper(paperId))
                       .filter(Boolean)
                       .slice(0, 2)
-                      .map((paper) => <p key={paper.id} className="list-card-preview-title">{paper.title}</p>)}
+                      .map((paper) => <p key={paper.id} className="list-card-preview-title"><ScientificText>{paper.title}</ScientificText></p>)}
                   </div>
                 )}
               </div>

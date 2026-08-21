@@ -162,14 +162,18 @@
   padding: var(--space-5) var(--space-4);
 }
 
+/* Selection must be readable at a glance: the whole row carries the state
+   (accent border + tint), and the checkbox is a real box with a real check,
+   not a discreet tick. */
 .save-modal-list-item {
   display: flex;
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3);
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: background var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -178,32 +182,56 @@
   }
 }
 
+.save-modal-list-item.is-selected {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary-glow);
+}
+
 .save-modal-list-item input[type="checkbox"] {
-  display: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .save-modal-checkbox {
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   border-radius: var(--radius-sm);
-  border: 2px solid var(--border-default);
+  border: 2px solid var(--border-strong);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-  transition: all var(--transition-fast);
+  color: transparent;
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.save-modal-checkbox svg {
+  transform: scale(0.6);
+  transition: transform var(--transition-fast);
 }
 
 .save-modal-list-item input:checked + .save-modal-checkbox {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
+  color: #fff;
 }
 
-.save-modal-list-item input:checked + .save-modal-checkbox::after {
-  content: '✓';
-  color: white;
-  font-size: 12px;
-  font-weight: bold;
+.save-modal-list-item input:checked + .save-modal-checkbox svg {
+  transform: scale(1);
+}
+
+.save-modal-list-item input:focus-visible + .save-modal-checkbox {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+.save-modal-list-item.is-selected .save-modal-list-name {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
 }
 
 .save-modal-list-emoji {
@@ -228,13 +256,62 @@
   padding: var(--space-2) var(--space-3);
 }
 
-/* --- New list --- */
+/* --- New list ---------------------------------------------------------------
+   Folded behind its own button under the lists; pressing it unfolds the
+   creation form (icon, name). Lists are born private — publishing is an act
+   on a list with content, over in My lists. */
+
+.save-modal-create-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  min-height: 42px;
+  margin-top: var(--space-3);
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  transition: border-color var(--transition-fast), color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .save-modal-create-toggle:hover {
+    border-color: var(--accent-primary);
+    background: var(--bg-glass);
+    color: var(--text-primary);
+  }
+}
 
 .save-modal-create {
   margin-top: var(--space-3);
   padding: var(--space-3);
-  border: 1px dashed var(--border-default);
+  border: 1px dashed var(--accent-primary);
   border-radius: var(--radius-lg);
+  animation: fadeIn 0.18s ease;
+}
+
+.save-modal-create-cancel {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .save-modal-create-cancel:hover {
+    color: var(--text-primary);
+  }
+}
+
+.save-modal-create-note {
+  margin: var(--space-2) 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
 }
 
 .save-modal-create-label {
@@ -341,21 +418,76 @@
 .save-modal-field textarea:focus,
 .save-modal-field input:focus { outline: none; border-color: var(--accent-primary); }
 
-.save-modal-metadata-btn {
-  align-self: flex-start;
-  min-height: 34px;
-  padding: var(--space-2) var(--space-4);
+/* --- Tags as chips ---------------------------------------------------------
+   One bordered field that holds the chips and the input together: typing and
+   Enter grows it, ✕ (or Backspace on an empty input) shrinks it. */
+
+.save-modal-tag-editor {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: 46px;
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-glass);
+  cursor: text;
+}
+
+.save-modal-tag-editor:focus-within {
+  border-color: var(--accent-primary);
+}
+
+.save-modal-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-1) 3px var(--space-3);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-full);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  background: var(--accent-primary);
-  color: #fff;
+  background: var(--bg-glass-strong);
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  overflow-wrap: anywhere;
+}
+
+.save-modal-tag-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--radius-full);
+  color: var(--text-tertiary);
+  transition: color var(--transition-fast), background var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .save-modal-metadata-btn:hover {
-    background: var(--accent-primary-hover);
+  .save-modal-tag-remove:hover {
+    background: var(--bg-glass-hover);
+    color: var(--text-primary);
   }
+}
+
+/* Scoped under the editor to outrank the generic `.save-modal-field input`
+   rule: the chip input is borderless — the editor box is the field. */
+.save-modal-tag-editor .save-modal-tag-input {
+  flex: 1;
+  width: auto;
+  min-width: 120px;
+  padding: var(--space-1);
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+
+.save-modal-tag-editor .save-modal-tag-input:focus {
+  border: none;
+  box-shadow: none;
+  outline: none;
 }
 
 /* --- Footer: export --- */
@@ -409,6 +541,102 @@
 }
 .save-modal-retry:hover { background: var(--bg-glass-hover); color: var(--text-primary); }
 
+/* --- The save bar -----------------------------------------------------------
+   One button confirms everything. Sticky at the modal's bottom edge (the
+   negative margins re-occupy the modal's padding), so it stays reachable
+   however far the sheet scrolls — which on a phone is the whole point. When
+   closing would lose changes, the bar becomes the discard confirmation. */
+
+.save-modal-savebar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  margin: var(--space-5) calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
+  padding: var(--space-3) var(--space-6) var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0 0 var(--radius-2xl) var(--radius-2xl);
+  background: var(--bg-elevated);
+}
+
+.save-modal-save-btn {
+  display: block;
+  width: 100%;
+  min-height: 42px;
+  border-radius: var(--radius-full);
+  background: var(--accent-primary);
+  color: #fff;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .save-modal-save-btn:not(:disabled):hover {
+    background: var(--accent-primary-hover);
+  }
+}
+
+.save-modal-save-error {
+  margin: 0 0 var(--space-2);
+  color: var(--accent-danger);
+  font-size: var(--fs-xs);
+}
+
+.save-modal-discard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.save-modal-discard p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.save-modal-discard-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.save-modal-discard-btn {
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius-full);
+  color: var(--accent-danger);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  transition: background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .save-modal-discard-btn:hover {
+    background: rgba(239, 68, 68, 0.08);
+  }
+}
+
+.save-modal-keep-btn {
+  min-height: 36px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .save-modal-keep-btn:hover {
+    background: var(--bg-glass-hover);
+  }
+}
+
 /* --- Phone: bottom sheet, like the comments sheet --- */
 
 @media (max-width: 600px) {
@@ -424,6 +652,12 @@
     padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
     animation: slideInFromBottom 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   }
+
+  .save-modal-savebar {
+    margin-bottom: calc(-1 * (var(--space-6) + env(safe-area-inset-bottom, 0px)));
+    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+    border-radius: 0;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -432,7 +666,8 @@
     animation: none;
   }
 
-  .save-modal-list-skeleton {
+  .save-modal-list-skeleton,
+  .save-modal-create {
     animation: none;
   }
 
