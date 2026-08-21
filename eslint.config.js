@@ -23,4 +23,9 @@ export default defineConfig([
     files: ['tests/**/*.js'],
     languageOptions: { globals: { ...globals.browser, ...globals.node } },
   },
+  {
+    // The Scopus egress runs on Deno Deploy; its tests run under Node.
+    files: ['proxy/**/*.js'],
+    languageOptions: { globals: { ...globals.node, Deno: 'readonly' } },
+  },
 ])

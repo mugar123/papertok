@@ -141,7 +141,12 @@ test('validates and batches NIH iCite PubMed identifiers', async () => {
   assert.deepEqual(await response.json(), { data: [{ pmid: 123, citation_count: 7 }] });
 });
 
-test('reports Scopus as unconfigured without contacting Elsevier', async () => {
+const SCOPUS_EGRESS = Object.freeze({
+  SCOPUS_PROXY_URL: 'https://scopus-proxy.example',
+  SCOPUS_PROXY_SECRET: 's'.repeat(48),
+});
+
+test('reports Scopus as unconfigured without contacting the egress', async () => {
   const response = await withWorkerFetchMock(async () => {
     throw new Error('No upstream request should be made');
   }, () => reportApi.fetch(new Request(
@@ -165,7 +170,7 @@ test('names the Elsevier error code when the key is refused from this network', 
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), { ELSEVIER_API_KEY: 'test-key' }),
+    ), SCOPUS_EGRESS),
   );
 
   assert.equal(response.status, 503);
@@ -191,13 +196,13 @@ test('falls back to the STANDARD view and reports that the abstract is missing',
             entry: [{ 'dc:title': 'A result without an abstract' }],
           },
         }),
-        { status: 200, headers: { 'X-RateLimit-Remaining': '19998' } },
+        { status: 200, headers: { 'X-RateLimit-Remaining': '19998', 'X-PaperTok-Insttoken': 'true' } },
       );
     },
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), { ELSEVIER_API_KEY: 'test-key', ELSEVIER_INST_TOKEN: 'test-token' }),
+    ), SCOPUS_EGRESS),
   );
 
   assert.deepEqual(requestedViews, ['COMPLETE', 'STANDARD']);
@@ -221,7 +226,7 @@ test('records what every view answered when Scopus refuses both of them', async 
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), { ELSEVIER_API_KEY: 'test-key' }),
+    ), SCOPUS_EGRESS),
   );
 
   assert.equal(response.status, 503);
@@ -247,7 +252,7 @@ test('reports a COMPLETE view that carries the abstract', async () => {
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/health/scopus',
       { headers: { origin: 'https://mugar123.github.io' } },
-    ), { ELSEVIER_API_KEY: 'test-key' }),
+    ), SCOPUS_EGRESS),
   );
 
   assert.equal(response.status, 200);
@@ -255,6 +260,32 @@ test('reports a COMPLETE view that carries the abstract', async () => {
   assert.equal(health.available, true);
   assert.equal(health.view, 'COMPLETE');
   assert.equal(health.hasAbstract, true);
+});
+
+test('reaches Scopus through the egress and never contacts Elsevier itself', async () => {
+  let upstreamUrl = '';
+  let sentHeaders = null;
+  await withWorkerFetchMock(
+    async (url, options) => {
+      upstreamUrl = String(url);
+      sentHeaders = new Headers(options.headers);
+      return new Response(
+        JSON.stringify({ 'search-results': { entry: [{ 'dc:title': 'A result' }] } }),
+        { status: 200 },
+      );
+    },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/scopus',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), SCOPUS_EGRESS),
+  );
+
+  const target = new URL(upstreamUrl);
+  assert.equal(target.origin, 'https://scopus-proxy.example');
+  assert.equal(target.pathname, '/scopus');
+  assert.equal(sentHeaders.get('authorization'), `Bearer ${SCOPUS_EGRESS.SCOPUS_PROXY_SECRET}`);
+  // The Elsevier key lives on the egress; this Worker must not carry one.
+  assert.equal(sentHeaders.get('X-ELS-APIKey'), null);
 });
 
 test('requires Firebase authentication before a secret-backed source can be used', async () => {

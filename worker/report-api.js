@@ -1106,18 +1106,26 @@ async function scopusFailure(response, view) {
   };
 }
 
+// `api.elsevier.com` is served by Cloudflare, and so is this Worker. A subrequest
+// to a hostname Cloudflare already fronts never leaves its network, and Elsevier
+// answers it with `500 GENERAL_SYSTEM_ERROR` -- measured, and reproduced with no
+// API key at all, while the same request from any other network answers
+// normally. So Scopus is reached through `proxy/scopus-proxy.js` on Deno Deploy,
+// which is where the Elsevier key lives; this Worker never holds it.
+export function isScopusEgressConfigured(env) {
+  return Boolean(env.SCOPUS_PROXY_URL) && Boolean(env.SCOPUS_PROXY_SECRET);
+}
+
 async function fetchScopusSearch(env, { query, start = 0, count = 1 }) {
-  const url = new URL('https://api.elsevier.com/content/search/scopus');
+  const url = new URL(`${String(env.SCOPUS_PROXY_URL).replace(/\/$/, '')}/scopus`);
   url.searchParams.set('query', query);
   url.searchParams.set('start', String(start));
   url.searchParams.set('count', String(count));
 
   const headers = {
     accept: 'application/json',
-    'X-ELS-APIKey': env.ELSEVIER_API_KEY,
-    'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
+    authorization: `Bearer ${env.SCOPUS_PROXY_SECRET}`,
   };
-  if (env.ELSEVIER_INST_TOKEN) headers['X-ELS-Insttoken'] = env.ELSEVIER_INST_TOKEN;
 
   // Every attempt is recorded so a failure names which view Elsevier refused and
   // why. The body of a failed attempt is consumed here; only a successful
@@ -1176,8 +1184,9 @@ function scopusErrorDetail(payload) {
 export async function checkScopusHealth(env) {
   const base = {
     provider: 'scopus',
-    configured: Boolean(env.ELSEVIER_API_KEY),
-    insttoken: Boolean(env.ELSEVIER_INST_TOKEN),
+    configured: isScopusEgressConfigured(env),
+    // Only the egress can see the Elsevier environment, so it reports this back.
+    insttoken: false,
     status: null,
     view: null,
     hasAbstract: false,
@@ -1211,6 +1220,7 @@ export async function checkScopusHealth(env) {
     const entry = Array.isArray(results.entry) ? results.entry[0] : null;
     return {
       ...base,
+      insttoken: response.headers.get('X-PaperTok-Insttoken') === 'true',
       available: Boolean(entry?.['dc:title']),
       status: response.status,
       code: entry?.['dc:title'] ? '' : 'SCOPUS_EMPTY_RESULT',
@@ -1235,7 +1245,7 @@ export async function checkScopusHealth(env) {
 async function handleScopus(request, env, identity) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
-  if (!env.ELSEVIER_API_KEY) {
+  if (!isScopusEgressConfigured(env)) {
     return json({ error: 'Scopus is not configured', code: 'SCOPUS_NOT_CONFIGURED' }, 503, corsHeaders(context.origin, env));
   }
 
@@ -1377,7 +1387,7 @@ export default {
         aiConfigured: Boolean(env.GEMINI_API_KEY || isKimiConfigured(env)),
         openAlexConfigured: Boolean(env.OPENALEX_API_KEY),
         adsConfigured: Boolean(env.NASA_ADS_API_TOKEN),
-        scopusConfigured: Boolean(env.ELSEVIER_API_KEY),
+        scopusConfigured: isScopusEgressConfigured(env),
         emailConfigured: Boolean(
           env.NOTIFICATION_STORE
           && ((env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) || env.RESEND_API_KEY),

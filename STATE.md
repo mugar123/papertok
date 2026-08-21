@@ -1,8 +1,8 @@
 # Estado / pendientes
 
-## Scopus: la clave autentica, pero Scopus la rechaza (2026-08-22)
+## Scopus: la API de Elsevier está detrás de Cloudflare, y el Worker también (2026-08-22)
 
-**Bloqueado a la espera de un token institucional de Elsevier.** La integración
+**La clave siempre fue buena. El problema era la red, y tiene arreglo.** La integración
 estaba entera desde hace tiempo y **nunca se había ejecutado**: en el bundle
 desplegado `VITE_SCOPUS_ENABLED` estaba compilado a `false` (`var uL=!1`), así que
 `isScopusEnabled()` devolvía `false` y ese camino no se tomaba jamás. La clave sí
@@ -47,16 +47,39 @@ credencial desde un tercer sitio —el datacenter de `r.jina.ai`, en dos endpoin
 distintos— y Elsevier devuelve el mismo `401 AUTHENTICATION_ERROR` limpio que a mi
 portátil. O sea: **Elsevier no rechaza a los servidores; rechaza a este Worker.**
 
-Con el matiz honesto de que no conseguí una muestra limpia de un Worker de
-Cloudflare ajeno (el proxy público que probé estaba caído con un 1027 propio de
-Cloudflare), así que lo demostrado es «nuestro Worker», no «todo Cloudflare».
+**Una clave nueva no arregla esto**, y está comprobado: @mugar creó una segunda,
+la puse como secreto del Worker, y devuelve exactamente el mismo 500 en las tres
+vistas.
 
-**Una clave nueva no arregla esto**, y está comprobado: @mugar creó una segunda
-(`Papertok`, website `https://mugar123.github.io/papertok`), la puse como secreto
-del Worker, y devuelve exactamente el mismo 500 en las tres vistas.
+### El mecanismo
 
-Identificadores de petición que pedirá el soporte de Elsevier si se les escribe:
-`3810ef7613bc4a9b`, `bf9f1709bba08220`, `af7ae2e99a17fd56`.
+```
+api.elsevier.com -> api.elsevier.com.cdn.cloudflare.net
+ips: 104.17.38.96, 104.17.39.96      server: cloudflare
+```
+
+**La API de Elsevier está servida por Cloudflare, y nuestro Worker también.** Una
+subpetición de un Worker a un dominio que Cloudflare ya sirve no sale a internet:
+se enruta por dentro, y sin que la zona de destino lo habilite, revienta. Por eso
+el 500 llega incluso sin credencial, y por eso Jina —que no está en Cloudflare—
+pasa. **Ningún Worker de Cloudflare va a poder llamar a `api.elsevier.com`**, ni
+con insttoken ni con otra clave.
+
+### La clave sí funciona
+
+@mugar corrió la consulta desde su portátil con la clave real: **173.504
+resultados**, paper con DOI, `scopus-citedby` y flag de open access. La clave es
+válida y tiene entitlement de Scopus Search. Lo único que sobraba era la salida
+por Cloudflare.
+
+### La vía barata está descartada, y medida
+
+Elsevier admite CORS, así que se podía llamar desde el navegador y ahorrarse el
+proxy. Pero **el «Website URL» del portal no restringe nada**: pedí permiso para
+cuatro orígenes y concedió los cuatro, incluido `https://mugar123.github.io.evil.test`.
+Poner la clave en el bundle es publicarla sin protección alguna — cualquiera quema
+los 20.000 requests/semana. Va además contra la regla escrita en
+`docs/DEVELOPMENT.md`. Descartada.
 
 ### Lo que sí quedó hecho
 
@@ -74,39 +97,40 @@ Identificadores de petición que pedirá el soporte de Elsevier si se les escrib
   `SemanticScholarAdapter`, con su `provider` y su `sources.primary` de verdad.
   Con el Scopus real entrando, el repo tenía dos «Elsevier» y uno era mentira.
 
+### El arreglo: una salida fuera de Cloudflare
+
+`proxy/scopus-proxy.js`, en Deno Deploy. Es donde vive la clave de Elsevier y el
+único sitio donde vive — ya no está en `wrangler secret`, y nunca en un `VITE_*`.
+
+No es un proxy general: sirve una ruta, exige un bearer que solo tiene el Worker,
+y **reconstruye la URL upstream** a partir de parámetros acotados en vez de
+aceptar una URL del que llama. `query` topa en 500 caracteres, `count` en 25,
+`start` en 5000, y una `view` que no sea `COMPLETE` o `STANDARD` se descarta. De
+vuelta solo relaya una lista blanca de cabeceras. Diez tests lo fijan, incluido
+que la clave no se filtra en la respuesta.
+
+El Worker conserva lo suyo: auth de Firebase, cuota por minuto y caché de 6 h.
+`/health/scopus` ahora mide **la cadena entera**, navegador → Worker → salida →
+Scopus.
+
 ### Lo que falta
 
-`VITE_SCOPUS_ENABLED` sigue en `false`, **y así debe quedarse** hasta que
-`/health/scopus` devuelva `available: true`. Encenderlo ahora solo añadiría
-peticiones que fallan.
-
-**Lo que falta no es código, y la siguiente medida la tiene que hacer @mugar**,
-porque es la única que no puedo tomar yo: correr la consulta con la clave real
-desde una red normal. Yo no puedo —el clasificador me impide mandar credenciales
-a servicios externos, y meterlas por un proxy público sería peor todavía.
+Desplegar la salida y encender. Pasos en `proxy/README.md`:
 
 ```bash
-curl -s -H "accept: application/json" -H "X-ELS-APIKey: <la clave>" \
-  'https://api.elsevier.com/content/search/scopus?query=TITLE-ABS-KEY%28%22photosynthesis%22%29&count=1'
+openssl rand -hex 32                          # el secreto compartido
+# variables en Deno Deploy: ELSEVIER_API_KEY, PROXY_SHARED_SECRET
+npx wrangler secret put SCOPUS_PROXY_URL      # https://<proyecto>.deno.dev
+npx wrangler secret put SCOPUS_PROXY_SECRET
+npx wrangler secret delete ELSEVIER_API_KEY   # en Cloudflare no hace nada
+npm run worker:deploy
+curl -s -H "origin: https://mugar123.github.io" https://papertok-report-api.papertok-mugar123.workers.dev/health/scopus
+gh variable set VITE_SCOPUS_ENABLED --body true   # solo si dice available: true
 ```
 
-Dos ramas, y son muy distintas:
-
-- **Si devuelve papers** — la clave sirve desde redes normales y lo único que
-  sobra es la salida por Cloudflare. Se arregla sin depender de Elsevier: mover
-  esa llamada a otra salida (Modal ya está montado en este proyecto para Kimi),
-  dejando en el Worker la auth, la cuota y la caché.
-- **Si devuelve 401/403** — hace falta acceso institucional de verdad, y ahí el
-  camino es el token: la institución suscrita a Scopus *y a su API*, y pedirlo por
-  el formulario de soporte. **El buzón `integrationsupport@elsevier.com` ya no se
-  atiende** (rebota); ahora es
-  <https://service.elsevier.com/app/contact/supporthub/dataasaservice/>.
-
-En cualquiera de las dos ramas, cuando el sondeo diga `available: true`:
-
-```bash
-gh variable set VITE_SCOPUS_ENABLED --body true
-```
+Sigue sin medirse si la clave concede la vista `COMPLETE`, que es la única con
+`dc:description`. Sin abstract, una tarjeta de Scopus en un feed de deslizar no
+vale gran cosa. El sondeo lo dirá en `hasAbstract` en cuanto la salida esté en pie.
 
 Queda por confirmar, además, si sus términos de API admiten un feed público:
 son de uso investigador y PaperTok es un sitio abierto. Merece la pena
