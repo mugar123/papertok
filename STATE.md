@@ -1,5 +1,188 @@
 # Estado / pendientes
 
+## El buscador: un solo asentamiento y un aviso que nombra a quien falla (2026-08-21)
+
+**Implementado, verificado en vivo, commiteado y desplegado** (`e93fcfc`).
+Trabajo de otra sesión; queda registrado aquí desde el commit y la
+verificación que él mismo declara — no lo he re-ejecutado.
+
+Tres fallos con la misma raíz: dos relojes que nadie sincronizaba y un banner
+que hablaba por fuentes que no conocía.
+
+- **El esqueleto moría a los 400 ms.** `usersHaveSomethingToSay` miraba
+  `userStatus`, no las filas, así que en cuanto la consulta de personas
+  *arrancaba* la página se daba por cargada, con las cinco fuentes externas
+  aún en vuelo. Medido: esqueleto hasta 400 ms, «No hay nadie con ese nombre»
+  entre 500 y 800 ms, resultados a partir de 840. Eso era el «primero dice que
+  no hay resultados y luego los carga» que se reportó. Ahora `searchPending`
+  cubre todos los canales que el filtro pinta, incluida la ventana de debounce
+  en la que `userStatus` sigue en `'idle'`. `'slow'` NO cuenta como pendiente:
+  es una espera ya anunciada con una lectura viva detrás.
+- **Los resultados se montaban solos**: se revelaba lo que hubiera a los
+  520 ms y cada fuente rezagada se pintaba por su cuenta, con plazos de hasta
+  6 s, recalculando `preferredSection` en cada render.
+- **El aviso de caída externa mentía.** `describeSearchOutage`
+  (`src/utils/searchOutage.js`) separa «OpenAlex está implicado» de «OpenAlex
+  nos está limitando»: solo el segundo puede prometer una hora. Y el aviso
+  sigue al filtro al que afecta en vez de borrarse al cambiar de píldora.
+
+Dos fallos preexistentes cazados de paso: con `prefers-reduced-motion` todas
+las filas de resultado y de esqueleto eran **invisibles** (la regla base las
+deja en `opacity: 0` y el bloque de movimiento reducido mataba la animación
+que las subía a 1); y el estado vacío ya no afirma «no se encontró nada»
+cuando las fuentes de ese filtro no llegaron a contestar.
+
+Verificado con OpenAlex realmente limitado (~8 h): un solo asentamiento
+(esqueleto → página completa, dos transiciones), cero mensajes intermedios de
+vacío, y el aviso encima de la persona encontrada. Bajo la píldora Usuarios no
+aparece. 872 tests, lint y build limpios.
+
+## Las esperas dejan de presentarse como fallos (2026-08-21)
+
+**Implementado, verificado en vivo contra producción y contra el dev server,
+commiteado y desplegado** (`68a7477` + `9ef21f5`, Pages en verde). Dos
+síntomas reportados por el usuario, tres bugs, una raíz común.
+
+Informe de latencia con las cascadas medidas y los diagnósticos D1–D13:
+https://claude.ai/code/artifact/29a17d68-e9d1-4c57-bb6a-b631319df17f
+
+### El número que lo explica todo: 10 000 ms
+
+`@firebase/firestore` 12.x lleva dentro un `ONLINE_STATE_TIMEOUT` de **10 000
+ms** codificado. Contra una conexión *estancada* —no caída: abierta y muda—
+el SDK tarda exactamente eso en declararse offline y entonces **rechaza** el
+`getDoc` con `code: 'unavailable'`. Reproducido contra producción:
+
+| Lectura | Resultado |
+|---|---|
+| `getDoc` del stub, canal mudo | **rechaza a los 10 003 ms** · `unavailable` |
+| 2ª lectura («Reintentar») | rechaza en **1 ms** |
+| 3ª lectura | rechaza en **0 ms** |
+| `getDocs` del hilo | **resuelve vacío**, `fromCache: true`, a los 10 003 ms |
+
+Con la conexión *rechazada* en vez de muda, el mismo error llega en 13 ms.
+Y el stream se cierra a los **60 000 ms** de inactividad, así que el handshake
+hay que rehacerlo justo cuando alguien abre los comentarios tras un rato
+leyendo el feed. De ahí el «a veces».
+
+**Eso no es un timeout**, así que `isReadTimeout` daba `false` y `patientRead`
+lo clasificaba como fallo determinista. `unavailable` es el error más
+reintentable que produce Firestore.
+
+### Los comentarios (`68a7477`)
+
+`isTransientReadError` (`src/utils/boundedRead.js`) separa «ahora no» de
+«nunca»: `unavailable`, `deadline-exceeded`, `internal`, `cancelled`,
+`aborted`, `resource-exhausted`, `unknown` merecen paciencia; el resto
+—`permission-denied`, `unauthenticated`, `not-found`…— sigue fallando al
+instante. Un rechazo transitorio **ya no asienta la promesa**: reintenta tras
+un backoff exponencial con tope de 8 s, despierta con el evento `online`, y
+sigue reintentando **después** del veredicto para curar la pantalla vía
+`onLateResult`. Requiere `signal` (AbortController) en el cleanup del efecto:
+el bucle sobrevive a la promesa a propósito.
+
+El backoff no es adorno: medido, con el SDK ya en offline los rechazos vuelven
+en 0-1 ms y sin pausa el presupuesto entero se quema en microsegundos.
+
+### Los dos banners de Mis listas (`9ef21f5`)
+
+`ListsPage` se acotaba a mano con `LISTS_LOAD_DEADLINE_MS = 2_500` y **lanzaba
+al expirar**. Ese plazo *era* el banner. 2,5 s está dentro de lo normal: el
+gate de `identitytoolkit/accounts:lookup` mide hasta 470 ms él solo, y la
+primera lectura tras el cierre del stream paga un handshake entero. Lo
+delator: el código dejaba viva la petición y **borraba el error al llegar la
+respuesta**, así que el aviso aparecía y se desvanecía solo.
+
+Igual en los metadatos: un lote que expiró sigue en vuelo y ya se fusiona al
+aterrizar, así que contarlo en `failedRequests` era lo que ponía «no se
+pudieron cargar algunos datos» sobre datos que llegaban un segundo después.
+Ahora cuenta como pendiente.
+
+### El skeleton sin fin al guardar en cadena (`9ef21f5`)
+
+Dos mecanismos sumados:
+
+- **El modal de guardar no tenía caché.** Cada apertura releía hasta
+  `OWN_LISTS_PAGE_SIZE` = **60 documentos de lista**. Cincuenta guardados
+  seguidos eran cincuenta relecturas completas, sobre un canal que además
+  lleva un `arrayUnion` por guardado al **mismo documento** (Firestore sostiene
+  ~1 escritura/s por documento).
+- **Y el arreglo de `68a7477` lo había convertido en espera infinita**, al
+  quitar el error duro sin poner techo. La paciencia sin límite es correcta
+  para un canal que se recupera y equivocada para una condición persistente:
+  sin techo, «seguimos intentándolo» es indistinguible de estar colgado.
+
+Ahora el modal pinta desde `ownListsCache` —la que ya comparten las pantallas
+de perfil— con una **ventana de frescura de 30 s** (`OWN_LISTS_FRESH_MS`), y
+dentro de ella no lee nada. La caché entra por el **mismo `patientRead`** que
+la red en vez de cortocircuitarlo: la pertenencia es por paper, y un atajo
+habría dejado las casillas del paper ANTERIOR en pantalla.
+
+**La obligación que trae la caché**, y es donde estaba el riesgo real:
+`withPaperMembership` (`src/utils/ownLists.js`) refleja en memoria el
+`arrayUnion`/`arrayRemove` que el guardado acaba de escribir. Sin eso, reabrir
+enseñaría la casilla anterior al guardado — peor mentira que el spinner que la
+caché quita. Crear una lista y visitar Mis listas también actualizan la caché.
+`reviseOwnLists` NO renueva la ventana; solo `rememberOwnLists` lo hace, o la
+frescura se auto-extendería para siempre.
+
+### Tres estados de espera donde había dos
+
+Los cuatro consumidores de `patientRead` distinguen ahora:
+
+- `slow` / `offline` — espera joven, `aria-busy`, sin alarma.
+- **`stalled`** — presupuesto agotado (`attempts: 3`, ~18 s + backoff): mensaje
+  honesto y Reintentar, **con `aria-busy` todavía en true** porque el bucle
+  sigue corriendo y `onLateResult` sigue armado.
+- `error` — solo lo que reintentar no arregla.
+
+Aplicado en `CommentsSheet`, `SaveToListModal`, `PublicListPage`, `FollowSheet`
+y `ListsPage`. `SearchPage` es el quinto consumidor y se dejó fuera a
+propósito: otra sesión estaba trabajando en el buscador a la vez.
+
+### Verificado en vivo
+
+Con la red cortada a mano (peticiones a `firestore.googleapis.com`
+**rechazadas** — no mudas):
+
+| t | |
+|---|---|
+| 255 ms | esqueleto |
+| 268 ms | `slow`, «está tardando», `aria-busy=true` |
+| **26 004 ms** | **`stalled`** con su botón — **nunca** «no se pudieron cargar» |
+| 40 515 ms | red restaurada, sin tocar la interfaz |
+| **59 196 ms** | **el hilo se pinta solo** |
+
+Modal: segunda apertura **instantánea y con cero lecturas nuevas**. Camino
+sano sin regresión: 259 ms al esqueleto, 400 ms al hilo. 872 tests (18
+nuevos), lint limpio en el ámbito tocado, build y escaneo de secretos
+correctos.
+
+### Pendiente / lo que NO se tocó
+
+- **`AuthContext` tiene el mismo patrón sin arreglar.** Cazado al inyectar un
+  retardo de 4 s en Firestore para probar el banner: la app se quedó en
+  **«Your profile could not be loaded»** antes de llegar siquiera a Mis
+  listas. Con una conexión meramente lenta te echa de la app entera con un
+  mensaje que culpa al servidor. Es el más visible de los que quedan.
+- **Un límite conocido del arreglo:** si las peticiones se quedan **mudas
+  para siempre** en vez de fallar, el cliente de Firestore queda encallado y
+  ningún reintento de la app lo salva. Medido: un cliente Firestore *nuevo*
+  leía en 154 ms mientras el de la app llevaba 85 s sin emitir una petición.
+  Salir de ahí pide ciclar `enableNetwork(db)` — efecto global sobre la
+  instancia compartida, decisión aparte.
+- **No verificado en vivo**, por el panel oculto que congela las transiciones
+  de `AnimatePresence`: el banner de metadatos de una lista abierta, y la
+  pertenencia al reabrir el modal sobre un paper que **sí** está en la lista.
+  Cubierto por 13 tests unitarios, incluido uno llamado «THE REGRESSION THE
+  CACHE COULD CAUSE».
+- **Los diez diagnósticos de rendimiento del informe (D1–D10) siguen sin
+  tocar**: bundle único de 1,98 MB sin code splitting, el gate de auth por
+  delante de toda lectura, el feed cargándose entero en rutas que no son el
+  feed (`FeedContext.jsx:1302`), los presupuestos en serie de 5 s + 4,5 s
+  antes de la primera tarjeta, OpenReview costando 5,2 s por miss de caché, y
+  los `/sources/*` del Worker sin `AbortController`.
+
 ## P25: las listas públicas se actualizan solas y el botón desaparece (2026-08-21)
 
 **Implementado, verificado de punta a punta contra producción con la cuenta
@@ -251,8 +434,10 @@ Reparado en `3982571` (el `export` que faltaba), verificado antes de empujar
 en un **worktree aislado en HEAD** —build limpio, 838 tests, lint limpio— para
 no tocar los ficheros que la otra sesión seguía usando. Pages en verde.
 
-Lo que queda sin commitear, y es suyo, no mío: `CommentsSheet.jsx`,
-`ProfilePage.jsx`, `FollowSheet.jsx`, `SearchPage.jsx`.
+Lo que quedaba sin commitear entonces —`CommentsSheet.jsx`, `ProfilePage.jsx`,
+`FollowSheet.jsx`, `SearchPage.jsx`— **ya está commiteado y desplegado**: los
+tres primeros en `68a7477` y `9ef21f5`, el cuarto en `e93fcfc`. Ver las dos
+secciones del 2026-08-21 al principio del documento.
 
 ### Pendiente / decisiones no tomadas aquí
 
@@ -270,6 +455,122 @@ Lo que queda sin commitear, y es suyo, no mío: `CommentsSheet.jsx`,
   lo he tocado: es otro arreglo, no el de LaTeX.
 - **`docs/plan/01-DATA-MODEL.md` sigue describiendo `pinnedLists` como
   tarjetas**: quedó pendiente desde F12, no de esto.
+
+## Crear lista abre su propia ventana sobre el modal (2026-08-21)
+
+**Implementado y commiteado** (`33ccbdb`). Trabajo de otra sesión (Claude
+Fable 5); registrado desde el commit, no re-verificado aquí.
+
+«Crear nueva lista» deja de desplegar una caja discontinua incrustada entre
+las listas y la nota: abre un `dialog` hijo centrado sobre el modal de
+guardar, con cabecera propia, campos Nombre e Icono etiquetados (iconos a
+38 px), la nota de privacidad y un pie con Cancelar/Crear.
+
+**El detalle que costó una pasada en vivo:** Escape cae solo sobre la ventana
+hija, con `stopPropagation` en `cancel` y `close`, **porque React propaga esos
+eventos sintéticos por el árbol de componentes** y el `onCancel` del modal
+padre lo cerraba entero. Cerrarla con `.close()` devuelve el foco al botón que
+la abrió. Crear sigue creando la lista vacía y auto-marcándola en pendiente:
+el paper entra al pulsar Guardar.
+
+## F12: listas atribuidas y escaparate del perfil (2026-08-21)
+
+**Implementado y commiteado** (`cd69fda`). Registrado aquí desde el commit y
+el plan; no lo he re-verificado en vivo. Plan completo en
+`docs/plan/06-F12-listas-atribuidas.md` (559 líneas).
+
+Una lista publicada puede **atribuirse** al perfil de su dueño: aparece como
+tarjeta en el escaparate de `/public/user/{handle}`. Publicar y atribuir son
+decisiones distintas — un enlace compartido no arrastra tu nombre al perfil
+salvo que lo pidas.
+
+- **`profileLists/{profileUid}`** guarda las tarjetas denormalizadas
+  (`shareId`, `title`, `emoji`, `paperCount`): suficiente para pintar el
+  escaparate **sin leer `publicLists`**, que es lo que mantiene el coste en
+  una lectura por visita.
+- **Escrito SOLO por el Worker**, en el mismo commit que publica, actualiza,
+  atribuye o despublica (`worker/public-list-api.js`, +296 líneas). Por eso
+  las rules no validan las tarjetas: `allow write: if false`.
+- **La lectura sigue la visibilidad del perfil**: el dueño siempre puede (esa
+  rama cortocircuita antes del `get`), cualquier otro solo mientras el perfil
+  sea público. Ese `get()` es lo que permite que ponerse privado esconda el
+  escaparate **con cero escrituras** y sin cláusulas nuevas en el camino de
+  escritura del perfil — al cliente no se le puede pedir que borre en su batch
+  un documento que no puede escribir.
+- `allow list: if false`: no hay directorio de escaparates. La única puerta de
+  entrada es un perfil que ya puedes leer.
+- `attributePublicList(shareId, attributed)` en `publicListService.js` es
+  idempotente: pedir lo que ya es cierto tiene éxito. Y `migrateLegacyPins` /
+  `migrateHiddenPins` en `userProfileService.js` traen los pines antiguos al
+  modelo nuevo.
+- `onProfile` (espejo de atribución en la lista privada) y `publicSyncedAt`
+  los estampa el Worker; las rules los toleran en `users/{uid}/lists` en vez
+  de protegerlos, porque falsearlos solo descoloca las insignias del propio
+  dueño. 141 líneas nuevas en `tests/firestore.rules.test.js`.
+
+**Pendiente desde aquí:** `docs/plan/01-DATA-MODEL.md` sigue describiendo
+`pinnedLists` como tarjetas.
+
+## El modal de guardar confirma con un solo botón (2026-08-21)
+
+**Implementado y commiteado** (`6cbf6d7`). Registrado desde el commit; no
+re-verificado aquí.
+
+El modal pasa a **confirmación explícita**: marcar listas, la nota, las
+etiquetas y Leer después son estado pendiente, y un único Guardar al pie
+(sticky, siempre a mano en el bottom sheet) lo escribe todo. Guardar aplica el
+diff en las dos direcciones —añade a las recién marcadas, quita de las
+desmarcadas— con **escrituras idempotentes**, así que un fallo parcial se
+reintenta pulsando Guardar otra vez, sin contabilidad aparte.
+
+Cerrar con cambios pendientes (✕, fondo o Escape, interceptado en el `cancel`
+del dialog) ya no pierde nada en silencio: la barra se convierte en «Tienes
+cambios sin guardar» con Descartar / Seguir editando.
+
+Las etiquetas son chips de verdad: Enter o coma crean, ✕ o Backspace sobre el
+input vacío quitan, y pegar «a, b, c» se trocea. La lógica pura vive en
+`src/utils/saveOrganizeModel.js` con sus tests, más dos estructurales:
+ninguna primitiva de escritura fuera de `handleCreateList` y `handleSave`, y
+el camino de Escape pasa por el guard.
+
+**Tres fallos preexistentes cazados por el ciclo en vivo:** el lápiz de una
+fila de lista pasaba el paper con un id que no casaba con el que la lista y la
+biblioteca almacenan (la fila salía desmarcada y la nota se iba a otro
+registro — R8); la caché de `savedPapers` reventaba con `invalid-argument` por
+campos `undefined` en papers que no vienen del feed; y los títulos con LaTeX
+se pintaban crudos en el modal, las filas de listas y la lista pública — ahora
+pasan por `ScientificText`, como el feed.
+
+## Rediseño de listas, guardar, perfil y búsqueda (2026-08-21)
+
+**Implementado y commiteado** (`e8bd40d`, 19 ficheros). Registrado desde el
+commit; no re-verificado aquí.
+
+- **Vista expandida de una lista, rehecha entera**: cabecera con icono,
+  recuento y estado Public/Privada; compartir/actualizar como acciones
+  primarias; exportar y «Dejar de compartir» con nombre en su propia fila; y
+  transición animada índice→expandida con esqueleto de espera al llegar desde
+  el perfil (fuera el flash del índice).
+- **El índice** gana crear lista inline, insignias Public, confirmación al
+  borrar y el patrón de cabecera de la casa en vez del título degradado. La
+  copy del tope público decía 12; F11 lo había subido a 50.
+- **El modal de guardar** se reorganiza en dos secciones que declaran su
+  modelo de guardado (destinos al instante; nota y etiquetas con botón), con
+  selector de iconos etiquetado, esqueletos y bottom sheet en móvil.
+- **Lenguaje de botón primario**: sólido `accent-primary` (Follow, Post,
+  puertas de sesión, crear); el degradado queda para marca. `:focus-visible`
+  propio en vez del anillo del SO, que pintaba un borde ámbar en los diálogos.
+- **Perfil**: engranaje anclado a la cabecera, composición retrato hasta
+  768 px (el tramo 561-768 era el escritorio estirado) y el chip de contenido
+  seguido ya no enseña un 0 colgado.
+- **Lista pública** con categorías humanas, sin «0 citations» y con
+  affordance de enlace en los títulos.
+- **Búsqueda**: el banner de caída externa no se pinta bajo el filtro Users, y
+  el token muerto `--text-muted` pasa a `--text-tertiary`. `SearchPage.css`,
+  `SettingsPage.css` y `FollowingSettingsPage.css` entran en la lista OWNED
+  del test de tokens.
+- **Mis comentarios** enseña la identidad del paper decodificada de la clave.
+  `FollowSheet` se dimensiona por el mayor recuento sin saltar entre pestañas.
 
 ## F11 implementada: publicar listas pasa por el Worker (2026-08-20)
 
