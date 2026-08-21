@@ -6,15 +6,34 @@
   padding: calc(var(--nav-height) + var(--space-6)) var(--space-6) var(--space-16);
 }
 
+/* The same header grammar as Settings and What-you-follow: eyebrow, plain
+   heading, one-line subtitle. This was the only gradient-filled title in the
+   app. */
+.lists-header {
+  margin-bottom: var(--space-6);
+}
+
+.lists-eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--accent-primary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
 .lists-header h1 {
+  margin: 0;
   font-family: var(--font-heading);
   font-size: var(--fs-3xl);
   font-weight: var(--fw-bold);
-  margin-bottom: var(--space-6);
-  background: var(--gradient-brand);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
+}
+
+.lists-subtitle {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
 }
 
 .lists-loading {
@@ -116,9 +135,11 @@
 
 @media (hover: hover) and (pointer: fine) {
   .list-card:hover {
-    transform: translateY(-4px) scale(1.02);
-    box-shadow: 0 12px 24px rgba(0,0,0,0.4);
-    border-color: rgba(255,255,255,0.1);
+    /* The lift the profile cards use — the old -4px + scale bounce was the
+       only hover in the app that jumped. */
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    border-color: var(--border-default);
   }
 }
 
@@ -180,9 +201,142 @@
   margin-bottom: var(--space-1);
 }
 
+.list-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
 .list-card-count {
   font-size: var(--fs-xs);
   color: var(--text-tertiary);
+}
+
+/* --- Create card -------------------------------------------------------------
+   The index's own door for making a list; before this the only way was inside
+   the save modal. */
+
+.list-card--create {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 132px;
+  border: 1px dashed var(--border-default);
+  border-radius: var(--radius-xl);
+  background: none;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  animation: fadeInUp 0.5s ease backwards;
+  animation-delay: calc(var(--stagger-index, 0) * 0.05s);
+  transition: border-color var(--transition-fast), color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .list-card--create:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+    background: var(--bg-glass);
+  }
+}
+
+.list-card-create-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: var(--radius-full);
+  background: var(--bg-glass);
+  color: var(--accent-primary);
+}
+
+.list-card--create-form {
+  border: 1px dashed var(--accent-primary);
+  border-radius: var(--radius-xl);
+  padding: var(--space-4);
+  animation: fadeIn 0.2s ease;
+}
+
+.list-card-form-label {
+  margin: 0 0 var(--space-2);
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.list-card-icon-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+}
+
+.list-card-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.list-card-icon-btn.is-active {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary-glow);
+  color: var(--text-primary);
+}
+
+.list-card-name-input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-sm);
+}
+
+.list-card-create-error {
+  margin: var(--space-2) 0 0;
+  color: var(--accent-danger);
+  font-size: var(--fs-xs);
+}
+
+.list-card-form-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+}
+
+.list-card-create-confirm {
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-full);
+  background: var(--accent-primary);
+  color: #fff;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .list-card-create-confirm:not(:disabled):hover {
+    background: var(--accent-primary-hover);
+  }
+}
+
+.list-card-create-cancel {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
 }
 
 .list-card-preview {
@@ -219,34 +373,81 @@
   }
 }
 
+/* One header for the open list: icon tile + title + meta on the left, the
+   primary share actions on the right, and everything secondary (export,
+   unpublish) on its own quiet row below. */
+.lists-expanded-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+  margin-bottom: var(--space-4);
+}
+
+.lists-expanded-titleblock {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.lists-expanded-icon {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.lists-expanded-copy {
+  min-width: 0;
+}
+
 .lists-expanded-title {
   font-family: var(--font-heading);
   font-size: var(--fs-2xl);
   font-weight: var(--fw-bold);
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  line-height: var(--lh-tight);
   margin: 0;
+  overflow-wrap: anywhere;
 }
 
-.lists-expanded-heading {
+.lists-expanded-meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-4);
-  margin-bottom: var(--space-6);
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-1) 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+.lists-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 1px var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+}
+
+.lists-badge--public {
+  border-color: var(--accent-success);
+  color: var(--accent-success);
 }
 
 .lists-export-actions,
 .lists-paper-actions { display: flex; align-items: center; gap: var(--space-2); }
-
-.lists-expanded-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2);
-}
 
 .lists-export-actions button,
 .lists-share-actions button {
@@ -257,32 +458,76 @@
   min-height: 36px;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-full);
   color: var(--text-secondary);
   font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
 }
 
 .lists-share-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: var(--space-2);
-  padding-left: var(--space-2);
-  border-left: 1px solid var(--border-subtle);
 }
 
 .lists-share-actions button.is-primary {
-  border-color: var(--accent-primary);
+  border-color: transparent;
   background: var(--accent-primary);
-  color: white;
-}
-
-.lists-share-actions button.is-danger {
-  width: 36px;
-  padding: 0;
-  color: var(--accent-danger);
+  color: #fff;
 }
 
 .lists-share-actions button:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.lists-expanded-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.lists-tools-label {
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+.lists-expanded-tools .lists-export-actions button {
+  min-height: 30px;
+  padding: var(--space-1) var(--space-3);
+  border-color: var(--border-subtle);
+}
+
+/* Unpublishing is destructive-adjacent: it keeps its name and its color, not
+   an anonymous icon. */
+.lists-unpublish-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 30px;
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: none;
+  color: var(--accent-danger);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lists-unpublish-btn:not(:disabled):hover {
+    border-color: rgba(239, 68, 68, 0.35);
+    background: rgba(239, 68, 68, 0.08);
+  }
+}
+
+.lists-unpublish-btn:disabled {
   cursor: wait;
   opacity: 0.55;
 }
@@ -332,8 +577,7 @@
 @media (hover: hover) and (pointer: fine) {
   .lists-export-actions button:hover { background: var(--bg-glass-hover); color: var(--text-primary); }
   .lists-share-actions button:not(:disabled):hover { background: var(--bg-glass-hover); color: var(--text-primary); }
-  .lists-share-actions button.is-primary:not(:disabled):hover { background: var(--accent-secondary); }
-  .lists-share-actions button.is-danger:not(:disabled):hover { color: var(--accent-danger); }
+  .lists-share-actions button.is-primary:not(:disabled):hover { background: var(--accent-primary-hover); color: #fff; }
 }
 
 .lists-expanded-papers {
@@ -352,6 +596,55 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  /* Same sober stagger the cards already had; capped in the JSX so a long
+     list does not turn into a cascade. */
+  animation: fadeInUp 0.4s ease backwards;
+  animation-delay: calc(var(--stagger-index, 0) * 0.04s);
+}
+
+.lists-paper-item--skeleton {
+  cursor: default;
+}
+
+.lists-paper-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-1) 0;
+}
+
+.lists-skeleton-bar {
+  height: 12px;
+  width: 40%;
+  border-radius: var(--radius-full);
+  background: var(--bg-glass-strong);
+  animation: lists-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.lists-skeleton-bar--wide {
+  height: 16px;
+  width: 72%;
+}
+
+.lists-skeleton-row {
+  height: 96px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-glass);
+  animation: lists-skeleton-pulse 1.4s ease-in-out infinite;
+}
+
+.lists-opening {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding-top: var(--space-8);
+}
+
+@keyframes lists-skeleton-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -449,48 +742,44 @@
   color: var(--text-tertiary);
 }
 
-/* Empty States */
+/* Empty states — the icon + fact + hint shape the rest of the app settled on. */
 .lists-empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
+  gap: var(--space-2);
   text-align: center;
-  padding: var(--space-12) var(--space-6);
-  background: rgba(255, 255, 255, 0.02);
-  border-radius: var(--radius-2xl);
-  border: 1px dashed rgba(255, 255, 255, 0.1);
-  margin-top: var(--space-8);
-  animation: fadeIn 0.6s ease-out;
+  padding: var(--space-10) var(--space-6);
+  animation: fadeIn 0.4s ease-out;
 }
 
-.lists-empty-state-icon {
-  font-size: 48px;
-  margin-bottom: var(--space-4);
-  opacity: 0.5;
+.lists-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  margin-bottom: var(--space-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--accent-primary);
 }
 
 .lists-empty-state h3 {
   font-family: var(--font-heading);
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-bold);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
   color: var(--text-primary);
-  margin-bottom: var(--space-2);
+  margin: 0;
 }
 
 .lists-empty-state p {
-  color: var(--text-secondary);
-  font-size: var(--fs-base);
-  max-width: 300px;
-}
-
-.lists-empty-text {
-  text-align: center;
-  padding: var(--space-8);
   color: var(--text-tertiary);
-  font-style: italic;
   font-size: var(--fs-sm);
-  animation: fadeIn 0.3s ease;
+  max-width: 340px;
+  margin: 0;
 }
 
 /* Animations */
@@ -509,13 +798,34 @@
     gap: var(--space-3);
   }
 
-  .lists-expanded-heading { align-items: flex-start; flex-direction: column; }
-  .lists-expanded-actions { width: 100%; justify-content: flex-start; }
-  .lists-share-actions { padding: var(--space-2) 0 0; border-left: 0; border-top: 1px solid var(--border-subtle); }
+  .lists-expanded-header { flex-direction: column; align-items: stretch; }
+  .lists-share-actions button { flex: 1; }
+  .lists-expanded-tools { align-items: flex-start; flex-direction: column; }
 }
 
 @media (max-width: 768px) {
   .lists-page {
     padding-bottom: calc(var(--nav-height-mobile) + var(--space-8));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .list-card,
+  .list-card--create,
+  .lists-paper-item,
+  .lists-expanded,
+  .lists-empty-state {
+    animation: none;
+  }
+
+  .lists-skeleton-bar,
+  .lists-skeleton-row {
+    animation: none;
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .list-card:hover {
+      transform: none;
+    }
   }
 }

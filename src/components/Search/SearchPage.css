@@ -85,7 +85,7 @@
 }
 
 .search-icon {
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   margin-right: 10px;
   flex-shrink: 0;
 }
@@ -173,7 +173,7 @@
 }
 
 .search-filter-pill svg {
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   transition: color 180ms ease, transform 180ms ease;
 }
 
@@ -360,7 +360,7 @@
 
 .search-empty span {
   font-size: 0.85rem;
-  color: var(--text-muted);
+  color: var(--text-tertiary);
 }
 
 /* ─── Sections ─── */
@@ -387,7 +387,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   padding-left: 4px;
 }
 
@@ -510,7 +510,7 @@
   align-items: center;
   gap: 8px;
   font-size: 0.75rem;
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   margin-top: 6px;
 }
 
@@ -687,7 +687,7 @@
   gap: 8px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-tertiary);
   margin: 0 0 16px 0;
   text-transform: uppercase;
   letter-spacing: 0;
@@ -835,10 +835,10 @@
 
 .search-users-note > svg {
   flex-shrink: 0;
-  /* --text-secondary and not --text-muted: the latter is used seven times in
-     this file and defined nowhere, so every one of those declarations is
-     dropped in silence. Pre-existing, not this section's to fix — but not
-     something to add an eighth instance of either. */
+  /* This file used an undefined --text-muted seven times; those declarations
+     were dropped in silence. They now use --text-tertiary, and this file is in
+     the OWNED list of profileStyles.test.js so the next ghost token fails a
+     test instead of shipping. */
   color: var(--text-secondary);
 }
 

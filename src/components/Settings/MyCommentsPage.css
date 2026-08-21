@@ -12,16 +12,35 @@
 
 .my-comments-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: var(--space-3);
   margin-bottom: var(--space-6);
+}
+
+.my-comments-heading {
+  min-width: 0;
+}
+
+.my-comments-eyebrow {
+  margin: 0 0 var(--space-1);
+  color: var(--accent-primary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .my-comments-header h1 {
   margin: 0;
   font-family: var(--font-heading);
-  font-size: var(--fs-xl);
+  font-size: var(--fs-2xl);
   font-weight: var(--fw-bold);
+}
+
+.my-comments-subtitle {
+  margin: var(--space-2) 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
 }
 
 .my-comments-back {
@@ -96,6 +115,36 @@
   color: var(--accent-primary);
 }
 
+.my-comments-state-title {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.my-comments-cta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  margin-top: var(--space-2);
+  padding: 0 var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+  transition: border-color var(--transition-fast);
+}
+
+.my-comments-cta:hover,
+.my-comments-cta:focus-visible {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
 .my-comments-list {
   list-style: none;
   margin: 0;
@@ -110,6 +159,20 @@
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   background: var(--bg-card);
+  animation: my-comments-row-in 0.35s ease backwards;
+}
+
+/* A short entrance cascade for the first rows; anything later arrives settled. */
+.my-comments-item:nth-child(1) { animation-delay: 0.03s; }
+.my-comments-item:nth-child(2) { animation-delay: 0.07s; }
+.my-comments-item:nth-child(3) { animation-delay: 0.11s; }
+.my-comments-item:nth-child(4) { animation-delay: 0.15s; }
+.my-comments-item:nth-child(5) { animation-delay: 0.19s; }
+.my-comments-item:nth-child(n+6) { animation-delay: 0.22s; }
+
+@keyframes my-comments-row-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .my-comments-item-meta {
@@ -138,12 +201,21 @@
   color: var(--accent-danger);
 }
 
+/* What the reader wrote is the row's content, not its metadata: primary, not
+   grey. */
 .my-comments-item-text {
   margin: var(--space-2) 0 0;
-  color: var(--text-secondary);
+  color: var(--text-primary);
   font-size: var(--fs-sm);
   line-height: var(--lh-relaxed);
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.my-comments-paper-id {
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
   overflow-wrap: anywhere;
 }
 
@@ -216,7 +288,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .my-comments-skeleton {
+  .my-comments-skeleton,
+  .my-comments-item {
     animation: none;
   }
 }

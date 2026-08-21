@@ -233,17 +233,31 @@ export default function SaveToListModal({ paper, onClose }) {
 
   const handleClose = () => { dialogRef.current?.close(); onClose(); };
 
+  // Two sections with two different save models, each saying which one it is:
+  // destinations save on tap; the note and tags wait for their button. Before
+  // this everything sat in one column and nothing said what saved when.
   return (
     <dialog ref={dialogRef} className="save-modal-dialog" onClose={handleClose}
       onClick={(e) => { if (e.target === dialogRef.current) handleClose(); }}>
       <div className="save-modal glass-strong">
         <div className="save-modal-header">
           <h2>{isEnglish ? 'Save and organize' : 'Guardar y organizar'}</h2>
-          <button className="save-modal-close" onClick={handleClose}>✕</button>
+          <button
+            className="save-modal-close"
+            onClick={handleClose}
+            aria-label={isEnglish ? 'Close' : 'Cerrar'}
+          >✕</button>
         </div>
         <p className="save-modal-paper-title">{paper.title}</p>
 
-        <section className="save-modal-personal" aria-label={isEnglish ? 'Personal reading tools' : 'Herramientas personales de lectura'}>
+        <section className="save-modal-destinations" aria-label={isEnglish ? 'Save to' : 'Guardar en'}>
+          <div className="save-modal-section-head">
+            <p className="save-modal-section-title">{isEnglish ? 'Save to' : 'Guardar en'}</p>
+            <p className="save-modal-section-hint">
+              {isEnglish ? 'Changes here save instantly.' : 'Aquí los cambios se guardan al momento.'}
+            </p>
+          </div>
+
           <button
             className={`save-modal-read-later ${libraryRecord.readLater ? 'active' : ''}`}
             onClick={() => toggleReadLater(paper)}
@@ -260,6 +274,92 @@ export default function SaveToListModal({ paper, onClose }) {
             </span>
           </button>
 
+          {listsStatus === 'loading' ? (
+            <div className="save-modal-lists" aria-busy="true" aria-label={isEnglish ? 'Loading lists...' : 'Cargando listas...'}>
+              <div className="save-modal-list-skeleton" />
+              <div className="save-modal-list-skeleton" />
+            </div>
+          ) : listsStatus === 'unavailable' ? (
+            <div className="save-modal-loading" role="status">
+              {isEnglish
+                ? 'Your lists could not be loaded. They are still there.'
+                : 'No se pudieron cargar tus listas. Siguen ahí.'}
+              <button
+                className="save-modal-retry"
+                onClick={() => { setListsStatus('loading'); setListsAttempt((n) => n + 1); }}
+              >
+                {isEnglish ? 'Try again' : 'Reintentar'}
+              </button>
+            </div>
+          ) : (
+            <div className="save-modal-lists">
+              {lists.map((list) => (
+                <label key={list.id} className="save-modal-list-item">
+                  <input type="checkbox" checked={paperLists.has(list.id)}
+                    onChange={() => handleToggleList(list.id)} />
+                  <span className="save-modal-checkbox" />
+                  <span className="save-modal-list-emoji">
+                    {(() => {
+                      const Icon = getIcon(list.emoji);
+                      return <Icon size={20} strokeWidth={1.5} />;
+                    })()}
+                  </span>
+                  <span className="save-modal-list-name">{list.name}</span>
+                  <span className="save-modal-list-count">{list.paperIds?.length || 0}</span>
+                </label>
+              ))}
+              {lists.length === 0 && (
+                <p className="save-modal-empty">
+                  {isEnglish
+                    ? 'No lists yet — create the first one right below.'
+                    : 'Aún no tienes listas: crea la primera aquí debajo.'}
+                </p>
+              )}
+            </div>
+          )}
+
+          <div className="save-modal-create">
+            <p className="save-modal-create-label" id="save-modal-icon-label">
+              {isEnglish ? 'New list' : 'Nueva lista'}
+            </p>
+            <div
+              className="save-modal-emoji-picker"
+              role="radiogroup"
+              aria-labelledby="save-modal-icon-label"
+            >
+              {AVAILABLE_ICONS.map((iconName) => {
+                const Icon = getIcon(iconName);
+                return (
+                  <button key={iconName}
+                    type="button"
+                    role="radio"
+                    aria-checked={newListIcon === iconName}
+                    aria-label={iconName}
+                    className={`save-modal-emoji-btn ${newListIcon === iconName ? 'active' : ''}`}
+                    onClick={() => setNewListIcon(iconName)}>
+                    <Icon size={20} strokeWidth={1.5} />
+                  </button>
+                );
+              })}
+            </div>
+            <div className="save-modal-create-row">
+              <input type="text" placeholder={isEnglish ? 'Name...' : 'Nombre...'} value={newListName}
+                onChange={(e) => setNewListName(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleCreateList()}
+                className="save-modal-input" />
+              <button className="save-modal-create-btn" onClick={handleCreateList}
+                disabled={!newListName.trim()}>{isEnglish ? 'Create' : 'Crear'}</button>
+            </div>
+          </div>
+        </section>
+
+        <section className="save-modal-personal" aria-label={isEnglish ? 'Private note and tags' : 'Nota privada y etiquetas'}>
+          <div className="save-modal-section-head">
+            <p className="save-modal-section-title">{isEnglish ? 'Note and tags' : 'Nota y etiquetas'}</p>
+            <p className="save-modal-section-hint">
+              {isEnglish ? 'Private to you; saved with the button.' : 'Solo tú los ves; se guardan con el botón.'}
+            </p>
+          </div>
           <label className="save-modal-field">
             <span><StickyNote size={16} /> {isEnglish ? 'Private note' : 'Nota privada'}</span>
             <textarea
@@ -278,83 +378,22 @@ export default function SaveToListModal({ paper, onClose }) {
             />
             <small>{isEnglish ? 'Separate them with commas' : 'Sepáralas con comas'}</small>
           </label>
-          <div className="save-modal-personal-actions">
-            <button className="save-modal-metadata-btn" onClick={handleSaveMetadata}>
-              {metadataSaved
-                ? (isEnglish ? 'Saved' : 'Guardado')
-                : (isEnglish ? 'Save note and tags' : 'Guardar nota y etiquetas')}
-            </button>
-            <div className="save-modal-export" aria-label={isEnglish ? 'Export citation' : 'Exportar cita'}>
-              <button onClick={() => downloadCitationFile([paper], 'bibtex', 'papertok-paper')} title={isEnglish ? 'Export BibTeX' : 'Exportar BibTeX'}>
-                <Download size={15} /> BibTeX
-              </button>
-              <button onClick={() => downloadCitationFile([paper], 'ris', 'papertok-paper')} title={isEnglish ? 'Export RIS' : 'Exportar RIS'}>
-                <Download size={15} /> RIS
-              </button>
-            </div>
-          </div>
+          <button className="save-modal-metadata-btn" onClick={handleSaveMetadata}>
+            {metadataSaved
+              ? (isEnglish ? 'Saved' : 'Guardado')
+              : (isEnglish ? 'Save note and tags' : 'Guardar nota y etiquetas')}
+          </button>
         </section>
 
-        {listsStatus === 'loading' ? (
-          <div className="save-modal-loading">{isEnglish ? 'Loading lists...' : 'Cargando listas...'}</div>
-        ) : listsStatus === 'unavailable' ? (
-          <div className="save-modal-loading" role="status">
-            {isEnglish
-              ? 'Your lists could not be loaded. They are still there.'
-              : 'No se pudieron cargar tus listas. Siguen ahí.'}
-            <button
-              className="save-modal-retry"
-              onClick={() => { setListsStatus('loading'); setListsAttempt((n) => n + 1); }}
-            >
-              {isEnglish ? 'Try again' : 'Reintentar'}
+        <div className="save-modal-footer">
+          <span className="save-modal-footer-label">{isEnglish ? 'Export citation' : 'Exportar cita'}</span>
+          <div className="save-modal-export">
+            <button onClick={() => downloadCitationFile([paper], 'bibtex', 'papertok-paper')} title={isEnglish ? 'Export BibTeX' : 'Exportar BibTeX'}>
+              <Download size={15} /> BibTeX
             </button>
-          </div>
-        ) : (
-          <div className="save-modal-lists">
-            <p className="save-modal-section-title">{isEnglish ? 'Custom lists' : 'Listas personalizadas'}</p>
-            {lists.map((list) => (
-              <label key={list.id} className="save-modal-list-item">
-                <input type="checkbox" checked={paperLists.has(list.id)}
-                  onChange={() => handleToggleList(list.id)} />
-                <span className="save-modal-checkbox" />
-                <span className="save-modal-list-emoji">
-                  {(() => {
-                    const Icon = getIcon(list.emoji);
-                    return <Icon size={20} strokeWidth={1.5} />;
-                  })()}
-                </span>
-                <span className="save-modal-list-name">{list.name}</span>
-                <span className="save-modal-list-count">{list.paperIds?.length || 0}</span>
-              </label>
-            ))}
-            {lists.length === 0 && (
-              <p className="save-modal-empty">
-                {isEnglish ? 'You do not have any lists yet. Create one.' : 'Aún no tienes listas. ¡Crea una!'}
-              </p>
-            )}
-          </div>
-        )}
-
-        <div className="save-modal-create">
-          <div className="save-modal-emoji-picker">
-            {AVAILABLE_ICONS.map((iconName) => {
-              const Icon = getIcon(iconName);
-              return (
-                <button key={iconName}
-                  className={`save-modal-emoji-btn ${newListIcon === iconName ? 'active' : ''}`}
-                  onClick={() => setNewListIcon(iconName)}>
-                  <Icon size={20} strokeWidth={1.5} />
-                </button>
-              );
-            })}
-          </div>
-          <div className="save-modal-create-row">
-            <input type="text" placeholder={isEnglish ? 'New list...' : 'Nueva lista...'} value={newListName}
-              onChange={(e) => setNewListName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreateList()}
-              className="save-modal-input" />
-            <button className="save-modal-create-btn" onClick={handleCreateList}
-              disabled={!newListName.trim()}>{isEnglish ? 'Create' : 'Crear'}</button>
+            <button onClick={() => downloadCitationFile([paper], 'ris', 'papertok-paper')} title={isEnglish ? 'Export RIS' : 'Exportar RIS'}>
+              <Download size={15} /> RIS
+            </button>
           </div>
         </div>
       </div>

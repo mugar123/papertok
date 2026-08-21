@@ -55,7 +55,8 @@ const COPY = {
   title: { es: 'Comentarios', en: 'Comments' },
   close: { es: 'Cerrar', en: 'Close' },
   loading: { es: 'Cargando...', en: 'Loading...' },
-  empty: { es: 'Nadie ha comentado todavía. Abre la conversación.', en: 'Nobody has commented yet. Start the conversation.' },
+  emptyTitle: { es: 'Nadie ha comentado todavía', en: 'Nobody has commented yet' },
+  empty: { es: 'Abre la conversación.', en: 'Start the conversation.' },
   loadError: { es: 'No se pudieron cargar los comentarios.', en: 'The comments could not be loaded.' },
   slowLoad: {
     es: 'Está tardando más de lo normal. Seguimos intentándolo.',
@@ -695,6 +696,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               <span className="comments-sheet-state-icon" aria-hidden="true">
                 <MessageCircle size={20} />
               </span>
+              <p className="comments-sheet-state-title">{text(COPY.emptyTitle)}</p>
               <p>{text(COPY.empty)}</p>
             </div>
           )}

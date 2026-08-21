@@ -23,6 +23,10 @@ import { readFile } from 'node:fs/promises';
  */
 const INJECTED_PROPERTIES = new Map([
   ['--stagger-index', '../Lists/ListsPage.jsx'],
+  ['--loading-row-index', '../Search/SearchPage.jsx'],
+  ['--search-item-index', '../Search/SearchPage.jsx'],
+  ['--settings-index', '../Settings/SettingsPage.jsx'],
+  ['--follow-rows', '../Public/FollowSheet.jsx'],
 ]);
 
 const OWNED = [
@@ -46,13 +50,15 @@ const OWNED = [
   // (`--nav-height`, `--accent-success`, `--accent-danger`) are exactly the kind
   // that get typed from memory and silently dropped.
   '../Lists/PublicListPage.css',
-  // `../Search/UserSearchPage.css` was here until the standalone people search
-  // was folded into SearchPage. SearchPage.css does NOT replace it in this
-  // list, and that is a deliberate hole with a date on it: pointing the check
-  // at that file today reports `--text-muted`, used there seven times and
-  // defined nowhere — a real instance of exactly the bug this test exists to
-  // catch, but a pre-existing one whose fix changes how the search page looks.
-  // Adding the file is a one-line change once that token is dealt with.
+  // Joined once its dead `--text-muted` (used seven times, defined nowhere,
+  // every declaration silently dropped) was replaced with the existing
+  // `--text-tertiary` in the redesign pass. Its two locally-injected
+  // properties are declared above.
+  '../Search/SearchPage.css',
+  // Both were already clean when checked during the redesign pass; adding them
+  // costs nothing and covers the settings surface too.
+  '../Settings/SettingsPage.css',
+  '../Settings/FollowingSettingsPage.css',
 ];
 
 test('every design token used by the profile screens is actually defined', async () => {

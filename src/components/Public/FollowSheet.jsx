@@ -107,11 +107,30 @@ export default function FollowSheet({
     [],
   );
 
+  // The body height tracks the LARGER of the two counts (both are known when
+  // the sheet opens), so switching tabs still never resizes the dialog — the
+  // rule the old fixed height existed for — while a two-row list no longer
+  // floats in a full-height void. Capped at 8 rows: past that the list
+  // scrolls. "1000+" parses as 1000 and lands on the cap.
+  const expectedRows = useMemo(() => {
+    const numeric = (value) => {
+      const parsed = Number.parseInt(String(value ?? ''), 10);
+      return Number.isFinite(parsed) ? parsed : null;
+    };
+    const known = [numeric(counts?.followers), numeric(counts?.following)]
+      .filter(value => value != null);
+    if (known.length === 0) return null;
+    return Math.min(8, Math.max(3, Math.max(...known)));
+  }, [counts]);
+
   const copy = isEnglish ? {
     followers: 'Followers',
     following: 'Following',
     close: 'Close',
     emptyTitle: mode === 'followers' ? 'No followers yet' : 'Not following anyone yet',
+    emptyHint: mode === 'followers'
+      ? 'When someone follows this account, they will show up here.'
+      : 'Users this account follows will show up here.',
     more: 'Load more',
     loading: 'Loading...',
     error: 'This list could not be loaded.',
@@ -122,6 +141,9 @@ export default function FollowSheet({
     following: 'Siguiendo',
     close: 'Cerrar',
     emptyTitle: mode === 'followers' ? 'Sin seguidores todavía' : 'Sin usuarios seguidos todavía',
+    emptyHint: mode === 'followers'
+      ? 'Cuando alguien siga esta cuenta, aparecerá aquí.'
+      : 'Aquí aparecerán los usuarios que siga esta cuenta.',
     more: 'Cargar más',
     loading: 'Cargando...',
     error: 'No se pudo cargar esta lista.',
@@ -251,6 +273,7 @@ export default function FollowSheet({
         aria-modal="true"
         aria-label={mode === 'followers' ? copy.followers : copy.following}
         {...sheetMotion}
+        style={expectedRows != null ? { '--follow-rows': expectedRows } : undefined}
         onClick={event => event.stopPropagation()}
       >
         <header className="follow-sheet-header">
@@ -307,7 +330,8 @@ export default function FollowSheet({
               <span className="follow-sheet-state-icon" aria-hidden="true">
                 <UsersRound size={20} />
               </span>
-              <p>{copy.emptyTitle}</p>
+              <p className="follow-sheet-state-title">{copy.emptyTitle}</p>
+              <p>{copy.emptyHint}</p>
             </div>
           )}
           <AnimatePresence initial={false}>

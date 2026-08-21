@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, MessageCircle, Trash2 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { deleteComment, fetchMyCommentsPage } from '../../services/commentService.js';
+import { decodeCanonicalPaperKey } from '../../utils/paperCanonicalKey.js';
 import './MyCommentsPage.css';
 
 /**
@@ -13,10 +14,17 @@ import './MyCommentsPage.css';
  */
 
 const COPY = {
+  eyebrow: { es: 'Tu actividad', en: 'Your activity' },
   title: { es: 'Mis comentarios', en: 'My comments' },
+  subtitle: {
+    es: 'Lo que has escrito en papers, con lo moderado incluido.',
+    en: 'What you have written on papers, moderated items included.',
+  },
   back: { es: 'Volver', en: 'Back' },
   loading: { es: 'Cargando...', en: 'Loading...' },
+  emptyTitle: { es: 'Todavía no has comentado', en: 'No comments yet' },
   empty: { es: 'Todavía no has comentado ningún paper.', en: 'You have not commented on any paper yet.' },
+  emptyCta: { es: 'Explorar papers', en: 'Explore papers' },
   error: { es: 'No se pudieron cargar tus comentarios.', en: 'Your comments could not be loaded.' },
   retry: { es: 'Reintentar', en: 'Try again' },
   more: { es: 'Cargar más', en: 'Load more' },
@@ -111,7 +119,11 @@ export default function MyCommentsPage() {
           <button type="button" className="my-comments-back" onClick={goBack} aria-label={text(COPY.back)}>
             <ArrowLeft size={18} />
           </button>
-          <h1>{text(COPY.title)}</h1>
+          <div className="my-comments-heading">
+            <p className="my-comments-eyebrow">{text(COPY.eyebrow)}</p>
+            <h1>{text(COPY.title)}</h1>
+            <p className="my-comments-subtitle">{text(COPY.subtitle)}</p>
+          </div>
         </header>
 
         {feedback && <p className="my-comments-feedback" role="status">{feedback}</p>}
@@ -143,16 +155,24 @@ export default function MyCommentsPage() {
         {state.status === 'ready' && state.rows.length === 0 && (
           <div className="my-comments-state">
             <span className="my-comments-state-icon" aria-hidden="true"><MessageCircle size={20} /></span>
+            <h2 className="my-comments-state-title">{text(COPY.emptyTitle)}</h2>
             <p>{text(COPY.empty)}</p>
+            <Link className="my-comments-cta" to="/">{text(COPY.emptyCta)}</Link>
           </div>
         )}
 
         {state.status === 'ready' && state.rows.length > 0 && (
           <ul className="my-comments-list">
-            {state.rows.map(row => (
+            {state.rows.map(row => {
+              // The comment document stores no paper title, but its key
+              // decodes to an honest identity (arxiv:…, doi:…) — enough
+              // context to tell the rows apart without inventing data.
+              const paperIdentity = row.paperKey ? decodeCanonicalPaperKey(row.paperKey) : null;
+              return (
               <li key={`${row.paperKey}/${row.id}`} className="my-comments-item">
                 <div className="my-comments-item-meta">
                   <span className="my-comments-item-date">{formatDate(row.createdAt, locale)}</span>
+                  {paperIdentity && <span className="my-comments-paper-id">{paperIdentity}</span>}
                   {row.replyTo && <span className="my-comments-chip">{text(COPY.reply)}</span>}
                   {row.editedAt && <span className="my-comments-item-date">{text(COPY.edited)}</span>}
                   {row.status === 'hidden' && (
@@ -185,7 +205,8 @@ export default function MyCommentsPage() {
                   )}
                 </div>
               </li>
-            ))}
+              );
+            })}
           </ul>
         )}
 

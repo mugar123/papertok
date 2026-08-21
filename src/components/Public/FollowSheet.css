@@ -104,8 +104,13 @@
   color: var(--text-primary);
 }
 
+/* Sized by the larger of the two counts (--follow-rows, injected by the
+   component; both counts are known before the sheet opens), so switching tabs
+   never resizes the dialog — the rule the old fixed height enforced — but a
+   near-empty list no longer floats in a full-height void. Falls back to the
+   old fixed height when no count is known. */
 .follow-sheet-body {
-  height: min(72dvh, 560px);
+  height: min(72dvh, 560px, calc(var(--follow-rows, 9) * 58px + 72px));
   overflow-y: auto;
   padding: var(--space-2) var(--space-3) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
 }
@@ -145,6 +150,14 @@
 
 .follow-sheet-state p {
   margin: 0;
+  max-width: 34ch;
+}
+
+.follow-sheet-state-title {
+  font-family: var(--font-heading);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
 }
 
 .follow-sheet-state .follow-sheet-more {
@@ -282,7 +295,7 @@
   }
 
   .follow-sheet-body {
-    height: min(52vh, 440px);
+    height: min(52vh, 440px, calc(var(--follow-rows, 8) * 58px + 72px));
     padding-bottom: var(--space-4);
   }
 }

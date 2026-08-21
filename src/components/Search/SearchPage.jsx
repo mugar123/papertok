@@ -674,7 +674,10 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
               </div>
             )}
 
-            {searchIssue && !isSearching && (
+            {/* The banner reports the EXTERNAL sources. Under the Users filter
+                none of them is even queried, so a stale outage banner there
+                would blame a view that worked. */}
+            {searchIssue && !isSearching && activeSearchFilter !== 'users' && (
               <div
                 className={`search-service-state ${hasResults ? 'is-partial' : 'is-error'}`}
                 role={hasResults ? 'status' : 'alert'}

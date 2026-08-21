@@ -10,17 +10,19 @@ import {
   documentId,
   doc,
   deleteDoc,
+  setDoc,
   updateDoc,
   arrayRemove,
   limit,
 } from 'firebase/firestore';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getCategoryLabel } from '../../data/categories';
-import { getIcon } from '../../utils/icons';
+import { getIcon, AVAILABLE_ICONS } from '../../utils/icons';
 import { paperLegacyAdapter } from '../../models/Paper';
-import { Download, Globe2, Pencil, RefreshCw, Share2, Unlink, X } from 'lucide-react';
+import { Download, Globe2, Library, Lock, Pencil, Plus, RefreshCw, Share2, Unlink, X } from 'lucide-react';
 import { shareOrCopyLink } from '../../utils/shareLink.js';
 import { downloadCitationFile } from '../../utils/readingLibrary';
 import { settleWithin } from '../../utils/asyncTiming';
@@ -106,8 +108,16 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   const [error, setError] = useState(null);
   const [reloadToken, setReloadToken] = useState(0);
   const [shareFeedback, setShareFeedback] = useState(null);
+  // The inline create form on the index: nothing else in the app can create a
+  // list outside the save modal, and an index of lists needs its own door.
+  const [creating, setCreating] = useState(false);
+  const [newListName, setNewListName] = useState('');
+  const [newListIcon, setNewListIcon] = useState('Folder');
+  const [createBusy, setCreateBusy] = useState(false);
+  const [createError, setCreateError] = useState(false);
   const metadataRequestId = useRef(0);
   const failedMetadataRequests = useRef(new Map());
+  const prefersReducedMotion = useReducedMotion();
 
   const displayLists = useMemo(() => {
     const favoriteIds = Array.from(likedPaperIds || []);
@@ -487,9 +497,45 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     setShareFeedback(null);
   };
 
+  const handleCreateList = async () => {
+    const name = newListName.trim();
+    if (!name || createBusy) return;
+    setCreateBusy(true);
+    setCreateError(false);
+    const listId = `list_${Date.now()}`;
+    const newList = { id: listId, name, emoji: newListIcon, paperIds: [], createdAt: new Date().toISOString() };
+    if (IS_DEMO) {
+      const allLists = demoGet('lists', []);
+      allLists.push(newList);
+      demoSet('lists', allLists);
+    } else {
+      try {
+        await setDoc(doc(db, 'users', user.uid, 'lists', listId), newList);
+      } catch (err) {
+        console.error('Error creating list:', err);
+        setCreateError(true);
+        setCreateBusy(false);
+        return;
+      }
+    }
+    setLists((prev) => [...prev, newList]);
+    setCreating(false);
+    setNewListName('');
+    setNewListIcon('Folder');
+    setCreateBusy(false);
+  };
+
   const handleDeleteList = async (listId) => {
     if (PRIVATE_LIST_IDS.has(listId)) return;
     const list = lists.find(candidate => candidate.id === listId);
+    // Deleting is irreversible and, for a published list, takes the public
+    // link down with it; a hover-revealed ✕ is too easy to hit for that.
+    const confirmed = globalThis.confirm?.(
+      isEnglish
+        ? `Delete "${list?.name ?? 'this list'}"? This cannot be undone.`
+        : `¿Eliminar "${list?.name ?? 'esta lista'}"? No se puede deshacer.`,
+    );
+    if (confirmed === false) return;
     if (IS_DEMO) {
       const allLists = demoGet('lists', []).filter((l) => l.id !== listId);
       localStorage.setItem('papertok_lists', JSON.stringify(allLists));
@@ -648,9 +694,31 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       setShareFeedback({ listId: list.id, state: 'error' });
     }
   };
+  const papersCount = (count) => `${count} ${count === 1 ? 'paper' : 'papers'}`;
+
+  // One motion vocabulary for the two views of this page: the index and an
+  // open list cross-fade with a small vertical step instead of swapping DOM in
+  // a single frame.
+  const viewMotion = {
+    initial: prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 },
+    animate: { opacity: 1, y: 0 },
+    exit: prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -8 },
+    transition: { duration: prefersReducedMotion ? 0.1 : 0.2, ease: [0.16, 1, 0.3, 1] },
+  };
+
+  // Arriving from a profile card with { openListId }: until the effect above
+  // opens it, hold a skeleton instead of flashing an index the visitor did not
+  // ask for. Falls through to the index if the list never shows up; closing
+  // the list clears the state, so this cannot re-trap a closed list.
+  const targetOpenId = location.state?.openListId;
+  const pendingOpen = Boolean(
+    targetOpenId
+    && !expandedList
+    && (loading || displayLists.some((entry) => entry.id === targetOpenId)),
+  );
+
   return (
     <div className="lists-page">
-      <div className="lists-header"><h1>{isEnglish ? 'My lists' : 'Mis listas'}</h1></div>
       {loading && (
         <div className="lists-inline-status" aria-live="polite">
           <div className="lists-loading-spinner" />
@@ -666,15 +734,16 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         </div>
       )}
 
+      <AnimatePresence mode="wait" initial={false}>
       {expandedList ? (
-        <div className="lists-expanded">
+        <motion.div className="lists-expanded" key="expanded" {...viewMotion}>
           <button
             className="lists-back-btn"
             onClick={openedFromRoute ? () => navigate(-1) : closeExpandedList}
           >
             {openedFromRoute
               ? (isEnglish ? '← Back' : '← Volver')
-              : (isEnglish ? '← Back to lists' : '← Volver a listas')}
+              : (isEnglish ? '← My lists' : '← Mis listas')}
           </button>
           {(() => {
             const list = displayLists.find((l) => l.id === expandedList);
@@ -689,70 +758,69 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
             const shareBusy = listShareFeedback?.state === 'loading';
             return (
               <>
-                <div className="lists-expanded-heading">
-                  <h2 className="lists-expanded-title">
-                    {(() => {
-                      const Icon = getIcon(list.emoji);
-                      return <Icon size={24} strokeWidth={2} />;
-                    })()}
-                    {list.name}
-                  </h2>
-                  <div className="lists-expanded-actions">
-                    {exportPapers.length > 0 && (
-                      <div className="lists-export-actions">
-                        <button onClick={() => downloadCitationFile(exportPapers, 'bibtex', `papertok-${list.name}`)}><Download size={16} /> BibTeX</button>
-                        <button onClick={() => downloadCitationFile(exportPapers, 'ris', `papertok-${list.name}`)}><Download size={16} /> RIS</button>
-                      </div>
-                    )}
-                    {isCustomList && !IS_DEMO && (
-                      <div className="lists-share-actions">
-                        {list.publicShareId ? (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => handleShareList(list)}
-                              disabled={shareBusy}
-                              title={isEnglish ? 'Share public link' : 'Compartir enlace público'}
-                            >
-                              <Share2 size={16} /> {isEnglish ? 'Share' : 'Compartir'}
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handlePublishList(list, publicPapers)}
-                              disabled={shareBusy || metadataLoadingListId === list.id}
-                              title={isEnglish ? 'Update the public list' : 'Actualizar la lista pública'}
-                            >
-                              <RefreshCw size={16} /> {isEnglish ? 'Update' : 'Actualizar'}
-                            </button>
-                            <button
-                              type="button"
-                              className="is-danger"
-                              onClick={() => handleUnpublishList(list)}
-                              disabled={shareBusy}
-                              title={isEnglish ? 'Stop sharing' : 'Dejar de compartir'}
-                            >
-                              <Unlink size={16} />
-                            </button>
-                          </>
+                <header className="lists-expanded-header">
+                  <div className="lists-expanded-titleblock">
+                    <span className="lists-expanded-icon" aria-hidden="true">
+                      {(() => {
+                        const Icon = getIcon(list.emoji);
+                        return <Icon size={22} strokeWidth={2} />;
+                      })()}
+                    </span>
+                    <div className="lists-expanded-copy">
+                      <h1 className="lists-expanded-title">{list.name}</h1>
+                      <p className="lists-expanded-meta">
+                        <span>{papersCount((list.paperIds || []).length)}</span>
+                        {isCustomList && !IS_DEMO && (list.publicShareId ? (
+                          <span className="lists-badge lists-badge--public">
+                            <Globe2 size={11} aria-hidden="true" /> {isEnglish ? 'Public' : 'Pública'}
+                          </span>
                         ) : (
+                          <span className="lists-badge">
+                            <Lock size={11} aria-hidden="true" /> {isEnglish ? 'Private' : 'Privada'}
+                          </span>
+                        ))}
+                      </p>
+                    </div>
+                  </div>
+                  {isCustomList && !IS_DEMO && (
+                    <div className="lists-share-actions">
+                      {list.publicShareId ? (
+                        <>
                           <button
                             type="button"
                             className="is-primary"
+                            onClick={() => handleShareList(list)}
+                            disabled={shareBusy}
+                          >
+                            <Share2 size={16} /> {isEnglish ? 'Share' : 'Compartir'}
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handlePublishList(list, publicPapers)}
                             disabled={shareBusy || metadataLoadingListId === list.id}
+                            title={isEnglish ? 'Push the latest changes to the public link' : 'Lleva los últimos cambios al enlace público'}
                           >
-                            <Globe2 size={16} /> {isEnglish ? 'Publish & share' : 'Publicar y compartir'}
+                            <RefreshCw size={16} /> {isEnglish ? 'Update' : 'Actualizar'}
                           </button>
-                        )}
-                      </div>
-                    )}
-                    {isCustomList && IS_DEMO && (
-                      <span className="lists-share-demo-note">
-                        {isEnglish ? 'Public sharing is unavailable in demo mode.' : 'No se pueden publicar listas en el modo demo.'}
-                      </span>
-                    )}
-                  </div>
-                </div>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          className="is-primary"
+                          onClick={() => handlePublishList(list, publicPapers)}
+                          disabled={shareBusy || metadataLoadingListId === list.id}
+                        >
+                          <Globe2 size={16} /> {isEnglish ? 'Publish & share' : 'Publicar y compartir'}
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {isCustomList && IS_DEMO && (
+                    <span className="lists-share-demo-note">
+                      {isEnglish ? 'Public sharing is unavailable in demo mode.' : 'No se pueden publicar listas en el modo demo.'}
+                    </span>
+                  )}
+                </header>
                 {listShareFeedback && (
                   <div
                     className={`lists-share-status ${['error', 'copy-error'].includes(listShareFeedback.state) ? 'is-error' : ''}`}
@@ -790,9 +858,30 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                 {isCustomList && ((list.paperIds || []).length > 20 || publicPapers.length < (list.paperIds || []).length) && (
                   <p className="lists-share-limit-note">
                     {isEnglish
-                      ? 'Public links include up to 12 papers with available details.'
-                      : 'Los enlaces públicos incluyen hasta 12 papers con datos disponibles.'}
+                      ? 'Public links include up to 50 papers with available details.'
+                      : 'Los enlaces públicos incluyen hasta 50 papers con datos disponibles.'}
                   </p>
+                )}
+                {(exportPapers.length > 0 || (isCustomList && !IS_DEMO && list.publicShareId)) && (
+                  <div className="lists-expanded-tools">
+                    {exportPapers.length > 0 && (
+                      <div className="lists-export-actions">
+                        <span className="lists-tools-label">{isEnglish ? 'Export citation' : 'Exportar cita'}</span>
+                        <button type="button" onClick={() => downloadCitationFile(exportPapers, 'bibtex', `papertok-${list.name}`)}><Download size={14} /> BibTeX</button>
+                        <button type="button" onClick={() => downloadCitationFile(exportPapers, 'ris', `papertok-${list.name}`)}><Download size={14} /> RIS</button>
+                      </div>
+                    )}
+                    {isCustomList && !IS_DEMO && list.publicShareId && (
+                      <button
+                        type="button"
+                        className="lists-unpublish-btn"
+                        onClick={() => handleUnpublishList(list)}
+                        disabled={shareBusy}
+                      >
+                        <Unlink size={14} aria-hidden="true" /> {isEnglish ? 'Stop sharing' : 'Dejar de compartir'}
+                      </button>
+                    )}
+                  </div>
                 )}
                 {metadataLoadingListId === list.id && (
                   <div className="lists-metadata-status" aria-live="polite">
@@ -809,20 +898,32 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                   </div>
                 )}
                 <div className="lists-expanded-papers">
-                  {(list.paperIds || []).map((paperId) => {
+                  {(list.paperIds || []).map((paperId, paperIndex) => {
                     const paper = getPaper(paperId);
                     const record = personalLibrary[paperId];
                     if (!paper) return (
-                      <div key={paperId} className="lists-paper-item">
-                        <p className="lists-paper-title lists-paper-placeholder">
-                          {metadataLoadingListId === list.id
-                            ? (isEnglish ? 'Loading paper details...' : 'Cargando datos del paper...')
-                            : paperId}
-                        </p>
+                      // While metadata is in flight the row is a shimmer with
+                      // the finished row's silhouette; the status line above
+                      // carries the accessible announcement.
+                      <div
+                        key={paperId}
+                        className="lists-paper-item lists-paper-item--skeleton"
+                        style={{ '--stagger-index': Math.min(paperIndex, 8) }}
+                        aria-hidden={metadataLoadingListId === list.id ? 'true' : undefined}
+                      >
+                        {metadataLoadingListId === list.id ? (
+                          <div className="lists-paper-skeleton">
+                            <span className="lists-skeleton-bar lists-skeleton-bar--wide" />
+                            <span className="lists-skeleton-bar" />
+                          </div>
+                        ) : (
+                          <p className="lists-paper-title lists-paper-placeholder">{paperId}</p>
+                        )}
                       </div>
                     );
                     return (
                       <div key={paperId} className="lists-paper-item"
+                        style={{ '--stagger-index': Math.min(paperIndex, 8) }}
                         onClick={() => openPaperCard(paper)}>
                         <div className="lists-paper-item-content">
                           {paper.categories && paper.categories.length > 0 && (
@@ -869,52 +970,152 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     );
                   })}
                   {(!list.paperIds || list.paperIds.length === 0) && (
-                    <p className="lists-empty-text">{isEnglish ? 'This list is empty' : 'Esta lista está vacía'}</p>
+                    <div className="lists-empty-state lists-empty-state--inline">
+                      <span className="lists-empty-icon" aria-hidden="true"><Library size={20} /></span>
+                      <h3>{isEnglish ? 'This list is empty' : 'Esta lista está vacía'}</h3>
+                      <p>
+                        {isEnglish
+                          ? 'Add papers to it from the feed with "Save and organize".'
+                          : 'Añádele papers desde el feed con "Guardar y organizar".'}
+                      </p>
+                    </div>
                   )}
                 </div>
               </>
             );
           })()}
-        </div>
-      ) : displayLists.length === 0 ? (
-        <div className="lists-empty-state">
-          <div className="lists-empty-state-icon">📚</div>
-          <h3>{isEnglish ? 'You do not have any lists yet' : 'Aún no tienes listas'}</h3>
-          <p>{isEnglish
-            ? 'Save papers or mark them as read to organize them here.'
-            : 'Guarda papers o marca algunos como leídos para organizarlos aquí.'}</p>
-        </div>
+        </motion.div>
+      ) : pendingOpen ? (
+        <motion.div
+          className="lists-opening"
+          key="opening"
+          {...viewMotion}
+          aria-busy="true"
+          aria-label={isEnglish ? 'Opening list...' : 'Abriendo la lista...'}
+        >
+          <div className="lists-skeleton-row" />
+          <div className="lists-skeleton-row" />
+          <div className="lists-skeleton-row" />
+          <div className="lists-skeleton-row" />
+        </motion.div>
       ) : (
-        <div className="lists-grid">
-          {displayLists.map((list, idx) => (
-            <div key={list.id} className="list-card glass" onClick={() => { setOpenedFromRoute(false); openList(list); }} style={{ '--stagger-index': idx }}>
-              <div className="list-card-top">
-                <span className="list-card-emoji">
-                  {(() => {
-                    const Icon = getIcon(list.emoji);
-                    return <Icon size={32} strokeWidth={1.5} />;
-                  })()}
-                </span>
-                {!['__favorites__', '__read__', '__read_later__'].includes(list.id) && (
-                  <button className="list-card-delete" onClick={(e) => { e.stopPropagation(); handleDeleteList(list.id); }}
-                    title={isEnglish ? 'Delete list' : 'Eliminar lista'}>✕</button>
+        <motion.div key="index" {...viewMotion}>
+          <header className="lists-header">
+            <p className="lists-eyebrow">{isEnglish ? 'Personal library' : 'Biblioteca personal'}</p>
+            <h1>{isEnglish ? 'My lists' : 'Mis listas'}</h1>
+            <p className="lists-subtitle">
+              {isEnglish
+                ? 'Organize, annotate and share the papers you keep.'
+                : 'Organiza, anota y comparte los papers que guardas.'}
+            </p>
+          </header>
+          <div className="lists-grid">
+            {displayLists.map((list, idx) => (
+              <div key={list.id} className="list-card glass" onClick={() => { setOpenedFromRoute(false); openList(list); }} style={{ '--stagger-index': idx }}>
+                <div className="list-card-top">
+                  <span className="list-card-emoji">
+                    {(() => {
+                      const Icon = getIcon(list.emoji);
+                      return <Icon size={32} strokeWidth={1.5} />;
+                    })()}
+                  </span>
+                  {!['__favorites__', '__read__', '__read_later__'].includes(list.id) && (
+                    <button className="list-card-delete" onClick={(e) => { e.stopPropagation(); handleDeleteList(list.id); }}
+                      title={isEnglish ? 'Delete list' : 'Eliminar lista'}>✕</button>
+                  )}
+                </div>
+                <h3 className="list-card-name">{list.name}</h3>
+                <div className="list-card-footer">
+                  <span className="list-card-count">{papersCount(list.paperIds?.length || 0)}</span>
+                  {/* The profile card says Public; its twin here said nothing. */}
+                  {list.publicShareId && (
+                    <span className="lists-badge lists-badge--public">
+                      <Globe2 size={11} aria-hidden="true" /> {isEnglish ? 'Public' : 'Pública'}
+                    </span>
+                  )}
+                </div>
+                {list.paperIds?.some((paperId) => getPaper(paperId)) && (
+                  <div className="list-card-preview">
+                    {list.paperIds
+                      .map((paperId) => getPaper(paperId))
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((paper) => <p key={paper.id} className="list-card-preview-title">{paper.title}</p>)}
+                  </div>
                 )}
               </div>
-              <h3 className="list-card-name">{list.name}</h3>
-              <span className="list-card-count">{list.paperIds?.length || 0} papers</span>
-              {list.paperIds?.some((paperId) => getPaper(paperId)) && (
-                <div className="list-card-preview">
-                  {list.paperIds
-                    .map((paperId) => getPaper(paperId))
-                    .filter(Boolean)
-                    .slice(0, 2)
-                    .map((paper) => <p key={paper.id} className="list-card-preview-title">{paper.title}</p>)}
+            ))}
+            {creating ? (
+              <div className="list-card list-card--create-form" style={{ '--stagger-index': displayLists.length }}>
+                <p className="list-card-form-label" id="lists-icon-picker-label">{isEnglish ? 'Icon' : 'Icono'}</p>
+                <div className="list-card-icon-picker" role="radiogroup" aria-labelledby="lists-icon-picker-label">
+                  {AVAILABLE_ICONS.map((iconName) => {
+                    const OptionIcon = getIcon(iconName);
+                    return (
+                      <button
+                        key={iconName}
+                        type="button"
+                        role="radio"
+                        aria-checked={newListIcon === iconName}
+                        aria-label={iconName}
+                        className={`list-card-icon-btn${newListIcon === iconName ? ' is-active' : ''}`}
+                        onClick={() => setNewListIcon(iconName)}
+                      >
+                        <OptionIcon size={16} strokeWidth={1.75} />
+                      </button>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
-          ))}
-        </div>
+                <input
+                  className="list-card-name-input"
+                  autoFocus
+                  value={newListName}
+                  maxLength={80}
+                  placeholder={isEnglish ? 'List name...' : 'Nombre de la lista...'}
+                  onChange={(e) => setNewListName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleCreateList();
+                    if (e.key === 'Escape') { setCreating(false); setNewListName(''); }
+                  }}
+                />
+                {createError && (
+                  <p className="list-card-create-error" role="alert">
+                    {isEnglish ? 'It could not be created. Try again.' : 'No se pudo crear. Inténtalo de nuevo.'}
+                  </p>
+                )}
+                <div className="list-card-form-actions">
+                  <button
+                    type="button"
+                    className="list-card-create-confirm"
+                    onClick={handleCreateList}
+                    disabled={!newListName.trim() || createBusy}
+                  >
+                    {createBusy ? (isEnglish ? 'Creating...' : 'Creando...') : (isEnglish ? 'Create' : 'Crear')}
+                  </button>
+                  <button
+                    type="button"
+                    className="list-card-create-cancel"
+                    onClick={() => { setCreating(false); setNewListName(''); }}
+                  >
+                    {isEnglish ? 'Cancel' : 'Cancelar'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="list-card list-card--create"
+                onClick={() => { setCreating(true); setCreateError(false); }}
+                style={{ '--stagger-index': displayLists.length }}
+              >
+                <span className="list-card-create-icon" aria-hidden="true"><Plus size={22} /></span>
+                <span>{isEnglish ? 'New list' : 'Nueva lista'}</span>
+              </button>
+            )}
+          </div>
+        </motion.div>
       )}
+      </AnimatePresence>
     </div>
   );
 }

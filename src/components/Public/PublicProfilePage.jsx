@@ -768,18 +768,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       >
         {!hasAppChrome && <p className="public-profile-brand">{copy.brand} · {copy.publicProfile}</p>}
 
-        {view.isOwner && (
-          <button
-            type="button"
-            className="profile-gear"
-            onClick={() => navigate('/settings')}
-            aria-label={copy.settings}
-            title={copy.settings}
-          >
-            <Settings2 size={20} />
-          </button>
-        )}
-
         {view.isOwner && profile && !profileIsPublic(profile) && (
           <div className="profile-private-notice">
             <Lock size={14} aria-hidden="true" />
@@ -791,6 +779,19 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
         )}
 
         <header className="public-profile-header">
+          {/* Anchored to the header's own corner, not floated over the page:
+              the gear belongs to the identity block at every width. */}
+          {view.isOwner && (
+            <button
+              type="button"
+              className="profile-gear"
+              onClick={() => navigate('/settings')}
+              aria-label={copy.settings}
+              title={copy.settings}
+            >
+              <Settings2 size={20} />
+            </button>
+          )}
           <div className="public-profile-avatar">
             {avatar
               ? <img src={avatar} alt="" referrerPolicy="no-referrer" />
@@ -897,7 +898,11 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   >
                     <Rss size={13} aria-hidden="true" />
                     {copy.followedContent}
-                    <strong>{followingLoading ? '…' : statValue(followedContentCount)}</strong>
+                    {/* A dangling "0" reads as something broken; the door works
+                        the same without the number until there is one. */}
+                    {(followingLoading || followedContentCount > 0) && (
+                      <strong>{followingLoading ? '…' : statValue(followedContentCount)}</strong>
+                    )}
                   </button>
                 </>
               ) : profile && (

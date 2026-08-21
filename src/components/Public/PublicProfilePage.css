@@ -21,7 +21,7 @@
   padding-top: calc(var(--nav-height) + var(--space-16));
 }
 
-@media (max-width: 560px) {
+@media (max-width: 768px) {
   .public-profile-page--app .public-profile-shell {
     padding-top: calc(var(--nav-height-mobile) + var(--space-10));
   }
@@ -38,6 +38,7 @@
 /* --- Header ---------------------------------------------------------------- */
 
 .public-profile-header {
+  position: relative;
   display: flex;
   align-items: flex-start;
   gap: clamp(var(--space-5), 4vw, var(--space-8));
@@ -241,6 +242,9 @@ button.profile-stat:focus-visible:not(:disabled) {
   color: var(--text-primary);
 }
 
+/* Solid accent, not the brand gradient: gradients are reserved for brand marks
+   (logo, avatar fallbacks); action buttons speak one color. The min-width keeps
+   the pill from resizing as the label cycles Follow → Following → Unfollow. */
 .profile-follow-button {
   display: inline-flex;
   align-items: center;
@@ -251,19 +255,24 @@ button.profile-stat:focus-visible:not(:disabled) {
   padding: 0 var(--space-5);
   border: 1px solid transparent;
   border-radius: var(--radius-full);
-  background: var(--gradient-brand);
-  color: var(--text-inverse);
+  background: var(--accent-primary);
+  color: #fff;
   font-family: var(--font-body);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   cursor: pointer;
   transition: background var(--transition-fast), border-color var(--transition-fast),
-    color var(--transition-fast), opacity var(--transition-fast);
+    color var(--transition-fast), opacity var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .profile-follow-button:hover:not(:disabled),
 .profile-follow-button:focus-visible:not(:disabled) {
-  background: var(--gradient-brand-hover);
+  background: var(--accent-primary-hover);
+}
+
+.profile-follow-button:active:not(:disabled) {
+  transform: scale(0.97);
 }
 
 /* Already following: the button rests quiet, like "Edit profile". Hovering it
@@ -293,12 +302,13 @@ button.profile-stat:focus-visible:not(:disabled) {
   font-size: var(--fs-xs);
 }
 
-/* The gear sits where the eye expects settings, aligned with the top of the
-   header block whichever chrome the page has. */
+/* Part of the header's composition, not a float over the page: anchored to the
+   header's own top-right corner, so it lines up with the identity block at
+   every width and chrome. */
 .profile-gear {
   position: absolute;
-  top: clamp(20px, 4vw, 44px);
-  right: clamp(20px, 5vw, 40px);
+  top: 0;
+  right: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -311,16 +321,6 @@ button.profile-stat:focus-visible:not(:disabled) {
   cursor: pointer;
   transition: color var(--transition-fast), border-color var(--transition-fast),
     transform var(--transition-fast);
-}
-
-.public-profile-page--app .profile-gear {
-  top: calc(var(--nav-height) + var(--space-8));
-}
-
-@media (max-width: 560px) {
-  .public-profile-page--app .profile-gear {
-    top: calc(var(--nav-height-mobile) + var(--space-6));
-  }
 }
 
 .profile-gear:hover,
@@ -722,11 +722,13 @@ a.profile-row:focus-visible {
   50% { opacity: 0.55; }
 }
 
-/* --- Mobile ------------------------------------------------------------------
+/* --- Mobile and narrow windows -----------------------------------------------
    A composed portrait header, not a stretched desktop row: identity centered
-   under the avatar, counters and actions centered with it. */
+   under the avatar, counters and actions centered with it. Up to 768, not 560:
+   the 561-768 band (small tablets, half-screen windows) was the stretched
+   desktop row with nothing composed for it. */
 
-@media (max-width: 560px) {
+@media (max-width: 768px) {
   .public-profile-header {
     flex-direction: column;
     align-items: center;
@@ -828,9 +830,7 @@ a.profile-row:focus-visible {
   flex-wrap: wrap;
   gap: var(--space-2);
   margin-bottom: var(--space-5);
-  /* The gear floats over this corner of the shell; the notice keeps its
-     content clear of it rather than running underneath. */
-  padding: var(--space-3) 56px var(--space-3) var(--space-4);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
   background: var(--bg-secondary);

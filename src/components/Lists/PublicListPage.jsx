@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { BookOpen, Check, Quote, RefreshCw, Share2 } from 'lucide-react';
+import { getCategoryLabel } from '../../data/categories';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
@@ -290,7 +291,9 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
                 <span className="public-list-paper-index">{String(index + 1).padStart(2, '0')}</span>
                 <div className="public-list-paper-body">
                   <div className="public-list-paper-tags">
-                    {paper.category && <span>{paper.category}</span>}
+                    {/* The stored category is the raw arXiv slug (gr-qc); every
+                        other screen shows the human label, so this one does too. */}
+                    {paper.category && <span>{getCategoryLabel(paper.category, isEnglish ? 'en' : 'es')}</span>}
                     {paper.year && <span>{paper.year}</span>}
                   </div>
                   <h2>
@@ -305,7 +308,8 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
                   )}
                   {paper.abstract && <p className="public-list-paper-abstract">{paper.abstract}</p>}
                   <div className="public-list-paper-footer">
-                    {Number.isInteger(paper.citations) && (
+                    {/* "0 citations" on every row is noise, not information. */}
+                    {Number.isInteger(paper.citations) && paper.citations > 0 && (
                       <span><Quote size={14} /> {copy.citations(paper.citations)}</span>
                     )}
                     {paper.concepts?.slice(0, 3).map(concept => <span key={concept}>{concept}</span>)}
@@ -314,7 +318,12 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
               </article>
             );
           })}
-          {publicList.papers.length === 0 && <p className="public-list-empty">{copy.empty}</p>}
+          {publicList.papers.length === 0 && (
+            <div className="public-list-empty">
+              <span className="public-list-empty-icon" aria-hidden="true"><BookOpen size={20} /></span>
+              <p>{copy.empty}</p>
+            </div>
+          )}
         </section>
       </div>
     </main>

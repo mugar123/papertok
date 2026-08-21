@@ -82,6 +82,23 @@ h1, h2, h3, h4, h5, h6 {
   color: var(--text-primary);
 }
 
+/* ── Focus ──
+   Without this, keyboard focus renders the OS default ring (whatever accent
+   color the system uses), which reads as a stray warning on this palette.
+   :where() keeps specificity at zero so any component can restyle it. */
+:where(button, a, [role='button'], [role='tab'], summary):focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
+/* A dialog opened with showModal() can end up focused itself; the ring around
+   the whole sheet reads as a broken border, and focus styling belongs to the
+   controls inside. */
+dialog:focus,
+dialog:focus-visible {
+  outline: none;
+}
+
 /* ── Buttons ── */
 button {
   font-family: var(--font-body);

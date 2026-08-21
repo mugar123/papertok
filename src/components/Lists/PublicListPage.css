@@ -141,7 +141,10 @@
 
 .public-list-paper h2 a {
   color: inherit;
-  text-decoration: none;
+  text-decoration: underline;
+  text-decoration-color: transparent;
+  text-underline-offset: 4px;
+  transition: color var(--transition-fast), text-decoration-color var(--transition-fast);
 }
 
 .public-list-paper-tags,
@@ -237,7 +240,29 @@
 }
 
 .public-list-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
   padding: 64px var(--space-4);
+}
+
+.public-list-empty p {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+}
+
+.public-list-empty-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 48px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-full);
+  background: var(--bg-secondary);
+  color: var(--accent-primary);
 }
 
 .public-list-status {
@@ -287,7 +312,10 @@
 
 @media (hover: hover) and (pointer: fine) {
   .public-list-brand .public-list-auth-cta:hover { border-color: var(--accent-primary); color: var(--text-primary); }
-  .public-list-paper h2 a:hover { color: var(--accent-secondary); }
+  .public-list-paper h2 a:hover {
+    color: var(--accent-secondary);
+    text-decoration-color: var(--accent-secondary);
+  }
   .public-list-share:not([data-state='copied']):hover,
   .public-list-status button:hover { border-color: var(--accent-primary); color: var(--text-primary); }
 }
