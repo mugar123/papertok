@@ -2,9 +2,10 @@
 
 ## P25: las listas públicas se actualizan solas y el botón desaparece (2026-08-21)
 
-**Implementado, `npm run check` en verde, y verificado de punta a punta
-contra producción con la cuenta @mugar.** No toca `worker/` ni
-`firestore.rules`: **solo hay que desplegar la app**.
+**Implementado, verificado de punta a punta contra producción con la cuenta
+@mugar, commiteado y DESPLEGADO** (`4a74091` + `3982571`, Pages en verde,
+bundle `index-B0vUDlHf.js` sin `RefreshCw` y con `publicSyncedAt`). No toca
+`worker/` ni `firestore.rules`: solo la app.
 
 - **Worker: verificado en producción.** `POST /lists/attribute` con un origen
   permitido responde `AUTH_REQUIRED` (401), no 405, así que el
@@ -232,6 +233,26 @@ Lo que **no** era un fallo, comprobado en vivo:
 - **Queda un `$\eps$` sin renderar** en un abstract. No es cableado: `\eps` es
   una macro que define el autor y KaTeX no conoce, y `ScientificText` cae al
   texto fuente a propósito en vez de adivinar. Pasa igual en el feed.
+
+### El despliegue se rompió una vez, y por qué
+
+`4a74091` dejó **main sin compilar** durante un run. No fue el código de esta
+fase: **otra sesión de Claude estaba editando este mismo working tree** a la
+vez, y entre sus cambios había un import de `isTransientReadError` añadido a
+`SaveToListModal.jsx` y `PublicListPage.jsx` —dos ficheros que yo también
+estaba tocando— con el `export` viviendo en su `boundedRead.js` sin commitear.
+
+Stageé por nombre de fichero creyendo que eso aislaba mi trabajo. No lo
+aísla: **un fichero que yo edito puede llevar también ediciones suyas**, y al
+stagearlo entran las dos. Comprobé el diff de `STATE.md` en busca de contenido
+ajeno y no hice lo mismo con los dos ficheros de listas.
+
+Reparado en `3982571` (el `export` que faltaba), verificado antes de empujar
+en un **worktree aislado en HEAD** —build limpio, 838 tests, lint limpio— para
+no tocar los ficheros que la otra sesión seguía usando. Pages en verde.
+
+Lo que queda sin commitear, y es suyo, no mío: `CommentsSheet.jsx`,
+`ProfilePage.jsx`, `FollowSheet.jsx`, `SearchPage.jsx`.
 
 ### Pendiente / decisiones no tomadas aquí
 
