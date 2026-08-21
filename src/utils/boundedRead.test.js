@@ -5,6 +5,7 @@ import {
   DEFAULT_READ_TIMEOUT_MS,
   ReadTimedOutError,
   isReadTimeout,
+  isTransientReadError,
   patientRead,
   withReadTimeout,
 } from './boundedRead.js';
@@ -20,15 +21,32 @@ function fakeTimers() {
       return id;
     },
     clearTimer(id) { pending.delete(id); },
-    fire() {
-      const entries = [...pending.entries()];
-      pending.clear();
+    /** Fires every armed timer, or only the ones set for `matchMs`. */
+    fire(matchMs) {
+      const entries = [...pending.entries()]
+        .filter(([, entry]) => matchMs === undefined || entry.ms === matchMs);
+      entries.forEach(([id]) => pending.delete(id));
       entries.forEach(([, entry]) => entry.callback());
     },
     get armed() { return pending.size; },
     get delay() { return [...pending.values()][0]?.ms; },
+    get delays() { return [...pending.values()].map(entry => entry.ms); },
   };
 }
+
+/** The rejection Firestore hands back after its own ten-second verdict. */
+function unavailable() {
+  return Object.assign(
+    new Error('Failed to get document because the client is offline.'),
+    { code: 'unavailable' },
+  );
+}
+
+/** Lets queued `.then` handlers run without waiting in real time. */
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
+
+/** Defaults that keep a test off the real `navigator` and `window`. */
+const noAmbient = { checkOffline: () => false, subscribeOnline: () => () => {} };
 
 test('a read that answers in time passes its value straight through', async () => {
   const timers = fakeTimers();
@@ -172,4 +190,239 @@ test('a success before the first timeout resolves without ever signalling slow',
   assert.equal(await read, 'fast');
   assert.deepEqual(slowNotices, [], 'a fast read never hears about slowness');
   assert.equal(timers.armed, 0, 'and leaves no timer behind');
+});
+
+// ---------------------------------------------------------------------------
+// The measured bug: Firestore's own ten-second verdict arrives as a rejection,
+// not as a timeout, and it used to walk straight past all the patience above.
+
+test('isTransientReadError tells "not now" apart from "not ever"', () => {
+  for (const code of ['unavailable', 'deadline-exceeded', 'internal',
+    'cancelled', 'aborted', 'resource-exhausted', 'unknown']) {
+    assert.equal(isTransientReadError({ code }), true, `${code} deserves patience`);
+  }
+  for (const code of ['permission-denied', 'unauthenticated', 'not-found',
+    'invalid-argument', 'failed-precondition', 'unimplemented']) {
+    assert.equal(isTransientReadError({ code }), false, `${code} will not change`);
+  }
+  assert.equal(isTransientReadError(new ReadTimedOutError('thread')), true);
+  assert.equal(isTransientReadError(new TypeError('a bug in our own code')), false);
+  assert.equal(isTransientReadError(null), false);
+});
+
+test('a stalled connection is not a verdict: the read waits and the retry answers', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  const notices = [];
+  const read = patientRead(makeAttempt, {
+    ...timers, ...noAmbient, attempts: 2,
+    onSlow: (attempt, info) => notices.push({ attempt, ...info }),
+  });
+
+  launched[0].reject(unavailable());
+  await tick();
+
+  assert.equal(launched.length, 1, 'the dead attempt is not replaced on the spot');
+  assert.deepEqual(notices, [{ attempt: 1, offline: false }],
+    'the interface is told "slow", never "could not be loaded"');
+  assert.ok(timers.delays.includes(800), 'the retry waits out a backoff first');
+
+  timers.fire(800);
+  assert.equal(launched.length, 2, 'and then asks again');
+  launched[1].resolve('thread');
+  assert.equal(await read, 'thread');
+});
+
+test('repeated instant rejections back off instead of burning the budget', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  const read = patientRead(makeAttempt, { ...timers, ...noAmbient, attempts: 2 });
+  read.catch(() => {});
+
+  // Once the SDK has latched itself offline it rejects in under a millisecond:
+  // without a growing pause these four rounds would all land in the same tick.
+  const seen = [];
+  for (let round = 0; round < 4; round += 1) {
+    launched[round].reject(unavailable());
+    await tick();
+    seen.push(timers.delays.find(ms => ms !== 6000));
+    timers.fire(seen[round]);
+  }
+  assert.deepEqual(seen, [800, 1600, 3200, 6400], 'each round waits twice as long');
+  assert.equal(launched.length, 5, 'one read per round, not a spin');
+});
+
+test('the backoff is capped, so a long outage costs one cheap read per pause', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  const read = patientRead(makeAttempt, {
+    ...timers, ...noAmbient, attempts: 2, retryDelayMs: 4000, maxRetryDelayMs: 8000,
+  });
+  read.catch(() => {});
+
+  const seen = [];
+  for (let round = 0; round < 3; round += 1) {
+    launched[round].reject(unavailable());
+    await tick();
+    const delay = timers.delays.find(ms => ms !== 6000);
+    seen.push(delay);
+    timers.fire(delay);
+  }
+  assert.deepEqual(seen, [4000, 8000, 8000], 'doubling stops at the ceiling');
+});
+
+test('with no network the notice says so, and the online event skips the wait', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  const notices = [];
+  let wake = null;
+  const read = patientRead(makeAttempt, {
+    ...timers, attempts: 2,
+    checkOffline: () => true,
+    subscribeOnline: (listener) => { wake = listener; return () => { wake = null; }; },
+    onSlow: (attempt, info) => notices.push(info),
+  });
+
+  launched[0].reject(unavailable());
+  await tick();
+  assert.deepEqual(notices, [{ offline: true }], '"no connection" is a different truth');
+  assert.ok(timers.delays.includes(8000), 'offline goes straight to the longest pause');
+
+  wake();
+  assert.equal(launched.length, 2, 'coming back online re-reads at once');
+  launched[1].resolve('thread');
+  assert.equal(await read, 'thread');
+});
+
+test('a stall that ends after the verdict still heals the screen, with no user action', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  let late = null;
+  const read = patientRead(makeAttempt, {
+    ...timers, ...noAmbient, attempts: 1, label: 'comment thread',
+    onLateResult: (value) => { late = value; },
+  });
+
+  launched[0].reject(unavailable());     // Firestore's ten-second verdict
+  await tick();
+  timers.fire(800);                      // backoff elapses, ask again
+  timers.fire(6000);                     // the retry times out: budget spent
+
+  const error = await read.then(() => null, e => e);
+  assert.equal(isReadTimeout(error), true, 'the caller sees a timeout, not a failure');
+  assert.equal(error.cause?.code, 'unavailable', 'and can still see what really happened');
+
+  // The promise is settled, but the loop is not: this is the whole point.
+  launched[1].reject(unavailable());
+  await tick();
+  timers.fire(timers.delays.find(ms => ms !== 6000));
+  await tick();
+  launched[2].resolve('the thread, eventually');
+  await tick();
+  assert.equal(late, 'the thread, eventually', 'the answer lands with nobody touching anything');
+});
+
+test('the retry loop stops when nobody is listening for a late answer', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  const read = patientRead(makeAttempt, { ...timers, ...noAmbient, attempts: 1 });
+  read.catch(() => {});
+
+  timers.fire(6000);                     // the only attempt times out
+  launched[0].reject(unavailable());
+  await tick();
+  assert.equal(timers.armed, 0, 'no onLateResult means the loop has no consumer');
+  assert.equal(launched.length, 1);
+});
+
+test('a deterministic error ends the retry loop even after the verdict', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  const read = patientRead(makeAttempt, {
+    ...timers, ...noAmbient, attempts: 1, onLateResult: () => {},
+  });
+  read.catch(() => {});
+
+  timers.fire(6000);
+  launched[0].reject(Object.assign(new Error('denied'), { code: 'permission-denied' }));
+  await tick();
+  assert.equal(timers.armed, 0, 'asking again will never change a denial');
+});
+
+test('aborting stops every timer and every retry', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  const controller = new AbortController();
+  const read = patientRead(makeAttempt, {
+    ...timers, ...noAmbient, attempts: 2, signal: controller.signal, onLateResult: () => {},
+  });
+  read.catch(() => {});
+
+  launched[0].reject(unavailable());
+  await tick();
+  assert.ok(timers.armed > 0, 'a retry is pending');
+
+  controller.abort();                    // the screen unmounted
+  assert.equal(timers.armed, 0, 'nothing is left to fire');
+  timers.fire();
+  assert.equal(launched.length, 1, 'and no further read is issued');
+});
+
+test('an already-aborted signal never reads at all', () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  const controller = new AbortController();
+  controller.abort();
+  patientRead(makeAttempt, { ...timers, ...noAmbient, signal: controller.signal }).catch(() => {});
+  assert.equal(launched.length, 0);
+  assert.equal(timers.armed, 0);
+});
+
+test('a read that never comes back is retried too, not just one that rejects', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  let late = null;
+  const read = patientRead(makeAttempt, {
+    ...timers, ...noAmbient, attempts: 1,
+    onLateResult: (value) => { late = value; },
+  });
+  read.catch(() => {});
+
+  timers.fire(6000);                 // the only attempt times out: budget spent
+  assert.ok(timers.delays.includes(800), 'a fresh read is queued behind the backoff');
+
+  // The first attempt is a hostage of the dead connection and will never
+  // answer. Only a new read can heal the screen.
+  timers.fire(800);
+  assert.equal(launched.length, 2, 'so a new one is issued');
+  launched[1].resolve('the thread, eventually');
+  await tick();
+  assert.equal(late, 'the thread, eventually');
+  assert.equal(timers.armed, 0, 'and the loop stops once the answer lands');
+});
+
+test('the healing loop survives a retry that also never comes back', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  let late = null;
+  const read = patientRead(makeAttempt, {
+    ...timers, ...noAmbient, attempts: 1,
+    onLateResult: (value) => { late = value; },
+  });
+  read.catch(() => {});
+
+  timers.fire(6000);                 // the verdict
+  timers.fire(800);                  // first healing read
+  assert.equal(launched.length, 2);
+
+  // It hangs exactly like the first one did. The loop must not stop here.
+  timers.fire(6000);
+  assert.ok(timers.delays.includes(1600), 'the next read is queued, at a longer pause');
+  timers.fire(1600);
+  assert.equal(launched.length, 3, 'the screen keeps asking while nobody is watching');
+
+  launched[2].resolve('the thread, eventually');
+  await tick();
+  assert.equal(late, 'the thread, eventually');
+  assert.equal(timers.armed, 0);
 });
