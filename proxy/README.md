@@ -27,8 +27,22 @@ it is dropped. Only an allowlist of upstream headers is relayed back.
 
 ## Deploy
 
-Create a project at [dash.deno.com](https://dash.deno.com) with `proxy/scopus-proxy.js`
-as the entry point, then set these environment variables on it:
+The file starts its own server with `Deno.serve`, because Deno Deploy runs the
+entry point the way `deno run` does. A bare `export default { fetch }` only
+listens under `deno serve`, and a project deployed that way starts and answers
+nothing — the default export is kept for `deno serve`, but it is not what runs in
+production.
+
+Two ways in, at [dash.deno.com](https://dash.deno.com):
+
+- **Playground** — *New Playground*, paste `scopus-proxy.js`, set the variables,
+  save. Nothing needs to be pushed, so this is the quickest way to prove the
+  egress actually reaches Elsevier before wiring anything to it.
+- **Linked to the repository** — new project from GitHub with
+  `proxy/scopus-proxy.js` as the entry point, which redeploys on every push. The
+  right home once the playground has proved the route.
+
+Either way, set these on the project:
 
 | Variable | Purpose |
 | --- | --- |
@@ -48,7 +62,10 @@ Then point the Worker at it:
 npx wrangler secret put SCOPUS_PROXY_URL     # https://<project>.deno.dev
 npx wrangler secret put SCOPUS_PROXY_SECRET  # the same value
 npx wrangler secret delete ELSEVIER_API_KEY  # it does nothing in Cloudflare
+npm run worker:deploy
 ```
+
+To run it locally: `deno run --allow-net --allow-env proxy/scopus-proxy.js`.
 
 ## Verify
 

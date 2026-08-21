@@ -140,5 +140,13 @@ export function createScopusProxy(env) {
 }
 
 const runtimeEnv = typeof Deno === 'undefined' ? {} : Deno.env.toObject();
+const handleRequest = createScopusProxy(runtimeEnv);
 
-export default { fetch: createScopusProxy(runtimeEnv) };
+// Deno Deploy runs this file the way `deno run` does, so the server has to be
+// started here: a bare `export default { fetch }` only listens under
+// `deno serve`, and a project deployed that way starts and answers nothing.
+// The default export is kept so `deno serve` works too, and both are skipped
+// under Node, where the tests import `createScopusProxy` directly.
+if (typeof Deno !== 'undefined') Deno.serve(handleRequest);
+
+export default { fetch: handleRequest };

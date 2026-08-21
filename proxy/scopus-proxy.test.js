@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createScopusProxy } from './scopus-proxy.js';
+import scopusProxy, { createScopusProxy } from './scopus-proxy.js';
 
 const SECRET = 'a'.repeat(48);
 const ENV = { PROXY_SHARED_SECRET: SECRET, ELSEVIER_API_KEY: 'test-key' };
@@ -150,4 +150,11 @@ test('answers the health route without a secret and without naming the key', asy
   assert.equal(response.status, 200);
   const health = await response.json();
   assert.deepEqual(health, { ok: true, configured: true, insttoken: false });
+});
+
+test('importing the module under Node starts no server and still exposes a handler', () => {
+  // Deno Deploy runs the file directly, so the module calls `Deno.serve` at load
+  // time. That call must stay behind a runtime guard: importing it here proves
+  // the guard holds, since Node has no `Deno` global to serve with.
+  assert.equal(typeof scopusProxy.fetch, 'function');
 });
