@@ -963,7 +963,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
 
   return (
     <div className="lists-page">
-      {loading && (
+      {/* Only on the index. This line reports the LIST COLLECTION refresh, and
+          showing it over an open list put a second spinner on screen next to
+          the one that was actually about the papers being looked at. */}
+      {loading && !expandedList && (
         <div className="lists-inline-status" aria-live="polite">
           <div className="lists-loading-spinner" />
           <span>{isEnglish ? 'Updating personal lists...' : 'Actualizando listas personales...'}</span>
@@ -1185,12 +1188,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     )}
                   </div>
                 )}
-                {metadataLoadingListId === list.id && (
-                  <div className="lists-metadata-status" aria-live="polite">
-                    <div className="lists-loading-spinner" />
-                    <span>{isEnglish ? 'Loading papers in this list...' : 'Cargando los papers de esta lista...'}</span>
-                  </div>
-                )}
+                {/* No spinner here. The skeleton rows below ARE the loading
+                    state — they say the same thing in the shape of the content
+                    that is coming, and they do not move the layout when it
+                    lands. The announcement they used to borrow from this line
+                    now lives on the papers container itself. */}
                 {metadataError && (
                   <div className="lists-metadata-status is-error" role="alert">
                     <span>{getUiErrorMessage(metadataError, language, 'LIST_METADATA_LOAD_FAILED')}</span>
@@ -1199,8 +1201,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     </button>
                   </div>
                 )}
-                <div className="lists-expanded-papers">
-                  {(list.paperIds || []).map((paperId, paperIndex) => {
+                <div
+                  className="lists-expanded-papers"
+                  aria-busy={metadataLoadingListId === list.id ? 'true' : undefined}
+                  aria-label={metadataLoadingListId === list.id
+                    ? (isEnglish ? 'Loading papers in this list...' : 'Cargando los papers de esta lista...')
+                    : undefined}
+                >
+                  {(list.paperIds || []).map((paperId) => {
                     const paper = getPaper(paperId);
                     const record = personalLibrary[paperId];
                     if (!paper) return (
@@ -1210,7 +1218,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                       <div
                         key={paperId}
                         className="lists-paper-item lists-paper-item--skeleton"
-                        style={{ '--stagger-index': Math.min(paperIndex, 8) }}
                         aria-hidden={metadataLoadingListId === list.id ? 'true' : undefined}
                       >
                         {metadataLoadingListId === list.id ? (
@@ -1225,7 +1232,6 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     );
                     return (
                       <div key={paperId} className="lists-paper-item"
-                        style={{ '--stagger-index': Math.min(paperIndex, 8) }}
                         onClick={() => openPaperCard(paper)}>
                         <div className="lists-paper-item-content">
                           {paper.categories && paper.categories.length > 0 && (

@@ -356,9 +356,13 @@
 }
 
 /* Expanded view */
-.lists-expanded {
-  animation: fadeIn 0.3s ease-out;
-}
+/* `.lists-expanded` carries no rule of its own any more. It used to fade in
+   with CSS while `viewMotion` in ListsPage.jsx was already cross-fading the
+   very same element through framer-motion — two animations on one node, each
+   with its own timing. framer-motion owns the transition; nothing here needs
+   to. (Left empty rather than given a placeholder declaration: `position:
+   relative` would have created a positioning context this subtree never
+   asked for.) */
 
 .lists-back-btn {
   color: var(--accent-secondary);
@@ -618,10 +622,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  /* Same sober stagger the cards already had; capped in the JSX so a long
-     list does not turn into a cascade. */
-  animation: fadeInUp 0.4s ease backwards;
-  animation-delay: calc(var(--stagger-index, 0) * 0.04s);
+  /* Deliberately not animated. The cards on the index stagger in because the
+     index IS the arrival; inside an open list the view transition already says
+     the same thing, and twenty rows repeating it one after another was most of
+     the motion this screen was accused of. Opening a list is now one
+     transition and, while papers are still coming, one pulse. */
 }
 
 .lists-paper-item--skeleton {
@@ -832,10 +837,11 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  /* `.lists-paper-item` and `.lists-expanded` are gone from this list because
+     they no longer animate at all — naming them here would suggest they still
+     do. */
   .list-card,
   .list-card--create,
-  .lists-paper-item,
-  .lists-expanded,
   .lists-empty-state {
     animation: none;
   }
