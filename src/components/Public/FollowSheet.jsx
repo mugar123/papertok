@@ -9,7 +9,7 @@ import {
 } from '../../services/followUserService.js';
 import { readUserProfile } from '../../services/userProfileService.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
-import { isTransientReadError, patientRead } from '../../utils/boundedRead.js';
+import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
 import './FollowSheet.css';
 
 /**
@@ -141,6 +141,7 @@ export default function FollowSheet({
     loading: 'Loading...',
     slow: 'This is taking longer than usual. Still trying.',
     offline: 'There seems to be no connection. Still trying.',
+    stalled: 'This is taking unusually long. We are still trying in the background.',
     error: 'This list could not be loaded.',
     retry: 'Try again',
     unavailable: 'Account unavailable',
@@ -156,6 +157,7 @@ export default function FollowSheet({
     loading: 'Cargando...',
     slow: 'Está tardando más de lo normal. Seguimos intentándolo.',
     offline: 'Parece que no hay conexión. Seguimos intentándolo.',
+    stalled: 'Está tardando muchísimo. Seguimos intentándolo por detrás.',
     error: 'No se pudo cargar esta lista.',
     retry: 'Reintentar',
     unavailable: 'Cuenta no disponible',
@@ -197,7 +199,7 @@ export default function FollowSheet({
     // error state below already has a Try again, so a timeout lands somewhere
     // the reader can act on.
     patientRead(() => readPage(null), {
-      attempts: 2,
+      attempts: 3,
       label: 'follow list',
       signal: controller.signal,
       onSlow: (attemptNumber, info) => {
@@ -208,9 +210,11 @@ export default function FollowSheet({
       .then(apply)
       .catch((error) => {
         // A mute connection answers as a rejection ten seconds later. That is
-        // still a wait, and the retry behind it is still running.
-        if (isTransientReadError(error)) {
+        // still a wait, and the retry behind it is still running — but past
+        // the budget it has to say so rather than hold the skeleton forever.
+        if (isReadTimeout(error)) {
           console.warn('The follow list did not answer in time', error);
+          if (active) setPage({ ...EMPTY_PAGE, mode, status: 'stalled' });
           return;
         }
         console.error('Error loading the follow list:', error);
@@ -341,9 +345,10 @@ export default function FollowSheet({
               )}
             </div>
           )}
-          {current.status === 'error' && (
-            <div className="follow-sheet-state">
-              <p>{copy.error}</p>
+          {(current.status === 'error' || current.status === 'stalled') && (
+            // 'stalled' still has a read running behind it; 'error' does not.
+            <div className="follow-sheet-state" aria-busy={current.status === 'stalled'}>
+              <p>{current.status === 'stalled' ? copy.stalled : copy.error}</p>
               <button
                 type="button"
                 className="follow-sheet-more"

@@ -49,12 +49,60 @@ export function rememberOwnProfile(uid, profile) {
   if (profile?.handle) ownProfileCache.set(handleProfileKey(profile.handle), { profile });
 }
 
+/**
+ * How long a lists read stays good enough to reuse without asking again.
+ *
+ * Saving papers in a burst is the case this exists for: the save modal opens
+ * once per paper, and every open used to re-read all sixty list documents.
+ * Fifty saves meant fifty full re-reads on a channel already carrying a write
+ * per save to the same document, and that is what saturated into an endless
+ * skeleton. Inside this window the modal trusts what it has.
+ *
+ * Correctness comes from write-through, not from luck: `handleSave` folds its
+ * own edit into the cached lists before the window expires, and the lists page
+ * stamps the cache from its own authoritative read. What is left is a list
+ * renamed on ANOTHER device going unnoticed for at most this long — a price
+ * worth one thirtieth of the reads.
+ */
+export const OWN_LISTS_FRESH_MS = 30_000;
+
+const ownListsReadAt = new Map();
+
+/** Caches a lists read and stamps it fresh. Both readers of the collection use it. */
+export function rememberOwnLists(uid, lists) {
+  if (!uid || !Array.isArray(lists)) return;
+  ownListsCache.set(uid, lists);
+  ownListsReadAt.set(uid, Date.now());
+}
+
+/** Updates the cached lists in place, without claiming they were re-read. */
+export function reviseOwnLists(uid, lists) {
+  if (!uid || !Array.isArray(lists)) return;
+  ownListsCache.set(uid, lists);
+}
+
+/**
+ * True when the cached lists are recent enough to skip the read entirely.
+ * Pure but for the clock, which is injectable so the tests never wait.
+ */
+export function ownListsAreFresh(uid, now = Date.now(), ttlMs = OWN_LISTS_FRESH_MS) {
+  if (!uid || !ownListsCache.get(uid)) return false;
+  const readAt = ownListsReadAt.get(uid);
+  return typeof readAt === 'number' && now - readAt < ttlMs;
+}
+
+export function forgetOwnLists(uid) {
+  if (!uid) return;
+  ownListsCache.delete(uid);
+  ownListsReadAt.delete(uid);
+}
+
 export function forgetOwnProfile(uid, handle) {
   const key = ownProfileKey(uid);
   if (key) ownProfileCache.delete(key);
   if (handle) ownProfileCache.delete(handleProfileKey(handle));
   if (uid) {
-    ownListsCache.delete(uid);
+    forgetOwnLists(uid);
     pinnableListsCache.delete(uid);
   }
 }

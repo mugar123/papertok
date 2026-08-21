@@ -47,10 +47,11 @@ import {
 } from '../../utils/publicListFreshness.js';
 import { getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService.js';
+import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
+import { rememberOwnLists } from '../../utils/profileSessionCaches.js';
 import { snapshotIsAuthoritative } from '../../utils/ownLists.js';
 import './ListsPage.css';
 
-const LISTS_LOAD_DEADLINE_MS = 2_500;
 const PAPER_METADATA_LOAD_DEADLINE_MS = 4_000;
 const PAPER_METADATA_BATCH_SIZE = 10;
 const PRIVATE_LIST_IDS = new Set(['__favorites__', '__read__', '__read_later__']);
@@ -214,6 +215,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
 
   useEffect(() => {
     let active = true;
+    // The retry loop outlives the promise; leaving the screen must end it.
+    const controller = new AbortController();
 
     const loadData = async () => {
       if (!user) {
@@ -228,13 +231,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       /**
        * Returns false when the snapshot is not worth believing.
        *
-       * The deadline below covers a slow read. It does not cover a read that
-       * answers instantly with nothing: with the backend unreachable `getDocs`
-       * resolves against the in-memory cache, so `settleWithin` sees a
-       * perfectly `fulfilled` empty success and this painted an account's
-       * custom lists out of existence — measured at 0 documents in 0.3 ms,
-       * with no error state shown at all. Records in hand are records; an
-       * *absence* only counts when the server is the one reporting it.
+       * `patientRead` below covers a read that is slow or that never comes
+       * back. It cannot cover a read that answers instantly with nothing:
+       * with the backend unreachable `getDocs` resolves against the in-memory
+       * cache, so a perfectly fulfilled empty success arrives — and believing
+       * it painted an account's custom lists out of existence, measured at 0
+       * documents in 0.3 ms, with no error state shown at all. Records in
+       * hand are records; an *absence* only counts when the server is the one
+       * reporting it.
        */
       const applySnapshot = (snapshot) => {
         if (!active) return false;
@@ -242,6 +246,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         const customLists = [];
         snapshot.forEach((item) => customLists.push({ id: item.id, ...item.data() }));
         setLists(customLists);
+        // The save modal paints from this same cache. Stamping it here means
+        // a visit to Mis listas refreshes what the modal will show next.
+        rememberOwnLists(user.uid, customLists);
         return true;
       };
 
@@ -267,37 +274,56 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
           // First visit on this device: nothing cached yet.
         }
 
-        const networkRequest = getDocs(listsRef);
-        const snapshot = await settleWithin(networkRequest, LISTS_LOAD_DEADLINE_MS);
-        if (snapshot.status !== 'fulfilled') {
-          if (snapshot.status === 'timed_out') {
-            // Keep the original request alive. A late response can still refresh
-            // the cards without making the user press Retry.
-            networkRequest.then((lateSnapshot) => {
-              if (!active) return;
-              if (applySnapshot(lateSnapshot)) setError(null);
-            }).catch(() => {});
-          }
-          throw snapshot.status === 'timed_out'
-            ? new Error('The list request exceeded its deadline.')
-            : (snapshot.reason || new Error('Custom lists could not be loaded.'));
-        }
-        if (!applySnapshot(snapshot.value)) {
+        // This screen used to bound the read itself: one 2.5-second deadline,
+        // and a `throw` when it expired. That deadline was the banner. A read
+        // that has not answered yet says nothing about whether it will, and
+        // 2.5 seconds is well inside normal — the auth gate alone measures up
+        // to 470 ms, and the first read after Firestore closes its idle
+        // stream at sixty seconds pays a whole handshake. So the banner fired
+        // on healthy accounts, then cleared itself when the answer landed a
+        // moment later: a false alarm that argued with itself.
+        //
+        // `patientRead` replaces it. A timeout keeps the read alive and
+        // re-asks; only a real refusal is an error, and the ceiling says
+        // "still trying" rather than "could not be updated".
+        const answered = await patientRead(() => getDocs(listsRef), {
+          attempts: 3,
+          label: 'custom lists',
+          signal: controller.signal,
+          onLateResult: (lateSnapshot) => {
+            if (!active) return;
+            if (applySnapshot(lateSnapshot)) {
+              setError(null);
+              setLoading(false);
+            }
+          },
+        });
+        if (!applySnapshot(answered)) {
           // Answered, but only by the cache, and with nothing in it. That is
           // "could not load", not "you have no lists".
           throw new Error('Custom lists could not be loaded.');
         }
         if (active) setError(null);
       } catch (err) {
+        if (!active) return;
+        if (isReadTimeout(err)) {
+          // The budget is spent; the retry loop and `onLateResult` are not.
+          console.warn('The custom lists did not answer in time', err);
+          setError('LISTS_LOAD_STALLED');
+          return;
+        }
         console.error('Error loading lists:', err);
-        if (active) setError('LISTS_LOAD_FAILED');
+        setError('LISTS_LOAD_FAILED');
       } finally {
         if (active) setLoading(false);
       }
     };
 
     loadData();
-    return () => { active = false; };
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [user, reloadToken]);
 
   const openList = useCallback(async (list, retryFailedOnly = false) => {
@@ -461,8 +487,13 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       );
       if (metadataRequestId.current !== requestId) return;
 
+      // A batch that merely ran out of time is still in flight, and the
+      // handler above already merges it when it lands. Counting it as a
+      // failure is what put "some metadata could not be loaded" on screen for
+      // data that arrived a second later.
       const failedRequests = requestResults.flatMap((result, index) => {
-        if (result.status === 'rejected' || result.value?.status !== 'fulfilled') {
+        const timedOut = result.status === 'fulfilled' && result.value?.status === 'timed_out';
+        if (!timedOut && (result.status === 'rejected' || result.value?.status !== 'fulfilled')) {
           return [requestDefinitions[index]];
         }
         return [];
@@ -473,6 +504,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         failedMetadataRequests.current.set(list.id, failedRequests);
         setMetadataError('LIST_METADATA_LOAD_FAILED');
       } else {
+        // Either everything resolved, or what is missing is merely late and
+        // the merge handler above is still waiting for it. Neither is an error.
         failedMetadataRequests.current.delete(list.id);
         setMetadataError(null);
       }
@@ -861,7 +894,14 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         </div>
       )}
       {error && (
-        <div className="lists-inline-status is-error" role="alert">
+        // 'stalled' is not an alarm: the read behind it is still running and
+        // can still refresh the cards on its own, so it keeps `aria-busy` and
+        // stays out of `role="alert"`. Only a real refusal is an error.
+        <div
+          className={`lists-inline-status${error === 'LISTS_LOAD_STALLED' ? '' : ' is-error'}`}
+          role={error === 'LISTS_LOAD_STALLED' ? 'status' : 'alert'}
+          aria-busy={error === 'LISTS_LOAD_STALLED'}
+        >
           <span>{getUiErrorMessage(error, language, 'LISTS_LOAD_FAILED')}</span>
           <button className="lists-retry-btn" onClick={() => setReloadToken(token => token + 1)}>
             {isEnglish ? 'Try again' : 'Reintentar'}

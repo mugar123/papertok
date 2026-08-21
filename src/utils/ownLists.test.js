@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readOwnLists, snapshotIsAuthoritative } from './ownLists.js';
+import {
+  listsHolding,
+  readOwnLists,
+  snapshotIsAuthoritative,
+  withPaperMembership,
+} from './ownLists.js';
 
 /**
  * The save-and-organize modal told an account with four lists that it had none
@@ -87,4 +92,69 @@ test('a snapshot reporting size but no `empty` flag is still read correctly', ()
     forEach: () => {},
   };
   assert.equal(snapshotIsAuthoritative(bare), false);
+});
+
+// ---------------------------------------------------------------------------
+// The session cache the save modal paints from. Saving fifty papers in a row
+// used to re-read all sixty list documents fifty times; painting from a cache
+// removes that, and creates one obligation in exchange — the cache has to
+// learn what the save just wrote.
+
+test('membership can be asked of lists that never came from a snapshot', () => {
+  const lists = [
+    { id: 'a', paperIds: ['p1', 'p2'] },
+    { id: 'b', paperIds: [] },
+    { id: 'c' },
+  ];
+  assert.deepEqual([...listsHolding(lists, 'p1')], ['a']);
+  assert.deepEqual([...listsHolding(lists, 'p9')], []);
+  assert.deepEqual([...listsHolding(lists, null)], [], 'no paper, no membership');
+  assert.deepEqual([...listsHolding(null, 'p1')], []);
+});
+
+test('THE REGRESSION THE CACHE COULD CAUSE: a save must be visible on reopen', () => {
+  const cached = [{ id: 'a', paperIds: [] }, { id: 'b', paperIds: ['p1'] }];
+  const after = withPaperMembership(cached, 'p1', { added: ['a'], removed: ['b'] });
+
+  // Reopening the modal on the same paper reads membership off the cache, so
+  // this is exactly what the checkboxes will show.
+  assert.deepEqual([...listsHolding(after, 'p1')], ['a']);
+});
+
+test('the write-through mirrors arrayUnion and arrayRemove, idempotently', () => {
+  const lists = [{ id: 'a', paperIds: ['p1'] }, { id: 'b', paperIds: [] }];
+
+  const addedTwice = withPaperMembership(
+    withPaperMembership(lists, 'p1', { added: ['a'] }), 'p1', { added: ['a'] },
+  );
+  assert.deepEqual(addedTwice[0].paperIds, ['p1'], 'adding a present id is a no-op');
+
+  const removedTwice = withPaperMembership(
+    withPaperMembership(lists, 'p1', { removed: ['b'] }), 'p1', { removed: ['b'] },
+  );
+  assert.deepEqual(removedTwice[1].paperIds, [], 'removing an absent id is a no-op');
+});
+
+test('the write-through copies rather than mutates the cached array', () => {
+  const lists = [{ id: 'a', paperIds: ['p1'] }, { id: 'b', paperIds: [] }];
+  const before = JSON.stringify(lists);
+  const after = withPaperMembership(lists, 'p2', { added: ['b'] });
+
+  assert.equal(JSON.stringify(lists), before, 'the entry on screen is shared; leave it alone');
+  assert.notEqual(after, lists);
+  assert.equal(after[0], lists[0], 'an untouched list keeps its identity');
+  assert.deepEqual(after[1].paperIds, ['p2']);
+});
+
+test('a save that changed nothing returns the very same array', () => {
+  const lists = [{ id: 'a', paperIds: [] }];
+  assert.equal(withPaperMembership(lists, 'p1', {}), lists);
+  assert.equal(withPaperMembership(lists, 'p1', { added: [], removed: [] }), lists);
+  assert.equal(withPaperMembership(lists, null, { added: ['a'] }), lists);
+});
+
+test('a list the cache does not know about is left alone', () => {
+  const lists = [{ id: 'a', paperIds: [] }];
+  const after = withPaperMembership(lists, 'p1', { added: ['ghost'] });
+  assert.deepEqual(after, lists, 'no phantom entries invented for an unknown id');
 });

@@ -10,7 +10,7 @@ import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import { readPublicList } from '../../services/publicListService.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
 import { getPublicListPath, getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
-import { isTransientReadError, patientRead } from '../../utils/boundedRead.js';
+import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
 import { shareOrCopyLink } from '../../utils/shareLink.js';
 import { copyText } from '../../utils/clipboard.js';
 import './PublicListPage.css';
@@ -100,7 +100,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     // silence, so "the list could not be loaded" used to appear for a list
     // that was perfectly fine. It stays a wait until an error says otherwise.
     patientRead(() => readPublicList(shareId), {
-      attempts: 2,
+      attempts: 3,
       label: 'public list',
       signal: controller.signal,
       onSlow: (attemptNumber, info) => {
@@ -110,8 +110,10 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     })
       .then(apply)
       .catch(error => {
-        if (isTransientReadError(error)) {
+        if (isReadTimeout(error)) {
+          // Budget spent, loop alive: `onLateResult` can still open the list.
           console.warn('The public list did not answer in time', error);
+          if (active) setStatus('stalled');
           return;
         }
         console.error('Error loading public list:', error);
@@ -196,6 +198,8 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     errorBody: 'Check your connection and try again.',
     slowTitle: 'Still opening this list',
     slowBody: 'This is taking longer than usual. Still trying.',
+    stalledTitle: 'Still opening this list',
+    stalledBody: 'This is taking unusually long. We are still trying in the background.',
     offlineTitle: 'Still opening this list',
     offlineBody: 'There seems to be no connection. It will open on its own when it comes back.',
     unsupportedTitle: 'Public lists are unavailable in demo mode',
@@ -220,6 +224,8 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     errorBody: 'Comprueba tu conexión e inténtalo de nuevo.',
     slowTitle: 'Seguimos abriendo la lista',
     slowBody: 'Está tardando más de lo normal. Seguimos intentándolo.',
+    stalledTitle: 'Seguimos abriendo la lista',
+    stalledBody: 'Está tardando muchísimo. Seguimos intentándolo por detrás.',
     offlineTitle: 'Seguimos abriendo la lista',
     offlineBody: 'Parece que no hay conexión. Se abrirá sola en cuanto vuelva.',
     unsupportedTitle: 'Las listas públicas no están disponibles en el modo demo',
@@ -242,18 +248,21 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
     // 'loading', 'slow' and 'offline' are all still waits: they keep the
     // spinner and the read behind them running. Only the other three are
     // outcomes, and only 'error' is worth a Try again.
-    const waiting = status === 'loading' || status === 'slow' || status === 'offline';
+    const waiting = status === 'loading' || status === 'slow'
+      || status === 'offline' || status === 'stalled';
     const stateCopy = status === 'not-found'
       ? [copy.notFoundTitle, copy.notFoundBody]
       : status === 'unsupported'
         ? [copy.unsupportedTitle, copy.unsupportedBody]
         : status === 'error'
           ? [copy.errorTitle, copy.errorBody]
-          : status === 'offline'
-            ? [copy.offlineTitle, copy.offlineBody]
-            : status === 'slow'
-              ? [copy.slowTitle, copy.slowBody]
-              : [copy.loading, ''];
+          : status === 'stalled'
+            ? [copy.stalledTitle, copy.stalledBody]
+            : status === 'offline'
+              ? [copy.offlineTitle, copy.offlineBody]
+              : status === 'slow'
+                ? [copy.slowTitle, copy.slowBody]
+                : [copy.loading, ''];
     return (
       <main className={pageClass}>
         {!hasAppChrome && (
@@ -266,7 +275,7 @@ export default function PublicListPage({ shareId: shareIdProp, onAuthRequired })
           {waiting ? <span className="public-list-spinner" aria-hidden="true" /> : <BookOpen size={30} />}
           <h1>{stateCopy[0]}</h1>
           {stateCopy[1] && <p>{stateCopy[1]}</p>}
-          {status === 'error' && (
+          {(status === 'error' || status === 'stalled') && (
             <button type="button" onClick={() => {
               setStatus('loading');
               setReloadToken(token => token + 1);

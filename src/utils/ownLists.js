@@ -29,14 +29,54 @@ export function readOwnLists(snapshot, paperId) {
     lists.push({ id: item.id, ...item.data() });
   });
 
-  const inLists = new Set();
-  if (paperId) {
-    lists.forEach((list) => {
-      if (Array.isArray(list.paperIds) && list.paperIds.includes(paperId)) {
-        inLists.add(list.id);
-      }
-    });
-  }
+  return { lists, inLists: listsHolding(lists, paperId), authoritative: true };
+}
 
-  return { lists, inLists, authoritative: true };
+/**
+ * Which of these lists already hold this paper.
+ *
+ * Split out of `readOwnLists` because the same question has to be answered
+ * about lists that never came from a snapshot: the save modal now paints from
+ * a session cache, and membership is per paper while the cached lists are not.
+ */
+export function listsHolding(lists, paperId) {
+  const inLists = new Set();
+  if (!paperId || !Array.isArray(lists)) return inLists;
+  lists.forEach((list) => {
+    if (Array.isArray(list?.paperIds) && list.paperIds.includes(paperId)) {
+      inLists.add(list.id);
+    }
+  });
+  return inLists;
+}
+
+/**
+ * The lists as they stand after a save, without re-reading them.
+ *
+ * The save modal paints from a shared session cache, so the cache has to learn
+ * what the save just wrote — otherwise reopening the modal on the same paper
+ * shows the checkbox it had *before* the save, which is a worse lie than the
+ * spinner the cache exists to remove. This mirrors, in memory, exactly what
+ * `handleSave` sends to Firestore: `arrayUnion` for `added`, `arrayRemove` for
+ * `removed`, both idempotent, so replaying it is always safe.
+ *
+ * Pure, and it copies rather than mutates: the cached array is shared with
+ * whatever is already on screen.
+ */
+export function withPaperMembership(lists, paperId, { added = [], removed = [] } = {}) {
+  if (!Array.isArray(lists) || !paperId) return lists;
+  const toAdd = new Set(added);
+  const toRemove = new Set(removed);
+  if (toAdd.size === 0 && toRemove.size === 0) return lists;
+
+  return lists.map((list) => {
+    const paperIds = Array.isArray(list?.paperIds) ? list.paperIds : [];
+    if (toAdd.has(list?.id) && !paperIds.includes(paperId)) {
+      return { ...list, paperIds: [...paperIds, paperId] };
+    }
+    if (toRemove.has(list?.id) && paperIds.includes(paperId)) {
+      return { ...list, paperIds: paperIds.filter((id) => id !== paperId) };
+    }
+    return list;
+  });
 }

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { IS_DEMO, db } from '../../services/firebase';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc, limit, query } from 'firebase/firestore';
-import { isTransientReadError, patientRead } from '../../utils/boundedRead';
+import { isReadTimeout, patientRead } from '../../utils/boundedRead';
 import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService';
-import { readOwnLists } from '../../utils/ownLists';
+import { listsHolding, readOwnLists, withPaperMembership } from '../../utils/ownLists';
 import { queuePublicListSync } from '../../services/publicListSync.js';
 import { publicListSyncKey } from '../../utils/publicListFreshness.js';
 import {
@@ -20,6 +20,12 @@ import { getIcon, AVAILABLE_ICONS } from '../../utils/icons';
 import ScientificText from '../ScientificText.js';
 import { BookOpen, Check, Download, Plus, StickyNote, Tags, X } from 'lucide-react';
 import { downloadCitationFile } from '../../utils/readingLibrary';
+import {
+  ownListsAreFresh,
+  ownListsCache,
+  rememberOwnLists,
+  reviseOwnLists,
+} from '../../utils/profileSessionCaches.js';
 import './SaveToListModal.css';
 
 /**
@@ -27,6 +33,14 @@ import './SaveToListModal.css';
  * skeleton and the read behind it: only 'unavailable' is the screen giving up.
  */
 const LISTS_WAITING = ['loading', 'slow', 'offline'];
+
+/**
+ * States where the skeleton has given way to words. 'stalled' is still a wait
+ * — the retry loop runs behind it and `onLateResult` can still paint the
+ * lists — but a skeleton with no end and no explanation reads as a hung
+ * screen, so past the budget the modal says so and offers the button.
+ */
+const LISTS_STOPPED = ['stalled', 'unavailable'];
 
 // Demo storage helpers
 function demoGet(key, fallback) {
@@ -69,16 +83,33 @@ export default function SaveToListModal({ paper, onClose }) {
     void ensurePersonalLibrary?.();
   }, [ensurePersonalLibrary]);
 
-  const [lists, setLists] = useState([]);
-  // Three outcomes, three states. 'loading' and 'unavailable' are deliberately
-  // not the same thing as an empty 'ready': "we could not find out" must never
-  // render as "you have no lists", which is the lie this modal used to tell.
-  const [listsStatus, setListsStatus] = useState('loading');
+  // Saving fifty papers in a row used to re-read all sixty list documents
+  // fifty times, once per open, and that is what saturated: the reads pile up
+  // on a channel already busy with a write per save to the same document.
+  // The lists are the same lists every time, so the modal paints from the
+  // session cache the profile screens already share, and revalidates behind
+  // it. Membership is the one thing that is NOT cached — it is per paper, so
+  // it is derived here from the cached lists.
+  const seededLists = user?.uid ? ownListsCache.get(user.uid) : null;
+  const seededMembership = useMemo(
+    () => listsHolding(seededLists, paper.id),
+    [seededLists, paper.id],
+  );
+
+  const [lists, setLists] = useState(() => seededLists ?? []);
+  // Four outcomes, four states. 'loading', 'slow'/'offline' and 'unavailable'
+  // are deliberately not the same thing as an empty 'ready': "we could not
+  // find out" must never render as "you have no lists", which is the lie this
+  // modal used to tell.
+  const [listsStatus, setListsStatus] = useState(seededLists ? 'ready' : 'loading');
   const [listsAttempt, setListsAttempt] = useState(0);
+  // Whether THIS open started from the cache: a failed revalidation behind a
+  // painted view must stay quiet, the same rule the comment sheet follows.
+  const openedSeeded = useRef(Boolean(seededLists));
 
   // Server truth vs what the UI shows. Save writes the diff, both directions.
-  const [initialListIds, setInitialListIds] = useState(() => new Set());
-  const [pendingListIds, setPendingListIds] = useState(() => new Set());
+  const [initialListIds, setInitialListIds] = useState(() => new Set(seededMembership));
+  const [pendingListIds, setPendingListIds] = useState(() => new Set(seededMembership));
 
   // Drafts are null until the user edits the field; while null, the field
   // shows the library baseline. This is what lets a library record that lands
@@ -143,13 +174,15 @@ export default function SaveToListModal({ paper, onClose }) {
       paper.id,
     );
 
-    const apply = ({ lists: userLists, inLists, authoritative }) => {
+    const apply = ({ lists: userLists, inLists, authoritative, cached = false }) => {
       if (!active) return;
       if (!authoritative) {
         setListsStatus('unavailable');
         return;
       }
       setLists(userLists);
+      if (cached) reviseOwnLists(user?.uid, userLists);
+      else rememberOwnLists(user?.uid, userLists);
       setInitialListIds(new Set(inLists));
       // A late answer (patientRead's onLateResult) must not wipe toggles the
       // user already made on an earlier answer's rows.
@@ -157,22 +190,56 @@ export default function SaveToListModal({ paper, onClose }) {
       setListsStatus('ready');
     };
 
-    patientRead(IS_DEMO ? fromDemo : fromFirestore, {
-      attempts: 2,
+    /**
+     * Inside the freshness window the cached lists ARE the answer, and this is
+     * what stops a burst of saves from re-reading sixty documents per paper.
+     *
+     * It goes through the same pipeline rather than short-circuiting it, and
+     * that is deliberate: membership is per paper, so opening the modal on a
+     * second paper without a fresh `apply` would leave the FIRST paper's
+     * checkboxes on screen. Feeding the cache in as an attempt keeps one path,
+     * one `apply`, and no state set synchronously inside the effect.
+     */
+    const fromFreshCache = () => {
+      const cached = ownListsCache.get(user.uid);
+      // `cached: true` is what stops `apply` from renewing the freshness
+      // window with data it did not fetch — otherwise the window would keep
+      // extending itself and the lists would never be re-read at all.
+      return {
+        lists: cached, inLists: listsHolding(cached, paper.id),
+        authoritative: true, cached: true,
+      };
+    };
+    const readLists = IS_DEMO
+      ? fromDemo
+      : (ownListsAreFresh(user.uid) ? fromFreshCache : fromFirestore);
+
+    patientRead(readLists, {
+      attempts: 3,
       label: 'lists',
       signal: controller.signal,
       // A mute connection is a wait, not a verdict: saying the lists could not
       // be loaded, while the read behind it is still going, is the one thing
       // this screen must never do to somebody's own data.
       onSlow: (attemptNumber, info) => {
-        if (active) setListsStatus(info?.offline ? 'offline' : 'slow');
+        if (active && !openedSeeded.current) setListsStatus(info?.offline ? 'offline' : 'slow');
       },
       onLateResult: apply,
     })
       .then(apply)
       .catch((err) => {
-        if (isTransientReadError(err)) {
+        // A revalidation that failed behind a painted view keeps the view.
+        if (active && openedSeeded.current) {
+          console.warn('The lists could not be refreshed; the cached view stands', err);
+          return;
+        }
+        if (isReadTimeout(err)) {
+          // The budget is spent but the retry loop is not: say so, offer the
+          // button, and keep `onLateResult` armed. An unlabelled skeleton that
+          // never ends is indistinguishable from being hung, which is what
+          // this state exists to stop.
           console.warn('The lists did not answer in time', err);
+          if (active) setListsStatus('stalled');
           return;
         }
         console.error('Error loading lists:', err);
@@ -310,7 +377,14 @@ export default function SaveToListModal({ paper, onClose }) {
       }
     }
 
-    setLists((previous) => [...previous, newList]);
+    setLists((previous) => {
+      const next = [...previous, newList];
+      // A list created here has to reach the cache too, or the next open
+      // inside the freshness window would paint a list that no longer
+      // matches the account.
+      reviseOwnLists(user?.uid, next);
+      return next;
+    });
     touchedLists.current = true;
     setPendingListIds((previous) => new Set([...previous, listId]));
     createDialogRef.current?.close();
@@ -425,6 +499,20 @@ export default function SaveToListModal({ paper, onClose }) {
         }
       }
 
+      // The cache this modal paints from has to learn what the save just
+      // wrote, or reopening on the same paper would show the checkbox as it
+      // was BEFORE the save — a worse lie than the spinner the cache removes.
+      if (user?.uid) {
+        const cached = ownListsCache.get(user.uid);
+        if (cached) {
+          // `revise`, not `remember`: the lists were edited, not re-read, so
+          // this must not renew the freshness window.
+          reviseOwnLists(user.uid, withPaperMembership(cached, paper.id, {
+            added: toAdd, removed: toRemove,
+          }));
+        }
+      }
+
       if (readLaterChanged) await toggleReadLater(paper);
       if (metadataChanged) await saveReadingMetadata(paper, { note, tags: finalTags });
 
@@ -453,6 +541,7 @@ export default function SaveToListModal({ paper, onClose }) {
     loadingLists: 'Loading lists...',
     listsSlow: 'This is taking longer than usual. Still trying.',
     listsOffline: 'There seems to be no connection. Still trying.',
+    listsStalled: 'Your lists are taking unusually long. We are still trying — your papers are safe.',
     listsUnavailable: 'Your lists could not be loaded. They are still there.',
     retry: 'Try again',
     noLists: 'No lists yet — create the first one right below.',
@@ -490,6 +579,7 @@ export default function SaveToListModal({ paper, onClose }) {
     loadingLists: 'Cargando listas...',
     listsSlow: 'Está tardando más de lo normal. Seguimos intentándolo.',
     listsOffline: 'Parece que no hay conexión. Seguimos intentándolo.',
+    listsStalled: 'Tus listas están tardando muchísimo. Seguimos intentándolo — tus papers están a salvo.',
     listsUnavailable: 'No se pudieron cargar tus listas. Siguen ahí.',
     retry: 'Reintentar',
     noLists: 'Aún no tienes listas: crea la primera aquí debajo.',
@@ -570,9 +660,13 @@ export default function SaveToListModal({ paper, onClose }) {
                 </p>
               )}
             </div>
-          ) : listsStatus === 'unavailable' ? (
-            <div className="save-modal-loading" role="status">
-              {copy.listsUnavailable}
+          ) : LISTS_STOPPED.includes(listsStatus) ? (
+            // 'stalled' keeps `aria-busy`: the read behind it is still going
+            // and can still paint the lists without anybody pressing anything.
+            // 'unavailable' is the verdict, and there the button is the only
+            // way forward.
+            <div className="save-modal-loading" role="status" aria-busy={listsStatus === 'stalled'}>
+              {listsStatus === 'stalled' ? copy.listsStalled : copy.listsUnavailable}
               <button
                 className="save-modal-retry"
                 onClick={() => { setListsStatus('loading'); setListsAttempt((n) => n + 1); }}

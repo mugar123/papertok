@@ -21,7 +21,7 @@ import {
 import { profileIsPublic, readOwnUserProfile } from '../../services/userProfileService.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
-import { isTransientReadError, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
+import { isReadTimeout, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
 import './CommentsSheet.css';
 
 // Opening the sheet used to start from nothing every time: anchor, pages and
@@ -65,6 +65,10 @@ const COPY = {
   noConnection: {
     es: 'Parece que no hay conexión. Seguimos intentándolo.',
     en: 'There seems to be no connection. Still trying.',
+  },
+  stalledLoad: {
+    es: 'Está tardando muchísimo. Seguimos intentándolo por detrás.',
+    en: 'This is taking unusually long. We are still trying in the background.',
   },
   retry: { es: 'Reintentar', en: 'Try again' },
   more: { es: 'Cargar más', en: 'Load more' },
@@ -115,6 +119,9 @@ const COPY = {
 const WAITING_COPY = {
   slow: COPY.slowLoad,
   offline: COPY.noConnection,
+  // Past the budget, but the retry loop is still running behind it: a wait
+  // with no end and no words reads as a hung screen, so it gets both.
+  stalled: COPY.stalledLoad,
   error: COPY.loadError,
 };
 
@@ -348,7 +355,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     };
 
     patientRead(loadThread, {
-      attempts: 2,
+      attempts: 3,
       label: 'comment thread',
       signal: controller.signal,
       // The truth at the first timeout is "slow", not "failed": the interface
@@ -365,20 +372,21 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     })
       .then(apply)
       .catch((error) => {
-        if (isTransientReadError(error)) {
-          // Already showing 'slow', and onLateResult stays armed. Saying
-          // "could not be loaded" here blamed the server for a slow answer —
-          // disproved by the instant success on the next tap. Firestore's own
-          // ten-second verdict arrives here as `unavailable`, which is the
-          // same non-answer wearing a rejection's clothes.
-          console.warn('The comment thread did not answer in time', error);
-          return;
-        }
-        console.error('The comment thread could not be loaded', error);
         if (!active) return;
         // A failed refresh behind an already-visible cached thread stays quiet
         // (the cached view keeps standing); an explicit retry reports honestly.
         if (openedSeeded.current && attempt === 0) return;
+        if (isReadTimeout(error)) {
+          // The budget is spent, the loop is not: onLateResult stays armed and
+          // can still paint the thread. Saying "could not be loaded" here
+          // blamed the server for a slow answer — disproved by the instant
+          // success on the next tap — but leaving the skeleton up forever is
+          // its own lie, so this says what is true and offers the button.
+          console.warn('The comment thread did not answer in time', error);
+          setStatus('stalled');
+          return;
+        }
+        console.error('The comment thread could not be loaded', error);
         setStatus('error');
       });
     return () => {

@@ -20,6 +20,8 @@ const ERROR_MESSAGES = {
     PARTIAL_AUTHORS_LOAD_FAILED: 'No se pudieron cargar algunos autores.',
     REPORT_LOAD_FAILED: 'No se pudo cargar la edición. Inténtalo de nuevo.',
     LISTS_LOAD_FAILED: 'No se pudieron actualizar tus listas personalizadas.',
+    // No es un fallo: es una espera que se ha alargado y sigue corriendo.
+    LISTS_LOAD_STALLED: 'Tus listas están tardando muchísimo. Seguimos intentándolo.',
     LIST_METADATA_LOAD_FAILED: 'No se pudieron cargar todos los datos de esta lista.',
     // P25: the public copy is rebuilt in the background, so its failures are
     // never "your edit was lost" — the edit is safe in Firestore and the list
@@ -50,6 +52,7 @@ const ERROR_MESSAGES = {
     PARTIAL_AUTHORS_LOAD_FAILED: 'Some authors could not be loaded.',
     REPORT_LOAD_FAILED: 'The edition could not be loaded. Try again.',
     LISTS_LOAD_FAILED: 'Your custom lists could not be updated.',
+    LISTS_LOAD_STALLED: 'Your lists are taking unusually long. Still trying.',
     LIST_METADATA_LOAD_FAILED: 'Some metadata for this list could not be loaded.',
     PUBLIC_LIST_SYNC_FAILED: 'Your changes are saved, but the public link does not have them yet. It will retry when you open the list.',
     PUBLISH_UNREACHABLE: 'Your changes are saved. The public link will catch up when the connection is back.',
