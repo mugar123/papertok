@@ -20,7 +20,7 @@
     "bloomfilter": "^1.1.0",
     "fast-xml-parser": "^5.10.1",
     "firebase": "^12.14.0",
-    "framer-motion": "^12.40.0",
+    "framer-motion": "^13.1.0",
     "katex": "^0.17.0",
     "lucide-react": "^1.18.0",
     "protobufjs": "7.6.5",
