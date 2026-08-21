@@ -97,3 +97,41 @@ test('the users section is a known section, or it sinks to the bottom forever', 
   assert.ok(order, 'the default order is where it is expected to be');
   assert.match(order[1], /'users'/);
 });
+
+test('the search never announces itself as unavailable', () => {
+  // The page saying "the search is temporarily unavailable" is the page
+  // denying its own existence — and it said it while results sat underneath,
+  // because `hasResults` did not count the people it had just found. A notice
+  // names the provider that went down, or it does not appear.
+  assert.doesNotMatch(code, /Search is temporarily unavailable/);
+  assert.doesNotMatch(code, /La búsqueda no está disponible/);
+});
+
+test('the page settles once', () => {
+  // Results used to be revealed in two phases — whatever had arrived by 520 ms,
+  // then every straggler painting on its own — which assembled the page on
+  // screen over several seconds and reshuffled the ranking as it went.
+  assert.doesNotMatch(code, /SEARCH_INITIAL_REVEAL_MS/);
+  assert.doesNotMatch(code, /Promise\.race/, 'no partial reveal race');
+  assert.match(code, /await Promise\.all\(tasks\)/, 'one settle for the whole fan-out');
+});
+
+test('the wait covers the people channel, not just the external one', () => {
+  // The skeleton used to die the moment the people query merely started, at
+  // 400 ms, leaving Firestore's "nobody matches that" alone on screen until the
+  // five external sources landed a second later.
+  const pending = code.match(/const peoplePending = [\s\S]{0,240}?;/);
+  assert.ok(pending, 'the people channel takes part in the pending state');
+  assert.match(pending[0], /userStatus/);
+  assert.match(code, /const searchPending = [\s\S]{0,200}?peoplePending/);
+});
+
+test('the outage description speaks only for the external sources', () => {
+  // Mirrors the rule above for setSearchIssue: a Firestore hiccup must not be
+  // able to reach a banner that names OpenAlex.
+  const described = code.match(/describeSearchOutage\([\s\S]{0,200}?\)/g) || [];
+  assert.ok(described.length > 0, 'the banner still goes through the outage module');
+  for (const call of described) {
+    assert.doesNotMatch(call, /user/i, 'people never enter the provider outage');
+  }
+});

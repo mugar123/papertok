@@ -1,4 +1,4 @@
-import { Children, useState, useEffect, useRef, useCallback } from 'react';
+import { Children, useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import {
   Search,
   FileText,
@@ -43,6 +43,15 @@ import {
   searchUsers,
 } from '../../services/userSearchService';
 import { isTransientReadError, patientRead } from '../../utils/boundedRead.js';
+import { getOpenAlexHealth, isOpenAlexRateLimitError } from '../../services/openAlexClient';
+import {
+  SECTION_SOURCES,
+  SOURCE_LABELS,
+  describeSearchOutage,
+  formatRetryDelay,
+  joinNames,
+  outageAffectsFilter,
+} from '../../utils/searchOutage.js';
 import PaperCard from '../Feed/PaperCard';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
@@ -60,7 +69,6 @@ const paperSearchAdapter = new OpenAlexAdapter();
 const SEARCH_DEBOUNCE_MS = 320;
 const SEARCH_TIMEOUT_MS = 6000;
 const SEARCH_MIN_LOADING_MS = 180;
-const SEARCH_INITIAL_REVEAL_MS = 520;
 const USER_SEARCH_TIMEOUT_MS = 6000;
 /** How many people the combined view shows before the Users pill takes over. */
 const USER_ROWS_IN_ALL = 5;
@@ -88,19 +96,27 @@ function initialOf(name, handle) {
 
 const wait = (delayMs) => new Promise(resolve => setTimeout(resolve, delayMs));
 
+/**
+ * Never rejects: a failed source resolves with its fallback and a status.
+ *
+ * The error object rides along now. It used to be dropped here
+ * (`.catch(() => ...)`), and with it went the one thing that could tell a rate
+ * limit from a timeout — `retryAfterMs`, which the OpenAlex client had already
+ * parsed out of `Retry-After`.
+ */
 function settleSearch(promise, fallback = [], timeoutMs = SEARCH_TIMEOUT_MS) {
   return new Promise((resolve) => {
     let settled = false;
-    const finish = (value, status) => {
+    const finish = (value, status, error = null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
-      resolve({ value, status });
+      resolve({ value, status, error });
     };
     const timeoutId = setTimeout(() => finish(fallback, 'timeout'), timeoutMs);
     Promise.resolve(promise)
       .then(value => finish(value, 'fulfilled'))
-      .catch(() => finish(fallback, 'rejected'));
+      .catch(error => finish(fallback, 'rejected', error));
   });
 }
 
@@ -112,6 +128,20 @@ function handleSearchItemKeyDown(event, action) {
   }
 }
 
+/**
+ * Ranks the sections by moving them in the DOM, so what a screen reader hears
+ * and what a keyboard walks match what everyone else sees.
+ *
+ * Moving a node does cancel and restart its CSS animations — `insertBefore`
+ * detaches the element first, and a subtree that leaves the document loses its
+ * running animations. That used to blank a section that was already on screen
+ * and re-enter it row by row, several times per search, because the ranking was
+ * recomputed as each straggling source landed. The fix is upstream: the page
+ * now settles once, so this comparator runs on a result set that no longer
+ * changes underneath it. Expressing the rank with flexbox `order` instead would
+ * also stop the restarts, but at the price of a reading order that no longer
+ * matches the visual one.
+ */
 function OrderedSearchSections({ children, preferredSection }) {
   return Children.toArray(children).sort((left, right) => (
     getSearchSectionOrder(left.props['data-section'], preferredSection)
@@ -234,19 +264,13 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
       topics: setConceptResults,
       projects: setProjectResults,
     };
-    const resolvedOutcomes = new Map();
-    let initialResultsRevealed = false;
     const isCurrentSearch = () => (
       searchId === searchIdRef.current && !requestController.signal.aborted
     );
-    const track = (section, promise) => promise.then((outcome) => {
-      const trackedOutcome = { ...outcome, section };
-      resolvedOutcomes.set(section, trackedOutcome);
-      if (initialResultsRevealed && isCurrentSearch()) {
-        sectionSetters[section](outcome.value);
-      }
-      return trackedOutcome;
-    });
+    // Only tags the outcome with its section. Painting used to happen here, one
+    // straggler at a time, which is what assembled the page on screen over
+    // several seconds; the whole search now lands in a single commit below.
+    const track = (section, promise) => promise.then(outcome => ({ ...outcome, section }));
 
     const tasks = [
       track('papers', settleSearch(
@@ -297,42 +321,60 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
       )),
     ];
 
-    const allOutcomesPromise = Promise.all(tasks);
-    await Promise.race([allOutcomesPromise, wait(SEARCH_INITIAL_REVEAL_MS)]);
+    // One settle. Every source is bounded by its own deadline above, so this
+    // waits at most as long as the slowest deadline and then commits the whole
+    // page at once. The floor keeps an instant answer from flashing a skeleton.
+    const outcomes = await Promise.all(tasks);
     const remainingMinimumDelay = Math.max(
       0,
       SEARCH_MIN_LOADING_MS - (Date.now() - searchStartedAt),
     );
     if (remainingMinimumDelay > 0) await wait(remainingMinimumDelay);
-
     if (!isCurrentSearch()) return;
-    resolvedOutcomes.forEach(outcome => {
-      sectionSetters[outcome.section](outcome.value);
-    });
-    initialResultsRevealed = true;
 
-    const outcomes = await allOutcomesPromise;
-    if (isCurrentSearch()) {
-      const resultCount = outcomes.reduce(
-        (total, outcome) => total + (Array.isArray(outcome.value) ? outcome.value.length : 0),
-        0,
-      );
-      trackEvent('search_performed', {
-        search_type: 'all',
-        result_count: resultCount,
-        has_results: resultCount > 0,
-      });
-      const unavailableSections = outcomes
-        .filter(outcome => outcome.status !== 'fulfilled')
-        .map(outcome => outcome.section);
-      setSearchIssue(unavailableSections.length > 0
-        ? { unavailableSections }
-        : null);
-      setIsSearching(false);
-      if (requestAbortRef.current === requestController) {
-        requestAbortRef.current = null;
-      }
+    const resultCount = outcomes.reduce(
+      (total, outcome) => total + (Array.isArray(outcome.value) ? outcome.value.length : 0),
+      0,
+    );
+
+    const failedSections = outcomes
+      .filter(outcome => outcome.status !== 'fulfilled')
+      .map(outcome => outcome.section);
+
+    // Only OpenAlex's own sections can testify about OpenAlex: a 429 from
+    // OpenAIRE also satisfies `isOpenAlexRateLimitError`, which walks the cause
+    // chain looking for that status.
+    const openAlexOutcomes = outcomes
+      .filter(outcome => SECTION_SOURCES[outcome.section] === 'openalex');
+    const health = getOpenAlexHealth();
+    const rateLimited = health.rateLimited
+      || openAlexOutcomes.some(outcome => isOpenAlexRateLimitError(outcome.error));
+    // Both sources of the figure, largest wins: the client zeroes
+    // `rateLimitedUntil` as soon as any request succeeds, so health can read 0
+    // while the error that just failed still carries what OpenAlex said.
+    const retryAfterMs = Math.max(
+      health.retryAfterMs || 0,
+      ...openAlexOutcomes.map(outcome => (
+        isOpenAlexRateLimitError(outcome.error) ? outcome.error?.retryAfterMs || 0 : 0
+      )),
+    );
+    const issue = describeSearchOutage({ sections: failedSections, rateLimited, retryAfterMs });
+
+    outcomes.forEach(outcome => sectionSetters[outcome.section](outcome.value));
+    setSearchIssue(issue);
+    setIsSearching(false);
+    if (requestAbortRef.current === requestController) {
+      requestAbortRef.current = null;
     }
+
+    // After the commit, never before: with the whole page behind the pending
+    // gate, anything that throws on the way to `setIsSearching(false)` no
+    // longer leaves a stale spinner — it leaves a blank page.
+    trackEvent('search_performed', {
+      search_type: 'all',
+      result_count: resultCount,
+      has_results: resultCount > 0,
+    });
   }, [language, trackEvent]);
 
   useEffect(() => {
@@ -472,8 +514,13 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
     || conceptResults.length > 0
     || projectResults.length > 0;
   const hasResults = hasSearchSectionResults || !!cleanOrcid;
+  // In the combined view the people section is one voice among six, so it is
+  // its ROWS that count: with nothing found anywhere, the page owes the reader
+  // one honest "no results", not a lone "nobody matches that" standing in for
+  // the whole search. Under the Users pill that section IS the page, so there
+  // it keeps speaking for itself.
   const hasVisibleResults = activeSearchFilter === 'all'
-    ? hasResults || usersHaveSomethingToSay
+    ? hasResults || userResults.length > 0
     : activeSearchFilter === 'users'
       ? usersHaveSomethingToSay
       : activeSearchFilter === 'papers'
@@ -487,7 +534,38 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
               : conceptResults.length > 0;
   const activeFilterOption = SEARCH_FILTER_OPTIONS.find(option => option.id === activeSearchFilter)
     || SEARCH_FILTER_OPTIONS[0];
-  const preferredSection = resolvePreferredSearchSection({
+
+  /**
+   * Is the page still waiting for something it is going to show?
+   *
+   * The two channels run on their own clocks — 320 ms for the external fan-out,
+   * 400 ms for people — and the skeleton used to disappear the moment EITHER of
+   * them had anything to say. In practice that meant it died at 400 ms, when
+   * the people query merely *started*, leaving Firestore's "nobody matches
+   * that" alone on screen for a second before the five external sources landed.
+   * The wait now covers every channel this filter actually paints.
+   *
+   * 'slow' and 'offline' deliberately do not count as pending: those are waits
+   * that already announced themselves and still have a live read behind them,
+   * so the people section explains itself in place rather than holding the
+   * whole page hostage to one stalled connection.
+   */
+  // 'idle' counts as pending while a people query is still owed: the two
+  // debounces are 80 ms apart and the external one fires first, so between the
+  // keystroke and the people timer there is a window where nothing is running
+  // yet. Without it a fast external answer settles the page, and then the
+  // people search starts and pulls the skeleton back over it — measured as
+  // skeleton → empty → skeleton → empty on one search.
+  const peopleWillRun = usersRequested && isSearchableTerm(typedUserTerm);
+  const peoplePending = peopleWillRun && (userStatus === 'idle' || userStatus === 'searching');
+  const externalPending = activeSearchFilter !== 'users' && isSearching;
+  const searchPending = Boolean(query.trim()) && (externalPending || peoplePending);
+
+  // Memoised so the order is recomputed only when the results themselves
+  // change, not on every render. With the whole page landing in one commit,
+  // that means once per search — the ordering churn that used to run 6-10 times
+  // while stragglers trickled in is gone with the staggered reveal.
+  const preferredSection = useMemo(() => resolvePreferredSearchSection({
     query,
     hint: searchIntent,
     sectionValues: {
@@ -512,10 +590,48 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
         project.title,
       ]),
     },
-  });
-  const openAlexUnavailable = searchIssue?.unavailableSections
-    ?.filter(section => ['papers', 'authors', 'topics'].includes(section))
-    .length >= 2;
+  }), [
+    query, searchIntent, userResults, paperResults,
+    conceptResults, authorResults, institutionResults, projectResults,
+  ]);
+
+  // The notice outlives the search that raised it, so the countdown has to keep
+  // running: `retryAtMs` is an instant, and this ticks it. Coarsely while the
+  // wait is long — one repaint a second for eight hours would be 28 800 renders
+  // that change nothing — and once a second in the last stretch.
+  const [outageNow, setOutageNow] = useState(() => Date.now());
+  const outageRetryAt = searchIssue?.retryAtMs || null;
+  useEffect(() => {
+    if (!outageRetryAt) return undefined;
+    const remaining = outageRetryAt - Date.now();
+    if (remaining <= 0) return undefined;
+    const interval = setInterval(
+      () => setOutageNow(Date.now()),
+      remaining > 90_000 ? 30_000 : 1_000,
+    );
+    return () => clearInterval(interval);
+  }, [outageRetryAt, outageNow]);
+  const openAlexRetryLabel = outageRetryAt
+    ? formatRetryDelay(outageRetryAt - outageNow)
+    : null;
+
+  // The notice names whoever went down and what is missing because of it, in
+  // the same words the filter pills use.
+  const sectionWord = (section) => {
+    const option = SEARCH_FILTER_OPTIONS.find(entry => entry.id === section);
+    return option ? (isEnglish ? option.labelEn : option.labelEs).toLowerCase() : null;
+  };
+  const outageSourceNames = joinNames(
+    (searchIssue?.sources || []).map(source => SOURCE_LABELS[source]),
+    isEnglish,
+  );
+  // Every failed section, not just OpenAlex's: a simultaneous OpenAIRE failure
+  // used to vanish behind the OpenAlex headline.
+  const outageSectionNames = joinNames(
+    (searchIssue?.sections || []).map(sectionWord),
+    isEnglish,
+  );
+  const outageIsSingleSource = (searchIssue?.sources || []).length === 1;
   const suggestedQueries = [
     {
       label: isEnglish ? 'Cosmology' : 'Cosmología',
@@ -573,6 +689,10 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   const handleSearchFilterChange = (filterId) => {
     setActiveSearchFilter(filterId);
     setSearchIntent(filterId === 'all' ? null : filterId);
+    // The notice belongs to the sections the previous view was showing. Kept
+    // across a filter change it would reappear, unretried, over a view it never
+    // described.
+    setSearchIssue(null);
   };
 
   const clearSearch = () => {
@@ -591,7 +711,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
           >
             <ArrowLeft size={22} />
           </button>
-          <div className={`search-input-wrapper ${isSearching ? 'is-searching' : ''}`}>
+          <div className={`search-input-wrapper ${searchPending ? 'is-searching' : ''}`}>
             <Search className="search-icon" size={18} />
             <input
               type="search"
@@ -605,7 +725,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
               autoComplete="off"
               autoFocus
             />
-            {isSearching && (
+            {searchPending && (
               <span
                 className="search-input-loader"
                 role="status"
@@ -646,7 +766,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
       </div>
 
       <div className="search-results custom-scrollbar">
-        <div id="search-results-panel" className="search-results-list" aria-busy={isSearching}>
+        <div id="search-results-panel" className="search-results-list" aria-busy={searchPending}>
             {!query.trim() && !isSearching && (
               <div className="search-initial-state">
                 <div className="search-initial-hero">
@@ -676,42 +796,63 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
               </div>
             )}
 
-            {/* The banner reports the EXTERNAL sources. Under the Users filter
-                none of them is even queried, so a stale outage banner there
-                would blame a view that worked. */}
-            {searchIssue && !isSearching && activeSearchFilter !== 'users' && (
-              <div
-                className={`search-service-state ${hasResults ? 'is-partial' : 'is-error'}`}
-                role={hasResults ? 'status' : 'alert'}
-              >
+            {/* Shown on the pills the outage is actually true for. Switching to
+                Papers during an OpenAlex outage keeps it — that IS the pill it
+                describes — while Users never matches, because people come from
+                Firestore and no provider here serves them. Clearing the notice
+                on every filter change traded one lie for another. */}
+            {searchIssue && !searchPending && outageAffectsFilter(searchIssue, activeSearchFilter) && (
+              <div className="search-service-state" role="status">
                 <AlertCircle size={20} aria-hidden="true" />
                 <div className="search-service-copy">
-                  <strong>{hasResults
-                    ? (openAlexUnavailable
-                        ? (isEnglish ? 'OpenAlex is temporarily unavailable' : 'OpenAlex no está disponible temporalmente')
-                        : (isEnglish ? 'Partial results' : 'Resultados parciales'))
-                    : (isEnglish ? 'Search is temporarily unavailable' : 'La búsqueda no está disponible temporalmente')}</strong>
-                  <span>{hasResults
-                    ? (openAlexUnavailable
-                        ? (isEnglish
-                            ? 'Some papers, authors, and topics may be missing until its quota resets.'
-                            : 'Pueden faltar papers, autores y temas hasta que se restablezca su cuota.')
-                        : (isEnglish ? 'Some sources did not respond.' : 'Algunas fuentes no han respondido.'))
-                    : (isEnglish ? 'Please try again in a moment.' : 'Vuelve a intentarlo dentro de un momento.')}</span>
+                  {/* One notice, always naming the provider that actually went
+                      down. The page never claims "the search is unavailable":
+                      it is the page itself, it knows perfectly well that it is
+                      running, and it used to say that over a list of results. */}
+                  <strong>{searchIssue.rateLimited
+                    ? (isEnglish
+                        ? 'OpenAlex is temporarily unavailable'
+                        : 'OpenAlex no está disponible temporalmente')
+                    : (isEnglish
+                        ? `${outageSourceNames} did not respond`
+                        : `${outageSourceNames} no ${outageIsSingleSource ? 'ha' : 'han'} respondido`)}</strong>
+                  <span>{[
+                    // Only a real rate limit can promise a time; a timeout gets
+                    // no invented estimate.
+                    searchIssue.rateLimited && (openAlexRetryLabel
+                      ? (isEnglish
+                          ? `It is estimated to be back in ${openAlexRetryLabel}.`
+                          : `Se estima que vuelve en ${openAlexRetryLabel}.`)
+                      : (isEnglish
+                          ? 'It has not said when it will be back.'
+                          : 'No ha dicho cuándo vuelve.')),
+                    outageSectionNames
+                      ? (isEnglish
+                          ? `Meanwhile ${outageSectionNames} may be limited.`
+                          : `Mientras tanto pueden faltar ${outageSectionNames}.`)
+                      : (isEnglish
+                          ? 'Searches may come back incomplete.'
+                          : 'Las búsquedas pueden salir incompletas.'),
+                  ].filter(Boolean).join(' ')}</span>
                 </div>
-                <button
-                  type="button"
-                  className="search-retry-btn"
-                  onClick={() => performSearch(query.trim())}
-                  aria-label={isEnglish ? 'Retry search' : 'Reintentar búsqueda'}
-                  title={isEnglish ? 'Retry search' : 'Reintentar búsqueda'}
-                >
-                  <RotateCw size={17} />
-                </button>
+                {/* No retry while OpenAlex is throttling us with a known wait:
+                    the client short-circuits without touching the network, so
+                    the button could only fail again, instantly. */}
+                {!(searchIssue.rateLimited && openAlexRetryLabel) && (
+                  <button
+                    type="button"
+                    className="search-retry-btn"
+                    onClick={() => performSearch(query.trim())}
+                    aria-label={isEnglish ? 'Retry search' : 'Reintentar búsqueda'}
+                    title={isEnglish ? 'Retry search' : 'Reintentar búsqueda'}
+                  >
+                    <RotateCw size={17} />
+                  </button>
+                )}
               </div>
             )}
 
-            {query.trim() && isSearching && !hasVisibleResults && (
+            {searchPending && (
               <div
                 className="search-loading-state"
                 role="status"
@@ -729,7 +870,13 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
               </div>
             )}
 
-            {!hasVisibleResults && query && hasSearched && !isSearching && !searchIssue && (
+            {/* "Nothing was found" is only sayable when the sources this view
+                depends on actually answered. Under an outage that covers them,
+                the page cannot know, and the notice above says so instead —
+                but an outage elsewhere no longer blanks the panel, which is
+                what the old blanket `!searchIssue` guard did. */}
+            {!hasVisibleResults && query && hasSearched && !searchPending
+              && !outageAffectsFilter(searchIssue, activeSearchFilter) && (
               <div className="search-empty">
                 <Search size={40} className="search-empty-icon" />
                 <p>{hasResults && activeSearchFilter !== 'all'
@@ -743,7 +890,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
               </div>
             )}
 
-            {hasVisibleResults && (
+            {hasVisibleResults && !searchPending && (
               <div key={activeSearchFilter} className="search-filtered-results">
                 {/* Direct ORCID */}
                 {cleanOrcid && (activeSearchFilter === 'all' || activeSearchFilter === 'authors') && (
@@ -912,7 +1059,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     <div
                       key={inst.id}
                       className="search-item search-item-enter"
-                      style={{ '--search-item-index': index }}
+                      style={{ '--search-item-index': Math.min(index, 6) }}
                       role="link"
                       tabIndex={0}
                       onClick={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)}

@@ -301,11 +301,9 @@
   animation: searchSectionIn 0.2s ease-out both;
 }
 
-.search-service-state.is-error {
-  border-color: rgba(248, 113, 113, 0.22);
-  background: rgba(127, 29, 29, 0.12);
-  color: #fca5a5;
-}
+/* The red `.is-error` variant is gone with the sentence it carried ("the search
+   is temporarily unavailable"). One provider being down is news, not a failure
+   of the page, so the notice keeps the amber informative tone. */
 
 .search-service-state > svg {
   flex-shrink: 0;
@@ -800,6 +798,15 @@
   .search-follow-btn.following,
   .search-follow-btn.is-pending:not(.following) {
     animation: none;
+  }
+
+  /* Both start at `opacity: 0` and reach 1 only through the animation that was
+     just cancelled above — so with reduced motion every result row and every
+     skeleton row was invisible. Turning the motion off must not turn the
+     content off with it. */
+  .search-item-enter,
+  .search-loading-row {
+    opacity: 1;
   }
 
   .search-input-loader {
