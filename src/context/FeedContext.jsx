@@ -1142,7 +1142,6 @@ export function FeedProvider({ children }) {
           .filter(Boolean)
       )];
       const enrichmentPromise = enrichPapersBatch(enrichmentIds, {
-        allowProxy: false,
         timeoutMs: OPENALEX_FEED_REQUEST_TIMEOUT_MS,
       }).catch((err) => {
         console.error('OpenAlex feed enrichment failed', err);

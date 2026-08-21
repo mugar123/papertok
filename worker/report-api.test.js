@@ -146,6 +146,145 @@ const SCOPUS_EGRESS = Object.freeze({
   SCOPUS_PROXY_SECRET: 's'.repeat(48),
 });
 
+function openAlexEnv(extra = {}) {
+  return {
+    OPENALEX_API_KEY: 'worker-key',
+    REQUEST_QUOTA_LEDGER: {
+      idFromName: () => 'quota-id',
+      get: () => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) }),
+    },
+    ...extra,
+  };
+}
+
+test('rebuilds the OpenAlex URL and attaches the key the caller cannot supply', async () => {
+  let upstreamUrl = '';
+  const response = await withWorkerFetchMock(
+    async url => {
+      upstreamUrl = String(url);
+      return new Response(JSON.stringify({ results: [] }), { status: 200 });
+    },
+    () => reportApi.fetch(new Request(
+      // A caller-supplied key and an unknown parameter must not survive.
+      'https://papertok-report-api.example/openalex/works?filter=doi:10.1%2Fa&per-page=50&api_key=stolen&callback=evil',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), openAlexEnv()),
+  );
+
+  assert.equal(response.status, 200);
+  const target = new URL(upstreamUrl);
+  assert.equal(target.origin + target.pathname, 'https://api.openalex.org/works');
+  assert.equal(target.searchParams.get('filter'), 'doi:10.1/a');
+  assert.equal(target.searchParams.get('per-page'), '50');
+  assert.equal(target.searchParams.get('api_key'), 'worker-key');
+  assert.equal(target.searchParams.get('callback'), null);
+});
+
+test('refuses an entity outside the allowlist and a path that tries to climb out', async () => {
+  const attempts = [
+    '/openalex/secrets',
+    // A raw `../` never reaches the route: the URL parser resolves it first.
+    // A percent-encoded one does, so it is checked on the decoded form.
+    '/openalex/works/%2e%2e%2f%2e%2e%2fadmin',
+    `/openalex/works/${'a'.repeat(241)}`,
+  ];
+  await withWorkerFetchMock(async () => {
+    throw new Error('No upstream request should be made');
+  }, async () => {
+    for (const pathname of attempts) {
+      const response = await reportApi.fetch(new Request(
+        `https://papertok-report-api.example${pathname}`,
+        { headers: { origin: 'https://mugar123.github.io' } },
+      ), openAlexEnv());
+      assert.equal(response.status, 400, pathname);
+    }
+  });
+});
+
+test('serves a guest without a session, because the guest feed reads OpenAlex', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response(JSON.stringify({ results: [{ id: 'W1' }] }), { status: 200 }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/openalex/works?filter=doi:10.1%2Fa',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), openAlexEnv()),
+  );
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { results: [{ id: 'W1' }] });
+});
+
+test('relays an OpenAlex refusal with its own wait instead of flattening it', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response(
+      JSON.stringify({ error: 'Rate limit exceeded', message: 'Insufficient budget.' }),
+      {
+        status: 429,
+        headers: {
+          'retry-after': '3564',
+          'x-ratelimit-remaining-usd': '0',
+          'x-ratelimit-limit-usd': '0.1',
+        },
+      },
+    ),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/openalex/works?filter=doi:10.1%2Fa',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), openAlexEnv()),
+  );
+
+  // Flattening this into a 502 would leave the client guessing how long to wait,
+  // and since the daily budget resets at midnight UTC that wait can be hours.
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('retry-after'), '3564');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  // Not simple response headers: without this the browser hides them.
+  assert.match(response.headers.get('access-control-expose-headers'), /retry-after/);
+  assert.match(response.headers.get('access-control-expose-headers'), /x-ratelimit-remaining-usd/);
+});
+
+test('reports the remaining OpenAlex budget as a number', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response('{"results":[]}', {
+      status: 200,
+      headers: { 'x-ratelimit-remaining-usd': '0.87', 'x-ratelimit-limit-usd': '1', 'x-ratelimit-remaining': '8700' },
+    }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/openalex',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { OPENALEX_API_KEY: 'worker-key' }),
+  );
+
+  assert.equal(response.status, 200);
+  const health = await response.json();
+  assert.equal(health.configured, true);
+  assert.equal(health.available, true);
+  assert.equal(health.budget.remainingUsd, 0.87);
+  assert.equal(health.budget.limitUsd, 1);
+  assert.equal(health.budget.remainingCalls, 8700);
+});
+
+test('reports an exhausted OpenAlex budget as unhealthy, naming the shortfall', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response(
+      JSON.stringify({ error: 'Rate limit exceeded', message: 'Insufficient budget. Resets at midnight UTC' }),
+      { status: 429, headers: { 'x-ratelimit-remaining-usd': '0', 'x-ratelimit-limit-usd': '0.1' } },
+    ),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/health/openalex',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), {}),
+  );
+
+  assert.equal(response.status, 503);
+  const health = await response.json();
+  assert.equal(health.configured, false);
+  assert.equal(health.available, false);
+  assert.equal(health.status, 429);
+  assert.equal(health.budget.remainingUsd, 0);
+  assert.match(health.message, /Insufficient budget/);
+});
+
 test('reports Scopus as unconfigured without contacting the egress', async () => {
   const response = await withWorkerFetchMock(async () => {
     throw new Error('No upstream request should be made');

@@ -28,11 +28,14 @@ Frontend variables are public in the built JavaScript:
 | `VITE_GA_MEASUREMENT_ID` | Public GA4 measurement ID; analytics remains consent-gated |
 | `VITE_PAPER_API_BASE_URL` | Cloudflare Worker base URL |
 | `VITE_REPORT_API_URL` | Legacy report API alias |
-| `VITE_SCOPUS_ENABLED` | Enables Scopus-backed browser flows. Check `/health/scopus` on the Worker before setting it to `true`: with the flag on and the key refused, the feed queues calls that only ever fail |
+| `VITE_SCOPUS_ENABLED` | Enables Scopus-backed browser flows. Check `/health/scopus` on the Worker before setting it to `true`: with the flag on and the key refused, the feed queues calls that only ever fail. Scopus reaches Elsevier through the Deno Deploy egress in `proxy/README.md`, never from the Worker |
 | `VITE_UNPAYWALL_EMAIL` | Public contact email required by Unpaywall |
 
 Never put secret provider tokens in a `VITE_*` variable. See `worker/README.md` for Worker
-secrets.
+secrets. OpenAlex is reached through the Worker's `/openalex/*` route for exactly this reason: since
+February 2026 it requires a key and bills against a daily budget, and its keys take prepaid credit.
+Without `VITE_PAPER_API_BASE_URL` the browser still calls OpenAlex directly, on the anonymous
+$0.10/day allowance.
 
 Google Analytics uses basic consent mode: the Analytics SDK is not loaded until the user
 explicitly opts in. PaperTok records normalized application routes and a strict allowlist of

@@ -45,6 +45,50 @@ const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const ARXIV_CACHE_SECONDS = 10 * 60;
 const SCOPUS_HEALTH_CACHE_SECONDS = 10 * 60;
+const OPENALEX_HEALTH_CACHE_SECONDS = 10 * 60;
+const OPENALEX_CACHE_SECONDS = 6 * 60 * 60;
+// OpenAlex bills per call against a daily budget, so the browser can no longer
+// hold the credential. These are the entities and parameters the app actually
+// asks for; the URL is rebuilt from them rather than forwarded.
+const OPENALEX_ENTITIES = new Set([
+  'works',
+  'authors',
+  'institutions',
+  'sources',
+  'topics',
+  'concepts',
+  'publishers',
+  'funders',
+  'keywords',
+  'autocomplete',
+]);
+const OPENALEX_PARAMS = [
+  'filter',
+  'search',
+  'select',
+  'sort',
+  'page',
+  'per-page',
+  'per_page',
+  'cursor',
+  'group_by',
+  'sample',
+  'seed',
+  'q',
+];
+// The client reads these to back off for as long as OpenAlex actually asks, so
+// they are relayed and, because they are not simple response headers, exposed
+// to the page. Without the expose header the browser hides them and the backoff
+// silently falls back to a guess.
+const OPENALEX_RATE_LIMIT_HEADERS = [
+  'retry-after',
+  'x-ratelimit-limit',
+  'x-ratelimit-remaining',
+  'x-ratelimit-reset',
+  'x-ratelimit-limit-usd',
+  'x-ratelimit-remaining-usd',
+];
+const DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT = 300;
 const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
   europepmc: 30 * 60,
@@ -77,6 +121,7 @@ const CACHE_PARAMS_BY_PATH = Object.freeze({
   '/enrich/icite': ['pmids'],
   '/resources/huggingface': ['arxiv_id'],
   '/health/scopus': [],
+  '/health/openalex': [],
 });
 const PROTECTED_PROVIDER_PATHS = new Set([
   '/report/trends',
@@ -122,7 +167,12 @@ function corsHeaders(origin, env) {
 function canonicalCacheKey(request, origin) {
   const requestUrl = new URL(request.url);
   const cacheUrl = new URL(`https://papertok.internal/cache${requestUrl.pathname}`);
-  for (const name of CACHE_PARAMS_BY_PATH[requestUrl.pathname] || []) {
+  // `/openalex/*` carries the entity in the path, so its parameters cannot be
+  // looked up by an exact pathname the way the fixed routes are.
+  const cacheParams = requestUrl.pathname.startsWith('/openalex/')
+    ? OPENALEX_PARAMS
+    : CACHE_PARAMS_BY_PATH[requestUrl.pathname] || [];
+  for (const name of cacheParams) {
     const value = requestUrl.searchParams.get(name);
     if (value !== null) cacheUrl.searchParams.set(name, value.trim());
   }
@@ -1170,6 +1220,11 @@ function scopusQuota(response) {
   };
 }
 
+function numberOrNull(value) {
+  const parsed = Number(value);
+  return value !== null && value !== '' && Number.isFinite(parsed) ? parsed : null;
+}
+
 function boundedText(value, maxLength) {
   return [...String(value || '')]
     .map(character => (character.charCodeAt(0) <= 31 || character.charCodeAt(0) === 127 ? ' ' : character))
@@ -1252,6 +1307,163 @@ export async function checkScopusHealth(env) {
       code: 'SCOPUS_UNREACHABLE',
       message: boundedText(error?.message, 160),
       attempts: [],
+    };
+  }
+}
+
+// Rebuilds the upstream URL from an entity allowlist and a parameter allowlist.
+// Nothing the caller sends reaches OpenAlex verbatim -- in particular an
+// `api_key` in the query is dropped, so a caller cannot spend someone else's
+// budget or pin a key of their own.
+function openAlexTargetUrl(pathname, searchParams) {
+  const [entity, ...idSegments] = pathname.slice('/openalex/'.length).split('/');
+  if (!OPENALEX_ENTITIES.has(entity)) return null;
+
+  const id = idSegments.join('/');
+  // `works/doi:10.1016/j.x` legitimately carries a slash, so the id is matched
+  // as a whole. A raw `../` never arrives -- the URL parser resolves it before
+  // this route sees it -- but a percent-encoded one does, so the check runs on
+  // the decoded form. A real identifier decodes to something without `..`.
+  if (id) {
+    if (!/^[A-Za-z0-9._:%|,\-/]{1,240}$/.test(id)) return null;
+    let decoded;
+    try {
+      decoded = decodeURIComponent(id);
+    } catch {
+      return null;
+    }
+    if (decoded.includes('..')) return null;
+  }
+
+  const url = new URL(`https://api.openalex.org/${entity}${id ? `/${id}` : ''}`);
+  for (const name of OPENALEX_PARAMS) {
+    const value = searchParams.get(name);
+    if (value !== null && value.length <= 2_000) url.searchParams.set(name, value);
+  }
+  return url;
+}
+
+// The guest feed reads OpenAlex, so this route cannot demand a Firebase
+// identity the way the other credential-backed routes do. What protects the
+// daily budget instead is a global per-minute ceiling, reserved only after a
+// cache miss so repeated queries cost nothing.
+async function reserveOpenAlexQuota(env, origin) {
+  const minute = new Date().toISOString().slice(0, 16);
+  const limit = boundedLimit(
+    env.OPENALEX_GLOBAL_MINUTE_LIMIT,
+    DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT,
+    100_000,
+  );
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `openalex:${minute}`,
+    subject: 'openalex:shared',
+    subjectLimit: limit,
+    globalLimit: limit,
+  });
+  if (!reservation.accepted && reservation.code) {
+    return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+    });
+  }
+  if (!reservation.accepted) {
+    return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+      'retry-after': '60',
+    });
+  }
+  return null;
+}
+
+function openAlexResponseHeaders(upstream, origin, env) {
+  const headers = new Headers({
+    'content-type': 'application/json; charset=utf-8',
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    ...corsHeaders(origin, env),
+  });
+  const exposed = [];
+  for (const name of OPENALEX_RATE_LIMIT_HEADERS) {
+    const value = upstream.headers.get(name);
+    if (value) {
+      headers.set(name, value);
+      exposed.push(name);
+    }
+  }
+  if (exposed.length > 0) headers.set('access-control-expose-headers', exposed.join(', '));
+  return headers;
+}
+
+async function handleOpenAlex(request, env) {
+  const requestUrl = new URL(request.url);
+  const origin = request.headers.get('origin') || '';
+  if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+
+  const target = openAlexTargetUrl(requestUrl.pathname, requestUrl.searchParams);
+  if (!target) return json({ code: 'INVALID_OPENALEX_REQUEST' }, 400, corsHeaders(origin, env));
+
+  const cacheKey = canonicalCacheKey(request, origin);
+  const cached = await caches.default.match(cacheKey);
+  if (cached) return cached;
+
+  const quotaError = await reserveOpenAlexQuota(env, origin);
+  if (quotaError) return quotaError;
+
+  const upstream = await fetch(addOpenAlexCredentials(target, env), {
+    headers: { accept: 'application/json' },
+  });
+  const body = await upstream.text();
+  const headers = openAlexResponseHeaders(upstream, origin, env);
+
+  // A refusal is relayed with its own status and its own `retry-after`, because
+  // flattening it into a 502 would leave the client guessing how long to wait --
+  // and since February 2026 that wait can be most of a day.
+  if (!upstream.ok) {
+    headers.set('cache-control', 'no-store');
+    return new Response(body, { status: upstream.status, headers });
+  }
+
+  headers.set('cache-control', `public, max-age=300, s-maxage=${OPENALEX_CACHE_SECONDS}, stale-while-revalidate=86400`);
+  const response = new Response(body, { status: 200, headers });
+  await caches.default.put(cacheKey, response.clone());
+  return response;
+}
+
+// OpenAlex reports the remaining daily budget on every response. With the quota
+// now denominated in money, that number is worth being able to read directly
+// instead of inferring it from a feed that stopped working.
+export async function checkOpenAlexHealth(env) {
+  const base = { provider: 'openalex', configured: Boolean(env.OPENALEX_API_KEY) };
+  try {
+    const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
+    url.searchParams.set('per-page', '1');
+    url.searchParams.set('select', 'id');
+    const response = await fetch(url, { headers: { accept: 'application/json' } });
+    const budget = {
+      limitUsd: numberOrNull(response.headers.get('x-ratelimit-limit-usd')),
+      remainingUsd: numberOrNull(response.headers.get('x-ratelimit-remaining-usd')),
+      remainingCalls: numberOrNull(response.headers.get('x-ratelimit-remaining')),
+      resetSeconds: numberOrNull(response.headers.get('x-ratelimit-reset')),
+    };
+    if (response.ok) return { ...base, available: true, status: 200, code: '', budget };
+    const payload = await response.json().catch(() => null);
+    return {
+      ...base,
+      available: false,
+      status: response.status,
+      code: boundedText(payload?.error, 80) || `OPENALEX_HTTP_${response.status}`,
+      message: boundedText(payload?.message, 200),
+      budget,
+    };
+  } catch (error) {
+    return {
+      ...base,
+      available: false,
+      status: null,
+      code: 'OPENALEX_UNREACHABLE',
+      message: boundedText(error?.message, 160),
+      budget: null,
     };
   }
 }
@@ -1420,6 +1632,26 @@ export default {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
       });
+    }
+    if (url.pathname.startsWith('/openalex/')) {
+      return handleOpenAlex(request, env);
+    }
+    if (url.pathname === '/health/openalex') {
+      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      const cacheKey = canonicalCacheKey(request, origin);
+      const cached = await caches.default.match(cacheKey);
+      if (cached) return cached;
+      const health = await checkOpenAlexHealth(env);
+      const response = json(health, health.available ? 200 : 503, {
+        ...corsHeaders(origin, env),
+        'cache-control': `public, max-age=60, s-maxage=${OPENALEX_HEALTH_CACHE_SECONDS}`,
+      });
+      try {
+        await caches.default.put(cacheKey, response.clone());
+      } catch {
+        // An uncacheable health response is still a valid answer.
+      }
+      return response;
     }
     if (url.pathname === '/health/scopus') {
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);

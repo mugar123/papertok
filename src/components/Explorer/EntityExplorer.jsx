@@ -655,7 +655,7 @@ export default function EntityExplorer({
         const arxivPapersPromise = arxivIds.length > 0
           ? Promise.all([
               fetchPapersByIds(arxivIds),
-              enrichPapersBatch(arxivIds, { allowProxy: false, timeoutMs: ENTITY_PRIMARY_RENDER_BUDGET_MS }),
+              enrichPapersBatch(arxivIds, { timeoutMs: ENTITY_PRIMARY_RENDER_BUDGET_MS }),
             ]).then(([rawPapers, enrichmentMap]) => rawPapers.map(paper => {
               const enriched = enrichmentMap[paper.id];
               if (!enriched) return paper;

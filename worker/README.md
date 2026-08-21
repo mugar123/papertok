@@ -3,7 +3,7 @@
 This Cloudflare Worker protects provider keys and caches trend, related-paper and open-access queries.
 
 ```bash
-npx wrangler secret put OPENALEX_API_KEY
+npx wrangler secret put OPENALEX_API_KEY # required since Feb 2026; without it OpenAlex runs on the $0.10/day anonymous budget
 npx wrangler secret put SEMANTIC_SCHOLAR_API_KEY
 npx wrangler secret put OPENCITATIONS_ACCESS_TOKEN # optional, recommended for production traffic
 npx wrangler secret put UNPAYWALL_EMAIL
@@ -33,7 +33,21 @@ After deployment, set the GitHub Actions repository variable `VITE_PAPER_API_BAS
 https://papertok-report-api.<account>.workers.dev
 ```
 
-Available routes are `/locale`, `/report/trends`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/explain`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/health/email`, `/health/ai`, `/health/scopus`, and `/health`. `/locale` returns only Cloudflare's country code for the automatic Spanish/English interface choice and is never cached. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback.
+Available routes are `/locale`, `/report/trends`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/explain`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, and `/health`. `/locale` returns only Cloudflare's country code for the automatic Spanish/English interface choice and is never cached. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback.
+
+
+`/openalex/*` exists because OpenAlex changed underneath the app. Since February 2026 it requires
+an API key and bills each call against a daily budget — $0.10/day anonymous, $1/day on a free key —
+so the browser can no longer hold the credential: an OpenAlex key accepts prepaid credit, which
+makes a key in the bundle someone else's spending, not just someone else's quota. The route rebuilds
+the upstream URL from an entity allowlist and a parameter allowlist, drops any `api_key` the caller
+sends, and attaches the Worker's own. It deliberately does **not** require a Firebase identity —
+the guest feed reads OpenAlex — so what protects the budget is the origin gate plus a global
+per-minute ceiling (`OPENALEX_GLOBAL_MINUTE_LIMIT`) reserved only after an edge-cache miss. A
+refusal is relayed with its own status and `retry-after` rather than flattened into a 502, and the
+rate-limit headers are named in `access-control-expose-headers` so the browser can actually read
+them; otherwise the client's backoff falls back to guessing, and since the budget resets at midnight
+UTC that guess can be hours wrong. `/health/openalex` reports the remaining daily budget in dollars.
 
 `/sources/scopus` does not call Elsevier. `api.elsevier.com` is served by Cloudflare and so is this
 Worker, so a subrequest never leaves Cloudflare's network and Elsevier answers it with

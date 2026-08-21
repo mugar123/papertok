@@ -1,5 +1,6 @@
 const OPENALEX_HOST = 'api.openalex.org';
 const DEFAULT_MAILTO = 'app@papertok.io';
+const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const DEFAULT_TIMEOUT_MS = 10000;
 const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_AUTO_RETRY_DELAY_MS = 5000;
@@ -61,12 +62,30 @@ export function getOpenAlexRateLimitDelay(response, now = Date.now()) {
   return 60000;
 }
 
-export function identifyOpenAlexUrl(rawUrl, mailto = DEFAULT_MAILTO) {
+// Since February 2026 OpenAlex requires an API key and bills each call against a
+// daily budget; the `mailto` polite pool it replaced no longer buys anything.
+// The key is money, so it cannot ship in the bundle: every OpenAlex request is
+// routed through the Worker, which holds it. Every caller in the app reaches
+// OpenAlex through this function, so redirecting here redirects all of them.
+//
+// With no Worker configured -- local development -- the request still goes
+// direct on the anonymous allowance, which is exactly what it did before.
+export function identifyOpenAlexUrl(rawUrl, mailto = DEFAULT_MAILTO, apiBase = PAPER_API_BASE) {
   const url = new URL(rawUrl);
-  if (url.hostname === OPENALEX_HOST && !url.searchParams.has('mailto')) {
-    url.searchParams.set('mailto', mailto);
+  if (url.hostname !== OPENALEX_HOST) return url.toString();
+
+  if (!apiBase) {
+    if (!url.searchParams.has('mailto')) url.searchParams.set('mailto', mailto);
+    return url.toString();
   }
-  return url.toString();
+
+  const proxied = new URL(`${String(apiBase).replace(/\/$/, '')}/openalex${url.pathname}`);
+  url.searchParams.forEach((value, name) => {
+    // The Worker attaches the credential; one arriving from here would only be
+    // dropped, and `mailto` is dead weight.
+    if (name !== 'api_key' && name !== 'mailto') proxied.searchParams.set(name, value);
+  });
+  return proxied.toString();
 }
 
 export class OpenAlexClient {
@@ -80,6 +99,7 @@ export class OpenAlexClient {
     this.sleep = options.sleep || defaultSleep;
     this.random = options.random || Math.random;
     this.mailto = options.mailto || DEFAULT_MAILTO;
+    this.apiBase = options.apiBase ?? PAPER_API_BASE;
     this.maxConcurrent = options.maxConcurrent || 2;
     this.activeRequests = 0;
     this.queue = [];
@@ -146,7 +166,7 @@ export class OpenAlexClient {
       throw new OpenAlexRequestError('Fetch is not available', { code: 'network_error' });
     }
 
-    const url = identifyOpenAlexUrl(rawUrl, this.mailto);
+    const url = identifyOpenAlexUrl(rawUrl, this.mailto, this.apiBase);
     const method = (options.method || 'GET').toUpperCase();
     const requestKey = `${method}:${url}`;
     const cacheTtlMs = options.cacheTtlMs ?? DEFAULT_CACHE_TTL_MS;

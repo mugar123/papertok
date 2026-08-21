@@ -157,7 +157,7 @@ async function enrichInstitutionWithRor(institution, prefetchedRor = null) {
 /**
  * Fetch OpenAlex enrichment data for a batch of arXiv IDs.
  * @param {string[]} arxivIds 
- * @param {{ allowProxy?: boolean, timeoutMs?: number }} options
+ * @param {{ timeoutMs?: number }} options
  * @returns {Promise<Object>} Map of { arxivId: { concepts, cited_by_count, related_works } }
  */
 export function isOpenAlexEnrichmentId(id) {
@@ -217,19 +217,16 @@ export async function enrichPapersBatch(arxivIds, options = {}) {
       primaryFailed = true;
     }
     
+    // There used to be a cascade through corsproxy.io and allorigins here. Both
+    // are gone -- corsproxy.io now answers "Server-side requests are not allowed
+    // on your plan" and allorigins returns a 520 -- and the Worker route makes
+    // them pointless anyway, since it is same-origin and holds the credential.
+    // A failure is a failure: the caller keeps whatever the cache already had.
     if (primaryFailed) {
-      if (options.allowProxy === false) return;
-      if (isOpenAlexRateLimitError(directError) || response?.status === 429) {
-        return;
+      if (directError && !isOpenAlexRateLimitError(directError)) {
+        console.warn('OpenAlex enrichment failed', directError);
       }
-      console.warn('OpenAlex direct fetch failed, trying proxy cascade');
-      const proxyUrl = `https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-      response = await fetchWithTimeout(proxyUrl, 8000).catch(() => null);
-
-      if (!response || !response.ok) {
-        const fallbackProxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        response = await fetchWithTimeout(fallbackProxyUrl, 8000).catch(() => null);
-      }
+      return;
     }
 
     try {

@@ -219,3 +219,48 @@ test('cancels an obsolete search request without retrying it', async () => {
   await assert.rejects(request, error => error.code === 'aborted');
   assert.equal(calls, 1);
 });
+
+test('routes OpenAlex through the Worker when one is configured', () => {
+  const identified = identifyOpenAlexUrl(
+    'https://api.openalex.org/works?filter=doi:10.1/a&per-page=50',
+    'app@papertok.io',
+    'https://papertok-report-api.example/',
+  );
+  const url = new URL(identified);
+
+  assert.equal(url.origin, 'https://papertok-report-api.example');
+  assert.equal(url.pathname, '/openalex/works');
+  assert.equal(url.searchParams.get('filter'), 'doi:10.1/a');
+  assert.equal(url.searchParams.get('per-page'), '50');
+  // OpenAlex now bills per call, so the credential stays in the Worker; the
+  // polite pool that `mailto` joined no longer exists.
+  assert.equal(url.searchParams.get('mailto'), null);
+});
+
+test('never forwards a credential the caller supplied', () => {
+  const url = new URL(identifyOpenAlexUrl(
+    'https://api.openalex.org/works?filter=doi:10.1/a&api_key=stolen',
+    'app@papertok.io',
+    'https://papertok-report-api.example',
+  ));
+  assert.equal(url.searchParams.get('api_key'), null);
+});
+
+test('keeps the entity path, including an identifier that carries a slash', () => {
+  const url = new URL(identifyOpenAlexUrl(
+    'https://api.openalex.org/works/doi:10.1016%2Fj.jmst.2026.06.058',
+    'app@papertok.io',
+    'https://papertok-report-api.example',
+  ));
+  assert.equal(url.pathname, '/openalex/works/doi:10.1016%2Fj.jmst.2026.06.058');
+});
+
+test('still goes direct when no Worker is configured, as it did before', () => {
+  const url = new URL(identifyOpenAlexUrl(
+    'https://api.openalex.org/works?filter=doi:10.1/a',
+    'app@papertok.io',
+    '',
+  ));
+  assert.equal(url.hostname, 'api.openalex.org');
+  assert.equal(url.searchParams.get('mailto'), 'app@papertok.io');
+});

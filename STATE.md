@@ -1,140 +1,180 @@
 # Estado / pendientes
 
-## Scopus: la API de Elsevier está detrás de Cloudflare, y el Worker también (2026-08-22)
+## OpenAlex se agotaba a diario porque le falta la clave (2026-08-22)
 
-**La clave siempre fue buena. El problema era la red, y tiene arreglo.** La integración
-estaba entera desde hace tiempo y **nunca se había ejecutado**: en el bundle
-desplegado `VITE_SCOPUS_ENABLED` estaba compilado a `false` (`var uL=!1`), así que
-`isScopusEnabled()` devolvía `false` y ese camino no se tomaba jamás. La clave sí
-estaba puesta — `/health` decía `scopusConfigured: true`— pero nadie había
-comprobado que sirviera.
+**Implementado, pendiente de una clave que solo puede sacar @mugar.** El síntoma
+era «la cuota gratuita de OpenAlex parece agotarse casi todos los días», y la
+propuesta era usar Scopus para hidratar citas y aliviarla. La causa es otra.
 
-### El sondeo
+### Lo que pasó
 
-Nuevo `GET /health/scopus` en el Worker. Una búsqueda mínima que informa de si la
-clave autentica desde la red de Cloudflare, qué vista concede, si esa vista trae
-abstract y cuánta cuota queda. Nunca devuelve la clave ni el token. Prueba
-`COMPLETE`, luego `STANDARD`, luego el endpoint sin `view`, y **registra qué
-contestó cada intento**, así que un fallo dice qué vista se rechazó y por qué.
-Cuesta una llamada upstream, así que se sirve desde la caché de borde diez
-minutos: martillear la ruta no puede vaciar la cuota semanal.
+En **febrero de 2026 OpenAlex pasó a un modelo de crédito con clave obligatoria**.
+El *polite pool* del parámetro `mailto` ya no existe. Su propia respuesta, medida
+hoy sin clave:
 
-### Lo que devuelve, medido
+```json
+{"error":"Rate limit exceeded","message":"Insufficient budget. This request costs
+$0.0001 but you only have $0 remaining. Resets at midnight UTC...","retryAfter":3819}
+```
 
-Las tres vistas fallan igual: **HTTP 500, `GENERAL_SYSTEM_ERROR`, «System Error
-Occurred»**, con `quota` a `null` en las tres — la petición ni siquiera llega al
-servicio medido. `insttoken: false`.
+Cabeceras del 429: `x-ratelimit-limit-usd: 0.1`, `x-ratelimit-limit: 1000`,
+`retry-after: 3564`. PaperTok seguía mandando `mailto` y **no tenía clave**
+(`/health`: `openAlexConfigured: false`), así que corría con el presupuesto
+anónimo de **$0,10/día** = 1.000 llamadas `list+filter`, reiniciadas a medianoche
+UTC. Eso es exactamente el síntoma.
 
-### La causa, aislada con un grupo de control
+Una clave gratuita da **$1/día**: 10.000 llamadas `list+filter`, 1.000 búsquedas,
+y las consultas de **una sola entidad salen gratis e ilimitadas**. Con los 50
+papers por llamada de `enrichPapersBatch`, ~500.000 papers hidratados al día.
 
-No es la vista, ni la consulta, ni las cabeceras, ni la clave. Lo aislé mandando
-desde el propio Worker la misma petición **sin ninguna clave** y con una clave
-inventada:
+**Por qué Scopus no era el remedio**: su cuota libre son 20.000 peticiones/semana
+≈ 2.857/día. Agrupando 25 DOIs por petición —comprobado que funciona, dos DOIs en
+una llamada devuelven ambos con `citedby-count` y su enlace de atribución— daría
+~71.000 papers/día, siete veces menos que la clave, y solo de literatura
+indexada: los preprints de arXiv, que dominan el feed, no están.
 
-| Desde | Credencial | Respuesta |
-| --- | --- | --- |
-| Cloudflare Worker | clave real | `500 GENERAL_SYSTEM_ERROR` |
-| Cloudflare Worker | clave inventada | `500 GENERAL_SYSTEM_ERROR` |
-| Cloudflare Worker | **sin clave** | `500 GENERAL_SYSTEM_ERROR` |
-| Portátil (misma URL, mismo user-agent) | sin clave | `401 AUTHENTICATION_ERROR` |
+### El arreglo
 
-Y ningún endpoint de Elsevier responde desde el Worker: `serial/title`,
-`search/sciencedirect`, `abstract/doi` y `search/author` dan los cinco el mismo
-500.
+La clave no puede ir en el bundle, y aquí menos que nunca: las claves de OpenAlex
+admiten **crédito prepago**, así que una publicada es alguien gastando tu dinero,
+no solo tu cuota. Va al Worker, en la ruta `/openalex/*`.
 
-**La red es la única variable**, y no es «servidor sí, servidor no». Muestreé sin
-credencial desde un tercer sitio —el datacenter de `r.jina.ai`, en dos endpoints
-distintos— y Elsevier devuelve el mismo `401 AUTHENTICATION_ERROR` limpio que a mi
-portátil. O sea: **Elsevier no rechaza a los servidores; rechaza a este Worker.**
+Ayudó que el cliente ya estuviera bien hecho: los 24 puntos de
+`openAlexService.js`, más `OpenAlexAdapter`, `PubmedAdapter`,
+`scientificTrendService` y `scientificReportService`, **todos** desembocan en
+`identifyOpenAlexUrl`. Verificado que nadie se lo salta. Redirigir ahí redirige
+todo.
 
-**Una clave nueva no arregla esto**, y está comprobado: @mugar creó una segunda,
-la puse como secreto del Worker, y devuelve exactamente el mismo 500 en las tres
-vistas.
+La ruta no reenvía la URL del que llama: la reconstruye desde una lista blanca de
+entidades y otra de parámetros, tira cualquier `api_key` que llegue del cliente, y
+pone la suya. **No exige sesión de Firebase** —el feed de invitados lee OpenAlex—
+así que lo que protege el presupuesto es el gate de Origin más un techo global por
+minuto reservado solo tras fallo de caché.
 
-### El mecanismo
+Dos detalles que habrían sido fallos silenciosos:
+
+- **Un rechazo se relaya con su propio estado y su `retry-after`** en vez de
+  aplanarse en un 502. Aplanarlo dejaría al cliente adivinando cuánto esperar, y
+  con el presupuesto reiniciándose a medianoche UTC esa espera puede ser de horas.
+- Las cabeceras de límite **van en `access-control-expose-headers`**. No son
+  cabeceras de respuesta simples: sin eso el navegador las esconde y el repliegue
+  del cliente cae a su valor por defecto de 60 s.
+
+También cayó la cascada de proxies muerta de `enrichPapersBatch`: corsproxy.io
+responde «Server-side requests are not allowed on your plan» y allorigins da un
+520, medido hoy. Con la ruta del Worker sobraban de todas formas. Queda la misma
+cascada en `arxivService.js`, apuntada aparte.
+
+`/health/openalex` informa del saldo diario restante en dólares. Con la cuota
+convertida en dinero, ese número merece consultarse en vez de deducirse de que el
+feed dejó de funcionar.
+
+### El orden importa
+
+**El cliente no debe desplegarse antes que la clave.** Hoy cada navegador tiene su
+propio presupuesto anónimo; al centralizar por el Worker lo compartirían todos. Sin
+clave eso sería *peor* que ahora, no mejor. La secuencia es:
+
+```bash
+# 1. @mugar: cuenta en openalex.org y clave en openalex.org/settings/api (gratis)
+npx wrangler secret put OPENALEX_API_KEY
+npm run worker:deploy
+curl -s -H "origin: https://mugar123.github.io" https://papertok-report-api.papertok-mugar123.workers.dev/health/openalex
+# 2. solo con budget.limitUsd = 1, desplegar el frontend
+```
+
+## Scopus funciona, por una salida fuera de Cloudflare y sin abstract (2026-08-22)
+
+**Encendido.** La integración llevaba tiempo entera y **nunca se había ejecutado**:
+en el bundle desplegado `VITE_SCOPUS_ENABLED` estaba compilado a `false`
+(`var uL=!1`). La clave estaba puesta —`/health` decía `scopusConfigured: true`—
+pero nadie había comprobado que sirviera. No servía.
+
+### El sondeo, que es lo que hizo el trabajo
+
+`GET /health/scopus`. Una búsqueda mínima que informa de si la clave autentica,
+qué vista concede, si esa vista trae abstract y cuánta cuota queda; nunca devuelve
+la clave ni el token. Prueba las vistas en escalera y **registra qué contestó cada
+intento**. Comparte `fetchScopusSearch` con la ruta de producción, así que mide el
+camino real en vez de imitarlo, y se sirve de la caché de borde diez minutos.
+
+### La causa: la API de Elsevier está detrás de Cloudflare, y el Worker también
 
 ```
 api.elsevier.com -> api.elsevier.com.cdn.cloudflare.net
 ips: 104.17.38.96, 104.17.39.96      server: cloudflare
 ```
 
-**La API de Elsevier está servida por Cloudflare, y nuestro Worker también.** Una
-subpetición de un Worker a un dominio que Cloudflare ya sirve no sale a internet:
-se enruta por dentro, y sin que la zona de destino lo habilite, revienta. Por eso
-el 500 llega incluso sin credencial, y por eso Jina —que no está en Cloudflare—
-pasa. **Ningún Worker de Cloudflare va a poder llamar a `api.elsevier.com`**, ni
-con insttoken ni con otra clave.
+Todo daba `500 GENERAL_SYSTEM_ERROR`. Lo aislé con un grupo de control:
 
-### La clave sí funciona
+| Desde | Credencial | Respuesta |
+| --- | --- | --- |
+| Cloudflare Worker | clave real | `500 GENERAL_SYSTEM_ERROR` |
+| Cloudflare Worker | clave inventada | `500 GENERAL_SYSTEM_ERROR` |
+| Cloudflare Worker | **sin clave** | `500 GENERAL_SYSTEM_ERROR` |
+| Portátil, y el datacenter de `r.jina.ai` | sin clave | `401 AUTHENTICATION_ERROR` |
 
-@mugar corrió la consulta desde su portátil con la clave real: **173.504
-resultados**, paper con DOI, `scopus-citedby` y flag de open access. La clave es
-válida y tiene entitlement de Scopus Search. Lo único que sobraba era la salida
-por Cloudflare.
+Una petición sin credencial no puede fallar por la credencial. Una subpetición de
+un Worker a un dominio que Cloudflare ya sirve no sale a internet, se enruta por
+dentro y revienta. **Ningún Worker de Cloudflare puede llamar a
+`api.elsevier.com`**, ni con insttoken ni con otra clave — se probó con una
+segunda clave y dio idéntico 500.
 
-### La vía barata está descartada, y medida
+### La vía barata, descartada con la medida delante
 
-Elsevier admite CORS, así que se podía llamar desde el navegador y ahorrarse el
-proxy. Pero **el «Website URL» del portal no restringe nada**: pedí permiso para
-cuatro orígenes y concedió los cuatro, incluido `https://mugar123.github.io.evil.test`.
-Poner la clave en el bundle es publicarla sin protección alguna — cualquiera quema
-los 20.000 requests/semana. Va además contra la regla escrita en
-`docs/DEVELOPMENT.md`. Descartada.
+Elsevier admite CORS, así que se podía llamar desde el navegador. Pero **el
+«Website URL» del portal no restringe nada**: pedí permiso para cuatro orígenes y
+concedió los cuatro, incluido `https://mugar123.github.io.evil.test`. La clave en
+el bundle sería una clave pública.
 
-### Lo que sí quedó hecho
+### El arreglo: `proxy/scopus-proxy.js` en Deno Deploy
 
-- `fetchScopusSearch` compartido: el sondeo recorre **el mismo camino** que
-  producción, fallback de vista incluido, en vez de imitarlo.
-- `ScopusAdapter.mapToStandard` pasa por `PaperBuilder.create`, como todos los
-  demás mappers. Antes devolvía `citationsCount` (no `citationCount`, que es lo que
-  lee PaperCard) y arrastraba el registro `COMPLETE` entero en `raw`. Funcionaba
-  solo porque los dos llamantes deduplican después. Ya no depende de esa suerte.
-- `isScopusEnabled()` exige sesión: la ruta del Worker rechaza anónimos, así que
-  sin sesión la petición moría en el navegador. Ahora la fuente se salta.
-- Un `503 SCOPUS_NOT_CONFIGURED` es un estado de configuración, no un error:
-  devuelve `unavailable` en vez de lanzar.
-- `ElsevierAdapter` **consultaba Semantic Scholar**. Renombrado a
-  `SemanticScholarAdapter`, con su `provider` y su `sources.primary` de verdad.
-  Con el Scopus real entrando, el repo tenía dos «Elsevier» y uno era mentira.
+Es donde vive la clave de Elsevier y el único sitio donde vive — fuera de
+`wrangler secret` (borrada de ahí) y nunca en un `VITE_*`. No es un proxy general:
+una ruta, un bearer que solo tiene el Worker, y la URL upstream **reconstruida** a
+partir de parámetros acotados en vez de aceptar la del que llama. Once tests.
 
-### El arreglo: una salida fuera de Cloudflare
+Detalle que costó un despliegue mudo: `export default { fetch }` solo escucha bajo
+`deno serve`. Deno Deploy ejecuta el entrypoint como `deno run`, así que arranca
+con `Deno.serve` detrás de una guarda de runtime.
 
-`proxy/scopus-proxy.js`, en Deno Deploy. Es donde vive la clave de Elsevier y el
-único sitio donde vive — ya no está en `wrangler secret`, y nunca en un `VITE_*`.
+### Lo que se ganó y lo que no
 
-No es un proxy general: sirve una ruta, exige un bearer que solo tiene el Worker,
-y **reconstruye la URL upstream** a partir de parámetros acotados en vez de
-aceptar una URL del que llama. `query` topa en 500 caracteres, `count` en 25,
-`start` en 5000, y una `view` que no sea `COMPLETE` o `STANDARD` se descarta. De
-vuelta solo relaya una lista blanca de cabeceras. Diez tests lo fijan, incluido
-que la clave no se filtra en la respuesta.
+Sondeo en producción: **`available: true`**, `results: 173504`, cuota
+`19996/20000`, un solo intento.
 
-El Worker conserva lo suyo: auth de Firebase, cuota por minuto y caché de 6 h.
-`/health/scopus` ahora mide **la cadena entera**, navegador → Worker → salida →
-Scopus.
+Pero la clave **no tiene entitlement de `COMPLETE`**, que es la única vista con
+`dc:description`. Elsevier lo dice con un `401 AUTHORIZATION_ERROR` — un 401 sobre
+**la vista**, no sobre la credencial. Ese 401 no estaba en la lista de estados que
+provocan el fallback, así que la escalera se paraba en el primer peldaño: Scopus
+habría fallado el 100% de las veces con la salida ya funcionando. Arreglado, y
+`SCOPUS_VIEW=STANDARD` fija la vista que responde para no gastar la llamada
+condenada en cada fallo de caché.
 
-### Lo que falta
+**Consecuencia: cada paper de Scopus llega sin abstract.** Trae título, un autor
+(`dc:creator`), DOI, revista, fecha, citas, open access y afiliaciones. @mugar
+decidió encenderlo igualmente en todas las superficies, feed incluido, sabiendo
+que esas tarjetas dirán «Resumen no disponible» en el cuerpo. Tampoco tendrán
+explicación de IA, que `hasUsableAIAbstract` cierra sin resumen.
 
-Desplegar la salida y encender. Pasos en `proxy/README.md`:
+Para desbloquear `COMPLETE` hace falta un token institucional
+(`ELSEVIER_INST_TOKEN`, variable de la salida en Deno). El buzón
+`integrationsupport@elsevier.com` **ya no se atiende**: ahora es
+<https://service.elsevier.com/app/contact/supporthub/dataasaservice/>. El día que
+llegue, `/health/scopus` pasará a `hasAbstract: true` y basta con quitar
+`SCOPUS_VIEW`.
 
-```bash
-openssl rand -hex 32                          # el secreto compartido
-# variables en Deno Deploy: ELSEVIER_API_KEY, PROXY_SHARED_SECRET
-npx wrangler secret put SCOPUS_PROXY_URL      # https://<proyecto>.deno.dev
-npx wrangler secret put SCOPUS_PROXY_SECRET
-npx wrangler secret delete ELSEVIER_API_KEY   # en Cloudflare no hace nada
-npm run worker:deploy
-curl -s -H "origin: https://mugar123.github.io" https://papertok-report-api.papertok-mugar123.workers.dev/health/scopus
-gh variable set VITE_SCOPUS_ENABLED --body true   # solo si dice available: true
-```
+### De paso
 
-Sigue sin medirse si la clave concede la vista `COMPLETE`, que es la única con
-`dc:description`. Sin abstract, una tarjeta de Scopus en un feed de deslizar no
-vale gran cosa. El sondeo lo dirá en `hasAbstract` en cuanto la salida esté en pie.
-
-Queda por confirmar, además, si sus términos de API admiten un feed público:
-son de uso investigador y PaperTok es un sitio abierto. Merece la pena
-preguntarlo antes de construir nada encima.
+- `ScopusAdapter.mapToStandard` pasa por `PaperBuilder.create` como el resto de
+  mappers. Devolvía `citationsCount` —PaperCard lee `citationCount`— y arrastraba
+  el registro entero en `raw`. Funcionaba solo porque los dos llamantes deduplican
+  después.
+- `isScopusEnabled()` exige sesión: la ruta rechaza anónimos, así que sin sesión la
+  petición moría en el navegador sin salir.
+- Un `503 SCOPUS_NOT_CONFIGURED` es configuración, no error: devuelve `unavailable`.
+- `ElsevierAdapter` consultaba Semantic Scholar. Renombrado a
+  `SemanticScholarAdapter`; había dos «Elsevier» en el repo y uno era mentira.
 
 ## El sync borraba papers publicados. Arreglado y desplegado (2026-08-21)
 

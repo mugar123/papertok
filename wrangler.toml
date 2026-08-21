@@ -28,6 +28,10 @@ EMAIL_PROVIDER = "brevo"
 EMAIL_DAILY_SEND_LIMIT = "290"
 PROVIDER_USER_MINUTE_LIMIT = "60"
 PROVIDER_GLOBAL_MINUTE_LIMIT = "2000"
+# OpenAlex bills per call against a daily budget ($1/day on a free key), and the
+# guest feed reads it without a session, so the ceiling here is global rather
+# than per user. It is reserved only after an edge-cache miss.
+OPENALEX_GLOBAL_MINUTE_LIMIT = "300"
 
 [[kv_namespaces]]
 binding = "NOTIFICATION_STORE"
