@@ -91,6 +91,7 @@ export default function SaveToListModal({ paper, onClose }) {
   const [saveError, setSaveError] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const dialogRef = useRef(null);
+  const createDialogRef = useRef(null);
 
   // What the library says today: the dirty check and the save diff compare
   // against this, and untouched fields render it directly.
@@ -206,6 +207,15 @@ export default function SaveToListModal({ paper, onClose }) {
     setTagsDraft(removeTag(tags, tag));
   };
 
+  // Closing the child dialog with .close() first hands focus back to the
+  // "Create a new list" button that opened it, per the platform's own rules.
+  const cancelCreateList = () => {
+    createDialogRef.current?.close();
+    setCreatingList(false);
+    setNewListName('');
+    setNewListIcon('Folder');
+  };
+
   const onTagInputKeyDown = (event) => {
     if (event.key === 'Enter' || event.key === ',') {
       event.preventDefault();
@@ -279,7 +289,9 @@ export default function SaveToListModal({ paper, onClose }) {
     setLists((previous) => [...previous, newList]);
     touchedLists.current = true;
     setPendingListIds((previous) => new Set([...previous, listId]));
+    createDialogRef.current?.close();
     setNewListName('');
+    setNewListIcon('Folder');
     setCreatingList(false);
   };
 
@@ -376,7 +388,9 @@ export default function SaveToListModal({ paper, onClose }) {
     noLists: 'No lists yet — create the first one right below.',
     newList: 'New list',
     newListCta: 'Create a new list',
-    newListName: 'Name...',
+    newListName: 'e.g. Thesis reading',
+    nameLabel: 'Name',
+    iconLabel: 'Icon',
     create: 'Create',
     cancel: 'Cancel',
     newListPrivacyNote: 'It starts private. Publish it from My lists once it has content.',
@@ -409,7 +423,9 @@ export default function SaveToListModal({ paper, onClose }) {
     noLists: 'Aún no tienes listas: crea la primera aquí debajo.',
     newList: 'Nueva lista',
     newListCta: 'Crear nueva lista',
-    newListName: 'Nombre...',
+    newListName: 'p. ej. Lecturas de tesis',
+    nameLabel: 'Nombre',
+    iconLabel: 'Icono',
     create: 'Crear',
     cancel: 'Cancelar',
     newListPrivacyNote: 'Nace privada. Publícala desde Mis listas cuando tenga contenido.',
@@ -515,65 +531,108 @@ export default function SaveToListModal({ paper, onClose }) {
             </div>
           )}
 
-          {!creatingList ? (
-            <button
-              type="button"
-              className="save-modal-create-toggle"
-              onClick={() => setCreatingList(true)}
+          <button
+            type="button"
+            className="save-modal-create-toggle"
+            onClick={() => setCreatingList(true)}
+          >
+            <Plus size={16} aria-hidden="true" /> {copy.newListCta}
+          </button>
+
+          {/* Its own window over the save modal, not a box crammed inside it.
+              A nested <dialog>: Escape lands on the topmost dialog only, so
+              it folds this form without touching the save modal or its
+              unsaved-changes guard. */}
+          {creatingList && (
+            <dialog
+              ref={(node) => {
+                createDialogRef.current = node;
+                if (node && !node.open) node.showModal();
+              }}
+              className="save-modal-create-dialog"
+              aria-label={copy.newList}
+              onCancel={(event) => {
+                // stopPropagation matters: React propagates the synthetic
+                // cancel/close up the component tree, and the parent dialog's
+                // own onCancel would close the whole save modal.
+                event.preventDefault();
+                event.stopPropagation();
+                cancelCreateList();
+              }}
+              onClose={(event) => {
+                event.stopPropagation();
+                setCreatingList(false);
+              }}
+              onClick={(event) => {
+                if (event.target === event.currentTarget) cancelCreateList();
+              }}
             >
-              <Plus size={16} aria-hidden="true" /> {copy.newListCta}
-            </button>
-          ) : (
-            <div className="save-modal-create">
-              <p className="save-modal-create-label" id="save-modal-icon-label">{copy.newList}</p>
-              <div
-                className="save-modal-emoji-picker"
-                role="radiogroup"
-                aria-labelledby="save-modal-icon-label"
-              >
-                {AVAILABLE_ICONS.map((iconName) => {
-                  const Icon = getIcon(iconName);
-                  return (
-                    <button key={iconName}
-                      type="button"
-                      role="radio"
-                      aria-checked={newListIcon === iconName}
-                      aria-label={iconName}
-                      className={`save-modal-emoji-btn ${newListIcon === iconName ? 'active' : ''}`}
-                      onClick={() => setNewListIcon(iconName)}>
-                      <Icon size={20} strokeWidth={1.5} />
-                    </button>
-                  );
-                })}
+              <div className="save-modal-create-card">
+                <div className="save-modal-create-header">
+                  <h3>{copy.newList}</h3>
+                  <button
+                    type="button"
+                    className="save-modal-close"
+                    onClick={cancelCreateList}
+                    aria-label={copy.close}
+                  >✕</button>
+                </div>
+                <label className="save-modal-create-field">
+                  <span>{copy.nameLabel}</span>
+                  <input
+                    type="text"
+                    className="save-modal-input"
+                    placeholder={copy.newListName}
+                    value={newListName}
+                    autoFocus
+                    maxLength={80}
+                    onChange={(e) => setNewListName(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleCreateList()}
+                  />
+                </label>
+                <div className="save-modal-create-field">
+                  <span id="save-modal-icon-label">{copy.iconLabel}</span>
+                  <div
+                    className="save-modal-emoji-picker"
+                    role="radiogroup"
+                    aria-labelledby="save-modal-icon-label"
+                  >
+                    {AVAILABLE_ICONS.map((iconName) => {
+                      const Icon = getIcon(iconName);
+                      return (
+                        <button key={iconName}
+                          type="button"
+                          role="radio"
+                          aria-checked={newListIcon === iconName}
+                          aria-label={iconName}
+                          className={`save-modal-emoji-btn ${newListIcon === iconName ? 'active' : ''}`}
+                          onClick={() => setNewListIcon(iconName)}>
+                          <Icon size={22} strokeWidth={1.5} />
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <p className="save-modal-create-note">{copy.newListPrivacyNote}</p>
+                <div className="save-modal-create-actions">
+                  <button
+                    type="button"
+                    className="save-modal-create-cancel"
+                    onClick={cancelCreateList}
+                  >
+                    {copy.cancel}
+                  </button>
+                  <button
+                    type="button"
+                    className="save-modal-create-btn"
+                    onClick={handleCreateList}
+                    disabled={!newListName.trim()}
+                  >
+                    {copy.create}
+                  </button>
+                </div>
               </div>
-              <div className="save-modal-create-row">
-                <input type="text" placeholder={copy.newListName} value={newListName}
-                  autoFocus
-                  onChange={(e) => setNewListName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCreateList();
-                    if (e.key === 'Escape') {
-                      // Folding the form is not closing the modal: keep the
-                      // Escape from turning into the dialog's cancel event.
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setCreatingList(false);
-                      setNewListName('');
-                    }
-                  }}
-                  className="save-modal-input" />
-                <button className="save-modal-create-btn" onClick={handleCreateList}
-                  disabled={!newListName.trim()}>{copy.create}</button>
-                <button
-                  type="button"
-                  className="save-modal-create-cancel"
-                  onClick={() => { setCreatingList(false); setNewListName(''); }}
-                >
-                  {copy.cancel}
-                </button>
-              </div>
-              <p className="save-modal-create-note">{copy.newListPrivacyNote}</p>
-            </div>
+            </dialog>
           )}
         </section>
 
