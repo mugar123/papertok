@@ -9,6 +9,7 @@ import {
   publishPublicList,
   readPublicList,
   sanitizePublicList,
+  sanitizePublicPaper,
   syncPublicList,
   unpublishPublicList,
 } from './publicListService.js';
@@ -193,6 +194,20 @@ test('P25 REGRESSION: re-keying must not strip the paper of its identity', async
   assert.equal(sent.sourceId, '2608.19135',
     'while the id the private list files it under is recorded, not guessed at later');
   assert.equal('listPaperId' in sent, false, 'the input hint is not a public field');
+});
+
+test('THE INVARIANT: sanitizing a paper twice is a fixed point', async () => {
+  // The payload is sanitized twice — once in the browser, once in the Worker,
+  // and the second pass sees the OUTPUT of the first. Both bugs this file has
+  // had were the same shape: a field the first pass renames or derives, that
+  // the second pass no longer recognises and silently drops. `arxivId` went
+  // that way in the morning and `sourceId` in the afternoon, each time leaving
+  // the join to guesswork and the public list a paper short.
+  const first = sanitizePublicPaper({ ...privatePaper, listPaperId: 'legacy-2401.00001' });
+  const second = sanitizePublicPaper(first);
+  assert.deepEqual(second, first, 'a second pass must change nothing');
+  assert.equal(second.sourceId, 'legacy-2401.00001');
+  assert.equal(second.doi, '10.1000/Example');
 });
 
 test('P25: papers record the id the private list files them under', async () => {

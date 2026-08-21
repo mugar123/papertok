@@ -116,7 +116,15 @@ function stablePaperId(paper, doi, arxivId) {
  * shared list. The join key is data now, not a guess.
  */
 function sourcePaperId(paper, id) {
-  const raw = cleanString(paper?.listPaperId, PUBLIC_LIST_LIMITS.id);
+  // `listPaperId` on the way in, `sourceId` on the way back through: this
+  // function has to be IDEMPOTENT because the payload is sanitized twice, once
+  // in the browser and once in the Worker, and the second pass sees the output
+  // of the first. Reading only the input name silently dropped the field on the
+  // Worker side — measured on a real list: the client sent 19 papers carrying
+  // it and the published document came back with none, so the join fell back
+  // to the very guesswork this field exists to replace.
+  const raw = cleanString(paper?.listPaperId, PUBLIC_LIST_LIMITS.id)
+    || cleanString(paper?.sourceId, PUBLIC_LIST_LIMITS.id);
   return raw && raw !== id ? raw : '';
 }
 

@@ -765,6 +765,34 @@ test('THE BUG: a stale membership from the client cannot shrink a published list
   assert.equal(result.skipped, 0);
 });
 
+test('a client-sanitized paper keeps its join key through the Worker', async () => {
+  stubIdentity();
+  // What the browser really sends: already sanitized, so the key arrives as
+  // `sourceId`, not as the `listPaperId` the browser was given. The Worker
+  // sanitizes again; if that pass drops the field the join silently falls back
+  // to guessing from doi/arxivId, which is what lost a paper in production.
+  const admin = fakeAdmin({
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1', paperIds: ['legacy-provider-id'] },
+    [`publicLists/${SHARE}`]: { title: 'Vieja', paperCount: 0, papers: [] },
+  });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Vieja',
+    papers: [{
+      id: 'arxiv:2608.18000',
+      title: 'Paper 0',
+      authors: ['Ada Lovelace'],
+      arxivId: '2608.18000',
+      sourceId: 'legacy-provider-id',
+    }],
+  }, { admin });
+
+  assert.equal(result.paperCount, 1, 'the membership id must find the paper the client sent');
+  assert.equal(result.papers[0].sourceId, 'legacy-provider-id',
+    'and the key must be written down, so the NEXT sync does not have to guess');
+  assert.equal(result.papers[0].id, 'arxiv:2608.18000', 'the public id is unchanged');
+});
+
 test('a paper published under a derived id is found again by the id the list files it under', async () => {
   stubIdentity();
   // The exact shape that lost "Observation of perfect absorption…": the public
