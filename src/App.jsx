@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
+import RouteFallback from './components/Layout/RouteFallback'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LanguageProvider, useLanguage } from './context/LanguageContext'
 import { AnalyticsProvider } from './context/AnalyticsContext'
@@ -101,7 +102,7 @@ function AppContent() {
   return (
     <FeedProvider feedRouteActive={normalizedPathname === '/'}>
       {showNavbar && <Navbar />}
-      <Suspense fallback={null}>
+      <Suspense fallback={<RouteFallback />}>
       <AnimatePresence mode="wait" initial={false}>
         <Routes location={location} key={location.pathname}>
           <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
