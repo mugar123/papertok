@@ -4,6 +4,7 @@ import katex from 'katex';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ScientificText from '../components/ScientificText.js';
+import { loadKatex } from './katexLoader.js';
 import { normalizeLatexText, normalizeScientificMarkup, splitLatexText } from './latex.js';
 
 const PHOTINO_ABSTRACT = 'A lower bound for the photino mass ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}}$ as a function of the spin-0 fermion superpartner mass ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}$ is derived as an extension of the calculation of Lee and Weinberg. The Majorana nature of the photino induces a $p$-wave threshold for annihilation $\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}\\ensuremath{\\rightarrow}f\\overline{f}$ into light fermions, and leads to a rather unexpected form for the bound: for $25 \\mathrm{GeV}\\ensuremath{\\lesssim}{m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}\\ensuremath{\\lesssim}45 \\mathrm{GeV}$, ${({m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}})}_{min}\\ensuremath{\\simeq}{m}_{\\ensuremath{\\tau}}=1.8$ GeV; for ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}&gt;45$ GeV, ${({m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}})}_{min}$ increases approximately linearly with ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}$ to a value of 20 GeV when ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}=100$ GeV.';
@@ -37,7 +38,10 @@ test('removes embedded HTML and MathML tags while preserving scientific content'
   assert.doesNotMatch(normalized, /<\/?(?:i|mml:)/);
 });
 
-test('renders every formula in the complete OpenAlex photino abstract', () => {
+test('renders every formula in the complete OpenAlex photino abstract', async () => {
+  // KaTeX loads on demand in the browser; rendering synchronously here needs
+  // the module preloaded, which is exactly what the idle prefetch gives users.
+  await loadKatex();
   const normalized = normalizeLatexText(PHOTINO_ABSTRACT);
   const formulas = [...normalized.matchAll(/\$([^$]+)\$/g)].map(match => match[1]);
 
@@ -54,12 +58,15 @@ test('renders every formula in the complete OpenAlex photino abstract', () => {
   assert.equal((rendered.match(/class="katex"/g) || []).length, formulas.length);
 });
 
-test('keeps malformed or incomplete math visible instead of dropping its delimiters', () => {
+test('keeps malformed or incomplete math visible instead of dropping its delimiters', async () => {
   assert.deepEqual(splitLatexText('Result: $x + 1'), [
     { type: 'text', value: 'Result: ' },
     { type: 'text', value: '$x + 1' },
   ]);
 
+  // Preloaded so the assertion exercises KaTeX's real error path, not the
+  // not-yet-loaded fallback (which shows the same raw text).
+  await loadKatex();
   const rendered = renderToStaticMarkup(
     React.createElement(ScientificText, null, 'Result: $\\notARealCommand$'),
   );

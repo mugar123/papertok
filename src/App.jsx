@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
@@ -11,30 +11,37 @@ import { FollowingUpdatesProvider } from './context/FollowingUpdatesContext'
 import { EmailNotificationsProvider } from './context/EmailNotificationsContext'
 import LoginPage from './components/Auth/LoginPage'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
-import OnboardingFlow from './components/Onboarding/OnboardingFlow'
 import FeedContainer from './components/Feed/FeedContainer'
-import ListsPage from './components/Lists/ListsPage'
 import Navbar from './components/Layout/Navbar'
-import PDFViewer from './components/PDF/PDFViewer'
-import SaveToListModal from './components/Lists/SaveToListModal'
-import CommentsSheet from './components/Comments/CommentsSheet'
-import SearchPage from './components/Search/SearchPage'
-import EntityExplorer from './components/Explorer/EntityExplorer'
-import ScientificReport from './components/Report/ScientificReport'
-import FollowingFeedPage from './components/Following/FollowingFeedPage'
-import SettingsPage from './components/Settings/SettingsPage'
-import FollowingSettingsPage from './components/Settings/FollowingSettingsPage'
-import MyCommentsPage from './components/Settings/MyCommentsPage'
-import ModerationPage from './components/Admin/ModerationPage'
 import AnalyticsConsentBanner from './components/Privacy/AnalyticsConsentBanner'
 import GuestFeedPage from './components/Public/GuestFeedPage'
 import AuthPrompt from './components/Public/AuthPrompt'
-import PublicPaperPage from './components/Public/PublicPaperPage'
-import PublicListPage from './components/Lists/PublicListPage'
-import PublicProfilePage from './components/Public/PublicProfilePage'
-import ProfilePage from './components/Profile/ProfilePage'
 import { getPublicPaperPath } from './utils/publicNavigation'
 import './App.css'
+
+// Only what the first paint of the feed needs loads eagerly. Everything below
+// is its own chunk: the 2 MB single bundle was the measured cost of every
+// screen riding in the boot graph (25 static screens, 0.9–1.3 s of parse), and
+// React Router v7 navigations run inside startTransition, so switching to a
+// route whose chunk is still downloading keeps the current screen on instead
+// of flashing a fallback.
+const OnboardingFlow = lazy(() => import('./components/Onboarding/OnboardingFlow'))
+const ListsPage = lazy(() => import('./components/Lists/ListsPage'))
+const PDFViewer = lazy(() => import('./components/PDF/PDFViewer'))
+const SaveToListModal = lazy(() => import('./components/Lists/SaveToListModal'))
+const CommentsSheet = lazy(() => import('./components/Comments/CommentsSheet'))
+const SearchPage = lazy(() => import('./components/Search/SearchPage'))
+const EntityExplorer = lazy(() => import('./components/Explorer/EntityExplorer'))
+const ScientificReport = lazy(() => import('./components/Report/ScientificReport'))
+const FollowingFeedPage = lazy(() => import('./components/Following/FollowingFeedPage'))
+const SettingsPage = lazy(() => import('./components/Settings/SettingsPage'))
+const FollowingSettingsPage = lazy(() => import('./components/Settings/FollowingSettingsPage'))
+const MyCommentsPage = lazy(() => import('./components/Settings/MyCommentsPage'))
+const ModerationPage = lazy(() => import('./components/Admin/ModerationPage'))
+const PublicPaperPage = lazy(() => import('./components/Public/PublicPaperPage'))
+const PublicListPage = lazy(() => import('./components/Lists/PublicListPage'))
+const PublicProfilePage = lazy(() => import('./components/Public/PublicProfilePage'))
+const ProfilePage = lazy(() => import('./components/Profile/ProfilePage'))
 
 function AppContent() {
   const [pdfPaper, setPdfPaper] = useState(null)
@@ -75,9 +82,26 @@ function AppContent() {
     navigate('/login', { state: { returnTo } })
   }, [location.pathname, location.search, navigate])
 
+  // Warm the chunks a session is most likely to need next — the three
+  // overlays any card can open, and the other navbar feeds — once the first
+  // screen has had the network and the main thread to itself for a while.
+  useEffect(() => {
+    const prefetch = () => {
+      import('./components/Comments/CommentsSheet').catch(() => {})
+      import('./components/PDF/PDFViewer').catch(() => {})
+      import('./components/Lists/SaveToListModal').catch(() => {})
+      import('./components/Report/ScientificReport').catch(() => {})
+      import('./components/Following/FollowingFeedPage').catch(() => {})
+    }
+    const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
+    const timer = setTimeout(() => schedule(prefetch), 2500)
+    return () => clearTimeout(timer)
+  }, [])
+
   return (
-    <FeedProvider>
+    <FeedProvider feedRouteActive={normalizedPathname === '/'}>
       {showNavbar && <Navbar />}
+      <Suspense fallback={null}>
       <AnimatePresence mode="wait" initial={false}>
         <Routes location={location} key={location.pathname}>
           <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
@@ -297,6 +321,7 @@ function AppContent() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AnimatePresence>
+      </Suspense>
 
       <AnalyticsConsentBanner guestFeedReady={guestFeedReady} />
 
@@ -309,28 +334,37 @@ function AppContent() {
         )}
       </AnimatePresence>
 
-      <AnimatePresence>
-        {commentsPaper && (
-          <CommentsSheet
-            paper={commentsPaper}
-            isAuthenticated={Boolean(user)}
-            isEnglish={isEnglish}
-            onClose={() => setCommentsPaper(null)}
-            onAuthRequired={requestAuthentication}
+      {/* Each overlay suspends on its own: while its chunk downloads (idle
+          prefetch usually has it already) nothing flashes, and the rest of
+          the screen stays interactive. */}
+      <Suspense fallback={null}>
+        <AnimatePresence>
+          {commentsPaper && (
+            <CommentsSheet
+              paper={commentsPaper}
+              isAuthenticated={Boolean(user)}
+              isEnglish={isEnglish}
+              onClose={() => setCommentsPaper(null)}
+              onAuthRequired={requestAuthentication}
+            />
+          )}
+        </AnimatePresence>
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {pdfPaper && (
+          <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />
+        )}
+      </Suspense>
+
+      <Suspense fallback={null}>
+        {saveModalPaper && (
+          <SaveToListModal
+            paper={saveModalPaper}
+            onClose={() => setSaveModalPaper(null)}
           />
         )}
-      </AnimatePresence>
-
-      {pdfPaper && (
-        <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />
-      )}
-
-      {saveModalPaper && (
-        <SaveToListModal
-          paper={saveModalPaper}
-          onClose={() => setSaveModalPaper(null)}
-        />
-      )}
+      </Suspense>
     </FeedProvider>
   )
 }
