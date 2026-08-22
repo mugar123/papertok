@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { EmailNotificationsContext } from './contexts';
 import { useAuth } from './AuthContext';
 import { useFollowing } from './FollowingContext';
 import { useFollowingUpdates } from './FollowingUpdatesContext';
@@ -13,8 +14,6 @@ import {
   sendEmailNotificationTest,
 } from '../services/emailNotificationService';
 import { getFollowingSignature } from '../utils/followingUpdates';
-
-const EmailNotificationsContext = createContext(null);
 
 const DEFAULT_PREFERENCES = {
   enabled: false,

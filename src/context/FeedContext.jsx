@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
+import { useContext, useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
+import { FeedContext } from './contexts';
 import { IS_DEMO, db } from '../services/firebase';
 import { doc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
@@ -64,7 +65,6 @@ import {
   getFollowedTopicCategoryIds,
 } from '../services/topicRetrievalService.js';
 
-const FeedContext = createContext(null);
 const PAGE_SIZE = 15;
 // Covers the worker arXiv route timeout (4s) plus headroom, so a slow-but-alive
 // source lands inside the render budget instead of being counted as failed.

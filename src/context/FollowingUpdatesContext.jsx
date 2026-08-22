@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { FollowingUpdatesContext } from './contexts';
 import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db, IS_DEMO } from '../services/firebase';
 import { fetchFollowingUpdates } from '../services/followingUpdatesService';
@@ -12,7 +13,6 @@ import {
   getFollowingUpdatesStorageKey,
 } from '../utils/followingUpdates';
 
-const FollowingUpdatesContext = createContext(null);
 const CACHE_TTL_MS = 15 * 60 * 1000;
 const requestsInFlight = new Map();
 

@@ -1,15 +1,14 @@
 /* eslint-disable react-refresh/only-export-components */
 import {
-  createContext,
   useCallback,
   useContext,
   useEffect,
   useMemo,
   useState,
 } from 'react';
+import { LanguageContext } from './contexts';
 import { useAuth } from './AuthContext';
 
-const LanguageContext = createContext(null);
 const LANGUAGE_STORAGE_KEY = 'papertok_language';
 const LANGUAGE_MODE_STORAGE_KEY = 'papertok_language_mode';
 const SUPPORTED_LANGUAGES = new Set(['es', 'en']);

@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useContext, useState, useEffect } from 'react';
+import { useContext, useState, useEffect } from 'react';
+import { AuthContext } from './contexts';
 import { IS_DEMO, auth, db } from '../services/firebase';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
 import {
@@ -17,7 +18,6 @@ import { settleWithin } from '../utils/asyncTiming';
 import { normalizeProfilePhoto } from '../utils/profileImage';
 import { clearUserScopedStorage } from '../utils/userScopedStorage';
 
-const AuthContext = createContext(null);
 const PROFILE_CACHE_TIMEOUT_MS = 800;
 const PROFILE_NETWORK_TIMEOUT_MS = 7000;
 

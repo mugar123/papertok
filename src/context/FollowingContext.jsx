@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { FollowingContext } from './contexts';
 import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import { db, IS_DEMO } from '../services/firebase';
 import { getRorInstitution, normalizeRorId } from '../services/rorService';
@@ -13,7 +14,6 @@ import {
   migrateLegacyAuthors,
 } from '../utils/following';
 
-const FollowingContext = createContext(null);
 const EMPTY_LOCALIZED_INSTITUTION_NAMES = Object.freeze({});
 
 /**

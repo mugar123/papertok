@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { AnalyticsContext } from './contexts';
 import { useLocation } from 'react-router-dom';
 import { useLanguage } from './LanguageContext';
 import {
@@ -12,8 +13,6 @@ import {
   trackDay7Return,
   trackProductEvent,
 } from '../services/analyticsService';
-
-const AnalyticsContext = createContext(null);
 
 export function AnalyticsProvider({ children }) {
   const location = useLocation();
