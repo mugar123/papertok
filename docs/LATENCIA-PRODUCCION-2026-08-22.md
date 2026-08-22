@@ -238,3 +238,37 @@ pintado incompleto por llegar tarde el observador; solo se usan sus waterfalls.
 La caché de borde del Worker (30 min) hace que las corridas consecutivas no
 sean independientes para OpenReview: el rango 149 ms–5,3 s refleja ese estado,
 y está anotado por corrida.
+
+---
+
+## 5. Post-implementación — re-medido el mismo día (build `cc29bdc`)
+
+Los cinco commits `0e7a2dc..cc29bdc` atacan los puntos 1, 2, 3, 5, 6 y 7 del
+§3 (el gate de auth queda para otra ronda; el Worker no se toca porque no se
+despliega desde CI). Mismo arnés, mismas condiciones (revisita, RTT bajo),
+medido contra producción tras el deploy:
+
+| Métrica | Antes (`2b051d1`) | Después (`cc29bdc`) |
+|---|---|---|
+| JS de arranque | 622,7 KB gzip / 2,0 MB crudos, 1 fichero | **346,3 KB gzip** / 1,09 MB, 17 ficheros (−44 %) |
+| CSS crítico | 57,7 KB gzip | **14,1 KB** (−76 %) |
+| Longtasks de arranque (frío) | 0,9–1,3 s | **0,26 s** |
+| Visitante, primer paper (revisita) | 1 588–2 700 ms, mediana 2 205 | **266–270 ms** (−88 %) |
+| Visitante, primer paper (caché PubMed fría) | 2 700 ms (corrida comparable) | **1 689 ms** (−37 %) |
+| Logueado revisita, primer paper | 428–667 ms… y **pisado** a 1–8,6 s | 615–755 ms y **cero reemplazos** |
+| Oleadas de fuentes por carga logueada | 1–4 (29–41 peticiones) | **1** |
+| Perfil público con sesión | 647–660 ms + 2–7 peticiones de feed parásitas | **507–818 ms + 0 parásitas** |
+| Snap de tarjeta (3 transiciones) | 3–4 longtasks de 58–151 ms, frames hasta 152 ms | **0 longtasks, frame máx 24 ms** |
+| Toque (abrir comentarios) | handler 114 ms, pintado a 256–296 ms | **handler 24 ms, pintado a 56–64 ms** |
+| Peor caso estructural del esqueleto | 5 000 + 4 500 + render ≈ 9,5 s+ | 4 000 + 900 + render ≈ **5,2–6,2 s** |
+
+Notas honestas: (1) el primer paper de la revisita logueada queda ~100 ms por
+encima del valor previo — 17 ficheros cacheados frente a uno — a cambio de que
+nada pise el contenido; (2) la corrida logueada sin snapshot dio 2 824 ms pero
+pagó la primera descarga de todos los chunks del deploy nuevo, no comparable
+con los 1 728 ms previos de caché caliente; (3) el jank de snap desapareció con
+el `scroll-behavior: smooth` global fuera y el arranque más ligero — no se
+aisló cuál de los dos pesa más; (4) los fps absolutos del entorno variaron
+entre días (42→60), así que la señal válida sigue siendo longtasks y máximos,
+no medianas de frame; (5) sin medir en esta pasada: móvil, primera visita
+totalmente fría de extremo a extremo, y el gate de auth (intacto por diseño).
