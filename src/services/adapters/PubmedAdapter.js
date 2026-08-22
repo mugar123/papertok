@@ -1,5 +1,6 @@
 import { CATEGORIES } from '../../data/categories.js';
 import { openAlexJson } from '../openAlexClient.js';
+import { reconstructOpenAlexAbstract } from '../../utils/openAlexAbstract.js';
 import { enrichPubmedIds } from '../europePmcService.js';
 import { BaseAdapter } from './BaseAdapter.js';
 
@@ -209,16 +210,7 @@ export class PubmedAdapter extends BaseAdapter {
                           const pmidKey = `pmid:${pmid}`;
                           if (!enrichmentMap[pmidKey]) enrichmentMap[pmidKey] = { abstract: '', categories: [] };
                           
-                          let abstract = '';
-                          if (work.abstract_inverted_index) {
-                              const words = [];
-                              for (const [word, positions] of Object.entries(work.abstract_inverted_index)) {
-                                  for (const pos of positions) {
-                                      words[pos] = word;
-                                  }
-                              }
-                              abstract = words.join(' ').replace(/\s+/g, ' ').trim();
-                          }
+                          const abstract = reconstructOpenAlexAbstract(work.abstract_inverted_index);
                           const categories = work.concepts?.map(c => c.display_name) || [];
                           
                           // Merge (prefer efetch abstract if exists, prefer whichever has categories)

@@ -130,3 +130,33 @@ test('deduplicates provider records by a stable arXiv identifier before title ma
   assert.equal(deduplicated[0].huggingFaceUpvotes, 12);
   assert.ok(deduplicated[0].sources.enrichedBy.includes('huggingface'));
 });
+
+test('fills a missing abstract from the OpenAlex enrichment that already runs', () => {
+  // Half of NASA's records and a tenth of Europe PMC's arrive without one, and a
+  // card whose body reads "Resumen no disponible" is dead weight in a feed you
+  // navigate by swiping.
+  const paper = PaperBuilder.create({ id: 'nasa:1', title: 'A record without an abstract' });
+  assert.equal(paper.abstract, 'No abstract available.');
+
+  const merged = PaperBuilder.merge(paper, { abstract: 'The abstract OpenAlex had.' }, 'openalex');
+  assert.equal(merged.abstract, 'The abstract OpenAlex had.');
+  assert.equal(merged.summary, 'The abstract OpenAlex had.');
+});
+
+test('never overwrites an abstract the source already supplied', () => {
+  // The publisher's own text beats a rebuild of an inverted index.
+  const paper = PaperBuilder.create({ id: 'arxiv:1', abstract: 'The text arXiv shipped.' });
+  const merged = PaperBuilder.merge(paper, { abstract: 'The rebuilt OpenAlex one.' }, 'openalex');
+  assert.equal(merged.abstract, 'The text arXiv shipped.');
+});
+
+test('leaves the placeholder alone when the enrichment has nothing either', () => {
+  const paper = PaperBuilder.create({ id: 'nasa:2' });
+  assert.equal(PaperBuilder.merge(paper, { abstract: '' }, 'openalex').abstract, 'No abstract available.');
+  assert.equal(PaperBuilder.merge(paper, {}, 'openalex').abstract, 'No abstract available.');
+  // A placeholder arriving from the other side must not be mistaken for text.
+  assert.equal(
+    PaperBuilder.merge(paper, { abstract: 'Resumen no disponible.' }, 'openalex').abstract,
+    'No abstract available.',
+  );
+});

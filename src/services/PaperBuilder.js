@@ -1,3 +1,5 @@
+import { hasUsableAIAbstract } from '../utils/aiExplanationAccess.js';
+
 /**
  * Builder class for creating unified Paper objects from various adapters
  * and merging metadata from multiple sources.
@@ -120,6 +122,15 @@ export class PaperBuilder {
       merged.doi = newDoi;
       // NOTE: Do NOT overwrite merged.id here. The id must remain stable (arXiv ID)
       // so that all subsequent state updates can find the paper by its original ID.
+    }
+
+    // Only fills a gap: a source that supplied its own abstract keeps it, since
+    // it is the publisher's text rather than a rebuild of OpenAlex's inverted
+    // index. `hasUsableAIAbstract` is the criterion the UI and the AI
+    // explanation already use for "there is no abstract here".
+    if (!hasUsableAIAbstract(merged.abstract) && hasUsableAIAbstract(enrichmentData.abstract)) {
+      merged.abstract = enrichmentData.abstract;
+      if (!hasUsableAIAbstract(merged.summary)) merged.summary = enrichmentData.abstract;
     }
 
     if (sourceName === 'scopus') {

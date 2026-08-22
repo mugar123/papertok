@@ -4,6 +4,7 @@
  */
 
 import { CATEGORIES } from '../data/categories.js';
+import { reconstructOpenAlexAbstract } from '../utils/openAlexAbstract.js';
 import {
   applyInstitutionWorksFallback,
   calculateEntityRecentImpact,
@@ -53,6 +54,12 @@ const OPENALEX_ENRICHMENT_SELECT = [
   'primary_location',
   'type',
   'open_access',
+  // OpenAlex charges per call, not per field, so this rides along on a request
+  // the feed already makes. It costs ~2.6 KB per paper and buys a readable card
+  // for the sources that arrive without one -- half of NASA's records, a tenth
+  // of Europe PMC's -- which also unlocks the AI explanation, gated on having a
+  // usable abstract.
+  'abstract_inverted_index',
 ].join(',');
 
 function normalizeDoi(value) {
@@ -101,6 +108,7 @@ export function mapOpenAlexEnrichmentWork(work) {
     openAlexId,
     arxivId,
     enrichment: {
+      abstract: reconstructOpenAlexAbstract(work.abstract_inverted_index),
       concepts: semanticTopics,
       topics: work.topics || [],
       primaryTopic: work.primary_topic || null,
@@ -1513,16 +1521,7 @@ export async function fetchPapersByDois(dois, options = {}) {
 }
 
 function formatOpenAlexWorkAsPaper(work) {
-  let summary = 'Resumen no disponible.';
-  if (work.abstract_inverted_index) {
-    const words = [];
-    for (const [word, positions] of Object.entries(work.abstract_inverted_index)) {
-      for (const pos of positions) {
-        words[pos] = word;
-      }
-    }
-    summary = words.join(' ').replace(/\s+/g, ' ').trim();
-  }
+  const summary = reconstructOpenAlexAbstract(work.abstract_inverted_index) || 'Resumen no disponible.';
   
   const authors = work.authorships?.map(a => ({ name: a.author?.display_name || 'Unknown Author', id: a.author?.id })) || [{ name: 'Unknown Author' }];
   const institutions = [...new Map((work.authorships || [])

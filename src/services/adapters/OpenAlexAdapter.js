@@ -1,6 +1,7 @@
 import { BaseAdapter } from './BaseAdapter.js';
 import { assignRequestedCategories } from '../arxivService.js';
 import { openAlexFetch } from '../openAlexClient.js';
+import { reconstructOpenAlexAbstract } from '../../utils/openAlexAbstract.js';
 
 export class OpenAlexAdapter extends BaseAdapter {
   constructor() {
@@ -89,19 +90,7 @@ export class OpenAlexAdapter extends BaseAdapter {
         displayName: institution.display_name,
       }])).values()];
 
-    // Reconstruct abstract from inverted index
-    let abstract = 'No abstract available.';
-    if (work.abstract_inverted_index) {
-      const index = work.abstract_inverted_index;
-      const wordPositions = [];
-      for (const [word, positions] of Object.entries(index)) {
-        for (const pos of positions) {
-          wordPositions.push({ word, pos });
-        }
-      }
-      wordPositions.sort((a, b) => a.pos - b.pos);
-      abstract = wordPositions.map(wp => wp.word).join(' ');
-    }
+    const abstract = reconstructOpenAlexAbstract(work.abstract_inverted_index) || 'No abstract available.';
 
     const isOpenAccess = work.open_access?.is_oa || false;
     const pdfUrl = work.open_access?.oa_url || null;

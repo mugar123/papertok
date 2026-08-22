@@ -9,6 +9,7 @@ import { PubmedAdapter } from './adapters/PubmedAdapter.js';
 import { PaperBuilder } from './PaperBuilder.js';
 import { CATEGORIES, getCategoryArea } from '../data/categories.js';
 import { openAlexJson } from './openAlexClient.js';
+import { reconstructOpenAlexAbstract } from '../utils/openAlexAbstract.js';
 import { REPORT_OPENALEX_FIELDS } from './openAlexReportQuery.js';
 import { normalizeScientificMarkup } from '../utils/latex.js';
 import { getDateThresholds } from '../utils/scientificReportPeriods.js';
@@ -155,16 +156,7 @@ function cacheCorpus(cacheKey, entry) {
 }
 
 export function formatOpenAlexWork(work) {
-  let summary = 'Resumen no disponible.';
-  if (work.abstract_inverted_index) {
-    const words = [];
-    for (const [word, positions] of Object.entries(work.abstract_inverted_index)) {
-      for (const pos of positions) {
-        words[pos] = word;
-      }
-    }
-    summary = words.join(' ').replace(/\s+/g, ' ').trim();
-  }
+  const summary = reconstructOpenAlexAbstract(work.abstract_inverted_index) || 'Resumen no disponible.';
   
   const authors = work.authorships?.map(a => ({ name: a.author?.display_name || 'Unknown Author', id: a.author?.id })) || [{ name: 'Unknown Author' }];
   const topics = work.topics || [];
