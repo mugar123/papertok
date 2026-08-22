@@ -274,6 +274,38 @@ cache-buster a `openreview`, `biorxiv` y `europepmc` responden 200, con el
 upstream real más lento en 2,79 s. Ojo: el Worker **no se despliega desde CI**
 — un `git push` no lo actualiza, hace falta `npm run worker:deploy`.
 
+### 5.1 Los flecos declarados, cerrados o desmentidos (misma noche)
+
+**El chunk «createLucideIcon» no es de iconos.** Atribución por sourcemap
+(decodificando los mappings, no a ojo): de sus 334 KB crudos, **190,8 KB son
+Firestore y 134 KB el resto de Firebase**; Lucide aporta 1,6 KB — la factoría
+`createLucideIcon`, que es lo único que da nombre al chunk. Los 77 iconos
+usados pesan **14,4 KB crudos en total** (~190 bytes/icono, en el chunk de
+entrada): el tree-shaking poda perfectamente y ahí no hay bocado. El chunk de
+entrada real es: app 219 KB + react-dom 178 KB + framer-motion 122 KB. El
+siguiente candidato con sustancia sería **diferir Firestore para visitantes**
+(~190 KB crudos que un invitado no usa), pero es cirugía en
+`services/firebase.js` y sus importadores, no un cambio mecánico.
+
+**El `fallback={null}` de las rutas ya no es una pantalla en blanco.** Las
+rutas diferidas muestran ahora `RouteFallback`: fondo `--bg-primary` con un
+indicador que **no aparece hasta los 320 ms** (la misma política de
+placeholders retrasados del resto de la app), así que en escritorio con caché
+caliente sigue sin verse nada y en móvil lento hay fondo e indicador en vez de
+blanco. Verificado en vivo: el nodo se inserta al suspender, con
+`animation-delay: 0.32s` computado, y se retira al llegar el chunk.
+
+**Primera visita, medida a nivel de red** (lo que el arnés de revisitas no
+cubría): bajar el set de arranque completo (18 ficheros, ~360 KB gzip /
+1,15 MB crudos) saltándose la caché HTTP cuesta **194–924 ms (mediana
+342 ms)** en esta conexión. Para móvil sigue siendo un **modelo**, no una
+medición: a 4G típica (~9 Mbps) la transferencia sale a ~0,32 s frente a
+~0,62 s del bundle antiguo (~680 KB gzip); a 3G rápida (~1,6 Mbps), ~1,8 s
+frente a ~3,4 s. El parse escala igual con los crudos: 1,15 MB frente a
+2,3 MB. Sin medir de verdad: CPU móvil real y RTTs de radio. La app en
+emulación móvil (375×812, táctil, UA Android) renderiza el feed completo sin
+desbordes horizontales.
+
 Notas honestas: (1) el primer paper de la revisita logueada queda ~100 ms por
 encima del valor previo — 17 ficheros cacheados frente a uno — a cambio de que
 nada pise el contenido; (2) la corrida logueada sin snapshot dio 2 824 ms pero
