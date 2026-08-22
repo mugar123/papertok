@@ -60,19 +60,26 @@ import { resolveWithin, settleWithin } from '../utils/asyncTiming';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard';
 import { dedupeInteractionPapers } from '../utils/feedInteractions';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
-import {
-  fetchTopicPapers,
-  getFollowedTopicCategoryIds,
-} from '../services/topicRetrievalService.js';
+// topicRetrievalService carries a ~32 KB gzip topic table and only matters
+// once a feed load actually ranks followed topics, so it loads on first use
+// instead of riding in the boot graph of every route.
+const loadTopicRetrieval = () => import('../services/topicRetrievalService.js');
 
 const PAGE_SIZE = 15;
-// Covers the worker arXiv route timeout (4s) plus headroom, so a slow-but-alive
-// source lands inside the render budget instead of being counted as failed.
-const FEED_SOURCE_RENDER_BUDGET_MS = 5000;
+// Per-source cap on the first-render fetch. The slowest healthy source
+// measured 2.4 s in production (OpenAlex, cold edge; PubMed's serial chain
+// 2.05 s); the only upstream ever seen above 4 s is OpenReview's cold 5.2 s,
+// which the previous 5 s budget lost anyway after waiting the full 5 s for it.
+const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
 const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
-const OPENALEX_FEED_WAIT_BUDGET_MS = 4500;
-const ICITE_FEED_WAIT_BUDGET_MS = 1800;
+// How long the first paint may wait for enrichment. Warm-edge enrichment lands
+// in 0.2–0.9 s (measured 2026-08-22); slower responses merge into the visible
+// cards through the existing late-enrichment path instead of holding the
+// skeleton — the old 4.5 s wait was the largest single slice of the measured
+// 9.5 s worst case.
+const OPENALEX_FEED_WAIT_BUDGET_MS = 900;
+const ICITE_FEED_WAIT_BUDGET_MS = 900;
 const INTERACTIONS_NETWORK_TIMEOUT_MS = 5000;
 // Upper bound on the reading-library records fetched on demand by the library
 // screens. Ten ids per `in` query, so this is 60 queries in the worst case and
@@ -144,6 +151,7 @@ async function fetchFollowedEntityCandidates(followedEntities, queryMode) {
   const results = await Promise.allSettled(selected.map(async (follow) => {
     let candidates = [];
     if (follow.type === 'topic') {
+      const { fetchTopicPapers } = await loadTopicRetrieval();
       const result = await fetchTopicPapers(follow, {
         allowLegacyDisplayName: true,
         maxPapers: 3,
@@ -202,7 +210,12 @@ function bumpConceptAffinities(conceptMap, paper, delta) {
   });
 }
 
-export function FeedProvider({ children }) {
+// `feedRouteActive` says whether the route that actually renders this feed is
+// on screen. The provider wraps every route so its consumers (save modal,
+// comments, PDF viewer) exist everywhere, but the multi-source fetch fan-out
+// must not: measured in production, a signed-in visit to a public profile
+// fired the full source cascade for a feed nobody was looking at.
+export function FeedProvider({ children, feedRouteActive = true }) {
   const { user, userPreferences, followedAuthors } = useAuth();
   const { followedEntities, loading: followingLoading } = useFollowing();
   const [papers, setPapers] = useState([]);
@@ -769,7 +782,9 @@ export function FeedProvider({ children }) {
         const allCategories = getAllLeafCategories();
         
         // ─── STEP 1: Rank user's selected categories by learned affinity ───
-        const followedTopicIds = getFollowedTopicCategoryIds(followedEntities);
+        const followedTopicIds = followedEntities.length > 0
+          ? (await loadTopicRetrieval()).getFollowedTopicCategoryIds(followedEntities)
+          : [];
         const rankedPreferences = [...new Set([...userPreferences, ...followedTopicIds])].sort((a, b) => {
           const affA = categoryAffinities.current[a] || 0;
           const affB = categoryAffinities.current[b] || 0;
@@ -1299,6 +1314,12 @@ export function FeedProvider({ children }) {
   }, [feedMode, isKnownPaper, user?.uid, userPreferences]);
 
   // A changed set of interests must invalidate the cached feed and replace it.
+  // A plain cold mount must not: restoring the snapshot and then firing a
+  // replacing refresh swapped the cards out from under the reader 1–8.6 s in
+  // (measured 2026-08-22), and chased already-seen pages through up to three
+  // extra source waves. On cold mount the snapshot stands on its own and the
+  // infinite-scroll sentinel fetches the next page when the reader nears the
+  // end — fresh content arrives below the current card instead of on top of it.
   useEffect(() => {
     const signature = feedPreferenceSignature(userPreferences);
 
@@ -1307,8 +1328,14 @@ export function FeedProvider({ children }) {
       return;
     }
 
+    // Off the feed route nothing is recorded, so preference edits made from
+    // settings or onboarding are picked up as a change on the next visit to
+    // the feed — and no source cascade fires for a feed nobody is looking at.
+    if (!feedRouteActive) return;
+
     if (preferencesSignatureRef.current === signature) return;
 
+    const isColdMount = preferencesSignatureRef.current === null;
     preferencesSignatureRef.current = signature;
     feedCache.current = {};
     const snapshot = readFeedSnapshot(user?.uid, signature);
@@ -1318,6 +1345,7 @@ export function FeedProvider({ children }) {
         setPapers(snapshot.papers);
         setPage(snapshot.page || 0);
         setHasMore(snapshot.hasMore !== false);
+        if (isColdMount) return;
       } else {
         setPapers([]);
         setPage(0);
@@ -1326,7 +1354,7 @@ export function FeedProvider({ children }) {
       loadPapers(true, null, true);
     }, 0);
     return () => clearTimeout(refreshTimer);
-  }, [feedMode, isKnownPaper, loadPapers, recommendationProfileReady, user?.uid, userPreferences]);
+  }, [feedMode, feedRouteActive, isKnownPaper, loadPapers, recommendationProfileReady, user?.uid, userPreferences]);
 
   const followingSignatureRef = useRef(null);
 

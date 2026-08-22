@@ -2,7 +2,6 @@ import { mapWithConcurrency } from '../utils/mapWithConcurrency.js';
 import { fetchPapersByIds, getAuthorPapers } from './arxivService.js';
 import { fetchPapersByDois, getWorksByEntity } from './openAlexService.js';
 import { getPapersByProject } from './openAireService.js';
-import { fetchTopicPapers } from './topicRetrievalService.js';
 import {
   isRecentFollowingUpdate,
   mergeFollowingUpdatePapers,
@@ -34,8 +33,13 @@ function cleanOpenAlexId(value) {
   return String(value || '').split('/').pop();
 }
 
-async function fetchTopicUpdates(follow, topicRetriever = fetchTopicPapers) {
-  const result = await topicRetriever(follow, {
+async function fetchTopicUpdates(follow, topicRetriever) {
+  // The topic table is ~32 KB gzip and this runs on a background refresh, so
+  // the module loads on first use instead of in the boot graph. Tests still
+  // inject their own retriever through the parameter.
+  const retrieve = topicRetriever
+    || (await import('./topicRetrievalService.js')).fetchTopicPapers;
+  const result = await retrieve(follow, {
     allowLegacyDisplayName: true,
     maxPapers: PAPERS_PER_ENTITY,
     mode: 'recent',
