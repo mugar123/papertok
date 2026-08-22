@@ -39,6 +39,13 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+    <!-- The first three requests of every session, in order: the auth gate
+         (identitytoolkit), the Firestore listens behind it, and the Worker.
+         Warming DNS+TLS here overlaps the handshakes with the JS download
+         instead of paying them serially once the bundle boots. -->
+    <link rel="preconnect" href="https://identitytoolkit.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://firestore.googleapis.com" crossorigin>
+    <link rel="preconnect" href="https://papertok-report-api.papertok-mugar123.workers.dev" crossorigin>
   </head>
   <body>
     <div id="root"></div>

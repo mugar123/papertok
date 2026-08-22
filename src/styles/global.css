@@ -14,7 +14,10 @@
 }
 
 html {
-  scroll-behavior: smooth;
+  /* No global smooth scrolling: it fights the feed's `scroll-snap-type: y
+     mandatory` and made every programmatic jump animate. Whoever wants a
+     smooth scroll must ask for it per call (scrollTo/scrollIntoView with
+     behavior: 'smooth'), which is what FeedContainer already does. */
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
 }
@@ -107,7 +110,15 @@ button {
   background: none;
   color: var(--text-primary);
   font-size: var(--fs-base);
-  transition: all var(--transition-base);
+  /* Only paint-cheap properties animate. `all` also animated layout
+     (width/height/padding), which is what made every button feel spongy. */
+  transition:
+    color var(--transition-base),
+    background-color var(--transition-base),
+    border-color var(--transition-base),
+    opacity var(--transition-base),
+    box-shadow var(--transition-base),
+    transform var(--transition-base);
 }
 
 button:disabled {
