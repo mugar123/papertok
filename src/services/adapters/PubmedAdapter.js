@@ -3,6 +3,13 @@ import { openAlexJson } from '../openAlexClient.js';
 import { reconstructOpenAlexAbstract } from '../../utils/openAlexAbstract.js';
 import { enrichPubmedIds } from '../europePmcService.js';
 import { BaseAdapter } from './BaseAdapter.js';
+import { readSourceCache, writeSourceCache } from '../../utils/sourceCache.js';
+
+// E-utilities answer as three serial requests (esearch → esummary → efetch)
+// straight from the browser: 1.35–2.05 s per feed load measured in
+// production, with nothing cacheable along the way — the constant floor under
+// every guest load. Ten minutes of staleness is invisible in a paper feed.
+const PUBMED_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const PUBMED_CATEGORY_ALIASES = Object.freeze({
   'med.gen': ['internal medicine', 'general medicine', 'primary care', 'family medicine', 'multimorbidity'],
@@ -122,6 +129,25 @@ export class PubmedAdapter extends BaseAdapter {
   }
 
   async search(query, page = 1, filters = {}) {
+    const cacheKey = [
+      'pubmed',
+      query,
+      page,
+      filters?.type || '',
+      [...(filters?.internalCategories || [])].sort().join(','),
+    ].join('|');
+
+    const cached = readSourceCache(cacheKey, PUBMED_CACHE_TTL_MS);
+    if (cached) return cached;
+
+    const result = await this.fetchSearch(query, page, filters);
+    // Errors throw past this point uncached; an empty result is a real answer
+    // from PubMed and caches like any other.
+    writeSourceCache(cacheKey, result);
+    return result;
+  }
+
+  async fetchSearch(query, page = 1, filters = {}) {
     try {
       const count = 25;
       const start = (page - 1) * count;
