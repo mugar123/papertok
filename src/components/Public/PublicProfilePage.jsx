@@ -229,10 +229,15 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   // happen. These two were the last state here with no seed, and the only ones
   // that cannot borrow one from Firestore: a `count()` aggregation is
   // server-only, so a warm channel buys them nothing.
+  // Lazy, like the seeds above it: the device read costs a JSON.parse, and a
+  // seed is a thing you need once per mount, not once per render.
   const seedStatsUid = selfMode ? (user?.uid || '') : (seededProfile?.profile?.uid || '');
-  const seededStats = readSeededFollowStats(seedStatsUid, selfMode);
-  const [followerStats, setFollowerStats] = useState(seededStats?.followers ?? null);
-  const [followedStats, setFollowedStats] = useState(seededStats?.followed ?? null);
+  const [followerStats, setFollowerStats] = useState(
+    () => readSeededFollowStats(seedStatsUid, selfMode)?.followers ?? null,
+  );
+  const [followedStats, setFollowedStats] = useState(
+    () => readSeededFollowStats(seedStatsUid, selfMode)?.followed ?? null,
+  );
   const [following, setFollowing] = useState(false);
   const [followBusy, setFollowBusy] = useState(false);
   const [followError, setFollowError] = useState(false);

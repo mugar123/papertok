@@ -1,5 +1,70 @@
 # Estado / pendientes
 
+## El perfil ya no espera para decir lo que sabe (2026-08-22)
+
+**Hecho, medido y verificado en vivo.** Dos quejas — los contadores de
+Seguidores/Siguiendo mostraban `…` un segundo mientras «Me gusta» ya estaba, y
+la hoja de seguidores se quedaba en skeleton un rato largo y volvía a él cada vez
+— resultaron ser la misma enfermedad: eran los únicos datos del perfil sin
+siembra de cache, y los únicos que no pintaban hasta tenerlo todo.
+
+### Por qué los contadores tardaban
+
+Los rellenan dos agregaciones `getCountFromServer` (`followUserService.js`), y
+esa lectura **es solo-servidor: Firestore no la sirve nunca del cache local**.
+Da igual lo caliente que esté el canal — cada montaje pagaba un viaje de red
+entero para redibujar dos números que no se habían movido. `likedPaperIds.size`
+sale de `FeedContext`, sin lectura ninguna, y por eso «Me gusta» era instantáneo.
+Medido en el dev server (RTT ~0, así que en producción es peor): las
+agregaciones respondieron a los **210 / 229 ms** en una pasada y a los
+**628 / 636 ms** en otra. Ese es exactamente el tiempo que el `…` estaba en
+pantalla.
+
+Arreglo: ranura `followStatsCache` en `profileSessionCaches.js` (patrón de
+siempre) más `papertok_followStats:{uid}` en `userScopedStorage.js` **solo para
+el perfil propio**, así que ni el primer montaje tras recargar espera. Verificado:
+la semilla llega en **t=0** con los números reales y `.profile-stat-pending`
+no entra en el DOM ni una vez. El perfil de otra persona no se persiste — se
+visita una vez, no cien. El `Promise.all` se deshizo: cada contador pinta cuando
+llega el suyo y el botón Seguir ya no espera a dos números que no necesita.
+
+### Por qué la hoja se quedaba en skeleton
+
+Eran **dos oleadas en serie** y un solo `setPage` al final: la query de aristas,
+y solo después un `readUserProfile` por fila. Medido en frío: aristas a los
+**103 ms**, nombre a los **219 ms** — y el skeleton cubría los 219 enteros.
+Además cada cambio de pestaña tiraba la página de la otra, y cerrar la hoja se
+llevaba todo, así que el skeleton volvía una y otra vez. Y pintaba tres barras
+para un seguidor, sabiendo que era uno.
+
+Arreglo: estado por pestaña sembrado de `followListCache`, perfiles de fila en
+`followRowProfileCache` (antes un `useRef` que moría con la hoja), pintado en
+cuanto llegan las aristas con las filas en pendiente (`undefined` ≠ `null`), y
+tantas barras de skeleton como diga el contador de esa pestaña. Verificado:
+volver a una pestaña ya cargada repinta a los **49 ms sin skeleton**; reabrir la
+hoja repinta a los **18 ms**, siembra las dos pestañas y no vuelve a leer ni un
+perfil (`alreadyNamed: 1`); y en frío la fila aparece a los 103 ms con el nombre
+detrás, en vez de nada hasta los 219.
+
+El skeleton y el `…` que queden se retrasan 320 ms en CSS, como el resto de la
+app: en el caso frío medido el skeleton vive 103 ms, o sea que **ya no llega a
+verse**.
+
+### Pendiente / dicho a las claras
+
+- No se ha tocado `firestore.rules` ni el modelo: `userProfiles.followerCount`
+  sigue reservado, congelado para clientes y sin escritor. La escalada a
+  contador denormalizado sigue documentada y sin hacer, y no hace falta para
+  esto.
+- La hoja no se persiste entre recargas; solo los dos contadores del perfil
+  propio.
+- **Bug ajeno encontrado de paso**: en cada carga de la app,
+  `EmailNotificationsProvider` revienta con «useFollowingUpdates must be used
+  within a FollowingUpdatesProvider» y `GlobalErrorBoundary` reconstruye el árbol
+  entero. Sobrevive a un hard reload, así que no es HMR. El anidamiento en
+  `App.jsx:338-349` es correcto y los import son consistentes. No se ve porque se
+  recupera, pero tira el primer render de la app en cada carga.
+
 ## OpenAlex se agotaba a diario porque le falta la clave (2026-08-22)
 
 **Implementado, pendiente de una clave que solo puede sacar @mugar.** El síntoma
