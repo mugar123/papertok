@@ -716,16 +716,23 @@ function utcDateOffset(days) {
   return date.toISOString().slice(0, 10);
 }
 
-async function fetchJsonUpstream(url, headers = {}) {
-  const response = await fetch(url, {
+// Every `/sources/*` upstream reaches the network through here, and none of
+// them used to carry a deadline: a hung provider held the subrequest open with
+// nothing to cut it, while the browser had already given up. Six seconds is
+// deliberately above the client's 4 s per-source budget — the slowest real
+// upstream measured is OpenReview at 5.2 s cold, and letting it finish still
+// pays off because the answer lands in the edge cache for the next reader,
+// even though the reader who triggered it has moved on.
+const SOURCE_UPSTREAM_TIMEOUT_MS = 6000;
+
+function fetchJsonUpstream(url, headers = {}) {
+  return fetchJsonWithTimeout(url, {
     headers: {
       accept: 'application/json',
       'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
       ...headers,
     },
-  });
-  if (!response.ok) throw new Error(`Upstream error: ${response.status}`);
-  return response.json();
+  }, SOURCE_UPSTREAM_TIMEOUT_MS);
 }
 
 async function handleBioRxiv(request, env) {

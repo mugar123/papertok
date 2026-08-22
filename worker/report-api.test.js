@@ -123,6 +123,38 @@ test('proxies Hugging Face paper search through the specialist source contract',
   assert.equal(payload.papers[0].paper.id, '2607.12345');
 });
 
+test('gives every source upstream a deadline it can be cut with', async () => {
+  let seenSignal;
+  const response = await withWorkerFetchMock(async (url, options) => {
+    assert.match(String(url), /ebi\.ac\.uk\/europepmc/);
+    seenSignal = options?.signal;
+    return new Response(JSON.stringify({ resultList: { result: [] } }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/europepmc?q=malaria&limit=4',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), {}));
+
+  assert.equal(response.status, 200);
+  // A hung provider used to hold the subrequest open with nothing to cut it.
+  assert.ok(seenSignal, 'the upstream fetch carries no AbortSignal');
+  assert.equal(seenSignal.aborted, false);
+});
+
+test('an aborted source upstream answers as a failure, not as a hung request', async () => {
+  // What the deadline does once it fires. Asserted with an immediate rejection
+  // rather than a real six-second wait, which would cost that on every run.
+  const response = await withWorkerFetchMock(async () => {
+    throw Object.assign(new Error('The operation was aborted'), { name: 'AbortError' });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/europepmc?q=malaria&limit=4',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), {}));
+
+  assert.equal(response.status, 502);
+});
+
 test('validates and batches NIH iCite PubMed identifiers', async () => {
   let upstreamUrl = '';
   const response = await withWorkerFetchMock(async url => {
