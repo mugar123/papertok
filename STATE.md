@@ -183,12 +183,55 @@ upstream en vez de aplanarlo**; con un 502 genérico habría seguido invisible.
 
 Tras el tráfico real: `0.9929 / 1 USD`, 9.929 llamadas restantes.
 
-### Cabo suelto
+### Scopus: estudio cerrado, y la respuesta no era sobre abstracts
 
-**Scopus sigue apagado.** `VITE_SCOPUS_ENABLED` está en `false`: funciona de punta
-a punta por la salida de Deno, pero sin entitlement de `COMPLETE` cada paper llega
-sin abstract, y esa decisión de producto quedó abierta cuando el hilo se movió a
-OpenAlex.
+`VITE_SCOPUS_ENABLED` se queda en `false`, **y esta vez con la medida delante**.
+
+La pregunta que parecía decisiva era «¿puede Scopus dar abstracts?». La que de
+verdad decidía era otra: **¿qué papers aporta Scopus que OpenAlex no tenga?**
+Tomé 75 papers reales de Scopus en tres áreas y pregunté a OpenAlex por sus DOIs:
+
+| Consulta | Scopus devolvió | OpenAlex los conoce | Con abstract |
+| --- | --- | --- | --- |
+| photosynthesis | 25 | **25** | 6 |
+| cell biology | 25 | **25** | 14 |
+| aerospace engineering | 25 | **25** | 10 |
+| | **75** | **75 (100%)** | 30 (40%) |
+
+**Ni un solo paper que OpenAlex no tuviera.** Como fuente de descubrimiento
+Scopus no contribuye nada: enseña lo que OpenAlex ya podía enseñar, con menos
+metadatos y sin resumen. Lo único genuinamente suyo es su propio número de citas,
+y mantenerlo vivo cuesta un proyecto en Deno, un secreto compartido, una cuota y
+la obligación de atribución de Elsevier. Retirado como inversión, no como código:
+la salida y el sondeo siguen ahí y avisan si algo cambia.
+
+Sobre el abstract quedaron dos puertas sin probar —selección por `field=` y la API
+de ScienceDirect— porque no puedo mandar la clave a un servicio externo. Alta
+confianza en que están cerradas: el propio error de Elsevier dice «not authorized
+to access the requested view **or fields**», y ScienceDirect solo cubriría papers
+publicados por ellos. Pero la medida las vuelve irrelevantes.
+
+### Lo que sí valía: el resumen ya venía en la llamada que hacemos
+
+El segundo número de la tabla —40%— era el aprovechable, y no para Scopus sino
+para todo el feed. `abstract_inverted_index` ahora viaja en el `select` del
+enriquecimiento que ya se ejecuta: OpenAlex cobra por llamada y no por campo, así
+que son **cero llamadas nuevas** y +2,6 KB por paper, medidos. Cubre a quien llega
+sin resumen —la mitad de los registros de NASA, un décimo de Europe PMC— y les
+abre la explicación de IA, que `hasUsableAIAbstract` cierra sin abstract.
+
+`PaperBuilder.merge` solo rellena el hueco: quien trajo su resumen se lo queda,
+porque es el texto del editor y no una reconstrucción.
+
+Y la reconstrucción del índice invertido estaba escrita a mano **cuatro** veces,
+ya divergidas: una ordenaba pares y se saltaba la normalización de espacios. Misma
+forma que el filtro `openalex:` que llevaba años devolviendo 400. Unificada en
+`src/utils/openAlexAbstract.js`.
+
+Verificado en producción: la ruta devuelve el índice y se reconstruye texto real
+(1.562, 1.284 y 1.215 caracteres en tres papers). El tercero es
+`10.1016/j.jmst.2026.06.058` — **el mismo paper de Elsevier cuyo abstract Scopus
+nos negó por falta de suscripción**, disponible gratis desde OpenAlex.
 
 ## Scopus funciona, por una salida fuera de Cloudflare y sin abstract (2026-08-22)
 
