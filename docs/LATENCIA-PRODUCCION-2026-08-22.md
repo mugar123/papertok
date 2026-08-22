@@ -261,6 +261,18 @@ medido contra producción tras el deploy:
 | Snap de tarjeta (3 transiciones) | 3–4 longtasks de 58–151 ms, frames hasta 152 ms | **0 longtasks, frame máx 24 ms** |
 | Toque (abrir comentarios) | handler 114 ms, pintado a 256–296 ms | **handler 24 ms, pintado a 56–64 ms** |
 | Peor caso estructural del esqueleto | 5 000 + 4 500 + render ≈ 9,5 s+ | 4 000 + 900 + render ≈ **5,2–6,2 s** |
+| `/sources/*` del Worker | diez endpoints **sin plazo** (§2) | **6 000 ms** de plazo (`b295e6f`, desplegado a mano) |
+
+**Sobre el Worker** (`b295e6f`, versión `1f2afe00`): las líneas de §1 y §2 que
+dicen que `fetchJsonUpstream` no tiene `AbortController` describen el estado
+del diagnóstico y se dejan como estaban; desde este despliegue ya no es cierto.
+El plazo son 6 s a propósito, por encima del presupuesto de 4 s del cliente:
+el upstream lento (OpenReview, 5,2 s en frío) llega a completar y deja la
+respuesta en la caché de borde para el siguiente lector, aunque quien la
+disparó ya se haya rendido. Verificado tras desplegar: 9/9 peticiones con
+cache-buster a `openreview`, `biorxiv` y `europepmc` responden 200, con el
+upstream real más lento en 2,79 s. Ojo: el Worker **no se despliega desde CI**
+— un `git push` no lo actualiza, hace falta `npm run worker:deploy`.
 
 Notas honestas: (1) el primer paper de la revisita logueada queda ~100 ms por
 encima del valor previo — 17 ficheros cacheados frente a uno — a cambio de que
