@@ -4,12 +4,19 @@ import { reconstructOpenAlexAbstract } from '../../utils/openAlexAbstract.js';
 import { enrichPubmedIds } from '../europePmcService.js';
 import { BaseAdapter } from './BaseAdapter.js';
 import { readSourceCache, writeSourceCache } from '../../utils/sourceCache.js';
+import { fetchWorkerSourceJson } from '../workerApiClient.js';
 
-// E-utilities answer as three serial requests (esearch → esummary → efetch)
-// straight from the browser: 1.35–2.05 s per feed load measured in
-// production, with nothing cacheable along the way — the constant floor under
-// every guest load. Ten minutes of staleness is invisible in a paper feed.
+// E-utilities answer as three serial requests (esearch → esummary → efetch).
+// Run from the browser that was 1.35–2.05 s per feed load measured in production,
+// with nothing cacheable along the way — the constant floor under every guest
+// load — and NCBI counts those requests against the caller's IP, so users behind
+// one NAT rate-limited each other. The chain now runs in the Worker, which holds
+// the NCBI key, caches the answer at the edge and reserves against a global
+// per-minute ceiling. This cache stays as a second tier in front of that one:
+// ten minutes of staleness is invisible in a paper feed, and a hit here costs no
+// request at all.
 const PUBMED_CACHE_TTL_MS = 10 * 60 * 1000;
+const PUBMED_PAGE_SIZE = 25;
 
 const PUBMED_CATEGORY_ALIASES = Object.freeze({
   'med.gen': ['internal medicine', 'general medicine', 'primary care', 'family medicine', 'multimorbidity'],
@@ -122,10 +129,12 @@ function assignPubmedCategory(paper, internalCategories) {
 }
 
 export class PubmedAdapter extends BaseAdapter {
-  constructor() {
+  // `workerOptions` is the injection seam `openAlexClient` already uses:
+  // `import.meta.env` does not exist under `node --test`, so without it this
+  // adapter's network path could only be exercised in a browser.
+  constructor(workerOptions = {}) {
     super('pubmed');
-    this.searchBase = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi';
-    this.summaryBase = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi';
+    this.workerOptions = workerOptions;
   }
 
   async search(query, page = 1, filters = {}) {
@@ -149,53 +158,40 @@ export class PubmedAdapter extends BaseAdapter {
 
   async fetchSearch(query, page = 1, filters = {}) {
     try {
-      const count = 25;
-      const start = (page - 1) * count;
-
       let finalQuery = query;
       if (filters && filters.type === 'author') {
          finalQuery = `${query}[Author]`;
       }
 
-      // 1. Fetch PMIDs
-      const searchUrl = new URL(this.searchBase);
-      searchUrl.searchParams.append('db', 'pubmed');
-      searchUrl.searchParams.append('term', finalQuery);
-      searchUrl.searchParams.append('retmode', 'json');
-      searchUrl.searchParams.append('retmax', count.toString());
-      searchUrl.searchParams.append('retstart', start.toString());
+      // 1. The whole E-utilities chain, in one call to the Worker. It returns the
+      // three upstream payloads unchanged — esearch, esummary and the efetch XML —
+      // so everything below maps exactly what it mapped when the browser fetched
+      // them itself.
+      const pubmedData = await fetchWorkerSourceJson('/sources/pubmed', {
+        q: finalQuery,
+        page,
+        limit: PUBMED_PAGE_SIZE,
+      }, this.workerOptions);
 
-      const searchRes = await fetch(searchUrl.toString());
-      if (!searchRes.ok) throw new Error(`PubMed Search Error: ${searchRes.status}`);
-      const searchData = await searchRes.json();
-      
-      const pmids = searchData.esearchresult?.idlist || [];
-      const total = parseInt(searchData.esearchresult?.count || '0');
+      const pmids = pubmedData?.esearchresult?.idlist || [];
+      const total = parseInt(pubmedData?.esearchresult?.count || '0');
 
       if (pmids.length === 0) {
         return { papers: [], total };
       }
 
-      // 2. Fetch Summaries
-      const summaryUrl = new URL(this.summaryBase);
-      summaryUrl.searchParams.append('db', 'pubmed');
-      summaryUrl.searchParams.append('id', pmids.join(','));
-      summaryUrl.searchParams.append('retmode', 'json');
-
-      const summaryRes = await fetch(summaryUrl.toString());
-      if (!summaryRes.ok) throw new Error(`PubMed Summary Error: ${summaryRes.status}`);
-      const summaryData = await summaryRes.json();
-
+      const summaryData = { result: pubmedData?.result || {} };
       const results = pmids.map(pmid => summaryData.result[pmid]).filter(Boolean);
       let mappedPapers = results.map(item => this.mapToStandard(item));
 
-      // 3. Enrich with EFetch, OpenAlex, and Europe PMC. Every source is optional.
+      // 2. Enrich with EFetch, OpenAlex, and Europe PMC. Every source is optional.
       try {
           const enrichmentMap = {};
           if (pmids.length > 0) {
-              const fetchUrl = `https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=pubmed&id=${pmids.join(',')}&retmode=xml`;
-              const fetchProm = fetch(fetchUrl).then(r => r.text()).catch(() => '');
-              
+              // The Worker already fetched this alongside the summaries; an empty
+              // string is its way of saying efetch was the half that failed.
+              const fetchProm = Promise.resolve(pubmedData?.efetch || '');
+
               const oaUrl = `https://api.openalex.org/works?filter=ids.pmid:${pmids.join('|')}&select=ids,abstract_inverted_index,concepts`;
               const oaProm = openAlexJson(oaUrl, {
                   timeoutMs: 8000,

@@ -1,11 +1,13 @@
 /**
  * Small TTL cache for source adapter responses, backed by localStorage.
  *
- * Exists for the sources the Worker cannot cache for us: PubMed's E-utilities
- * run as three serial requests straight from the browser and measured
- * 1.35–2.05 s per feed load, every load, because nothing along that path is
- * cacheable. Ten minutes of staleness is invisible in a feed of scientific
- * papers; two seconds of skeleton on every revisit is not.
+ * Written when PubMed's E-utilities ran as three serial requests straight from
+ * the browser — 1.35–2.05 s per feed load, every load, because nothing along that
+ * path was cacheable. `/sources/pubmed` now runs that chain inside the Worker and
+ * caches the answer at the edge, so this is no longer the only cache in front of
+ * it; it is the nearer one. A hit here still costs no request at all, and ten
+ * minutes of staleness is invisible in a feed of scientific papers while two
+ * seconds of skeleton on every revisit is not.
  *
  * One storage key holds every entry so eviction is a single read-modify-write,
  * and the entry count is capped: this must never compete with the feed

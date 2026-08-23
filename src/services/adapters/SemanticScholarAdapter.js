@@ -1,75 +1,62 @@
 import { BaseAdapter } from './BaseAdapter.js';
+import { fetchWorkerSourceJson } from '../workerApiClient.js';
+
+const SEMANTIC_SCHOLAR_PAGE_SIZE = 25;
 
 export class SemanticScholarAdapter extends BaseAdapter {
-  constructor() {
+  // Same injection seam as `PubmedAdapter`: `import.meta.env` is absent under
+  // `node --test`, so the Worker origin has to be passable for the network path
+  // to be testable at all.
+  constructor(workerOptions = {}) {
     super('semanticscholar');
+    this.workerOptions = workerOptions;
   }
 
   async search(query, page = 1, filters = {}) {
-    const limit = 25;
-    const offset = (page - 1) * limit;
-    
     // Clean query
     let safeQuery = query.replace(/OR|AND/g, ' ').replace(/"/g, '').replace(/[()]/g, '');
     if (filters && filters.type === 'author') {
        safeQuery = query;
     }
 
-    const fields = 'paperId,title,abstract,authors,year,isOpenAccess,venue,publicationTypes,citationCount,referenceCount,openAccessPdf';
-    const url = `https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(safeQuery)}&offset=${offset}&limit=${limit}&fields=${fields}`;
+    // Semantic Scholar rate-limits per API key, not per caller, and this used to
+    // go straight out of the browser with no key and a retry loop of its own —
+    // one that every tab ran independently, so the more tabs the harder they
+    // rate-limited each other. Both the key and the single shared ceiling live in
+    // the Worker; a refusal arrives here already carrying its `retry-after`, so
+    // there is nothing left for a local backoff to add.
+    try {
+      const data = await fetchWorkerSourceJson('/sources/s2', {
+        q: safeQuery,
+        page,
+        limit: SEMANTIC_SCHOLAR_PAGE_SIZE,
+      }, this.workerOptions);
 
-    let attempts = 0;
-    const maxAttempts = 3;
-    let delay = 1200;
+      if (!data?.data) return { papers: [], total: 0 };
 
-    while (attempts < maxAttempts) {
-      try {
-        const response = await fetch(url);
-        
-        if (response.status === 429) {
-          attempts++;
-          console.warn(`Semantic Scholar API rate limited (429). Retrying attempt ${attempts}/${maxAttempts} in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-          delay *= 1.5;
-          continue;
-        }
+      let mappedPapers = data.data.map(item => this.mapToStandard(item));
 
-        if (!response.ok) {
-          return { papers: [], total: 0 };
-        }
-        
-        const data = await response.json();
-        if (!data.data) return { papers: [], total: 0 };
-
-        let mappedPapers = data.data.map(item => this.mapToStandard(item));
-        
-        if (filters && filters.internalCategories && filters.internalCategories.length > 0) {
-          mappedPapers = mappedPapers.map(p => {
-            const paperText = `${p.title} ${p.abstract || ''}`.toLowerCase();
-            let bestMatch = null;
-            for (const catId of filters.internalCategories) {
-                const keywords = catId.split('.');
-                if (keywords.some(kw => kw.length > 2 && paperText.includes(kw))) {
-                    bestMatch = catId;
-                    break;
-                }
-            }
-            const selectedCat = bestMatch || filters.internalCategories[Math.floor(Math.random() * filters.internalCategories.length)];
-            p.categories = [selectedCat, ...(p.categories || [])];
-            return p;
-          });
-        }
-        return { papers: mappedPapers, total: data.total || 0 };
-      } catch (e) {
-        attempts++;
-        if (attempts >= maxAttempts) {
-          console.error("Error fetching from Semantic Scholar:", e);
-          return { papers: [], total: 0 };
-        }
-        await new Promise(resolve => setTimeout(resolve, delay));
+      if (filters && filters.internalCategories && filters.internalCategories.length > 0) {
+        mappedPapers = mappedPapers.map(p => {
+          const paperText = `${p.title} ${p.abstract || ''}`.toLowerCase();
+          let bestMatch = null;
+          for (const catId of filters.internalCategories) {
+              const keywords = catId.split('.');
+              if (keywords.some(kw => kw.length > 2 && paperText.includes(kw))) {
+                  bestMatch = catId;
+                  break;
+              }
+          }
+          const selectedCat = bestMatch || filters.internalCategories[Math.floor(Math.random() * filters.internalCategories.length)];
+          p.categories = [selectedCat, ...(p.categories || [])];
+          return p;
+        });
       }
+      return { papers: mappedPapers, total: data.total || 0 };
+    } catch (e) {
+      console.error("Error fetching from Semantic Scholar:", e);
+      return { papers: [], total: 0 };
     }
-    return { papers: [], total: 0 };
   }
 
   async getDetails() {

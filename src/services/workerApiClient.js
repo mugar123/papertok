@@ -45,6 +45,39 @@ export class WorkerApiAuthError extends Error {
   }
 }
 
+// The Worker's own origin, for callers that build a route URL rather than being
+// handed one. Exported as a builder rather than as the bare origin so no caller
+// has to remember the trailing-slash and empty-value handling.
+export function workerSourceUrl(path, params = {}, apiBase = configuredWorkerOrigin()) {
+  if (!apiBase) return '';
+  const url = new URL(`${String(apiBase).replace(/\/$/, '')}${path}`);
+  for (const [name, value] of Object.entries(params)) {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(name, String(value));
+  }
+  return url.toString();
+}
+
+// The unauthenticated half of this module, for the `/sources/*` routes the guest
+// feed reads. `apiBase` and `fetchImpl` are injectable for the same reason
+// `openAlexClient` injects them: `import.meta.env` does not exist under
+// `node --test`, so without a seam these paths could only be tested in a browser.
+export async function fetchWorkerSourceJson(path, params = {}, {
+  timeoutMs,
+  apiBase = configuredWorkerOrigin(),
+  // Wrapped rather than passed by reference: a detached `fetch` is an illegal
+  // invocation in a browser.
+  fetchImpl = (...args) => fetch(...args),
+} = {}) {
+  const url = workerSourceUrl(path, params, apiBase);
+  if (!url) throw new WorkerApiAuthError('WORKER_ORIGIN_NOT_ALLOWED');
+  // One deadline for the headers and the body alike: these calls sit inside the
+  // feed's `allSettled`, where an upstream that answers its headers and then
+  // stops used to hold every other source behind it.
+  const response = await fetchImpl(url, withRequestDeadline({ headers: { accept: 'application/json' } }, timeoutMs));
+  if (!response.ok) throw new Error(`${path} returned ${response.status}`);
+  return response.json();
+}
+
 export async function authenticatedWorkerFetch(input, options = {}) {
   const url = trustedWorkerUrl(input);
   if (!url) throw new WorkerApiAuthError('WORKER_ORIGIN_NOT_ALLOWED');
