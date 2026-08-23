@@ -4,6 +4,8 @@ import {
   buildPublicListPayload,
   createShareId,
   handlePublicListRequest,
+  mergePreparedPayload,
+  prepareMergeInput,
   PublicListApiError,
 } from './public-list-api.js';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.js';
@@ -233,6 +235,51 @@ test('an unwired quota ledger fails closed rather than uncapping the route', asy
     () => run('/lists/publish', { listId: 'l1', title: 'T', papers: [] },
       { env: envWith({ REQUEST_QUOTA_LEDGER: null }) }),
     error => error.code === 'PUBLISH_QUOTA_NOT_CONFIGURED' && error.status === 503,
+  );
+});
+
+test('a body that never reaches Firestore does not spend a unit of the daily cap', async () => {
+  stubIdentity();
+  const env = envWith({ REQUEST_QUOTA_LEDGER: ledger(1) });
+  const admin = fakeAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1' } });
+  const refused = [
+    ['/lists/publish', { listId: '', title: 'T', papers: [] }],
+    ['/lists/publish', { listId: 'l1', title: '', papers: [] }],
+    ['/lists/publish', { listId: 'l1', title: 'T', papers: listOf(51) }],
+    ['/lists/update', { shareId: 'ZZZ', title: 'T', papers: [] }],
+    ['/lists/unpublish', { shareId: 'nope' }],
+    ['/lists/attribute', { shareId: SHARE, attributed: 'yes' }],
+  ];
+  for (const [pathname, body] of refused) {
+    await assert.rejects(
+      () => run(pathname, body, { admin, env }),
+      error => error instanceof PublicListApiError && error.status === 400,
+      `must refuse ${pathname} ${JSON.stringify(body)}`,
+    );
+  }
+  // Charging for these let a handful of accounts spend the global allowance on
+  // rejects and take publishing away from everybody, for nothing.
+  await run('/lists/publish', { listId: 'l1', title: 'T', papers: [] }, { admin, env });
+  assert.equal(admin.commits.length, 1, 'the one unit the ledger held was still there');
+});
+
+test('a failure that did reach Firestore still spends its unit', async () => {
+  stubIdentity();
+  const env = envWith({ REQUEST_QUOTA_LEDGER: ledger(1) });
+  const admin = fakeAdmin({
+    [`users/${UID}/lists/l1`]: { id: 'l1', publicShareId: SHARE },
+    [`users/${UID}/lists/l2`]: { id: 'l2' },
+  });
+  await assert.rejects(
+    () => run('/lists/publish', { listId: 'l1', title: 'T', papers: [] }, { admin, env }),
+    error => error.code === 'ALREADY_PUBLISHED' && error.status === 409,
+  );
+  // Deliberate, and the reason the discriminator is "did it read Firestore"
+  // rather than "is it a 409": that refusal spent a read of the free-tier
+  // allowance, and this cap is the only thing bounding that allowance.
+  await assert.rejects(
+    () => run('/lists/publish', { listId: 'l2', title: 'T', papers: [] }, { admin, env }),
+    error => error.code === 'PUBLISH_QUOTA_EXCEEDED' && error.status === 429,
   );
 });
 
@@ -1030,4 +1077,80 @@ test('F12: attributing somebody else\'s share is a 403, a full showcase a 409, a
     }),
     error => error.code === 'INVALID_BODY' && error.status === 400,
   );
+});
+
+// ---------------------------------------------------------------------------
+// The merge on its own. It sits four Firestore reads away from any route and
+// it has already deleted papers from a real shared list twice, so it is worth
+// reaching directly.
+// ---------------------------------------------------------------------------
+
+const HEADER_ONLY = { title: 'T', papers: [] };
+
+test('a published paper the caller did not hydrate this time survives the merge', () => {
+  const existing = { papers: [{ id: 'doi:10.1/x', sourceId: 'p1', title: 'Kept', authors: ['A'] }] };
+  const merged = mergePreparedPayload(prepareMergeInput(HEADER_ONLY), existing, ['p1']);
+  assert.deepEqual(merged.payload.papers.map(entry => entry.id), ['doi:10.1/x']);
+  assert.equal(merged.payload.paperCount, 1);
+  assert.deepEqual([merged.listCount, merged.skipped], [1, 0]);
+});
+
+test('an id that matches nothing anywhere is counted, never silently dropped', () => {
+  const merged = mergePreparedPayload(prepareMergeInput(HEADER_ONLY), { papers: [] }, ['ghost']);
+  assert.deepEqual(merged.payload.papers, []);
+  // Counting it is how the owner gets told, instead of comparing numbers
+  // between two accounts and finding no explanation.
+  assert.deepEqual([merged.listCount, merged.skipped], [1, 1]);
+});
+
+test('documents published before sourceId existed still join by id, doi and arxivId', () => {
+  const existing = {
+    papers: [
+      { id: 'doi:10.1/a', doi: '10.1/a', title: 'A', authors: ['A'] },
+      { id: 'arxiv:2608.1', arxivId: '2608.1', title: 'B', authors: ['B'] },
+    ],
+  };
+  const merged = mergePreparedPayload(
+    prepareMergeInput(HEADER_ONLY), existing, ['10.1/a', '2608.1'],
+  );
+  assert.deepEqual(merged.payload.papers.map(entry => entry.id), ['doi:10.1/a', 'arxiv:2608.1']);
+});
+
+test('the membership decides, not the paperIds the request happens to carry', () => {
+  const existing = {
+    papers: [
+      { id: 'a', sourceId: 'p1', title: 'A', authors: ['A'] },
+      { id: 'b', sourceId: 'p2', title: 'B', authors: ['B'] },
+    ],
+  };
+  const merged = mergePreparedPayload(
+    prepareMergeInput({ ...HEADER_ONLY, paperIds: ['p1'] }), existing, ['p1', 'p2'],
+  );
+  assert.deepEqual(merged.payload.papers.map(entry => entry.id), ['a', 'b'],
+    'trusting the request once cost a real shared list two papers');
+});
+
+test('past the cap the merge truncates and counts, rather than refusing to sync at all', () => {
+  const existing = {
+    papers: Array.from({ length: 60 }, (_, i) => ({
+      id: `p${i}`, sourceId: `s${i}`, title: `Paper ${i}`, authors: ['A'],
+    })),
+  };
+  const merged = mergePreparedPayload(
+    prepareMergeInput(HEADER_ONLY), existing, existing.papers.map(entry => entry.sourceId),
+  );
+  // Refusing would leave a 60-paper list unable to sync anything, for ever.
+  assert.equal(merged.payload.papers.length, 50);
+  assert.deepEqual([merged.listCount, merged.skipped], [60, 10]);
+});
+
+test('preparing the input is pure: no membership needed, and a bad paper is refused there', () => {
+  assert.throws(() => prepareMergeInput({ title: '', papers: [] }),
+    error => error.code === 'TITLE_REQUIRED');
+  assert.throws(() => prepareMergeInput({ title: 'T', papers: [{ title: '' }] }),
+    error => error.code === 'PAPERS_REJECTED');
+  // No id source at all is the caller's problem, and only mergePreparedPayload
+  // can know it, because the membership arrives from Firestore.
+  assert.throws(() => mergePreparedPayload(prepareMergeInput(HEADER_ONLY), { papers: [] }, null),
+    error => error.code === 'INVALID_BODY');
 });

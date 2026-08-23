@@ -176,20 +176,20 @@ export function buildPublicListPayload(body) {
  * skipped and counted, so the owner can be told rather than left comparing
  * numbers between two accounts.
  */
-export function buildMergedPayload(body, existing, membership) {
+/**
+ * The half of the merge that depends only on the request. Split out so it can
+ * run BEFORE the daily quota is reserved (nothing that never reached Firestore
+ * may charge for it) and so the retry below can reuse it: sanitizing fifty
+ * papers again on the second attempt would be pure waste, and the result cannot
+ * have changed.
+ */
+export function prepareMergeInput(body) {
   let header;
   try {
     header = sanitizePublicList({ ...body, papers: [] });
   } catch {
     throw new PublicListApiError('TITLE_REQUIRED', 400);
   }
-
-  const source = Array.isArray(membership) ? membership : body.paperIds;
-  if (!Array.isArray(source)) throw new PublicListApiError('INVALID_BODY', 400);
-  const ids = source
-    .map(id => (typeof id === 'string' ? id.trim() : ''))
-    .filter(Boolean);
-  if (ids.length > 500) throw new PublicListApiError('INVALID_BODY', 400);
 
   // Refused rather than coerced, like buildPublicListPayload: a paper the
   // sanitizer would drop is a caller that must be told.
@@ -199,6 +199,22 @@ export function buildMergedPayload(body, existing, membership) {
     if (!clean) throw new PublicListApiError('PAPERS_REJECTED', 400);
     byRawId.set(publicPaperJoinKey(clean), clean);
   }
+
+  return {
+    header,
+    byRawId,
+    requestIds: Array.isArray(body.paperIds) ? body.paperIds : null,
+  };
+}
+
+/** The other half: everything that needs the two documents to be read first. */
+export function mergePreparedPayload({ header, byRawId, requestIds }, existing, membership) {
+  const source = Array.isArray(membership) ? membership : requestIds;
+  if (!Array.isArray(source)) throw new PublicListApiError('INVALID_BODY', 400);
+  const ids = source
+    .map(id => (typeof id === 'string' ? id.trim() : ''))
+    .filter(Boolean);
+  if (ids.length > 500) throw new PublicListApiError('INVALID_BODY', 400);
 
   const byPublishedKey = new Map();
   for (const paper of Array.isArray(existing?.papers) ? existing.papers : []) {
@@ -246,6 +262,11 @@ export function buildMergedPayload(body, existing, membership) {
   // `skipped` never reaches the document; it rides the response so the owner
   // can be told why the public copy is shorter than the list.
   return { payload, listCount: ids.length, skipped };
+}
+
+/** The two halves back together, for a caller that has both at once. */
+export function buildMergedPayload(body, existing, membership) {
+  return mergePreparedPayload(prepareMergeInput(body), existing, membership);
 }
 
 /**
@@ -386,16 +407,22 @@ export async function refreshPinnedCard(admin, uid, shareId, card, { now }) {
 }
 
 // ---------------------------------------------------------------------------
-// The three operations.
+// The four operations. Each one is a pure `validate` and an impure `run`, and
+// the split is load-bearing rather than tidy: the dispatcher settles the syntax
+// of a request before it reserves a unit of the daily quota, so a body that
+// never reaches Firestore cannot spend one.
 // ---------------------------------------------------------------------------
 
-async function publish(admin, uid, body, { cryptoApi, now }) {
+function validatePublish(body) {
   const listId = requireListId(body.listId);
   // Attributed by default (F12): publishing puts the list on your profile,
   // and the UI says so before the click. `attributed: false` is the per-list
   // escape hatch that keeps "share by link, no showcase" possible.
   const attributed = body.attributed !== false;
-  const payload = buildPublicListPayload(body);
+  return { listId, attributed, payload: buildPublicListPayload(body) };
+}
+
+async function publish(admin, uid, { listId, attributed, payload }, { cryptoApi, now }) {
   const list = await requireOwnedList(admin, uid, listId);
   if (list.publicShareId) throw new PublicListApiError('ALREADY_PUBLISHED', 409);
 
@@ -433,8 +460,17 @@ async function publish(admin, uid, body, { cryptoApi, now }) {
   return { shareId, attributed, ...payload };
 }
 
-async function update(admin, uid, body, { now }) {
-  const shareId = requireShareId(body.shareId);
+function validateUpdate(body) {
+  return {
+    shareId: requireShareId(body.shareId),
+    merge: prepareMergeInput(body),
+    // Carried whole for the legacy whole-payload branch, the only part of the
+    // operation that still reads the request directly.
+    body,
+  };
+}
+
+async function update(admin, uid, { shareId, merge, body }, { now }) {
   const owner = await requireOwnedShare(admin, uid, shareId);
 
   // The membership comes from the private list, not from the request. One
@@ -447,10 +483,10 @@ async function update(admin, uid, body, { now }) {
   let payload;
   let listCount = null;
   let skipped = 0;
-  if (membership || Array.isArray(body.paperIds)) {
+  if (membership || merge.requestIds) {
     const existing = await admin.getDocument(['publicLists', shareId]);
     if (!existing) throw new PublicListApiError('SHARE_NOT_FOUND', 404);
-    const merged = buildMergedPayload(body, existing, membership);
+    const merged = mergePreparedPayload(merge, existing, membership);
     payload = merged.payload;
     listCount = merged.listCount;
     skipped = merged.skipped;
@@ -509,8 +545,7 @@ async function update(admin, uid, body, { now }) {
   };
 }
 
-async function unpublish(admin, uid, body, { now }) {
-  const shareId = requireShareId(body.shareId);
+function validateUnpublish(body) {
   // `body.listId` is read no more. The share document already records which
   // private list it belongs to, and that record is the only one that can be
   // trusted here: a client working from a stale idea of its own lists could
@@ -519,6 +554,10 @@ async function unpublish(admin, uid, body, { now }) {
   // unpublishable (the ownership lookup 404s) nor deletable (firestore.rules
   // vetoes it) — and another list's public copy unreachable for good. `update`
   // has always taken the id from here; so does this.
+  return { shareId: requireShareId(body.shareId) };
+}
+
+async function unpublish(admin, uid, { shareId }, { now }) {
   const owner = await requireOwnedShare(admin, uid, shareId);
 
   const timestamp = new Date(now());
@@ -560,9 +599,13 @@ async function unpublish(admin, uid, body, { now }) {
  * migration path — a legacy pinned card becomes an attributed list through
  * this exact door, consent having been given by the pin itself.
  */
-async function attribute(admin, uid, body, { now }) {
+function validateAttribute(body) {
   const shareId = requireShareId(body.shareId);
   if (typeof body.attributed !== 'boolean') throw new PublicListApiError('INVALID_BODY', 400);
+  return { shareId, attributed: body.attributed };
+}
+
+async function attribute(admin, uid, { shareId, attributed }, { now }) {
   const owner = await requireOwnedShare(admin, uid, shareId);
 
   const timestamp = new Date(now());
@@ -571,18 +614,18 @@ async function attribute(admin, uid, body, { now }) {
   const held = entries.some(entry => entry?.shareId === shareId);
 
   const mirror = mergeWrite(admin.name(['users', uid, 'lists', owner.listId]), {
-    onProfile: body.attributed,
+    onProfile: attributed,
   });
 
   // Asking for what is already true is success, not an error — but the
   // mirror is still stamped, so a missing badge heals on the same call.
-  if (body.attributed === held) {
+  if (attributed === held) {
     await admin.commit([mirror]);
-    return { shareId, attributed: body.attributed, unchanged: true };
+    return { shareId, attributed, unchanged: true };
   }
 
   const writes = [mirror];
-  if (body.attributed) {
+  if (attributed) {
     if (entries.length >= PROFILE_LISTS_LIMIT) {
       throw new PublicListApiError('PROFILE_LISTS_FULL', 409);
     }
@@ -606,14 +649,14 @@ async function attribute(admin, uid, body, { now }) {
     ));
   }
   await admin.commit(writes);
-  return { shareId, attributed: body.attributed };
+  return { shareId, attributed };
 }
 
 const OPERATIONS = {
-  '/lists/publish': publish,
-  '/lists/update': update,
-  '/lists/unpublish': unpublish,
-  '/lists/attribute': attribute,
+  '/lists/publish': { validate: validatePublish, run: publish },
+  '/lists/update': { validate: validateUpdate, run: update },
+  '/lists/unpublish': { validate: validateUnpublish, run: unpublish },
+  '/lists/attribute': { validate: validateAttribute, run: attribute },
 };
 
 export async function handlePublicListRequest(request, env, pathname, options = {}) {
@@ -626,6 +669,18 @@ export async function handlePublicListRequest(request, env, pathname, options = 
   // No cached identity here: this route publishes to the open web.
   const identity = await verifyFirebaseIdentity(request, env, { allowCache: false });
   const body = await readBody(request);
+  const operation = OPERATIONS[pathname];
+
+  // Syntax first, quota second. Refusing a malformed body costs nothing, and
+  // charging for it meant a handful of Firebase accounts could spend the whole
+  // global daily allowance on rejects and take publishing away from everybody
+  // — without paying a single Firestore operation for the privilege.
+  //
+  // What still charges, on purpose: every failure that DID reach Firestore —
+  // LIST_NOT_FOUND, SHARE_NOT_FOUND, NOT_THE_OWNER, ALREADY_PUBLISHED,
+  // PROFILE_LISTS_FULL. Each of those spends a read of the free-tier allowance,
+  // and this cap is the only thing keeping that allowance bounded.
+  const prepared = operation.validate(body);
   await reservePublishQuota(env, identity.uid);
 
   const admin = options.admin || createFirestoreAdmin(env);
@@ -634,7 +689,7 @@ export async function handlePublicListRequest(request, env, pathname, options = 
     now: options.now || (() => Date.now()),
   };
   try {
-    return await OPERATIONS[pathname](admin, identity.uid, body, settings);
+    return await operation.run(admin, identity.uid, prepared, settings);
   } catch (error) {
     if (error instanceof FirestoreAdminError) {
       // A lost race on create is the only precondition this route can hit.
