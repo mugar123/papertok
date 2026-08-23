@@ -21,7 +21,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getCategoryLabel } from '../../data/categories';
-import { getIcon, AVAILABLE_ICONS } from '../../utils/icons';
+import { getIcon } from '../../utils/icons';
+import CreateListDialog from './CreateListDialog.jsx';
 import ScientificText from '../ScientificText.js';
 import { paperLegacyAdapter } from '../../models/Paper';
 import { AlertTriangle, Check, Download, Globe2, Library, Lock, Pencil, Plus, Share2, Unlink, X } from 'lucide-react';
@@ -149,13 +150,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // what lets a list damaged by an earlier sync repair itself on open — the
   // dirty stamp cannot, because a bad sync marks itself as done.
   const [publicSnapshots, setPublicSnapshots] = useState({});
-  // The inline create form on the index: nothing else in the app can create a
-  // list outside the save modal, and an index of lists needs its own door.
+  // The index needs its own door to a new list: the only other one in the app is
+  // inside the save modal, and it opens the very same window (CreateListDialog).
   const [creating, setCreating] = useState(false);
-  const [newListName, setNewListName] = useState('');
-  const [newListIcon, setNewListIcon] = useState('Folder');
-  const [createBusy, setCreateBusy] = useState(false);
-  const [createError, setCreateError] = useState(false);
   const metadataRequestId = useRef(0);
   const failedMetadataRequests = useRef(new Map());
   const prefersReducedMotion = useReducedMotion();
@@ -602,32 +599,20 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     setShareFeedback(null);
   };
 
-  const handleCreateList = async () => {
-    const name = newListName.trim();
-    if (!name || createBusy) return;
-    setCreateBusy(true);
-    setCreateError(false);
+  // The dialog owns the form and its busy/error states; this owns the write.
+  // Letting the failure through is the contract: CreateListDialog keeps itself
+  // open and says so, instead of the caller guessing what to render.
+  const handleCreateList = async (name, icon) => {
     const listId = `list_${Date.now()}`;
-    const newList = { id: listId, name, emoji: newListIcon, paperIds: [], createdAt: new Date().toISOString() };
+    const newList = { id: listId, name, emoji: icon, paperIds: [], createdAt: new Date().toISOString() };
     if (IS_DEMO) {
       const allLists = demoGet('lists', []);
       allLists.push(newList);
       demoSet('lists', allLists);
     } else {
-      try {
-        await setDoc(doc(db, 'users', user.uid, 'lists', listId), newList);
-      } catch (err) {
-        console.error('Error creating list:', err);
-        setCreateError(true);
-        setCreateBusy(false);
-        return;
-      }
+      await setDoc(doc(db, 'users', user.uid, 'lists', listId), newList);
     }
     setLists((prev) => [...prev, newList]);
-    setCreating(false);
-    setNewListName('');
-    setNewListIcon('Folder');
-    setCreateBusy(false);
   };
 
   const handleDeleteList = async (listId) => {
@@ -1358,73 +1343,21 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                 )}
               </div>
             ))}
-            {creating ? (
-              <div className="list-card list-card--create-form" style={{ '--stagger-index': displayLists.length }}>
-                <p className="list-card-form-label" id="lists-icon-picker-label">{isEnglish ? 'Icon' : 'Icono'}</p>
-                <div className="list-card-icon-picker" role="radiogroup" aria-labelledby="lists-icon-picker-label">
-                  {AVAILABLE_ICONS.map((iconName) => {
-                    const OptionIcon = getIcon(iconName);
-                    return (
-                      <button
-                        key={iconName}
-                        type="button"
-                        role="radio"
-                        aria-checked={newListIcon === iconName}
-                        aria-label={iconName}
-                        className={`list-card-icon-btn${newListIcon === iconName ? ' is-active' : ''}`}
-                        onClick={() => setNewListIcon(iconName)}
-                      >
-                        <OptionIcon size={16} strokeWidth={1.75} />
-                      </button>
-                    );
-                  })}
-                </div>
-                <input
-                  className="list-card-name-input"
-                  autoFocus
-                  value={newListName}
-                  maxLength={80}
-                  placeholder={isEnglish ? 'List name...' : 'Nombre de la lista...'}
-                  onChange={(e) => setNewListName(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') handleCreateList();
-                    if (e.key === 'Escape') { setCreating(false); setNewListName(''); }
-                  }}
-                />
-                {createError && (
-                  <p className="list-card-create-error" role="alert">
-                    {isEnglish ? 'It could not be created. Try again.' : 'No se pudo crear. Inténtalo de nuevo.'}
-                  </p>
-                )}
-                <div className="list-card-form-actions">
-                  <button
-                    type="button"
-                    className="list-card-create-confirm"
-                    onClick={handleCreateList}
-                    disabled={!newListName.trim() || createBusy}
-                  >
-                    {createBusy ? (isEnglish ? 'Creating...' : 'Creando...') : (isEnglish ? 'Create' : 'Crear')}
-                  </button>
-                  <button
-                    type="button"
-                    className="list-card-create-cancel"
-                    onClick={() => { setCreating(false); setNewListName(''); }}
-                  >
-                    {isEnglish ? 'Cancel' : 'Cancelar'}
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                type="button"
-                className="list-card list-card--create"
-                onClick={() => { setCreating(true); setCreateError(false); }}
-                style={{ '--stagger-index': displayLists.length }}
-              >
-                <span className="list-card-create-icon" aria-hidden="true"><Plus size={22} /></span>
-                <span>{isEnglish ? 'New list' : 'Nueva lista'}</span>
-              </button>
-            )}
+            <button
+              type="button"
+              className="list-card list-card--create"
+              onClick={() => setCreating(true)}
+              style={{ '--stagger-index': displayLists.length }}
+            >
+              <span className="list-card-create-icon" aria-hidden="true"><Plus size={22} /></span>
+              <span>{isEnglish ? 'New list' : 'Nueva lista'}</span>
+            </button>
+            <CreateListDialog
+              open={creating}
+              isEnglish={isEnglish}
+              onClose={() => setCreating(false)}
+              onCreate={handleCreateList}
+            />
           </div>
         </motion.div>
       )}

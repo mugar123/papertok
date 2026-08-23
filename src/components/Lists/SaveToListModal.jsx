@@ -16,7 +16,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
-import { getIcon, AVAILABLE_ICONS } from '../../utils/icons';
+import { getIcon } from '../../utils/icons';
+import CreateListDialog from './CreateListDialog.jsx';
 import ScientificText from '../ScientificText.js';
 import { BookOpen, Check, Download, Plus, StickyNote, Tags, X } from 'lucide-react';
 import { downloadCitationFile } from '../../utils/readingLibrary';
@@ -122,15 +123,12 @@ export default function SaveToListModal({ paper, onClose }) {
   const [readLaterDraft, setReadLaterDraft] = useState(null);
   const touchedLists = useRef(false);
 
-  const [newListName, setNewListName] = useState('');
-  const [newListIcon, setNewListIcon] = useState('Folder');
   // The creation form stays folded behind its button until asked for.
   const [creatingList, setCreatingList] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
   const dialogRef = useRef(null);
-  const createDialogRef = useRef(null);
 
   // What the library says today: the dirty check and the save diff compare
   // against this, and untouched fields render it directly.
@@ -298,15 +296,6 @@ export default function SaveToListModal({ paper, onClose }) {
     setTagsDraft(removeTag(tags, tag));
   };
 
-  // Closing the child dialog with .close() first hands focus back to the
-  // "Create a new list" button that opened it, per the platform's own rules.
-  const cancelCreateList = () => {
-    createDialogRef.current?.close();
-    setCreatingList(false);
-    setNewListName('');
-    setNewListIcon('Folder');
-  };
-
   const onTagInputKeyDown = (event) => {
     if (event.key === 'Enter' || event.key === ',') {
       event.preventDefault();
@@ -353,13 +342,15 @@ export default function SaveToListModal({ paper, onClose }) {
 
   /* --- The two write sites, last by contract ------------------------------ */
 
-  const handleCreateList = async () => {
-    if (!newListName.trim()) return;
+  // The write, and only the write: CreateListDialog owns the form, the busy
+  // state and the error. Letting this throw is what gives the owner a message —
+  // it used to end at console.error, leaving an unchanged screen behind.
+  const handleCreateList = async (name, icon) => {
     const listId = `list_${Date.now()}`;
     // Created EMPTY: creating the list is this button's explicit act; the
     // paper joins it when Save commits the (auto-checked) selection.
     const newList = {
-      id: listId, name: newListName.trim(), emoji: newListIcon,
+      id: listId, name, emoji: icon,
       paperIds: [], createdAt: new Date().toISOString(),
     };
 
@@ -368,13 +359,8 @@ export default function SaveToListModal({ paper, onClose }) {
       allLists.push(newList);
       demoSet('lists', allLists);
     } else {
-      try {
-        const listRef = doc(db, 'users', user.uid, 'lists', listId);
-        await setDoc(listRef, newList);
-      } catch (err) {
-        console.error('Error creating list:', err);
-        return;
-      }
+      const listRef = doc(db, 'users', user.uid, 'lists', listId);
+      await setDoc(listRef, newList);
     }
 
     setLists((previous) => {
@@ -387,10 +373,6 @@ export default function SaveToListModal({ paper, onClose }) {
     });
     touchedLists.current = true;
     setPendingListIds((previous) => new Set([...previous, listId]));
-    createDialogRef.current?.close();
-    setNewListName('');
-    setNewListIcon('Folder');
-    setCreatingList(false);
   };
 
   const handleSave = async () => {
@@ -545,14 +527,7 @@ export default function SaveToListModal({ paper, onClose }) {
     listsUnavailable: 'Your lists could not be loaded. They are still there.',
     retry: 'Try again',
     noLists: 'No lists yet — create the first one right below.',
-    newList: 'New list',
     newListCta: 'Create a new list',
-    newListName: 'e.g. Thesis reading',
-    nameLabel: 'Name',
-    iconLabel: 'Icon',
-    create: 'Create',
-    cancel: 'Cancel',
-    newListPrivacyNote: 'It starts private. Publish it from My lists once it has content.',
     noteAndTags: 'Note and tags',
     noteAndTagsHint: 'Private to you.',
     privateNote: 'Private note',
@@ -583,14 +558,7 @@ export default function SaveToListModal({ paper, onClose }) {
     listsUnavailable: 'No se pudieron cargar tus listas. Siguen ahí.',
     retry: 'Reintentar',
     noLists: 'Aún no tienes listas: crea la primera aquí debajo.',
-    newList: 'Nueva lista',
     newListCta: 'Crear nueva lista',
-    newListName: 'p. ej. Lecturas de tesis',
-    nameLabel: 'Nombre',
-    iconLabel: 'Icono',
-    create: 'Crear',
-    cancel: 'Cancelar',
-    newListPrivacyNote: 'Nace privada. Publícala desde Mis listas cuando tenga contenido.',
     noteAndTags: 'Nota y etiquetas',
     noteAndTagsHint: 'Solo tú los ves.',
     privateNote: 'Nota privada',
@@ -710,101 +678,14 @@ export default function SaveToListModal({ paper, onClose }) {
             <Plus size={16} aria-hidden="true" /> {copy.newListCta}
           </button>
 
-          {/* Its own window over the save modal, not a box crammed inside it.
-              A nested <dialog>: Escape lands on the topmost dialog only, so
-              it folds this form without touching the save modal or its
-              unsaved-changes guard. */}
-          {creatingList && (
-            <dialog
-              ref={(node) => {
-                createDialogRef.current = node;
-                if (node && !node.open) node.showModal();
-              }}
-              className="save-modal-create-dialog"
-              aria-label={copy.newList}
-              onCancel={(event) => {
-                // stopPropagation matters: React propagates the synthetic
-                // cancel/close up the component tree, and the parent dialog's
-                // own onCancel would close the whole save modal.
-                event.preventDefault();
-                event.stopPropagation();
-                cancelCreateList();
-              }}
-              onClose={(event) => {
-                event.stopPropagation();
-                setCreatingList(false);
-              }}
-              onClick={(event) => {
-                if (event.target === event.currentTarget) cancelCreateList();
-              }}
-            >
-              <div className="save-modal-create-card">
-                <div className="save-modal-create-header">
-                  <h3>{copy.newList}</h3>
-                  <button
-                    type="button"
-                    className="save-modal-close"
-                    onClick={cancelCreateList}
-                    aria-label={copy.close}
-                  >✕</button>
-                </div>
-                <label className="save-modal-create-field">
-                  <span>{copy.nameLabel}</span>
-                  <input
-                    type="text"
-                    className="save-modal-input"
-                    placeholder={copy.newListName}
-                    value={newListName}
-                    autoFocus
-                    maxLength={80}
-                    onChange={(e) => setNewListName(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleCreateList()}
-                  />
-                </label>
-                <div className="save-modal-create-field">
-                  <span id="save-modal-icon-label">{copy.iconLabel}</span>
-                  <div
-                    className="save-modal-emoji-picker"
-                    role="radiogroup"
-                    aria-labelledby="save-modal-icon-label"
-                  >
-                    {AVAILABLE_ICONS.map((iconName) => {
-                      const Icon = getIcon(iconName);
-                      return (
-                        <button key={iconName}
-                          type="button"
-                          role="radio"
-                          aria-checked={newListIcon === iconName}
-                          aria-label={iconName}
-                          className={`save-modal-emoji-btn ${newListIcon === iconName ? 'active' : ''}`}
-                          onClick={() => setNewListIcon(iconName)}>
-                          <Icon size={22} strokeWidth={1.5} />
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-                <p className="save-modal-create-note">{copy.newListPrivacyNote}</p>
-                <div className="save-modal-create-actions">
-                  <button
-                    type="button"
-                    className="save-modal-create-cancel"
-                    onClick={cancelCreateList}
-                  >
-                    {copy.cancel}
-                  </button>
-                  <button
-                    type="button"
-                    className="save-modal-create-btn"
-                    onClick={handleCreateList}
-                    disabled={!newListName.trim()}
-                  >
-                    {copy.create}
-                  </button>
-                </div>
-              </div>
-            </dialog>
-          )}
+          {/* Its own window over the save modal, not a box crammed inside it,
+              and the same window the lists page opens. */}
+          <CreateListDialog
+            open={creatingList}
+            isEnglish={isEnglish}
+            onClose={() => setCreatingList(false)}
+            onCreate={handleCreateList}
+          />
         </section>
 
         <section className="save-modal-personal" aria-label={copy.noteAndTags}>
