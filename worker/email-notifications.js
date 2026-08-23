@@ -31,6 +31,8 @@ const DIGEST_SOURCE_MAX_ATTEMPTS = 2;
 const DIGEST_SOURCE_TIMEOUT_MS = 5_000;
 const DIGEST_SOURCE_RETRY_MAX_DELAY_MS = 1_000;
 const EMAIL_PROVIDER_TIMEOUT_MS = 12_000;
+const EMAIL_IDENTITY_TIMEOUT_MS = 8_000;
+const EMAIL_HEALTH_TIMEOUT_MS = 8_000;
 const SCHEDULE_PROCESSING_BUDGET_MS = 12 * 60 * 1000;
 const SCHEDULE_MIN_BATCH_REMAINING_MS = 3 * 60 * 1000;
 const SCHEDULE_PAGE_SIZE = 3;
@@ -685,21 +687,42 @@ async function fetchArxivTopicUpdates(follows, sourceReport) {
   });
 }
 
+const TRUSTED_EMAIL_PROVIDERS = new Set(['google.com', 'github.com']);
+
+/**
+ * FIREBASE_WEB_API_KEY is public, so the Worker cannot assume the console only
+ * offers Google and GitHub: any sign-up method that hands over an unverified
+ * address would otherwise subscribe a stranger's inbox to the daily digest.
+ * Firebase does not always flag federated sign-ins as verified, so an identity
+ * provider that vouched for the same address counts as proof of possession.
+ */
+function accountOwnsEmail(account) {
+  if (account?.emailVerified === true) return true;
+  const email = cleanText(account?.email, 320).toLowerCase();
+  return (account?.providerUserInfo || []).some(provider => (
+    TRUSTED_EMAIL_PROVIDERS.has(cleanText(provider?.providerId, 40).toLowerCase())
+    && cleanText(provider?.email, 320).toLowerCase() === email
+  ));
+}
+
 async function verifyFirebaseIdentity(request, env) {
   const authorization = request.headers.get('authorization') || '';
   const token = authorization.match(/^Bearer\s+(.+)$/i)?.[1];
   if (!token) throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
   if (!env.FIREBASE_WEB_API_KEY) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
 
-  const response = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`, {
+  const response = await fetchWithDeadline(`https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ idToken: token }),
-  });
+  }, EMAIL_IDENTITY_TIMEOUT_MS);
   const payload = await response.json().catch(() => ({}));
   const account = payload?.users?.[0];
   if (!response.ok || !account?.localId || !account?.email) {
     throw new EmailNotificationError('EMAIL_AUTH_REQUIRED', 401);
+  }
+  if (!accountOwnsEmail(account)) {
+    throw new EmailNotificationError('EMAIL_ADDRESS_NOT_VERIFIED', 403);
   }
   return {
     uid: account.localId,
@@ -1331,10 +1354,37 @@ function withKvDeliveryLedgerLock(store, key, operation) {
   });
 }
 
+/**
+ * The KV emulation of the ledger is serialized by a WeakMap that only exists
+ * inside one isolate, so it cannot stop two isolates from duplicating a send or
+ * overrunning the daily limit. It stays available for tests and local runs
+ * behind an explicit opt-in; a deployment that loses the Durable Object binding
+ * must fail loudly instead of degrading into a mode with no guarantees.
+ */
+function emailDeliveryLedgerMode(env) {
+  if (env?.EMAIL_DELIVERY_LEDGER?.idFromName && env?.EMAIL_DELIVERY_LEDGER?.get) return 'durable';
+  if (cleanText(env?.EMAIL_DELIVERY_LEDGER_FALLBACK, 20).toLowerCase() === 'kv') return 'kv';
+  return 'missing';
+}
+
+export function getEmailDeliveryLedgerHealth(env) {
+  const mode = emailDeliveryLedgerMode(env);
+  if (mode === 'durable') return { mode, ok: true };
+  return {
+    mode,
+    ok: false,
+    code: mode === 'kv' ? 'EMAIL_DELIVERY_LEDGER_FALLBACK' : 'EMAIL_DELIVERY_LEDGER_MISSING',
+  };
+}
+
 async function callEmailDeliveryLedger(env, payload, now = Date.now()) {
   const day = utcDay(now);
   const ledgerNow = Date.now();
-  if (env.EMAIL_DELIVERY_LEDGER?.idFromName && env.EMAIL_DELIVERY_LEDGER?.get) {
+  const mode = emailDeliveryLedgerMode(env);
+  if (mode === 'missing') {
+    throw new EmailNotificationError('EMAIL_DELIVERY_LEDGER_UNAVAILABLE', 503);
+  }
+  if (mode === 'durable') {
     const id = env.EMAIL_DELIVERY_LEDGER.idFromName(day);
     const stub = env.EMAIL_DELIVERY_LEDGER.get(id);
     const response = await stub.fetch('https://papertok.internal/email-delivery', {
@@ -1543,9 +1593,9 @@ function renderDigest(subscription, papers, unsubscribeUrl, test) {
   return { html, text, subject: test ? copy.testSubject : title };
 }
 
-async function fetchEmailProvider(input, init) {
+async function fetchWithDeadline(input, init, timeoutMs) {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), EMAIL_PROVIDER_TIMEOUT_MS);
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(input, { ...init, signal: controller.signal });
   } finally {
@@ -1553,7 +1603,11 @@ async function fetchEmailProvider(input, init) {
   }
 }
 
-async function sendWithBrevo(subscription, content, env, { test = false, idempotencyKey } = {}) {
+async function fetchEmailProvider(input, init) {
+  return fetchWithDeadline(input, init, EMAIL_PROVIDER_TIMEOUT_MS);
+}
+
+async function sendWithBrevo(subscription, content, unsubscribeUrl, env, { test = false, idempotencyKey } = {}) {
   const sender = resolveBrevoSender(env);
   const response = await fetchEmailProvider(`${BREVO_API}/smtp/email`, {
     method: 'POST',
@@ -1572,7 +1626,13 @@ async function sendWithBrevo(subscription, content, env, { test = false, idempot
       subject: content.subject,
       htmlContent: content.html,
       textContent: content.text,
-      headers: { idempotencyKey },
+      headers: {
+        idempotencyKey,
+        // RFC 8058 one-click: Gmail and Yahoo score sender reputation on it, and
+        // /notifications/unsubscribe already accepts a bodyless POST.
+        'List-Unsubscribe': `<${unsubscribeUrl}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
       tags: [test ? 'papertok-test' : 'papertok-following-digest'],
     }),
   });
@@ -1737,7 +1797,7 @@ async function deliverReservedDraft(env, reservationId, draft, now, {
   let providerId;
   try {
     providerId = draft.provider === 'brevo'
-      ? await sendWithBrevo(draft.recipient, draft.content, env, { test, idempotencyKey })
+      ? await sendWithBrevo(draft.recipient, draft.content, draft.unsubscribeUrl, env, { test, idempotencyKey })
       : await sendWithResend(
         draft.recipient,
         draft.content,
@@ -1756,6 +1816,18 @@ async function deliverReservedDraft(env, reservationId, draft, now, {
   return { sent: true, providerId, delivery: draft.delivery };
 }
 
+/**
+ * Reconciling a ledger reservation only makes sense while the delivery state
+ * has not caught up with it. A committed reservation survives three days, so
+ * treating it as pending work spent every cron window of the following day
+ * replaying a delivery that was already recorded.
+ */
+function deliveryAlreadySettled(subscription, deliveredAt) {
+  const settled = Date.parse(subscription?.lastSentAt || '');
+  const delivered = Date.parse(deliveredAt || '');
+  return Number.isFinite(settled) && Number.isFinite(delivered) && settled >= delivered;
+}
+
 async function resumeScheduledDelivery(subscription, env, {
   now = Date.now(),
   key = `${SUBSCRIPTION_PREFIX}${subscription.uid}`,
@@ -1766,6 +1838,9 @@ async function resumeScheduledDelivery(subscription, env, {
     const existing = await inspectEmailDelivery(env, reservationId, ledgerTime);
     if (existing.status === 'missing') continue;
     if (existing.status === 'committed' && existing.delivery) {
+      if (deliveryAlreadySettled(subscription, existing.delivery.sentAt || existing.committedAt)) {
+        continue;
+      }
       return { reconciled: true, delivery: existing.delivery };
     }
     if (existing.status !== 'reserved') return { pending: true };
@@ -1783,6 +1858,10 @@ async function resumeScheduledDelivery(subscription, env, {
     );
     if (retryExpired) {
       await commitEmailDelivery(env, reservationId, draft.delivery, ledgerTime);
+      // Committing keeps the uncertain outcome honest in the ledger, but a
+      // delivery the state already records must not be replayed: it would push
+      // lastSentAt backwards and cost the reader the digest due right now.
+      if (deliveryAlreadySettled(latest, draft.delivery.sentAt)) continue;
       return { reconciled: true, uncertain: true, delivery: draft.delivery };
     }
 
@@ -1982,13 +2061,13 @@ export async function checkEmailProviderHealth(env) {
 
   if (provider === 'brevo') {
     try {
-      const response = await fetch(`${BREVO_API}/senders`, {
+      const response = await fetchWithDeadline(`${BREVO_API}/senders`, {
         headers: {
           'api-key': env.BREVO_API_KEY,
           accept: 'application/json',
           'user-agent': 'PaperTok/1.0',
         },
-      });
+      }, EMAIL_HEALTH_TIMEOUT_MS);
       if (response.status === 401 || response.status === 403) {
         return { configured: true, available: false, provider, code: 'EMAIL_PROVIDER_AUTH_FAILED' };
       }
@@ -2016,13 +2095,13 @@ export async function checkEmailProviderHealth(env) {
   }
 
   try {
-    const response = await fetch(`${RESEND_API}/domains?limit=1`, {
+    const response = await fetchWithDeadline(`${RESEND_API}/domains?limit=1`, {
       headers: {
         authorization: `Bearer ${env.RESEND_API_KEY}`,
         accept: 'application/json',
         'user-agent': 'PaperTok/1.0',
       },
-    });
+    }, EMAIL_HEALTH_TIMEOUT_MS);
     if (response.status === 401 || response.status === 403) {
       const errorPayload = await response.json().catch(() => ({}));
       // A "sending access" (restricted) Resend key can send emails but is not
@@ -2279,7 +2358,11 @@ export async function runEmailNotificationSchedule(env, scheduledTime = Date.now
   const now = new Date(scheduledTime);
   const startedAt = Date.now();
   const provider = configuredEmailProvider(env);
-  if (!env.NOTIFICATION_STORE || !provider) {
+  const ledgerMissing = Boolean(provider && env.NOTIFICATION_STORE) && emailDeliveryLedgerMode(env) === 'missing';
+  if (ledgerMissing) {
+    console.error('Email delivery ledger binding is missing; refusing to send without an atomic daily limit');
+  }
+  if (!env.NOTIFICATION_STORE || !provider || ledgerMissing) {
     const summary = {
       scheduledAt: now.toISOString(),
       completedAt: new Date().toISOString(),
@@ -2297,7 +2380,7 @@ export async function runEmailNotificationSchedule(env, scheduledTime = Date.now
       skipped: 1,
       failed: 0,
       sources: compactSourceReport(),
-      failureCodes: {},
+      failureCodes: ledgerMissing ? { EMAIL_DELIVERY_LEDGER_MISSING: 1 } : {},
       disabled: true,
     };
     await recordScheduleOutcome(env, summary);

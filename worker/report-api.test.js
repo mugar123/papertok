@@ -78,6 +78,92 @@ test('returns an unhealthy status when the email provider works but the schedule
   assert.equal(payload.schedule.code, 'EMAIL_SCHEDULE_STALE');
 });
 
+test('serves the email health probe from the edge cache', async () => {
+  // Brevo shares one rate limit between this probe and real digest delivery, so
+  // an anonymous route that hits `/v3/senders` per request can starve the cron.
+  let providerCalls = 0;
+  const env = {
+    EMAIL_PROVIDER: 'brevo',
+    BREVO_API_KEY: 'xkeysib-test',
+    BREVO_FROM_EMAIL: 'papertok@example.com',
+    EMAIL_DELIVERY_LEDGER: { idFromName: () => 'day', get: () => ({ fetch: async () => new Response('{}') }) },
+    NOTIFICATION_STORE: {
+      get: async () => ({
+        scheduledAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        scanned: 1,
+      }),
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  const stored = new Map();
+  globalThis.caches = {
+    default: {
+      async match(key) {
+        const hit = stored.get(String(key.url));
+        return hit ? hit.clone() : null;
+      },
+      async put(key, response) {
+        stored.set(String(key.url), response.clone());
+      },
+    },
+  };
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    return new Response(JSON.stringify({ senders: [{ active: true, email: 'papertok@example.com' }] }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  try {
+    const emailHealthRequest = () => new Request(
+      'https://papertok-report-api.example/health/email',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    );
+    const first = await reportApi.fetch(emailHealthRequest(), env);
+    const second = await reportApi.fetch(emailHealthRequest(), env);
+
+    assert.equal(first.status, 200);
+    assert.match(first.headers.get('cache-control'), /s-maxage=300/);
+    assert.equal(second.status, 200);
+    assert.equal(providerCalls, 1);
+    assert.equal((await second.json()).available, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
+test('reports a missing email delivery ledger binding as unhealthy', async () => {
+  const env = {
+    EMAIL_PROVIDER: 'brevo',
+    BREVO_API_KEY: 'xkeysib-test',
+    BREVO_FROM_EMAIL: 'papertok@example.com',
+    NOTIFICATION_STORE: {
+      get: async () => ({
+        scheduledAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        scanned: 1,
+      }),
+    },
+  };
+  const response = await withWorkerFetchMock(async () => new Response(JSON.stringify({
+    senders: [{ active: true, email: 'papertok@example.com' }],
+  }), { headers: { 'content-type': 'application/json' } }), () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/health/email',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), env));
+
+  assert.equal(response.status, 503);
+  const payload = await response.json();
+  assert.equal(payload.available, true);
+  assert.equal(payload.schedule.fresh, true);
+  assert.equal(payload.ledger.ok, false);
+  assert.equal(payload.ledger.code, 'EMAIL_DELIVERY_LEDGER_MISSING');
+});
+
 test('proxies OpenReview forum papers while excluding imported public records', async () => {
   let upstreamUrl = '';
   const response = await withWorkerFetchMock(async url => {

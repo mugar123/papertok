@@ -116,6 +116,7 @@ function publicReservation(existing, meta, extra = {}) {
     reserved: meta.reserved,
     attempts: positiveInteger(existing.attempts, 1),
     ...(existing.reservedAt ? { reservedAt: existing.reservedAt } : {}),
+    ...(existing.committedAt ? { committedAt: existing.committedAt } : {}),
     ...(existing.draft ? { draft: existing.draft } : {}),
     ...(existing.delivery ? { delivery: existing.delivery } : {}),
     ...extra,

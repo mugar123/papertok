@@ -9,6 +9,7 @@ import {
 import {
   checkEmailProviderHealth,
   EmailNotificationError,
+  getEmailDeliveryLedgerHealth,
   getEmailScheduleHealth,
   handleEmailNotificationRequest,
   handleEmailUnsubscribe,
@@ -44,6 +45,7 @@ const RELATED_CACHE_SECONDS = 24 * 60 * 60;
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const ARXIV_CACHE_SECONDS = 10 * 60;
+const EMAIL_HEALTH_CACHE_SECONDS = 5 * 60;
 const SCOPUS_HEALTH_CACHE_SECONDS = 10 * 60;
 const OPENALEX_HEALTH_CACHE_SECONDS = 10 * 60;
 const OPENALEX_CACHE_SECONDS = 6 * 60 * 60;
@@ -1630,15 +1632,28 @@ export default {
     }
     if (url.pathname === '/health/email') {
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      // Brevo shares one rate limit between this probe and real delivery, so the
+      // answer is served from the edge cache like its Scopus and OpenAlex
+      // siblings: hammering the route cannot make the digests fail.
+      const cacheKey = canonicalCacheKey(request, origin);
+      const cached = await caches.default.match(cacheKey);
+      if (cached) return cached;
       const [health, schedule] = await Promise.all([
         checkEmailProviderHealth(env),
         getEmailScheduleHealth(env),
       ]);
-      const operational = health.available && schedule.fresh;
-      return json({ ...health, schedule }, operational ? 200 : 503, {
+      const ledger = getEmailDeliveryLedgerHealth(env);
+      const operational = health.available && schedule.fresh && ledger.ok;
+      const response = json({ ...health, schedule, ledger }, operational ? 200 : 503, {
         ...corsHeaders(origin, env),
-        'cache-control': 'no-store',
+        'cache-control': `public, max-age=60, s-maxage=${EMAIL_HEALTH_CACHE_SECONDS}`,
       });
+      try {
+        await caches.default.put(cacheKey, response.clone());
+      } catch {
+        // An uncacheable health response is still a valid answer.
+      }
+      return response;
     }
     if (url.pathname.startsWith('/openalex/')) {
       return handleOpenAlex(request, env);

@@ -4,12 +4,14 @@ import {
   emailNotificationInternals,
   checkEmailProviderHealth,
   getEmailScheduleHealth,
+  handleEmailNotificationRequest,
   handleEmailUnsubscribe,
   runEmailNotificationSchedule,
 } from './email-notifications.js';
 
 const {
   brevoSendErrorCode,
+  buildDeliveryReservationId,
   buildProviderIdempotencyKey,
   buildResendIdempotencyKey,
   collectDigestPapers,
@@ -141,6 +143,9 @@ function emailEnvironment(kv) {
     EMAIL_PROVIDER: 'brevo',
     BREVO_API_KEY: 'xkeysib-test',
     BREVO_FROM_EMAIL: 'papertok@example.com',
+    // Tests run the KV emulation of the delivery ledger, which production must
+    // never fall back to silently.
+    EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
   };
 }
 
@@ -517,6 +522,7 @@ test('scheduled digest fetches native arXiv follows before OpenAlex indexes them
       EMAIL_PROVIDER: 'brevo',
       BREVO_API_KEY: 'xkeysib-test',
       BREVO_FROM_EMAIL: 'papertok@example.com',
+      EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
     }, now.getTime());
 
     assert.equal(result.sent, 1);
@@ -630,6 +636,7 @@ test('scheduled digest fetches and emails papers from every followed entity type
       EMAIL_PROVIDER: 'brevo',
       BREVO_API_KEY: 'xkeysib-test',
       BREVO_FROM_EMAIL: 'papertok@example.com',
+      EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
     }, now.getTime());
 
     assert.equal(result.sent, 1);
@@ -957,6 +964,7 @@ test('marks a legacy enabled subscription with zero follows invalid without call
       EMAIL_PROVIDER: 'brevo',
       BREVO_API_KEY: 'xkeysib-test',
       BREVO_FROM_EMAIL: 'papertok@example.com',
+      EMAIL_DELIVERY_LEDGER_FALLBACK: 'kv',
     }, now.getTime());
 
     assert.equal(result.sent, 0);
@@ -1406,6 +1414,123 @@ test('provider success followed by state reconciliation failure does not resend'
   }
 });
 
+test('a settled digest yesterday does not swallow today digest', async () => {
+  const firstWindow = new Date('2026-08-09T08:00:00Z');
+  const secondWindow = new Date('2026-08-10T08:00:00Z');
+  const subscriptionKey = 'notification:subscription:daily-reader';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({
+      uid: 'daily-reader',
+      previewItems: [digestPaper({ id: 'paper-day-one', published: '2026-08-09' })],
+    }),
+  });
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') {
+      providerCalls += 1;
+      return jsonResponse(201, { messageId: `delivery-${providerCalls}` });
+    }
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    const first = await runEmailNotificationSchedule(emailEnvironment(kv), firstWindow.getTime());
+    // A new day brings a new paper: yesterday's committed reservation must not
+    // be replayed as a reconciliation instead of today's delivery.
+    const stored = await kv.get(subscriptionKey, 'json');
+    stored.previewItems = [digestPaper({ id: 'paper-day-two', published: '2026-08-10' })];
+    await kv.put(subscriptionKey, JSON.stringify(stored));
+    const second = await runEmailNotificationSchedule(emailEnvironment(kv), secondWindow.getTime());
+
+    assert.equal(first.sent, 1);
+    assert.equal(second.sent, 1);
+    assert.equal(second.reconciled, 0);
+    assert.equal(providerCalls, 2);
+    const state = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(state.lastSentAt, secondWindow.toISOString());
+    assert.equal(state.lastDelivery.status, 'sent');
+    assert.equal(state.sentPaperKeys.includes('id:paper-day-two'), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('an expired reservation already reflected in delivery state does not replace today digest', async () => {
+  const staleWindow = new Date('2026-08-09T07:00:00Z');
+  const todayWindow = new Date('2026-08-10T08:00:00Z');
+  const uid = 'stale-reservation-reader';
+  const subscriptionKey = `notification:subscription:${uid}`;
+  const subscription = digestSubscription({
+    uid,
+    previewItems: [digestPaper({ id: 'paper-today', published: '2026-08-10' })],
+  });
+  const staleReservationId = await buildDeliveryReservationId(subscription, {
+    now: staleWindow.getTime(),
+  });
+  const kv = createMemoryKv({
+    [subscriptionKey]: subscription,
+    // Yesterday's reservation never committed, but its delivery is already
+    // settled in the subscription state: replaying it would push lastSentAt
+    // backwards and cost the reader today's digest.
+    [`${deliveryLedgerPrefix}2026-08-09`]: {
+      committed: 0,
+      reserved: 1,
+      reservations: {
+        [staleReservationId]: {
+          status: 'reserved',
+          reservedAt: staleWindow.toISOString(),
+          attempts: 2,
+          draft: {
+            provider: 'brevo',
+            recipient: { email: 'reader@example.com', displayName: '' },
+            content: { subject: 'Yesterday digest', html: '<p>y</p>', text: 'y' },
+            unsubscribeUrl: 'https://worker.example/notifications/unsubscribe?token=unsubscribe-token',
+            delivery: {
+              kind: 'digest',
+              sentAt: staleWindow.toISOString(),
+              paperCount: 1,
+              paperKeys: ['id:paper-yesterday'],
+              partial: false,
+              sources: {},
+            },
+          },
+        },
+      },
+    },
+    [`${deliveryStatePrefix}${uid}`]: {
+      lastCheckedAt: staleWindow.toISOString(),
+      lastSentAt: staleWindow.toISOString(),
+      sentPaperKeys: ['id:paper-yesterday'],
+      lastDelivery: { status: 'sent', kind: 'digest', at: staleWindow.toISOString(), paperCount: 1, partial: false },
+    },
+  });
+  let providerCalls = 0;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') {
+      providerCalls += 1;
+      return jsonResponse(201, { messageId: 'today-delivery' });
+    }
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    const summary = await runEmailNotificationSchedule(emailEnvironment(kv), todayWindow.getTime());
+
+    assert.equal(summary.sent, 1);
+    assert.equal(summary.uncertain, 0);
+    assert.equal(providerCalls, 1);
+    const state = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(state.lastSentAt, todayWindow.toISOString());
+    assert.equal(state.sentPaperKeys.includes('id:paper-today'), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('reports the resend.dev recipient restriction instead of an invalid credential', () => {
   const code = resendSendErrorCode(403, {
     name: 'validation_error',
@@ -1659,4 +1784,176 @@ test('localizes the test-email subject and empty state', () => {
   assert.equal(digest.subject, 'PaperTok: test email');
   assert.equal(digest.html.includes('Your PaperTok email works'), true);
   assert.equal(digest.html.includes('We have not found recent publications'), true);
+});
+
+function identityEnvironment(kv) {
+  return { ...emailEnvironment(kv), FIREBASE_WEB_API_KEY: 'firebase-web-key' };
+}
+
+function preferencesRequest() {
+  return new Request('https://worker.example/notifications/preferences', {
+    headers: { authorization: 'Bearer id-token' },
+  });
+}
+
+async function readPreferencesAs(account) {
+  const restore = stubFetch(jsonResponse(200, { users: [account] }));
+  try {
+    return await handleEmailNotificationRequest(
+      preferencesRequest(),
+      identityEnvironment(createMemoryKv()),
+      '/notifications/preferences',
+    );
+  } finally {
+    restore();
+  }
+}
+
+test('refuses to configure notifications for an address the account never proved', async () => {
+  // FIREBASE_WEB_API_KEY is public, so a console that ever accepts password or
+  // unverified-IdP sign-up would let anyone subscribe a stranger's inbox.
+  await assert.rejects(
+    () => readPreferencesAs({ localId: 'attacker', email: 'victim@example.com' }),
+    error => error.code === 'EMAIL_ADDRESS_NOT_VERIFIED' && error.status === 403,
+  );
+  await assert.rejects(
+    () => readPreferencesAs({
+      localId: 'attacker',
+      email: 'victim@example.com',
+      emailVerified: false,
+      providerUserInfo: [{ providerId: 'google.com', email: 'attacker@example.com' }],
+    }),
+    error => error.code === 'EMAIL_ADDRESS_NOT_VERIFIED' && error.status === 403,
+  );
+});
+
+test('accepts a verified address or a federated provider that owns it', async () => {
+  const verified = await readPreferencesAs({
+    localId: 'reader',
+    email: 'reader@example.com',
+    emailVerified: true,
+  });
+  assert.equal(verified.preferences.email, 'reader@example.com');
+
+  // Firebase does not always mark federated sign-ins as verified, so the
+  // provider that vouched for the address counts as proof of possession.
+  const federated = await readPreferencesAs({
+    localId: 'reader',
+    email: 'Reader@Example.com',
+    emailVerified: false,
+    providerUserInfo: [{ providerId: 'github.com', email: 'reader@example.com' }],
+  });
+  assert.equal(federated.preferences.email, 'Reader@Example.com');
+});
+
+test('gives the identity lookup and both provider probes a deadline', async () => {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, options = {}) => {
+    const url = new URL(String(input));
+    calls.push({ host: url.hostname, signal: options.signal });
+    if (url.hostname === 'identitytoolkit.googleapis.com') {
+      return jsonResponse(200, {
+        users: [{ localId: 'reader', email: 'reader@example.com', emailVerified: true }],
+      });
+    }
+    if (url.hostname === 'api.brevo.com') {
+      return jsonResponse(200, { senders: [{ active: true, email: 'papertok@example.com' }] });
+    }
+    return jsonResponse(200, { data: [] });
+  };
+
+  try {
+    await handleEmailNotificationRequest(
+      preferencesRequest(),
+      identityEnvironment(createMemoryKv()),
+      '/notifications/preferences',
+    );
+    await checkEmailProviderHealth(emailEnvironment(createMemoryKv()));
+    await checkEmailProviderHealth({ EMAIL_PROVIDER: 'resend', RESEND_API_KEY: 're_test-key' });
+
+    assert.deepEqual(calls.map(call => call.host), [
+      'identitytoolkit.googleapis.com',
+      'api.brevo.com',
+      'api.resend.com',
+    ]);
+    // A hung identity or health upstream used to hold the subrequest open with
+    // nothing to cut it, in front of every notification route.
+    calls.forEach((call) => {
+      assert.ok(call.signal instanceof AbortSignal, `${call.host} was called without a deadline`);
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('sends the Brevo digest with one-click unsubscribe headers', async () => {
+  const now = new Date('2026-08-09T08:00:00Z');
+  const subscriptionKey = 'notification:subscription:brevo-reader';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({
+      uid: 'brevo-reader',
+      previewItems: [digestPaper({ id: 'brevo-paper', published: '2026-08-09' })],
+    }),
+  });
+  let payload;
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input, options = {}) => {
+    const url = new URL(String(input));
+    if (url.hostname === 'api.brevo.com') {
+      payload = JSON.parse(options.body);
+      return jsonResponse(201, { messageId: 'brevo-delivery' });
+    }
+    return jsonResponse(200, { results: [] });
+  };
+
+  try {
+    const summary = await runEmailNotificationSchedule(emailEnvironment(kv), now.getTime());
+
+    assert.equal(summary.sent, 1);
+    // Gmail and Yahoo score sender reputation on RFC 8058 one-click, which the
+    // Resend branch already sent and the production Brevo branch did not.
+    const unsubscribeUrl = 'https://papertok-report-api.papertok-mugar123.workers.dev/notifications/unsubscribe?token=unsubscribe-token&lang=es';
+    assert.equal(payload.headers['List-Unsubscribe'], `<${unsubscribeUrl}>`);
+    assert.equal(payload.headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click');
+    assert.equal(typeof payload.headers.idempotencyKey, 'string');
+    assert.equal(payload.textContent.includes(unsubscribeUrl), true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('refuses to run the schedule without an atomic delivery ledger', async () => {
+  const now = new Date('2026-08-09T08:00:00Z');
+  const subscriptionKey = 'notification:subscription:unprotected-reader';
+  const kv = createMemoryKv({
+    [subscriptionKey]: digestSubscription({
+      uid: 'unprotected-reader',
+      previewItems: [digestPaper({ id: 'unprotected-paper', published: '2026-08-09' })],
+    }),
+  });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error('No delivery may be attempted without the delivery ledger binding');
+  };
+
+  try {
+    // Without the Durable Object the daily limit degrades to a per-isolate lock
+    // that cannot stop two isolates from sending twice: fail loud, not silently.
+    const summary = await runEmailNotificationSchedule({
+      NOTIFICATION_STORE: kv,
+      EMAIL_PROVIDER: 'brevo',
+      BREVO_API_KEY: 'xkeysib-test',
+      BREVO_FROM_EMAIL: 'papertok@example.com',
+    }, now.getTime());
+
+    assert.equal(summary.disabled, true);
+    assert.equal(summary.sent, 0);
+    assert.equal(summary.scanned, 0);
+    assert.equal(summary.failureCodes.EMAIL_DELIVERY_LEDGER_MISSING, 1);
+    const stored = await storedSubscriptionWithState(kv, subscriptionKey);
+    assert.equal(stored.lastSentAt, undefined);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
 });

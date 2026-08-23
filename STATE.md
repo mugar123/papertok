@@ -1,5 +1,86 @@
 # Estado / pendientes
 
+## G1 de ERRORES.MD: los digests diarios ya no llegan en días alternos (2026-08-23)
+
+**Hecho y verificado en local; falta desplegar el Worker.** Grupo G1 completo —
+F24, F25, F26, F27, F28 y la parte email de F3 — en la rama
+`fix/g1-email-notifications`. Ficheros tocados: `worker/email-notifications.js`,
+`worker/email-delivery-ledger.js`, la ruta `/health/email` de
+`worker/report-api.js`, sus tests, `worker/README.md` y dos líneas de copy en
+`EmailNotificationModal.jsx`. **No se ha tocado `firebase-auth.js`** ni ninguna
+ruta `/sources/*`: son de G2.
+
+### F24 — el fallo activo, reproducido antes de tocar nada
+
+`resumeScheduledDelivery` mira la reserva de hoy y la de ayer, y devolvía
+`{reconciled:true}` en cuanto encontraba la de ayer **committed**, sin comprobar
+si el estado de entrega ya reflejaba ese envío. Como el llamante consulta resume
+antes de `isSubscriptionDue` y corta con lo que devuelva, el día siguiente a
+cualquier envío correcto se pasaba entero reconciliando.
+
+Corrido contra el módulo real con KV en memoria y proveedor simulado, un
+suscriptor diario con papers nuevos cada día:
+
+| día | resultado | llamadas a Brevo |
+|---|---|---|
+| D | `sent:1` | 1 |
+| D+1 | `reconciled:1` | **0** |
+| D+2 | `sent:1` | 1 |
+| D+3 | `reconciled:1` | **0** |
+
+Arreglo: `deliveryAlreadySettled(subscription, deliveredAt)`. Las ramas
+`committed` y `retryExpired` hacen `continue` cuando `lastSentAt` ya cubre el
+`sentAt` de la reserva; al agotarse el bucle devuelve `null` y el flujo normal
+sigue. `retryExpired` mantiene el commit —la contabilidad de una entrega
+incierta es honesta— pero ya no puede empujar `lastSentAt` hacia atrás, que era
+la puerta al envío duplicado. La misma simulación tras el arreglo: **cinco días
+seguidos, cinco envíos, cero reconciliaciones**.
+
+La frontera importa: el test que ya existía —proveedor acepta, la escritura de
+estado falla, al día siguiente se reconcilia sin reenviar— sigue verde sin
+tocarlo. Reconciliar sigue estando bien cuando el estado se quedó atrás; lo que
+se ha cerrado es reconciliar lo que ya estaba asentado.
+
+### Los otros cinco
+
+**F25.** El `verifyFirebaseIdentity` local aceptaba cualquier cuenta con
+`localId` + `email`. Ahora exige `emailVerified === true` **o** un
+`providerUserInfo` de Google/GitHub con el mismo email: Firebase no siempre marca
+como verificado un acceso federado, y un 403 estricto habría dejado sin avisos a
+usuarios legítimos de GitHub. Código nuevo `EMAIL_ADDRESS_NOT_VERIFIED` (403) con
+copy en los dos idiomas — sin ella caía en «el servicio no está disponible».
+
+**F26.** `/health/email` era anónima y `no-store`, y cada hit gastaba una llamada
+a Brevo del mismo rate limit que usan los envíos. Ahora va por la caché de borde
+con el patrón literal de `/health/scopus` (`s-maxage=300`). Test: dos peticiones
+seguidas, una sola llamada a Brevo.
+
+**F27.** El fallback KV del ledger se serializa con un `WeakMap` que solo existe
+dentro de un isolate: no es garantía de nada. Ahora exige el opt-in explícito
+`EMAIL_DELIVERY_LEDGER_FALLBACK = 'kv'`. Sin binding y sin opt-in el cron aborta
+antes de escanear (`EMAIL_DELIVERY_LEDGER_MISSING` + `console.error`), las rutas
+fallan cerradas con 503 y `/health/email` lo enseña en un campo `ledger` nuevo
+que entra en el criterio de operatividad. `health.available` sigue siendo solo la
+sonda del proveedor, que es lo que la UI lee.
+
+**F28.** El envío por Brevo —el de producción— no llevaba `List-Unsubscribe`; la
+rama Resend sí. Ahora las dos cabeceras RFC 8058 viajan también en Brevo,
+reutilizando la URL que ya construye el pie del correo.
+
+**F3 (email).** `fetchWithDeadline(input, init, timeoutMs)` extraído de
+`fetchEmailProvider` (que conserva sus 12 s) y aplicado con 8 s a los tres
+`fetch` que iban sin plazo: identitytoolkit —que está delante de toda ruta de
+notificaciones— y las dos sondas de salud. La parte no-email de F3 sigue siendo
+de G2.
+
+### Verificación
+
+`npm run check` en verde: **953 tests** (8 nuevos), lint, build y
+`wrangler deploy --dry-run`. Los ocho arreglos se verificaron **por mutación**:
+deshecho cada uno, su test falla; restaurado, pasa. Queda pendiente `wrangler
+deploy` y la comprobación que solo puede cerrar el calendario: que un suscriptor
+que recibió ayer reciba también hoy.
+
 ## El perfil ya no espera para decir lo que sabe (2026-08-22)
 
 **Hecho, medido y verificado en vivo.** Dos quejas — los contadores de

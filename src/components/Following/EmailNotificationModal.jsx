@@ -9,6 +9,7 @@ const ERROR_COPY = {
   es: {
     EMAIL_NOT_CONFIGURED: 'Los avisos por email todavía no están configurados.',
     EMAIL_AUTH_REQUIRED: 'Vuelve a iniciar sesión para configurar los avisos.',
+    EMAIL_ADDRESS_NOT_VERIFIED: 'Confirma tu dirección de correo con tu proveedor de acceso antes de activar los avisos.',
     EMAIL_PROVIDER_AUTH_FAILED: 'El proveedor de correo ha rechazado la credencial configurada.',
     EMAIL_SENDER_NOT_VERIFIED: 'El remitente de Brevo todavía no está verificado.',
     EMAIL_PROVIDER_LIMIT: 'Se ha alcanzado temporalmente el límite de envío.',
@@ -23,6 +24,7 @@ const ERROR_COPY = {
   en: {
     EMAIL_NOT_CONFIGURED: 'Email updates have not been configured yet.',
     EMAIL_AUTH_REQUIRED: 'Sign in again to configure email updates.',
+    EMAIL_ADDRESS_NOT_VERIFIED: 'Confirm your email address with your sign-in provider before enabling email updates.',
     EMAIL_PROVIDER_AUTH_FAILED: 'The email provider rejected the configured credential.',
     EMAIL_SENDER_NOT_VERIFIED: 'The Brevo sender has not been verified yet.',
     EMAIL_PROVIDER_LIMIT: 'The sending limit has temporarily been reached.',
