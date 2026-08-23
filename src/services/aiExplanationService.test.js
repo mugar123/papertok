@@ -1,11 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  AIExplanationServiceError,
   canExplainPaper,
   formatAIModelLabel,
   hasUsableAbstract,
   serializePaperForExplanation,
+  toServiceError,
 } from './aiExplanationService.js';
+import { WorkerApiAuthError } from './workerApiClient.js';
 
 test('serializes only the scientific fields required by the AI backend', () => {
   const result = serializePaperForExplanation({
@@ -54,4 +57,29 @@ test('formats the configured AI model for the explanation metadata', () => {
   assert.equal(formatAIModelLabel('gemini-3.5-flash'), 'Gemini 3.5 Flash');
   assert.equal(formatAIModelLabel('moonshotai/Kimi-K3', 'modal-kimi'), 'Kimi K3 · Modal');
   assert.equal(formatAIModelLabel(''), 'Modelo de IA');
+});
+
+test('tells an expired session apart from a broken AI service', () => {
+  // The sheet has copy for AI_AUTH_REQUIRED and hides the retry button for it:
+  // reporting «AI unavailable» sent the reader to retry a request that could
+  // only work after signing in again.
+  assert.equal(toServiceError(new WorkerApiAuthError()).code, 'AI_AUTH_REQUIRED');
+  assert.equal(
+    toServiceError({ name: 'FirebaseError', code: 'auth/user-token-expired' }).code,
+    'AI_AUTH_REQUIRED',
+  );
+  // A worker origin that is not allowed is configuration, not a session.
+  assert.equal(
+    toServiceError(new WorkerApiAuthError('WORKER_ORIGIN_NOT_ALLOWED')).code,
+    'AI_NOT_CONFIGURED',
+  );
+  assert.equal(toServiceError({ name: 'AbortError' }).code, 'AI_TIMEOUT');
+  assert.equal(toServiceError(new TypeError('Failed to fetch')).code, 'AI_UNAVAILABLE');
+});
+
+test('never rewrites an error the worker already classified', () => {
+  const original = new AIExplanationServiceError('AI_QUOTA_EXHAUSTED', 'AI_QUOTA_EXHAUSTED', { scope: 'user' });
+
+  assert.equal(toServiceError(original), original);
+  assert.deepEqual(toServiceError(original).quota, { scope: 'user' });
 });

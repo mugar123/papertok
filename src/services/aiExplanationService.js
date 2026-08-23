@@ -89,6 +89,27 @@ export function serializePaperForExplanation(paper) {
   };
 }
 
+/**
+ * The worker answers its own auth failures with `AI_AUTH_REQUIRED`, but the ones
+ * raised here never reach it: an expired session fails inside
+ * `authenticatedWorkerFetch`, and collapsing that into `AI_UNAVAILABLE` told the
+ * reader the service was down when what they needed was to sign in again.
+ */
+export function toServiceError(error) {
+  if (error instanceof AIExplanationServiceError) return error;
+  if (error?.name === 'WorkerApiAuthError') {
+    return new AIExplanationServiceError(
+      error.code === 'WORKER_ORIGIN_NOT_ALLOWED' ? 'AI_NOT_CONFIGURED' : 'AI_AUTH_REQUIRED',
+    );
+  }
+  if (error?.name === 'AbortError') return new AIExplanationServiceError('AI_TIMEOUT');
+  // Firebase reports a revoked or expired session through `getIdToken`.
+  if (typeof error?.code === 'string' && error.code.startsWith('auth/')) {
+    return new AIExplanationServiceError('AI_AUTH_REQUIRED');
+  }
+  return new AIExplanationServiceError('AI_UNAVAILABLE');
+}
+
 export async function explainPaper(paper, level = 'university', { force = false, language = 'es' } = {}) {
   if (!AI_EXPLANATION_LEVELS.some(item => item.id === level)) {
     throw new AIExplanationServiceError('AI_INVALID_LEVEL');
@@ -121,9 +142,7 @@ export async function explainPaper(paper, level = 'university', { force = false,
     explanationCache.set(cacheKey, payload);
     return payload;
   } catch (error) {
-    if (error instanceof AIExplanationServiceError) throw error;
-    if (error?.name === 'AbortError') throw new AIExplanationServiceError('AI_TIMEOUT');
-    throw new AIExplanationServiceError('AI_UNAVAILABLE');
+    throw toServiceError(error);
   } finally {
     clearTimeout(timeout);
   }

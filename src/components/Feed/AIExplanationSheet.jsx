@@ -39,6 +39,8 @@ const ERROR_COPY = {
     AI_TIMEOUT: 'La explicación está tardando demasiado. Puedes volver a intentarlo.',
     AI_BUSY: 'El servicio de IA está recibiendo muchas solicitudes. Inténtalo de nuevo dentro de un momento.',
     AI_INVALID_PAPER: 'Este paper no contiene suficiente información para generar una explicación fiable.',
+    AI_SOURCE_UNAVAILABLE: 'No se ha podido descargar el texto completo del paper ahora mismo. Inténtalo de nuevo.',
+    AI_INVALID_REQUEST_UPSTREAM: 'El modelo ha rechazado esta petición. Prueba con otro nivel de explicación o con otro paper.',
     AI_INVALID_RESPONSE: 'No se ha podido construir una explicación fiable. Inténtalo de nuevo.',
     AI_UNAVAILABLE: 'No se ha podido generar la explicación ahora mismo. Inténtalo de nuevo.',
   },
@@ -50,6 +52,8 @@ const ERROR_COPY = {
     AI_TIMEOUT: 'The explanation is taking too long. You can try again.',
     AI_BUSY: 'The AI service is receiving many requests. Try again in a moment.',
     AI_INVALID_PAPER: 'This paper does not contain enough information for a reliable explanation.',
+    AI_SOURCE_UNAVAILABLE: 'The paper’s full text could not be downloaded right now. Try again.',
+    AI_INVALID_REQUEST_UPSTREAM: 'The model rejected this request. Try another explanation level or another paper.',
     AI_INVALID_RESPONSE: 'A reliable explanation could not be built. Try again.',
     AI_UNAVAILABLE: 'The explanation could not be generated right now. Try again.',
   },
@@ -433,7 +437,7 @@ export default function AIExplanationSheet({ paper, onClose }) {
                   </small>
                 )}
               </span>
-              {!['AI_QUOTA_EXHAUSTED', 'AI_FALLBACK_BUDGET_EXHAUSTED', 'AI_NOT_CONFIGURED', 'AI_AUTH_REQUIRED'].includes(error.code) && (
+              {!['AI_QUOTA_EXHAUSTED', 'AI_FALLBACK_BUDGET_EXHAUSTED', 'AI_NOT_CONFIGURED', 'AI_AUTH_REQUIRED', 'AI_INVALID_REQUEST_UPSTREAM'].includes(error.code) && (
                 <button onClick={handleExplain}>{copy.retry}</button>
               )}
             </motion.div>
