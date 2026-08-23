@@ -1,5 +1,149 @@
 # Estado / pendientes
 
+## G8 cerrado — PubMed y Semantic Scholar entran por el Worker (2026-08-24)
+
+**Hecho, verificado en vivo y desplegado; quedan dos secretos que solo puede
+sacar @mugar.** Último grupo de ERRORES.MD: F41, más el `F2-residuo` que el
+informe dejaba sin dueño —que acabó arreglando otra sesión en paralelo, ver la
+entrada siguiente—. Los 42 fallos quedan cerrados.
+
+### Lo arreglado, por orden de aterrizaje
+
+**1. `/sources/pubmed` — la cadena de E-utilities corre dentro de Cloudflare.**
+Antes eran tres `fetch` encadenados desde el navegador, ninguno con señal de
+aborto, sin clave de NCBI —que cuenta por IP, así que dos lectores tras el mismo
+NAT se limitaban entre ellos— y sin nada cacheable en el camino. Es el suelo de
+latencia que `docs/LATENCIA-PRODUCCION-2026-08-22.md:72` ya había medido. La ruta
+hace `esearch` y después `esummary` y `efetch` **en paralelo**, porque solo
+dependen del primero: dos saltos en serie en vez de tres, y una sola entrada de
+caché. Devuelve las tres cargas crudas, así que ni un mapper del cliente cambió.
+
+Sondeado en producción tras desplegar: `q=oncology immunotherapy&limit=5` → 200,
+5 pmids, 159.937 bytes de XML de efetch, y la **segunda** petición idéntica
+`cf-cache-status: HIT`. Antes eso eran tres viajes por lector; ahora es uno por
+consulta y por diez minutos, para todos.
+
+**2. `/sources/s2` — el límite de tasa vive donde hay un solo contador.**
+El limitador del navegador era una variable de módulo, y ni siquiera serializaba
+(ver más abajo). Ahora la ruta lleva la clave, el plazo, la caché de edge y un
+techo global por minuto. `/related` comparte el mismo techo `s2:` porque gasta la
+misma cuota: un techo por ruta habría sido el limitador por pestaña otra vez.
+
+**3. Ninguna de las dos exige sesión, y eso es deliberado.** El feed de invitado
+lee PubMed (`useGuestFeed.js:47`) y `/explorer/:type/:id` **no** está tras
+`ProtectedRoute` (`App.jsx:266`). Pedir identidad habría hecho correr esas ramas
+para que lanzaran `WorkerApiAuthError` y se las tragara el `allSettled` — que es
+exactamente F38, recién arreglado por G6. Toman el trato de `/openalex/*`.
+
+**4. Un 429 del proveedor deja de disfrazarse de avería.** Se aplanaba a 502 en
+todas las rutas menos Scopus, y un 502 dice «esta fuente está rota»: un cliente
+que se lo cree reintenta de inmediato, que es lo único que empeora un límite de
+tasa. Las trece rutas relevan ahora el 429 con el `retry-after` del proveedor.
+
+**5. El `F2-residuo` lo arregló otra sesión mientras esta trabajaba.** Se hizo el
+mismo cambio en `fetchDigestSource` y se descartó al rebasar: la entrada de abajo
+lo cubre y va más lejos —encontró una segunda instancia, un `fetchWithDeadline`
+local que se llamaba igual que el bueno—. Queda anotado porque el plan de G8 lo
+daba por suyo, y porque es el segundo trabajo duplicado del día entre sesiones
+concurrentes sobre este árbol.
+
+### Las correcciones al diagnóstico del informe
+
+| # | El informe decía | Lo que había |
+|---|---|---|
+| 1 | «el limitador serializa por pestaña» | No serializaba **en absoluto**: leía `lastRequestTime` (:14), esperaba (:18) y lo escribía (:21), así que N llamadas concurrentes leían el mismo valor viejo y salían en la misma vuelta del bucle |
+| 2 | Solo `semanticScholarService.js` llama a S2 directo | También `adapters/SemanticScholarAdapter.js:19`, con `fetch(url)` pelado **sin señal ninguna**, usado por las páginas de autor, que son públicas. Sin incluirlo, el criterio de aceptación del propio F41 falla al abrir una |
+| 3 | (nada) | `getPaperCitationsAndReferences` y `getSimilarAuthors` no tenían ni un llamante: dos URLs directas a S2 más viajando en el bundle. Borradas |
+| 4 | (nada) | El `throw` del error no-429 caía en el `catch` de su propia función: un 500, un fallo de red y «no hay resultados» eran indistinguibles |
+
+**Fuera de alcance, declarado:** el punto 4 de F41 (Europe PMC), que el propio
+informe marca opcional. Ya lleva `AbortController`, `/sources/europepmc` ya
+existía, y su consolidación es **F42 — de G6**, que aterrizó el mismo día sobre
+`europePmcService.js` y `domainSourceService.js`. No se tocó ninguno de los dos.
+
+### El hallazgo que condiciona la mitad del grupo
+
+`SEMANTIC_SCHOLAR_API_KEY` **nunca se ha configurado en este despliegue**, pese a
+figurar en la lista de `wrangler secret put` de `worker/README.md`;
+`wrangler secret list` devuelve quince secretos y esa no está. Medido el 24-08:
+
+| Camino | 200 de 10 intentos |
+|---|---|
+| Directo desde IP residencial (lo que hacía el navegador) | **0 / 10** |
+| A través del Worker, sin clave | **1 / 10** |
+
+O sea: el pool anónimo de S2 está agotado en todas partes, S2 llevaba roto desde
+antes —`/related` incluido— y migrarlo **no es una regresión**; pero sin la clave
+`/sources/s2` no sirve de nada. `NCBI_API_KEY` sí es opcional de verdad: sube
+PubMed de 3 a 10 req/s y la ruta responde sin ella (`/health` lo dice ahora con
+`pubmedKeyConfigured`).
+
+**Pendiente de @mugar:**
+
+```bash
+npx wrangler secret put SEMANTIC_SCHOLAR_API_KEY   # https://www.semanticscholar.org/product/api#api-key-form
+npx wrangler secret put NCBI_API_KEY               # opcional, NCBI account settings
+```
+
+Con `NCBI_API_KEY` puesta, `PUBMED_GLOBAL_MINUTE_LIMIT` puede subir de 60 a ~200
+(cada fallo de caché son tres llamadas a NCBI).
+
+### Verificado por mutación
+
+Dieciséis mutantes, ninguno vivo. Cada uno revierte un arreglo y deja su test en
+rojo:
+
+| Mutación | Test que la caza |
+|---|---|
+| `/sources/pubmed` sin sus `canonicalParams` | dos consultas distintas comparten entrada de caché |
+| `cacheResponse` sin reservar el techo compartido | el 429 con `retry-after` no llega |
+| reservar **antes** del acierto de caché | un acierto gasta cuota |
+| un fallo de efetch tumba la tanda entera | las fichas se pierden con los resúmenes |
+| el 200 degradado con el TTL sano | `s-maxage=600` en vez de 120 |
+| no filtrar los identificadores de esearch | `../../evil` llega a la URL de esummary |
+| no adjuntar nunca la clave de NCBI | falta `api_key` en el upstream |
+| `/related` con el tope de 10 | `limit=20` se recorta |
+| `/sources/s2` sin acotar el offset | `offset+limit` pasa de mil |
+| `/related` con techo propio en vez del compartido | solo un `s2:` en el ledger |
+| el temporizador del digest limpiado en `finally` | el cuerpo que gotea no se corta |
+| `PubmedAdapter` apuntando a otra ruta | la llamada no va a `/sources/pubmed` |
+| el adaptador de S2 reintentando en local | tres intentos en vez de uno |
+| cachear un fallo como respuesta vacía | la segunda llamada no reintenta |
+| `workerSourceUrl` mandando parámetros vacíos | `sort=` viaja en la clave |
+| aplanar el 429 a 502 | la negativa se lee como avería |
+
+### Verificación en vivo
+
+Dev server en el puerto 4175 —**no** en el que Vite elige solo: los otros puertos
+no están en `ALLOWED_ORIGINS` y todas las rutas del Worker salen bloqueadas por
+CORS, lo que parece un fallo del cambio y no lo es—. Con el feed cargado y la
+consola abierta: **cero** peticiones a `eutils.ncbi.nlm.nih.gov` y **cero** a
+`api.semanticscholar.org`. Los adaptadores reales, importados desde el bundle del
+dev server, contra `deep learning`: 25 papeles, 145.427 de total, el primero con
+**1.274 caracteres de resumen** —o sea que el XML de efetch viajó dentro del sobre
+y se parseó igual que antes— y sus categorías MeSH asignadas.
+
+Un detalle que despista: `EntityExplorer` busca en PubMed como
+`"<nombre completo>"[Author]`, y PubMed indexa `Hinton GE`, no el nombre entre
+comillas. La consulta devuelve cero — 36 con la forma correcta. Es
+comportamiento previo del cliente, no del cambio, y no es de este grupo.
+
+### Límites de esta verificación
+
+- `/sources/s2` solo se ha visto responder 429 en producción, porque falta la
+  clave. Su camino feliz está probado por tests con `fetch` stubbeado y por el
+  contrato de la ruta, no contra Semantic Scholar de verdad.
+- El techo por minuto se ha probado con el Durable Object stubbeado, no con 61
+  peticiones reales en un minuto.
+- Europe PMC sigue saliendo directa del navegador desde el enriquecido de
+  PubMed. Está declarado fuera de alcance, no olvidado.
+
+### Números
+
+1.106 → **1.132 tests** en verde bajo Node 22, que es lo que corre CI.
+`npm run check` en verde. Worker desplegado (`d378b527`) **antes** del frontend,
+que es el orden que pide una ruta nueva; `docs/ARCHITECTURE.md` decía lo
+contrario sin distinguir los dos casos y ahora los distingue.
 ## F2-residuo cerrado — y había una segunda instancia sin documentar (2026-08-24)
 
 Se pidió re-verificar F2 («el plazo solo cubre cabeceras, no el cuerpo») con

@@ -49,6 +49,15 @@ verde y la suite en verde bajo Node 22. Verificado en producción con número:
 20 variantes de espacios de una misma query costaban **21** llamadas facturadas
 antes del deploy y **2** después.
 
+**G8 cerrado el 24-08-2026** (F41): re-verificado y real, con cuatro correcciones
+de diagnóstico propias y el punto 4 (Europe PMC) declarado fuera de alcance por
+solaparse con G6. 24 tests nuevos (1.106 → 1.132), cada arreglo verificado por
+mutación sin mutantes vivos, `npm run check` en verde y la suite en verde bajo
+Node 22. Worker desplegado antes que el frontend y las dos rutas sondeadas en
+vivo. **Pendiente de @mugar:** los secretos
+`SEMANTIC_SCHOLAR_API_KEY` (que nunca se configuró y sin la cual S2 no responde)
+y `NCBI_API_KEY` (opcional, sube PubMed a 10 req/s).
+
 **G3 arreglado el 23-08-2026** (F6, F7, F8, F9, F10, F11, F12, F13, F14, F15):
 los diez re-verificados y los diez reales, con dos correcciones de diagnóstico
 propias (el punto 3 de F8 ya estaba hecho; la fuga de F14 no era solo de caché).
@@ -1141,7 +1150,7 @@ Variables de GitHub **no se han tocado**, y el porqué está en F40.
 `src/services/europePmcService.js` (opcional). **Correr después de G2/G5**
 (reutiliza el helper de plazos y no pisar el fichero).
 
-- [ ] **F41 · media · PubMed, Europe PMC y Semantic Scholar se llaman directo del navegador**
+- [x] **F41 · media · PubMed, Europe PMC y Semantic Scholar se llaman directo del navegador**
   `src/services/adapters/PubmedAdapter.js:127-197`,
   `src/services/europePmcService.js:137`,
   `src/services/semanticScholarService.js:10-24`.
@@ -1170,6 +1179,38 @@ Variables de GitHub **no se han tocado**, y el porqué está en F40.
      directas a `eutils.ncbi.nlm.nih.gov` ni `api.semanticscholar.org`;
      tests de contrato de las rutas nuevas; `wrangler deploy` antes que el
      frontend (orden: Worker primero, como siempre).
+
+  **Cerrado el 24-08-2026.** Puntos 1, 2, 3 y 5 hechos; el 4 (Europe PMC) se deja
+  fuera a propósito: ya lleva plazo, `/sources/europepmc` ya existía, y su
+  consolidación es F42, que es de G6 y aterrizó el mismo día sobre esos mismos
+  ficheros. Cuatro correcciones al diagnóstico, todas ampliando el fallo:
+
+  1. El limitador de S2 no serializaba **ni dentro de una pestaña**: leía
+     `lastRequestTime`, esperaba, y solo entonces lo escribía. El informe decía
+     «serializa por pestaña»; no serializaba en absoluto.
+  2. F41 se dejaba fuera un tercer llamante directo,
+     `src/services/adapters/SemanticScholarAdapter.js`, con `fetch(url)` pelado y
+     sin señal ninguna, usado por las páginas de autor —que son públicas—. Sin
+     él, el criterio de aceptación del propio F41 fallaba al abrir una.
+  3. `getPaperCitationsAndReferences` y `getSimilarAuthors` no tenían ni un
+     llamante: dos URLs directas a S2 más en el bundle. Borradas.
+  4. El `throw` del error no-429 de S2 caía en el `catch` de su propia función,
+     así que un 500, un fallo de red y «no hay resultados» eran indistinguibles.
+
+  **Y un hallazgo que no es de G8 pero lo condiciona:**
+  `SEMANTIC_SCHOLAR_API_KEY` **nunca se ha configurado** en el despliegue, pese a
+  figurar en `worker/README.md` (`wrangler secret list` no la muestra). Medido el
+  24-08: el pool anónimo de S2 rechazó 10 de 10 peticiones desde una IP
+  residencial y 9 de 10 desde el Worker. O sea que S2 llevaba roto desde antes
+  —`/related` incluido— y migrarlo no es una regresión, pero **sin la clave
+  `/sources/s2` no sirve de nada**. Igual con `NCBI_API_KEY`, que sube PubMed de
+  3 a 10 req/s; esa sí es opcional de verdad, y PubMed funciona sin ella.
+  Las dos las tiene que sacar @mugar.
+
+  El **F2-residuo** que el informe dejaba «al primero de G5/G8 que pase por aquí»
+  lo arregló una sesión en paralelo mientras esta trabajaba; el arreglo duplicado
+  se descartó al rebasar, porque el suyo va más lejos —encontró una segunda
+  instancia que ninguna ficha recogía—.
 
 ---
 
