@@ -12,6 +12,7 @@ npx wrangler secret put MODAL_PROXY_TOKEN_ID
 npx wrangler secret put MODAL_PROXY_TOKEN_SECRET
 npx wrangler secret put MODAL_KIMI_BASE_URL
 npx wrangler secret put CORE_API_KEY # optional, raises CORE rate limits
+npx wrangler secret put NCBI_API_KEY # optional, raises PubMed E-utilities from 3 to 10 req/s
 npx wrangler secret put NASA_ADS_API_TOKEN # optional; INSPIRE is used until configured
 npx wrangler secret put SCOPUS_PROXY_URL # https://<project>.deno.dev -- see proxy/README.md
 npx wrangler secret put SCOPUS_PROXY_SECRET # shared with the egress; the Elsevier key itself never lives here
@@ -33,7 +34,25 @@ After deployment, set the GitHub Actions repository variable `VITE_PAPER_API_BAS
 https://papertok-report-api.<account>.workers.dev
 ```
 
-Available routes are `/locale`, `/report/trends`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/explain`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, and `/health`. `/locale` returns only Cloudflare's country code for the automatic Spanish/English interface choice and is never cached. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback.
+Available routes are `/locale`, `/report/trends`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/explain`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, and `/health`. `/locale` returns only Cloudflare's country code for the automatic Spanish/English interface choice and is never cached. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback.
+
+`/sources/pubmed` runs the whole E-utilities chain server-side — esearch, then esummary and efetch
+in parallel — and returns the three upstream payloads unchanged, so the browser keeps its own
+mappers. Run from the browser that chain was three serial round trips with nothing cacheable in
+between, and NCBI counts them against the caller's IP, so readers behind one NAT rate-limited each
+other. `NCBI_API_KEY` is optional and raises the upstream allowance from 3 to 10 requests a second;
+without it the route still answers. If efetch fails while the summaries succeed the route still
+returns 200, marked `_papertok.efetch: "unavailable"`, because the client already falls back to
+OpenAlex and Europe PMC for the abstract — and the ten-minute TTL bounds how long that degraded
+answer can be served.
+
+`/sources/pubmed` and `/sources/s2` deliberately do **not** require a Firebase identity: the guest
+feed reads PubMed and the author pages are public, so demanding a session would make those branches
+run, fail locally and be swallowed. They take the same trade `/openalex/*` does — origin gate, edge
+cache, and a **global** per-minute ceiling reserved only after a cache miss
+(`PUBMED_GLOBAL_MINUTE_LIMIT`, `S2_GLOBAL_MINUTE_LIMIT`). `/related` shares the Semantic Scholar
+ceiling with `/sources/s2` because both spend the same provider allowance; the browser's old
+per-tab limiter counted per caller, so N tabs were N times the limit.
 
 
 `/openalex/*` exists because OpenAlex changed underneath the app. Since February 2026 it requires

@@ -98,8 +98,12 @@ with `wrangler secret put`.
 
 OpenReview and Hugging Face contribute optional AI and computer-science candidates. NIH iCite
 enriches PubMed-indexed candidates in one bounded batch and never blocks the feed when the
-service is unavailable. Hugging Face model and dataset links are loaded only for papers whose
-normalized provenance includes Hugging Face.
+service is unavailable. PubMed and Semantic Scholar searches are proxied by `/sources/pubmed` and
+`/sources/s2`: both providers rate-limit per caller identity rather than per user, so the limiter
+belongs where there is one copy of it. Neither route requires a session, because the guest feed
+reads PubMed and author pages are public; a global per-minute ceiling and the edge cache stand in
+for the identity check, as they already do for `/openalex/*`. Hugging Face model and dataset
+links are loaded only for papers whose normalized provenance includes Hugging Face.
 
 ## Deployment
 
@@ -109,5 +113,8 @@ normalized provenance includes Hugging Face.
 - For a contract change, deploy and verify GitHub Pages first, then deploy the Worker. Roll back
   the Worker before the frontend if verification fails. This ordering keeps the currently deployed
   browser compatible while authenticated Worker routes are introduced.
+- A **new** route inverts that order: deploy the Worker first. The old bundle does not call a route
+  it has never heard of, whereas a new bundle deployed first spends the gap calling one that does
+  not exist yet. The rule above is about changing a route both sides already use.
 - Firestore rules are deployed explicitly with
   `npx --yes firebase-tools@15.26.0 deploy --only firestore:rules --project papertok-168df`.

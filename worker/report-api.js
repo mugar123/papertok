@@ -124,6 +124,12 @@ const OPENALEX_CALLS = Object.freeze({
 const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
   europepmc: 30 * 60,
+  // Ten minutes is what the browser cache in `src/utils/sourceCache.js` already
+  // considered invisible staleness for a paper feed, and it is short enough that
+  // a batch whose efetch half failed heals on its own rather than sitting behind
+  // a six-hour TTL.
+  pubmed: 10 * 60,
+  s2: 30 * 60,
   core: 6 * 60 * 60,
   osti: 60 * 60,
   nasa: 60 * 60,
@@ -145,6 +151,27 @@ const PROTECTED_PROVIDER_PATHS = new Set([
 ]);
 const DEFAULT_PROVIDER_USER_MINUTE_LIMIT = 60;
 const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
+
+// Ceilings for routes whose upstream limit is per provider rather than per user,
+// and which the guest feed reads, so they cannot be gated behind an identity the
+// way the credential-backed routes are. This is the same trade `/openalex/*`
+// makes: origin gate plus edge cache plus a global per-minute ceiling reserved
+// only after a cache miss.
+//
+// `/related` shares the `s2` namespace with `/sources/s2` on purpose. Both spend
+// the same Semantic Scholar allowance, and a ceiling that only covered one of
+// them would leave alive exactly the failure this replaces -- a limiter that
+// counts per caller instead of per provider.
+const DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT = 60;
+const DEFAULT_S2_GLOBAL_MINUTE_LIMIT = 60;
+const SHARED_MINUTE_CEILINGS = Object.freeze({
+  // 60 route misses a minute are at most 180 E-utilities calls -- three per miss
+  // -- which is the 3 req/s NCBI allows without a key. `NCBI_API_KEY` raises the
+  // upstream allowance to 10 req/s; the variable is what raises this to match.
+  '/sources/pubmed': { namespace: 'pubmed', variable: 'PUBMED_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT },
+  '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT },
+  '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT },
+});
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -307,6 +334,40 @@ function getSafeLimit(value, fallback = 8, max = 10) {
   return Number.isFinite(parsed) ? Math.max(1, Math.min(max, parsed)) : fallback;
 }
 
+// The sibling of `reserveProtectedProviderQuota` for routes with no identity to
+// charge, and the sibling of `reserveOpenAlexBudget` for providers that bill in
+// requests rather than in money. It stays separate from that one because the
+// budgets are different in kind: OpenAlex needs a daily ceiling because the
+// allowance is a daily sum of dollars, while NCBI and Semantic Scholar publish a
+// rate -- requests per second -- which a per-minute ceiling is the direct
+// expression of, and a daily one would not bound at all.
+async function reserveSharedMinuteQuota(request, env, origin) {
+  const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
+  if (!ceiling) return null;
+  const minute = new Date().toISOString().slice(0, 16);
+  const limit = boundedLimit(env[ceiling.variable], ceiling.fallback, 100_000);
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `${ceiling.namespace}:${minute}`,
+    subject: `${ceiling.namespace}:shared`,
+    subjectLimit: limit,
+    globalLimit: limit,
+  });
+  if (!reservation.accepted && reservation.code) {
+    return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+    });
+  }
+  if (!reservation.accepted) {
+    return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+      'retry-after': '60',
+    });
+  }
+  return null;
+}
+
 // `ttl` may be a function of the payload, because whether an answer deserves its
 // full TTL is something only the fetcher's result can say: a 200 assembled from a
 // fallback after the real provider refused is not worth six hours.
@@ -314,6 +375,8 @@ async function cacheResponse(request, origin, env, ttl, fetcher, options = {}) {
   const cacheKey = canonicalCacheKey(request, origin, options.canonicalParams);
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
+  const sharedQuotaError = await reserveSharedMinuteQuota(request, env, origin);
+  if (sharedQuotaError) return sharedQuotaError;
   const quotaError = await reserveProtectedProviderQuota(options.identity || null, env, origin);
   if (quotaError) return quotaError;
   if (options.openAlexCalls) {
@@ -347,7 +410,10 @@ async function handleRelated(request, env, identity) {
   if (!/^(?:DOI:10\.|ARXIV:|[a-f0-9]{40}$)/i.test(paperId) || paperId.length > 300) {
     return json({ error: 'Invalid paper id' }, 400, corsHeaders(origin, env));
   }
-  const limit = getSafeLimit(requestUrl.searchParams.get('limit'));
+  // Twenty, not the eight-of-ten the other routes use: the feed's recommendation
+  // seeding asked Semantic Scholar for twenty directly, and this route is what it
+  // now goes through.
+  const limit = getSafeLimit(requestUrl.searchParams.get('limit'), 8, 20);
   return cacheResponse(request, origin, env, RELATED_CACHE_SECONDS, async () => {
     const fields = 'paperId,title,abstract,authors,year,externalIds,url,venue,publicationDate,citationCount,isOpenAccess,openAccessPdf,publicationTypes';
     const url = `https://api.semanticscholar.org/recommendations/v1/papers/forpaper/${encodeURIComponent(paperId)}?fields=${encodeURIComponent(fields)}&limit=${limit}`;
@@ -808,7 +874,11 @@ function safeSourceQuery(value) {
   return query.length <= 500 ? query : '';
 }
 
-function sourceRequestContext(request, env) {
+// The `limit` bounds are a parameter because the two page-sized sources do not
+// agree with the other nine. PubMed and Semantic Scholar were read straight from
+// the browser in batches of 25, and capping them at the 10 the domain sources use
+// would quietly shrink every result set that migrates here.
+function sourceRequestContext(request, env, { limitFallback = 8, limitMax = 10 } = {}) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) {
@@ -818,7 +888,7 @@ function sourceRequestContext(request, env) {
     requestUrl,
     origin,
     page: getSafeLimit(requestUrl.searchParams.get('page'), 1, 100),
-    limit: getSafeLimit(requestUrl.searchParams.get('limit'), 8, 10),
+    limit: getSafeLimit(requestUrl.searchParams.get('limit'), limitFallback, limitMax),
     sort: requestUrl.searchParams.get('sort') === 'recent' ? 'recent' : 'relevance',
   };
 }
@@ -888,6 +958,132 @@ async function handleEuropePmc(request, env) {
     url.searchParams.set('page', String(context.page));
     return fetchJsonUpstream(url);
   }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
+}
+
+const PUBMED_EUTILS_BASE = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils';
+const PUBMED_MAX_LIMIT = 50;
+const PUBMED_DEFAULT_LIMIT = 25;
+
+// NCBI asks every automated caller to identify itself with `tool` and `email`,
+// and rate-limits by API key when one is present and by source IP when it is not.
+// The key is optional here for the same reason `CORE_API_KEY` is: without it the
+// route still answers, just against the anonymous 3 req/s allowance.
+function pubmedUrl(endpoint, env, params) {
+  const url = new URL(`${PUBMED_EUTILS_BASE}/${endpoint}`);
+  for (const [name, value] of Object.entries(params)) url.searchParams.set(name, value);
+  url.searchParams.set('tool', 'papertok');
+  url.searchParams.set('email', 'app@papertok.io');
+  // Built from an explicit parameter list, so an `api_key` a caller tried to send
+  // is never among them; only the Worker's own can reach NCBI.
+  if (env.NCBI_API_KEY) url.searchParams.set('api_key', env.NCBI_API_KEY);
+  return url;
+}
+
+// E-utilities cannot answer a search in one call: esearch returns identifiers,
+// esummary returns the records, and efetch is the only one that carries the
+// abstract. Run from the browser that was three serial round trips per feed load
+// with nothing cacheable in between -- the measured floor under every guest load.
+// Here the chain is two hops, because esummary and efetch only depend on esearch
+// and not on each other, and the whole thing lands in one edge-cache entry.
+async function handlePubmed(request, env) {
+  const context = sourceRequestContext(request, env, {
+    limitFallback: PUBMED_DEFAULT_LIMIT,
+    limitMax: PUBMED_MAX_LIMIT,
+  });
+  if (context.error) return context.error;
+  const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
+  if (!query) return json({ error: 'Missing PubMed query' }, 400, corsHeaders(context.origin, env));
+
+  // A batch that lost its abstracts is exactly the case the payload-dependent TTL
+  // was added for: it is a real answer, but not one worth serving for ten minutes.
+  const ttl = payload => (payload?._papertok?.efetch === 'unavailable'
+    ? DEGRADED_CACHE_SECONDS
+    : SOURCE_CACHE_SECONDS.pubmed);
+
+  return cacheResponse(request, context.origin, env, ttl, async () => {
+    const search = await fetchJsonUpstream(pubmedUrl('esearch.fcgi', env, {
+      db: 'pubmed',
+      term: query,
+      retmode: 'json',
+      retmax: String(context.limit),
+      retstart: String((context.page - 1) * context.limit),
+    }));
+    const esearchresult = search?.esearchresult || {};
+    // Identifiers go straight back into two upstream URLs, so anything that is
+    // not a PubMed identifier is dropped rather than forwarded.
+    const pmids = (esearchresult.idlist || [])
+      .map(value => String(value || '').trim())
+      .filter(value => /^\d{1,12}$/.test(value));
+    if (pmids.length === 0) {
+      return { esearchresult: { ...esearchresult, idlist: [] }, result: {}, efetch: '', _papertok: { efetch: 'empty' } };
+    }
+
+    const [summary, efetch] = await Promise.all([
+      fetchJsonUpstream(pubmedUrl('esummary.fcgi', env, {
+        db: 'pubmed',
+        id: pmids.join(','),
+        retmode: 'json',
+      })),
+      // The abstract half is enrichment: the client already falls back to OpenAlex
+      // and Europe PMC when it is missing, so losing efetch must not lose the
+      // records esummary did return. The marker is what tells a reader -- and the
+      // TTL policy -- that this answer is the degraded one.
+      fetchPubmedArticleXml(pmids, env).catch(() => ''),
+    ]);
+
+    return {
+      esearchresult: { ...esearchresult, idlist: pmids },
+      result: summary?.result || {},
+      efetch,
+      _papertok: { efetch: efetch ? 'ok' : 'unavailable' },
+    };
+  }, { canonicalParams: sourceCacheParams(context, { q: query }) });
+}
+
+async function fetchPubmedArticleXml(pmids, env) {
+  const url = pubmedUrl('efetch.fcgi', env, { db: 'pubmed', id: pmids.join(','), retmode: 'xml' });
+  const response = await fetchWithDeadline(url, {
+    headers: {
+      accept: 'application/xml, text/xml;q=0.9',
+      'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
+    },
+  }, SOURCE_UPSTREAM_TIMEOUT_MS);
+  if (!response.ok) throw new Error(`PubMed efetch error: ${response.status}`);
+  // Read under the same deadline that covered the headers: efetch answers the
+  // largest body of the three and a document that stops halfway is a stall, not a
+  // short answer.
+  return response.text();
+}
+
+const S2_SEARCH_FIELDS = 'paperId,title,abstract,authors,year,isOpenAccess,venue,publicationTypes,citationCount,referenceCount,openAccessPdf';
+const S2_MAX_LIMIT = 25;
+const S2_MAX_OFFSET = 1_000;
+
+// Semantic Scholar was rate-limited in the browser by a module variable, which
+// counts per tab rather than per provider: N tabs were N times the allowance, and
+// the two browser callers did not even share the one counter. The limit belongs
+// where there is a single copy of it, next to the API key, which is here.
+async function handleSemanticScholar(request, env) {
+  const context = sourceRequestContext(request, env, {
+    limitFallback: S2_MAX_LIMIT,
+    limitMax: S2_MAX_LIMIT,
+  });
+  if (context.error) return context.error;
+  const query = safeSourceQuery(context.requestUrl.searchParams.get('q'));
+  if (!query) return json({ error: 'Missing Semantic Scholar query' }, 400, corsHeaders(context.origin, env));
+
+  return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.s2, async () => {
+    const url = new URL('https://api.semanticscholar.org/graph/v1/paper/search');
+    url.searchParams.set('query', query);
+    // Semantic Scholar refuses `offset + limit` past a thousand with a 400. Paging
+    // beyond the end of a result set has to run out of records, not turn into an
+    // upstream error the feed reports as a dead source.
+    url.searchParams.set('offset', String(Math.min((context.page - 1) * context.limit, S2_MAX_OFFSET - context.limit)));
+    url.searchParams.set('limit', String(context.limit));
+    url.searchParams.set('fields', S2_SEARCH_FIELDS);
+    const headers = env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {};
+    return fetchJsonUpstream(url, headers);
+  }, { canonicalParams: sourceCacheParams(context, { q: query }) });
 }
 
 function compactOpenReviewNote(note) {
@@ -1698,6 +1894,8 @@ async function handleScopus(request, env, identity) {
 const DOMAIN_SOURCE_HANDLERS = {
   '/sources/biorxiv': handleBioRxiv,
   '/sources/europepmc': handleEuropePmc,
+  '/sources/pubmed': handlePubmed,
+  '/sources/s2': handleSemanticScholar,
   '/sources/core': handleCore,
   '/sources/osti': handleOsti,
   '/sources/nasa': handleNasa,
@@ -1800,6 +1998,9 @@ export default {
         openAlexConfigured: Boolean(env.OPENALEX_API_KEY),
         adsConfigured: Boolean(env.NASA_ADS_API_TOKEN),
         scopusConfigured: isScopusEgressConfigured(env),
+        // Absent means PubMed runs on NCBI's anonymous 3 req/s rather than 10, so
+        // it belongs in the report even though the route works without it.
+        pubmedKeyConfigured: Boolean(env.NCBI_API_KEY),
         emailConfigured: Boolean(
           env.NOTIFICATION_STORE
           && ((env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) || env.RESEND_API_KEY),

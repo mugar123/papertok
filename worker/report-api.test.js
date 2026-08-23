@@ -851,6 +851,8 @@ test('cuts an arXiv upstream that sends its headers and then stalls the body', a
 const SOURCE_ROUTES = [
   ['/sources/biorxiv?category=neuroscience', {}],
   ['/sources/europepmc?q=malaria', {}],
+  ['/sources/pubmed?q=malaria', {}],
+  ['/sources/s2?q=malaria', {}],
   ['/sources/core?q=malaria', {}],
   ['/sources/osti?q=malaria', {}],
   ['/sources/nasa?q=malaria', {}],
@@ -1447,4 +1449,368 @@ test('a rejected OpenAlex batch is a short answer, not a complete one', async ()
   assert.equal(payload.degraded, true);
   assert.deepEqual(payload.references, []);
   assert.equal(maxAgeSeconds(response), 120);
+});
+
+// --- /sources/pubmed and /sources/s2 -----------------------------------------
+// These two used to be called straight from the browser. PubMed as three serial
+// E-utilities requests with no key and no abort signal, Semantic Scholar behind a
+// module-variable limiter that counted per tab. Both now run here.
+
+// Both new routes fail closed when the ledger binding is missing, the same way
+// `/openalex/*` does: an unreachable ceiling is not a reason to spend somebody
+// else's rate limit. Tests that are about the proxying therefore have to supply
+// one, and production supplies it through `wrangler.toml`.
+const OPEN_ROUTE_ENV = {
+  REQUEST_QUOTA_LEDGER: {
+    idFromName: () => 'quota-id',
+    get: () => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) }),
+  },
+};
+
+function countingQuotaLedger(state, accepted = true) {
+  return {
+    idFromName: name => {
+      state.periodKeys.push(String(name));
+      return `quota-${name}`;
+    },
+    get: () => ({
+      fetch: async () => {
+        state.reservations += 1;
+        return new Response(JSON.stringify(accepted ? { accepted: true } : { accepted: false, scope: 'global' }));
+      },
+    }),
+  };
+}
+
+test('runs the whole PubMed chain in the Worker and returns the three payloads', async () => {
+  const upstream = [];
+  const response = await withWorkerFetchMock(async url => {
+    const requested = new URL(String(url));
+    upstream.push(requested);
+    if (requested.pathname.endsWith('esearch.fcgi')) {
+      return new Response(JSON.stringify({ esearchresult: { count: '412', idlist: ['31000001', '31000002'] } }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (requested.pathname.endsWith('esummary.fcgi')) {
+      return new Response(JSON.stringify({ result: { 31000001: { uid: '31000001', title: 'One' } } }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response('<PubmedArticleSet><PubmedArticle/></PubmedArticleSet>', {
+      headers: { 'content-type': 'application/xml' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/pubmed?q=malaria&page=3&limit=25',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), OPEN_ROUTE_ENV));
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.deepEqual(payload.esearchresult.idlist, ['31000001', '31000002']);
+  assert.equal(payload.esearchresult.count, '412');
+  assert.equal(payload.result['31000001'].title, 'One');
+  assert.match(payload.efetch, /PubmedArticleSet/);
+  assert.equal(payload._papertok.efetch, 'ok');
+
+  const byEndpoint = Object.fromEntries(upstream.map(url => [url.pathname.split('/').pop(), url]));
+  assert.deepEqual(Object.keys(byEndpoint).sort(), ['efetch.fcgi', 'esearch.fcgi', 'esummary.fcgi']);
+  // Page three of twenty-five starts at fifty, not at zero: paging has to reach
+  // the second and third screen of a category, not re-serve the first.
+  assert.equal(byEndpoint['esearch.fcgi'].searchParams.get('retstart'), '50');
+  assert.equal(byEndpoint['esearch.fcgi'].searchParams.get('retmax'), '25');
+  assert.equal(byEndpoint['esummary.fcgi'].searchParams.get('id'), '31000001,31000002');
+  assert.equal(byEndpoint['efetch.fcgi'].searchParams.get('id'), '31000001,31000002');
+  // NCBI asks automated callers to identify themselves on every request.
+  assert.equal(byEndpoint['esearch.fcgi'].searchParams.get('tool'), 'papertok');
+  assert.equal(byEndpoint['esearch.fcgi'].searchParams.get('email'), 'app@papertok.io');
+});
+
+test('attaches the NCBI key only when configured and never one the caller sent', async () => {
+  const withoutKey = [];
+  await withWorkerFetchMock(async url => {
+    withoutKey.push(String(url));
+    return new Response(JSON.stringify({ esearchresult: { count: '0', idlist: [] } }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/pubmed?q=malaria&api_key=caller-key',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), OPEN_ROUTE_ENV));
+
+  // The upstream URL is rebuilt from a fixed parameter list, so a key a caller
+  // tried to smuggle in cannot reach NCBI and be billed to somebody else's quota.
+  assert.equal(withoutKey.length, 1);
+  assert.ok(!withoutKey[0].includes('api_key'), `caller api_key reached NCBI: ${withoutKey[0]}`);
+
+  const withKey = [];
+  await withWorkerFetchMock(async url => {
+    withKey.push(String(url));
+    return new Response(JSON.stringify({ esearchresult: { count: '0', idlist: [] } }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/pubmed?q=malaria',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), { ...OPEN_ROUTE_ENV, NCBI_API_KEY: 'worker-key' }));
+
+  assert.match(withKey[0], /api_key=worker-key/);
+});
+
+test('keeps the PubMed summaries when only the abstract half fails', async () => {
+  const response = await withWorkerFetchMock(async url => {
+    const requested = new URL(String(url));
+    if (requested.pathname.endsWith('esearch.fcgi')) {
+      return new Response(JSON.stringify({ esearchresult: { count: '1', idlist: ['31000001'] } }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (requested.pathname.endsWith('esummary.fcgi')) {
+      return new Response(JSON.stringify({ result: { 31000001: { uid: '31000001', title: 'One' } } }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response('nope', { status: 503 });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/pubmed?q=malaria',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), OPEN_ROUTE_ENV));
+
+  // Losing efetch loses the abstracts, which the client can still get from
+  // OpenAlex and Europe PMC. Losing the records too would lose the batch.
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.result['31000001'].title, 'One');
+  assert.equal(payload.efetch, '');
+  assert.equal(payload._papertok.efetch, 'unavailable');
+  // ...but a degraded answer does not get the healthy answer's ten minutes. A
+  // one-second hiccup at NCBI must not leave a whole category without abstracts
+  // for everybody until the TTL runs out.
+  assert.match(response.headers.get('cache-control'), /s-maxage=120\b/);
+  assert.doesNotMatch(response.headers.get('cache-control'), /stale-while-revalidate/);
+});
+
+test('drops identifiers PubMed did not answer with before putting them in a URL', async () => {
+  const upstream = [];
+  await withWorkerFetchMock(async url => {
+    const requested = new URL(String(url));
+    upstream.push(requested);
+    if (requested.pathname.endsWith('esearch.fcgi')) {
+      return new Response(JSON.stringify({ esearchresult: { count: '2', idlist: ['31000001', '../../evil'] } }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({ result: {} }), { headers: { 'content-type': 'application/json' } });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/pubmed?q=malaria',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), OPEN_ROUTE_ENV));
+
+  const summary = upstream.find(url => url.pathname.endsWith('esummary.fcgi'));
+  assert.equal(summary.searchParams.get('id'), '31000001');
+});
+
+test('refuses a PubMed request with no query without spending the shared ceiling', async () => {
+  const state = { reservations: 0, periodKeys: [] };
+  const originalCaches = globalThis.caches;
+  globalThis.caches = { default: { match: async () => null, put: async () => undefined } };
+  try {
+    const response = await reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/pubmed',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) });
+
+    assert.equal(response.status, 400);
+    assert.equal(state.reservations, 0);
+  } finally {
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
+test('serves a cached PubMed answer without an upstream call or a reservation', async () => {
+  const state = { reservations: 0, periodKeys: [] };
+  let upstreamCalls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.fetch = async () => {
+    upstreamCalls += 1;
+    throw new Error('No upstream request should be made');
+  };
+  globalThis.caches = {
+    default: {
+      match: async request => (request.url.includes('/cache/sources/pubmed')
+        ? new Response(JSON.stringify({ esearchresult: { idlist: ['1'] } }), { headers: { 'content-type': 'application/json' } })
+        : null),
+      put: async () => undefined,
+    },
+  };
+  try {
+    const response = await reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/pubmed?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) });
+
+    assert.equal(response.status, 200);
+    assert.equal(upstreamCalls, 0);
+    // The ceiling exists to bound calls to NCBI. A cache hit makes none, so it
+    // must not consume one either -- otherwise repeated queries cost quota.
+    assert.equal(state.reservations, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
+test('refuses PubMed with retry-after once the shared per-minute ceiling is full', async () => {
+  const state = { reservations: 0, periodKeys: [] };
+  let upstreamCalls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.fetch = async () => {
+    upstreamCalls += 1;
+    throw new Error('No upstream request should be made');
+  };
+  globalThis.caches = { default: { match: async () => null, put: async () => undefined } };
+  try {
+    const response = await reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/pubmed?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { REQUEST_QUOTA_LEDGER: countingQuotaLedger(state, false) });
+
+    assert.equal(response.status, 429);
+    assert.equal(response.headers.get('retry-after'), '60');
+    assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+    assert.equal(upstreamCalls, 0);
+    assert.match(state.periodKeys[0], /^pubmed:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
+test('proxies Semantic Scholar search with the Worker key and a bounded offset', async () => {
+  let upstreamUrl = '';
+  let upstreamHeaders = {};
+  const response = await withWorkerFetchMock(async (url, options) => {
+    upstreamUrl = String(url);
+    upstreamHeaders = options?.headers || {};
+    return new Response(JSON.stringify({ total: 3, data: [{ paperId: 'abc', title: 'One' }] }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/s2?q=malaria&page=90&limit=25',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), { ...OPEN_ROUTE_ENV, SEMANTIC_SCHOLAR_API_KEY: 's2-test-key' }));
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data[0].paperId, 'abc');
+  assert.match(upstreamUrl, /graph\/v1\/paper\/search/);
+  assert.equal(upstreamHeaders['x-api-key'], 's2-test-key');
+  // Semantic Scholar answers offset + limit past a thousand with a 400. Paging
+  // off the end has to run out of records, not turn into a dead source.
+  const offset = Number(new URL(upstreamUrl).searchParams.get('offset'));
+  assert.ok(offset + 25 <= 1000, `offset ${offset} would be refused by Semantic Scholar`);
+});
+
+test('leaves the Semantic Scholar key off entirely when none is configured', async () => {
+  let upstreamCalls = 0;
+  let upstreamHeaders = {};
+  await withWorkerFetchMock(async (_url, options) => {
+    upstreamCalls += 1;
+    upstreamHeaders = options?.headers || {};
+    return new Response(JSON.stringify({ data: [] }), { headers: { 'content-type': 'application/json' } });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/s2?q=malaria',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), OPEN_ROUTE_ENV));
+
+  assert.equal(upstreamCalls, 1, 'the request never reached Semantic Scholar, so the header assertion proves nothing');
+  assert.equal(upstreamHeaders['x-api-key'], undefined);
+});
+
+test('charges /related and /sources/s2 to the same Semantic Scholar ceiling', async () => {
+  const state = { reservations: 0, periodKeys: [] };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({ recommendedPapers: [] }), {
+    headers: { 'content-type': 'application/json' },
+  });
+  try {
+    await withCachedIdentity(() => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=20',
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) }));
+
+    await withCachedIdentity(() => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/s2?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) }));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  // One namespace, because both spend the same provider allowance. A limiter with
+  // one counter per route is the per-tab limiter this replaced, wearing a hat.
+  const s2Keys = state.periodKeys.filter(key => key.startsWith('s2:'));
+  assert.equal(s2Keys.length, 2, `expected both routes on the s2 ceiling, saw ${JSON.stringify(state.periodKeys)}`);
+});
+
+test('lets /related ask for the twenty recommendations the feed seeds from', async () => {
+  let upstreamUrl = '';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async url => {
+    upstreamUrl = String(url);
+    return new Response(JSON.stringify({ recommendedPapers: [] }), { headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    await withCachedIdentity(() => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=20',
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), AUTHENTICATED_ENV));
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.match(upstreamUrl, /limit=20/);
+});
+
+test('keeps two different PubMed queries in two different cache entries', async () => {
+  const stored = new Map();
+  let upstreamCalls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.fetch = async () => {
+    upstreamCalls += 1;
+    return new Response(JSON.stringify({ esearchresult: { count: '0', idlist: [] } }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  globalThis.caches = {
+    default: {
+      match: async request => stored.get(request.url)?.clone() || null,
+      put: async (request, response) => stored.set(request.url, response.clone()),
+    },
+  };
+  try {
+    const ask = query => reportApi.fetch(new Request(
+      `https://papertok-report-api.example/sources/pubmed?q=${query}&limit=25`,
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), OPEN_ROUTE_ENV);
+
+    await ask('malaria');
+    await ask('tuberculosis');
+    await ask('malaria');
+
+    // A route with no entry in `CACHE_PARAMS_BY_PATH` gets an empty parameter
+    // list, which collapses every query onto one entry keyed by origin alone --
+    // and the first answer is then served to everybody who asks for anything.
+    assert.equal(upstreamCalls, 2);
+    assert.equal(stored.size, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
 });
