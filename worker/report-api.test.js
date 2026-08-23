@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import reportApi from './report-api.js';
+import reportApi, { fetchWithDeadline } from './report-api.js';
+import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.js';
 
 async function withWorkerFetchMock(fetchImplementation, callback) {
   const originalFetch = globalThis.fetch;
@@ -979,4 +980,34 @@ test('answers an OpenAlex network failure with CORS headers instead of throwing'
   // relay with its `retry-after` -- which this route goes out of its way to
   // preserve -- is lost with it.
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+});
+
+// The helper G5 and G8 were told to reuse, tested on the contract that note
+// promises them. Reuses the harness the client-side sweep built, so both halves
+// of the tree describe a stalled upstream the same way.
+test('enforces its deadline even when the caller brings a signal of its own', async () => {
+  // In the Worker a caller signal is a *cancellation* -- `request.signal`, the
+  // browser that hung up -- not a budget. Letting it replace the deadline would
+  // hand the next route that passes one an unbounded wait, which is the whole
+  // failure this helper exists to remove.
+  const caller = new AbortController(); // never fires
+  const outcome = await withStubbedFetch(dribblingFetch(), () => settleWithin(2_000, async () => {
+    const response = await fetchWithDeadline('https://upstream.example/', { signal: caller.signal }, 25);
+    await response.text();
+  }));
+
+  assert.equal(outcome, 'TimeoutError');
+});
+
+test('still lets a caller cancellation be told apart from its own deadline', async () => {
+  // The guard on over-correcting: combining the two must not relabel a hang-up
+  // as a timeout. `AbortSignal.any` keeps whichever fired first as the reason.
+  const caller = new AbortController();
+  caller.abort(new DOMException('the client hung up', 'AbortError'));
+  const outcome = await withStubbedFetch(dribblingFetch(), () => settleWithin(2_000, async () => {
+    const response = await fetchWithDeadline('https://upstream.example/', { signal: caller.signal }, 25);
+    await response.text();
+  }));
+
+  assert.equal(outcome, 'AbortError');
 });

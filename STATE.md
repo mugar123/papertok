@@ -80,13 +80,32 @@ cancela el llamante -> AbortError
 vence el plazo      -> TimeoutError
 ```
 
-La misma asimetría existe en el Worker (`fetchWithDeadline`,
-`worker/report-api.js:342`, también con `??`). Hoy **no es un fallo vivo**:
-ninguno de sus diez llamantes pasa señal. Pero ahí la señal que un llamante
-podría traer sería `request.signal` — el cliente que se desconecta, o sea una
-cancelación — así que la semántica correcta allí es la aditiva, y el consejo de
-«usad `fetchWithDeadline`» que se le dio a G5 y G8 deja el footgun armado.
-**Pendiente, y falta confirmar que workerd soporte `AbortSignal.any`.**
+La misma asimetría existía en el Worker (`fetchWithDeadline`,
+`worker/report-api.js`). No era un fallo vivo —ninguno de sus diez llamantes pasa
+señal— pero ahí la que un llamante podría traer sería `request.signal`, el
+cliente que se desconecta: una cancelación. La semántica correcta es la aditiva,
+y el consejo de «usad `fetchWithDeadline`» que se le dio a G5 y G8 dejaba el
+footgun armado.
+
+**Cerrado el 23-08-2026.** `fetchWithDeadline` compone ahora con
+`AbortSignal.any`, igual que `withEnforcedDeadline` en el cliente, con dos tests
+en `report-api.test.js` que reutilizan `src/test-support/deadlineHarness.js`. La
+mutación de vuelta al `??` pone en rojo el del plazo aditivo y **solo** ese.
+
+`AbortSignal.any` en workerd: **confirmado ejecutándolo dentro del runtime**, no
+por documentación —los docs de Cloudflare no lo cubren—. Con el `workerd` que
+trae wrangler (2026-08-11) y la `compatibilityDate` real del proyecto:
+
+```
+$ workerd test probe.capnp
+PROBE {"AbortSignal.timeout":"function","AbortSignal.any":"function",
+       "aborted":true,"reason":"TimeoutError"}
+[ PASS ] probe:test
+```
+
+`workerd test` corre y sale, sin levantar servidor: sirve para comprobar una API
+del runtime sin desplegar nada. Vale la pena recordarlo para la próxima duda de
+este tipo.
 
 ### Tests
 

@@ -339,8 +339,23 @@ async function handleRelated(request, env, identity) {
 // until the body has been read in full, and cuts the read too. Measured against a
 // server that sends headers and then goes quiet, the old shape was still waiting
 // when the test gave up; this one aborts on the mark.
-function fetchWithDeadline(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
-  return fetch(url, { ...options, signal: options.signal ?? AbortSignal.timeout(timeoutMs) });
+//
+// A caller signal is *added* to the deadline rather than replacing it, and the
+// difference is the whole reason this is worth a comment. In the browser a signal
+// carries a **budget** -- the AI explanation is allowed seventy seconds -- so
+// `withRequestDeadline` lets it win. Here it carries a **cancellation**:
+// `request.signal` is the browser that hung up, and hanging up says nothing about
+// how long the upstream may take. Letting it replace the deadline would hand the
+// next route that passes one an unbounded wait, which is exactly what this helper
+// exists to remove. `AbortSignal.any` keeps whichever fired first as the reason,
+// so a cancellation still surfaces as `AbortError` and only a real deadline as
+// `TimeoutError`.
+export function fetchWithDeadline(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
+  const deadline = AbortSignal.timeout(timeoutMs);
+  return fetch(url, {
+    ...options,
+    signal: options.signal ? AbortSignal.any([options.signal, deadline]) : deadline,
+  });
 }
 
 async function fetchJsonWithTimeout(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
