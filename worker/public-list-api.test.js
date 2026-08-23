@@ -1154,3 +1154,145 @@ test('preparing the input is pure: no membership needed, and a bad paper is refu
   assert.throws(() => mergePreparedPayload(prepareMergeInput(HEADER_ONLY), { papers: [] }, null),
     error => error.code === 'INVALID_BODY');
 });
+
+// ---------------------------------------------------------------------------
+// Two tabs at once. The merge is a read-modify-write and the showcase is
+// another one; both writes are pinned, and losing either means reading it all
+// again rather than committing what was already built.
+// ---------------------------------------------------------------------------
+
+/**
+ * A fake whose documents change the instant a commit is refused — the winner of
+ * the race landing between the loser's read and its retry.
+ */
+function racingAdmin(documents, { updateTimes = {}, afterRace = {} } = {}) {
+  const admin = fakeAdmin(documents, { updateTimes, failOn: [1] });
+  const commit = admin.commit;
+  admin.commit = async (writes) => {
+    try {
+      return await commit(writes);
+    } catch (error) {
+      Object.assign(admin.documents, afterRace);
+      throw error;
+    }
+  };
+  return admin;
+}
+
+const published = i => ({ id: `a${i}`, sourceId: `p${i}`, title: `A${i}`, authors: ['Ada'] });
+const showcaseEntry = (shareId, title, paperCount) => ({
+  shareId, title, paperCount, publishedAt: new Date(NOW - 1000),
+});
+
+function mergeFixture(extra = {}) {
+  return {
+    [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' },
+    [`users/${UID}/lists/l1`]: { id: 'l1', paperIds: ['p1', 'p2'] },
+    [`publicLists/${SHARE}`]: { title: 'V', paperCount: 2, papers: [published(1), published(2)] },
+    ...extra,
+  };
+}
+
+test('the merge write is pinned to the exact version it merged against', async () => {
+  stubIdentity();
+  const admin = fakeAdmin(mergeFixture(), {
+    updateTimes: { [`publicLists/${SHARE}`]: '2026-08-21T00:00:00.000000Z' },
+  });
+  await run('/lists/update', { shareId: SHARE, listId: 'l1', title: 'V', papers: [] }, { admin });
+  assert.deepEqual(admin.commits[0][0].currentDocument, {
+    updateTime: '2026-08-21T00:00:00.000000Z',
+  }, 'unpinned, the other tab paper is skipped once and then skipped for ever');
+});
+
+test('the legacy whole-payload replace is not a read-modify-write, so it is not pinned', async () => {
+  stubIdentity();
+  // Nothing was read to build this payload, so there is no lost update to
+  // guard — and pinning it would only invent conflicts.
+  const admin = fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' } });
+  await run('/lists/update', { shareId: SHARE, listId: 'l1', title: 'T', papers: [] }, { admin });
+  assert.deepEqual(admin.commits[0][0].currentDocument, { exists: true });
+});
+
+test('a lost race is re-merged from the fresh copy, not re-committed from the stale one', async () => {
+  stubIdentity();
+  const admin = racingAdmin({
+    ...mergeFixture(),
+    [`users/${UID}/lists/l1`]: { id: 'l1', paperIds: ['p1', 'p2', 'p3'] },
+  }, {
+    // The other tab published p3 while this one was merging.
+    afterRace: {
+      [`publicLists/${SHARE}`]: {
+        title: 'V', paperCount: 3, papers: [published(1), published(2), published(3)],
+      },
+    },
+  });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'V', papers: [],
+  }, { admin });
+
+  assert.deepEqual(result.papers.map(entry => entry.id), ['a1', 'a2', 'a3']);
+  assert.equal(result.skipped, 0, 'p3 is in the list and in the fresh copy: nothing to skip');
+  assert.equal(admin.commits.length, 1, 'the first attempt was refused, the second landed');
+});
+
+test('the retry rebuilds the showcase too, so a card added mid-flight survives', async () => {
+  stubIdentity();
+  const THIRD_SHARE = 'c'.repeat(32);
+  const admin = racingAdmin(mergeFixture({
+    [`profileLists/${UID}`]: {
+      lists: [showcaseEntry(OTHER_SHARE, 'Otra', 2), showcaseEntry(SHARE, 'Vieja', 12)],
+      updatedAt: new Date(NOW - 500),
+    },
+  }), {
+    afterRace: {
+      [`profileLists/${UID}`]: {
+        lists: [
+          showcaseEntry(OTHER_SHARE, 'Otra', 2),
+          showcaseEntry(SHARE, 'Vieja', 12),
+          showcaseEntry(THIRD_SHARE, 'Nueva', 1),
+        ],
+        updatedAt: new Date(NOW),
+      },
+    },
+  });
+  await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Renombrada', papers: [],
+  }, { admin });
+
+  const showcase = admin.commits[0].find(write => write.update?.name.endsWith(`profileLists/${UID}`));
+  assert.deepEqual(fieldsOf(showcase).lists.map(entry => entry.shareId),
+    [OTHER_SHARE, SHARE, THIRD_SHARE],
+    'carrying the first attempt cards over would delete the one just published');
+});
+
+test('if the showcase drops the card mid-flight, the retry does not put it back', async () => {
+  stubIdentity();
+  const admin = racingAdmin(mergeFixture({
+    [`profileLists/${UID}`]: {
+      lists: [showcaseEntry(OTHER_SHARE, 'Otra', 2), showcaseEntry(SHARE, 'Vieja', 12)],
+      updatedAt: new Date(NOW - 500),
+    },
+  }), {
+    // The owner turned attribution off from another tab.
+    afterRace: {
+      [`profileLists/${UID}`]: {
+        lists: [showcaseEntry(OTHER_SHARE, 'Otra', 2)],
+        updatedAt: new Date(NOW),
+      },
+    },
+  });
+  await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'Renombrada', papers: [],
+  }, { admin });
+  assert.equal(admin.commits[0].length, 2, 'public doc + sync stamp, and no showcase write');
+});
+
+test('losing twice is the caller turn to retry, and it is told so', async () => {
+  stubIdentity();
+  const admin = fakeAdmin(mergeFixture(), { failOn: [1, 2] });
+  await assert.rejects(
+    () => run('/lists/update', { shareId: SHARE, listId: 'l1', title: 'V', papers: [] }, { admin }),
+    error => error.code === 'PUBLISH_CONFLICT' && error.status === 409,
+  );
+  assert.equal(admin.commits.length, 0);
+});

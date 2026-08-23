@@ -21,6 +21,10 @@
  * +1 read always, +1 more only when pins are hidden, +1 write only when the
  * list was actually pinned and the card changed — bounded by the same daily
  * quotas, so the worst day stays far inside the allowance.
+ *
+ * An update that loses a version precondition reads everything again and
+ * commits once more: 7 reads and 2 commits instead of 4 and 1, and only for the
+ * loser of a race between two of the same owner's tabs. Still far inside.
  */
 import {
   assertPublicListWithinLimits,
@@ -470,79 +474,113 @@ function validateUpdate(body) {
   };
 }
 
+/**
+ * Two attempts, and EVERYTHING the commit is built from is read again on the
+ * second one.
+ *
+ * The merge is a read-modify-write, and it used to carry no version
+ * precondition: two tabs syncing at once could each write the list as they
+ * found it. The loser's paper was skipped for having no metadata anywhere, and
+ * it stayed skipped for ever — the client empties its hydration after a
+ * successful sync, so every later sync names that paper by id alone and the
+ * merge cannot find it either. Only `skipped > 0` in the response ever said so.
+ *
+ * The re-read has to cover the SHOWCASE as well as the public document. Its
+ * write is pinned too, so it can be the one that loses; carrying the first
+ * attempt's cards into a write pinned to the new version would delete a card
+ * that a concurrent publish had just added — worse than the bug being fixed.
+ */
 async function update(admin, uid, { shareId, merge, body }, { now }) {
   const owner = await requireOwnedShare(admin, uid, shareId);
 
-  // The membership comes from the private list, not from the request. One
-  // extra read — the same document `publish` already reads — and in exchange
-  // no client version, present or past, can shrink a published list by
-  // sending a stale idea of what is in it.
-  const list = await admin.getDocument(['users', uid, 'lists', owner.listId]);
-  const membership = Array.isArray(list?.paperIds) ? list.paperIds : null;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    // The membership comes from the private list, not from the request. One
+    // extra read — the same document `publish` already reads — and in exchange
+    // no client version, present or past, can shrink a published list by
+    // sending a stale idea of what is in it.
+    const list = await admin.getDocument(['users', uid, 'lists', owner.listId]);
+    const membership = Array.isArray(list?.paperIds) ? list.paperIds : null;
 
-  let payload;
-  let listCount = null;
-  let skipped = 0;
-  if (membership || merge.requestIds) {
-    const existing = await admin.getDocument(['publicLists', shareId]);
-    if (!existing) throw new PublicListApiError('SHARE_NOT_FOUND', 404);
-    const merged = mergePreparedPayload(merge, existing, membership);
-    payload = merged.payload;
-    listCount = merged.listCount;
-    skipped = merged.skipped;
-  } else {
-    // No membership anywhere to merge against: the legacy whole-payload
-    // replace, kept for a caller that sends neither.
-    payload = buildPublicListPayload(body);
+    let payload;
+    let listCount = null;
+    let skipped = 0;
+    let pinnedTo = null;
+    if (membership || merge.requestIds) {
+      const existing = await admin.getDocument(['publicLists', shareId], { withMeta: true });
+      if (!existing) throw new PublicListApiError('SHARE_NOT_FOUND', 404);
+      const merged = mergePreparedPayload(merge, existing.data, membership);
+      payload = merged.payload;
+      listCount = merged.listCount;
+      skipped = merged.skipped;
+      pinnedTo = existing.updateTime;
+    } else {
+      // No membership anywhere to merge against: the legacy whole-payload
+      // replace, kept for a caller that sends neither. Nothing was read to
+      // build it, so there is no lost update to guard and no version to pin.
+      payload = buildPublicListPayload(body);
+    }
+
+    const timestamp = new Date(now());
+    // `description` is always in the mask and only sometimes in the fields: a
+    // list that drops its description must lose it from the public document
+    // rather than keep the old one. `createdAt` is in neither, so it cannot move.
+    const fields = { ...payload, updatedAt: timestamp };
+    const write = mergeWrite(
+      admin.name(['publicLists', shareId]),
+      fields,
+      pinnedTo ? { updateTime: pinnedTo } : {},
+    );
+    write.updateMask = {
+      fieldPaths: [...new Set([...Object.keys(fields), 'description'])],
+    };
+
+    const writes = [
+      write,
+      mergeWrite(admin.name(['users', uid, 'lists', owner.listId]), {
+        publicSyncedAt: timestamp,
+      }),
+    ];
+    // The showcase card travels in the SAME commit as the list it mirrors —
+    // the atomicity the best-effort pin refresh below never had.
+    const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
+    const entries = projectionEntries(projection);
+    const held = entries.find(entry => entry?.shareId === shareId);
+    if (held && (held.title !== payload.title || held.paperCount !== payload.paperCount)) {
+      writes.push(projectionWrite(
+        admin,
+        uid,
+        entries.map(entry => (entry?.shareId === shareId
+          ? { ...entry, title: payload.title, paperCount: payload.paperCount }
+          : entry)),
+        timestamp,
+        projection,
+      ));
+    }
+    try {
+      await admin.commit(writes);
+    } catch (error) {
+      // A lost precondition is a concurrent writer, not a failure. Read it all
+      // again and rebuild; a second loss is the caller's to retry (409).
+      if (attempt === 0 && error instanceof FirestoreAdminError && error.status === 409) continue;
+      throw error;
+    }
+    // Transitional (F12 migration window): profiles that still hold legacy
+    // pinned CARDS get them refreshed best-effort, exactly as before. Retired
+    // with rules v2, when no profile holds cards any more.
+    const pinCard = await refreshPinnedCard(admin, uid, shareId, {
+      title: payload.title, paperCount: payload.paperCount,
+    }, { now });
+    return {
+      shareId,
+      ...payload,
+      pinCard,
+      // What the owner needs to understand a count that does not match: how many
+      // papers the list holds, and how many of them had nothing to publish.
+      ...(listCount === null ? {} : { listCount, skipped }),
+    };
   }
-
-  const timestamp = new Date(now());
-  // `description` is always in the mask and only sometimes in the fields: a
-  // list that drops its description must lose it from the public document
-  // rather than keep the old one. `createdAt` is in neither, so it cannot move.
-  const fields = { ...payload, updatedAt: timestamp };
-  const write = mergeWrite(admin.name(['publicLists', shareId]), fields);
-  write.updateMask = {
-    fieldPaths: [...new Set([...Object.keys(fields), 'description'])],
-  };
-
-  const writes = [
-    write,
-    mergeWrite(admin.name(['users', uid, 'lists', owner.listId]), {
-      publicSyncedAt: timestamp,
-    }),
-  ];
-  // The showcase card travels in the SAME commit as the list it mirrors —
-  // the atomicity the best-effort pin refresh below never had.
-  const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
-  const entries = projectionEntries(projection);
-  const held = entries.find(entry => entry?.shareId === shareId);
-  if (held && (held.title !== payload.title || held.paperCount !== payload.paperCount)) {
-    writes.push(projectionWrite(
-      admin,
-      uid,
-      entries.map(entry => (entry?.shareId === shareId
-        ? { ...entry, title: payload.title, paperCount: payload.paperCount }
-        : entry)),
-      timestamp,
-      projection,
-    ));
-  }
-  await admin.commit(writes);
-  // Transitional (F12 migration window): profiles that still hold legacy
-  // pinned CARDS get them refreshed best-effort, exactly as before. Retired
-  // with rules v2, when no profile holds cards any more.
-  const pinCard = await refreshPinnedCard(admin, uid, shareId, {
-    title: payload.title, paperCount: payload.paperCount,
-  }, { now });
-  return {
-    shareId,
-    ...payload,
-    pinCard,
-    // What the owner needs to understand a count that does not match: how many
-    // papers the list holds, and how many of them had nothing to publish.
-    ...(listCount === null ? {} : { listCount, skipped }),
-  };
+  // Unreachable: the loop returns or throws on every path.
+  throw new PublicListApiError('PUBLISH_CONFLICT', 409);
 }
 
 function validateUnpublish(body) {
