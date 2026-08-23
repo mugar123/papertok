@@ -511,8 +511,15 @@ async function update(admin, uid, body, { now }) {
 
 async function unpublish(admin, uid, body, { now }) {
   const shareId = requireShareId(body.shareId);
-  const listId = requireListId(body.listId);
-  await requireOwnedShare(admin, uid, shareId);
+  // `body.listId` is read no more. The share document already records which
+  // private list it belongs to, and that record is the only one that can be
+  // trusted here: a client working from a stale idea of its own lists could
+  // delete share S while clearing the pointer of a DIFFERENT published list,
+  // which left one list pointing at a share that no longer exists — neither
+  // unpublishable (the ownership lookup 404s) nor deletable (firestore.rules
+  // vetoes it) — and another list's public copy unreachable for good. `update`
+  // has always taken the id from here; so does this.
+  const owner = await requireOwnedShare(admin, uid, shareId);
 
   const timestamp = new Date(now());
   // The private list loses its pointer in the same commit — and its F12
@@ -523,7 +530,7 @@ async function unpublish(admin, uid, body, { now }) {
   const writes = [
     deleteWrite(admin.name(['publicLists', shareId])),
     deleteWrite(admin.name(['publicListOwners', shareId])),
-    clearFieldsWrite(admin.name(['users', uid, 'lists', listId]), [
+    clearFieldsWrite(admin.name(['users', uid, 'lists', owner.listId]), [
       'publicShareId', 'onProfile', 'publicSyncedAt',
     ]),
   ];

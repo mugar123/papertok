@@ -504,6 +504,17 @@ test('unpublishing removes both public documents AND the private pointer', async
   assert.deepEqual(clearPointer.update.fields, {});
 });
 
+test('the pointer cleared is the share own list, not the one the body names', async () => {
+  stubIdentity();
+  const admin = fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: UID, listId: 'l1' } });
+  // A client with a stale view sends the wrong list. Clearing l2's pointer
+  // would strand l1 — unpublishable and undeletable — and orphan l2's public
+  // copy at the same time.
+  await run('/lists/unpublish', { shareId: SHARE, listId: 'l2' }, { admin });
+  const [, , clearPointer] = admin.commits[0];
+  assert.match(clearPointer.update.name, new RegExp(`users/${UID}/lists/l1$`));
+});
+
 test('unpublishing someone else share is a 403', async () => {
   stubIdentity();
   const admin = fakeAdmin({ [`publicListOwners/${SHARE}`]: { ownerId: OTHER, listId: 'l1' } });
