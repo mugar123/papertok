@@ -6,7 +6,7 @@ import {
   microsToUsd,
   usdToMicros,
 } from './kimi-budget-ledger.js';
-import { reserveRequestQuota } from './request-quota-ledger.js';
+import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.js';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.js';
 
 const PROMPT_VERSION = 'paper-explainer-v4';
@@ -27,8 +27,33 @@ export const AI_REQUEST_BUDGETS = Object.freeze({
   pdfOnlySourceMs: 9_000,
   geminiPrimaryMs: 12_000,
   geminiFallbackMs: 32_000,
+  kimiMs: 52_000,
   browserMs: 70_000,
+  // Room to settle the Kimi ledger and serialise the answer before the browser
+  // stops listening.
+  responseMarginMs: 2_000,
+  // Under these margins a stage cannot finish: the retry would only spend the
+  // remaining time, and Kimi would additionally charge its reservation for a
+  // call that was never going to return.
+  minGeminiFallbackMs: 8_000,
+  minKimiMs: 20_000,
 });
+
+/**
+ * The stage budgets add up to more than the browser waits: 9 + 12 + 32 + 52 =
+ * 105 s against `browserMs`. So each stage is capped by what is left of the
+ * request, not only by its own budget, and a stage without room is skipped.
+ * The caller then gets the real provider error at ~53 s instead of an
+ * `AI_TIMEOUT` at 70 s with the daily use spent and a reservation in flight.
+ */
+export function createRequestDeadline(now = Date.now) {
+  const deadlineAt = now() + AI_REQUEST_BUDGETS.browserMs - AI_REQUEST_BUDGETS.responseMarginMs;
+  return { remainingMs: () => Math.max(0, deadlineAt - now()) };
+}
+
+export function stageBudgetMs(deadline, stageMs) {
+  return deadline ? Math.min(stageMs, deadline.remainingMs()) : stageMs;
+}
 
 const LATEX_JSON_COMMANDS = new Set([
   'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'varepsilon', 'zeta', 'eta',
@@ -507,6 +532,9 @@ export function classifyGeminiError(status, payload) {
     return 'AI_NOT_CONFIGURED';
   }
   if (status === 503 || status === 529) return 'AI_BUSY';
+  // A rejected request is deterministic: the lighter model will reject the very
+  // same body, so this must not look retryable.
+  if (status === 400) return 'AI_INVALID_REQUEST_UPSTREAM';
   return 'AI_UNAVAILABLE';
 }
 
@@ -610,7 +638,7 @@ export function shouldRetryGeminiWithFallback(error) {
     && ['AI_BUSY', 'AI_UNAVAILABLE', 'AI_INVALID_RESPONSE'].includes(error.code);
 }
 
-async function explainWithGemini({ paper, level, language, pdfBase64, env }) {
+async function explainWithGemini({ paper, level, language, pdfBase64, env, deadline }) {
   if (!env.GEMINI_API_KEY) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   const primaryModel = cleanText(env.AI_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
   const fallbackModel = cleanText(env.AI_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL, 100);
@@ -625,11 +653,14 @@ async function explainWithGemini({ paper, level, language, pdfBase64, env }) {
         pdfBase64,
         env,
         model: primaryModel,
-        timeoutMs: AI_REQUEST_BUDGETS.geminiPrimaryMs,
+        timeoutMs: stageBudgetMs(deadline, AI_REQUEST_BUDGETS.geminiPrimaryMs),
       });
     } catch (error) {
       const canFallback = canUseFallback
-        && shouldRetryGeminiWithFallback(error);
+        && shouldRetryGeminiWithFallback(error)
+        // A retry that cannot finish only spends what is left of the request
+        // and returns the same error later.
+        && stageBudgetMs(deadline, AI_REQUEST_BUDGETS.geminiFallbackMs) >= AI_REQUEST_BUDGETS.minGeminiFallbackMs;
       if (!canFallback) throw error;
       await rememberModelCooldown(primaryModel, error);
     }
@@ -642,7 +673,7 @@ async function explainWithGemini({ paper, level, language, pdfBase64, env }) {
     pdfBase64,
     env,
     model: fallbackModel,
-    timeoutMs: AI_REQUEST_BUDGETS.geminiFallbackMs,
+    timeoutMs: stageBudgetMs(deadline, AI_REQUEST_BUDGETS.geminiFallbackMs),
   });
 }
 
@@ -682,14 +713,26 @@ export function isKimiConfigured(env) {
   );
 }
 
+/**
+ * Sniffing the body only makes sense where the provider is explaining that it
+ * refused over money: a 402, or a 403 about billing rather than credentials.
+ * Running it over every status meant that a 500 mentioning a load balancer
+ * matched `balance` and locked the fallback until the first of next month, so
+ * the status decides first and the words only break the tie — with word
+ * boundaries, which is what keeps `balancer` out.
+ */
+const KIMI_BUDGET_WORDS = /\b(?:credits?|balance|billing|budget)\b/;
+const KIMI_MONTHLY_QUOTA = /\bquota\b.{0,40}\bmonthly?\b|\bmonthly?\b.{0,40}\bquota\b/;
+
 export function classifyKimiError(status, payload) {
+  if (status === 429 || status === 503 || status === 529) return 'AI_BUSY';
+  if (status >= 500) return 'AI_UNAVAILABLE';
+  if (status === 402) return 'AI_FALLBACK_BUDGET_EXHAUSTED';
   const detail = JSON.stringify(payload || {}).toLowerCase();
-  if (status === 401 || status === 403) return 'AI_NOT_CONFIGURED';
-  if (status === 402 || /credit|balance|billing|budget|quota.+month|monthly.+quota/.test(detail)) {
+  if (status === 403 && (KIMI_BUDGET_WORDS.test(detail) || KIMI_MONTHLY_QUOTA.test(detail))) {
     return 'AI_FALLBACK_BUDGET_EXHAUSTED';
   }
-  if (status === 429 || status === 503 || status === 529) return 'AI_BUSY';
-  if (status === 400 || status === 404) return 'AI_NOT_CONFIGURED';
+  if (status === 401 || status === 403 || status === 400 || status === 404) return 'AI_NOT_CONFIGURED';
   return 'AI_UNAVAILABLE';
 }
 
@@ -701,6 +744,11 @@ export function shouldFallbackToKimi(error) {
 
 function kimiBudgetConfig(env) {
   return {
+    // The maximum equals the default on purpose: $27 is the ceiling this
+    // project is willing to spend on the paid fallback in a month, and
+    // `KIMI_MONTHLY_HARD_CAP_USD` can only lower it. Raising it is a code
+    // change, deliberately, so a typo in `wrangler.toml` cannot multiply the
+    // bill. `ai-explanation-fallback.test.js` pins this.
     hardCapUsd: safeNumber(
       env.KIMI_MONTHLY_HARD_CAP_USD,
       DEFAULT_KIMI_MONTHLY_HARD_CAP_USD,
@@ -731,11 +779,15 @@ function kimiPeriod(now = new Date()) {
   return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
 }
 
-async function callKimiBudgetLedger(env, payload) {
+async function callKimiBudgetLedger(env, payload, period) {
   if (!env.KIMI_BUDGET_LEDGER?.idFromName || !env.KIMI_BUDGET_LEDGER?.get) {
     throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   }
-  const id = env.KIMI_BUDGET_LEDGER.idFromName(kimiPeriod());
+  // The period travels with the call instead of being recomputed: reserving at
+  // 23:59:59 on the last day of the month and settling a second later would
+  // otherwise settle against a ledger where the reservation does not exist, and
+  // the real spend would never be counted.
+  const id = env.KIMI_BUDGET_LEDGER.idFromName(period);
   const stub = env.KIMI_BUDGET_LEDGER.get(id);
   const response = await stub.fetch('https://papertok.internal/kimi-budget', {
     method: 'POST',
@@ -747,7 +799,7 @@ async function callKimiBudgetLedger(env, payload) {
   return result;
 }
 
-async function reserveKimiBudget(env, amountMicros, hardCapUsd) {
+async function reserveKimiBudget(env, amountMicros, hardCapUsd, period) {
   const reservationId = crypto.randomUUID();
   const hardCapMicros = usdToMicros(hardCapUsd);
   const result = await callKimiBudgetLedger(env, {
@@ -755,7 +807,7 @@ async function reserveKimiBudget(env, amountMicros, hardCapUsd) {
     reservationId,
     amountMicros,
     hardCapMicros,
-  });
+  }, period);
   if (!result.accepted) {
     throw new AIExplanationError(
       'AI_FALLBACK_BUDGET_EXHAUSTED',
@@ -768,7 +820,7 @@ async function reserveKimiBudget(env, amountMicros, hardCapUsd) {
       },
     );
   }
-  return { reservationId, reservationMicros: result.reservationMicros, hardCapUsd };
+  return { reservationId, reservationMicros: result.reservationMicros, hardCapUsd, period };
 }
 
 async function settleKimiBudget(env, reservation, chargedMicros) {
@@ -777,7 +829,7 @@ async function settleKimiBudget(env, reservation, chargedMicros) {
       action: 'settle',
       reservationId: reservation.reservationId,
       chargedMicros,
-    });
+    }, reservation.period);
     return {
       hardCapUsd: reservation.hardCapUsd,
       remainingUsd: Math.max(
@@ -799,7 +851,7 @@ function kimiMaxOutputTokens(level) {
   return 3_200;
 }
 
-async function explainWithKimi({ paper, level, language, env }) {
+async function explainWithKimi({ paper, level, language, env, deadline, now = Date.now }) {
   if (!isKimiConfigured(env) || !paper.abstract) {
     throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   }
@@ -820,17 +872,33 @@ async function explainWithKimi({ paper, level, language, env }) {
     stream: false,
   });
   const budgetConfig = kimiBudgetConfig(env);
+  const usagePrices = {
+    promptUsdPerMillion: budgetConfig.promptUsdPerMillion,
+    cachedPromptUsdPerMillion: budgetConfig.cachedPromptUsdPerMillion,
+    outputUsdPerMillion: budgetConfig.outputUsdPerMillion,
+  };
   const reservationMicros = estimateKimiReservationMicros({
     promptBytes: new TextEncoder().encode(requestBody).byteLength,
     maxOutputTokens,
     promptUsdPerMillion: budgetConfig.promptUsdPerMillion,
     outputUsdPerMillion: budgetConfig.outputUsdPerMillion,
   });
-  const reservation = await reserveKimiBudget(env, reservationMicros, budgetConfig.hardCapUsd);
+  // Checked before reserving, not after: a reservation made for a call that
+  // cannot even start would be charged as unknown consumption.
+  const kimiBudgetMs = stageBudgetMs(deadline, AI_REQUEST_BUDGETS.kimiMs);
+  if (kimiBudgetMs <= 0) throw new AIExplanationError('AI_UNAVAILABLE', 503);
+  const reservation = await reserveKimiBudget(
+    env,
+    reservationMicros,
+    budgetConfig.hardCapUsd,
+    kimiPeriod(new Date(now())),
+  );
+  // Only an unknown consumption — abort, timeout, dead network — pays the whole
+  // reservation. Every other outcome below replaces this with what was measured.
   let chargedMicros = reservation.reservationMicros;
   let result;
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 52_000);
+  const timeout = setTimeout(() => controller.abort(), kimiBudgetMs);
   try {
     const response = await fetch(modalKimiApiUrl(env, 'chat/completions'), {
       method: 'POST',
@@ -840,6 +908,10 @@ async function explainWithKimi({ paper, level, language, env }) {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
+      // The provider answered, so what it billed is whatever `usage` says —
+      // nothing at all for most errors. Charging the full reservation here let
+      // ~180 failed attempts eat the monthly cap without a token generated.
+      chargedMicros = calculateKimiUsageMicros(payload?.usage ?? {}, usagePrices);
       const code = classifyKimiError(response.status, payload);
       throw new AIExplanationError(
         code,
@@ -852,11 +924,7 @@ async function explainWithKimi({ paper, level, language, env }) {
             : null,
       );
     }
-    const measuredMicros = calculateKimiUsageMicros(payload.usage, {
-      promptUsdPerMillion: budgetConfig.promptUsdPerMillion,
-      cachedPromptUsdPerMillion: budgetConfig.cachedPromptUsdPerMillion,
-      outputUsdPerMillion: budgetConfig.outputUsdPerMillion,
-    });
+    const measuredMicros = calculateKimiUsageMicros(payload?.usage ?? {}, usagePrices);
     if (measuredMicros > 0) chargedMicros = measuredMicros;
     result = {
       explanation: parseOpenAIChatPayload(payload),
@@ -870,7 +938,10 @@ async function explainWithKimi({ paper, level, language, env }) {
   } finally {
     clearTimeout(timeout);
     const budget = await settleKimiBudget(env, reservation, chargedMicros);
-    if (result && budget) result.budget = budget;
+    // The monthly cap and its remaining balance are the operator's business.
+    // They used to ride along in the answer, which cached them for a week and
+    // served them to anyone; the log keeps the signal without shipping it.
+    if (budget) console.info('AI fallback budget', JSON.stringify(budget));
   }
   return result;
 }
@@ -891,7 +962,10 @@ async function explainWithProviderChain({ providerName, fallbackProviderName, ..
       && providerName === 'gemini'
       && shouldFallbackToKimi(primaryError)
       && isKimiConfigured(args.env)
-      && Boolean(args.paper.abstract);
+      && Boolean(args.paper.abstract)
+      // Starting Kimi without room to finish charges its reservation for a call
+      // the browser will not wait for. The honest answer is Gemini's error.
+      && stageBudgetMs(args.deadline, AI_REQUEST_BUDGETS.kimiMs) >= AI_REQUEST_BUDGETS.minKimiMs;
     if (!canUseKimi) throw primaryError;
     try {
       return await PROVIDERS['modal-kimi'](args);
@@ -1010,18 +1084,46 @@ export function getDailyQuotaReset(now = Date.now()) {
   };
 }
 
+/**
+ * Failures that are not the user's doing give the daily use back. What is left
+ * out matters as much: `AI_INVALID_RESPONSE` and `AI_INVALID_REQUEST_UPSTREAM`
+ * mean the provider did process the request, and refunding those would hand out
+ * unlimited free retries against its quota.
+ */
+const REFUNDABLE_AI_CODES = new Set([
+  'AI_BUSY',
+  'AI_UNAVAILABLE',
+  'AI_NOT_CONFIGURED',
+  'AI_SOURCE_UNAVAILABLE',
+  'AI_FALLBACK_BUDGET_EXHAUSTED',
+]);
+
+export function shouldRefundAIQuota(error) {
+  // A crash of ours is never the user's fault either.
+  if (!(error instanceof AIExplanationError)) return true;
+  // Past the reservation this can only be the provider's daily wall, never the
+  // user's own — that one is refused before anything is counted.
+  if (error.code === 'AI_QUOTA_EXHAUSTED') return error.quota?.scope !== 'user';
+  return REFUNDABLE_AI_CODES.has(error.code);
+}
+
 async function reserveAIQuota(env, uid) {
-  const day = todayKey();
-  const userLimit = safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100);
-  const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
-  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
-    periodKey: `ai:${day}`,
+  // The day is fixed once and travels with the reservation: recomputing it at
+  // release time would refund against tomorrow's ledger for a request that
+  // straddles UTC midnight.
+  const ledgerRequest = {
+    periodKey: `ai:${todayKey()}`,
     subject: `ai:${uid}`,
-    subjectLimit: userLimit,
-    globalLimit,
-  });
+    subjectLimit: safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100),
+    globalLimit: safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000),
+  };
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {
-    throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+    // A ledger that is merely unreachable is a transient outage worth retrying;
+    // only a missing binding means the feature is not configured.
+    throw reservation.code === 'QUOTA_LEDGER_NOT_CONFIGURED'
+      ? new AIExplanationError('AI_NOT_CONFIGURED', 503)
+      : new AIExplanationError('AI_UNAVAILABLE', 503);
   }
   if (!reservation.accepted) {
     throw new AIExplanationError('AI_QUOTA_EXHAUSTED', 429, 'AI_QUOTA_EXHAUSTED', {
@@ -1030,7 +1132,15 @@ async function reserveAIQuota(env, uid) {
       ...(reservation.scope === 'user' ? { remainingUses: 0 } : {}),
     });
   }
-  return { remainingUses: reservation.remaining };
+  return { remainingUses: reservation.remaining, ledgerRequest };
+}
+
+async function releaseAIQuota(env, quota) {
+  try {
+    await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, quota.ledgerRequest);
+  } catch {
+    // A refund that cannot be delivered must not replace the real error.
+  }
 }
 
 async function sha256(value) {
@@ -1043,7 +1153,10 @@ export async function explanationCacheKey(paper, level, language, provider, mode
   return new Request(`https://papertok.internal/ai/${provider}/${model}/${PROMPT_VERSION}/${language}/${level}/${fingerprint}`);
 }
 
-export async function handleAIExplanation(request, env) {
+export async function handleAIExplanation(request, env, { now = Date.now } = {}) {
+  // The clock starts where the browser's does: everything below shares the one
+  // budget the caller is willing to wait for.
+  const deadline = createRequestDeadline(now);
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_REQUEST_BYTES) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
   const uid = await verifyFirebaseUser(request, env);
@@ -1069,22 +1182,32 @@ export async function handleAIExplanation(request, env) {
   if (cached) return { ...(await cached.json()), remainingUses: null, cached: true };
 
   const quota = await reserveAIQuota(env, uid);
-  const pdfBase64 = await fetchPaperPdf(
-    paper.pdfUrl,
-    paper.abstract
-      ? AI_REQUEST_BUDGETS.pdfWithAbstractMs
-      : AI_REQUEST_BUDGETS.pdfOnlySourceMs,
-  );
-  if (!pdfBase64 && !paper.abstract) throw new AIExplanationError('AI_INVALID_PAPER', 400);
-  const result = await explainWithProviderChain({
-    providerName,
-    fallbackProviderName,
-    paper,
-    level,
-    language,
-    pdfBase64,
-    env,
-  });
+  let result;
+  try {
+    const pdfBudgetMs = stageBudgetMs(
+      deadline,
+      paper.abstract ? AI_REQUEST_BUDGETS.pdfWithAbstractMs : AI_REQUEST_BUDGETS.pdfOnlySourceMs,
+    );
+    const pdfBase64 = pdfBudgetMs > 0 ? await fetchPaperPdf(paper.pdfUrl, pdfBudgetMs) : null;
+    // The paper was accepted with a PDF and no abstract, so an empty download is
+    // the source being unreachable, not the paper being unusable. Blaming the
+    // paper here also spent the daily use on a transient failure.
+    if (!pdfBase64 && !paper.abstract) throw new AIExplanationError('AI_SOURCE_UNAVAILABLE', 502);
+    result = await explainWithProviderChain({
+      providerName,
+      fallbackProviderName,
+      paper,
+      level,
+      language,
+      pdfBase64,
+      env,
+      deadline,
+      now,
+    });
+  } catch (error) {
+    if (shouldRefundAIQuota(error)) await releaseAIQuota(env, quota);
+    throw error;
+  }
   const cacheableResponse = {
     ...result,
     level,

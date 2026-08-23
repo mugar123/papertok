@@ -71,6 +71,46 @@ export function calculateKimiUsageMicros(usage = {}, {
   return usdToMicros(costUsd);
 }
 
+const RESERVATION_PREFIX = 'reservation:';
+// A reservation only lives while the Modal call is in flight, and that call is
+// capped well under a minute. Five minutes is a wide margin for it, and short
+// enough that a reservation orphaned between reserve and settle — a cancelled
+// request, an eviction — stops shrinking the monthly cap almost at once instead
+// of until the first of next month.
+export const RESERVATION_TTL_MS = 5 * 60 * 1000;
+
+/**
+ * Reservations used to be a bare number, with nothing to tell a live one from
+ * the leftovers of an invocation that died before settling. A legacy entry is
+ * not dropped on sight — that could cancel a reservation still in flight during
+ * a deploy — it is handed a full TTL counted from now.
+ */
+function reservationRecord(value, now) {
+  const isObject = value !== null && typeof value === 'object';
+  const expiresAt = isObject ? Number(value.expiresAt) : Number.NaN;
+  const dated = Number.isFinite(expiresAt);
+  return {
+    amountMicros: positiveInteger(isObject ? value.amountMicros : value),
+    expiresAt: dated ? expiresAt : now + RESERVATION_TTL_MS,
+    dated,
+  };
+}
+
+async function sweepExpiredReservations(transaction, now) {
+  const entries = await transaction.list({ prefix: RESERVATION_PREFIX });
+  let releasedMicros = 0;
+  for (const [key, value] of entries) {
+    const record = reservationRecord(value, now);
+    if (record.expiresAt <= now) {
+      await transaction.delete(key);
+      releasedMicros += record.amountMicros;
+    } else if (!record.dated) {
+      await transaction.put(key, { amountMicros: record.amountMicros, expiresAt: record.expiresAt });
+    }
+  }
+  return releasedMicros;
+}
+
 function json(payload, status = 200) {
   return new Response(JSON.stringify(payload), {
     status,
@@ -93,7 +133,8 @@ export class KimiBudgetLedger {
     }
 
     const result = await this.state.storage.transaction(async transaction => {
-      const reservationKey = `reservation:${reservationId}`;
+      const now = Date.now();
+      const reservationKey = `${RESERVATION_PREFIX}${reservationId}`;
       const [spentValue, reservedValue, existingReservation] = await Promise.all([
         transaction.get('spentMicros'),
         transaction.get('reservedMicros'),
@@ -106,25 +147,30 @@ export class KimiBudgetLedger {
         if (existingReservation) {
           return {
             accepted: true,
-            reservationMicros: positiveInteger(existingReservation),
+            reservationMicros: reservationRecord(existingReservation, now).amountMicros,
             spentMicros,
             reservedMicros,
           };
         }
+        const releasedMicros = await sweepExpiredReservations(transaction, now);
+        const liveReservedMicros = Math.max(0, reservedMicros - releasedMicros);
+        // Written before the cap check: those keys are already gone, so a
+        // rejected reservation must not leave the counter claiming otherwise.
+        if (releasedMicros) await transaction.put('reservedMicros', liveReservedMicros);
         const amountMicros = positiveInteger(payload.amountMicros);
         const hardCapMicros = positiveInteger(payload.hardCapMicros);
-        if (!amountMicros || !hardCapMicros || spentMicros + reservedMicros + amountMicros > hardCapMicros) {
-          return { accepted: false, spentMicros, reservedMicros, hardCapMicros };
+        if (!amountMicros || !hardCapMicros || spentMicros + liveReservedMicros + amountMicros > hardCapMicros) {
+          return { accepted: false, spentMicros, reservedMicros: liveReservedMicros, hardCapMicros };
         }
         await Promise.all([
-          transaction.put(reservationKey, amountMicros),
-          transaction.put('reservedMicros', reservedMicros + amountMicros),
+          transaction.put(reservationKey, { amountMicros, expiresAt: now + RESERVATION_TTL_MS }),
+          transaction.put('reservedMicros', liveReservedMicros + amountMicros),
         ]);
         return {
           accepted: true,
           reservationMicros: amountMicros,
           spentMicros,
-          reservedMicros: reservedMicros + amountMicros,
+          reservedMicros: liveReservedMicros + amountMicros,
           hardCapMicros,
         };
       }
@@ -132,7 +178,7 @@ export class KimiBudgetLedger {
       if (!existingReservation) {
         return { settled: true, spentMicros, reservedMicros };
       }
-      const reservationMicros = positiveInteger(existingReservation);
+      const reservationMicros = reservationRecord(existingReservation, now).amountMicros;
       const chargedMicros = Math.min(
         reservationMicros,
         positiveInteger(payload.chargedMicros, reservationMicros),

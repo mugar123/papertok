@@ -1,3 +1,4 @@
+const LEDGER_ACTIONS = new Set(['reserve', 'release']);
 const MAX_SUBJECT_KEY_LENGTH = 96;
 const MAX_LIMIT = 1_000_000;
 const RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
@@ -30,7 +31,8 @@ export class RequestQuotaLedger {
     const subjectKey = safeSubjectKey(payload?.subjectKey);
     const subjectLimit = positiveInteger(payload?.subjectLimit);
     const globalLimit = positiveInteger(payload?.globalLimit);
-    if (payload?.action !== 'reserve' || !subjectKey || !subjectLimit || !globalLimit) {
+    const action = payload?.action;
+    if (!LEDGER_ACTIONS.has(action) || !subjectKey || !subjectLimit || !globalLimit) {
       return json({ code: 'INVALID_REQUEST' }, 400);
     }
 
@@ -42,6 +44,23 @@ export class RequestQuotaLedger {
       ]);
       const subjectUsage = Math.max(0, Number(subjectValue) || 0);
       const globalUsage = Math.max(0, Number(globalValue) || 0);
+
+      if (action === 'release') {
+        // Nothing was delivered, so the use goes back. The floor is what keeps a
+        // repeated release from minting quota that was never reserved.
+        const releasedSubjectUsage = Math.max(0, subjectUsage - 1);
+        const releasedGlobalUsage = Math.max(0, globalUsage - 1);
+        await Promise.all([
+          transaction.put(subjectStorageKey, releasedSubjectUsage),
+          transaction.put('global', releasedGlobalUsage),
+        ]);
+        return {
+          released: true,
+          subjectUsage: releasedSubjectUsage,
+          globalUsage: releasedGlobalUsage,
+          remaining: Math.max(0, subjectLimit - releasedSubjectUsage),
+        };
+      }
 
       if (subjectUsage >= subjectLimit) {
         return { accepted: false, scope: 'user', subjectUsage, globalUsage };
@@ -80,7 +99,7 @@ async function sha256(value) {
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export async function reserveRequestQuota(namespace, {
+async function callRequestQuotaLedger(namespace, action, {
   periodKey,
   subject,
   subjectLimit,
@@ -91,11 +110,11 @@ export async function reserveRequestQuota(namespace, {
   }
   const subjectKey = await sha256(subject);
   const id = namespace.idFromName(String(periodKey).slice(0, 160));
-  const response = await namespace.get(id).fetch('https://papertok.internal/quota/reserve', {
+  const response = await namespace.get(id).fetch(`https://papertok.internal/quota/${action}`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({
-      action: 'reserve',
+      action,
       subjectKey,
       subjectLimit,
       globalLimit,
@@ -103,4 +122,17 @@ export async function reserveRequestQuota(namespace, {
   });
   if (!response.ok) return { accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE' };
   return response.json();
+}
+
+export function reserveRequestQuota(namespace, options) {
+  return callRequestQuotaLedger(namespace, 'reserve', options);
+}
+
+/**
+ * Gives a reserved use back. The caller has to hand over the same `periodKey`
+ * it reserved with — recomputing today's key at release time would credit
+ * tomorrow's ledger for a request that crossed UTC midnight.
+ */
+export function releaseRequestQuota(namespace, options) {
+  return callRequestQuotaLedger(namespace, 'release', options);
 }

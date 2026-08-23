@@ -28,12 +28,22 @@ function installCache() {
   return store;
 }
 
-/** A daily AI quota ledger that always has room left. */
+/** A daily AI quota ledger that always has room left, and remembers who asked. */
 function requestQuotaLedger(remaining = 4) {
+  const calls = [];
   return {
+    calls,
     idFromName: name => name,
-    get: () => ({
-      fetch: async () => new Response(JSON.stringify({ accepted: true, remaining })),
+    get: periodKey => ({
+      fetch: async (_url, init) => {
+        const body = JSON.parse(init.body);
+        calls.push({ periodKey, ...body });
+        return new Response(JSON.stringify(
+          body.action === 'release'
+            ? { released: true, remaining: remaining + 1 }
+            : { accepted: true, remaining },
+        ));
+      },
     }),
   };
 }
@@ -42,20 +52,45 @@ function requestQuotaLedger(remaining = 4) {
  * The real Durable Object over in-memory storage, so reservations and
  * settlements are accounted exactly as they are in production.
  */
-function kimiBudgetLedger({ spentMicros = 0 } = {}) {
+function inMemoryKimiLedger(spentMicros = 0) {
   const store = new Map();
   if (spentMicros) store.set('spentMicros', spentMicros);
   const storage = {
     get: async key => store.get(key),
     put: async (key, value) => { store.set(key, value); },
     delete: async key => { store.delete(key); },
+    // Workers hands back a Map from `list`, verified against workerd.
+    list: async ({ prefix = '' } = {}) => new Map(
+      [...store].filter(([key]) => String(key).startsWith(prefix)),
+    ),
   };
   storage.transaction = async run => run(storage);
   const ledger = new KimiBudgetLedger({ storage });
+  return { store, fetch: (url, init) => ledger.fetch(new Request(url, init)) };
+}
+
+function kimiBudgetLedger({ spentMicros = 0 } = {}) {
+  const ledger = inMemoryKimiLedger(spentMicros);
   return {
-    store,
+    store: ledger.store,
     idFromName: name => name,
-    get: () => ({ fetch: (url, init) => ledger.fetch(new Request(url, init)) }),
+    get: () => ({ fetch: ledger.fetch }),
+  };
+}
+
+/** One ledger per month, so a reserve and a settle can land on different ones. */
+function kimiBudgetLedgerByPeriod() {
+  const ledgers = new Map();
+  const asked = [];
+  const ledgerFor = period => {
+    if (!ledgers.has(period)) ledgers.set(period, inMemoryKimiLedger());
+    return ledgers.get(period);
+  };
+  return {
+    asked,
+    storeFor: period => ledgerFor(period).store,
+    idFromName: period => { asked.push(period); return period; },
+    get: period => ({ fetch: ledgerFor(period).fetch }),
   };
 }
 
@@ -217,8 +252,9 @@ test('an exhausted Gemini daily quota hands the explanation to Kimi K3', async (
   // 900 prompt + (700 + 300) output tokens at $3 / $15 per million.
   assert.equal(env.KIMI_BUDGET_LEDGER.store.get('spentMicros'), 17_700);
   assert.equal(env.KIMI_BUDGET_LEDGER.store.get('reservedMicros'), 0);
-  assert.equal(result.budget.hardCapUsd, 27);
-  assert.equal(result.budget.remainingUsd, 26.9823);
+  // The monthly cap and what is left of it are the operator's business: they
+  // used to ride in the answer, which cached them for a week for everyone.
+  assert.equal('budget' in result, false);
 });
 
 test('the Kimi answer is cached under the fallback pair, not under Gemini', async () => {
@@ -235,6 +271,7 @@ test('the Kimi answer is cached under the fallback pair, not under Gemini', asyn
 
   assert.equal(cached.cached, true);
   assert.equal(cached.provider, 'modal-kimi');
+  assert.equal('budget' in cached, false);
   assert.equal(cached.explanation.takeaway, EXPLANATION.takeaway);
   assert.equal(calls.filter(call => call.url.includes('modal.run')).length, 1);
 });
@@ -291,9 +328,11 @@ test('a model Modal does not serve surfaces the original Gemini quota error', as
     error => error.code === 'AI_QUOTA_EXHAUSTED' && error.quota.scope === 'provider',
   );
 
-  // The failed attempt still charges its reservation: a misconfigured model
-  // silently eats the monthly safety budget instead of raising an alarm.
-  assert.ok(env.KIMI_BUDGET_LEDGER.store.get('spentMicros') > 100_000);
+  // The provider answered with an error, so it billed nothing. Charging the
+  // whole reservation here meant ~180 failed attempts ate the $27 cap and left
+  // the fallback dead for the rest of the month.
+  assert.equal(env.KIMI_BUDGET_LEDGER.store.get('spentMicros'), 0);
+  assert.equal(env.KIMI_BUDGET_LEDGER.store.get('reservedMicros'), 0);
 });
 
 test('the contract follows the requested language', async () => {
@@ -337,4 +376,262 @@ test('translated keys from Kimi fail loudly instead of rendering half empty', as
     handleAIExplanation(explainRequest(), env),
     error => error.code === 'AI_INVALID_RESPONSE' && error.status === 502,
   );
+});
+
+// ---------------------------------------------------------------------------
+// What a failure costs (G3: F6, F8, F9, F12, F15).
+// ---------------------------------------------------------------------------
+
+const PDF_ONLY_PAPER = {
+  id: 'arxiv:2608.09999',
+  title: 'Sideband cooling without an abstract',
+  pdfUrl: 'https://arxiv.org/pdf/2608.09999.pdf',
+  year: 2026,
+};
+
+const ledgerActions = env => env.REQUEST_QUOTA_LEDGER.calls.map(call => call.action);
+
+test('a Modal error that reports usage is charged for exactly that usage', async () => {
+  installCache();
+  const env = envWith();
+  stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+    'modal.run': () => json({
+      error: { message: 'Generation stopped', type: 'server_error' },
+      usage: { prompt_tokens: 900, completion_tokens: 700, completion_tokens_details: { reasoning_tokens: 300 } },
+    }, 500),
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env),
+    error => error.code === 'AI_UNAVAILABLE',
+  );
+
+  assert.equal(env.KIMI_BUDGET_LEDGER.store.get('spentMicros'), 17_700);
+  assert.equal(env.KIMI_BUDGET_LEDGER.store.get('reservedMicros'), 0);
+});
+
+test('a dead network still charges the reservation, because nothing was measured', async () => {
+  installCache();
+  const env = envWith();
+  stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+    'modal.run': () => { throw new TypeError('network error'); },
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env),
+    error => error.code === 'AI_UNAVAILABLE',
+  );
+
+  // The opposite of the case above: with no answer there is no way to know what
+  // ran on the other side, so the conservative estimate stands.
+  assert.ok(env.KIMI_BUDGET_LEDGER.store.get('spentMicros') > 100_000);
+  assert.equal(env.KIMI_BUDGET_LEDGER.store.get('reservedMicros'), 0);
+});
+
+test('a provider outage gives the daily use back instead of spending it', async () => {
+  installCache();
+  const env = envWith();
+  stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json({ error: { code: 500, message: 'Internal error' } }, 500),
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env),
+    error => error.code === 'AI_UNAVAILABLE',
+  );
+
+  assert.deepEqual(ledgerActions(env), ['reserve', 'release']);
+  const [reserve, release] = env.REQUEST_QUOTA_LEDGER.calls;
+  // Same day and same identity, or the refund lands on another ledger.
+  assert.equal(release.periodKey, reserve.periodKey);
+  assert.equal(release.subjectKey, reserve.subjectKey);
+});
+
+test('an unreachable PDF blames the source, not the paper, and refunds', async () => {
+  installCache();
+  const env = envWith();
+  stubFetch({
+    identitytoolkit: identityOk,
+    'arxiv.org': () => new Response('down', { status: 500 }),
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(PDF_ONLY_PAPER), env),
+    error => error.code === 'AI_SOURCE_UNAVAILABLE' && error.status === 502,
+  );
+
+  assert.deepEqual(ledgerActions(env), ['reserve', 'release']);
+});
+
+test('a malformed answer keeps the use spent: the provider did the work', async () => {
+  installCache();
+  const env = envWith();
+  stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json({ candidates: [{ content: { parts: [{ text: 'not json' }] } }] }),
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env),
+    error => error.code === 'AI_INVALID_RESPONSE',
+  );
+
+  // Refunding this would hand out unlimited free retries against the provider.
+  assert.deepEqual(ledgerActions(env), ['reserve']);
+});
+
+test('a rejected Gemini request is not repeated on the lighter model', async () => {
+  installCache();
+  const env = envWith();
+  const calls = stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json({
+      error: { code: 400, status: 'INVALID_ARGUMENT', message: 'Request contains an invalid argument.' },
+    }, 400),
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env),
+    error => error.code === 'AI_INVALID_REQUEST_UPSTREAM' && error.status === 502,
+  );
+
+  assert.equal(calls.filter(call => call.url.includes('generativelanguage')).length, 1);
+  assert.deepEqual(ledgerActions(env), ['reserve']);
+});
+
+test('a Gemini attempt that eats the request budget skips Kimi instead of charging it', async () => {
+  installCache();
+  const env = envWith();
+  let clock = Date.parse('2026-08-23T10:00:00.000Z');
+  const calls = stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => {
+      clock += 55_000;
+      return json(GEMINI_DAILY_QUOTA, 429);
+    },
+    'modal.run': kimiCompletion,
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env, { now: () => clock }),
+    error => error.code === 'AI_QUOTA_EXHAUSTED' && error.quota.scope === 'provider',
+  );
+
+  // 55 s spent leaves 13 s of the browser's 70: not enough for Kimi's 52 s, and
+  // starting it anyway would charge $0.15 for an answer nobody waits for.
+  assert.equal(calls.some(call => call.url.includes('modal.run')), false);
+  assert.equal(env.KIMI_BUDGET_LEDGER.store.get('reservedMicros'), undefined);
+  assert.deepEqual(ledgerActions(env), ['reserve', 'release']);
+});
+
+test('the same wall with room to spare still reaches Kimi', async () => {
+  installCache();
+  const env = envWith();
+  let clock = Date.parse('2026-08-23T10:00:00.000Z');
+  const calls = stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => {
+      clock += 40_000;
+      return json(GEMINI_DAILY_QUOTA, 429);
+    },
+    'modal.run': kimiCompletion,
+  });
+
+  const result = await handleAIExplanation(explainRequest(), env, { now: () => clock });
+
+  assert.equal(result.provider, 'modal-kimi');
+  assert.equal(calls.filter(call => call.url.includes('modal.run')).length, 1);
+});
+
+test('the monthly cap cannot be raised from configuration', async () => {
+  installCache();
+  const env = envWith({
+    KIMI_MONTHLY_HARD_CAP_USD: '50',
+    KIMI_BUDGET_LEDGER: kimiBudgetLedger({ spentMicros: 26_999_000 }),
+  });
+  const calls = stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+    'modal.run': kimiCompletion,
+  });
+
+  // $27 is the ceiling on purpose: the variable can only lower it.
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env),
+    error => error.code === 'AI_FALLBACK_BUDGET_EXHAUSTED',
+  );
+  assert.equal(calls.some(call => call.url.includes('modal.run')), false);
+});
+
+test('a month that rolls over between reserve and settle settles where it reserved', async () => {
+  installCache();
+  const env = envWith({ KIMI_BUDGET_LEDGER: kimiBudgetLedgerByPeriod() });
+  let clock = Date.parse('2026-11-30T23:59:59.900Z');
+  stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+    'modal.run': () => {
+      clock += 200;
+      return kimiCompletion();
+    },
+  });
+
+  await handleAIExplanation(explainRequest(), env, { now: () => clock });
+
+  // Recomputing the month per call settled against a ledger where the
+  // reservation did not exist: the spend vanished and the reservation stayed.
+  assert.deepEqual(env.KIMI_BUDGET_LEDGER.asked, ['2026-11', '2026-11']);
+  assert.equal(env.KIMI_BUDGET_LEDGER.storeFor('2026-11').get('spentMicros'), 17_700);
+  assert.equal(env.KIMI_BUDGET_LEDGER.storeFor('2026-11').get('reservedMicros'), 0);
+  assert.equal(env.KIMI_BUDGET_LEDGER.storeFor('2026-12').size, 0);
+});
+
+test('a quota ledger that is merely unreachable is not «not configured»', async () => {
+  installCache();
+  stubFetch({ identitytoolkit: identityOk });
+
+  const unreachable = envWith({
+    REQUEST_QUOTA_LEDGER: {
+      idFromName: name => name,
+      get: () => ({ fetch: async () => new Response('boom', { status: 500 }) }),
+    },
+  });
+  const missing = envWith({ REQUEST_QUOTA_LEDGER: undefined });
+
+  // Transient: the reader gets a retry button instead of «not available yet».
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), unreachable),
+    error => error.code === 'AI_UNAVAILABLE' && error.status === 503,
+  );
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), missing),
+    error => error.code === 'AI_NOT_CONFIGURED' && error.status === 503,
+  );
+});
+
+test('Kimi as the primary provider does not reserve budget it cannot spend', async () => {
+  installCache();
+  const env = envWith({ AI_PROVIDER: 'modal-kimi', AI_FALLBACK_PROVIDER: '' });
+  let clock = Date.parse('2026-08-23T10:00:00.000Z');
+  const calls = stubFetch({
+    identitytoolkit: () => {
+      clock += 70_000;
+      return identityOk();
+    },
+    'modal.run': kimiCompletion,
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env, { now: () => clock }),
+    error => error.code === 'AI_UNAVAILABLE',
+  );
+
+  assert.equal(calls.some(call => call.url.includes('modal.run')), false);
+  assert.equal(env.KIMI_BUDGET_LEDGER.store.size, 0);
+  assert.deepEqual(ledgerActions(env), ['reserve', 'release']);
 });
