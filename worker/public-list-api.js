@@ -101,11 +101,21 @@ function requireListId(value) {
   return listId;
 }
 
+/**
+ * The ceiling is a number of BYTES, so it has to be measured in bytes.
+ * `text.length` counts UTF-16 code units, and a body of three-byte characters
+ * weighs three times what it reports: a 1 MB budget that quietly accepted 3 MB.
+ * `content-length` catches any ordinary client, but a chunked body carries no
+ * such header, which is precisely the shape a caller who cared would send.
+ */
 async function readBody(request) {
   const declared = Number(request.headers.get('content-length') || 0);
   if (declared > MAX_BODY_BYTES) throw new PublicListApiError('PAYLOAD_TOO_LARGE', 413);
-  const text = await request.text();
-  if (text.length > MAX_BODY_BYTES) throw new PublicListApiError('PAYLOAD_TOO_LARGE', 413);
+  const buffer = await request.arrayBuffer();
+  if (buffer.byteLength > MAX_BODY_BYTES) throw new PublicListApiError('PAYLOAD_TOO_LARGE', 413);
+  // Non-fatal on purpose: invalid UTF-8 becomes U+FFFD and is refused below as
+  // INVALID_BODY, instead of throwing a TypeError straight past this function.
+  const text = new TextDecoder().decode(buffer);
   try {
     const body = JSON.parse(text);
     if (!body || typeof body !== 'object' || Array.isArray(body)) {

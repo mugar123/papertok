@@ -104,6 +104,25 @@ function post(pathname, body, { token = 'id-token' } = {}) {
   });
 }
 
+/**
+ * A POST whose body arrives chunked, so no `content-length` rides along and the
+ * only thing standing between the caller and the isolate is the size check.
+ */
+function streamedPost(pathname, text) {
+  const bytes = new TextEncoder().encode(text);
+  return new Request(`https://worker.test${pathname}`, {
+    method: 'POST',
+    headers: { authorization: 'Bearer id-token', 'content-type': 'application/json' },
+    body: new ReadableStream({
+      start(controller) {
+        controller.enqueue(bytes);
+        controller.close();
+      },
+    }),
+    duplex: 'half',
+  });
+}
+
 const paper = (i, overrides = {}) => ({
   id: `arxiv:2608.${18000 + i}`,
   title: `Paper ${i}`,
@@ -119,8 +138,8 @@ const paper = (i, overrides = {}) => ({
 const listOf = count => Array.from({ length: count }, (_, i) => paper(i));
 
 /** Runs the real entry point with the doubles wired in. */
-async function run(pathname, body, { admin = fakeAdmin(), env = envWith(), cryptoApi } = {}) {
-  return handlePublicListRequest(post(pathname, body), env, pathname, {
+async function run(pathname, body, { admin = fakeAdmin(), env = envWith(), cryptoApi, request } = {}) {
+  return handlePublicListRequest(request || post(pathname, body), env, pathname, {
     admin,
     now: () => NOW,
     cryptoApi: cryptoApi || { getRandomValues: bytes => bytes.fill(0xaa) },
@@ -174,6 +193,29 @@ test('identity is re-checked on every write, never served from the 60 s cache', 
   const admin2 = fakeAdmin({ [`users/${UID}/lists/l2`]: { id: 'l2', name: 'L' } });
   await run('/lists/publish', { listId: 'l2', title: 'T', papers: [] }, { admin: admin2 });
   assert.equal(identityLookups, 2, 'a revoked token must not stay good for a minute');
+});
+
+test('the body ceiling counts bytes, not UTF-16 code units', async () => {
+  stubIdentity();
+  // 400k three-byte characters: 400k code units and 1.2 MB. Measured as a
+  // string length it slipped under a limit that is written in bytes.
+  const oversized = `{"listId":"l1","title":"${'字'.repeat(400_000)}","papers":[]}`;
+  await assert.rejects(
+    () => run('/lists/publish', null, {
+      request: streamedPost('/lists/publish', oversized),
+    }),
+    error => error.code === 'PAYLOAD_TOO_LARGE' && error.status === 413,
+  );
+});
+
+test('a body that is merely large still gets through', async () => {
+  stubIdentity();
+  const admin = fakeAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1' } });
+  const padded = JSON.stringify({
+    listId: 'l1', title: 'T', papers: [], junk: 'a'.repeat(900_000),
+  });
+  await run('/lists/publish', null, { admin, request: streamedPost('/lists/publish', padded) });
+  assert.equal(admin.commits.length, 1, '900 kB of ASCII is under the ceiling and must pass');
 });
 
 // ---------------------------------------------------------------------------
