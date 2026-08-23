@@ -63,6 +63,93 @@ navegador; hay que disparar `.click()` real del DOM desde la consola. Se perdió
 un rato creyendo que el botón «Crear» estaba roto cuando lo que fallaba era la
 automatización.
 
+## G3: una avería de IA deja de cobrarse como consumo (2026-08-23)
+
+Diez fallos (F6–F15) de `ERRORES.MD`, los diez re-verificados leyendo el código
+antes de tocarlo y los diez **reales**, con dos correcciones de diagnóstico
+propias. Las suites del grupo pasan de 33 a **58** tests; la suite completa en
+verde bajo Node 25 y bajo **Node 22** (lo que corre CI): 1.064, 0 `cancelled`.
+Los 17 arreglos verificados por mutación uno a uno, **sin mutantes vivos**.
+Worker desplegado (versión `e5b760bf`), `/health` y `/health/ai` en verde con
+Gemini y el fallback Kimi disponibles.
+
+### Las dos correcciones al informe
+
+- **F8 punto 3 ya estaba hecho.** «Mover el caso sin abstract y sin PDF delante
+  de la reserva» ya ocurría: `normalizePaperForExplanation` lo rechaza antes de
+  tocar la cuota. Lo que quedaba vivo era otro caso —el PDF existía y su
+  descarga falló— y ese es el punto 4: ahora `AI_SOURCE_UNAVAILABLE` 502 con
+  devolución, en vez de un 400 que culpaba al paper.
+- **F14 no era solo la caché.** `budget` viajaba también en la respuesta viva,
+  así que sacarlo únicamente del objeto cacheado dejaba la misma fuga, más
+  fresca. Comprobado que ningún consumidor del cliente lo lee: fuera de la
+  respuesta y al log del Worker.
+
+### Lo arreglado, por orden de aterrizaje
+
+1. **F7** — `classifyKimiError` decidía por substring sobre el payload entero y
+   **antes** de mirar el status: «load ba·lanc·er» en un 500 casaba con
+   `balance` y devolvía «presupuesto agotado» con reset el día 1. Ahora manda el
+   status (429/503/529 → `AI_BUSY`, todo 5xx → `AI_UNAVAILABLE`) y el sniffing
+   queda en 402/403 con límites de palabra, que es lo que deja fuera a
+   `balancer`.
+2. **F6** — un HTTP no-ok liquida lo que diga `usage` (cero casi siempre), no la
+   reserva íntegra. El cargo completo queda solo para abort/timeout/red, donde
+   el consumo es desconocido. El test que lo reconocía como trampa
+   («silently eats the monthly safety budget») es ahora el de regresión.
+3. **F11** — el periodo se calcula una vez y viaja a reserve y settle. El test
+   inyecta el reloj en `2026-11-30T23:59:59.900Z` **a propósito**: con un mes
+   distinto del real, un mutante que recalcule `kimiPeriod()` se delata.
+4. **F14** — cap y saldo fuera de la respuesta y de la caché de 7 días.
+5. **F10** — las reservas Kimi guardan `expiresAt` y cada reserve barre las
+   caducadas (TTL 5 min), devolviendo sus micros al cap. Una entrada legacy
+   (número suelto) **no se descarta, se fecha**: descartarla podría cancelar una
+   reserva viva durante la ventana del despliegue. `transaction.list` no se
+   usaba en ningún DO del repo, así que se sondeó contra el runtime real con
+   `workerd test` antes de escribir el barrido.
+6. **F8** — `RequestQuotaLedger` estrena `action: 'release'` (suelo en 0) y
+   `releaseRequestQuota`. **Lo que NO se devuelve es la parte interesante**:
+   `AI_INVALID_RESPONSE` y `AI_INVALID_REQUEST_UPSTREAM` se quedan cobrados
+   porque ahí el proveedor sí procesó la petición, y reembolsarlos abriría
+   reintentos gratis ilimitados contra su cupo. El `periodKey` viaja con la
+   reserva para no reintroducir un gemelo de F11 al cruzar medianoche UTC.
+7. **F12** — un 400 de Gemini es determinista: código propio
+   `AI_INVALID_REQUEST_UPSTREAM`, fuera de `shouldRetryGeminiWithFallback`, y
+   sin botón de reintento en la hoja.
+8. **F9** — plazo global decreciente. Las etapas suman 105 s contra los 70 s que
+   espera el navegador: ahora cada una se acota con lo que queda
+   (`stageBudgetMs`) y las que no caben se saltan, así que el lector recibe el
+   error real de Gemini a los ~53 s en vez de un `AI_TIMEOUT` a los 70 con la
+   cuota gastada y una reserva Kimi en vuelo. El 52 s hardcodeado sale a
+   `AI_REQUEST_BUDGETS`. Extra propio: `explainWithKimi` comprueba el margen
+   **antes** de reservar, para el caso en que Kimi sea el proveedor primario.
+9. **F15** — (a) el tope de $27 queda documentado como techo deliberado
+   (decisión del usuario) y **fijado con un test**: `KIMI_MONTHLY_HARD_CAP_USD`
+   solo puede bajarlo. (b) `QUOTA_LEDGER_UNAVAILABLE` es transitorio y se
+   traduce a `AI_UNAVAILABLE`, no a `AI_NOT_CONFIGURED`.
+10. **F13** — el cliente distingue la sesión caducada (`AI_AUTH_REQUIRED`, cuya
+    copy ya existía) del servicio caído. `toServiceError` sale como función pura
+    para poder testearla.
+
+### Límites de esta verificación
+
+- **La mutación de F13 cubre el mapeo, no la línea que lo llama.** `explainPaper`
+  no es testeable en Node: lee `import.meta.env` fuera del try y revienta sin
+  bundler. El `catch` es una sola línea (`throw toServiceError(error)`).
+- **Falta una explicación real en producción**, que necesita sesión y la hace el
+  usuario. Lo verificable sin credenciales está hecho: `/health` y `/health/ai`
+  en verde, y `/ai/explain` sin token responde `AI_AUTH_REQUIRED` 401.
+- **El Worker se desplegó desde la rama antes de fusionar** (versión
+  `e5b760bf`), así que hubo unas horas de deriva entre lo desplegado y `main`.
+  Al entrar aquí desaparece; la parte de cliente (F13 y la copy de los dos
+  códigos nuevos) llega a producción con la Action del frontend que dispara este
+  push.
+- Otra sesión de Claude estaba editando el mismo árbol (`src/components/Lists/*`,
+  `src/utils/createListFormModel.*`, que son suyos y llegaron a `main` por su
+  cuenta). Se revisó el diff fichero a fichero: sus cambios **no** entraron en
+  los commits de G3 ni en el bundle del Worker, que no importa ninguno de esos
+  ficheros.
+
 ## G4: las listas públicas dejan de poder perder papeles en carrera (2026-08-23)
 
 Ocho fallos (F16–F23) de `ERRORES.MD`, los ocho re-verificados leyendo el código

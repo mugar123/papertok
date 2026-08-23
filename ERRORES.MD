@@ -39,6 +39,13 @@ rechazada por análisis** — ver F18. 30 tests nuevos (1.001 → 1.031), cada u
 verificado por mutación, `npm run check` en verde y la suite en verde bajo Node
 22, que es lo que corre CI.
 
+**G3 arreglado el 23-08-2026** (F6, F7, F8, F9, F10, F11, F12, F13, F14, F15):
+los diez re-verificados y los diez reales, con dos correcciones de diagnóstico
+propias (el punto 3 de F8 ya estaba hecho; la fuga de F14 no era solo de caché).
+25 tests nuevos (33 → 58 en las suites del grupo), cada arreglo verificado por
+mutación sin mutantes vivos, `npm run check` en verde y 1.064 tests en verde
+bajo Node 22, que es lo que corre CI.
+
 G7 cerrado el 23-08-2026: **F40 re-verificado y RECHAZADO** por mal
 diagnosticado (el bundle apagado era la decisión vigente, no una deriva). Se
 arregló en su lugar la causa raíz que el propio F40 nombra en su punto 4 — nada
@@ -133,7 +140,9 @@ Casi todo lo de abajo es latente — salvo F24 (activo en producción). ~~y F40
   `worker/request-quota-ledger.js`.**~~ **G4 pasó por aquí el 23-08-2026 y NO la
   implementó**, a propósito: en la ruta de listas el reembolso desacota las
   lecturas de Firestore (razonamiento completo en F18). El ledger sigue con solo
-  `reserve`. G3 tiene las manos libres para añadirla para F8 —donde el reembolso
+  `reserve`. **G3 la añadió el 23-08-2026** (`action: 'release'` +
+  `releaseRequestQuota`, con suelo en 0 y el `periodKey` viajando con la
+  reserva), para F8 —donde el reembolso
   es por fallo de proveedor, no por una carrera que el llamante puede provocar—
   y en ese caso la implementa entera, sin nadie con quien coordinarse.
 - **F3 se reparte**: los fetch sin plazo de `email-notifications.js` los arregla
@@ -434,7 +443,7 @@ mecanismo de devolución. Las averías de proveedores se pagan como consumo real
 
 ## Fallos
 
-- [ ] **F6 · media · Cualquier fallo de Modal liquida la reserva completa como gasto del mes**
+- [x] **F6 · media · Cualquier fallo de Modal liquida la reserva completa como gasto del mes**
   `worker/ai-explanation.js:830` y `:870-874`.
   `chargedMicros` se inicializa con la reserva completa (~$0,15: prompt ~8 KB +
   4.200×2 tokens de salida) y solo se sustituye por el coste medido si la
@@ -450,7 +459,7 @@ mecanismo de devolución. Las averías de proveedores se pagan como consumo real
   íntegro solo para abort/timeout/red, donde el consumo es desconocido.
   Convertir el test-lamento en test de regresión.
 
-- [ ] **F7 · media · `classifyKimiError` clasifica por substring: un 5xx → «presupuesto agotado hasta el mes que viene»**
+- [x] **F7 · media · `classifyKimiError` clasifica por substring: un 5xx → «presupuesto agotado hasta el mes que viene»**
   `worker/ai-explanation.js:685-694` y `:848-849`.
   `if (status === 402 || /credit|balance|billing|budget|quota.+month|monthly.+quota/.test(detail))`
   corre sobre `JSON.stringify(payload)` completo, para cualquier status y
@@ -463,7 +472,7 @@ mecanismo de devolución. Las averías de proveedores se pagan como consumo real
   **Test:** un 500 con «balancer» en el cuerpo no debe clasificarse como
   presupuesto.
 
-- [ ] **F8 · media · La cuota diaria se consume antes de llamar al proveedor y no se devuelve nunca**
+- [x] **F8 · media · La cuota diaria se consume antes de llamar al proveedor y no se devuelve nunca**
   `worker/ai-explanation.js:1071-1078`; `worker/request-quota-ledger.js:33`
   (solo existe `action: 'reserve'`).
   `reserveAIQuota` incrementa el contador (10/día) y después vienen la
@@ -477,7 +486,7 @@ mecanismo de devolución. Las averías de proveedores se pagan como consumo real
   el caso «sin abstract y sin PDF» delante de la reserva. (4) Código
   `AI_SOURCE_UNAVAILABLE` para el PDF inaccesible.
 
-- [ ] **F9 · media · El peor caso serial (~105 s) revienta el presupuesto del navegador (70 s)**
+- [x] **F9 · media · El peor caso serial (~105 s) revienta el presupuesto del navegador (70 s)**
   `worker/ai-explanation.js:25-31` y `:833`;
   `src/services/aiExplanationService.js:103`.
   Encadenado posible: PDF 4,5–9 s + Gemini 12 s + flash-lite 32 s + Kimi 52 s
@@ -489,7 +498,7 @@ mecanismo de devolución. Las averías de proveedores se pagan como consumo real
   frente a `browserMs` y pasarlo como `timeoutMs` a cada etapa, saltando
   etapas sin margen. Mover el 52 s a la constante.
 
-- [ ] **F10 · media · Reservas Kimi huérfanas sin expiración: restan presupuesto todo el mes**
+- [x] **F10 · media · Reservas Kimi huérfanas sin expiración: restan presupuesto todo el mes**
   `worker/kimi-budget-ledger.js:95-153` (sin `alarm()` ni TTL);
   `ai-explanation.js:789-794`.
   El único camino que borra una `reservation:<id>` es el settle. Si la
@@ -501,7 +510,7 @@ mecanismo de devolución. Las averías de proveedores se pagan como consumo real
   reserve, descartar y borrar las caducadas (>5 min); o un `alarm()` que las
   barra.
 
-- [ ] **F11 · baja · Reserve y settle pueden caer en DOs de meses distintos**
+- [x] **F11 · baja · Reserve y settle pueden caer en DOs de meses distintos**
   `worker/ai-explanation.js:730-748`. `callKimiBudgetLedger` recalcula
   `kimiPeriod()` por llamada: reservar a las 23:59:59 UTC del día 31 y
   liquidar tras medianoche liquida contra el DO del mes nuevo (la reserva no
@@ -509,7 +518,7 @@ mecanismo de devolución. Las averías de proveedores se pagan como consumo real
   **Arreglo:** calcular el periodo una vez en `explainWithKimi` y pasarlo a
   ambas llamadas.
 
-- [ ] **F12 · baja · Un 400 permanente de Gemini se reintenta en flash-lite**
+- [x] **F12 · baja · Un 400 permanente de Gemini se reintenta en flash-lite**
   `worker/ai-explanation.js:503-511` y `:608-611`. Un `INVALID_ARGUMENT` sin
   patrón de api-key/permiso/modelo cae en `AI_UNAVAILABLE` (reintentable): se
   repite la misma petición inválida contra flash-lite (hasta 32 s más), y el
@@ -517,19 +526,19 @@ mecanismo de devolución. Las averías de proveedores se pagan como consumo real
   **Arreglo:** código no reintentable `AI_INVALID_REQUEST_UPSTREAM` excluido
   de `shouldRetryGeminiWithFallback`.
 
-- [ ] **F13 · baja · El cliente convierte el fallo de autenticación en «IA no disponible»**
+- [x] **F13 · baja · El cliente convierte el fallo de autenticación en «IA no disponible»**
   `src/services/aiExplanationService.js:123-126`. El `catch` no distingue
   `WorkerApiAuthError` y lo reduce a `AI_UNAVAILABLE`: sesión expirada con la
   sheet abierta → «servicio no disponible» en vez de invitar a re-login.
   **Arreglo:** mapear a `AI_AUTH_REQUIRED` con su copy.
 
-- [ ] **F14 · baja · El saldo mensual de Kimi se cachea 7 días y se sirve a todos**
+- [x] **F14 · baja · El saldo mensual de Kimi se cachea 7 días y se sirve a todos**
   `worker/ai-explanation.js:872-873` y `:1088-1100`. `result.budget`
   (cap $27 + saldo) entra en `cacheableResponse` una semana: detalle
   financiero del operador, obsoleto, servido a cualquiera.
   **Arreglo:** excluir `budget` del objeto cacheado.
 
-- [ ] **F15 · baja · Config confusa (dos puntos)**
+- [x] **F15 · baja · Config confusa (dos puntos)**
   (a) `ai-explanation.js:704-709`: `KIMI_MONTHLY_HARD_CAP_USD` se clampa con
   máximo = 27 (el default) — subirla en `wrangler.toml` se ignora en silencio.
   Si es techo deliberado, comentarlo; si no, constante de máximo aparte.
