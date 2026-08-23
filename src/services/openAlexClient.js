@@ -46,6 +46,33 @@ export function parseRetryAfter(value, now = Date.now()) {
   return Number.isFinite(timestamp) ? Math.max(0, timestamp - now) : 0;
 }
 
+// Two upstream headers decide how long the client stops calling OpenAlex, and
+// neither can be trusted at face value. `x-ratelimit-reset` has no fixed unit:
+// the `x-` convention (GitHub's) is an epoch in seconds, a plain delta is just
+// as common, and nothing on the wire says which arrived. Read an epoch as a
+// delta and ~1.77e9 becomes a 56-year backoff -- `rateLimitedUntil` lands in
+// the far future, every later call throws before touching the network, and the
+// only thing that clears it is a 200 that can no longer happen. `retry-after`
+// has the unit pinned but not the size, and it comes from whatever proxy sits
+// in front of the API.
+//
+// So: a value past the threshold is an instant, anything below it is a delta,
+// and both branches leave through the same clamp. A day is longer than any
+// real OpenAlex window and short enough that a bogus header costs one session,
+// not the tab.
+const RATE_LIMIT_EPOCH_THRESHOLD_S = 1e9; // ~2001-09-09: no sane delta reaches it
+const MAX_RATE_LIMIT_DELAY_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_RATE_LIMIT_DELAY_MS = 60_000;
+
+// Only ever called for a response that IS rate limited, so a delay that comes
+// out at zero or below -- an epoch already in the past, a negative header --
+// means "unusable", not "not limited": falling back to the default keeps the
+// backoff a 429 legitimately asked for.
+function boundRateLimitDelay(delayMs) {
+  if (!Number.isFinite(delayMs) || delayMs <= 0) return DEFAULT_RATE_LIMIT_DELAY_MS;
+  return Math.min(delayMs, MAX_RATE_LIMIT_DELAY_MS);
+}
+
 export function getOpenAlexRateLimitDelay(response, now = Date.now()) {
   if (!response) return 0;
   const remainingHeader = response.headers.get('x-ratelimit-remaining');
@@ -55,11 +82,15 @@ export function getOpenAlexRateLimitDelay(response, now = Date.now()) {
   if (!isLimited) return 0;
 
   const retryAfterMs = parseRetryAfter(response.headers.get('retry-after'), now);
-  if (retryAfterMs > 0) return retryAfterMs;
+  if (retryAfterMs > 0) return boundRateLimitDelay(retryAfterMs);
 
   const resetSeconds = Number(response.headers.get('x-ratelimit-reset'));
-  if (Number.isFinite(resetSeconds) && resetSeconds > 0) return resetSeconds * 1000;
-  return 60000;
+  if (Number.isFinite(resetSeconds) && resetSeconds > 0) {
+    return boundRateLimitDelay(resetSeconds > RATE_LIMIT_EPOCH_THRESHOLD_S
+      ? resetSeconds * 1000 - now
+      : resetSeconds * 1000);
+  }
+  return DEFAULT_RATE_LIMIT_DELAY_MS;
 }
 
 // Since February 2026 OpenAlex requires an API key and bills each call against a

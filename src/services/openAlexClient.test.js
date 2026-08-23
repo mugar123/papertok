@@ -59,6 +59,61 @@ test('recognizes the exhausted OpenAlex allowance returned as HTTP 403', () => {
   assert.equal(getOpenAlexRateLimitDelay(new Response('{}', { status: 403 }), 0), 0);
 });
 
+test('reads an x-ratelimit-reset epoch as an instant, not as a decades-long delta', () => {
+  const now = 1_756_000_000_000;
+  const limited = new Response('{}', {
+    status: 429,
+    headers: { 'X-RateLimit-Reset': String(now / 1000 + 300) },
+  });
+
+  assert.equal(getOpenAlexRateLimitDelay(limited, now), 300_000);
+});
+
+test('falls back to the default backoff when the reset instant already passed', () => {
+  const now = 1_756_000_000_000;
+  const limited = new Response('{}', {
+    status: 429,
+    headers: { 'X-RateLimit-Reset': String(now / 1000 - 60) },
+  });
+
+  assert.equal(getOpenAlexRateLimitDelay(limited, now), 60_000);
+});
+
+test('caps a runaway backoff at a day, whichever header carries it', () => {
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  const byReset = new Response('{}', {
+    status: 429,
+    headers: { 'X-RateLimit-Reset': '999999999' },
+  });
+  const byRetryAfter = new Response('{}', {
+    status: 429,
+    headers: { 'Retry-After': '999999999' },
+  });
+
+  assert.equal(getOpenAlexRateLimitDelay(byReset, 0), oneDayMs);
+  assert.equal(getOpenAlexRateLimitDelay(byRetryAfter, 0), oneDayMs);
+});
+
+test('reopens OpenAlex once an epoch-shaped reset has passed', async () => {
+  let now = 1_756_000_000_000;
+  const client = new OpenAlexClient({
+    now: () => now,
+    fetchImpl: async () => new Response('{}', {
+      status: 429,
+      headers: { 'X-RateLimit-Reset': String(now / 1000 + 3600) },
+    }),
+  });
+
+  await assert.rejects(
+    () => client.json('https://api.openalex.org/works/W1'),
+    isOpenAlexRateLimitError,
+  );
+  assert.equal(client.getHealth().rateLimited, true);
+
+  now += 3_600_000 + 1;
+  assert.equal(client.getHealth().rateLimited, false);
+});
+
 test('retries a short 429 using Retry-After', async () => {
   let calls = 0;
   const delays = [];
