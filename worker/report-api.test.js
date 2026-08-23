@@ -1814,3 +1814,35 @@ test('keeps two different PubMed queries in two different cache entries', async 
     else globalThis.caches = originalCaches;
   }
 });
+
+test('relays an upstream refusal as a refusal instead of flattening it to 502', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response(JSON.stringify({ message: 'Too Many Requests' }), {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': '30' },
+    }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/s2?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), OPEN_ROUTE_ENV),
+  );
+
+  // 502 says "this source is broken", and a client that believes that retries
+  // straight away -- which is the one thing that makes a rate limit worse.
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('retry-after'), '30');
+  assert.equal((await response.json()).code, 'UPSTREAM_RATE_LIMITED');
+});
+
+test('falls back to a minute when the upstream refused without saying for how long', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response('{}', { status: 429, headers: { 'content-type': 'application/json' } }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/pubmed?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), OPEN_ROUTE_ENV),
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('retry-after'), '60');
+});

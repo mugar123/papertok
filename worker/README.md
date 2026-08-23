@@ -54,6 +54,15 @@ cache, and a **global** per-minute ceiling reserved only after a cache miss
 ceiling with `/sources/s2` because both spend the same provider allowance; the browser's old
 per-tab limiter counted per caller, so N tabs were N times the limit.
 
+`SEMANTIC_SCHOLAR_API_KEY` is listed above as if it were optional. It is not, in practice.
+Measured on 2026-08-24, Semantic Scholar's anonymous pool refused **10 of 10** requests from a
+residential address and **9 of 10** from the Worker: without a key, `/sources/s2` and `/related`
+are both effectively unavailable, and were before either route existed. The secret has never been
+set on this deployment — `wrangler secret list` does not show it — so setting it is what turns
+Semantic Scholar back on. A refusal is relayed as a 429 with the provider's own `retry-after`, not
+flattened into a 502, so a client can tell a rate limit from an outage; every `/sources/*` route
+does this now, not only Scopus.
+
 
 `/openalex/*` exists because OpenAlex changed underneath the app. Since February 2026 it requires
 an API key and bills each call against a daily budget — $0.10/day anonymous, $1/day on a free key —

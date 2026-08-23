@@ -460,6 +460,9 @@ async function fetchJsonWithTimeout(url, options = {}, timeoutMs = UPSTREAM_TIME
     // that answered "I do not have this" from one that did not answer at all.
     const error = new Error(`Upstream error: ${response.status}`);
     error.status = response.status;
+    // And the provider's own backoff, when it gave one. Inventing a number here
+    // would be guessing at somebody else's window.
+    error.retryAfter = response.headers.get('retry-after') || '';
     throw error;
   }
   return response.json();
@@ -2146,12 +2149,21 @@ export default {
       } catch (error) {
         console.error(`Specialist source failed: ${url.pathname}`, error);
         const isScopus = url.pathname === '/sources/scopus';
-        const status = isScopus && error.status === 429 ? 429 : 502;
+        // A refusal relayed as a 502 reads as "this source is broken", and a
+        // client that believes that retries at once -- which is the one thing
+        // that makes a rate limit worse. Scopus already relayed its own 429;
+        // every source route does now, because every one of them can be refused.
+        const rateLimited = error.status === 429;
+        const status = rateLimited ? 429 : 502;
         return json({
           error: isScopus ? 'Scopus unavailable' : 'Specialist source unavailable',
+          ...(rateLimited ? { code: 'UPSTREAM_RATE_LIMITED' } : {}),
           ...(isScopus && error.status ? { upstreamStatus: error.status } : {}),
           ...(isScopus && error.resetAt ? { resetAt: error.resetAt } : {}),
-        }, status, corsHeaders(origin, env));
+        }, status, {
+          ...corsHeaders(origin, env),
+          ...(rateLimited ? { 'retry-after': error.retryAfter || '60' } : {}),
+        });
       }
     }
     return json({ error: 'Not found' }, 404, corsHeaders(origin, env));
