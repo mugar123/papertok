@@ -331,13 +331,25 @@ test('publishing twice is refused instead of orphaning the first share', async (
 
 test('a hostile list id cannot walk out of the caller own subtree', async () => {
   stubIdentity();
-  for (const listId of ['../../publicLists', 'a/b', '', 'x'.repeat(161)]) {
+  // `.` and `..` survive encodeURIComponent and are then resolved away by the
+  // URL parser, so they address a document one level up from the one asked
+  // about — the slash check alone never saw them.
+  for (const listId of ['../../publicLists', 'a/b', '', 'x'.repeat(161), '.', '..']) {
     await assert.rejects(
       () => run('/lists/publish', { listId, title: 'T', papers: [] }),
       error => error.code === 'INVALID_LIST_ID',
       `must refuse ${JSON.stringify(listId)}`,
     );
   }
+});
+
+test('a dotted list id still publishes: only the bare dot segments are refused', async () => {
+  stubIdentity();
+  const listId = 'arxiv.2608.18000';
+  const admin = fakeAdmin({ [`users/${UID}/lists/${listId}`]: { id: listId } });
+  await run('/lists/publish', { listId, title: 'T', papers: [] }, { admin });
+  assert.equal(fieldsOf(admin.commits[0][0]).listId, listId);
+  assert.match(admin.commits[0][2].update.name, /arxiv\.2608\.18000$/);
 });
 
 test('a javascript: link never reaches the public document', async () => {

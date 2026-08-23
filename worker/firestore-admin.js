@@ -206,10 +206,20 @@ function documentRoot(projectId) {
   return `projects/${projectId}/databases/(default)/documents`;
 }
 
-/** `['users', uid, 'lists', listId]` -> a fully qualified document name. */
+/**
+ * `['users', uid, 'lists', listId]` -> a fully qualified document name.
+ *
+ * A segment that is `.` or `..` survives `encodeURIComponent` and is then
+ * resolved away by the URL parser, which would silently address a document one
+ * level up from the one the caller asked about. This is not only belt and
+ * braces for the route validators: `listId` also arrives here straight out of
+ * `publicListOwners/{shareId}`, recorded by a publish that ran before those
+ * validators existed, so it is never re-checked upstream.
+ */
 export function documentName(projectId, segments) {
   for (const segment of segments) {
-    if (typeof segment !== 'string' || !segment || segment.includes('/')) {
+    if (typeof segment !== 'string' || !segment || segment.includes('/')
+      || segment === '.' || segment === '..') {
       throw new FirestoreAdminError('INVALID_DOCUMENT_PATH', 400);
     }
   }

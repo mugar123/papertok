@@ -189,7 +189,7 @@ test('a path segment cannot smuggle a slash and reach another collection', () =>
     documentName('p', ['users', 'alice', 'lists', 'l1']),
     'projects/p/databases/(default)/documents/users/alice/lists/l1',
   );
-  for (const hostile of ['../../admin', 'a/b', '', null, 42]) {
+  for (const hostile of ['../../admin', 'a/b', '', null, 42, '.', '..']) {
     assert.throws(
       () => documentName('p', ['users', hostile]),
       error => error instanceof FirestoreAdminError && error.code === 'INVALID_DOCUMENT_PATH',
@@ -200,6 +200,13 @@ test('a path segment cannot smuggle a slash and reach another collection', () =>
 
 test('path segments are percent-encoded', () => {
   assert.match(documentName('p', ['users', 'a b']), /users\/a%20b$/);
+});
+
+test('a dot inside a segment is ordinary: only the bare dot segments are refused', () => {
+  // Rejecting anything containing a dot would refuse `arxiv:2608.18000`, which
+  // is what half the ids in this app look like.
+  assert.match(documentName('p', ['users', 'a..b']), /users\/a\.\.b$/);
+  assert.match(documentName('p', ['papers', 'arxiv:2608.18000']), /arxiv%3A2608\.18000$/);
 });
 
 // ---------------------------------------------------------------------------

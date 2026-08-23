@@ -84,9 +84,18 @@ function requireShareId(value) {
   return shareId;
 }
 
+/**
+ * A list id becomes a path segment, so it has to be a segment and nothing else.
+ * `.` and `..` are not names: `encodeURIComponent` leaves them untouched and the
+ * URL parser then resolves them away, so `listId: '..'` turns the ownership read
+ * of `users/{uid}/lists/..` into a read of the caller's own user document — a
+ * check answered by the wrong document, and a quota unit spent on it. Exact
+ * equality rather than a dot search: `arxiv:2608.18000` is a perfectly good id.
+ */
 function requireListId(value) {
   const listId = String(value || '').trim();
-  if (!listId || listId.length > 160 || listId.includes('/')) {
+  if (!listId || listId.length > 160 || listId.includes('/')
+    || listId === '.' || listId === '..') {
     throw new PublicListApiError('INVALID_LIST_ID', 400);
   }
   return listId;
