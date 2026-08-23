@@ -1,5 +1,6 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import { describeDeployFlagDrift, findDeployFlagDrift } from './src/utils/deployFlags.js'
 
 // Fifteen services read `VITE_PAPER_API_BASE_URL` — arXiv, OpenAlex, Scopus, AI
 // explanations, citations, related papers, Unpaywall, public lists and
@@ -8,8 +9,7 @@ import react from '@vitejs/plugin-react'
 // deploy looks wrong. Since the arXiv proxy cascade was removed there is not even
 // a fallback left to mask it. A production build without a Worker is a broken
 // build, so it stops here instead of shipping.
-function requireWorkerBaseUrl(mode) {
-  const env = loadEnv(mode, globalThis.process?.cwd?.() || '.', 'VITE_')
+function requireWorkerBaseUrl(env) {
   if (env.VITE_PAPER_API_BASE_URL) return
   throw new Error(
     'VITE_PAPER_API_BASE_URL is not set, so this build would ship a bundle that reaches no '
@@ -20,8 +20,35 @@ function requireWorkerBaseUrl(mode) {
   )
 }
 
+// A flag whose value is a product decision is declared in
+// `src/utils/deployFlags.js`, but the value that reaches the bundle comes from a
+// GitHub Actions repository variable, which changes with no commit and no
+// review. Nothing used to compare the two, so the bundle could ship the
+// opposite of the decision on record and look entirely healthy doing it —
+// `VITE_SCOPUS_ENABLED` has drifted that way twice, in both directions. This
+// stops the build instead, before the bundle exists, because a warning is
+// precisely what already proved too quiet to notice.
+function requireDeclaredDeployFlags(env) {
+  const drift = findDeployFlagDrift(env)
+  if (drift.length === 0) return
+  throw new Error(
+    'This build disagrees with the deploy flags declared in src/utils/deployFlags.js:\n'
+    + `${describeDeployFlagDrift(drift)}\n`
+    + 'Change the decision in src/utils/deployFlags.js, in the commit that records why, '
+    + 'or clear the disagreeing GitHub Actions repository variable (Settings -> Secrets '
+    + 'and variables -> Actions -> Variables). Do not change only the variable: the value '
+    + 'it carries is the one nobody reviews.',
+  )
+}
+
+function verifyProductionEnv(mode) {
+  const env = loadEnv(mode, globalThis.process?.cwd?.() || '.', 'VITE_')
+  requireWorkerBaseUrl(env)
+  requireDeclaredDeployFlags(env)
+}
+
 export default defineConfig(({ command, mode }) => {
-  if (command === 'build') requireWorkerBaseUrl(mode)
+  if (command === 'build') verifyProductionEnv(mode)
 
   return {
     base: '/papertok/',

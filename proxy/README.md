@@ -84,5 +84,16 @@ carried an abstract:
 curl -s -H "origin: https://mugar123.github.io" https://papertok-report-api.papertok-mugar123.workers.dev/health/scopus
 ```
 
-Only once that returns `available: true` should the browser flow be switched on
-with `gh variable set VITE_SCOPUS_ENABLED --body true`.
+`available: true` is necessary but not sufficient, and the browser flow is
+deliberately off. Measured against OpenAlex, Scopus returned 75 papers across
+three fields and OpenAlex already held all 75 (STATE.md, «Scopus: estudio
+cerrado», 2026-08-22), so it adds nothing as a discovery source; and without an
+institutional token the probe reports `hasAbstract: false`, so its records reach
+the card with no summary and no AI explanation. The egress and the probe stay in
+place to report the day either of those changes.
+
+Turning the flow on is therefore a product decision, and it is recorded in
+`src/utils/deployFlags.js` rather than in a repository variable: `vite build`
+refuses a bundle whose `VITE_SCOPUS_ENABLED` disagrees with what is declared
+there. Change the declaration first, in the commit that records why — setting
+the variable alone only makes the build fail.

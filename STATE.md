@@ -1,5 +1,92 @@
 # Estado / pendientes
 
+## G7: Scopus no estaba apagado por error, y ahora el build lo defiende (2026-08-23)
+
+**F40 re-verificado y RECHAZADO.** Decía que Scopus estaba apagado en el bundle
+«pese a la decisión registrada de encenderlo» y mandaba poner
+`VITE_SCOPUS_ENABLED=true` en las Variables del repo. **El hecho era cierto y la
+premisa falsa**: ejecutarlo habría metido la regresión, no arreglado nada. La
+variable no se ha tocado.
+
+### La trampa: dos decisiones del mismo día, y este fichero va al revés
+
+STATE.md se lee de más nuevo a más viejo. Hay dos entradas del 22-08 sobre
+Scopus, y quien audite de arriba abajo encuentra primero la que **revoca**:
+
+| Commit | Hora | Dice |
+| --- | --- | --- |
+| `ad4dcd5` | 22-08 01:12:39 | «Encendido… encenderlo en todas las superficies» |
+| `b26418a` | 22-08 **02:14:15** | «`VITE_SCOPUS_ENABLED` se queda en `false`, y esta vez con la medida delante» |
+
+62 minutos separan una de otra. La segunda trae el estudio: 75 papers de Scopus
+en tres áreas, OpenAlex ya tenía **75 de 75**. `git log -S 'SCOPUS_ENABLED'`
+desde esa fecha no devuelve nada que la revierta. **El bundle apagado era la
+decisión vigente correctamente desplegada.**
+
+La auditoría citó la de las 01:12. No es un descuido tonto: es lo que pasa
+cuando el estado previsto de un flag vive en prosa ordenada por fecha
+descendente y el efectivo vive en una variable de repo. Ya había pasado dos
+veces en las dos direcciones; esta fue la tercera.
+
+### Lo verificado en vivo, antes de concluir nada
+
+- Bundle publicado `assets/index-BFoeehHB.js`: `og=!1`, `function cg(){return og}`.
+  (F40 citaba `index-DU0AKCXZ.js` y `ag=!1`; en el bundle de hoy `ag` es la URL
+  del Worker. **El nombre minificado cambia en cada build** — razón por la que un
+  check post-deploy que grepee el bundle no es una base sólida.)
+- `gh variable list`: solo existe `VITE_PAPER_API_BASE_URL`. Los otros tres
+  `vars` del workflow tampoco están, pero los tres tienen fallback en código
+  (`app@papertok.io`, `G-LHG0SGJ6G8`, `${PAPER_API_BASE}/report/trends`) y salen
+  bien en el bundle. No son fallo.
+- `gh auth status`: `mugar123`, scopes `repo`+`workflow`. **Sí había acceso** para
+  poner la variable, al revés de lo que F40 daba por supuesto. Se decidió no
+  ponerla por la medida, no por falta de permisos.
+- `/health/scopus`: `available: true`, `view: STANDARD`, `hasAbstract: false`,
+  cuota 19.983/20.000. El lado servidor funciona; sigue sin traer resumen.
+
+### Lo que sí se arregló: que la intención tenga dónde vivir
+
+Es el punto 4 del propio F40 («esta clase de discrepancia ya ha pasado dos veces
+en dos direcciones y no se detecta sola»), y era la causa raíz.
+
+`src/utils/deployFlags.js` declara `VITE_SCOPUS_ENABLED: false` **con su porqué
+al lado**, y `vite.config.js` estrena `requireDeclaredDeployFlags`, hermana de la
+`requireWorkerBaseUrl` que ya paraba el build por esta misma clase de fallo
+(`aa84d6b`). Un build cuyo entorno discrepe de lo declarado se para antes de
+existir el bundle. `vite dev` no se ve afectado.
+
+El detalle que la hace correcta: la guarda coerce **exactamente** como
+`ScopusAdapter.js` (`=== 'true'`, sin `trim`, sin aceptar `'TRUE'` ni `'1'`).
+Normalizar de más rechazaría builds que la app habría ejecutado bien; de menos,
+dejaría pasar un bundle que discrepa. Con esa coerción, variable ausente y
+`'false'` son el mismo estado — que es lo que son, y por eso el CI de hoy
+(`vars` inexistente → `''`) sigue pasando sin tocar nada.
+
+Un test lee el texto de `ScopusAdapter.js` y falla si deja de comparar con
+`=== 'true'`: es lo único que podría volver la guarda silenciosamente falsa.
+
+### Verificado por mutación, en las dos direcciones
+
+| Caso | Resultado |
+| --- | --- |
+| `VITE_SCOPUS_ENABLED=true npm run build` | **falla**: «declared false, this build would ship true» |
+| `npm run build` y `VITE_SCOPUS_ENABLED='' npm run build` | pasan; bundle con `og=!1`, idéntico al de producción |
+| declaración volteada a `true`, entorno real del CI | **falla**: «declared true, this build would ship false» |
+| declaración volteada a `true` | 4 de los 7 tests fallan |
+
+La tercera fila es **literalmente el escenario de F40**: decisión «encendido»,
+bundle apagado. Si la decisión de las 01:12 hubiera estado declarada en el repo,
+el despliegue siguiente habría fallado en voz alta en vez de servir lo contrario
+durante un día. Ahora falla.
+
+Se descartó el script post-deploy que pedía la letra del punto 4: compara contra
+un bundle ya servido, mete red en CI, y tendría que reconocer el flag en código
+minificado cuyo nombre cambia en cada build. La guarda no tiene ninguna de las
+tres fragilidades.
+
+Tests: 994 → 1.001 (7 nuevos). `proxy/README.md` y `docs/DEVELOPMENT.md` ya no mandan
+encender el flag; ahora apuntan a dónde se cambia la decisión.
+
 ## F2 fuera del alcance de G2: los cinco servicios que quedaron (2026-08-23)
 
 **Hecho y verificado en local, incluido bajo el Node de CI.** Cierra el pendiente

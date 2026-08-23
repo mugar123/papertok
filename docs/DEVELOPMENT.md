@@ -28,7 +28,7 @@ Frontend variables are public in the built JavaScript:
 | `VITE_GA_MEASUREMENT_ID` | Public GA4 measurement ID; analytics remains consent-gated |
 | `VITE_PAPER_API_BASE_URL` | Cloudflare Worker base URL |
 | `VITE_REPORT_API_URL` | Legacy report API alias |
-| `VITE_SCOPUS_ENABLED` | Enables Scopus-backed browser flows. Check `/health/scopus` on the Worker before setting it to `true`: with the flag on and the key refused, the feed queues calls that only ever fail. Scopus reaches Elsevier through the Deno Deploy egress in `proxy/README.md`, never from the Worker |
+| `VITE_SCOPUS_ENABLED` | Enables Scopus-backed browser flows. Declared `false` in `src/utils/deployFlags.js`, which is where the decision is made and reviewed; `vite build` fails when this variable disagrees with that declaration, so change the declaration first. Check `/health/scopus` on the Worker before ever declaring it on: with the flag on and the key refused, the feed queues calls that only ever fail. Scopus reaches Elsevier through the Deno Deploy egress in `proxy/README.md`, never from the Worker |
 | `VITE_UNPAYWALL_EMAIL` | Public contact email required by Unpaywall |
 
 Never put secret provider tokens in a `VITE_*` variable. See `worker/README.md` for Worker

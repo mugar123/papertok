@@ -31,12 +31,42 @@ https://claude.ai/code/artifact/a613c6d3-c496-474a-bba9-ccefb0cd5f7f
 la parte email de F3), con tests de regresión verificados por mutación y
 `npm run check` en verde. G2 arreglado el 23-08-2026 (F1, F2, F4, F5, F36 y la
 parte no-email de F3), 21 tests nuevos verificados por mutación, 980 en verde.
-Pendiente el despliegue del Worker y del proxy Deno.
+
+G7 cerrado el 23-08-2026: **F40 re-verificado y RECHAZADO** por mal
+diagnosticado (el bundle apagado era la decisión vigente, no una deriva). Se
+arregló en su lugar la causa raíz que el propio F40 nombra en su punto 4 — nada
+ataba el estado previsto del flag al bundle publicado. 7 tests nuevos, 1.001 en
+verde, guarda verificada por mutación en las dos direcciones.
+
+**Verificación independiente del 23-08-2026 (tarde):** los 12 fallos de G1+G2
+re-verificados de forma adversaria contra el código de main — los 12 ARREGLADOS,
+con mutation testing confirmando que cada test de regresión falla al revertir su
+arreglo. 994 tests en verde. Despliegue verificado en vivo: Worker y proxy Deno
+desplegados con G1+G2 (`/health/email` sirve con `s-maxage=300`), frontend
+desplegado con `55444c6` (Action en verde, bundle `index-BFoeehHB.js`). **El
+Worker de producción NO incluye `55444c6`** (el endurecimiento de
+`fetchWithDeadline` con `AbortSignal.any`; el último deploy es de las 18:56 y el
+commit de las 19:34) — no es un agujero vivo (ningún llamante actual pasa señal),
+pero conviene un `wrangler deploy` antes de que G5/G8 usen el helper.
+
+**Residuo detectado en la verificación (sin dueño — el primero de G5/G8 que
+pase por aquí, o una pasada corta propia):**
+
+- [ ] **F2-residuo · baja · `fetchDigestSource` conserva el patrón viejo de plazo solo-cabeceras**
+  `worker/email-notifications.js:527-552`: `clearTimeout` en `finally` y
+  devuelve el `Response` **sin leer**; los llamantes hacen `response.json()`
+  fuera del bloque cubierto (p. ej. `:1007`). Es la única instancia viva del
+  patrón F2 en todo el repo: quedó fuera de G2 (fichero vetado por ser de G1) y
+  fuera del alcance declarado de la parte email de F3 (que solo cubría
+  identitytoolkit y las dos sondas). Impacto acotado: corre dentro del cron con
+  presupuesto propio de 12 min, no en el camino de una petición de usuario.
+  **Arreglo:** el mismo de F2 — leer el cuerpo dentro del bloque cubierto o
+  usar `AbortSignal.timeout` sin `clearTimeout`.
 
 **Estado en vivo al auditar** (23-08-2026): `/health` todo en verde; OpenAlex
 $0,97/1,00 de presupuesto diario; Scopus servidor disponible (19.988/20.000).
-Casi todo lo de abajo es latente — salvo F24 (activo en producción) y F40
-(discrepancia de despliegue activa).
+Casi todo lo de abajo es latente — salvo F24 (activo en producción). ~~y F40
+(discrepancia de despliegue activa)~~ **F40 no era una discrepancia**: ver G7.
 
 ---
 
@@ -83,7 +113,7 @@ Casi todo lo de abajo es latente — salvo F24 (activo en producción) y F40
 | F37 | baja | G6 | Comillas dobles corrompen la query de arXiv |
 | F38 | media | G6 | Feed de invitado llama a `/sources/physics` (protegida) |
 | F39 | baja | G6 | `q-bio.NC` entra literal como término basura en OpenAlex |
-| F40 | media | G7 | Scopus apagado en el bundle de producción |
+| F40 | ~~media~~ | G7 | ~~Scopus apagado en el bundle de producción~~ — **RECHAZADO**: mal diagnosticado |
 | F41 | media | G8 | PubMed/Europe PMC/S2 directos del navegador |
 | F42 | baja | G6 | Europe PMC mapeado dos veces |
 
@@ -97,8 +127,10 @@ Casi todo lo de abajo es latente — salvo F24 (activo en producción) y F40
   sola vez, genérica); el segundo la consume. Anotad en STATE.md quién la hizo.
 - **F3 se reparte**: los fetch sin plazo de `email-notifications.js` los arregla
   G1 (para no pisar el fichero); el resto, G2.
-- **G7 (F40) es solo configuración + redeploy del frontend** — puede hacerse en
-  cualquier momento, pero verifica el bundle después (el plan dice cómo).
+- ~~**G7 (F40) es solo configuración + redeploy del frontend**~~ — resultó no
+  serlo: F40 estaba mal diagnosticado y no había nada que configurar. G7 acabó
+  tocando `vite.config.js` y añadiendo `src/utils/deployFlags.js`; ningún otro
+  grupo toca esos ficheros.
 - **G8 (F41) crea rutas nuevas en `report-api.js`** — hazlo después de G2/G5, y
   reutiliza su helper de plazos y el patrón de las nueve rutas existentes.
 - Orden global sugerido por daño: **G1 → G7 → G2 → G4 → G3 → G5 → G6 → G8**.
@@ -786,32 +818,77 @@ reutiliza su helper de plazos).
 
 ---
 
-# G7 — Despliegue: encender Scopus de verdad
+# G7 — Despliegue: ~~encender Scopus de verdad~~ atar el flag al bundle
 
-**Ficheros:** ninguno del repo (variables de GitHub) + verificación del bundle.
+**Ficheros:** `src/utils/deployFlags.js` (nuevo), `src/utils/deployFlags.test.js`
+(nuevo), `vite.config.js`, `proxy/README.md`, `docs/DEVELOPMENT.md`. Las
+Variables de GitHub **no se han tocado**, y el porqué está en F40.
 
-- [ ] **F40 · media · Scopus está apagado en el bundle de producción pese a la decisión registrada de encenderlo**
-  Verificado en vivo el 23-08-2026: el bundle desplegado
-  (`assets/index-DU0AKCXZ.js` en `mugar123.github.io/papertok`) compila
-  `isScopusEnabled` a `false` constante (`ag=!1`). STATE.md registra la
-  decisión del 22-08 de encender Scopus en todas las superficies, y el lado
-  servidor funciona (`/health/scopus`: `available: true`). El flag viene de
-  `vars.VITE_SCOPUS_ENABLED` en `.github/workflows/deploy.yml:44`
-  (`.env.example` lo tiene a `false`): o la variable de repo nunca se puso, o
-  un despliegue posterior la perdió. Toda la rama Scopus del cliente
-  (`ScopusAdapter`, la rama `plan.scopus` de `getDomainSourcePlan`) es código
-  muerto en producción — la integración que costó el proxy en Deno no corre.
-  **Plan:** (1) poner `VITE_SCOPUS_ENABLED=true` en las Variables del
-  repositorio de GitHub (Settings → Secrets and variables → Actions →
-  Variables) — esto tiene que hacerlo alguien con acceso al repo, no una
-  sesión de Claude sin gh auth con permisos. (2) Redesplegar el frontend
-  (push o re-run del workflow). (3) **Verificar el bundle**: descargar el
-  `assets/index-*.js` nuevo y comprobar que el flag ya no compila a `!1`
-  (buscar el contexto de `scopus` minificado), o directamente cargar el feed
-  con sesión y ver peticiones a `/sources/scopus` en Network. (4) Añadir un
-  check post-deploy (paso del workflow o script) que compare el flag esperado
-  con el bundle publicado — esta clase de discrepancia ya ha pasado dos veces
-  en dos direcciones y no se detecta sola.
+- [x] **F40 · RECHAZADO · el hecho es cierto, el diagnóstico no** — re-verificado el 23-08-2026
+  F40 decía: Scopus apagado en el bundle «**pese a la decisión registrada de
+  encenderlo**», y mandaba poner `VITE_SCOPUS_ENABLED=true` en las Variables del
+  repo. **El hecho se confirma; la premisa es falsa, y ejecutar el plan habría
+  metido la regresión en vez de arreglarla.**
+
+  **El hecho, confirmado hoy:**
+
+  | Comprobación | Resultado |
+  | --- | --- |
+  | Bundle vivo `assets/index-BFoeehHB.js` | `og=!1`, `function cg(){return og}` → Scopus apagado |
+  | `gh variable list` | solo `VITE_PAPER_API_BASE_URL`; `VITE_SCOPUS_ENABLED` nunca se puso |
+  | `gh auth status` | `mugar123`, scopes `repo`+`workflow` — **sí** había acceso, al revés de lo que F40 suponía |
+  | `/health/scopus` | `available: true`, `view: STANDARD`, `hasAbstract: false`, cuota 19.983/20.000 |
+
+  (F40 cita `index-DU0AKCXZ.js` y `ag=!1`; en el bundle actual `ag` es la URL del
+  Worker y el flag es `og`. El nombre minificado cambia en cada build — detalle
+  que importa justo para el punto 4 de abajo.)
+
+  **Por qué la premisa es falsa.** Hay **dos** decisiones del 22-08 en STATE.md,
+  y el fichero va de más nuevo a más viejo, así que F40 leyó la más antigua:
+
+  - `ad4dcd5` — 22-08 **01:12:39** — «Encendido… @mugar decidió encenderlo
+    igualmente en todas las superficies, feed incluido».
+  - `b26418a` — 22-08 **02:14:15** (62 min después) — «`VITE_SCOPUS_ENABLED` se
+    queda en `false`, **y esta vez con la medida delante**»: de 75 papers de
+    Scopus en tres áreas, OpenAlex ya tenía **75**. «Ni un solo paper que
+    OpenAlex no tuviera… Retirado como inversión, no como código.»
+
+  `git log -S 'SCOPUS_ENABLED'` desde esa fecha no devuelve nada que lo
+  revierta. **El bundle apagado es la decisión vigente correctamente
+  desplegada.** La variable de repo no se ha tocado.
+
+  **Lo que sí se arregló: el punto 4 de F40**, que era la causa raíz real. Nada
+  ataba el estado *previsto* del flag al bundle publicado: el previsto vivía en
+  prosa, en un fichero ordenado por fecha descendente, y el efectivo en una
+  variable de repo que se cambia sin commit y sin revisión. Por eso la
+  discrepancia ocurrió «dos veces en dos direcciones», y por eso una auditoría
+  acaba de leerla al revés una tercera.
+
+  - `src/utils/deployFlags.js` (nuevo): la intención declarada
+    (`VITE_SCOPUS_ENABLED: false`) junto a su porqué, y la coerción que espeja
+    exactamente la de `ScopusAdapter.js` (`=== 'true'`, sin `trim`).
+  - `vite.config.js`: `requireDeclaredDeployFlags`, hermana de la
+    `requireWorkerBaseUrl` que ya existía (`aa84d6b`). `vite build` se para si el
+    entorno discrepa de lo declarado. `vite dev` no se ve afectado.
+  - `src/utils/deployFlags.test.js` (nuevo): 7 tests, incluida una guarda de
+    acoplamiento que falla si `ScopusAdapter` deja de leer el flag como la
+    guarda supone — lo único que podría volverla silenciosamente falsa.
+  - `proxy/README.md` y `docs/DEVELOPMENT.md` ya no mandan encenderlo.
+
+  **Verificado por mutación, en las dos direcciones:**
+
+  | Caso | Resultado |
+  | --- | --- |
+  | `VITE_SCOPUS_ENABLED=true npm run build` | **falla**: «declared false, this build would ship true» |
+  | `npm run build` y `VITE_SCOPUS_ENABLED='' npm run build` (estado real del CI) | pasan; bundle con `og=!1`, idéntico al de producción |
+  | declaración volteada a `true` + estado real del CI | **falla**: «declared true, this build would ship false» — *literalmente el escenario que describe F40*, ahora detectado antes de desplegar |
+  | declaración volteada a `true` | 4 de los 7 tests fallan |
+
+  Se descartó el script post-deploy que pedía la letra del punto 4: compara
+  contra un bundle ya servido, depende de red en CI, y tendría que reconocer el
+  flag en código minificado cuyo nombre cambia en cada build. La guarda de build
+  bloquea antes de publicar y no tiene ninguna de esas tres fragilidades.
+
 
 ---
 
