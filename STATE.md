@@ -98,12 +98,47 @@ el cuerpo se ha leído entero. Ese es el mecanismo que sustituye al par
   `email-delivery-ledger` en verde, y las tres pruebas de `/health/email`
   también.
 
+### Despliegue (23-08-2026)
+
+**Frontend: desplegado y verificado.** `main` en `2146e45`; la Action terminó en
+verde (build + deploy). Comprobado a nivel de bytes en el bundle servido: el
+chunk `workerApiClient-*.js` de producción contiene `var t=15e3` y
+`e.signal??AbortSignal.timeout(n)`, y `scientificClassification-*.js` importa el
+helper de ahí. Los arreglos de cliente de G2 (F2 y F5) están vivos.
+
+El primer push dejó `main` en rojo un rato y hay que saberlo: los cuatro tests de
+`requestDeadline` salieron **`cancelled`** en CI (976/980, exit 1) pasando en
+local. Causa: `AbortSignal.timeout` programa un timer **unref'd**, así que bajo
+Node no mantiene vivo el event loop por sí mismo; Node 25 (local) lo sostenía por
+otra vía y Node 22 (el de CI, fijado en `deploy.yml`) no. Arreglado con un
+`setInterval` ref'd en el test y verificado con el Node de CI de verdad
+(`npx -p node@22`, 980 tests, 0 fallos, 0 cancelados). **Lección para la próxima:
+`npm test` en local no es la misma prueba que CI mientras las versiones de Node
+no coincidan.**
+
+**Worker: SIN desplegar.** `npx wrangler deploy` quedó bloqueado por el
+clasificador de auto-mode de Claude Code. Hasta que se ejecute, ni G1 ni la parte
+Worker de G2 están en producción. Comando:
+
+    npx wrangler deploy
+
+**Proxy Deno: SIN desplegar, y no se puede desde aquí.** Es un **Playground**, no
+un proyecto enlazado al repo — comprobado: el repo solo tiene los entornos
+`copilot` y `github-pages`, y la única app con check-runs es `github-actions`; un
+proyecto enlazado crearía los suyos en cada push. Hay que pegar
+`proxy/scopus-proxy.js` a mano en dash.deno.com. F1 y F36 viven ahí.
+
+**Estado de producción sondeado tras el despliegue del frontend** (con el Worker
+todavía antiguo): `/health`, `/health/openalex` (0,95/1,00 USD), `/health/scopus`
+(vista STANDARD, 19.986/20.000) y `/health/email` los cuatro en verde. Hay que
+volver a sondear después de desplegar el Worker.
+
 ### Pendiente
 
-1. `wrangler deploy` desde la raíz — sin él, los arreglos del Worker no están en
-   producción.
-2. Redeploy de `proxy/scopus-proxy.js` en Deno Deploy — F1 y F36 viven ahí.
-3. Sondear `/health/scopus` y `/health/openalex` después de desplegar.
+1. `npx wrangler deploy` — bloqueado por el clasificador; lo tiene que lanzar el
+   usuario o autorizar la acción.
+2. Pegar `proxy/scopus-proxy.js` en el Playground de Deno Deploy.
+3. Re-sondear `/health/scopus` y `/health/openalex` después de ambos.
 4. **Fuera del alcance de G2:** el patrón de F2 vive también en
    `src/services/rorService.js:150-165`, `dataCiteService.js:166-176`,
    `orcidService.js:7-21`, y con forma parecida en `openAireService.js` y

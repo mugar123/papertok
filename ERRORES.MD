@@ -361,8 +361,11 @@ no `fetch` a pelo.** Códigos nuevos: `AUTH_UNAVAILABLE` 503,
 `OPENALEX_UNREACHABLE` 502, `SCOPUS_UPSTREAM_TIMEOUT` / `SCOPUS_UPSTREAM_UNREACHABLE`
 504, motivo de fallback `ads_timeout`.
 
-**Pendiente de despliegue:** `wrangler deploy` (Worker) y redeploy del proxy en
-Deno Deploy. Sin ellos los arreglos del Worker y del proxy no están en producción.
+**Despliegue:** el frontend está desplegado y verificado (main `2146e45`, Action
+en verde, arreglos de cliente comprobados en el bundle servido). **Falta el
+Worker** (`npx wrangler deploy` — quedó bloqueado por el clasificador de
+auto-mode) y **el proxy Deno**, que es un *Playground* y hay que pegarlo a mano en
+dash.deno.com: no está enlazado al repo, así que ningún push lo redespliega.
 
 **Fuera del alcance de G2, encontrado al barrer:** el patrón exacto de F2 —
 `return response.json()` con `clearTimeout` en un `finally` — vive también en
