@@ -22,9 +22,10 @@
  * list was actually pinned and the card changed — bounded by the same daily
  * quotas, so the worst day stays far inside the allowance.
  *
- * An update that loses a version precondition reads everything again and
- * commits once more: 7 reads and 2 commits instead of 4 and 1, and only for the
- * loser of a race between two of the same owner's tabs. Still far inside.
+ * Publish and update both retry once when they lose a version precondition,
+ * reading everything again first: at worst 2 reads and 2 commits for a publish,
+ * 7 and 2 for an update, and only for the loser of a race between two of the
+ * same owner's tabs. Still far inside the allowance.
  */
 import {
   assertPublicListWithinLimits,
@@ -324,9 +325,14 @@ async function reservePublishQuota(env, uid) {
   );
 }
 
-/** Reads the private list and proves the caller owns it. */
+/**
+ * Reads the private list and proves the caller owns it. `withMeta` because the
+ * publish that follows pins its pointer write to this exact version: the
+ * "is it already published?" check and the write that answers it have to be
+ * talking about the same version of the document.
+ */
 async function requireOwnedList(admin, uid, listId) {
-  const list = await admin.getDocument(['users', uid, 'lists', listId]);
+  const list = await admin.getDocument(['users', uid, 'lists', listId], { withMeta: true });
   if (!list) throw new PublicListApiError('LIST_NOT_FOUND', 404);
   return list;
 }
@@ -426,42 +432,69 @@ function validatePublish(body) {
   return { listId, attributed, payload: buildPublicListPayload(body) };
 }
 
+/**
+ * The `ALREADY_PUBLISHED` check is check-then-act, and the pointer write used to
+ * carry no precondition, so two publishes racing both committed: two share ids
+ * minted, the pointer left holding the later one, and the other public document
+ * alive, readable, owned by nobody the product can reach. Pinning the pointer to
+ * the version that answered the check makes the loser's whole commit fail.
+ *
+ * The retry is not optional. The browser stamps `updatedAt` on the private list
+ * at every edit, and the gap between the read and the commit is a full round
+ * trip; without it, pinning would trade a rare orphan for a Publish button that
+ * fails after an ordinary edit — and unlike the sync engine, `publishPublicList`
+ * never retries. On the second read the two cases separate themselves: a
+ * `publicShareId` that is now set means a real double publish and is reported as
+ * such; anything else was benign churn and simply commits.
+ */
 async function publish(admin, uid, { listId, attributed, payload }, { cryptoApi, now }) {
-  const list = await requireOwnedList(admin, uid, listId);
-  if (list.publicShareId) throw new PublicListApiError('ALREADY_PUBLISHED', 409);
-
+  // Minted once: a refused commit is atomic, so it wrote nothing and the id it
+  // would have used is still free.
   const shareId = createShareId(cryptoApi);
-  const timestamp = new Date(now());
-  const writes = [
-    createWrite(admin.name(['publicListOwners', shareId]), {
-      ownerId: uid, listId, createdAt: timestamp,
-    }),
-    createWrite(admin.name(['publicLists', shareId]), {
-      ...payload, createdAt: timestamp, updatedAt: timestamp,
-    }),
-    // `onProfile` mirrors the showcase so Mis listas renders the badge from
-    // the document it already reads; `publicSyncedAt` marks the copy as in
-    // step with the list as of this commit (the dirty check of P25).
-    mergeWrite(admin.name(['users', uid, 'lists', listId]), {
-      publicShareId: shareId, onProfile: attributed, publicSyncedAt: timestamp,
-    }),
-  ];
-  if (attributed) {
-    const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
-    const entries = projectionEntries(projection);
-    if (entries.length >= PROFILE_LISTS_LIMIT) {
-      throw new PublicListApiError('PROFILE_LISTS_FULL', 409);
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const list = await requireOwnedList(admin, uid, listId);
+    if (list.data.publicShareId) throw new PublicListApiError('ALREADY_PUBLISHED', 409);
+
+    const timestamp = new Date(now());
+    const writes = [
+      createWrite(admin.name(['publicListOwners', shareId]), {
+        ownerId: uid, listId, createdAt: timestamp,
+      }),
+      createWrite(admin.name(['publicLists', shareId]), {
+        ...payload, createdAt: timestamp, updatedAt: timestamp,
+      }),
+      // `onProfile` mirrors the showcase so Mis listas renders the badge from
+      // the document it already reads; `publicSyncedAt` marks the copy as in
+      // step with the list as of this commit (the dirty check of P25).
+      mergeWrite(admin.name(['users', uid, 'lists', listId]), {
+        publicShareId: shareId, onProfile: attributed, publicSyncedAt: timestamp,
+      }, { updateTime: list.updateTime }),
+    ];
+    if (attributed) {
+      const projection = await admin.getDocument(['profileLists', uid], { withMeta: true });
+      const entries = projectionEntries(projection);
+      if (entries.length >= PROFILE_LISTS_LIMIT) {
+        throw new PublicListApiError('PROFILE_LISTS_FULL', 409);
+      }
+      const card = showcaseCard(shareId, {
+        title: payload.title,
+        emoji: cleanEmoji(list.data.emoji),
+        paperCount: payload.paperCount,
+        publishedAt: timestamp,
+      });
+      writes.push(projectionWrite(admin, uid, [...entries, card], timestamp, projection));
     }
-    const card = showcaseCard(shareId, {
-      title: payload.title,
-      emoji: cleanEmoji(list.emoji),
-      paperCount: payload.paperCount,
-      publishedAt: timestamp,
-    });
-    writes.push(projectionWrite(admin, uid, [...entries, card], timestamp, projection));
+    try {
+      await admin.commit(writes);
+    } catch (error) {
+      if (attempt === 0 && error instanceof FirestoreAdminError && error.status === 409) continue;
+      throw error;
+    }
+    return { shareId, attributed, ...payload };
   }
-  await admin.commit(writes);
-  return { shareId, attributed, ...payload };
+  // Unreachable: the loop returns or throws on every path.
+  throw new PublicListApiError('PUBLISH_CONFLICT', 409);
 }
 
 function validateUpdate(body) {

@@ -1296,3 +1296,41 @@ test('losing twice is the caller turn to retry, and it is told so', async () => 
   );
   assert.equal(admin.commits.length, 0);
 });
+
+test('the pointer write is pinned to the version the already-published check read', async () => {
+  stubIdentity();
+  const admin = fakeAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1' } }, {
+    updateTimes: { [`users/${UID}/lists/l1`]: '2026-08-20T18:00:00.000000Z' },
+  });
+  await run('/lists/publish', { listId: 'l1', title: 'T', papers: [] }, { admin });
+  assert.deepEqual(admin.commits[0][2].currentDocument, {
+    updateTime: '2026-08-20T18:00:00.000000Z',
+  }, 'unpinned, two publishes both commit and one share is left public and unreachable');
+});
+
+test('losing the pointer to another publish is reported as already published', async () => {
+  stubIdentity();
+  const admin = racingAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1' } }, {
+    afterRace: { [`users/${UID}/lists/l1`]: { id: 'l1', publicShareId: OTHER_SHARE } },
+  });
+  await assert.rejects(
+    () => run('/lists/publish', { listId: 'l1', title: 'T', papers: [] }, { admin }),
+    error => error.code === 'ALREADY_PUBLISHED' && error.status === 409,
+  );
+  assert.equal(admin.commits.length, 0, 'the second share was never created');
+});
+
+test('losing the pointer to an ordinary edit of the list resolves on the retry', async () => {
+  stubIdentity();
+  // The browser stamps updatedAt on the private list at every edit, and the gap
+  // between the read and the commit is a full round trip. Failing here would
+  // trade a rare orphan for a Publish button that breaks after editing — and
+  // publishPublicList, unlike the sync engine, never retries.
+  const admin = racingAdmin({ [`users/${UID}/lists/l1`]: { id: 'l1' } }, {
+    afterRace: { [`users/${UID}/lists/l1`]: { id: 'l1', updatedAt: new Date(NOW) } },
+  });
+  const result = await run('/lists/publish', { listId: 'l1', title: 'T', papers: [] }, { admin });
+  assert.match(result.shareId, /^[a-f0-9]{32}$/);
+  assert.equal(admin.commits.length, 1, 'one refused attempt, one that landed');
+  assert.equal(fieldsOf(admin.commits[0][0]).ownerId, UID, 'and only one share was minted');
+});
