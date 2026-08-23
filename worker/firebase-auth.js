@@ -22,6 +22,48 @@ async function sha256(value) {
  */
 const IDENTITY_TOOLKIT_TIMEOUT_MS = 4000;
 
+/** A token this close to expiry is still worth asking Google about. */
+const CLOCK_SKEW_SECONDS = 60;
+
+function decodeSegment(segment) {
+  const binary = atob(segment.replace(/-/g, '+').replace(/_/g, '/'));
+  const bytes = Uint8Array.from(binary, character => character.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+/**
+ * A local, signature-free look at the token before Google is asked about it.
+ *
+ * Delegating verification to `accounts:lookup` is the right design and is not
+ * being revisited. What was wrong is that ANY non-blank string up to 8 KB paid
+ * for a round trip to Identity Toolkit, so an anonymous caller could spend the
+ * upstream allowance one junk request at a time. Three base64url segments, a
+ * payload that parses, an `exp` that has not passed and an `aud` naming this
+ * project cost nothing to check here, and a token failing any of them cannot
+ * have been issued by Firebase.
+ *
+ * `alg`, `iss` and `sub` are deliberately not read: unverified, they are
+ * attacker-controlled, so they would buy no security while risking a false
+ * negative the day Firebase changes one of them. And `aud` is only checked when
+ * the project id is configured — a Worker that does not know its own project
+ * must not answer 401 to everybody.
+ */
+function looksLikeIdToken(token, env, nowSeconds) {
+  const segments = token.split('.');
+  if (segments.length !== 3 || segments.some(segment => !segment)) return false;
+  let claims;
+  try {
+    decodeSegment(segments[0]);
+    claims = decodeSegment(segments[1]);
+  } catch {
+    return false;
+  }
+  if (!claims || typeof claims !== 'object') return false;
+  if (!Number.isFinite(claims.exp) || claims.exp + CLOCK_SKEW_SECONDS < nowSeconds) return false;
+  const projectId = String(env.FIREBASE_PROJECT_ID || '').trim();
+  return !projectId || claims.aud === projectId;
+}
+
 async function lookupIdentity(token, env) {
   const response = await fetch(
     `https://identitytoolkit.googleapis.com/v1/accounts:lookup?key=${encodeURIComponent(env.FIREBASE_WEB_API_KEY)}`,
@@ -59,6 +101,13 @@ export async function verifyFirebaseIdentity(request, env, { allowCache = true }
   if (allowCache) {
     const cached = await caches.default.match(cacheKey);
     if (cached) return cached.json();
+  }
+
+  // After the cache, not before it: only a verified identity is ever cached, so
+  // a token that fails this filter could not have produced a hit anyway, and
+  // the warm path keeps costing what it costs today.
+  if (!looksLikeIdToken(token, env, Math.floor(Date.now() / 1000))) {
+    throw new WorkerAuthError('AUTH_REQUIRED', 401);
   }
 
   let lookup;

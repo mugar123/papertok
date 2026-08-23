@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import reportApi, { fetchWithDeadline } from './report-api.js';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.js';
+import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
 
 async function withWorkerFetchMock(fetchImplementation, callback) {
   const originalFetch = globalThis.fetch;
@@ -940,11 +941,13 @@ test('falls back to INSPIRE when NASA ADS stalls instead of waiting on it', asyn
 });
 
 test('answers 503 AUTH_UNAVAILABLE when Identity Toolkit cannot be reached', async () => {
+  // A well-formed token on purpose: a malformed one is now refused locally, and
+  // this test is about Google being unreachable, not about the token.
   const response = await withWorkerFetchMock(async () => {
     throw Object.assign(new Error('The operation timed out'), { name: 'TimeoutError' });
   }, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/sources/core?q=malaria',
-    { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    { headers: { origin: 'https://mugar123.github.io', authorization: `Bearer ${fakeIdToken()}` } },
   ), { FIREBASE_WEB_API_KEY: 'firebase-test-key' }));
 
   // Not 401: telling a user their session expired because Google was unreachable
@@ -958,7 +961,7 @@ test('still answers 401 AUTH_REQUIRED when Identity Toolkit refuses the token', 
     async () => new Response(JSON.stringify({ error: { message: 'INVALID_ID_TOKEN' } }), { status: 400 }),
     () => reportApi.fetch(new Request(
       'https://papertok-report-api.example/sources/core?q=malaria',
-      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+      { headers: { origin: 'https://mugar123.github.io', authorization: `Bearer ${fakeIdToken()}` } },
     ), { FIREBASE_WEB_API_KEY: 'firebase-test-key' }),
   );
 

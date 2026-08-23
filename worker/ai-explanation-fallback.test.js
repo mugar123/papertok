@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { handleAIExplanation } from './ai-explanation.js';
 import { KimiBudgetLedger } from './kimi-budget-ledger.js';
+import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
 
 const UID = 'ada-uid';
 const KIMI_BASE_URL = 'https://papertok--kimi.modal.run/v1';
@@ -167,7 +168,7 @@ const PAPER = {
 function explainRequest(paper = PAPER, { level = 'university', language = 'es' } = {}) {
   return new Request('https://worker.test/ai/explain', {
     method: 'POST',
-    headers: { authorization: 'Bearer id-token', 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${fakeIdToken()}`, 'content-type': 'application/json' },
     body: JSON.stringify({ level, language, paper }),
   });
 }

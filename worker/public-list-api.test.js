@@ -7,11 +7,16 @@ import {
   PublicListApiError,
 } from './public-list-api.js';
 import { decodeFields, FirestoreAdminError } from './firestore-admin.js';
+import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
 
 const UID = 'alice-uid';
 const OTHER = 'mallory-uid';
 const SHARE = 'a'.repeat(32);
 const NOW = Date.parse('2026-08-20T10:00:00.000Z');
+const PROJECT_ID = 'papertok-168df';
+// The Worker refuses a token that is not shaped like one before it spends a
+// call on Identity Toolkit, so the fixture has to look like the real thing.
+const TOKEN = fakeIdToken({ aud: PROJECT_ID });
 
 // ---------------------------------------------------------------------------
 // Doubles.
@@ -38,7 +43,7 @@ function envWith(overrides = {}) {
     FIREBASE_WEB_API_KEY: 'web-key',
     FIREBASE_SERVICE_ACCOUNT_EMAIL: 'papertok-worker@papertok-168df.iam.gserviceaccount.com',
     FIREBASE_SERVICE_ACCOUNT_PRIVATE_KEY: '-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----',
-    FIREBASE_PROJECT_ID: 'papertok-168df',
+    FIREBASE_PROJECT_ID: PROJECT_ID,
     REQUEST_QUOTA_LEDGER: ledger(),
     ...overrides,
   };
@@ -93,7 +98,7 @@ function stubIdentity({ uid = UID, ok = true } = {}) {
   };
 }
 
-function post(pathname, body, { token = 'id-token' } = {}) {
+function post(pathname, body, { token = TOKEN } = {}) {
   return new Request(`https://worker.test${pathname}`, {
     method: 'POST',
     headers: {
@@ -112,7 +117,7 @@ function streamedPost(pathname, text) {
   const bytes = new TextEncoder().encode(text);
   return new Request(`https://worker.test${pathname}`, {
     method: 'POST',
-    headers: { authorization: 'Bearer id-token', 'content-type': 'application/json' },
+    headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
     body: new ReadableStream({
       start(controller) {
         controller.enqueue(bytes);
