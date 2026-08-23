@@ -1,5 +1,54 @@
 # Estado / pendientes
 
+## F2-residuo cerrado — y había una segunda instancia sin documentar (2026-08-24)
+
+Se pidió re-verificar F2 («el plazo solo cubre cabeceras, no el cuerpo») con
+diagnóstico propio. Los **cinco puntos originales están arreglados de verdad**:
+`fetchWithDeadline` de `report-api.js:382`, `requestDeadline.js` en el cliente,
+`firebase-auth.js:74` y `scopus-proxy.js:143` usan todos `AbortSignal.timeout`,
+que no tiene temporizador que limpiar y por eso sigue armado durante la lectura
+del cuerpo.
+
+Lo que quedaba vivo estaba en `worker/email-notifications.js`, y eran **dos**
+funciones, no una:
+
+| | Dónde | Estado en las fichas |
+|---|---|---|
+| A | `fetchDigestSource` `:527` | Documentada como «F2-residuo» |
+| B | `fetchWithDeadline` local `:1596` | **Sin documentar en ninguna parte** |
+
+**La corrección de diagnóstico:** la nota del residuo afirmaba que A era «la
+única instancia viva del patrón F2 en todo el repo». No lo era, y B —la que se
+le escapó— pesa más. A corre dentro del cron, con presupuesto propio de 12 min;
+B incluye el lookup de Identity Toolkit que está **delante de toda ruta de email
+protegida**, los dos envíos de proveedor y las dos sondas de `/health/email`.
+
+**Por qué B sobrevivió al barrido**, que es la parte que conviene recordar: no es
+un resto, lo introdujo el propio arreglo email de F3 (G1) escrito con la forma
+vieja, y se llama **igual** que el helper correcto de `report-api.js` — al barrer
+por nombre se lee como ya arreglado. Y su test de G1 comprobaba
+`signal instanceof AbortSignal`: que se *pasara* una señal, no que siguiera
+armada al leer el cuerpo. Un helper con el nombre de otro y un test que mide la
+forma en vez del efecto: por ahí pasó.
+
+El helper local es ahora idéntico al de `report-api.js`, `AbortSignal.any`
+incluido, para que compartir nombre deje de significar contratos distintos.
+Detalle que casi se cuela: `AbortSignal.timeout` levanta `TimeoutError`, no
+`AbortError`, así que la clasificación de `:544` había que ampliarla o un plazo
+agotado real habría pasado a reportarse `EMAIL_SOURCE_*_UNAVAILABLE` en vez de
+`_TIMEOUT` — un arreglo que rompe la señal que el módulo publica.
+
+**Verificación:** 5 tests nuevos (1.104 → 1.109) sobre el arnés que ya existía
+para F2 (`src/test-support/deadlineHarness.js`), los cinco en rojo antes del
+arreglo —los de cuerpo goteante daban literalmente `still waiting`—; 4
+mutaciones y **4 mutantes muertos**. La cuarta (dejar que una señal del llamante
+*reemplace* el plazo en vez de sumarse) **sobrevivió a la primera tanda**: no
+había test que la cubriera, y ese hueco obligó a añadir el quinto. `npm run
+check` en verde y la suite entera en verde bajo Node 22 (1.109/1.109, cero
+`cancelled`), que es lo que corre CI.
+
+**Pendiente: `wrangler deploy`.** El cambio es del Worker y no se ha desplegado.
+
 ## G6 cerrado — siete fallos verificados, siete arreglados (2026-08-24)
 
 Capa cliente y feed: F31, F34, F35, F37, F38, F39 y F42. Los siete se

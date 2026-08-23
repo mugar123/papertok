@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.js';
 import {
   emailNotificationInternals,
   checkEmailProviderHealth,
@@ -11,6 +12,8 @@ import {
 
 const {
   brevoSendErrorCode,
+  fetchDigestSource,
+  fetchWithDeadline,
   buildDeliveryReservationId,
   buildProviderIdempotencyKey,
   buildResendIdempotencyKey,
@@ -1956,4 +1959,81 @@ test('refuses to run the schedule without an atomic delivery ledger', async () =
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+// --- F2 residue: the deadline must cover the body, not just the headers ------
+// Both helpers below used to arm an `AbortController` and clear its timer in a
+// `finally`. `fetch` resolves when the *headers* arrive, so the timer was gone
+// before a single byte of the body had been read, and every caller reads the
+// body afterwards. An upstream that answers its headers and then dribbles hung
+// exactly as one that never answered at all. `AbortSignal.timeout` has no timer
+// to clear: it stays armed through the read. The harness is the same one the
+// client-side F2 sweep built, so both halves of the tree describe a stalled
+// upstream the same way.
+
+test('fetchDigestSource cuts a dribbling body, not only the headers', async () => {
+  const outcome = await withStubbedFetch(dribblingFetch(), () => settleWithin(2_000, async () => {
+    const response = await fetchDigestSource('https://upstream.example/', {}, {
+      source: 'openalex',
+      timeoutMs: 25,
+    });
+    await response.text();
+  }));
+
+  assert.equal(outcome, 'TimeoutError');
+});
+
+test('fetchWithDeadline cuts a dribbling body, not only the headers', async () => {
+  // This is the helper behind the Identity Toolkit lookup that guards every
+  // protected email route, both provider sends and both `/health/email` probes.
+  const outcome = await withStubbedFetch(dribblingFetch(), () => settleWithin(2_000, async () => {
+    const response = await fetchWithDeadline('https://upstream.example/', {}, 25);
+    await response.json();
+  }));
+
+  assert.equal(outcome, 'TimeoutError');
+});
+
+test('fetchWithDeadline enforces its deadline even when the caller brings a signal', async () => {
+  // The mutant this kills: `init.signal ?? deadline`. A caller signal here is a
+  // *cancellation*, not a budget, and says nothing about how long the upstream
+  // may take -- letting it replace the deadline would hand the next caller that
+  // passes one an unbounded wait, which is the whole failure this helper exists
+  // to remove.
+  const caller = new AbortController(); // never fires
+  const outcome = await withStubbedFetch(dribblingFetch(), () => settleWithin(2_000, async () => {
+    const response = await fetchWithDeadline('https://upstream.example/', { signal: caller.signal }, 25);
+    await response.text();
+  }));
+
+  assert.equal(outcome, 'TimeoutError');
+});
+
+test('fetchWithDeadline still tells a caller cancellation from its own deadline', async () => {
+  // The guard on over-correcting: adding the deadline to a caller signal must
+  // not relabel a hang-up as a timeout. `AbortSignal.any` keeps whichever fired
+  // first as the reason.
+  const caller = new AbortController();
+  caller.abort(new DOMException('the caller gave up', 'AbortError'));
+  const outcome = await withStubbedFetch(dribblingFetch(), () => settleWithin(2_000, async () => {
+    const response = await fetchWithDeadline('https://upstream.example/', { signal: caller.signal }, 25);
+    await response.text();
+  }));
+
+  assert.equal(outcome, 'AbortError');
+});
+
+test('a source that runs out of deadline is still reported as a TIMEOUT', async () => {
+  // The subtle half of the fix. `AbortSignal.timeout` raises `TimeoutError`,
+  // not `AbortError`, and the controller whose `.aborted` flag used to answer
+  // this question is gone -- so a fix that stopped here would quietly recode
+  // every real deadline as `_UNAVAILABLE` and lose the signal the digest report
+  // publishes.
+  const timingOut = async () => {
+    throw new DOMException('the deadline passed', 'TimeoutError');
+  };
+  await withStubbedFetch(timingOut, () => assert.rejects(
+    fetchDigestSource('https://upstream.example/', {}, { source: 'openalex', timeoutMs: 25 }),
+    error => error.code === 'EMAIL_SOURCE_OPENALEX_TIMEOUT',
+  ));
 });

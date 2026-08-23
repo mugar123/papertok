@@ -106,10 +106,10 @@ Worker de producción NO incluye `55444c6`** (el endurecimiento de
 commit de las 19:34) — no es un agujero vivo (ningún llamante actual pasa señal),
 pero conviene un `wrangler deploy` antes de que G5/G8 usen el helper.
 
-**Residuo detectado en la verificación (sin dueño — el primero de G5/G8 que
-pase por aquí, o una pasada corta propia):**
+**Residuo detectado en la verificación — CERRADO el 24-08-2026**, y con él una
+segunda instancia del mismo patrón que ninguna ficha había visto (ver abajo):
 
-- [ ] **F2-residuo · baja · `fetchDigestSource` conserva el patrón viejo de plazo solo-cabeceras**
+- [x] **F2-residuo · baja · `fetchDigestSource` conserva el patrón viejo de plazo solo-cabeceras**
   `worker/email-notifications.js:527-552`: `clearTimeout` en `finally` y
   devuelve el `Response` **sin leer**; los llamantes hacen `response.json()`
   fuera del bloque cubierto (p. ej. `:1007`). Es la única instancia viva del
@@ -119,6 +119,45 @@ pase por aquí, o una pasada corta propia):**
   presupuesto propio de 12 min, no en el camino de una petición de usuario.
   **Arreglo:** el mismo de F2 — leer el cuerpo dentro del bloque cubierto o
   usar `AbortSignal.timeout` sin `clearTimeout`.
+
+  **Cerrado el 24-08-2026, con una corrección al diagnóstico: NO era la única
+  instancia.** Había una **segunda** en el mismo fichero, sin documentar en
+  ninguna ficha y de impacto **mayor** que la que sí lo estaba: un
+  `fetchWithDeadline` local en `:1596-1603`, con la forma vieja exacta
+  (`return await fetch(...)` en el `try`, `clearTimeout` en el `finally`,
+  `Response` sin leer) y cinco llamantes que leen el cuerpo ya fuera de
+  cobertura — el lookup de Identity Toolkit de `:714`, que está **delante de
+  toda ruta de email protegida** (justo el escenario que F3 llamó «el más
+  delicado»), los envíos Brevo (`:1612`) y Resend (`:1658`), y las dos sondas
+  que respaldan `/health/email` (`:2064`, `:2098`). El argumento de impacto
+  acotado de esta ficha —«corre dentro del cron»— solo describía
+  `fetchDigestSource`.
+
+  **Por qué sobrevivió al barrido:** no es un resto de nada, lo **introdujo** el
+  propio arreglo email de F3 (G1), escrito con la forma vieja; y se llama igual
+  que el helper *correcto* de `report-api.js:382`, así que al barrer se lee como
+  ya arreglado. Su test de G1 (`gives the identity lookup and both provider
+  probes a deadline`) solo comprobaba `signal instanceof AbortSignal` — que se
+  pasara una señal, no que siguiera armada al leer el cuerpo. Ese es el hueco
+  exacto por el que pasó.
+
+  Los dos usan ya `AbortSignal.timeout`; el helper local es ahora idéntico al de
+  `report-api.js`, `AbortSignal.any` incluido, para que compartir el nombre deje
+  de significar contratos distintos. Se ajustó además la clasificación de
+  `:544`: `AbortSignal.timeout` levanta `TimeoutError`, no `AbortError`, así que
+  sin tocarla un plazo agotado real habría pasado a codificarse
+  `EMAIL_SOURCE_*_UNAVAILABLE` en vez de `_TIMEOUT`. 5 tests nuevos
+  (1.104 → 1.109), 4 mutaciones y 4 mutantes muertos —una de ellas, dejar que
+  una señal del llamante *reemplace* el plazo, sobrevivió a la primera tanda y
+  obligó a añadir un quinto test—, `npm run check` en verde y la suite entera en
+  verde bajo Node 22, que es lo que corre CI. **Pendiente de `wrangler deploy`:
+  el cambio es del Worker.**
+
+  **Verificado también:** los cinco puntos originales de F2 siguen arreglados, y
+  ya no queda ninguna instancia del patrón en `src/`, `worker/` ni `proxy/` — se
+  revisaron los ~20 `clearTimeout` restantes uno a uno, y todos leen el cuerpo
+  dentro del bloque cubierto, que es el discriminante real (no la presencia del
+  `clearTimeout`).
 
 **Estado en vivo al auditar** (23-08-2026): `/health` todo en verde; OpenAlex
 $0,97/1,00 de presupuesto diario; Scopus servidor disponible (19.988/20.000).

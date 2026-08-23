@@ -535,20 +535,24 @@ async function fetchDigestSource(input, init, {
       report.requestAttempts += 1;
       if (attempt > 0) report.retried += 1;
     }
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
     let response;
     try {
-      response = await fetch(input, { ...init, signal: controller.signal });
+      // A fresh deadline per attempt, and one that outlives this `await`: the
+      // response is handed back unread, so the body -- which is the part that
+      // actually stalls -- is only covered because `AbortSignal.timeout` has no
+      // timer for a `finally` to clear.
+      response = await fetch(input, { ...init, signal: AbortSignal.timeout(timeoutMs) });
     } catch (error) {
-      const timedOut = controller.signal.aborted || error?.name === 'AbortError';
+      // `AbortSignal.timeout` raises `TimeoutError`, not `AbortError`. Reading
+      // only the latter would recode every real deadline as `_UNAVAILABLE` and
+      // lose the distinction the digest report publishes; `AbortError` stays
+      // because a runtime that cuts the request is a deadline all the same.
+      const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
       lastError = new DigestSourceError(
         source,
         `EMAIL_SOURCE_${sourceCodeName(source)}_${timedOut ? 'TIMEOUT' : 'UNAVAILABLE'}`,
         error?.message,
       );
-    } finally {
-      clearTimeout(timeoutId);
     }
 
     if (response?.ok) return response;
@@ -1593,14 +1597,23 @@ function renderDigest(subscription, papers, unsubscribeUrl, test) {
   return { html, text, subject: test ? copy.testSubject : title };
 }
 
-async function fetchWithDeadline(input, init, timeoutMs) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(input, { ...init, signal: controller.signal });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+// Deliberately the same shape as `fetchWithDeadline` in `report-api.js`, down
+// to the caller-signal rule. This one used to arm an `AbortController` and clear
+// its timer in a `finally`, which reads as bounded and is not: `fetch` resolves
+// when the **headers** arrive, so the timer was gone before a byte of the body
+// had been read -- and every caller here reads the body afterwards, the Identity
+// Toolkit lookup that guards each protected route among them. `AbortSignal.timeout`
+// has no timer to clear and stays armed until the response has been read in full.
+// Sharing the name with a helper that behaved differently is what let the old
+// shape survive a sweep for exactly this bug, so the contracts now match: a
+// caller signal is *added* to the deadline, never a replacement for it, and
+// `AbortSignal.any` keeps whichever fired first as the reason.
+function fetchWithDeadline(input, init, timeoutMs) {
+  const deadline = AbortSignal.timeout(timeoutMs);
+  return fetch(input, {
+    ...init,
+    signal: init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline,
+  });
 }
 
 async function fetchEmailProvider(input, init) {
@@ -2480,6 +2493,10 @@ export async function runEmailNotificationSchedule(env, scheduledTime = Date.now
 
 export const emailNotificationInternals = {
   brevoSendErrorCode,
+  // Exported for the F2 deadline regressions: the tests need to hand them a
+  // 25 ms deadline instead of waiting out the real one.
+  fetchDigestSource,
+  fetchWithDeadline,
   buildDeliveryReservationId,
   buildProviderIdempotencyKey,
   buildResendIdempotencyKey,
