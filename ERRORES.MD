@@ -32,6 +32,13 @@ la parte email de F3), con tests de regresión verificados por mutación y
 `npm run check` en verde. G2 arreglado el 23-08-2026 (F1, F2, F4, F5, F36 y la
 parte no-email de F3), 21 tests nuevos verificados por mutación, 980 en verde.
 
+**G4 arreglado el 23-08-2026** (F16, F17, F18, F19, F20, F21, F22, F23): los
+ocho re-verificados y los ocho reales, con dos correcciones de diagnóstico
+propias (F16 es más grave, F19 más estrecho) y **la mitad `release` de F18
+rechazada por análisis** — ver F18. 30 tests nuevos (1.001 → 1.031), cada uno
+verificado por mutación, `npm run check` en verde y la suite en verde bajo Node
+22, que es lo que corre CI.
+
 G7 cerrado el 23-08-2026: **F40 re-verificado y RECHAZADO** por mal
 diagnosticado (el bundle apagado era la decisión vigente, no una deriva). Se
 arregló en su lugar la causa raíz que el propio F40 nombra en su punto 4 — nada
@@ -122,9 +129,13 @@ Casi todo lo de abajo es latente — salvo F24 (activo en producción). ~~y F40
 - **G2 y G5 tocan los dos `worker/report-api.js`.** No los corras en paralelo.
   Orden recomendado: G2 primero (crea el helper de fetch-con-plazo que G5 puede
   reutilizar).
-- **G3 (F8) y G4 (F18) necesitan los dos una acción `release` en
-  `worker/request-quota-ledger.js`.** El primero que llegue la implementa (una
-  sola vez, genérica); el segundo la consume. Anotad en STATE.md quién la hizo.
+- ~~**G3 (F8) y G4 (F18) necesitan los dos una acción `release` en
+  `worker/request-quota-ledger.js`.**~~ **G4 pasó por aquí el 23-08-2026 y NO la
+  implementó**, a propósito: en la ruta de listas el reembolso desacota las
+  lecturas de Firestore (razonamiento completo en F18). El ledger sigue con solo
+  `reserve`. G3 tiene las manos libres para añadirla para F8 —donde el reembolso
+  es por fallo de proveedor, no por una carrera que el llamante puede provocar—
+  y en ese caso la implementa entera, sin nadie con quien coordinarse.
 - **F3 se reparte**: los fetch sin plazo de `email-notifications.js` los arregla
   G1 (para no pisar el fichero); el resto, G2.
 - ~~**G7 (F40) es solo configuración + redeploy del frontend**~~ — resultó no
@@ -546,12 +557,17 @@ mecanismo de devolución. Las averías de proveedores se pagan como consumo real
 # G4 — Listas públicas y autenticación
 
 **Ficheros:** `worker/public-list-api.js`, `worker/firebase-auth.js`,
-`worker/firestore-admin.js`, `worker/request-quota-ledger.js` (release,
-compartida con G3). Tests: `public-list-api.test.js`, `firestore-admin.test.js`.
+`worker/firestore-admin.js`, ~~`worker/request-quota-ledger.js` (release,
+compartida con G3)~~ — el ledger no se tocó. Tests:
+`public-list-api.test.js`, `firestore-admin.test.js`, y dos nuevos:
+`worker/firebase-auth.test.js` y `src/test-support/firebaseIdToken.js`.
+El pre-filtro de F20 obligó además a actualizar los fixtures de token de
+`worker/report-api.test.js` (G2/G5) y `worker/ai-explanation-fallback.test.js`
+(G3) — cuatro líneas, solo el literal del token.
 
 ## Fallos
 
-- [ ] **F16 · media · `/lists/unpublish` confía en el `listId` del body: estado atascado permanente**
+- [x] **F16 · media · `/lists/unpublish` confía en el `listId` del body: estado atascado permanente**
   `worker/public-list-api.js:493-509` (lee `body.listId` en 495, lo usa en
   `clearFieldsWrite` en 507; `requireOwnedShare` devuelve `owner.listId` y se
   descarta).
@@ -568,7 +584,7 @@ compartida con G3). Tests: `public-list-api.test.js`, `firestore-admin.test.js`.
   **Arreglo:** ignorar `body.listId` y usar `owner.listId` como hace `update`
   (o 400 si difieren). Una línea + test del caso no coincidente.
 
-- [ ] **F17 · media · Dos syncs concurrentes del mismo dueño pueden perder un paper de forma persistente**
+- [x] **F17 · media · Dos syncs concurrentes del mismo dueño pueden perder un paper de forma persistente**
   `worker/public-list-api.js:432` (lee `existing` sin `withMeta`) y `:449`
   (`mergeWrite` solo con `exists: true`); `src/services/publicListSync.js:141`.
   El merge de `/lists/update` es read-modify-write sin precondición de versión
@@ -585,7 +601,7 @@ compartida con G3). Tests: `public-list-api.test.js`, `firestore-admin.test.js`.
   el patrón ya existe en el fichero (`projectionWrite`, `refreshPinnedCard`,
   test `:663-665`).
 
-- [ ] **F18 · media · La cuota se cobra antes de validar y no se devuelve: DoS del global**
+- [x] **F18 · media · La cuota se cobra antes de validar y no se devuelve: DoS del global**
   `worker/public-list-api.js:603` (`reservePublishQuota`, antes de
   `OPERATIONS[pathname]` en `:611`).
   Un `LIST_NOT_FOUND`, body inválido o `PUBLISH_CONFLICT` consume una unidad
@@ -597,8 +613,20 @@ compartida con G3). Tests: `public-list-api.test.js`, `firestore-admin.test.js`.
   (o no cobrar los 4xx que no tocaron Firestore); `release` en el ledger para
   los 409 de carrera. Cobrar-antes puede seguir siendo la política para lo que
   sí llega a Firestore (protege el presupuesto Spark, es deliberado).
+  **HECHO (23-08-2026), con la segunda mitad RECHAZADA.** La reserva va ahora
+  tras una validación pura por ruta (`OPERATIONS` pasó a `{validate, run}`), así
+  que nada que no llegue a Firestore cobra. La acción `release` **no se
+  implementó**: reabre un agujero peor que el que cierra. `/lists/update`
+  conserva un write con `mustExist: true` sobre la lista privada, así que una
+  lista privada borrada hace que todas sus sincronizaciones den 409 para
+  siempre — cada una gastando 3-4 lecturas de Firestore y recuperando la unidad;
+  y un atacante puede provocar 409 de carrera contra su propia lista a voluntad.
+  Reembolsar los deja gratis y desacota las lecturas del plan gratuito, que es
+  exactamente lo que el cobro protegía. **La acción compartida sigue sin existir:
+  G3 (F8) es libre de implementarla para su caso**, donde el reembolso es por
+  fallo de proveedor y no por carrera provocable por el llamante.
 
-- [ ] **F19 · media · Doble publish concurrente crea un documento público huérfano**
+- [x] **F19 · media · Doble publish concurrente crea un documento público huérfano**
   `worker/public-list-api.js:380-413`. El check `ALREADY_PUBLISHED` (`:381`)
   es check-then-act y el `mergeWrite` del puntero (`:395-397`) no lleva
   precondición: dos publish concurrentes generan shareIds distintos, ambos
@@ -609,7 +637,7 @@ compartida con G3). Tests: `public-list-api.test.js`, `firestore-admin.test.js`.
   puntero a su `updateTime`: el perdedor falla el commit entero (ya mapeado a
   `PUBLISH_CONFLICT` 409). Mismo patrón que F17.
 
-- [ ] **F20 · baja · Cada token basura de ≤8 KB dispara una llamada a Identity Toolkit**
+- [x] **F20 · baja · Cada token basura de ≤8 KB dispara una llamada a Identity Toolkit**
   `worker/firebase-auth.js:20-43`. No hay ni un check de forma JWT
   (`[^\s]+` hasta 8192): peticiones anónimas con strings basura consumen una
   llamada upstream cada una. (El diseño de delegar la verificación en
@@ -617,7 +645,7 @@ compartida con G3). Tests: `public-list-api.test.js`, `firestore-admin.test.js`.
   **Arreglo:** pre-filtro local sin verificar firma — tres segmentos
   base64url, `exp` no vencido, `aud` = projectId.
 
-- [ ] **F21 · baja · El token OAuth de la service account no se invalida tras un 401 de Firestore**
+- [x] **F21 · baja · El token OAuth de la service account no se invalida tras un 401 de Firestore**
   `worker/firestore-admin.js:125-149` (cache por isolate, margen 300 s) y
   `:222-228` (`authorizedFetch` no reacciona al status). Tras rotar la clave,
   el token cacheado sigue sirviéndose hasta ~55 min: cada petición 401 → 502
@@ -625,7 +653,7 @@ compartida con G3). Tests: `public-list-api.test.js`, `firestore-admin.test.js`.
   **Arreglo:** ante 401/403, `tokenCache.delete(email)` y reintentar una vez
   con token fresco.
 
-- [ ] **F22 · baja · `requireListId` acepta `.` y `..`**
+- [x] **F22 · baja · `requireListId` acepta `.` y `..`**
   `worker/public-list-api.js:87-93`; `firestore-admin.js:210-217`
   (`documentName` rechaza `/` pero no segmentos-punto). Con `listId: '..'` la
   URL del GET de propiedad se normaliza a `…/documents/users/{uid}`:
@@ -634,7 +662,7 @@ compartida con G3). Tests: `public-list-api.test.js`, `firestore-admin.test.js`.
   **Arreglo:** rechazar `.` y `..` en `requireListId` y, en defensa en
   profundidad, en `documentName`.
 
-- [ ] **F23 · baja · `readBody` mide el límite en UTF-16, no en bytes**
+- [x] **F23 · baja · `readBody` mide el límite en UTF-16, no en bytes**
   `worker/public-list-api.js:95-99`. `text.length` cuenta code units: un body
   de caracteres de 3 bytes pasa con ~3× el tamaño real (y `content-length`
   puede faltar con chunked). Solo memoria/CPU: el saneado posterior acota lo
@@ -649,7 +677,9 @@ compartida con G3). Tests: `public-list-api.test.js`, `firestore-admin.test.js`.
 2. F17 y F19 juntos: mismo patrón de precondición `updateTime` + retry, ya
    presente en el fichero. Tests de concurrencia: dos updates simultáneos no
    pierden el paper; dos publish simultáneos no dejan huérfano.
-3. F18 con la acción `release` (coordinar con G3, ver Dependencias).
+3. ~~F18 con la acción `release` (coordinar con G3, ver Dependencias).~~ F18 se
+   cerró con la validación por delante de la reserva; la acción `release` quedó
+   rechazada (ver F18) y el ledger no se tocó.
 4. F20–F23 en una pasada, cada uno con test.
 5. Lo que NO hay que tocar (verificado en buen estado): la verdad de membresía
    en el servidor, el saneado idempotente (tiene tests de regresión de los dos

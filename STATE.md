@@ -1,5 +1,113 @@
 # Estado / pendientes
 
+## G4: las listas públicas dejan de poder perder papeles en carrera (2026-08-23)
+
+Ocho fallos (F16–F23) de `ERRORES.MD`, los ocho re-verificados leyendo el código
+antes de tocarlo y los ocho **reales**. Tests 1.001 → **1.031**, `npm run check`
+en verde, y la suite en verde bajo **Node 22** (lo que corre CI; 0 `cancelled`).
+Cada test nuevo verificado por mutación: revertido su arreglo, en rojo;
+restaurado, en verde.
+
+### Lo arreglado, por orden de aterrizaje
+
+1. **F22** — `requireListId` aceptaba `.` y `..`. Comprobado con el parser real:
+   `encodeURIComponent('..')` devuelve `'..'` y la URL se normaliza, así que la
+   lectura de propiedad de `users/{uid}/lists/..` acababa leyendo
+   `users/{uid}/`. Rechazados por **igualdad exacta** en `requireListId` y en
+   `documentName` — esto último **no es defensa en profundidad, es necesario
+   hoy**: `owner.listId` llega desde Firestore y no vuelve a pasar por el
+   validador. Va primero justo por eso: F16 lo consume.
+2. **F23** — el tope del cuerpo se medía con `text.length` (UTF-16). Medido:
+   400.000 `字` son 400.000 code units y **1.200.000 bytes**, y pasaban. Ahora
+   `arrayBuffer().byteLength` + `TextDecoder` no fatal.
+3. **F16** — `unpublish` limpiaba el puntero de la lista que dijera el *body*.
+   **Más grave de lo que decía el informe**: la lista víctima se queda sin
+   `publicShareId`, con lo que pasa a ser borrable (`firestore.rules:800`) y su
+   copia pública queda inalcanzable para siempre. Ahora usa `owner.listId`, como
+   `update` desde siempre. El cliente sigue mandando `listId`; nadie lo lee.
+4. **F21** — un 401 de Firestore borra el token OAuth cacheado y reintenta una
+   vez. **403 queda fuera a propósito**, con test que lo fija: una clave revocada
+   falla al *acuñar* el token (`SERVICE_TOKEN_REFUSED`), no aquí, así que todo
+   403 es `PERMISSION_DENIED` sobre una identidad ya autenticada.
+5. **F20** — pre-filtro local del ID token antes de llamar a Identity Toolkit.
+   Colocado **después del fallo de caché**: solo se cachean identidades ya
+   verificadas, así que no pierde cobertura y ahorra tocar cuatro tests de
+   `report-api` que siembran la caché. Módulo nuevo `worker/firebase-auth.test.js`
+   (no tenía suite) y `src/test-support/firebaseIdToken.js`.
+6. **F18a** — `OPERATIONS` pasa de función a `{validate, run}`: la validación es
+   pura y corre **antes** de reservar cuota. `buildMergedPayload` partido en
+   `prepareMergeInput` (puro) y `mergePreparedPayload`, que estrena tests
+   directos — no tenía ninguno pese a haber borrado papeles de una lista
+   compartida real dos veces.
+7. **F17** — el merge de `/lists/update` va pineado a `updateTime` con reintento
+   que **relee todo**, vitrina incluida. La rama legado (reemplazo entero) no se
+   pinea: no lee nada para construirse, así que no hay actualización que perder.
+8. **F19** — el puntero de `publish` pineado, **con reintento**. Ver abajo.
+
+### Las tres correcciones al diagnóstico del informe
+
+- **F19 es más estrecho de lo que decía.** Con `attributed: true` y una vitrina
+  ya existente, los dos writes van pineados al mismo `updateTime` y el perdedor
+  ya fallaba entero. El agujero real: `attributed: false`, y la **primera**
+  publicación de la cuenta, donde `projectionWrite` cae a `mustExist: false`.
+- **El arreglo propuesto para F19 era net-negativo tal cual.** Pinear sin
+  reintentar habría cambiado un huérfano raro por un «Publicar» que falla tras
+  editar: el navegador estampa `updatedAt` en la lista privada en cada edición
+  (`ListsPage.jsx`, `SaveToListModal.jsx`) y la ventana entre lectura y commit es
+  un viaje de ida y vuelta entero — y `publishPublicList` **no reintenta**, a
+  diferencia del motor de sync. Con reintento, la segunda lectura separa sola los
+  dos casos: `publicShareId` puesto → `ALREADY_PUBLISHED`; si no, ruido, y comitea.
+- **El reintento de F17 tiene que releer la VITRINA, no solo el documento
+  público.** Su write también va pineado, así que puede ser el que pierda;
+  arrastrar las tarjetas del primer intento a un write pineado a la versión nueva
+  borraría la que otra pestaña acabara de publicar. Hay tres tests para esto
+  (tarjeta añadida en vuelo, tarjeta quitada en vuelo, y `held` cambiando).
+
+### F18: la mitad `release` está RECHAZADA, y el ledger sigue sin ella
+
+`ERRORES.MD` pedía además una acción `release` genérica en
+`worker/request-quota-ledger.js`, compartida con G3, para devolver la cuota en
+los 409 de carrera. **No se ha implementado**, y la decisión se tomó con el
+usuario delante.
+
+Reabre un agujero peor que el que cierra. `/lists/update` conserva un write con
+`mustExist: true` sobre la lista privada: si esa lista se borra, **todas** sus
+sincronizaciones dan 409 para siempre, cada una gastando 3-4 lecturas de
+Firestore y recuperando su unidad. Y sin necesitar ese estado, cualquiera puede
+lanzar `/lists/update` en paralelo contra su propia lista: las que pierdan la
+carrera dan 409, se reembolsan, y han gastado las lecturas igual. El tope de
+60/día deja de acotar las lecturas del plan gratuito — que es exactamente lo que
+el cobro protegía. El precedente que cita el informe (`email-delivery-ledger`)
+no ayuda: es idempotente por `reservationId`, pero aquí cada petición del ataque
+trae su propia reserva.
+
+Con solo F18a el DoS descrito queda cerrado igualmente: los fallos que no tocan
+Firestore ya no cobran. **Lo que sí llegó a Firestore sigue cobrando, a
+propósito**, y hay un test que lo fija (`ALREADY_PUBLISHED` consume) para que
+nadie «simplifique» el discriminante a `error.status === 409`: `ALREADY_PUBLISHED`
+y `PROFILE_LISTS_FULL` también son 409, y hacerlos gratis daría un amplificador
+de lecturas sin tope.
+
+**Aviso a G3 (F8):** la acción compartida sigue sin existir. G3 puede
+implementarla entera para su caso —donde el reembolso es por fallo de proveedor,
+no por una carrera que el llamante provoca— sin coordinarse con nadie.
+
+### Ficheros tocados fuera del alcance declarado de G4
+
+El pre-filtro de F20 obliga a que los tests manden un token con forma de token.
+Cuatro literales: `worker/report-api.test.js` (G2/G5, dos) y
+`worker/ai-explanation-fallback.test.js` (G3, uno), más el `post()` de
+`public-list-api.test.js`. `worker/email-notifications.test.js` **no** está
+afectado: `email-notifications.js:708` tiene su propio verificador local, que
+por cierto es más laxo que el que se acaba de endurecer — candidato a ticket.
+
+### Coste en el plan gratuito
+
+Un `publish` que pierde la precondición pasa a 2 lecturas + 2 commits; un
+`update`, a 7 + 2 (de 4 + 1). Solo lo paga el perdedor de una carrera entre dos
+pestañas del mismo dueño. El comentario de coste de `public-list-api.js` está
+actualizado para no seguir mintiendo.
+
 ## G7: Scopus no estaba apagado por error, y ahora el build lo defiende (2026-08-23)
 
 **F40 re-verificado y RECHAZADO.** Decía que Scopus estaba apagado en el bundle

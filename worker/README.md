@@ -83,6 +83,22 @@ Authentication is checked before route handling, while quota is reserved only af
 validation and a cache miss. Invalid queries and cached responses therefore cannot consume the
 provider allowance.
 
+Every route that requires a token also screens it locally before asking Identity Toolkit: three
+base64url segments, an unexpired `exp`, and an `aud` matching `FIREBASE_PROJECT_ID` when that
+variable is set. Nothing is verified here — the signature check stays with `accounts:lookup` — but
+a string that could not have been issued by Firebase no longer costs an upstream call. The screen
+runs after the identity cache, which only ever holds verified identities.
+
+The publishing routes (`/lists/publish`, `/lists/update`, `/lists/unpublish`, `/lists/attribute`)
+follow the same rule: each request is validated in full before a unit of the daily publishing
+allowance (`PUBLIC_LIST_USER_DAILY_LIMIT`, `PUBLIC_LIST_GLOBAL_DAILY_LIMIT`) is reserved, so a
+malformed body cannot consume one. Failures that did reach Firestore still consume theirs, which is
+deliberate: they spend a read of the free-tier allowance, and the daily cap is what bounds it.
+`/lists/publish` and the merge half of `/lists/update` pin their writes to the document version they
+read, and retry once from a fresh read when they lose, so two tabs publishing or syncing at the same
+moment can neither orphan a public document nor drop a paper from one. `/lists/unpublish` takes the
+private list id from the share record, never from the request body.
+
 Email digests require the `NOTIFICATION_STORE` KV binding and a configured email provider. Production uses Brevo through `BREVO_API_KEY` and an active `BREVO_FROM_EMAIL`; Resend remains an optional fallback. The Worker verifies the Firebase ID token before storing a subscription, requires the account to have proven the address (`emailVerified`, or a Google or GitHub identity carrying the same address) so nobody can subscribe a stranger's inbox, derives the recipient address from Firebase rather than trusting client input, and persists the active `es`/`en` interface language so the subject, body, dynamic labels, and unsubscribe page use the same locale. Enabled legacy records without follows are marked invalid and are never sent.
 
 Both providers send `List-Unsubscribe` and RFC 8058 `List-Unsubscribe-Post` headers. Opening an unsubscribe link with `GET` only shows a confirmation page. The subscription is
