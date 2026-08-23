@@ -62,6 +62,29 @@ arregló en su lugar la causa raíz que el propio F40 nombra en su punto 4 — n
 ataba el estado previsto del flag al bundle publicado. 7 tests nuevos, 1.001 en
 verde, guarda verificada por mutación en las dos direcciones.
 
+**Verificación independiente del 24-08-2026 (G3, G4, G7):** los 18 fallos de
+G3+G4 re-verificados de forma adversaria contra main — **los 18 ARREGLADOS**
+(G3: 6 mutaciones, 6 mutantes muertos; G4: 10 mutaciones, 9 muertos — el vivo
+es un hueco de test, no de código, anotado abajo). Las correcciones de
+diagnóstico de ambas sesiones se sostienen contra el código pre-arreglo, y el
+rechazo de la mitad `release` de F18 es sólido (un 409 reembolsable daría
+reintentos gratis contra lecturas reales de Firestore). **El rechazo de F40
+(G7) es CORRECTO y verificado**: la decisión de apagar Scopus (`b26418a`,
+22-08 02:14) es 62 min posterior a la de encender (`ad4dcd5`, 01:12) — la
+auditoría leyó la vieja; `gh variable list` confirma que la variable nunca
+existió, y la guarda de build nueva verificada en vivo
+(`VITE_SCOPUS_ENABLED=true npm run build` falla con «declared false, this
+build would ship true»). 1.064 tests en verde. Despliegue verificado: Worker
+con G4+G3 (deploys 23:25 y 23:57 del 23-08, `/health/ai` en verde según
+STATE.md, y cubren también el `55444c6` pendiente de la verificación
+anterior); frontend con F13 y todo lo de cliente (Action en verde del 24-08
+00:14). Huecos menores anotados por los verificadores, ninguno bloqueante:
+(G3) el éxito con `usage` ausente cobra la reserva íntegra sin test ni
+documentación, el settle no-op de una reserva barrida sin test, el fallback
+tras cooldown no respeta `minGeminiFallbackMs`; (G4) ningún test fija que el
+retry del merge relee la membresía fresca (el código sí lo hace), y los datos
+ya corrompidos por el F16 pre-arreglo no se curan (previene, no repara).
+
 **Verificación independiente del 23-08-2026 (tarde):** los 12 fallos de G1+G2
 re-verificados de forma adversaria contra el código de main — los 12 ARREGLADOS,
 con mutation testing confirmando que cada test de regresión falla al revertir su
