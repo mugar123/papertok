@@ -32,7 +32,13 @@ export class RequestQuotaLedger {
     const subjectLimit = positiveInteger(payload?.subjectLimit);
     const globalLimit = positiveInteger(payload?.globalLimit);
     const action = payload?.action;
-    if (!LEDGER_ACTIONS.has(action) || !subjectKey || !subjectLimit || !globalLimit) {
+    // A caller that is about to spend several units of a billed allowance has to
+    // be able to say so in one round trip: reserving one at a time either costs
+    // N trips to this object or, worse, lets the ledger accept the first unit of
+    // a request whose remaining units it would have refused. Absent means one,
+    // which is what every caller written before this asked for.
+    const amount = payload?.amount === undefined ? 1 : positiveInteger(payload.amount);
+    if (!LEDGER_ACTIONS.has(action) || !subjectKey || !subjectLimit || !globalLimit || !amount) {
       return json({ code: 'INVALID_REQUEST' }, 400);
     }
 
@@ -46,10 +52,13 @@ export class RequestQuotaLedger {
       const globalUsage = Math.max(0, Number(globalValue) || 0);
 
       if (action === 'release') {
-        // Nothing was delivered, so the use goes back. The floor is what keeps a
-        // repeated release from minting quota that was never reserved.
-        const releasedSubjectUsage = Math.max(0, subjectUsage - 1);
-        const releasedGlobalUsage = Math.max(0, globalUsage - 1);
+        // Nothing was delivered, so the use goes back -- as much of it as was
+        // taken, which is why this reads `amount` too: giving one unit back to a
+        // caller that reserved nine would leak eight of them every time. The floor
+        // is what keeps a repeated release from minting quota that was never
+        // reserved.
+        const releasedSubjectUsage = Math.max(0, subjectUsage - amount);
+        const releasedGlobalUsage = Math.max(0, globalUsage - amount);
         await Promise.all([
           transaction.put(subjectStorageKey, releasedSubjectUsage),
           transaction.put('global', releasedGlobalUsage),
@@ -62,15 +71,18 @@ export class RequestQuotaLedger {
         };
       }
 
-      if (subjectUsage >= subjectLimit) {
+      // `usage + amount > limit` rather than `usage >= limit`: with an amount of
+      // one the two are the same condition, and with more than one it is the only
+      // one that refuses a reservation the allowance cannot actually cover.
+      if (subjectUsage + amount > subjectLimit) {
         return { accepted: false, scope: 'user', subjectUsage, globalUsage };
       }
-      if (globalUsage >= globalLimit) {
+      if (globalUsage + amount > globalLimit) {
         return { accepted: false, scope: 'global', subjectUsage, globalUsage };
       }
 
-      const nextSubjectUsage = subjectUsage + 1;
-      const nextGlobalUsage = globalUsage + 1;
+      const nextSubjectUsage = subjectUsage + amount;
+      const nextGlobalUsage = globalUsage + amount;
       await Promise.all([
         transaction.put(subjectStorageKey, nextSubjectUsage),
         transaction.put('global', nextGlobalUsage),
@@ -104,6 +116,7 @@ async function callRequestQuotaLedger(namespace, action, {
   subject,
   subjectLimit,
   globalLimit,
+  amount = 1,
 }) {
   if (!namespace?.idFromName || !namespace?.get) {
     return { accepted: false, code: 'QUOTA_LEDGER_NOT_CONFIGURED' };
@@ -118,6 +131,7 @@ async function callRequestQuotaLedger(namespace, action, {
       subjectKey,
       subjectLimit,
       globalLimit,
+      amount,
     }),
   });
   if (!response.ok) return { accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE' };
@@ -131,7 +145,8 @@ export function reserveRequestQuota(namespace, options) {
 /**
  * Gives a reserved use back. The caller has to hand over the same `periodKey`
  * it reserved with — recomputing today's key at release time would credit
- * tomorrow's ledger for a request that crossed UTC midnight.
+ * tomorrow's ledger for a request that crossed UTC midnight — and the same
+ * `amount`, for the same reason in the other direction.
  */
 export function releaseRequestQuota(namespace, options) {
   return callRequestQuotaLedger(namespace, 'release', options);

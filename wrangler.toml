@@ -32,6 +32,11 @@ PROVIDER_GLOBAL_MINUTE_LIMIT = "2000"
 # guest feed reads it without a session, so the ceiling here is global rather
 # than per user. It is reserved only after an edge-cache miss.
 OPENALEX_GLOBAL_MINUTE_LIMIT = "300"
+# And a daily one, because the budget is daily and the per-minute ceiling bounds
+# nothing against it: 300/min is 432.000/day. Measured on /health/openalex the
+# allowance is $1/day = 10.000 calls, so this leaves ~2.000 for the digest cron
+# (which spends outside this ledger) and the health probe.
+OPENALEX_GLOBAL_DAILY_LIMIT = "8000"
 
 [[kv_namespaces]]
 binding = "NOTIFICATION_STORE"

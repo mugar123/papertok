@@ -42,8 +42,15 @@ so the browser can no longer hold the credential: an OpenAlex key accepts prepai
 makes a key in the bundle someone else's spending, not just someone else's quota. The route rebuilds
 the upstream URL from an entity allowlist and a parameter allowlist, drops any `api_key` the caller
 sends, and attaches the Worker's own. It deliberately does **not** require a Firebase identity —
-the guest feed reads OpenAlex — so what protects the budget is the origin gate plus a global
-per-minute ceiling (`OPENALEX_GLOBAL_MINUTE_LIMIT`) reserved only after an edge-cache miss. A
+the guest feed reads OpenAlex — so what protects the budget is a pair of global ceilings,
+per-minute (`OPENALEX_GLOBAL_MINUTE_LIMIT`) and per-day (`OPENALEX_GLOBAL_DAILY_LIMIT`), reserved
+only after an edge-cache miss and for as many calls as the route is about to spend. The origin gate
+is not one of them and should not be counted as one: a request with no `Origin` header has nothing
+to check, and one is trivially forged, so the ceiling is the frontier. The day matters because the
+budget is daily and a per-minute ceiling does not bound it — 300/min is 432.000/day. Every route
+that spends the budget reserves against both, `/openalex/*` for one call, `/report/trends` for two
+and `/citation-graph` for up to nine, so a caller who cannot be identified still cannot outspend the
+day. A
 refusal is relayed with its own status and `retry-after` rather than flattened into a 502, and the
 rate-limit headers are named in `access-control-expose-headers` so the browser can actually read
 them; otherwise the client's backoff falls back to guessing, and since the budget resets at midnight

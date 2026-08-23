@@ -167,3 +167,114 @@ test('an unreachable ledger is reported as unavailable, not as unconfigured', as
     periodKey: 'ai:2026-08-23', subject: 'ai:uid', subjectLimit: 10, globalLimit: 1_000,
   }), { accepted: false, code: 'QUOTA_LEDGER_NOT_CONFIGURED' });
 });
+
+test('reserves several units in one round trip and refuses the one that would cross', async () => {
+  // Reserving one unit at a time either costs a trip per unit or, worse, lets the
+  // ledger take the first unit of a request whose remaining units it would have
+  // refused -- which is exactly how a route that spends nine OpenAlex calls used
+  // to pass a ceiling built for one.
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  // The two ceilings are deliberately far apart, so each assertion below can only
+  // be answered by the check it is aiming at: with both set to ten, the global
+  // one alone refuses everything the subject one would have, and a subject check
+  // that ignored the amount would pass unnoticed.
+  const reserve = (amount, limits = { subjectLimit: 10, globalLimit: 100 }) => ledger.fetch(
+    new Request('https://internal', {
+      method: 'POST',
+      body: JSON.stringify({ action: 'reserve', subjectKey: 'a'.repeat(64), ...limits, amount }),
+    }),
+  );
+
+  assert.deepEqual(await (await reserve(4)).json(), {
+    accepted: true, subjectUsage: 4, globalUsage: 4, remaining: 6,
+  });
+  const refused = await (await reserve(7)).json();
+  assert.equal(refused.accepted, false);
+  assert.equal(refused.scope, 'user');
+  // Refused, not clamped: the usage stays where it was, so a rejected reservation
+  // never leaves a partial spend behind.
+  assert.equal(refused.subjectUsage, 4);
+  assert.equal((await (await reserve(6)).json()).accepted, true);
+});
+
+test('the global ceiling also refuses on what the reservation would spend', async () => {
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const reserve = amount => ledger.fetch(new Request('https://internal', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'reserve',
+      subjectKey: 'a'.repeat(64),
+      subjectLimit: 1_000,
+      globalLimit: 10,
+      amount,
+    }),
+  }));
+
+  assert.equal((await (await reserve(9)).json()).accepted, true);
+  const refused = await (await reserve(4)).json();
+  assert.equal(refused.accepted, false);
+  assert.equal(refused.scope, 'global');
+  assert.equal(refused.globalUsage, 9);
+});
+
+test('a reservation that names no amount still spends exactly one', async () => {
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const response = await ledger.fetch(new Request('https://internal', {
+    method: 'POST',
+    body: JSON.stringify({
+      action: 'reserve',
+      subjectKey: 'a'.repeat(64),
+      subjectLimit: 1,
+      globalLimit: 1,
+    }),
+  }));
+
+  assert.deepEqual(await response.json(), {
+    accepted: true, subjectUsage: 1, globalUsage: 1, remaining: 0,
+  });
+});
+
+test('a zero or negative amount is refused rather than treated as one', async () => {
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  for (const amount of [0, -3, 'many']) {
+    const response = await ledger.fetch(new Request('https://internal', {
+      method: 'POST',
+      body: JSON.stringify({
+        action: 'reserve',
+        subjectKey: 'a'.repeat(64),
+        subjectLimit: 5,
+        globalLimit: 5,
+        amount,
+      }),
+    }));
+    assert.equal(response.status, 400, `amount ${amount} should not be accepted`);
+  }
+});
+
+test('a release gives back as much as was reserved, not one unit of it', async () => {
+  // The half of `amount` that only exists because both features landed together:
+  // handing one unit back to a caller that reserved nine would leak eight of them
+  // on every refund.
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const call = (action, amount) => ledger.fetch(new Request('https://internal', {
+    method: 'POST',
+    body: JSON.stringify({
+      action,
+      subjectKey: 'd'.repeat(64),
+      subjectLimit: 50,
+      globalLimit: 50,
+      amount,
+    }),
+  }));
+
+  await call('reserve', 9);
+  const released = await (await call('release', 9)).json();
+
+  assert.equal(released.subjectUsage, 0);
+  assert.equal(released.globalUsage, 0);
+});

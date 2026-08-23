@@ -57,6 +57,12 @@ const EMAIL_HEALTH_CACHE_SECONDS = 5 * 60;
 const SCOPUS_HEALTH_CACHE_SECONDS = 10 * 60;
 const OPENALEX_HEALTH_CACHE_SECONDS = 10 * 60;
 const OPENALEX_CACHE_SECONDS = 6 * 60 * 60;
+// What a degraded answer is worth. A provider hiccup that lasts a second used to
+// own its cache entry for the entire normal TTL -- six hours for physics, seven
+// days for the citation graph -- so a single 500 blanked one query for everybody.
+// Two minutes is long enough to absorb the retry burst of a feed fan-out and
+// short enough that recovery is invisible.
+const DEGRADED_CACHE_SECONDS = 120;
 // OpenAlex bills per call against a daily budget, so the browser can no longer
 // hold the credential. These are the entities and parameters the app actually
 // asks for; the URL is rebuilt from them rather than forwarded.
@@ -99,6 +105,22 @@ const OPENALEX_RATE_LIMIT_HEADERS = [
   'x-ratelimit-remaining-usd',
 ];
 const DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT = 300;
+// The budget OpenAlex bills against is *daily* ($1/day, ~10.000 calls measured on
+// `/health/openalex`), and until now the only ceiling was per minute: 300/min is
+// 432.000/day, which bounds nothing. This leaves ~2.000 calls of headroom for the
+// digest cron -- which spends outside this ledger -- and the health probe.
+const DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT = 8_000;
+// What a cold answer costs OpenAlex, per route, worst case. Reserved in one go
+// before the work starts: a route that spends nine calls and reserves one is a
+// route the daily ceiling does not actually cover.
+const OPENALEX_CALLS = Object.freeze({
+  relay: 1,
+  // The two periods the report compares.
+  trends: 2,
+  // One `works/doi:` lookup, then up to two batches of twenty for each of the two
+  // reference filters and the same again for citations.
+  citationGraph: 9,
+});
 const SOURCE_CACHE_SECONDS = {
   biorxiv: 10 * 60,
   europepmc: 30 * 60,
@@ -113,26 +135,6 @@ const SOURCE_CACHE_SECONDS = {
   huggingFaceResources: 7 * 24 * 60 * 60,
 };
 const ARXIV_PARAMS = ['search_query', 'id_list', 'start', 'max_results', 'sortBy', 'sortOrder'];
-const CACHE_PARAMS_BY_PATH = Object.freeze({
-  '/report/trends': ['from', 'to', 'previous_from', 'previous_to', 'categories', 'countries'],
-  '/related': ['paper_id', 'limit'],
-  '/citation-graph': ['doi', 'limit'],
-  '/oa': ['doi'],
-  '/arxiv': ARXIV_PARAMS,
-  '/sources/biorxiv': ['category', 'page', 'limit', 'sort'],
-  '/sources/europepmc': ['q', 'page', 'limit', 'sort'],
-  '/sources/core': ['q', 'page', 'limit', 'sort'],
-  '/sources/osti': ['q', 'page', 'limit', 'sort'],
-  '/sources/nasa': ['q', 'page', 'limit', 'sort'],
-  '/sources/physics': ['q', 'fallback_q', 'page', 'limit', 'sort'],
-  '/sources/scopus': ['terms', 'author', 'page', 'limit', 'sort'],
-  '/sources/openreview': ['q', 'page', 'limit', 'sort'],
-  '/sources/huggingface': ['q', 'page', 'limit', 'sort'],
-  '/enrich/icite': ['pmids'],
-  '/resources/huggingface': ['arxiv_id'],
-  '/health/scopus': [],
-  '/health/openalex': [],
-});
 const PROTECTED_PROVIDER_PATHS = new Set([
   '/report/trends',
   '/related',
@@ -174,17 +176,23 @@ function corsHeaders(origin, env) {
     : {};
 }
 
-function canonicalCacheKey(request, origin) {
-  const requestUrl = new URL(request.url);
-  const cacheUrl = new URL(`https://papertok.internal/cache${requestUrl.pathname}`);
-  // `/openalex/*` carries the entity in the path, so its parameters cannot be
-  // looked up by an exact pathname the way the fixed routes are.
-  const cacheParams = requestUrl.pathname.startsWith('/openalex/')
-    ? OPENALEX_PARAMS
-    : CACHE_PARAMS_BY_PATH[requestUrl.pathname] || [];
-  for (const name of cacheParams) {
-    const value = requestUrl.searchParams.get(name);
-    if (value !== null) cacheUrl.searchParams.set(name, value.trim());
+// The key is built from the values the handler is about to send upstream, never
+// from the ones that arrived. Those are two different things everywhere in this
+// file -- `limit=99` is clamped to 10, `categories=zzz` is dropped, a DOI is
+// lowercased, a filter is trimmed -- and keying on the raw ones made every
+// variant of a discarded parameter a fresh miss for one identical upstream call.
+// On the routes OpenAlex bills that was money: `categories=zzz1`, `zzz2`, ...
+// each cost two calls against a $1/day budget.
+//
+// The contract this puts on callers is the reverse of the old parameter
+// allowlist, and stricter: whatever affects the answer must appear here, because
+// nothing else does. Anything absent is not merely un-keyed, it is shared.
+function canonicalCacheKey(request, origin, canonicalParams = {}) {
+  const cacheUrl = new URL(`https://papertok.internal/cache${new URL(request.url).pathname}`);
+  for (const [name, value] of Object.entries(canonicalParams)) {
+    if (value !== null && value !== undefined && value !== '') {
+      cacheUrl.searchParams.set(name, String(value));
+    }
   }
   cacheUrl.searchParams.set('_origin', origin || 'no-origin');
   return new Request(cacheUrl.toString(), { method: 'GET' });
@@ -267,27 +275,31 @@ async function handleTrends(request, env, identity) {
     categories: (requestUrl.searchParams.get('categories') || '').split(',').filter(Boolean).slice(0, 12),
     countries: (requestUrl.searchParams.get('countries') || '').split(',').filter(Boolean).slice(0, 20),
   });
-  const cache = caches.default;
-  const cacheKey = canonicalCacheKey(request, origin);
-  const cached = await cache.match(cacheKey);
-  if (cached) return cached;
-  const quotaError = await reserveProtectedProviderQuota(identity, env, origin);
-  if (quotaError) return quotaError;
 
-  const [current, previous] = await Promise.all([
-    fetchOpenAlexPeriod({ fromStr: dates.from, toStr: dates.to }, filters, env),
-    fetchOpenAlexPeriod({ fromStr: dates.previousFrom, toStr: dates.previousTo }, filters, env),
-  ]);
-  const response = json(
-    { current, previous },
-    200,
-    {
-      ...corsHeaders(origin, env),
-      'cache-control': `public, max-age=300, s-maxage=${CACHE_SECONDS}, stale-while-revalidate=86400`,
+  return cacheResponse(request, origin, env, CACHE_SECONDS, async () => {
+    const [current, previous] = await Promise.all([
+      fetchOpenAlexPeriod({ fromStr: dates.from, toStr: dates.to }, filters, env),
+      fetchOpenAlexPeriod({ fromStr: dates.previousFrom, toStr: dates.previousTo }, filters, env),
+    ]);
+    return { current, previous };
+  }, {
+    identity,
+    openAlexCalls: OPENALEX_CALLS.trends,
+    canonicalParams: {
+      // The dates are exact by `isDate`, so they are already canonical. The
+      // filters are not: `normalizeReportFilters` drops anything outside
+      // `REPORT_OPENALEX_FIELDS` and anything that is not ISO-2, then sorts and
+      // deduplicates what is left. Keying on what arrived meant `categories=zzz1`
+      // and `zzz2` -- and `cs,math` against `math,cs` -- were separate misses for
+      // one identical upstream query, at two billed OpenAlex calls each.
+      from: dates.from,
+      to: dates.to,
+      previous_from: dates.previousFrom,
+      previous_to: dates.previousTo,
+      categories: filters.categories.join(','),
+      countries: filters.countries.join(','),
     },
-  );
-  await cache.put(cacheKey, response.clone());
-  return response;
+  });
 }
 
 function getSafeLimit(value, fallback = 8, max = 10) {
@@ -295,16 +307,29 @@ function getSafeLimit(value, fallback = 8, max = 10) {
   return Number.isFinite(parsed) ? Math.max(1, Math.min(max, parsed)) : fallback;
 }
 
-async function cacheResponse(request, origin, env, ttl, fetcher, identity = null) {
-  const cacheKey = canonicalCacheKey(request, origin);
+// `ttl` may be a function of the payload, because whether an answer deserves its
+// full TTL is something only the fetcher's result can say: a 200 assembled from a
+// fallback after the real provider refused is not worth six hours.
+async function cacheResponse(request, origin, env, ttl, fetcher, options = {}) {
+  const cacheKey = canonicalCacheKey(request, origin, options.canonicalParams);
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
-  const quotaError = await reserveProtectedProviderQuota(identity, env, origin);
+  const quotaError = await reserveProtectedProviderQuota(options.identity || null, env, origin);
   if (quotaError) return quotaError;
+  if (options.openAlexCalls) {
+    const budgetError = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
+    if (budgetError) return budgetError;
+  }
   const payload = await fetcher();
+  const seconds = typeof ttl === 'function' ? ttl(payload) : ttl;
+  // A short TTL exists because the answer is suspect, so it does not also get to
+  // be served stale for a day while it revalidates -- and the browser must not
+  // hold it longer than the edge does.
+  const directives = ['public', `max-age=${Math.min(300, seconds)}`, `s-maxage=${seconds}`];
+  if (seconds > DEGRADED_CACHE_SECONDS) directives.push('stale-while-revalidate=86400');
   const response = json(payload, 200, {
     ...corsHeaders(origin, env),
-    'cache-control': `public, max-age=300, s-maxage=${ttl}, stale-while-revalidate=86400`,
+    'cache-control': directives.join(', '),
   });
   await caches.default.put(cacheKey, response.clone());
   return response;
@@ -314,7 +339,11 @@ async function handleRelated(request, env, identity) {
   const requestUrl = new URL(request.url);
   const origin = request.headers.get('origin') || '';
   if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
-  const paperId = requestUrl.searchParams.get('paper_id') || '';
+  // Trimmed once, then used for the key and for the upstream URL alike. It used
+  // to be trimmed only on the way into the cache key, so `paper_id=x` and
+  // `paper_id=%20x%20` shared an entry while asking Semantic Scholar two
+  // different questions -- whichever landed first owned the answer for a day.
+  const paperId = (requestUrl.searchParams.get('paper_id') || '').trim();
   if (!/^(?:DOI:10\.|ARXIV:|[a-f0-9]{40}$)/i.test(paperId) || paperId.length > 300) {
     return json({ error: 'Invalid paper id' }, 400, corsHeaders(origin, env));
   }
@@ -327,7 +356,7 @@ async function handleRelated(request, env, identity) {
     const response = await fetchWithDeadline(url, { headers }, SOURCE_UPSTREAM_TIMEOUT_MS);
     if (!response.ok) throw new Error(`Semantic Scholar error: ${response.status}`);
     return response.json();
-  }, identity);
+  }, { identity, canonicalParams: { paper_id: paperId, limit: String(limit) } });
 }
 
 // Every upstream call in this file goes through here, and the deadline covers
@@ -360,7 +389,13 @@ export function fetchWithDeadline(url, options = {}, timeoutMs = UPSTREAM_TIMEOU
 
 async function fetchJsonWithTimeout(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
   const response = await fetchWithDeadline(url, options, timeoutMs);
-  if (!response.ok) throw new Error(`Upstream error: ${response.status}`);
+  if (!response.ok) {
+    // The status travels on the error because callers need to tell a provider
+    // that answered "I do not have this" from one that did not answer at all.
+    const error = new Error(`Upstream error: ${response.status}`);
+    error.status = response.status;
+    throw error;
+  }
   return response.json();
 }
 
@@ -484,9 +519,12 @@ async function fetchOpenAlexCurrentWork(doi, env) {
   );
   url.searchParams.set('select', 'id,referenced_works,cited_by_count');
   try {
-    return await fetchOpenAlexJsonWithFallback(url, env, 6500);
-  } catch {
-    return null;
+    return { work: await fetchOpenAlexJsonWithFallback(url, env, 6500), failed: false };
+  } catch (error) {
+    // A DOI OpenAlex has never heard of is an answer, and the graph built without
+    // it is the real one. Anything else is an outage, and the difference decides
+    // whether the result may own its cache entry for a week.
+    return { work: null, failed: error?.status !== 404 };
   }
 }
 
@@ -504,7 +542,12 @@ async function fetchOpenAlexWorksByFilter(filterName, values, env) {
     const payload = await fetchOpenAlexJsonWithFallback(url, env, 7500);
     return payload?.results || [];
   }));
-  return batches.flatMap(batch => batch.status === 'fulfilled' ? batch.value : []);
+  // A rejected batch is a shorter answer, and until now it was a shorter answer
+  // that looked exactly like a complete one -- and got cached for seven days.
+  return {
+    works: batches.flatMap(batch => batch.status === 'fulfilled' ? batch.value : []),
+    failed: batches.some(batch => batch.status === 'rejected'),
+  };
 }
 
 async function fetchOpenCitationsMetadata(connections, env) {
@@ -531,9 +574,16 @@ async function resolveCitationConnections(connections, env, limit, relation) {
     fetchOpenAlexWorksByFilter('openalex_id', openAlexIds, env),
     fetchOpenAlexWorksByFilter('doi', doisWithoutOpenAlexId, env),
   ]);
-  let mapped = deduplicateCitationGraphPapers([...byId, ...byDoi].map(mapCitationGraphWork).filter(Boolean), 40);
+  let failed = byId.failed || byDoi.failed;
+  let mapped = deduplicateCitationGraphPapers(
+    [...byId.works, ...byDoi.works].map(mapCitationGraphWork).filter(Boolean),
+    40,
+  );
   if (mapped.length < limit) {
-    const metaFallback = await fetchOpenCitationsMetadata(candidates, env).catch(() => []);
+    const metaFallback = await fetchOpenCitationsMetadata(candidates, env).catch(() => {
+      failed = true;
+      return [];
+    });
     mapped = deduplicateCitationGraphPapers([...mapped, ...metaFallback], 40);
   }
   mapped.sort((paperA, paperB) => {
@@ -544,7 +594,7 @@ async function resolveCitationConnections(connections, env, limit, relation) {
     return (paperB.citationCount || 0) - (paperA.citationCount || 0)
       || (paperB.year || 0) - (paperA.year || 0);
   });
-  return mapped.slice(0, limit);
+  return { papers: mapped.slice(0, limit), failed };
 }
 
 async function fetchOpenAlexCitingWorks(openAlexId, env, limit) {
@@ -559,6 +609,16 @@ async function fetchOpenAlexCitingWorks(openAlexId, env, limit) {
     (payload?.results || []).map(mapCitationGraphWork).filter(Boolean),
     limit,
   );
+}
+
+// `partial` and `degraded` are not the same thing, and conflating them is what
+// made this fault hard to see. `partial` says the answer was assembled from more
+// than one provider -- which is also what a healthy, heavily cited paper looks
+// like, because past three hundred citations the route asks OpenAlex on purpose.
+// `degraded` says something upstream failed. Only the second one is a reason to
+// refuse the seven-day TTL.
+function citationGraphCacheSeconds(payload) {
+  return payload?.degraded ? DEGRADED_CACHE_SECONDS : CITATION_GRAPH_CACHE_SECONDS;
 }
 
 async function fetchOpenCitationsRows(doi, relation, env) {
@@ -580,8 +640,8 @@ async function handleCitationGraph(request, env, identity) {
   }
   const limit = getSafeLimit(requestUrl.searchParams.get('limit'), 8, 10);
 
-  return cacheResponse(request, origin, env, CITATION_GRAPH_CACHE_SECONDS, async () => {
-    const currentWork = await fetchOpenAlexCurrentWork(doi, env);
+  return cacheResponse(request, origin, env, citationGraphCacheSeconds, async () => {
+    const { work: currentWork, failed: currentWorkFailed } = await fetchOpenAlexCurrentWork(doi, env);
     const currentOpenAlexId = String(currentWork?.id || '').split('/').pop();
     const shouldUseOpenAlexForCitations = (currentWork?.cited_by_count || 0) > 300;
     const [referenceResult, citationResult] = await Promise.allSettled([
@@ -592,6 +652,11 @@ async function handleCitationGraph(request, env, identity) {
     ]);
 
     let partial = referenceResult.status === 'rejected' || citationResult.status === 'rejected';
+    // The worst case this exists for did not even set `partial`: a transient
+    // failure of the `works/doi:` lookup left `currentWork` null, and if
+    // OpenCitations was empty too the route answered `{references: [],
+    // citations: [], partial: false}` -- and cached that for a week.
+    let degraded = currentWorkFailed || partial;
     let referenceConnections = normalizeCitationRows(
       referenceResult.status === 'fulfilled' ? referenceResult.value : [],
       'reference',
@@ -612,13 +677,20 @@ async function handleCitationGraph(request, env, identity) {
       partial = true;
     }
 
-    const references = await resolveCitationConnections(referenceConnections, env, limit, 'reference');
+    const resolvedReferences = await resolveCitationConnections(referenceConnections, env, limit, 'reference');
+    const references = resolvedReferences.papers;
+    degraded = degraded || resolvedReferences.failed;
     let citations;
     if (shouldUseOpenAlexForCitations || !citationConnections.length) {
-      citations = await fetchOpenAlexCitingWorks(currentOpenAlexId, env, limit).catch(() => []);
+      citations = await fetchOpenAlexCitingWorks(currentOpenAlexId, env, limit).catch(() => {
+        degraded = true;
+        return [];
+      });
       if (shouldUseOpenAlexForCitations || citations.length) partial = true;
     } else {
-      citations = await resolveCitationConnections(citationConnections, env, limit, 'citation');
+      const resolvedCitations = await resolveCitationConnections(citationConnections, env, limit, 'citation');
+      citations = resolvedCitations.papers;
+      degraded = degraded || resolvedCitations.failed;
     }
 
     return {
@@ -630,8 +702,17 @@ async function handleCitationGraph(request, env, identity) {
       },
       source: partial ? 'opencitations+openalex' : 'opencitations',
       partial,
+      degraded,
     };
-  }, identity);
+  }, {
+    identity,
+    openAlexCalls: OPENALEX_CALLS.citationGraph,
+    // The DOI reaching upstream is the normalized one -- lowercased, stripped of
+    // its `doi.org` prefix and of trailing punctuation -- so keying on the raw one
+    // made every capitalisation of the same DOI a separate miss worth up to nine
+    // billed OpenAlex calls. Same for a `limit` that `getSafeLimit` clamps to ten.
+    canonicalParams: { doi, limit: String(limit) },
+  });
 }
 
 async function handleOpenAccess(request, env) {
@@ -649,10 +730,14 @@ async function handleOpenAccess(request, env) {
     }, SOURCE_UPSTREAM_TIMEOUT_MS);
     if (!response.ok) throw new Error(`Unpaywall error: ${response.status}`);
     return response.json();
-  });
+  }, { canonicalParams: { doi } });
 }
 
-function safeArxivParam(name, value) {
+function safeArxivParam(name, rawValue) {
+  // Trimmed here rather than only on the way into the cache key: the two used to
+  // disagree, so `search_query=x` and `search_query=%20x%20` shared one entry
+  // while asking arXiv two different questions.
+  const value = String(rawValue || '').trim();
   if (!value) return '';
   if (value.length > 2_000) return '';
   if (name === 'start') return /^\d{1,6}$/.test(value) ? value : '';
@@ -679,7 +764,9 @@ async function handleArxiv(request, env) {
     return json({ error: 'Missing arXiv query' }, 400, corsHeaders(origin, env));
   }
 
-  const cacheKey = canonicalCacheKey(request, origin);
+  // Keyed on the URL that was actually built, which is the only way the two
+  // cannot drift apart.
+  const cacheKey = canonicalCacheKey(request, origin, Object.fromEntries(upstreamUrl.searchParams));
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
 
@@ -736,6 +823,15 @@ function sourceRequestContext(request, env) {
   };
 }
 
+// Page and limit are normalized by `sourceRequestContext` before they reach any
+// upstream, so those are the values the key has to carry. `sort` is deliberately
+// not folded in here: three of these routes never send it upstream, and a key
+// that carries an input the answer does not depend on is just a second entry for
+// one response.
+function sourceCacheParams(context, extra) {
+  return { page: String(context.page), limit: String(context.limit), ...extra };
+}
+
 function utcDateOffset(days) {
   const date = new Date();
   date.setUTCDate(date.getUTCDate() + days);
@@ -774,7 +870,7 @@ async function handleBioRxiv(request, env) {
     const url = `https://api.biorxiv.org/details/biorxiv/${utcDateOffset(-180)}/${utcDateOffset(0)}/${cursor}/json?category=${encodedCategory}`;
     const data = await fetchJsonUpstream(url);
     return { ...data, collection: (data?.collection || []).slice(0, context.limit) };
-  });
+  }, { canonicalParams: sourceCacheParams(context, { category }) });
 }
 
 async function handleEuropePmc(request, env) {
@@ -791,7 +887,7 @@ async function handleEuropePmc(request, env) {
     url.searchParams.set('pageSize', String(context.limit));
     url.searchParams.set('page', String(context.page));
     return fetchJsonUpstream(url);
-  });
+  }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
 }
 
 function compactOpenReviewNote(note) {
@@ -854,7 +950,7 @@ async function handleOpenReview(request, env) {
         .map(compactOpenReviewNote),
       count: Number(payload?.count) || 0,
     };
-  });
+  }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
 }
 
 async function handleHuggingFacePapers(request, env) {
@@ -875,7 +971,7 @@ async function handleHuggingFacePapers(request, env) {
         - Date.parse(a?.paper?.publishedAt || a?.publishedAt || 0));
     }
     return { papers: papers.slice(0, context.limit) };
-  });
+  }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
 }
 
 async function handleICite(request, env) {
@@ -906,7 +1002,7 @@ async function handleICite(request, env) {
     ].join(','));
     const payload = await fetchJsonUpstream(url);
     return { data: Array.isArray(payload?.data) ? payload.data : [] };
-  });
+  }, { canonicalParams: { pmids: pmids.join(',') } });
 }
 
 async function handleHuggingFaceResources(request, env) {
@@ -936,7 +1032,7 @@ async function handleHuggingFaceResources(request, env) {
         likes: Number(dataset?.likes) || 0,
       })),
     };
-  });
+  }, { canonicalParams: { arxiv_id: arxivId } });
 }
 
 async function handleCore(request, env, identity) {
@@ -952,7 +1048,9 @@ async function handleCore(request, env, identity) {
     url.searchParams.set('offset', String((context.page - 1) * context.limit));
     const headers = env.CORE_API_KEY ? { authorization: `Bearer ${env.CORE_API_KEY}` } : {};
     return fetchJsonUpstream(url, headers);
-  }, identity);
+    // No `sort`: this handler never sends it upstream, so two entries would hold
+    // one identical answer.
+  }, { identity, canonicalParams: sourceCacheParams(context, { q: query }) });
 }
 
 async function handleOsti(request, env) {
@@ -971,7 +1069,7 @@ async function handleOsti(request, env) {
       url.searchParams.set('order', 'desc');
     }
     return fetchJsonUpstream(url);
-  });
+  }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
 }
 
 async function handleNasa(request, env) {
@@ -991,7 +1089,7 @@ async function handleNasa(request, env) {
       url.searchParams.set('sort.order', 'desc');
     }
     return fetchJsonUpstream(url);
-  });
+  }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
 }
 
 function adsQueryFromTerms(query) {
@@ -1144,6 +1242,17 @@ function adsFallbackReason(error) {
   return `ads_${error?.status || 'unavailable'}`;
 }
 
+// A fallback that exists because ADS is not configured is a steady state, and
+// INSPIRE is then the real answer: it earns the full six hours. A fallback that
+// exists because ADS timed out or answered 500 is a one-second hiccup that used
+// to blank that query for everybody until the afternoon.
+function physicsCacheSeconds(payload) {
+  const info = payload?._papertok || {};
+  return info.fallback === true && info.fallbackReason !== 'ads_not_configured'
+    ? DEGRADED_CACHE_SECONDS
+    : SOURCE_CACHE_SECONDS.physics;
+}
+
 async function handlePhysicsLiterature(request, env, identity) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
@@ -1151,7 +1260,7 @@ async function handlePhysicsLiterature(request, env, identity) {
   const fallbackQuery = safeSourceQuery(context.requestUrl.searchParams.get('fallback_q'));
   if (!query) return json({ error: 'Missing physics query' }, 400, corsHeaders(context.origin, env));
 
-  return cacheResponse(request, context.origin, env, SOURCE_CACHE_SECONDS.physics, async () => {
+  return cacheResponse(request, context.origin, env, physicsCacheSeconds, async () => {
     if (env.NASA_ADS_API_TOKEN) {
       try {
         return await fetchAdsLiterature(context, query, env);
@@ -1166,7 +1275,14 @@ async function handlePhysicsLiterature(request, env, identity) {
     return fallbackQuery
       ? fetchInspireLiterature(context, fallbackQuery, 'ads_not_configured')
       : emptyPhysicsLiterature('ads_not_configured');
-  }, identity);
+  }, {
+    identity,
+    canonicalParams: sourceCacheParams(context, {
+      q: query,
+      fallback_q: fallbackQuery,
+      sort: context.sort,
+    }),
+  });
 }
 
 // Scopus only serves `dc:description` -- the abstract -- through the COMPLETE
@@ -1377,40 +1493,68 @@ function openAlexTargetUrl(pathname, searchParams) {
   const url = new URL(`https://api.openalex.org/${entity}${id ? `/${id}` : ''}`);
   for (const name of OPENALEX_PARAMS) {
     const value = searchParams.get(name);
-    if (value !== null && value.length <= 2_000) url.searchParams.set(name, value);
+    if (value === null || value.length > 2_000) continue;
+    // Trimmed here, and the cache key is then read back off this URL. The two used
+    // to disagree -- the key trimmed, the upstream URL did not -- so `filter=x`
+    // and `filter=%20x%20` collided on one entry for six hours, and a spoofable
+    // Origin let that entry be seeded from outside. An all-whitespace value is
+    // dropped rather than sent empty, so it collides with sending nothing, which
+    // is what it means.
+    const trimmed = value.trim();
+    if (trimmed) url.searchParams.set(name, trimmed);
   }
   return url;
 }
 
-// The guest feed reads OpenAlex, so this route cannot demand a Firebase
-// identity the way the other credential-backed routes do. What protects the
-// daily budget instead is a global per-minute ceiling, reserved only after a
-// cache miss so repeated queries cost nothing.
-async function reserveOpenAlexQuota(env, origin) {
-  const minute = new Date().toISOString().slice(0, 16);
-  const limit = boundedLimit(
-    env.OPENALEX_GLOBAL_MINUTE_LIMIT,
-    DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT,
-    100_000,
-  );
-  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
-    periodKey: `openalex:${minute}`,
-    subject: 'openalex:shared',
-    subjectLimit: limit,
-    globalLimit: limit,
-  });
-  if (!reservation.accepted && reservation.code) {
-    return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
-      ...corsHeaders(origin, env),
-      'cache-control': 'no-store',
+// Every OpenAlex call this Worker pays for goes through here, and it is the only
+// thing standing between a scripted caller and the day's budget: the Origin gate
+// is advisory by construction -- a request with no `Origin` header at all has
+// nothing to check, and one is trivially forged -- so a ceiling is the frontier,
+// not the header. The guest feed reads OpenAlex without a session, so the ceiling
+// is global rather than per user, and it is reserved only after a cache miss so
+// repeated queries cost nothing.
+//
+// Minute first, day second. Both orders can leave one bucket spent when the other
+// refuses; this way the leak lives in the minute bucket, which is thrown away
+// sixty seconds later, instead of in the day's.
+async function reserveOpenAlexBudget(env, origin, amount) {
+  const now = new Date().toISOString();
+  const periods = [
+    [`openalex:${now.slice(0, 16)}`, boundedLimit(
+      env.OPENALEX_GLOBAL_MINUTE_LIMIT,
+      DEFAULT_OPENALEX_GLOBAL_MINUTE_LIMIT,
+      100_000,
+    ), '60'],
+    // Not the true seconds until UTC midnight: a `retry-after` of several hours is
+    // a client that stops asking until someone reloads the tab, and the daily
+    // ceiling is an emergency brake, not a normal state.
+    [`openalex:day:${now.slice(0, 10)}`, boundedLimit(
+      env.OPENALEX_GLOBAL_DAILY_LIMIT,
+      DEFAULT_OPENALEX_GLOBAL_DAILY_LIMIT,
+      1_000_000,
+    ), '300'],
+  ];
+  for (const [periodKey, limit, retryAfter] of periods) {
+    const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+      periodKey,
+      subject: 'openalex:shared',
+      subjectLimit: limit,
+      globalLimit: limit,
+      amount,
     });
-  }
-  if (!reservation.accepted) {
-    return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
-      ...corsHeaders(origin, env),
-      'cache-control': 'no-store',
-      'retry-after': '60',
-    });
+    if (!reservation.accepted && reservation.code) {
+      return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+      });
+    }
+    if (!reservation.accepted) {
+      return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+        ...corsHeaders(origin, env),
+        'cache-control': 'no-store',
+        'retry-after': retryAfter,
+      });
+    }
   }
   return null;
 }
@@ -1442,11 +1586,11 @@ async function handleOpenAlex(request, env) {
   const target = openAlexTargetUrl(requestUrl.pathname, requestUrl.searchParams);
   if (!target) return json({ code: 'INVALID_OPENALEX_REQUEST' }, 400, corsHeaders(origin, env));
 
-  const cacheKey = canonicalCacheKey(request, origin);
+  const cacheKey = canonicalCacheKey(request, origin, Object.fromEntries(target.searchParams));
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
 
-  const quotaError = await reserveOpenAlexQuota(env, origin);
+  const quotaError = await reserveOpenAlexBudget(env, origin, OPENALEX_CALLS.relay);
   if (quotaError) return quotaError;
 
   const upstream = await fetchWithDeadline(addOpenAlexCredentials(target, env), {
@@ -1545,7 +1689,10 @@ async function handleScopus(request, env, identity) {
         quota: scopusQuota(response),
       },
     };
-  }, identity);
+    // The built query rather than `terms` and `author`: it is what reaches
+    // Elsevier, and it is already sanitized and deduplicated. No `sort` -- this
+    // route never sends one.
+  }, { identity, canonicalParams: sourceCacheParams(context, { query }) });
 }
 
 const DOMAIN_SOURCE_HANDLERS = {

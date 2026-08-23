@@ -1014,3 +1014,437 @@ test('still lets a caller cancellation be told apart from its own deadline', asy
 
   assert.equal(outcome, 'AbortError');
 });
+
+// --- G5: the cache key is the upstream call ---------------------------------
+// Every test below asks the same question in a different place: do two requests
+// that reach the same upstream also reach the same cache entry? Before G5 they
+// did not, and on the routes OpenAlex bills that was money -- `categories=zzz1`,
+// `zzz2`, ... each cost two calls against a $1/day budget for one identical query.
+
+// A cache that actually remembers, plus a signed-in caller. `withCachedIdentity`
+// answers the auth lookup but stores nothing, and what these tests measure is
+// whether the second request finds what the first one put away.
+async function withIdentityAndCacheStore(callback) {
+  const originalCaches = globalThis.caches;
+  const stored = new Map();
+  globalThis.caches = {
+    default: {
+      async match(request) {
+        if (String(request.url).includes('/auth/')) {
+          return new Response(JSON.stringify({ uid: 'user-1' }), {
+            headers: { 'content-type': 'application/json' },
+          });
+        }
+        return stored.get(String(request.url))?.clone() || null;
+      },
+      async put(request, response) {
+        stored.set(String(request.url), response.clone());
+      },
+    },
+  };
+  try {
+    return await callback(stored);
+  } finally {
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+}
+
+async function withCountedUpstream(handler, callback) {
+  const calls = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    calls.push(String(url));
+    return handler(String(url), options);
+  };
+  try {
+    await callback(calls);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+  return calls;
+}
+
+const BROWSER = Object.freeze({ origin: 'https://mugar123.github.io' });
+const SIGNED_IN = Object.freeze({ ...BROWSER, authorization: 'Bearer test-token' });
+const TRENDS_BASE = 'https://papertok-report-api.example/report/trends'
+  + '?from=2026-01-01&to=2026-02-01&previous_from=2025-12-01&previous_to=2026-01-01';
+
+const trendsPage = async () => new Response(
+  JSON.stringify({ meta: { count: 1 }, group_by: [] }),
+  { headers: { 'content-type': 'application/json' } },
+);
+
+test('two discarded trend filters are one billed query, not two', async () => {
+  const calls = await withCountedUpstream(trendsPage, async () => {
+    await withIdentityAndCacheStore(async () => {
+      for (const categories of ['zzz1', 'zzz2']) {
+        const response = await reportApi.fetch(new Request(
+          `${TRENDS_BASE}&categories=${categories}`,
+          { headers: SIGNED_IN },
+        ), AUTHENTICATED_ENV);
+        assert.equal(response.status, 200);
+      }
+    });
+  });
+
+  // Two calls -- one pair of periods -- not four. `normalizeReportFilters` throws
+  // away anything outside `REPORT_OPENALEX_FIELDS`, so both requests ask OpenAlex
+  // the identical question; keying on what arrived made each one a fresh miss,
+  // and an authenticated caller sustains sixty of those a minute.
+  assert.equal(calls.length, 2);
+});
+
+test('reordering and recasing a trend filter does not buy a second cache entry', async () => {
+  const calls = await withCountedUpstream(trendsPage, async () => {
+    await withIdentityAndCacheStore(async () => {
+      for (const query of ['categories=cs,math&countries=US', 'categories=math,cs&countries=us']) {
+        const response = await reportApi.fetch(new Request(
+          `${TRENDS_BASE}&${query}`,
+          { headers: SIGNED_IN },
+        ), AUTHENTICATED_ENV);
+        assert.equal(response.status, 200);
+      }
+    });
+  });
+
+  // `normalizeReportFilters` sorts and uppercases, so the upstream filter is
+  // byte-identical in both cases.
+  assert.equal(calls.length, 2);
+});
+
+test('the same DOI in a different shape is the same citation graph', async () => {
+  const citationGraphUpstream = async url => new Response(
+    JSON.stringify(url.includes('opencitations') ? [] : { id: 'https://openalex.org/W1', results: [] }),
+    { headers: { 'content-type': 'application/json' } },
+  );
+  let afterFirst = 0;
+  const calls = await withCountedUpstream(citationGraphUpstream, async collected => {
+    await withIdentityAndCacheStore(async () => {
+      const shapes = ['10.1234/AbC', 'https://doi.org/10.1234/abc'];
+      for (const doi of shapes) {
+        const response = await reportApi.fetch(new Request(
+          `https://papertok-report-api.example/citation-graph?doi=${encodeURIComponent(doi)}&limit=8`,
+          { headers: SIGNED_IN },
+        ), AUTHENTICATED_ENV);
+        assert.equal(response.status, 200);
+        afterFirst ||= collected.length;
+      }
+    });
+  });
+
+  // `normalizeCitationDoi` lowercases and strips the `doi.org` prefix, so every
+  // capitalisation of one DOI is one upstream question -- and each miss is worth
+  // up to nine billed OpenAlex calls, which is 2^n ways to spend the day's budget.
+  assert.equal(calls.length, afterFirst);
+});
+
+test('a limit the route clamps cannot buy a second cache entry', async () => {
+  const calls = await withCountedUpstream(
+    async () => new Response(JSON.stringify({ notes: [] }), {
+      headers: { 'content-type': 'application/json' },
+    }),
+    async () => {
+      await withIdentityAndCacheStore(async () => {
+        for (const limit of [11, 12]) {
+          const response = await reportApi.fetch(new Request(
+            `https://papertok-report-api.example/sources/openreview?q=security&limit=${limit}`,
+            { headers: BROWSER },
+          ), {});
+          assert.equal(response.status, 200);
+        }
+      });
+    },
+  );
+
+  // `getSafeLimit` clamps both to ten. The test that was already here used
+  // `limit=4` against `limit=4&limit=nonce`, which `searchParams.get` collapses
+  // before either layer sees it -- so it never touched this.
+  assert.equal(calls.length, 1);
+});
+
+test('whitespace around an OpenAlex filter is trimmed once, for the key and the call alike', async () => {
+  const calls = await withCountedUpstream(
+    async () => new Response(JSON.stringify({ results: [] }), { status: 200 }),
+    async () => {
+      await withIdentityAndCacheStore(async () => {
+        for (const filter of ['doi:10.1/x', '%20doi:10.1/x%20']) {
+          const response = await reportApi.fetch(new Request(
+            `https://papertok-report-api.example/openalex/works?filter=${filter}`,
+            { headers: BROWSER },
+          ), openAlexEnv());
+          assert.equal(response.status, 200);
+        }
+      });
+    },
+  );
+
+  assert.equal(calls.length, 1);
+  // The trim used to happen only on the way into the key, so these two shared an
+  // entry while asking OpenAlex two different questions: whichever arrived first
+  // owned the answer for six hours, and the Origin gate is not a frontier that
+  // stops an outsider from being first.
+  assert.match(calls[0], /filter=doi%3A10\.1%2Fx&/);
+});
+
+test('a repeated PubMed identifier does not buy a second iCite entry', async () => {
+  const calls = await withCountedUpstream(
+    async () => new Response(JSON.stringify({ data: [] }), {
+      headers: { 'content-type': 'application/json' },
+    }),
+    async () => {
+      await withIdentityAndCacheStore(async () => {
+        for (const pmids of ['123,123,456', '123,456']) {
+          const response = await reportApi.fetch(new Request(
+            `https://papertok-report-api.example/enrich/icite?pmids=${pmids}`,
+            { headers: BROWSER },
+          ), {});
+          assert.equal(response.status, 200);
+        }
+      });
+    },
+  );
+
+  assert.equal(calls.length, 1);
+});
+
+// --- G5: a degraded answer does not own its entry for the full TTL ----------
+
+function maxAgeSeconds(response) {
+  return Number(response.headers.get('cache-control').match(/s-maxage=(\d+)/)[1]);
+}
+
+async function physicsAnswer(env, adsHandler) {
+  return withIdentityAndCacheStore(async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async url => (String(url).includes('adsabs')
+      ? adsHandler()
+      : new Response(JSON.stringify({ hits: { hits: [], total: 0 } }), {
+        headers: { 'content-type': 'application/json' },
+      }));
+    try {
+      return await reportApi.fetch(new Request(
+        'https://papertok-report-api.example/sources/physics?q=galaxies&fallback_q=galaxies',
+        { headers: SIGNED_IN },
+      ), { ...AUTHENTICATED_ENV, ...env });
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+}
+
+test('a transient NASA ADS failure does not own the physics entry for six hours', async () => {
+  const response = await physicsAnswer(
+    { NASA_ADS_API_TOKEN: 'ads-test-token' },
+    () => new Response('upstream exploded', { status: 500 }),
+  );
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.json())._papertok.fallbackReason, 'ads_500');
+  // A one-second hiccup used to blank that query for everybody until the
+  // afternoon, because `cacheResponse` gave the fallback the full 21600.
+  assert.equal(maxAgeSeconds(response), 120);
+  // And it does not get to be served stale for a day on top of that, nor to sit
+  // in the browser longer than it sits at the edge.
+  assert.doesNotMatch(response.headers.get('cache-control'), /stale-while-revalidate/);
+  assert.equal(Number(response.headers.get('cache-control').match(/max-age=(\d+)/)[1]), 120);
+});
+
+test('a healthy NASA ADS answer keeps the full physics TTL', async () => {
+  const response = await physicsAnswer(
+    { NASA_ADS_API_TOKEN: 'ads-test-token' },
+    () => new Response(JSON.stringify({ response: { docs: [{ bibcode: 'X' }] } }), {
+      headers: { 'content-type': 'application/json' },
+    }),
+  );
+
+  assert.equal(maxAgeSeconds(response), 21600);
+});
+
+test('NASA ADS being unconfigured is a steady state, not a degraded one', async () => {
+  const response = await physicsAnswer({}, () => {
+    throw new Error('NASA ADS should not be contacted without a token');
+  });
+
+  const payload = await response.json();
+  assert.equal(payload._papertok.fallbackReason, 'ads_not_configured');
+  // INSPIRE is then the real answer, not a consolation prize, and it earns the
+  // same six hours the primary provider would have.
+  assert.equal(maxAgeSeconds(response), 21600);
+});
+
+async function citationGraphAnswer(upstream) {
+  return withIdentityAndCacheStore(async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async url => upstream(String(url));
+    try {
+      return await reportApi.fetch(new Request(
+        'https://papertok-report-api.example/citation-graph?doi=10.1234/abc&limit=8',
+        { headers: SIGNED_IN },
+      ), AUTHENTICATED_ENV);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+}
+
+test('an OpenCitations failure does not own the citation graph for a week', async () => {
+  const response = await citationGraphAnswer(url => (url.includes('opencitations')
+    ? new Response('gateway timeout', { status: 504 })
+    : new Response(JSON.stringify({ id: 'https://openalex.org/W1', results: [] }), {
+      headers: { 'content-type': 'application/json' },
+    })));
+
+  const payload = await response.json();
+  assert.equal(payload.degraded, true);
+  assert.equal(maxAgeSeconds(response), 120);
+});
+
+test('a heavily cited paper is partial by design and keeps its week', async () => {
+  // The correction this test exists to hold: `partial` is also what a healthy
+  // answer looks like. Past three hundred citations the route asks OpenAlex for
+  // citing works on purpose, and shortening the TTL of the most-cited papers in
+  // the corpus because nothing failed would be a fix worse than the fault.
+  const response = await citationGraphAnswer(url => {
+    if (url.includes('opencitations')) {
+      return new Response(JSON.stringify([]), { headers: { 'content-type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({
+      id: 'https://openalex.org/W1',
+      cited_by_count: 5_000,
+      results: [],
+    }), { headers: { 'content-type': 'application/json' } });
+  });
+
+  const payload = await response.json();
+  assert.equal(payload.partial, true);
+  assert.equal(payload.degraded, false);
+  assert.equal(maxAgeSeconds(response), 604800);
+});
+
+// --- G5: billed spend reaches the ledger, with a daily ceiling --------------
+
+function recordingLedger(answer = () => ({ accepted: true })) {
+  const reservations = [];
+  return {
+    reservations,
+    binding: {
+      idFromName: periodKey => periodKey,
+      get: periodKey => ({
+        fetch: async (_url, options) => {
+          const body = JSON.parse(options.body);
+          reservations.push({ periodKey, amount: body.amount, limit: body.globalLimit });
+          return new Response(JSON.stringify(answer(periodKey)));
+        },
+      }),
+    },
+  };
+}
+
+test('a cold trend report reserves both OpenAlex periods for what it actually spends', async () => {
+  const ledger = recordingLedger();
+  await withCountedUpstream(trendsPage, async () => {
+    await withIdentityAndCacheStore(async () => {
+      const response = await reportApi.fetch(new Request(
+        `${TRENDS_BASE}&categories=cs`,
+        { headers: SIGNED_IN },
+      ), { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: ledger.binding });
+      assert.equal(response.status, 200);
+    });
+  });
+
+  // This route spent two billed OpenAlex calls per miss and reserved none of
+  // them: the `openalex:*` ceiling only ever covered `/openalex/*`.
+  const openAlex = ledger.reservations.filter(entry => entry.periodKey.startsWith('openalex:'));
+  assert.deepEqual(openAlex.map(entry => entry.amount), [2, 2]);
+  assert.match(openAlex[0].periodKey, /^openalex:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  assert.match(openAlex[1].periodKey, /^openalex:day:\d{4}-\d{2}-\d{2}$/);
+  assert.equal(openAlex[1].limit, 8_000);
+});
+
+test('the daily OpenAlex ceiling refuses a request the per-minute one would allow', async () => {
+  const ledger = recordingLedger(periodKey => ({ accepted: !periodKey.startsWith('openalex:day:') }));
+  const response = await withIdentityAndCacheStore(() => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/openalex/works?filter=doi:10.1/x',
+    { headers: BROWSER },
+  ), openAlexEnv({ REQUEST_QUOTA_LEDGER: ledger.binding })));
+
+  assert.equal(response.status, 429);
+  assert.deepEqual(await response.json(), { code: 'PROVIDER_RATE_LIMITED' });
+  // Bounded on purpose. The true wait is the seconds left until UTC midnight, and
+  // handing the client six hours is a tab that stops asking until it is reloaded.
+  assert.equal(response.headers.get('retry-after'), '300');
+});
+
+test('a cached trend report spends nothing against either ceiling', async () => {
+  const ledger = recordingLedger();
+  const calls = await withCountedUpstream(trendsPage, async () => {
+    await withIdentityAndCacheStore(async () => {
+      const env = { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: ledger.binding };
+      const request = () => reportApi.fetch(new Request(
+        `${TRENDS_BASE}&categories=cs`,
+        { headers: SIGNED_IN },
+      ), env);
+      await request();
+      ledger.reservations.length = 0;
+      assert.equal((await request()).status, 200);
+    });
+  });
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(ledger.reservations, []);
+});
+
+test('an OpenAlex outage on the current work degrades the graph, a 404 does not', async () => {
+  // The worst case the `degraded` flag exists for, and the one the audit's own
+  // `partial === true` rule would have missed entirely: `fetchOpenAlexCurrentWork`
+  // swallows every error and answers `null`, so with OpenCitations empty too the
+  // route used to return `{references: [], citations: [], partial: false}` -- and
+  // cache that for seven days.
+  const graphWith = status => citationGraphAnswer(url => (url.includes('/works/doi:')
+    ? new Response('nope', { status })
+    : new Response(JSON.stringify(url.includes('opencitations') ? [] : { results: [] }), {
+      headers: { 'content-type': 'application/json' },
+    })));
+
+  const outage = await graphWith(503);
+  assert.equal((await outage.json()).degraded, true);
+  assert.equal(maxAgeSeconds(outage), 120);
+
+  // A DOI OpenAlex has never heard of is an answer, not an outage: the graph
+  // built without it is the real one and keeps its week.
+  const unknown = await graphWith(404);
+  assert.equal((await unknown.json()).degraded, false);
+  assert.equal(maxAgeSeconds(unknown), 604800);
+});
+
+test('a rejected OpenAlex batch is a short answer, not a complete one', async () => {
+  // `Promise.allSettled` over the batches means a rejected chunk returns fewer
+  // papers and looks exactly like a full result. Seven days of looking like one.
+  const response = await citationGraphAnswer(url => {
+    if (url.includes('/works/doi:')) {
+      return new Response(JSON.stringify({ id: 'https://openalex.org/W1' }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (url.includes('opencitations')) {
+      return new Response(JSON.stringify([{ cited: 'doi:10.5555/ref1', creation: '2020-01-01' }]), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    // Only the batch that resolves the references fails. The citing-works call
+    // answers normally, so nothing else in the route can raise the flag and the
+    // assertion below has to come from the batch itself.
+    if (url.includes('filter=cites')) {
+      return new Response(JSON.stringify({ results: [] }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response('upstream exploded', { status: 500 });
+  });
+
+  const payload = await response.json();
+  assert.equal(payload.degraded, true);
+  assert.deepEqual(payload.references, []);
+  assert.equal(maxAgeSeconds(response), 120);
+});

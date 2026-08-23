@@ -71,7 +71,14 @@ diversity.
   deadline, while provider JSON is normalized before LaTeX-aware rendering.
 - The Kimi budget ledger uses a Durable Object for atomic monthly reservations.
 - Provider-backed Worker routes verify Firebase identity and use canonical cache keys before
-  spending protected API quota.
+  spending protected API quota. A canonical key is built from the values the handler is about to
+  send upstream, never from the ones that arrived: those differ everywhere — a limit is clamped, a
+  DOI is lowercased, an unlisted filter is dropped, a value is trimmed — and keying on the raw ones
+  makes every variant of a discarded parameter a fresh miss for one identical upstream call.
+- Billed OpenAlex spend is bounded per minute and per day, in proportion to the calls each route
+  makes. A degraded answer — a fallback taken because the primary provider refused, a graph
+  assembled after an upstream failed — is cached for two minutes rather than for its normal TTL, so
+  a one-second hiccup cannot own a cache entry for six hours or seven days.
 
 ## Worker
 
