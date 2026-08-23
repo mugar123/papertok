@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchPapers } from '../services/arxivService.js';
-import { CATEGORIES } from '../data/categories.js';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.js';
 import { PubmedAdapter } from '../services/adapters/PubmedAdapter.js';
 import { PaperBuilder } from '../services/PaperBuilder.js';
 import { fetchDomainPapers } from '../services/domainSourceService.js';
 import { settleWithin } from '../utils/asyncTiming.js';
+import { GUEST_CATEGORIES, buildGuestDiscoveryQuery } from '../utils/guestFeedPlan.js';
 import { enrichPapersBatch } from '../services/openAlexService.js';
 import {
   getOpenAlexEnrichmentId,
@@ -13,14 +13,6 @@ import {
   waitForInitialEnrichment,
 } from '../utils/feedEnrichment.js';
 
-const GUEST_CATEGORIES = Object.freeze([
-  'astro-ph.CO',
-  'quant-ph',
-  'cs.AI',
-  'q-bio.NC',
-  'math.PR',
-  'econ.GN',
-]);
 const GUEST_PAGE_SIZE = 12;
 // How long the first paint may wait for OpenAlex metadata. Enrichment lands in
 // 0.2–0.9 s when the Worker edge is warm (measured 2026-08-22), so this budget
@@ -33,16 +25,8 @@ const INITIAL_ENRICHMENT_BUDGET_MS = 900;
 // 5.2 s, which no realistic budget saves. Waiting 5 s for it bought nothing.
 const GUEST_SOURCE_BUDGET_MS = 4_000;
 
-function categoryLabel(categoryId) {
-  for (const area of Object.values(CATEGORIES)) {
-    const category = area.subcategories?.[categoryId];
-    if (category) return category.labelEn || category.label || categoryId;
-  }
-  return categoryId;
-}
-
 async function fetchGuestCandidates({ refresh = false } = {}) {
-  const query = GUEST_CATEGORIES.map(category => `"${categoryLabel(category)}"`).join(' OR ');
+  const query = buildGuestDiscoveryQuery();
   const openAlex = new OpenAlexAdapter();
   const pubmed = new PubmedAdapter();
   const requests = [
