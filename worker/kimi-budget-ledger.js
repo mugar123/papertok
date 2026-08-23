@@ -176,6 +176,12 @@ export class KimiBudgetLedger {
       }
 
       if (!existingReservation) {
+        // Nothing to settle against: a second settle for the same id, or one
+        // arriving after the sweep took the reservation. Staying a no-op keeps
+        // settle idempotent, which matters more than the spend it declines to
+        // count — charging an amount with no reservation to bound it would make
+        // a double settle charge twice, and a call cannot outlive its own
+        // reservation anyway (52 s cap against a 5 min TTL).
         return { settled: true, spentMicros, reservedMicros };
       }
       const reservationMicros = reservationRecord(existingReservation, now).amountMicros;

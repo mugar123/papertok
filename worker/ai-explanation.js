@@ -644,6 +644,10 @@ async function explainWithGemini({ paper, level, language, pdfBase64, env, deadl
   const fallbackModel = cleanText(env.AI_FALLBACK_MODEL || DEFAULT_FALLBACK_MODEL, 100);
   const canUseFallback = Boolean(fallbackModel && fallbackModel !== primaryModel);
 
+  // When the primary is cooling down, the lighter model is the *only* attempt,
+  // so no minimum margin applies here: refusing it would mean asking nobody.
+  // `minGeminiFallbackMs` guards the retry path below, where one model already
+  // had its turn and a second doomed call would only spend what is left.
   if (!canUseFallback || !await isModelCoolingDown(primaryModel)) {
     try {
       return await requestGeminiExplanation({
@@ -925,6 +929,10 @@ async function explainWithKimi({ paper, level, language, env, deadline, now = Da
       );
     }
     const measuredMicros = calculateKimiUsageMicros(payload?.usage ?? {}, usagePrices);
+    // An answer without `usage` is the one success that keeps the reservation
+    // charged in full: tokens were certainly generated and there is no way to
+    // price them, so the cap keeps the conservative figure rather than the zero
+    // an unmeasured success would otherwise settle.
     if (measuredMicros > 0) chargedMicros = measuredMicros;
     result = {
       explanation: parseOpenAIChatPayload(payload),

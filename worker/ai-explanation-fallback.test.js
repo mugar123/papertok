@@ -635,3 +635,24 @@ test('Kimi as the primary provider does not reserve budget it cannot spend', asy
   assert.equal(env.KIMI_BUDGET_LEDGER.store.size, 0);
   assert.deepEqual(ledgerActions(env), ['reserve', 'release']);
 });
+
+test('a success that reports no usage keeps the conservative charge', async () => {
+  installCache();
+  const env = envWith();
+  stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+    'modal.run': () => json({
+      choices: [{ message: { content: JSON.stringify(EXPLANATION) } }],
+    }),
+  });
+
+  const result = await handleAIExplanation(explainRequest(), env);
+
+  // The reader still gets the explanation, and the month still pays the
+  // estimate: tokens were generated and nothing says how many, so the cap keeps
+  // the conservative figure instead of settling an unmeasured success at zero.
+  assert.equal(result.explanation.overview, EXPLANATION.overview);
+  assert.ok(env.KIMI_BUDGET_LEDGER.store.get('spentMicros') > 100_000);
+  assert.equal(env.KIMI_BUDGET_LEDGER.store.get('reservedMicros'), 0);
+});

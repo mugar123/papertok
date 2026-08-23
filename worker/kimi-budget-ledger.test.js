@@ -132,3 +132,16 @@ test('settle understands both reservation shapes', async () => {
     settled: true, spentMicros: 0, reservedMicros: 0, chargedMicros: 0,
   });
 });
+
+test('settling a reservation that is no longer there changes nothing', async () => {
+  const harness = ledgerHarness({ spentMicros: 17_700, reservedMicros: 0 });
+
+  // Reached by a second settle for the same id, or by one arriving after the
+  // sweep. Idempotence wins over the spend it declines to count: with no
+  // reservation to bound the amount, charging would let a double settle charge
+  // twice — and a 52 s call cannot outlive its own 5 min reservation.
+  assert.deepEqual(await harness.call({
+    action: 'settle', reservationId: 'swept', chargedMicros: 150_000,
+  }), { settled: true, spentMicros: 17_700, reservedMicros: 0 });
+  assert.equal(harness.store.get('spentMicros'), 17_700);
+});
