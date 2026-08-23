@@ -1235,6 +1235,27 @@ test('a lost race is re-merged from the fresh copy, not re-committed from the st
   assert.equal(admin.commits.length, 1, 'the first attempt was refused, the second landed');
 });
 
+test('the retry re-reads the membership, not just the published copy', async () => {
+  stubIdentity();
+  // The winner of the race added p3 to the private list AND to the public copy.
+  // A retry that reuses the membership it read the first time would publish two
+  // papers and skip the third for ever — the same silent loss, one layer up.
+  const admin = racingAdmin(mergeFixture(), {
+    afterRace: {
+      [`users/${UID}/lists/l1`]: { id: 'l1', paperIds: ['p1', 'p2', 'p3'] },
+      [`publicLists/${SHARE}`]: {
+        title: 'V', paperCount: 3, papers: [published(1), published(2), published(3)],
+      },
+    },
+  });
+  const result = await run('/lists/update', {
+    shareId: SHARE, listId: 'l1', title: 'V', papers: [],
+  }, { admin });
+
+  assert.deepEqual(result.papers.map(entry => entry.id), ['a1', 'a2', 'a3']);
+  assert.deepEqual([result.listCount, result.skipped], [3, 0]);
+});
+
 test('the retry rebuilds the showcase too, so a card added mid-flight survives', async () => {
   stubIdentity();
   const THIRD_SHARE = 'c'.repeat(32);
