@@ -1,5 +1,134 @@
 # Estado / pendientes
 
+## G5 cerrado — el presupuesto de OpenAlex, cerrado por número (2026-08-24)
+
+Cuatro fallos (F29, F30, F32, F33), los cuatro reales, y dos de ellos bastante
+más grandes de lo que decía la auditoría. El hilo común: **el Worker paga a
+OpenAlex por llamada contra un presupuesto diario, y ni la caché ni el ledger
+estaban puestos donde protegen ese dinero.**
+
+### La clave de caché no era la llamada upstream (F30 + F33)
+
+Resultaron ser el mismo defecto visto desde dos lados. `canonicalCacheKey`
+construía la clave con lo que llegaba; cada handler construía la llamada con lo
+que quedaba tras normalizar. Y eso difiere **en las trece rutas cacheadas**, no
+en los dos parámetros que nombraba F30:
+
+| Ruta | Variantes gratis para una sola query upstream |
+|---|---|
+| `/report/trends` | `categories=zzz1`, `zzz2`, … y `cs,math` vs `math,cs` vs `us`/`US` |
+| `/citation-graph` | el DOI se pasa a minúsculas upstream: 2ⁿ claves |
+| `/sources/*`, `/related` | `limit=11..99` y `page` fuera de rango se recortan |
+| `/enrich/icite` | `pmids=1,1,2` se deduplica |
+| `/openalex/*`, `/arxiv` | el trim vivía solo en la clave (F33) |
+
+Ahora la clave se construye **solo** con los valores que el handler va a mandar
+upstream. La lista blanca `CACHE_PARAMS_BY_PATH` desaparece: cada una de las
+quince llamadas a `cacheResponse` declara los suyos, y `/arxiv` y `/openalex/*`
+derivan la clave de la URL ya construida, que es la única forma de que las dos
+no puedan divergir. El contrato es el inverso del anterior y más estricto —lo
+que afecta a la respuesta tiene que estar, porque nada más está—, así que salió
+`sort` de la clave en core, scopus y biorxiv: esos tres upstreams no lo leen.
+
+Efecto lateral bueno: no hizo falta el 400 a categorías fuera de lista que
+proponía F30. Todo el basurero colapsa en una entrada por sí solo.
+
+**Medido en producción, que es lo que cierra el asunto.** Veinte variantes de
+espacios de una misma query contra `/openalex/works`, leyendo
+`x-ratelimit-remaining` antes y después: **21 llamadas facturadas antes del
+deploy, 2 después.** (`/health/openalex` no vale para esto: está cacheado 10 min
+en el edge.)
+
+### Un hipo de un segundo no se queda con la entrada (F29)
+
+Dos correcciones al diagnóstico, ambas escritas como test:
+
+- **`partial` no sirve de señal.** También se pone a `true` en un camino sano:
+  pasados 300 citas la ruta va a OpenAlex a propósito. La regla que proponía la
+  auditoría habría acortado el TTL de los papers más citados del corpus sin que
+  nada hubiera fallado. Hay ahora un `degraded` aparte; `partial` conserva su
+  significado, que es el que lee el cliente.
+- **El peor caso ni siquiera encendía `partial`.** `fetchOpenAlexCurrentWork`
+  tragaba cualquier error y devolvía `null`; con OpenCitations vacío, la ruta
+  respondía un grafo vacío con `partial: false` y lo cacheaba **siete días**.
+  Igual los `allSettled` de los lotes: un lote rechazado devolvía menos papers
+  sin dejar rastro.
+
+Degradado son ahora 120 s en vez de 6 h (physics) o 7 días (citation-graph), sin
+`stale-while-revalidate` encima y sin dejar el `max-age` del navegador por
+encima del `s-maxage` del edge. Con una excepción deliberada: sin ADS
+configurado, INSPIRE **es** la respuesta buena y se queda con sus seis horas.
+
+### El techo que faltaba (F32)
+
+El gate de Origin es consultivo y lo volví a comprobar en vivo: `/openalex/*`
+responde 200 sin cabecera `Origin` y 403 con una no permitida. **Exigirla —el
+punto 3 de F32— queda rechazado por análisis**: cualquiera la pone con `curl
+-H`, así que solo rompería el ops legítimo (la propia sonda de esta
+verificación) a cambio de cero seguridad.
+
+La frontera es el ledger, y ahora lo es de verdad: todo el gasto facturado pasa
+por él, **proporcionalmente** (`/openalex/*` 1, `/report/trends` 2,
+`/citation-graph` 9 en el peor caso) y contra dos periodos, minuto y **día**.
+`OPENALEX_GLOBAL_DAILY_LIMIT = 8000`, con la aritmética delante: $1/día = 10.000
+llamadas medidas, menos el cron de digests —que gasta fuera de este ledger, es
+fichero de G1— y la sonda de salud, ~2.000 de margen. El minuto se reserva antes
+que el día a propósito: si el día rechaza, el exceso queda en un cubo que se tira
+sesenta segundos después.
+
+Reservar 9 en citation-graph sobre-estima el caso típico (~3), y es la dirección
+correcta para una guarda de presupuesto. Con 8.000/día siguen cabiendo ~888
+grafos fríos diarios.
+
+Para reservar N en un viaje hizo falta un `amount` en `RequestQuotaLedger`
+(`worker/request-quota-ledger.js`) — la única salida deliberada de los ficheros
+declarados para G5, compatible hacia atrás: `usage + 1 > limit` es la misma
+condición que `usage >= limit`. **G3 aterrizó en main con su `release` sobre ese
+mismo fichero mientras esto se escribía**, y las dos mitades se fusionaron a mano
+en el rebase: el `release` devuelve ahora `amount` unidades y no una, con su
+test, porque devolverle una a quien reservó nueve fuga ocho en cada reembolso. Consecuencia que conviene saber: trends y citation-graph **fallan
+cerrado** si el Durable Object no está disponible, como ya hacía `/openalex/*`.
+
+### Verificación
+
+21 tests nuevos (1.067 → 1.088), `npm run check` en verde, suite en verde bajo
+Node 22 (que es lo que corre CI; local es v25.9), `wrangler deploy` a la versión
+`85c79bc6`, y las veinte rutas barridas en producción.
+
+**18 mutaciones, 18 mutantes muertos — pero dos sobrevivieron a la primera
+pasada**, y ese es el dato útil: sus tests pasaban por el motivo equivocado. El
+del lote OpenAlex rechazado lo mataba en realidad la ruta de citing-works, y el
+del techo de sujeto lo mataba el techo global. Hubo que afilar los dos hasta que
+solo pudiera responderlos la comprobación a la que apuntaban.
+
+Dos 502 del barrido, comprobados como caídas ajenas y no regresiones: Hugging
+Face devuelve 404 para un `arxiv_id` que no indexa (con uno real, 200 — y su
+variante `v3` comparte entrada, que es F30 funcionando), y OSTI no responde ni a
+un `curl` directo de 25 s.
+
+### Un despliegue que hubo que rehacer, y por qué
+
+Desplegué **antes** de rebasar, desde una rama que salía de `752d9c0`. G3 había
+aterrizado en main entretanto, así que ese `wrangler deploy` (`4f7d444c`) subió
+un Worker con G5 y **sin** G3: revirtió en producción `ai-explanation.js` y
+`kimi-budget-ledger.js` a su versión previa. Estuvo así unos minutos. Rebasado y
+redesplegado (`85c79bc6`), `/health/ai` vuelve a dar Gemini y Kimi disponibles y
+la medida de G5 se sostiene (9.095 → 9.093, dos llamadas por veinte variantes).
+
+La lección, para la próxima sesión que cierre un grupo: **rebasar antes de
+desplegar, no después.** El Worker se despliega desde el árbol de trabajo, así
+que un árbol desactualizado no publica «lo mío más lo que había», publica «lo
+mío en lugar de lo que había». La advertencia de este fichero sobre sesiones
+concurrentes hablaba de `git add`; vale igual, y más caro, para `wrangler
+deploy`.
+
+### Nota para quien venga detrás
+
+Sigue vivo el **F2-residuo** que la auditoría dejó sin dueño:
+`fetchDigestSource` en `worker/email-notifications.js` conserva el patrón viejo
+de plazo solo-cabeceras (`clearTimeout` en `finally`, `Response` devuelto sin
+leer). No lo toqué: no es de G5 y ese fichero es de G1. Sigue acotado al cron.
+
 ## G4 verificado en vivo, y una sola ventana para crear listas (2026-08-24)
 
 ### La ronda completa de G4, contra el Worker desplegado

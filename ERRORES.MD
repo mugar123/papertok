@@ -39,6 +39,16 @@ rechazada por análisis** — ver F18. 30 tests nuevos (1.001 → 1.031), cada u
 verificado por mutación, `npm run check` en verde y la suite en verde bajo Node
 22, que es lo que corre CI.
 
+**G5 cerrado el 24-08-2026** (F29, F30, F32, F33): los cuatro re-verificados y
+los cuatro reales, con **dos ampliaciones de diagnóstico** (F30 no son dos
+parámetros de `/report/trends` sino las trece rutas cacheadas; F29 no puede usar
+`partial` como señal y su peor caso ni siquiera la enciende) y **el punto 3 de
+F32 —exigir la cabecera `Origin`— analizado y rechazado**, ver F32. 21 tests
+nuevos (1.067 → 1.088), 18 mutaciones y 18 mutantes muertos, `npm run check` en
+verde y la suite en verde bajo Node 22. Verificado en producción con número:
+20 variantes de espacios de una misma query costaban **21** llamadas facturadas
+antes del deploy y **2** después.
+
 **G3 arreglado el 23-08-2026** (F6, F7, F8, F9, F10, F11, F12, F13, F14, F15):
 los diez re-verificados y los diez reales, con dos correcciones de diagnóstico
 propias (el punto 3 de F8 ya estaba hecho; la fuga de F14 no era solo de caché).
@@ -708,7 +718,8 @@ reutiliza su helper de plazos).
 
 ## Fallos
 
-- [ ] **F29 · media · Resultados degradados se cachean a TTL completo**
+- [x] **F29 · media · Resultados degradados se cachean a TTL completo** — REAL,
+  arreglado el 24-08-2026, con dos correcciones de diagnóstico:
   `worker/report-api.js:1123-1137` (physics, TTL 6 h) y `:551-601`
   (citation-graph, TTL 7 días).
   En `/sources/physics`, un 500 transitorio de ADS hace servir el fallback
@@ -717,11 +728,29 @@ reutiliza su helper de plazos).
   `/citation-graph`, un fallo de OpenCitations produce `partial: true`…
   cacheado 7 días (`resolveCitationConnections` traga errores con
   `allSettled` y `.catch(() => [])`).
-  **Arreglo:** cuando `fallback === true`, `partial === true` o
-  vacío-por-fallo-upstream → TTL corto (60–300 s) o `no-store`.
-  `cacheResponse` puede aceptar un TTL calculado por el fetcher.
+  **Corrección 1: `partial === true` no sirve como señal.** También se pone a
+  `true` en un camino sano y deliberado —`cited_by_count > 300` va a OpenAlex a
+  propósito—, así que la regla propuesta habría acortado el TTL de los papers
+  más citados sin que nada fallara. Hay ahora un campo aparte, `degraded`, que
+  solo enciende un fallo real; `partial` conserva su significado (el cliente lo
+  lee en `citationGraphService.js`).
+  **Corrección 2: el peor caso ni siquiera encendía `partial`.**
+  `fetchOpenAlexCurrentWork` tragaba cualquier error y devolvía `null`; con
+  OpenCitations vacío, la ruta respondía `{references: [], citations: [],
+  partial: false}` y lo cacheaba 7 días. Igual con los `allSettled` de
+  `fetchOpenAlexWorksByFilter`: un lote rechazado devolvía menos papers sin
+  dejar rastro.
+  **Arreglo:** `cacheResponse` acepta un TTL calculado sobre el payload y
+  `DEGRADED_CACHE_SECONDS = 120` sustituye al TTL completo cuando la respuesta
+  es degradada: en physics, `fallback === true` salvo `ads_not_configured`
+  (sin ADS, INSPIRE *es* la respuesta buena y merece sus 6 h); en
+  citation-graph, `degraded === true`. Un TTL corto tampoco arrastra ya
+  `stale-while-revalidate=86400`, ni deja el `max-age` del navegador por
+  encima del `s-maxage` del edge. Los errores upstream llevan ahora su
+  `status`, para distinguir un 404 de OpenAlex (una respuesta) de una caída
+  (un fallo).
 
-- [ ] **F30 · media · `/report/trends`: clave de caché cruda vs filtro normalizado — quema presupuesto facturado**
+- [x] **F30 · media · `/report/trends`: clave de caché cruda vs filtro normalizado — quema presupuesto facturado** — REAL y **más amplio**, arreglado el 24-08-2026:
   `worker/report-api.js:106-107` (params de clave), `:256-259`
   (normalización), `:261-270` (clave con crudos, 2 fetch por miss).
   La clave usa `categories`/`countries` tal cual; el filtro upstream sale de
@@ -731,39 +760,88 @@ reutiliza su helper de plazos).
   llamadas OpenAlex facturadas ($1/día). Un usuario autenticado sostiene ~120
   llamadas/min, y ninguna pasa por el ledger `openalex:*` (ese techo solo
   cubre `/openalex/*`). El presupuesto diario se agota en decenas de minutos.
-  **Arreglo:** (1) clave de caché con los valores ya normalizados (o 400 a
-  valores fuera de lista); (2) que trends/citation-graph reserven también
-  contra el ledger `openalex:*` proporcionalmente a sus llamadas.
+  **Ampliación de diagnóstico: no son dos parámetros, son las trece rutas
+  cacheadas.** El mismo desajuste está en `/citation-graph` (`normalizeCitationDoi`
+  pasa a minúsculas y quita el prefijo `doi.org`: 2ⁿ claves por query), en todas
+  las `/sources/*` y `/related` (`limit=11..99` y `page` fuera de rango se
+  recortan upstream y se guardan crudos), en `/enrich/icite` (`pmids` se
+  deduplica) y en `/resources/huggingface` (`2401.1234v2` ≡ `2401.1234`).
+  Medido: `/report/trends` sí exige sesión (401 sin token), pero la cuenta es
+  autoservicio y sostiene 60 misses/min × 2 llamadas; `/citation-graph` gasta
+  hasta 9 por miss.
+  **Arreglo:** (1) `canonicalCacheKey` se construye ahora **solo** con los
+  valores que el handler va a mandar upstream —la lista blanca
+  `CACHE_PARAMS_BY_PATH` desaparece y cada una de las quince llamadas a
+  `cacheResponse` declara los suyos—, así que `categories=zzz1` y `zzz2`
+  colapsan en la misma entrada y no hace falta el 400 a valores fuera de lista;
+  `/arxiv` y `/openalex/*` derivan la clave de la URL upstream ya construida,
+  que es la única forma de que las dos no puedan divergir. Sale `sort` de la
+  clave en core, scopus y biorxiv: esos upstreams no lo leen. (2) trends y
+  citation-graph reservan contra el ledger `openalex:*` por lo que gastan (2 y
+  9), lo que obligó a añadir un `amount` al Durable Object — la única salida
+  deliberada de los ficheros declarados para G5. G3 aterrizó en main con su
+  `release` mientras esto se escribía, y las dos mitades se fusionaron a mano en
+  el rebase: el `release` devuelve ahora `amount` unidades y no una, con su test,
+  porque devolverle una a quien reservó nueve fuga ocho en cada reembolso.
 
-- [ ] **F32 · media · El gate de Origin es consultivo (verificado en vivo)**
+- [x] **F32 · media · El gate de Origin es consultivo (verificado en vivo)** — CONFIRMADO otra vez en vivo el 24-08-2026 y compensado; **el punto 3 rechazado por análisis**:
   Sondeado contra producción: `/sources/europepmc` y `/openalex/*` devuelven
   200 sin cabecera `Origin` y 403 con Origin no permitido. Un curl sin
   `Origin` (o falsificándolo, que cualquiera puede) atraviesa el gate: la
   única protección real del presupuesto es el techo por minuto — y F30
   muestra rutas fuera de él. A 300/min, las 10.000 llamadas diarias son
   drenables en ~34 min de script.
-  **Arreglo:** asumirlo como decisión explícita y compensar: (1) cerrar F30
-  para que TODO el gasto facturado pase por el ledger; (2) techo **diario**
-  además del por-minuto (el presupuesto es diario, el techo no); (3) opcional,
-  exigir la cabecera Origin en rutas de navegador (disuasorio, no frontera).
+  **Arreglo:** asumido como decisión explícita y compensado. (1) y (2) hechos:
+  todo el gasto facturado pasa por el ledger (ver F30) y hay techo **diario**,
+  `OPENALEX_GLOBAL_DAILY_LIMIT = 8000`, reservado antes del trabajo. La
+  aritmética, medida ese día en `/health/openalex`: $1/día = 10.000 llamadas,
+  menos el cron de digests —que gasta fuera de este ledger, es fichero de G1— y
+  la sonda de salud (≤144/día) → ~2.000 de margen. El `retry-after` del techo
+  diario es 300 s a propósito y no los segundos que faltan hasta medianoche UTC:
+  un `retry-after` de horas es un cliente que deja de preguntar hasta que
+  alguien recarga la pestaña.
+  **(3) RECHAZADO por análisis.** Exigir `Origin` no es una frontera —cualquiera
+  la pone con `curl -H`—, así que lo único que compraría es romper el ops
+  legítimo (incluida la sonda en vivo que verificó este mismo grupo) a cambio de
+  cero seguridad. La frontera es el techo diario, y ya está puesta. Queda
+  documentado en `worker/README.md` para que no se vuelva a contar el gate de
+  origen como una de las protecciones del presupuesto.
 
-- [ ] **F33 · baja · Trim asimétrico en la clave de caché**
+- [x] **F33 · baja · Trim asimétrico en la clave de caché** — REAL, arreglado el 24-08-2026 y **medido en producción**:
   `worker/report-api.js:175-178` vs `:1346-1349`. La clave hace
   `value.trim()` pero la URL upstream lleva el valor sin recortar:
   `?filter=x` y `?filter=%20x%20` colisionan en una entrada; gana la primera
   todo el TTL, y el Origin espoofable permite sembrarla desde fuera.
-  **Arreglo:** recortar una vez y usar el mismo valor para clave y URL.
+  El mismo desajuste estaba en `/arxiv` (`safeArxivParam` no recortaba) y en
+  `/related` (`paper_id` iba crudo upstream).
+  **Medido contra producción**, 20 variantes de espacios de una misma query
+  contra `/openalex/works`, leyendo `x-ratelimit-remaining` antes y después:
+  **21 llamadas facturadas antes del deploy, 2 después** (las 20 variantes
+  colapsan en 1, más la sonda).
+  **Arreglo:** recortado una vez, en `openAlexTargetUrl` y en `safeArxivParam`,
+  y la clave se deriva de la URL upstream ya construida. Un valor que queda
+  vacío al recortar ya no se manda: colisiona con no mandar nada, que es lo que
+  significa.
 
-## Plan de implementación G5
+## Plan de implementación G5 — ejecutado el 24-08-2026
 
-1. F30 primero (es el agujero facturable), después F32 (techo diario +
-   ledger), F29, F33.
-2. Cuidado con la claveada por `_origin` de la caché: está bien hecha, no
-   romperla al tocar `canonicalCacheKey`.
-3. Verificación: tests de clave de caché (misma clave ⇔ misma query upstream),
-   `wrangler deploy`, y `/health/openalex` mostrando el presupuesto estable
-   tras una tanda de peticiones con parámetros basura (antes del fix, cada
-   una costaría dinero).
+1. Hecho en ese orden. F30 y F33 resultaron ser el mismo defecto visto desde
+   dos lados, y se arreglaron con un solo mecanismo.
+2. La claveada por `_origin` sigue intacta.
+3. Verificación: 21 tests nuevos (1.067 → 1.088), **18 mutaciones y 18 mutantes
+   muertos** —dos de ellos sobrevivieron a la primera pasada porque sus tests
+   pasaban por el motivo equivocado (uno lo mataba la ruta de citing-works, no
+   el lote; el otro el techo global, no el de sujeto) y hubo que afilarlos—,
+   `npm run check` en verde, suite en verde bajo Node 22, `wrangler deploy`
+   (versión `85c79bc6`, ver la nota de despliegue en STATE.md) y la medida en vivo de F33: 21 llamadas facturadas
+   antes, 2 después. Barrido de las veinte rutas en producción: todas responden
+   lo que deben. Dos 502 comprobados como caídas ajenas y no regresiones —
+   Hugging Face devuelve 404 para un `arxiv_id` que no indexa (con uno real,
+   200, y su variante `v3` comparte entrada) y OSTI no responde ni a un `curl`
+   directo de 25 s.
+   `/health/openalex` no sirve para esta medida: está cacheado 10 min en el
+   edge, así que el contador se lee en `x-ratelimit-remaining`, que
+   `/openalex/*` ya relaya.
 
 ---
 
