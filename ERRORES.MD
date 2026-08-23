@@ -56,6 +56,16 @@ propias (el punto 3 de F8 ya estaba hecho; la fuga de F14 no era solo de caché)
 mutación sin mutantes vivos, `npm run check` en verde y 1.064 tests en verde
 bajo Node 22, que es lo que corre CI.
 
+**G6 arreglado el 24-08-2026** (F31, F34, F35, F37, F38, F39, F42): los siete
+re-verificados y los siete reales, con tres correcciones de diagnóstico propias
+(F38 es más ancho — son tres rutas protegidas, no una; F31 tenía un gemelo en
+`retry-after`; F39 cuesta la precisión `cat:` de arXiv, y se aceptó a
+sabiendas). 16 tests nuevos (1.088 → 1.104 al apilarse sobre G5), cada arreglo
+verificado por mutación sin mutantes vivos, `npm run check` en verde y la suite
+entera en verde bajo Node 22 —que es lo que corre CI— y verificación en vivo del
+feed de invitado con el dev server: cero `WorkerApiAuthError`, cero peticiones a
+rutas protegidas y la query de OpenAlex sin `"q-bio.NC"`.
+
 G7 cerrado el 23-08-2026: **F40 re-verificado y RECHAZADO** por mal
 diagnosticado (el bundle apagado era la decisión vigente, no una deriva). Se
 arregló en su lugar la causa raíz que el propio F40 nombra en su punto 4 — nada
@@ -876,7 +886,7 @@ reutiliza su helper de plazos).
 
 ## Fallos
 
-- [ ] **F31 · media · `x-ratelimit-reset` interpretado como delta sin tope: un epoch bloquearía OpenAlex hasta recargar**
+- [x] **F31 · media · `x-ratelimit-reset` interpretado como delta sin tope: un epoch bloquearía OpenAlex hasta recargar** — arreglado el 24-08-2026
   `src/services/openAlexClient.js:60-62` y `:180-188`;
   `worker/report-api.js:83-90` (relay tal cual).
   `getOpenAlexRateLimitDelay` hace `resetSeconds * 1000` asumiendo
@@ -890,7 +900,18 @@ reutiliza su helper de plazos).
   **Arreglo:** tope defensivo `Math.min(delay, 24*3600*1000)` + detección de
   epoch (`> 1e9` → restar `now`), y un test que fije la semántica.
 
-- [ ] **F38 · media · El feed de invitado llama a `/sources/physics`, que exige sesión**
+  **Re-verificado y arreglado, con un gemelo que la ficha no nombraba:**
+  `retry-after` (`:57-58`) tampoco tenía tope, así que un
+  `retry-after: 999999999` de cualquier intermediario abría el mismo circuito
+  irrecuperable. Las dos ramas salen ahora por el mismo clamp
+  (`boundRateLimitDelay`), un delay que quede en cero o negativo cae al default
+  de 60 s en vez de decir «no limitado», y el epoch se detecta por umbral. 4
+  tests nuevos, incluido uno que comprueba que el circuito **se cierra solo**
+  al pasar el instante — antes no se cerraba nunca. El relay del Worker
+  (`worker/report-api.js:83-90`) se deja como está: es fichero de G5, y el
+  arreglo del cliente vale para cualquier unidad que llegue.
+
+- [x] **F38 · media · El feed de invitado llama a `/sources/physics`, que exige sesión** — arreglado el 24-08-2026
   `src/hooks/useGuestFeed.js:16-23`, `domainSourceService.js:83`
   (`isPhysicsCategory`), `:445-447` (protectedPath), `:537-539`.
   `GUEST_CATEGORIES` incluye `astro-ph.CO` y `quant-ph`, que casan con el
@@ -906,7 +927,20 @@ reutiliza su helper de plazos).
   invitados con techo por minuto. **Test:** el plan de invitado sin sesión no
   produce ninguna petición a rutas protegidas.
 
-- [ ] **F39 · baja · `q-bio.NC` no existe en el esquema: término basura en la query OpenAlex del invitado**
+  **Re-verificado, y es más ancho de lo que decía la ficha.** El Worker protege
+  tres rutas de fuentes (`report-api.js:136-142`: `/sources/core`,
+  `/sources/physics` y `/sources/scopus`), no una: la rama de ingeniería tiene
+  la misma precondición incumplida y hoy no muerde solo porque
+  `GUEST_CATEGORIES` no lleva ingeniería. El gate se puso a las tres, en una
+  función pura y exportada (`getEligibleDomainSources`) que es donde vive ahora
+  la invariante. **Producto, decidido:** la rama se condiciona a que haya
+  sesión y las categorías de física **se quedan** — el invitado sigue viendo
+  física por arXiv (`cat:`) y OpenAlex; solo pierde ADS/INSPIRE, que hoy
+  tampoco recibía. Nada que tocar en el Worker. Verificado en vivo: el feed de
+  invitado ya no pide `/sources/physics` ni `/sources/core`, y no hay ni un
+  `WorkerApiAuthError` en consola.
+
+- [x] **F39 · baja · `q-bio.NC` no existe en el esquema: término basura en la query OpenAlex del invitado** — arreglado el 24-08-2026
   `src/hooks/useGuestFeed.js:20` y `:36-45`; `src/data/categories.js:288`.
   El esquema interno usa `bio.neuro`; `q-bio.NC` solo aparece en el mapa de
   prefijos de área, no como subcategoría, así que `categoryLabel('q-bio.NC')`
@@ -917,27 +951,46 @@ reutiliza su helper de plazos).
   PubMed del invitado ya usa esa forma) y hacer que `categoryLabel` avise en
   dev cuando devuelve el id literal.
 
-- [ ] **F34 · baja · Los fallos de fuentes del feed se tragan sin dejar rastro**
+  **Re-verificado y arreglado, con un coste que la ficha no nombraba:**
+  `q-bio.NC` **sí** es categoría real de arXiv (`ARXIV_PREFIXES` incluye
+  `q-bio`), así que la rama arXiv del invitado sí funcionaba con
+  `cat:q-bio.NC`; lo roto era la query de OpenAlex y el plan de dominio. Al
+  sustituir por `bio.neuro`, arXiv pasa a `all:"Neuroscience"` — decidido
+  aceptarlo: a cambio la query facturada deja de buscar un id, y bioRxiv y
+  Europe PMC de neurociencia (rutas públicas) se activan para el invitado.
+  Verificado en vivo, en la petición: `default.search:"Cosmology" OR "Quantum
+  Physics" OR "Artificial Intelligence" OR "Neuroscience" OR "Probability" OR
+  "General Economics"`. La parte pura del hook vive ahora en
+  `src/utils/guestFeedPlan.js` con la invariante en un test: **toda categoría
+  de invitado existe en el esquema interno**.
+
+- [x] **F34 · baja · Los fallos de fuentes del feed se tragan sin dejar rastro** — arreglado el 24-08-2026
   `src/services/domainSourceService.js:575-578`. El `Promise.allSettled`
   descarta los `rejected` sin log: un 401 sistemático, un 429 de cuota o una
   caída de `/sources/*` son indistinguibles de «esa fuente no tenía
   resultados». Es lo que ocultaba F38.
   **Arreglo:** loggear los `rejected` con path de fuente y código.
 
-- [ ] **F35 · baja · Parámetro muerto `schema: 4` hacia `/sources/physics`**
+- [x] **F35 · baja · Parámetro muerto `schema: 4` hacia `/sources/physics`** — arreglado el 24-08-2026
   `src/services/domainSourceService.js:541`. El Worker no lo lee y no figura
   en `CACHE_PARAMS_BY_PATH['/sources/physics']`.
   **Arreglo:** eliminarlo del cliente (o implementarlo y añadirlo a los cache
   params, si era un versionado pendiente).
 
-- [ ] **F37 · baja · Comillas dobles corrompen la sintaxis de consulta de arXiv**
+  Re-verificado: ningún handler del Worker lee `schema` y no está en
+  `CACHE_PARAMS_BY_PATH['/sources/physics']` (`report-api.js:127`). Eliminado
+  del cliente. **Sin test**, a propósito: es el borrado de un parámetro muerto y
+  no hay comportamiento que fijar; lo que lo respalda es la lectura de las dos
+  puntas.
+
+- [x] **F37 · baja · Comillas dobles corrompen la sintaxis de consulta de arXiv** — arreglado el 24-08-2026
   `src/services/arxivService.js:305` (`au:"${authorName}"`) y `:341`
   (`all:"${queryStr}"`). No es inyección de URL (`URLSearchParams` codifica),
   pero un `"` en el nombre o la búsqueda rompe el emparejado de comillas de
   la query de arXiv → resultados vacíos o erróneos en silencio.
   **Arreglo:** `.replace(/"/g, '')` antes de interpolar.
 
-- [ ] **F42 · baja · Europe PMC mapeado dos veces con dos formas de paper**
+- [x] **F42 · baja · Europe PMC mapeado dos veces con dos formas de paper** — arreglado el 24-08-2026
   `src/services/europePmcService.js:114-137` vs
   `domainSourceService.js` (`mapEuropePmcSearchResult`). La misma API mapeada
   por dos funciones independientes que pueden divergir — la forma exacta de
@@ -945,6 +998,15 @@ reutiliza su helper de plazos).
   invertido ×4).
   **Arreglo:** extraer un `mapEuropePmcRecord` común (como se hizo con
   `buildOpenAlexIdFilter` y `openAlexAbstract.js`).
+
+  **Re-verificado: no era deuda teórica, ya habían divergido en cuatro puntos
+  medibles** — qué cuenta como acceso abierto (`OA` a secas frente a `OA`/`F`
+  más la bandera `isOpenAccess`), si se decodifican las entidades HTML del
+  resumen, si los términos se deduplican ignorando mayúsculas, y de qué formas
+  de `descriptorName` se leen los MeSH. `src/utils/europePmcRecord.js` es ahora
+  el único lector; donde discrepaban gana la unión. Los dos tests que ya
+  existían siguen verdes **sin tocarlos**, que es la prueba de que no cambió
+  ningún comportamiento observado.
 
 ## Plan de implementación G6
 

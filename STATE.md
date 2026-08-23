@@ -1,5 +1,80 @@
 # Estado / pendientes
 
+## G6 cerrado — siete fallos verificados, siete arreglados (2026-08-24)
+
+Capa cliente y feed: F31, F34, F35, F37, F38, F39 y F42. Los siete se
+re-verificaron contra el código de hoy antes de tocar nada y los siete eran
+reales; las líneas de F37 se habían desplazado diez. Tres diagnósticos había que
+corregirlos:
+
+| Fallo | Lo que decía la ficha | Lo que resultó ser |
+|---|---|---|
+| F38 | La rama de física del invitado pide una ruta con sesión | Son **tres** rutas protegidas, no una: `/sources/core` y `/sources/scopus` tienen la misma precondición incumplida |
+| F31 | `x-ratelimit-reset` sin tope ni unidad fijada | Cierto, y `retry-after` tenía el mismo agujero al lado |
+| F39 | `q-bio.NC` no existe, sustitúyelo por `bio.neuro` | Cierto para el esquema interno, pero `q-bio.NC` **sí** es categoría real de arXiv: el cambio cuesta el filtro `cat:` |
+
+### El feed de invitado dejaba de pedir lo que no podía recibir
+
+`/sources/physics` exige token, `authenticatedWorkerFetch` lanza **dentro del
+navegador** antes de salir a red, y el `allSettled` se lo tragaba: cada carga de
+invitado pedía física que nunca iba a ver, y desde fuera era indistinguible de
+«esa fuente no tenía resultados». La decisión de qué ramas pueden pedir vive
+ahora en `getEligibleDomainSources`, pura y exportada, con la invariante fijada
+en un test que recorre `GUEST_CATEGORIES` y comprueba que **ninguna ruta
+protegida sale elegible sin sesión**. Producto: las categorías de física se
+quedan — el invitado sigue viendo física por arXiv y OpenAlex, y solo pierde
+ADS/INSPIRE, que tampoco recibía.
+
+F34 es lo que mantenía todo esto invisible, así que iba en la misma pasada: los
+`rejected` del `allSettled` se loggean con su path. En la verificación en vivo
+se leyó exactamente eso — `Domain source /sources/europepmc failed: …` —, que
+antes no existía.
+
+### Dos ideas que estaban escritas dos veces
+
+- **Europe PMC** se mapeaba en `europePmcService` y en `domainSourceService`, y
+  las dos copias **ya habían divergido** en cuatro puntos: acceso abierto (`OA`
+  frente a `OA`/`F` + `isOpenAccess`), entidades HTML del resumen, dedupe de
+  términos sensible o no a mayúsculas, y qué formas de `descriptorName` se leen.
+  Un solo lector, `src/utils/europePmcRecord.js`; donde discrepaban gana la
+  unión. **Los dos tests que ya existían siguen verdes sin tocarlos** — esa es
+  la prueba de que no cambió nada observable.
+- **La parte pura del feed de invitado** (`GUEST_CATEGORIES`, la etiqueta y la
+  query) sale del hook a `src/utils/guestFeedPlan.js`, al estilo de
+  `feedEnrichment.js`. `q-bio.NC` no estaba en el esquema, así que la query
+  facturada de OpenAlex buscaba el id literal; ahora es `bio.neuro` y avisa en
+  dev cuando una etiqueta cae al id. A cambio, arXiv pierde `cat:q-bio.NC` y
+  pasa a `all:"Neuroscience"`, y el invitado gana bioRxiv y Europe PMC de
+  neurociencia, que no piden sesión.
+
+### El circuito de OpenAlex que no se cerraba
+
+`getOpenAlexRateLimitDelay` leía `x-ratelimit-reset` como delta. Con un epoch
+(~1,77e9) el delay salía de ~56 años: `rateLimitedUntil` en el futuro remoto,
+todas las llamadas fallando sin salir a red, y el único reset —una respuesta
+`ok`— ya imposible. Ahora un valor por encima de 1e9 se lee como instante, las
+dos ramas (`retry-after` incluido) salen por el mismo clamp de 24 h, y un delay
+que quede en cero cae al default de 60 s en vez de decir «no limitado». Hay un
+test que comprueba que el circuito **se cierra solo** al pasar el instante.
+
+### Lo que lo respalda
+
+16 tests nuevos (1.088 → 1.104 al apilarse sobre G5, que entró en `main`
+mientras esto se escribía), **cada arreglo verificado por mutación**: se
+revirtió uno a uno y su test falló (gate de física, gate de core, log de
+fuentes, `q-bio.NC` de vuelta, aviso de id fuera de esquema, detección de epoch,
+clamp, comillas de arXiv y las cuatro reglas de Europe PMC). `npm run check` en
+verde y la suite entera en verde **bajo Node 22**, que es lo que corre CI (local
+es 25).
+
+En vivo, con el dev server y el feed de invitado cargado: cero
+`WorkerApiAuthError`, **ninguna** petición a `/sources/physics` ni
+`/sources/core`, la query de OpenAlex sin `"q-bio.NC"` y con `"Neuroscience"`, y
+el feed renderizando papers de física igualmente, por arXiv. Todo lo de G6 es
+cliente: no hace falta `wrangler deploy`.
+
+**Quedan G5 y G8**, y el `F2-residuo` de `email-notifications.js` sigue sin
+dueño.
 ## G5 cerrado — el presupuesto de OpenAlex, cerrado por número (2026-08-24)
 
 Cuatro fallos (F29, F30, F32, F33), los cuatro reales, y dos de ellos bastante
