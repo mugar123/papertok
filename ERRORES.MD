@@ -622,9 +622,10 @@ El pre-filtro de F20 obligó además a actualizar los fixtures de token de
   siempre — cada una gastando 3-4 lecturas de Firestore y recuperando la unidad;
   y un atacante puede provocar 409 de carrera contra su propia lista a voluntad.
   Reembolsar los deja gratis y desacota las lecturas del plan gratuito, que es
-  exactamente lo que el cobro protegía. **La acción compartida sigue sin existir:
-  G3 (F8) es libre de implementarla para su caso**, donde el reembolso es por
-  fallo de proveedor y no por carrera provocable por el llamante.
+  exactamente lo que el cobro protegía. **G4 no añadió la acción compartida ni
+  la consume**; si G3 (F8) la implementa para su caso —donde el reembolso es por
+  fallo de proveedor y no por una carrera que el llamante provoca— la ruta de
+  listas seguirá sin llamarla, a propósito.
 
 - [x] **F19 · media · Doble publish concurrente crea un documento público huérfano**
   `worker/public-list-api.js:380-413`. El check `ALREADY_PUBLISHED` (`:381`)

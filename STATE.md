@@ -1,5 +1,68 @@
 # Estado / pendientes
 
+## G4 verificado en vivo, y una sola ventana para crear listas (2026-08-24)
+
+### La ronda completa de G4, contra el Worker desplegado
+
+Publicar → sincronizar → despublicar → borrar, con una lista de prueba en la
+cuenta real y el observador de red leyendo cada llamada:
+
+| Ruta | Resultado | Qué prueba |
+|---|---|---|
+| `/lists/publish` | 200, shareId `1ee7a86e…` | F19 (puntero pineado) y F18 (validar antes de reservar) |
+| `/lists/update` | 200, `paperCount: 2` | F17: el merge conservó el paper que el cliente ya no hidrata tras publicar |
+| `/lists/unpublish` | 200, `unpublished: true` | F16 |
+| borrar la lista | **funcionó** | La prueba decisiva de F16 |
+
+El borrado es lo que cierra el círculo: `firestore.rules:800` solo lo permite si
+`publicShareId` ya no está en el documento, así que despublicar tuvo que limpiar
+el puntero de **la lista correcta**. Con el bug de F16 vivo, esa lista habría
+quedado sin poder despublicarse ni borrarse nunca. Las dos listas de prueba
+quedaron borradas; la lista real del usuario, intacta.
+
+F20 se midió aparte en producción, por el reloj: un token basura, caducado o de
+otro proyecto se rechaza en 60-110 ms; uno bien formado pero sin firmar cuesta
+250-360 ms. Esa diferencia es el viaje a Identity Toolkit que ya no se paga.
+
+### Crear una lista: dos formularios pasan a ser uno
+
+Se hacía desde dos sitios con dos interfaces escritas por separado, y habían
+divergido **en las dos direcciones**: la pestaña de listas sabía decir «no se
+pudo crear» y el modal de guardar no —terminaba en `console.error` y dejaba al
+usuario mirando una pantalla que no cambiaba—, mientras que el modal tenía
+ventana propia y la pestaña un recuadro apretado dentro de la tarjeta.
+
+Ahora hay un `CreateListDialog` compartido: `<dialog>` nativo, cabecera, campos
+etiquetados, iconos a 22 px, error y estado «Creando…». **Posee el formulario y
+nada más** — la escritura se queda en cada llamante, que es lo que impide que
+vuelvan a divergir. La máquina de estados vive aparte y pura en
+`src/utils/createListFormModel.js`, al estilo de `saveOrganizeModel.js`: nombre
+en blanco que no envía, segundo envío en vuelo que no crea dos listas, y estado
+que no sobrevive al cierre.
+
+Dos cosas que solo se vieron al mirarlo en el navegador y no en los tests:
+
+- **El foco caía en `<body>`.** `autoFocus` no gana la carrera contra
+  `showModal()` llamado desde el callback de la ref, así que quien abriera la
+  ventana con teclado no tenía dónde escribir. Ahora se enfoca explícitamente en
+  un efecto, que corre después del commit.
+- **`.close()` antes de desmontar.** La plataforma devuelve el foco al botón que
+  abrió el diálogo cuando se *cierra*, no cuando se elimina del documento.
+  Verificado: abre con el foco en el campo, cierra con el foco en «New list».
+
+Verificado en vivo también el caso anidado: la ventana abierta desde el modal de
+guardar cancela sola y deja el modal en pie.
+
+Tests: 1.031 → 1.039 propios (1.064 con el árbol compartido), `npm run check` en
+verde y la suite en verde bajo Node 22. Los siete mutantes del modelo, muertos.
+
+### Nota para quien venga detrás
+
+Los clics y las teclas sintéticas **no llegan a React** en el panel del
+navegador; hay que disparar `.click()` real del DOM desde la consola. Se perdió
+un rato creyendo que el botón «Crear» estaba roto cuando lo que fallaba era la
+automatización.
+
 ## G4: las listas públicas dejan de poder perder papeles en carrera (2026-08-23)
 
 Ocho fallos (F16–F23) de `ERRORES.MD`, los ocho re-verificados leyendo el código
