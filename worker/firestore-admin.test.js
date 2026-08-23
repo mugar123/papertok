@@ -247,17 +247,24 @@ test('deleteWrite is just the name', () => {
 // The client.
 // ---------------------------------------------------------------------------
 
-function adminWith(responder) {
+function adminWith(responder, { tokens = ['tok'] } = {}) {
   resetAccessTokenCache();
   const calls = [];
+  let mints = 0;
   const fetchImpl = async (url, init) => {
     if (url === 'https://oauth2.googleapis.com/token') {
-      return new Response(JSON.stringify({ access_token: 'tok', expires_in: 3600 }), { status: 200 });
+      const token = tokens[Math.min(mints, tokens.length - 1)];
+      mints += 1;
+      return new Response(JSON.stringify({ access_token: token, expires_in: 3600 }), { status: 200 });
     }
     calls.push({ url, init });
     return responder(url, init);
   };
-  return { calls, admin: createFirestoreAdmin(ENV, { fetchImpl, now: () => 0 }) };
+  return {
+    calls,
+    mints: () => mints,
+    admin: createFirestoreAdmin(ENV, { fetchImpl, now: () => 0 }),
+  };
 }
 
 test('a missing document reads as null rather than throwing', async () => {
@@ -319,4 +326,36 @@ test('commit sends every write in one request, so a publish is atomic', async ()
   assert.equal(calls.length, 1, 'one commit, not one request per document');
   assert.match(calls[0].url, /:commit$/);
   assert.equal(JSON.parse(calls[0].init.body).writes.length, 2);
+});
+
+test('a 401 drops the isolate cached token and retries once with a fresh one', async () => {
+  let answered = 0;
+  const { admin, calls, mints } = adminWith(async () => {
+    answered += 1;
+    return answered === 1
+      ? new Response(JSON.stringify({ error: { status: 'UNAUTHENTICATED' } }), { status: 401 })
+      : new Response(JSON.stringify({ fields: { title: { stringValue: 'Ok' } } }), { status: 200 });
+  }, { tokens: ['token-1', 'token-2'] });
+
+  // Without this the cached token keeps being presented for the best part of an
+  // hour, and every request in that window leaves as a 502.
+  assert.deepEqual(await admin.getDocument(['publicLists', 'abc']), { title: 'Ok' });
+  assert.equal(calls.length, 2);
+  assert.equal(calls[0].init.headers.authorization, 'Bearer token-1');
+  assert.equal(calls[1].init.headers.authorization, 'Bearer token-2');
+  assert.equal(mints(), 2);
+});
+
+test('a 403 answers about permissions, not about the token, so nothing is re-minted', async () => {
+  const { admin, calls, mints } = adminWith(async () => new Response(
+    JSON.stringify({ error: { status: 'PERMISSION_DENIED' } }),
+    { status: 403 },
+  ), { tokens: ['token-1', 'token-2'] });
+
+  await assert.rejects(
+    () => admin.getDocument(['publicLists', 'abc']),
+    error => error.code === 'FIRESTORE_READ_FAILED' && error.status === 502,
+  );
+  assert.equal(calls.length, 1);
+  assert.equal(mints(), 1, 'a 403 per request would mean an RS256 signature per request');
 });

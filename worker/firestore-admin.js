@@ -227,14 +227,39 @@ export function documentName(projectId, segments) {
 }
 
 export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.now() } = {}) {
-  const { projectId } = readServiceAccount(env);
+  const { email, projectId } = readServiceAccount(env);
 
+  /**
+   * One retry, and only for a 401.
+   *
+   * The access token is cached for the life of the isolate, so a token Google
+   * has stopped honouring goes on being presented for up to fifty-five minutes,
+   * and every request inside that window comes back 401 and leaves as a 502.
+   * Dropping the cached token costs one signature and recovers on the spot.
+   *
+   * Repeating a commit is safe even though these writes are not idempotent: a
+   * 401 is refused at the authentication layer, before the transaction runs, so
+   * the second attempt is the first execution.
+   *
+   * 403 is deliberately NOT retried. A revoked key fails at the token exchange
+   * (SERVICE_TOKEN_REFUSED) and never gets this far; every remaining 403 is
+   * PERMISSION_DENIED about an identity that authenticated perfectly well, so a
+   * fresh token changes nothing and re-minting would add a JWT signature and a
+   * token exchange to every single request for as long as the misconfiguration
+   * lasted.
+   */
   async function authorizedFetch(url, init) {
-    const token = await getAccessToken(env, { fetchImpl, now });
-    return fetchImpl(url, {
-      ...init,
-      headers: { ...init?.headers, authorization: `Bearer ${token}` },
-    });
+    const send = async () => {
+      const token = await getAccessToken(env, { fetchImpl, now });
+      return fetchImpl(url, {
+        ...init,
+        headers: { ...init?.headers, authorization: `Bearer ${token}` },
+      });
+    };
+    const response = await send();
+    if (response.status !== 401) return response;
+    tokenCache.delete(email);
+    return send();
   }
 
   return {
