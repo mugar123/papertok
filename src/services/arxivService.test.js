@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { assignRequestedCategories, clearCache, fetchPapers } from './arxivService.js';
+import {
+  assignRequestedCategories,
+  buildAuthorQuery,
+  buildSearchQuery,
+  clearCache,
+  fetchPapers,
+} from './arxivService.js';
 
 // Under node the module sees no import.meta.env, so neither the Worker route nor
 // the dev proxy is configured -- exactly the state in which the dead corsproxy.io
@@ -52,4 +58,13 @@ test('maps keyword-search papers back to the most relevant requested subcategory
 
   assert.equal(paper.primaryCategory, 'mech.dyn');
   assert.ok(paper.allCategories.includes('cs.RO'));
+});
+
+// A quote inside the phrase used to close arXiv's quoted term early, which is
+// answered with an empty or wrong result set rather than an error.
+test('keeps the arXiv phrase quotes balanced whatever the user typed', () => {
+  assert.equal(buildAuthorQuery('Ada "Countess" Lovelace'), 'au:"Ada Countess Lovelace"');
+  assert.equal(buildSearchQuery('  "quantum" error correction  '), 'all:"quantum error correction"');
+  assert.equal((buildAuthorQuery('A" OR au:B').match(/"/g) || []).length, 2);
+  assert.equal((buildSearchQuery('a"b"c').match(/"/g) || []).length, 2);
 });

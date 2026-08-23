@@ -287,13 +287,29 @@ export function getPdfUrl(arxivId) { return `https://arxiv.org/pdf/${arxivId}`; 
 export function getAbsUrl(arxivId) { return `https://arxiv.org/abs/${arxivId}`; }
 export function clearCache() { cache.clear(); }
 
+// arXiv's query grammar takes a phrase between double quotes, so a `"` inside
+// the phrase closes it early: the rest of the name or of the search reaches the
+// API as stray syntax, and what comes back is empty or wrong with no error to
+// say so. `URLSearchParams` keeps the URL safe -- it never kept the query safe.
+// Dropping the quote leaves a phrase arXiv can still match.
+function arxivPhrase(value) {
+  return String(value ?? '').replace(/"/g, '').trim();
+}
+
+export function buildAuthorQuery(authorName) {
+  return `au:"${arxivPhrase(authorName)}"`;
+}
+
+export function buildSearchQuery(queryStr) {
+  return `all:"${arxivPhrase(queryStr)}"`;
+}
+
 /**
  * Fetch papers by a specific author
  */
 export async function getAuthorPapers(authorName, maxResults = 10) {
   // We use quotes for exact match. URLSearchParams will safely encode spaces.
-  const query = `au:"${authorName.trim()}"`;
-  return fetchPapers(query, 0, maxResults, 'submittedDate');
+  return fetchPapers(buildAuthorQuery(authorName), 0, maxResults, 'submittedDate');
 }
 
 /**
@@ -328,6 +344,5 @@ export async function fetchPapersByIds(arxivIds) {
  */
 export async function searchPapers(queryStr, start = 0, maxResults = 20) {
   if (!queryStr || queryStr.trim() === '') return [];
-  const encodedQuery = `all:"${queryStr.trim()}"`;
-  return fetchPapers(encodedQuery, start, maxResults, 'recent', 'relevance');
+  return fetchPapers(buildSearchQuery(queryStr), start, maxResults, 'recent', 'relevance');
 }
