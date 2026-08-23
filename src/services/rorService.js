@@ -1,4 +1,5 @@
 import { filterRelevantSearchResults } from '../utils/searchRelevance.js';
+import { withEnforcedDeadline } from '../utils/requestDeadline.js';
 
 const API_BASE = 'https://api.ror.org/v2/organizations';
 const CACHE_PREFIX = 'papertok_ror_v3_';
@@ -147,21 +148,15 @@ function writeCache(rorId, value) {
   }
 }
 
-async function fetchJson(url, timeoutMs = 7000, { signal } = {}) {
-  const controller = new AbortController();
-  const abortFromSignal = () => controller.abort(signal?.reason);
-  if (signal?.aborted) abortFromSignal();
-  else signal?.addEventListener('abort', abortFromSignal, { once: true });
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { signal: controller.signal });
-    if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`ROR Error: ${response.status}`);
-    return response.json();
-  } finally {
-    clearTimeout(timeout);
-    signal?.removeEventListener('abort', abortFromSignal);
-  }
+/**
+ * Exported for its regression test, which needs a deadline short enough to wait
+ * for: the real ones are seven seconds.
+ */
+export async function fetchJson(url, timeoutMs = 7000, { signal } = {}) {
+  const response = await fetch(url, withEnforcedDeadline({ signal }, timeoutMs));
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`ROR Error: ${response.status}`);
+  return response.json();
 }
 
 export async function getRorInstitution(value) {

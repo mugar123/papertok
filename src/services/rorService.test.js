@@ -1,6 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  dribblingFetch,
+  settleWithin,
+  withStubbedFetch,
+} from '../test-support/deadlineHarness.js';
+import {
+  fetchJson,
   mergeInstitutionWithRor,
   normalizeRorId,
   normalizeRorInstitution,
@@ -84,4 +90,32 @@ test('caches repeated institution searches in memory', async () => {
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test('the deadline covers a ROR body that never finishes', async () => {
+  // Before the fix this cleared its timer as soon as the headers landed, so a
+  // dribbling body waited for ever behind a seven-second deadline.
+  await withStubbedFetch(dribblingFetch(), async () => {
+    assert.equal(
+      await settleWithin(1000, () => fetchJson('https://api.ror.org/v2/organizations?query=deadline', 50)),
+      'TimeoutError',
+    );
+  });
+});
+
+test('a caller signal does not take the ROR deadline away with it', async () => {
+  // `SearchPage` passes an abort signal on every keystroke. Under a `??` rule
+  // that signal would have replaced the deadline and left the typeahead — the
+  // busiest path this service has — unbounded again.
+  const cancellation = new AbortController();
+  await withStubbedFetch(dribblingFetch(), async () => {
+    assert.equal(
+      await settleWithin(1000, () => fetchJson(
+        'https://api.ror.org/v2/organizations?query=deadline-with-signal',
+        50,
+        { signal: cancellation.signal },
+      )),
+      'TimeoutError',
+    );
+  });
 });

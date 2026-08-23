@@ -5,6 +5,7 @@
 
 import { CATEGORIES } from '../data/categories.js';
 import { reconstructOpenAlexAbstract } from '../utils/openAlexAbstract.js';
+import { withRequestDeadline } from '../utils/requestDeadline.js';
 import {
   applyInstitutionWorksFallback,
   calculateEntityRecentImpact,
@@ -145,7 +146,15 @@ export function buildOpenAlexIdFilter(ids) {
   return values.length > 0 ? `openalex:${encodeURIComponent(values.join('|'))}` : '';
 }
 
-async function fetchWithTimeout(url, timeoutMs = 8000) {
+/**
+ * Exported for its regression test, which needs a deadline short enough to wait
+ * for: the real one is eight seconds.
+ *
+ * The OpenAlex branch has been covering its body read since `openAlexClient`
+ * started buffering inside the deadline. This one hands the response back
+ * unread, so it needs the deadline to outlive the call the same way.
+ */
+export async function fetchWithTimeout(url, timeoutMs = 8000) {
   let hostname = '';
   try {
     hostname = new URL(url).hostname;
@@ -157,13 +166,7 @@ async function fetchWithTimeout(url, timeoutMs = 8000) {
     return openAlexFetch(url, { timeoutMs, cacheTtlMs: 5 * 60 * 1000 });
   }
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  return fetch(url, withRequestDeadline({}, timeoutMs));
 }
 
 async function enrichInstitutionWithRor(institution, prefetchedRor = null) {

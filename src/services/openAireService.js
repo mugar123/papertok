@@ -1,20 +1,20 @@
 import { deduplicateProjectParticipants } from '../utils/entityMetadata.js';
+import { withEnforcedDeadline } from '../utils/requestDeadline.js';
 
 export const CACHE = new Map();
 const CACHE_TTL = 1000 * 60 * 60 * 24; // 24 hours
 
-async function fetchWithTimeout(url, timeout = 10000, { signal } = {}) {
-  const controller = new AbortController();
-  const abortFromSignal = () => controller.abort(signal?.reason);
-  if (signal?.aborted) abortFromSignal();
-  else signal?.addEventListener('abort', abortFromSignal, { once: true });
-  const id = setTimeout(() => controller.abort(), timeout);
-  try {
-    return await fetch(url, { signal: controller.signal });
-  } finally {
-    clearTimeout(id);
-    signal?.removeEventListener('abort', abortFromSignal);
-  }
+/**
+ * The response is handed back unread, so the deadline has to outlive this
+ * function — every `response.json()` below is the part that actually stalls.
+ * The old timer was cleared the moment the headers landed, which left those
+ * reads unbounded.
+ *
+ * Exported for its regression test, which needs a deadline short enough to wait
+ * for: the real one is ten seconds.
+ */
+export function fetchWithTimeout(url, timeout = 10000, { signal } = {}) {
+  return fetch(url, withEnforcedDeadline({ signal }, timeout));
 }
 
 /** Validate that a string is a plausible 3-letter ISO 4217 currency code */

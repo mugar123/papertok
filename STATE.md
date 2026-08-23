@@ -1,5 +1,118 @@
 # Estado / pendientes
 
+## F2 fuera del alcance de G2: los cinco servicios que quedaron (2026-08-23)
+
+**Hecho y verificado en local, incluido bajo el Node de CI.** Cierra el pendiente
+3 de la sección de G2 de más abajo. Ficheros tocados:
+`src/services/{rorService,dataCiteService,orcidService,openAireService,openAlexService}.js`,
+`src/utils/requestDeadline.js`, sus tests, y `src/test-support/deadlineHarness.js`
+(nuevo). **No se ha tocado `worker/ai-explanation.js`** (G3) ni
+`worker/email-notifications.js` (G1). Tests: 980 → 992.
+
+### El discriminante, medido y no recordado
+
+El patrón de F2 no se reconoce por tener un `clearTimeout` en el `finally`, sino
+por si el cuerpo se lee **dentro** del `try`. El `finally` corre al *ejecutarse*
+el `return`, no al asentarse la promesa:
+
+```
+return response.json()        →  finally  ->  body done     ← roto
+return await response.json()  →  body done  ->  finally     ← sano
+```
+
+Con eso, barrer los 80+ `clearTimeout` de `src`, `worker` y `functions` deja de
+ser heurística. Dos formas rotas: `return response.json()` sin `await`, y
+devolver un `Response` **sin leer** — esta segunda es peor, porque el
+`response.json()` ocurre en el llamante, a veces a 160 líneas de distancia
+(`openAireService`), del todo fuera del plazo. Reproducido contra un servidor que
+manda cabeceras y luego gotea:
+
+```
+forma actual:  cabeceras a 28ms, plazo 1000ms → cuerpo SIGUE ESPERANDO a 3031ms
+con el fijo:   cuerpo lanza TimeoutError a 1009ms
+```
+
+### Los cinco
+
+`rorService.js` y `dataCiteService.js` tenían el `return response.json()` sin
+`await`. `orcidService.js`, `openAireService.js` y `openAlexService.js:165`
+devolvían el `Response` sin leer. Los tres últimos venían marcados por una
+heurística y sin verificar; **no eran falsos positivos**, eran la variante peor.
+
+En `openAireService` el fallo era doble: el `removeEventListener` del `finally`
+desenganchaba también la señal del llamante antes de leer el cuerpo, así que ni
+el plazo ni la cancelación del usuario llegaban a la lectura. Su test de
+mutación falla 3 de 3 por eso.
+
+### Verificado y sano — no se toca
+
+- `openAlexService.js:623` (`settleAuthorInstitutionLookup`) — era el candidato
+  dudoso del encargo y **no tiene el fallo**: es una carrera de promesas que
+  resuelve `null`, sin `fetch`.
+- `openAlexClient.js:369` — ya correcto por la otra vía válida: drena el cuerpo
+  con `bufferResponse` *dentro* del plazo. Es el precedente del árbol.
+- `huggingFace`, `iCite`, `unpaywall`, `relatedPapers`, `citationGraph`,
+  `scientificTrend`, `europePmc`, `ScopusAdapter` y los
+  `src/services/{email,aiExplanation}*` — todos awaitean el cuerpo dentro del
+  `try`. Sanos, y el barrido lo demuestra en vez de suponerlo.
+
+### Presupuesto contra cancelación: por qué hay dos helpers
+
+`withRequestDeadline` hace `options.signal ?? AbortSignal.timeout(ms)`. Ahí la
+señal del llamante trae un **presupuesto** — `workerApiClient` la recibe de quien
+ya sabe cuánto puede tardar (IA 70 s, email 25 s), y que un default de 15 s la
+recorte sería el error. Es diseño, no descuido.
+
+Pero en `rorService` y `openAireService` la señal trae una **cancelación**:
+`SearchPage.jsx:295-313` aborta la petición en vuelo en cada pulsación, y una
+cancelación no dice nada sobre cuánto puede durar la petición. Con la regla del
+`??`, el typeahead —la ruta más caliente que tienen esos dos servicios— se habría
+quedado otra vez sin plazo. Habríamos cambiado un colgado ilimitado por otro.
+
+De ahí `withEnforcedDeadline`, aditivo vía `AbortSignal.any`. `withRequestDeadline`
+**no se ha tocado**, así que sus tres usuarios de G2 siguen exactamente igual.
+`AbortSignal.any` conserva cuál señal disparó, que es lo que mantiene separadas
+las dos causas y deja intacto el silencio-al-cancelar de `EntityExplorer.jsx:828`
+y `openAireService.js:369`:
+
+```
+cancela el llamante -> AbortError
+vence el plazo      -> TimeoutError
+```
+
+La misma asimetría existe en el Worker (`fetchWithDeadline`,
+`worker/report-api.js:342`, también con `??`). Hoy **no es un fallo vivo**:
+ninguno de sus diez llamantes pasa señal. Pero ahí la señal que un llamante
+podría traer sería `request.signal` — el cliente que se desconecta, o sea una
+cancelación — así que la semántica correcta allí es la aditiva, y el consejo de
+«usad `fetchWithDeadline`» que se le dio a G5 y G8 deja el footgun armado.
+**Pendiente, y falta confirmar que workerd soporte `AbortSignal.any`.**
+
+### Tests
+
+Un caso de regresión por servicio, con `src/test-support/deadlineHarness.js`:
+un `fetch` que responde cabeceras al instante y un cuerpo que no termina nunca.
+Cada uno **verificado por mutación**: revertido el arreglo, en rojo; restaurado,
+en verde.
+
+Dos detalles del arnés que no son cosméticos. Los casos corren contra un watchdog
+porque `node --test` no tiene timeout por caso: sin él, revertir un arreglo
+dejaría la suite colgada para siempre en vez de ponerla roja, y la verificación
+por mutación no valdría nada. Y ese watchdog usa un `setTimeout` **ref'd**, que
+sostiene el event loop; `AbortSignal.timeout` programa uno *unref'd*, y bajo Node
+22 un test que solo espere su abort sale `cancelled` — 0 fallos, N cancelados,
+exit 1 — que no se parece a un fallo normal. Ya pasó en G2 (976/980).
+
+Por eso, además de `npm run check` (verde, 992/992), la suite se corrió con el
+Node de CI, que no es el de local (22 contra 25):
+
+```
+npx -y -p node@22 node --test $(find src worker proxy -name '*.test.js')
+→ # pass 992  # fail 0  # cancelled 0
+```
+
+No hay que desplegar nada: los cinco son de cliente y entran por el build normal.
+
 ## G2 de ERRORES.MD: ningún camino de red puede ya esperar sin límite (2026-08-23)
 
 **Hecho y verificado en local; faltan dos despliegues.** Grupo G2 completo — F1,
@@ -158,11 +271,12 @@ que F25 exige `emailVerified`.
    suscriptor que recibió el digest hoy lo recibe también mañana.** Es la única
    prueba real de F24, y no se puede adelantar.
 2. Vigilar el `EMAIL_SUBSCRIPTION_INVALID` de la pasada de las 13:40Z.
-3. **Fuera del alcance de G2:** el patrón de F2 vive también en
+3. ~~**Fuera del alcance de G2:** el patrón de F2 vive también en
    `src/services/rorService.js:150-165`, `dataCiteService.js:166-176`,
    `orcidService.js:7-21`, y con forma parecida en `openAireService.js` y
-   `openAlexService.js`. No se han tocado: no están en la lista de ficheros del
-   grupo y otra sesión puede estar en ellos. Merecen su propio grupo.
+   `openAlexService.js`.~~ **Hecho** — ver la sección del 2026-08-23 al principio
+   del fichero. Los cinco tenían el fallo; el falso positivo era el otro sitio de
+   `openAlexService` (`:623`), no los ficheros marcados por heurística.
 
 ## G1 de ERRORES.MD: los digests diarios ya no llegan en días alternos (2026-08-23)
 

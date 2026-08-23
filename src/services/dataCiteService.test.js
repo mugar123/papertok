@@ -1,6 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mapDataCiteDirectRelations, mapDataCiteRecord } from './dataCiteService.js';
+import {
+  dribblingFetch,
+  settleWithin,
+  withStubbedFetch,
+} from '../test-support/deadlineHarness.js';
+import { fetchJson, mapDataCiteDirectRelations, mapDataCiteRecord } from './dataCiteService.js';
 
 test('maps a reverse DataCite dataset relationship to a paper DOI', () => {
   const resource = mapDataCiteRecord({
@@ -79,4 +84,15 @@ test('maps direct version and software relations with safe links', () => {
   assert.equal(resources.length, 3);
   assert.deepEqual(resources.map(resource => resource.kind), ['version', 'software', 'software']);
   assert.equal(resources[0].url, 'https://doi.org/10.5281/zenodo.2');
+});
+
+test('the deadline covers a DataCite body that never finishes', async () => {
+  // Before the fix the timer was cleared as soon as the headers landed, so the
+  // `response.json()` on the next line ran with nothing bounding it.
+  await withStubbedFetch(dribblingFetch(), async () => {
+    assert.equal(
+      await settleWithin(1000, () => fetchJson('https://api.datacite.org/dois?query=deadline', 50)),
+      'TimeoutError',
+    );
+  });
 });

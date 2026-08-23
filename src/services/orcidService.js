@@ -3,22 +3,19 @@
  * Fetches data from the ORCID Public API (v3.0)
  */
 
-// A simple fetch with timeout, similar to openAlexService
-const fetchWithTimeout = async (url, options = {}, timeout = 8000) => {
-  const controller = new AbortController();
-  const id = setTimeout(() => controller.abort(), timeout);
-  try {
-    const response = await fetch(url, {
-      ...options,
-      signal: controller.signal
-    });
-    clearTimeout(id);
-    return response;
-  } catch (error) {
-    clearTimeout(id);
-    throw error;
-  }
-};
+import { withRequestDeadline } from '../utils/requestDeadline.js';
+
+/**
+ * One deadline covering the headers and the body. This used to clear its own
+ * timer before returning, and it hands the response back unread — so every
+ * `response.json()` below happened with no deadline on it at all.
+ *
+ * Exported for its regression test, which needs a deadline short enough to wait
+ * for: the real one is eight seconds.
+ */
+export const fetchWithTimeout = (url, options = {}, timeout = 8000) => (
+  fetch(url, withRequestDeadline(options, timeout))
+);
 
 /**
  * Validates and extracts a clean ORCID ID from a string or URL.

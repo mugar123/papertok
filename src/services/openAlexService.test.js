@@ -2,7 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mapCrossrefInstitutionWork } from './crossrefInstitutionService.js';
 import {
+  dribblingFetch,
+  settleWithin,
+  withStubbedFetch,
+} from '../test-support/deadlineHarness.js';
+import {
   buildOpenAlexIdFilter,
+  fetchWithTimeout,
   buildRecentImpactUrl,
   dedupeAuthors,
   enrichAuthorInstitutionLocalization,
@@ -311,4 +317,18 @@ test('drops blanks and duplicates instead of sending an empty filter', () => {
   assert.equal(buildOpenAlexIdFilter(['W1', '', '  ', 'W1', 'W2']), 'openalex:W1%7CW2');
   assert.equal(buildOpenAlexIdFilter([]), '');
   assert.equal(buildOpenAlexIdFilter(null), '');
+});
+
+test('the deadline covers a non-OpenAlex body that never finishes', async () => {
+  // This branch hands the response back unread, so the body is read by a caller
+  // far from here. Clearing the timer on the way out left that read unbounded.
+  await withStubbedFetch(dribblingFetch(), async () => {
+    assert.equal(
+      await settleWithin(1000, async () => {
+        const response = await fetchWithTimeout('https://api.crossref.org/works?query=deadline', 50);
+        await response.json();
+      }),
+      'TimeoutError',
+    );
+  });
 });

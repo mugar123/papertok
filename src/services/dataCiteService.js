@@ -1,4 +1,5 @@
 import { normalizeDoi } from './unpaywallService.js';
+import { withRequestDeadline } from '../utils/requestDeadline.js';
 
 const API_BASE = 'https://api.datacite.org/dois';
 const CACHE_PREFIX = 'papertok_datacite_';
@@ -163,17 +164,17 @@ function writeCache(doi, value) {
   }
 }
 
-async function fetchJson(url, timeoutMs = 7000) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { signal: controller.signal, headers: { Accept: 'application/vnd.api+json' } });
-    if (response.status === 404) return null;
-    if (!response.ok) throw new Error(`DataCite Error: ${response.status}`);
-    return response.json();
-  } finally {
-    clearTimeout(timeout);
-  }
+/**
+ * Exported for its regression test, which needs a deadline short enough to wait
+ * for: the real ones are seven seconds.
+ */
+export async function fetchJson(url, timeoutMs = 7000) {
+  const response = await fetch(url, withRequestDeadline({
+    headers: { Accept: 'application/vnd.api+json' },
+  }, timeoutMs));
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`DataCite Error: ${response.status}`);
+  return response.json();
 }
 
 function deduplicateResources(resources) {

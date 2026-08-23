@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_REQUEST_TIMEOUT_MS,
   requestDeadline,
+  withEnforcedDeadline,
   withRequestDeadline,
 } from './requestDeadline.js';
 
@@ -64,4 +65,36 @@ test('the deadline still covers a body that arrives after the headers', async ()
 
 test('defaults to fifteen seconds, comfortably inside every caller budget', () => {
   assert.equal(DEFAULT_REQUEST_TIMEOUT_MS, 15_000);
+});
+
+test('the enforced deadline still fires when the caller brought a signal', async () => {
+  // The regression `withRequestDeadline` would have introduced in the searches:
+  // SearchPage passes an abort signal on every keystroke, and under the `??`
+  // rule that signal would have removed the deadline entirely.
+  const cancellation = new AbortController();
+  const { signal } = withEnforcedDeadline({ signal: cancellation.signal }, 20);
+  assert.equal(signal.aborted, false);
+
+  await holdingTheEventLoop(() => new Promise(resolve => {
+    signal.addEventListener('abort', resolve, { once: true });
+  }));
+
+  assert.equal(signal.reason.name, 'TimeoutError');
+  assert.equal(cancellation.signal.aborted, false, 'the caller signal is not aborted on our behalf');
+});
+
+test('a cancelling caller still reads as a cancellation, not as a timeout', () => {
+  // `EntityExplorer` and `searchProjects` stay quiet when the user navigates away
+  // and log when a request times out. Both need the reason to survive the merge.
+  const cancellation = new AbortController();
+  const { signal } = withEnforcedDeadline({ signal: cancellation.signal }, 60_000);
+  cancellation.abort();
+  assert.equal(signal.reason.name, 'AbortError');
+});
+
+test('the enforced deadline carries the rest of the options through', () => {
+  const options = withEnforcedDeadline({ method: 'POST', headers: { accept: 'application/json' } }, 20);
+  assert.equal(options.method, 'POST');
+  assert.deepEqual(options.headers, { accept: 'application/json' });
+  assert.equal(options.signal.aborted, false);
 });
