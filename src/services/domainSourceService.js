@@ -5,6 +5,7 @@ import { isTechnicalClassification } from '../utils/scientificClassification.js'
 import { mapOpenReviewNote } from './openReviewService.js';
 import { mapHuggingFacePaper } from './huggingFaceService.js';
 import { authenticatedWorkerFetch } from './workerApiClient.js';
+import { withRequestDeadline } from '../utils/requestDeadline.js';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -435,22 +436,20 @@ export function mapInspirePaper(hit, requestedCategories = []) {
 
 async function fetchJson(path, params) {
   if (!PAPER_API_BASE) return null;
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  try {
-    const url = new URL(`${PAPER_API_BASE}${path}`);
-    Object.entries(params).forEach(([key, value]) => {
-      if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
-    });
-    const protectedPath = ['/sources/core', '/sources/physics'].includes(path);
-    const response = protectedPath
-      ? await authenticatedWorkerFetch(url, { signal: controller.signal, headers: { accept: 'application/json' } })
-      : await fetch(url, { signal: controller.signal, headers: { accept: 'application/json' } });
-    if (!response.ok) throw new Error(`${path} returned ${response.status}`);
-    return response.json();
-  } finally {
-    clearTimeout(timeout);
-  }
+  const url = new URL(`${PAPER_API_BASE}${path}`);
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
+  });
+  const protectedPath = ['/sources/core', '/sources/physics'].includes(path);
+  // One deadline for headers and body alike. These calls run inside the
+  // `Promise.allSettled` of `fetchDomainPapers`, so a single source that answers
+  // its headers and then stops used to hold the whole feed behind it.
+  const options = withRequestDeadline({ headers: { accept: 'application/json' } }, REQUEST_TIMEOUT_MS);
+  const response = protectedPath
+    ? await authenticatedWorkerFetch(url, options)
+    : await fetch(url, options);
+  if (!response.ok) throw new Error(`${path} returned ${response.status}`);
+  return response.json();
 }
 
 function sourceQuery(categories) {

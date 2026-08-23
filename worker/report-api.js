@@ -40,6 +40,14 @@ const DEFAULT_ALLOWED_ORIGINS = [
   'http://localhost:5173',
   'http://127.0.0.1:5173',
 ];
+// Upstream deadlines, all in one place because every group that adds a route
+// needs one. The ceiling on any of them is what the browser is willing to wait:
+// the client gives `/report/trends` 10 s and the specialist sources 10 s, so a
+// Worker that outlasts that is answering nobody.
+const UPSTREAM_TIMEOUT_MS = 8000;
+const SOURCE_UPSTREAM_TIMEOUT_MS = 6000;
+const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
+
 const CACHE_SECONDS = 6 * 60 * 60;
 const RELATED_CACHE_SECONDS = 24 * 60 * 60;
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
@@ -233,7 +241,7 @@ async function fetchOpenAlexPeriod(period, filters, env) {
   url.searchParams.set('mailto', 'app@papertok.io');
   if (env.OPENALEX_API_KEY) url.searchParams.set('api_key', env.OPENALEX_API_KEY);
 
-  const response = await fetch(url, { headers: { accept: 'application/json' } });
+  const response = await fetchWithDeadline(url, { headers: { accept: 'application/json' } });
   if (!response.ok) throw new Error(`OpenAlex error: ${response.status}`);
   const data = await response.json();
   return {
@@ -316,22 +324,29 @@ async function handleRelated(request, env, identity) {
     const url = `https://api.semanticscholar.org/recommendations/v1/papers/forpaper/${encodeURIComponent(paperId)}?fields=${encodeURIComponent(fields)}&limit=${limit}`;
     const headers = { accept: 'application/json' };
     if (env.SEMANTIC_SCHOLAR_API_KEY) headers['x-api-key'] = env.SEMANTIC_SCHOLAR_API_KEY;
-    const response = await fetch(url, { headers });
+    const response = await fetchWithDeadline(url, { headers }, SOURCE_UPSTREAM_TIMEOUT_MS);
     if (!response.ok) throw new Error(`Semantic Scholar error: ${response.status}`);
     return response.json();
   }, identity);
 }
 
-async function fetchJsonWithTimeout(url, options = {}, timeoutMs = 8000) {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(url, { ...options, signal: controller.signal });
-    if (!response.ok) throw new Error(`Upstream error: ${response.status}`);
-    return response.json();
-  } finally {
-    clearTimeout(timeoutId);
-  }
+// Every upstream call in this file goes through here, and the deadline covers
+// the whole exchange -- headers and body alike. The distinction is not academic:
+// a timer cleared in a `finally` stops covering the response the moment `fetch`
+// resolves, which is when the *headers* arrive, so an upstream that answers its
+// headers and then dribbles the body used to hang exactly like one that never
+// answered at all. An `AbortSignal.timeout` has no timer to clear: it stays armed
+// until the body has been read in full, and cuts the read too. Measured against a
+// server that sends headers and then goes quiet, the old shape was still waiting
+// when the test gave up; this one aborts on the mark.
+function fetchWithDeadline(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
+  return fetch(url, { ...options, signal: options.signal ?? AbortSignal.timeout(timeoutMs) });
+}
+
+async function fetchJsonWithTimeout(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS) {
+  const response = await fetchWithDeadline(url, options, timeoutMs);
+  if (!response.ok) throw new Error(`Upstream error: ${response.status}`);
+  return response.json();
 }
 
 function addOpenAlexCredentials(url, env) {
@@ -614,9 +629,9 @@ async function handleOpenAccess(request, env) {
   }
   return cacheResponse(request, origin, env, OA_CACHE_SECONDS, async () => {
     const email = env.UNPAYWALL_EMAIL || 'app@papertok.io';
-    const response = await fetch(`https://api.unpaywall.org/v2/${encodeURIComponent(doi)}?email=${encodeURIComponent(email)}`, {
+    const response = await fetchWithDeadline(`https://api.unpaywall.org/v2/${encodeURIComponent(doi)}?email=${encodeURIComponent(email)}`, {
       headers: { accept: 'application/json' },
-    });
+    }, SOURCE_UPSTREAM_TIMEOUT_MS);
     if (!response.ok) throw new Error(`Unpaywall error: ${response.status}`);
     return response.json();
   });
@@ -653,21 +668,15 @@ async function handleArxiv(request, env) {
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 5000);
-  let response;
-  try {
-    response = await fetch(upstreamUrl.toString(), {
-      signal: controller.signal,
-      headers: {
-        accept: 'application/atom+xml, application/xml, text/xml;q=0.9',
-        'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
-      },
-    });
-  } finally {
-    clearTimeout(timeoutId);
-  }
+  const response = await fetchWithDeadline(upstreamUrl.toString(), {
+    headers: {
+      accept: 'application/atom+xml, application/xml, text/xml;q=0.9',
+      'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
+    },
+  }, ARXIV_UPSTREAM_TIMEOUT_MS);
   if (!response.ok) throw new Error(`arXiv error: ${response.status}`);
+  // Read under the same deadline: arXiv is the one upstream that answers XML, and
+  // a feed that stops mid-document is a stall, not a short answer.
   const xml = await response.text();
   if (!xml.includes('<feed')) throw new Error('Invalid arXiv response');
 
@@ -725,8 +734,6 @@ function utcDateOffset(days) {
 // upstream measured is OpenReview at 5.2 s cold, and letting it finish still
 // pays off because the answer lands in the edge cache for the next reader,
 // even though the reader who triggered it has moved on.
-const SOURCE_UPSTREAM_TIMEOUT_MS = 6000;
-
 function fetchJsonUpstream(url, headers = {}) {
   return fetchJsonWithTimeout(url, {
     headers: {
@@ -1002,13 +1009,13 @@ async function fetchAdsLiterature(context, query, env) {
     'doctype',
   ].join(','));
 
-  const response = await fetch(url, {
+  const response = await fetchWithDeadline(url, {
     headers: {
       accept: 'application/json',
       authorization: `Bearer ${env.NASA_ADS_API_TOKEN}`,
       'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
     },
-  });
+  }, SOURCE_UPSTREAM_TIMEOUT_MS);
   if (!response.ok) {
     const error = new Error(`NASA ADS error: ${response.status}`);
     error.status = response.status;
@@ -1115,6 +1122,13 @@ function emptyPhysicsLiterature(fallbackReason) {
   };
 }
 
+// A provider that refused and a provider that never answered are different
+// failures, and the fallback reason is the only place the difference survives.
+function adsFallbackReason(error) {
+  if (error?.name === 'TimeoutError' || error?.name === 'AbortError') return 'ads_timeout';
+  return `ads_${error?.status || 'unavailable'}`;
+}
+
 async function handlePhysicsLiterature(request, env, identity) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
@@ -1128,9 +1142,10 @@ async function handlePhysicsLiterature(request, env, identity) {
         return await fetchAdsLiterature(context, query, env);
       } catch (error) {
         console.warn('NASA ADS unavailable, using INSPIRE fallback', error);
+        const reason = adsFallbackReason(error);
         return fallbackQuery
-          ? fetchInspireLiterature(context, fallbackQuery, `ads_${error.status || 'unavailable'}`)
-          : emptyPhysicsLiterature(`ads_${error.status || 'unavailable'}`);
+          ? fetchInspireLiterature(context, fallbackQuery, reason)
+          : emptyPhysicsLiterature(reason);
       }
     }
     return fallbackQuery
@@ -1209,7 +1224,7 @@ async function fetchScopusSearch(env, { query, start = 0, count = 1 }) {
   for (const candidate of scopusViewLadder(env)) {
     if (candidate) url.searchParams.set('view', candidate);
     else url.searchParams.delete('view');
-    response = await fetch(url, { headers });
+    response = await fetchWithDeadline(url, { headers }, SOURCE_UPSTREAM_TIMEOUT_MS);
     view = candidate || 'DEFAULT';
     if (response.ok) {
       attempts.push({ view, status: response.status, code: '', message: '', requestId: '' });
@@ -1419,7 +1434,7 @@ async function handleOpenAlex(request, env) {
   const quotaError = await reserveOpenAlexQuota(env, origin);
   if (quotaError) return quotaError;
 
-  const upstream = await fetch(addOpenAlexCredentials(target, env), {
+  const upstream = await fetchWithDeadline(addOpenAlexCredentials(target, env), {
     headers: { accept: 'application/json' },
   });
   const body = await upstream.text();
@@ -1448,7 +1463,7 @@ export async function checkOpenAlexHealth(env) {
     const url = addOpenAlexCredentials(new URL('https://api.openalex.org/works'), env);
     url.searchParams.set('per-page', '1');
     url.searchParams.set('select', 'id');
-    const response = await fetch(url, { headers: { accept: 'application/json' } });
+    const response = await fetchWithDeadline(url, { headers: { accept: 'application/json' } }, SOURCE_UPSTREAM_TIMEOUT_MS);
     const budget = {
       limitUsd: numberOrNull(response.headers.get('x-ratelimit-limit-usd')),
       remainingUsd: numberOrNull(response.headers.get('x-ratelimit-remaining-usd')),
@@ -1656,7 +1671,19 @@ export default {
       return response;
     }
     if (url.pathname.startsWith('/openalex/')) {
-      return handleOpenAlex(request, env);
+      try {
+        return await handleOpenAlex(request, env);
+      } catch (error) {
+        // This was the one route that returned its handler bare. A connection
+        // reset or a transient DNS failure rose uncaught, and an uncaught throw
+        // carries no `access-control-allow-origin`: the browser sees an opaque
+        // CORS error and the 429 relay this route works to preserve is lost.
+        console.error('OpenAlex relay failed', error);
+        return json({ code: 'OPENALEX_UNREACHABLE' }, 502, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'no-store',
+        });
+      }
     }
     if (url.pathname === '/health/openalex') {
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);

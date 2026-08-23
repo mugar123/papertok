@@ -1,4 +1,5 @@
 import { auth } from './firebase.js';
+import { withRequestDeadline } from '../utils/requestDeadline.js';
 
 const PRODUCTION_WORKER_ORIGIN = 'https://papertok-report-api.papertok-mugar123.workers.dev';
 
@@ -44,5 +45,9 @@ export async function authenticatedWorkerFetch(input, options = {}) {
   const token = await currentUser.getIdToken();
   const headers = new Headers(options.headers || {});
   headers.set('authorization', `Bearer ${token}`);
-  return fetch(url, { ...options, headers });
+  // Every caller but `publicListService` passed a signal of its own, and that one
+  // could wait on a stalled Worker until the tab was closed. The default closes
+  // that hole and the next one like it; a caller with its own budget — the AI
+  // explanation spends seventy seconds legitimately — still overrides it.
+  return fetch(url, withRequestDeadline({ ...options, headers }));
 }

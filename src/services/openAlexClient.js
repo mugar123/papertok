@@ -342,7 +342,12 @@ export class OpenAlexClient {
       .forEach(key => delete fetchOptions[key]);
 
     try {
-      return await this.fetchImpl(url, { ...fetchOptions, signal: controller.signal });
+      const response = await this.fetchImpl(url, { ...fetchOptions, signal: controller.signal });
+      // Drained here, inside the deadline, and handed back as a fresh Response.
+      // `json()` reads the body far from this function and `fetch()` caches and
+      // clones it on the way, so leaving the read outside meant the timeout
+      // stopped covering the one part of the exchange that actually stalls.
+      return await bufferResponse(response);
     } catch (error) {
       if (controller.signal.aborted) {
         if (externalSignal?.aborted) {
@@ -369,6 +374,20 @@ export class OpenAlexClient {
   withJitter(delayMs) {
     return Math.round(delayMs * (0.9 + this.random() * 0.2));
   }
+}
+
+// 204, 205 and 304 carry no body, and the `Response` constructor refuses one for
+// them, so those are handed straight back.
+const BODYLESS_STATUSES = new Set([101, 204, 205, 304]);
+
+async function bufferResponse(response) {
+  if (BODYLESS_STATUSES.has(response.status) || !response.body) return response;
+  const body = await response.arrayBuffer();
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 export const openAlexClient = new OpenAlexClient();

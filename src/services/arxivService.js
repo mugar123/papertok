@@ -6,6 +6,7 @@
 const isDev = import.meta.env?.DEV === true;
 import { PaperBuilder } from './PaperBuilder.js';
 import CATEGORIES from '../data/categories.js';
+import { withRequestDeadline } from '../utils/requestDeadline.js';
 
 const ARXIV_DEV = '/api/arxiv';
 const ARXIV_PROD = 'https://export.arxiv.org/api/query';
@@ -50,25 +51,14 @@ export function assignRequestedCategories(papers, requestedCategories) {
   });
 }
 
-async function fetchWithTimeout(url, timeoutMs = 8000) {
-  const controller = new AbortController();
-  const timeoutId1 = setTimeout(() => controller.abort(), timeoutMs);
-  
-  let timeoutId2;
-  const timeoutPromise = new Promise((_, reject) => {
-    timeoutId2 = setTimeout(() => {
-       controller.abort();
-       reject(new Error('Timeout'));
-    }, timeoutMs + 100);
-  });
-
-  return Promise.race([
-    fetch(url, { signal: controller.signal }),
-    timeoutPromise
-  ]).finally(() => {
-    clearTimeout(timeoutId1);
-    clearTimeout(timeoutId2);
-  });
+// The XML is read here, under the same deadline that covered the headers.
+// Handing an unread Response back to the caller is what put the read outside the
+// only thing bounding it: a feed that stops mid-document is a stall, not a short
+// answer, and the two timers this replaces both stopped at the headers.
+async function fetchXmlWithTimeout(url, timeoutMs, errorLabel) {
+  const response = await fetch(url, withRequestDeadline({}, timeoutMs));
+  if (!response.ok) throw new Error(`${errorLabel}: ${response.status}`);
+  return response.text();
 }
 
 function parseArxivXml(xmlText) {
@@ -208,12 +198,14 @@ async function fetchArxivDataNow(url) {
   if (PAPER_API_BASE) {
     try {
       const query = new URL(url, 'https://export.arxiv.org').search;
-      const response = await fetchWithTimeout(`${PAPER_API_BASE}/arxiv${query}`, 4_000);
-      if (!response.ok) throw new Error(`PaperTok arXiv API error: ${response.status}`);
       // The Worker only answers 200 once it has checked the body is a real Atom feed,
       // so an empty parse here means arXiv matched nothing. That is an answer, not a
       // failure: paging past the end of a category has to return [] rather than raise.
-      return parseArxivXml(await response.text());
+      return parseArxivXml(await fetchXmlWithTimeout(
+        `${PAPER_API_BASE}/arxiv${query}`,
+        4_000,
+        'PaperTok arXiv API error',
+      ));
     } catch (error) {
       lastError = error;
       console.warn('PaperTok arXiv API failed', error);
@@ -222,9 +214,7 @@ async function fetchArxivDataNow(url) {
 
   if (isDev) {
     try {
-      const response = await fetchWithTimeout(url, 5_000);
-      if (!response.ok) throw new Error(`arXiv API error: ${response.status}`);
-      return parseArxivXml(await response.text());
+      return parseArxivXml(await fetchXmlWithTimeout(url, 5_000, 'arXiv API error'));
     } catch (error) {
       lastError = error;
       console.warn('Dev fetch failed', error);

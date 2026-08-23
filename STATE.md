@@ -1,5 +1,115 @@
 # Estado / pendientes
 
+## G2 de ERRORES.MD: ningún camino de red puede ya esperar sin límite (2026-08-23)
+
+**Hecho y verificado en local; faltan dos despliegues.** Grupo G2 completo — F1,
+F2, F4, F5, F36 y la parte no-email de F3 — en la rama
+`fix/g1-email-notifications`. Ficheros tocados: `worker/report-api.js`,
+`worker/firebase-auth.js`, `proxy/scopus-proxy.js`,
+`src/services/{workerApiClient,publicListService,domainSourceService,arxivService,openAlexClient}.js`,
+`src/utils/requestDeadline.js` (nuevo) y sus tests. **No se ha tocado
+`email-notifications.js`** (G1) ni `ai-explanation.js` (G3).
+
+### La causa raíz, reproducida antes de tocar nada
+
+Los seis fallos son una misma forma escrita en once sitios:
+
+```js
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), ms);
+try {
+  const response = await fetch(url, { signal: controller.signal });
+  return response.json();      // <-- devuelve una promesa pendiente
+} finally {
+  clearTimeout(timeout);       // <-- y esto corre YA, no cuando se lea el cuerpo
+}
+```
+
+`fetch` resuelve al llegar las **cabeceras**. El `finally` desarma el temporizador
+antes de que se haya leído un solo byte del cuerpo, así que un upstream que
+manda cabeceras y luego gotea cuelga igual que si no hubiera plazo. Medido
+contra un servidor que hace exactamente eso, con un plazo de 1 s:
+
+| patrón | resultado |
+|---|---|
+| el de `fetchJsonWithTimeout` | **seguía esperando a los 3000 ms** |
+| cuerpo leído dentro del bloque cubierto | `AbortError` a los 1011 ms |
+| `AbortSignal.timeout(800)` | `TimeoutError` a los 806 ms |
+
+`AbortSignal.timeout` no tiene temporizador que limpiar: sigue armado hasta que
+el cuerpo se ha leído entero. Ese es el mecanismo que sustituye al par
+`AbortController` + `clearTimeout` en todo el grupo.
+
+### El contrato que G5 y G8 deben reutilizar
+
+- **Worker:** `fetchWithDeadline(url, options = {}, timeoutMs = UPSTREAM_TIMEOUT_MS)`
+  en `worker/report-api.js`. Devuelve el `Response` **sin leer** y con la señal
+  aún armada, para quien necesita cabeceras, estado o el cuerpo crudo;
+  `fetchJsonWithTimeout` se construye encima. Respeta un `options.signal` propio.
+  Tras el arreglo no queda un solo `fetch(` a pelo en el fichero: el único que
+  hay vive dentro del helper.
+- **Cliente:** `withRequestDeadline(options, timeoutMs)` en
+  `src/utils/requestDeadline.js`, con test propio.
+- **Plazos:** 8 s upstream genérico, 6 s fuentes, 5 s arXiv, 4 s Identity
+  Toolkit, 5 s Elsevier desde el proxy Deno (a propósito **más corto** que el
+  peldaño de 6 s del Worker, para que el proxy conteste con un estado legible en
+  vez de morir cortado), 15 s por defecto en el cliente y sobrescribible.
+- **Códigos nuevos:** `AUTH_UNAVAILABLE` 503, `OPENALEX_UNREACHABLE` 502,
+  `SCOPUS_UPSTREAM_TIMEOUT` y `SCOPUS_UPSTREAM_UNREACHABLE` 504, y el motivo de
+  fallback `ads_timeout`.
+
+### Lo que cada fallo era de verdad
+
+- **F1.** `fetchScopusSearch` y `fetchAdsLiterature` no pasaban por
+  `fetchJsonUpstream`, y el test de plazos solo cubría `/sources/europepmc` — ese
+  hueco es lo que dejó pasar el fallo. El test nuevo es **paramétrico sobre las
+  once rutas**; al escribirlo, esas dos salieron en rojo y las otras nueve en
+  verde, exactamente como decía la auditoría. El fallback a INSPIRE era letra
+  muerta: solo se activaba si ADS **lanzaba**, y un ADS colgado no lanza nunca.
+  Con plazo, lanza, y el motivo lo distingue (`ads_timeout`).
+- **F2.** Cinco puntos, arreglados los cinco. El delicado era `openAlexClient`:
+  el cuerpo no se lee en `fetchOnce` sino en `json()`, y la respuesta se cachea y
+  se clona por el camino, así que no bastaba con mover el `await` — `fetchOnce`
+  ahora materializa el cuerpo dentro del plazo y devuelve un `Response` nuevo
+  (los estados sin cuerpo, 204/205/304, se devuelven tal cual).
+- **F3.** Seis puntos. El de `firebase-auth.js` era el peor: está delante de toda
+  ruta protegida en cada miss de la caché de identidad de 60 s. Además de ponerle
+  plazo, su fallo tiene ahora código propio — un verificador inalcanzable no
+  puede reportarse como 401, que le diría al usuario que su sesión caducó cuando
+  lo que pasa es que Google no contesta.
+- **F4.** Confirmado por mutación: quitando el try/catch, el test vuelve a rojo.
+- **F5.** El default por sí solo habría empeorado las cosas: el aborto del cuerpo
+  caía en `response.json().catch(() => ({}))` y el llamante recibía un payload
+  vacío que trataba como publicación correcta **sin `shareId`**. El plazo y la
+  lectura del cuerpo se arreglaron juntos.
+- **F36.** Los digests SHA-256 miden siempre 32 bytes, así que el retorno
+  temprano por longitud desaparece por construcción. El test lo fija espiando
+  `crypto.subtle.digest`: ambos rechazos hashean los dos valores (4 llamadas),
+  cosa que el atajo por longitud no hacía.
+
+### Verificación
+
+- `npm test`: **980 en verde** (era 969; 21 tests nuevos, ninguno roto).
+- `npm run lint`, `npm run build`, `npx wrangler deploy --dry-run`: en verde.
+- Cada test nuevo verificado **por mutación**: revertido el arreglo, visto el
+  test en rojo, restaurado. Incluido el paramétrico (quitando la señal del helper
+  caen las once rutas) y el motivo `ads_timeout`.
+- **G1 sin regresión:** 67 tests de `email-notifications` y
+  `email-delivery-ledger` en verde, y las tres pruebas de `/health/email`
+  también.
+
+### Pendiente
+
+1. `wrangler deploy` desde la raíz — sin él, los arreglos del Worker no están en
+   producción.
+2. Redeploy de `proxy/scopus-proxy.js` en Deno Deploy — F1 y F36 viven ahí.
+3. Sondear `/health/scopus` y `/health/openalex` después de desplegar.
+4. **Fuera del alcance de G2:** el patrón de F2 vive también en
+   `src/services/rorService.js:150-165`, `dataCiteService.js:166-176`,
+   `orcidService.js:7-21`, y con forma parecida en `openAireService.js` y
+   `openAlexService.js`. No se han tocado: no están en la lista de ficheros del
+   grupo y otra sesión puede estar en ellos. Merecen su propio grupo.
+
 ## G1 de ERRORES.MD: los digests diarios ya no llegan en días alternos (2026-08-23)
 
 **Hecho y verificado en local; falta desplegar el Worker.** Grupo G1 completo —

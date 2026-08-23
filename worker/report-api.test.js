@@ -776,3 +776,207 @@ test('adds baseline browser hardening headers to JSON responses', async () => {
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
   assert.match(response.headers.get('permissions-policy'), /camera=\(\)/);
 });
+
+// --- G2: plazos de red -------------------------------------------------------
+
+// An upstream that answers its headers and then never finishes the body. The
+// stream fails only when the caller's own deadline cuts it, which is the whole
+// point: a deadline that stops at the headers leaves this hanging forever.
+function stalledBodyResponse(signal, contentType = 'application/json') {
+  return new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"partial":'));
+      const fail = () => controller.error(signal?.reason ?? new Error('aborted'));
+      if (signal?.aborted) fail();
+      else signal?.addEventListener('abort', fail, { once: true });
+    },
+  }), { headers: { 'content-type': contentType } });
+}
+
+// Every deadline in the code under test becomes `ms`, so a test can watch one
+// fire without paying six real seconds for it. Patching `AbortSignal.timeout`
+// also pins the mechanism: a timer cleared in a `finally` ignores this patch and
+// the request hangs, which is exactly the failure these tests exist to catch.
+async function withShortDeadlines(ms, callback) {
+  const original = AbortSignal.timeout;
+  AbortSignal.timeout = () => original.call(AbortSignal, ms);
+  try {
+    return await callback();
+  } finally {
+    AbortSignal.timeout = original;
+  }
+}
+
+const HUNG = Symbol('hung');
+
+async function answeredWithin(ms, promise) {
+  const result = await Promise.race([
+    promise,
+    new Promise(resolve => setTimeout(() => resolve(HUNG), ms)),
+  ]);
+  assert.notEqual(result, HUNG, `the request was still hanging after ${ms}ms`);
+  return result;
+}
+
+test('cuts a source upstream that sends its headers and then stalls the body', async () => {
+  const response = await withShortDeadlines(25, () => withWorkerFetchMock(
+    async (_url, options) => stalledBodyResponse(options?.signal),
+    () => answeredWithin(2_000, reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/europepmc?q=malaria&limit=4',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), {})),
+  ));
+
+  assert.equal(response.status, 502);
+});
+
+test('cuts an arXiv upstream that sends its headers and then stalls the body', async () => {
+  const response = await withShortDeadlines(25, () => withWorkerFetchMock(
+    async (_url, options) => stalledBodyResponse(options?.signal, 'application/atom+xml'),
+    () => answeredWithin(2_000, reportApi.fetch(new Request(
+      'https://papertok-report-api.example/arxiv?search_query=all:malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), {})),
+  ));
+
+  assert.equal(response.status, 502);
+});
+
+// Every specialist route, not just the one that happened to be covered when this
+// suite was written. `/sources/scopus` and `/sources/physics` do not go through
+// `fetchJsonUpstream`, and that is precisely how they kept their unbounded waits
+// through a fix that was supposed to have closed them.
+const SOURCE_ROUTES = [
+  ['/sources/biorxiv?category=neuroscience', {}],
+  ['/sources/europepmc?q=malaria', {}],
+  ['/sources/core?q=malaria', {}],
+  ['/sources/osti?q=malaria', {}],
+  ['/sources/nasa?q=malaria', {}],
+  ['/sources/physics?q=malaria', { NASA_ADS_API_TOKEN: 'ads-test-token' }],
+  ['/sources/scopus?terms=physics', SCOPUS_EGRESS],
+  ['/sources/openreview?q=malaria', {}],
+  ['/sources/huggingface?q=malaria', {}],
+  ['/enrich/icite?pmids=123', {}],
+  ['/resources/huggingface?arxiv_id=2607.12345', {}],
+];
+
+const AUTHENTICATED_ENV = {
+  FIREBASE_WEB_API_KEY: 'firebase-test-key',
+  REQUEST_QUOTA_LEDGER: {
+    idFromName: () => 'quota-id',
+    get: () => ({ fetch: async () => new Response(JSON.stringify({ accepted: true })) }),
+  },
+};
+
+// A signed-in caller without an Identity Toolkit round trip: the Worker caches a
+// verified identity, so seeding that cache is how a protected route is reached.
+async function withCachedIdentity(callback) {
+  const originalCaches = globalThis.caches;
+  globalThis.caches = {
+    default: {
+      match: async request => (String(request.url).includes('/auth/')
+        ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
+        : null),
+      put: async () => undefined,
+    },
+  };
+  try {
+    return await callback();
+  } finally {
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+}
+
+for (const [route, extraEnv] of SOURCE_ROUTES) {
+  test(`gives ${route.split('?')[0]} an upstream deadline it can be cut with`, async () => {
+    let seenSignal;
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = async (_url, options) => {
+      seenSignal ??= options?.signal;
+      return new Response('{}', { headers: { 'content-type': 'application/json' } });
+    };
+    try {
+      await withCachedIdentity(() => reportApi.fetch(new Request(
+        `https://papertok-report-api.example${route}`,
+        { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+      ), { ...AUTHENTICATED_ENV, ...extraEnv }));
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+
+    assert.ok(seenSignal, `${route} reaches its upstream with no AbortSignal`);
+    assert.equal(seenSignal.aborted, false);
+  });
+}
+
+test('falls back to INSPIRE when NASA ADS stalls instead of waiting on it', async () => {
+  let inspireQuery = '';
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes('api.adsabs.harvard.edu')) return stalledBodyResponse(options?.signal);
+    inspireQuery = String(url);
+    return new Response(JSON.stringify({ hits: { hits: [], total: 0 } }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    const response = await withShortDeadlines(25, () => withCachedIdentity(
+      () => answeredWithin(2_000, reportApi.fetch(new Request(
+        'https://papertok-report-api.example/sources/physics?q=malaria&fallback_q=malaria',
+        { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+      ), { ...AUTHENTICATED_ENV, NASA_ADS_API_TOKEN: 'ads-test-token' })),
+    ));
+
+    assert.equal(response.status, 200);
+    assert.match(inspireQuery, /inspirehep\.net/);
+    // The reason names the stall rather than hiding it behind a generic
+    // "unavailable": a hung provider and a refusing one need different answers.
+    assert.equal((await response.json())._papertok.fallbackReason, 'ads_timeout');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('answers 503 AUTH_UNAVAILABLE when Identity Toolkit cannot be reached', async () => {
+  const response = await withWorkerFetchMock(async () => {
+    throw Object.assign(new Error('The operation timed out'), { name: 'TimeoutError' });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/core?q=malaria',
+    { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+  ), { FIREBASE_WEB_API_KEY: 'firebase-test-key' }));
+
+  // Not 401: telling a user their session expired because Google was unreachable
+  // sends them to sign in again for nothing.
+  assert.equal(response.status, 503);
+  assert.deepEqual(await response.json(), { code: 'AUTH_UNAVAILABLE' });
+});
+
+test('still answers 401 AUTH_REQUIRED when Identity Toolkit refuses the token', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response(JSON.stringify({ error: { message: 'INVALID_ID_TOKEN' } }), { status: 400 }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/core?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), { FIREBASE_WEB_API_KEY: 'firebase-test-key' }),
+  );
+
+  assert.equal(response.status, 401);
+  assert.deepEqual(await response.json(), { code: 'AUTH_REQUIRED' });
+});
+
+test('answers an OpenAlex network failure with CORS headers instead of throwing', async () => {
+  const response = await withWorkerFetchMock(async () => {
+    throw new TypeError('Network connection lost');
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/openalex/works?per-page=1',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), openAlexEnv()));
+
+  assert.equal(response.status, 502);
+  assert.deepEqual(await response.json(), { code: 'OPENALEX_UNREACHABLE' });
+  // Without this header the browser reports an opaque CORS failure, and the 429
+  // relay with its `retry-after` -- which this route goes out of its way to
+  // preserve -- is lost with it.
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+});

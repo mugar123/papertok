@@ -431,3 +431,23 @@ test('F12: attribution posts the share and the boolean, nothing else', async () 
   await assert.rejects(() => attributePublicList('nonsense', true, api), TypeError);
   assert.equal(requests.length, 2, 'a refused call must never reach the network');
 });
+
+test('a Worker that stalls mid-answer fails as unreachable, not as an empty publish', async () => {
+  // With a deadline on the request but the body read left outside it, the abort
+  // landed in `response.json().catch(() => ({}))` and the caller received `{}` —
+  // a 200 with no `shareId`, which reads as a successful publish that published
+  // nothing. A hang is bad; a silent wrong answer is worse.
+  const stalled = new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode('{"shareId":'));
+      controller.error(Object.assign(new Error('timed out'), { name: 'TimeoutError' }));
+    },
+  }), { status: 200, headers: { 'content-type': 'application/json' } });
+
+  const { api } = fakeApi({ responses: [stalled] });
+
+  await assert.rejects(
+    () => publishPublicList({ listId: 'list-1', title: 'T', papers: [] }, api),
+    error => error instanceof PublicListRequestError && error.code === 'PUBLISH_UNREACHABLE',
+  );
+});

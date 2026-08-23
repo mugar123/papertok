@@ -103,6 +103,17 @@ function validatePrivateListId(listId) {
   return normalized;
 }
 
+// An answer that is not JSON is still an answer — the Worker's own error codes
+// arrive as JSON, but a proxy in between may not. A body that never finished is
+// a different matter, and that one throws out of here rather than parsing.
+function parseWorkerPayload(text) {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
 /**
  * One call to the Worker. The payload is sanitized here as well as there —
  * here so the UI never sends something it could have cleaned, there because a
@@ -111,16 +122,21 @@ function validatePrivateListId(listId) {
 async function callWorker(api, path, body) {
   if (!api.apiBase) throw new PublicListRequestError('PUBLISHING_NOT_CONFIGURED', 503);
   let response;
+  let payload;
   try {
     response = await api.request(`${api.apiBase}${path}`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     });
+    // Read inside the same block. The request now carries a deadline, and a
+    // deadline that fires while the body is arriving must fail the call: left
+    // outside, the abort landed in a `.catch(() => ({}))` and the caller got an
+    // empty payload it would have treated as a successful publish.
+    payload = parseWorkerPayload(await response.text());
   } catch (error) {
     throw new PublicListRequestError(error?.code || 'PUBLISH_UNREACHABLE', 0);
   }
-  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new PublicListRequestError(payload?.code || 'PUBLISH_FAILED', response.status);
   }

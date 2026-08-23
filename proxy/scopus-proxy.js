@@ -17,6 +17,10 @@ const SCOPUS_SEARCH_URL = 'https://api.elsevier.com/content/search/scopus';
 const ALLOWED_VIEWS = new Set(['COMPLETE', 'STANDARD']);
 const MAX_QUERY_LENGTH = 500;
 const MIN_SHARED_SECRET_LENGTH = 32;
+// Deliberately shorter than the Worker's six-second rung: this proxy has to get
+// its answer in before the Worker gives up on it, so a stalled Elsevier comes
+// back as a status the Worker can read instead of as the Worker's own timeout.
+const UPSTREAM_TIMEOUT_MS = 5000;
 // Scopus refuses a start offset beyond 5000 and a count above 25.
 const MAX_START = 5000;
 const MAX_COUNT = 25;
@@ -43,13 +47,23 @@ function json(data, status = 200, headers = {}) {
   });
 }
 
-// Compares without an early return, so a wrong secret cannot be narrowed down by
-// timing the response.
-function secretsMatch(candidate, expected) {
-  if (candidate.length !== expected.length) return false;
+async function sha256Bytes(value) {
+  return new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)));
+}
+
+// Compares the SHA-256 digests rather than the values. Digests are always 32
+// bytes, so the loop runs the same number of times whatever the caller presented
+// -- which is what the previous `if (candidate.length !== expected.length)`
+// broke: it returned early, and the time that saved told a caller when it had
+// guessed the length of the secret. The comment above it claimed otherwise.
+async function secretsMatch(candidate, expected) {
+  const [candidateDigest, expectedDigest] = await Promise.all([
+    sha256Bytes(candidate),
+    sha256Bytes(expected),
+  ]);
   let difference = 0;
-  for (let index = 0; index < expected.length; index += 1) {
-    difference |= candidate.charCodeAt(index) ^ expected.charCodeAt(index);
+  for (let index = 0; index < expectedDigest.length; index += 1) {
+    difference |= candidateDigest[index] ^ expectedDigest[index];
   }
   return difference === 0;
 }
@@ -99,7 +113,7 @@ export function createScopusProxy(env) {
     // anyone who finds this hostname, so it is a configuration failure, not a
     // reason to fall through unauthenticated.
     if (sharedSecret.length < MIN_SHARED_SECRET_LENGTH) return json({ code: 'PROXY_NOT_CONFIGURED' }, 503);
-    if (!secretsMatch(presentedSecret(request), sharedSecret)) return json({ code: 'PROXY_AUTH_REQUIRED' }, 401);
+    if (!await secretsMatch(presentedSecret(request), sharedSecret)) return json({ code: 'PROXY_AUTH_REQUIRED' }, 401);
     if (!apiKey) return json({ code: 'SCOPUS_NOT_CONFIGURED' }, 503);
 
     const query = safeQuery(requestUrl.searchParams.get('query'));
@@ -119,8 +133,22 @@ export function createScopusProxy(env) {
     };
     if (instToken) upstreamHeaders['X-ELS-Insttoken'] = instToken;
 
-    const upstream = await fetch(target, { headers: upstreamHeaders });
-    const body = await upstream.text();
+    let upstream;
+    let body;
+    try {
+      // One clock for the whole exchange. `AbortSignal.timeout` has no timer to
+      // clear, so it stays armed while the body is read: an Elsevier that answers
+      // its headers and then stalls is cut at the same mark as one that never
+      // answers at all.
+      upstream = await fetch(target, { headers: upstreamHeaders, signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS) });
+      body = await upstream.text();
+    } catch (error) {
+      // A deadline without this would only trade a hang for an uncaught throw,
+      // which Deno answers with a bare 500 the Worker cannot tell apart from an
+      // Elsevier outage.
+      const timedOut = error?.name === 'TimeoutError' || error?.name === 'AbortError';
+      return json({ code: timedOut ? 'SCOPUS_UPSTREAM_TIMEOUT' : 'SCOPUS_UPSTREAM_UNREACHABLE' }, 504);
+    }
 
     const headers = new Headers({
       'content-type': upstream.headers.get('content-type') || 'application/json; charset=utf-8',

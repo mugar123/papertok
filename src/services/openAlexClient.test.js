@@ -264,3 +264,31 @@ test('still goes direct when no Worker is configured, as it did before', () => {
   assert.equal(url.hostname, 'api.openalex.org');
   assert.equal(url.searchParams.get('mailto'), 'app@papertok.io');
 });
+
+test('cuts a response whose headers arrive and whose body never finishes', async () => {
+  // `json()` reads the body far from `fetchOnce`, and the response is cached and
+  // cloned on the way there. A timer cleared when `fetch` resolved therefore
+  // stopped covering the one part of the exchange that stalls.
+  const client = new OpenAlexClient({
+    fetchImpl: async (_url, options) => new Response(new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"results":'));
+        options.signal.addEventListener(
+          'abort',
+          () => controller.error(options.signal.reason ?? new Error('aborted')),
+          { once: true },
+        );
+      },
+    }), { status: 200, headers: { 'content-type': 'application/json' } }),
+  });
+
+  const hung = Symbol('hung');
+  const outcome = await Promise.race([
+    client.json('https://api.openalex.org/works/W1', { timeoutMs: 25, retries: 0 })
+      .then(() => 'resolved', error => error.code),
+    new Promise(resolve => setTimeout(() => resolve(hung), 2_000)),
+  ]);
+
+  assert.notEqual(outcome, hung, 'the request was still hanging after 2000ms');
+  assert.equal(outcome, 'timeout');
+});

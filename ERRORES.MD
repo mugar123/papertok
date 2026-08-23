@@ -29,7 +29,9 @@ https://claude.ai/code/artifact/a613c6d3-c496-474a-bba9-ccefb0cd5f7f
 
 **Estado de los grupos:** G1 arreglado el 23-08-2026 (F24, F25, F26, F27, F28 y
 la parte email de F3), con tests de regresión verificados por mutación y
-`npm run check` en verde. Pendiente el despliegue del Worker.
+`npm run check` en verde. G2 arreglado el 23-08-2026 (F1, F2, F4, F5, F36 y la
+parte no-email de F3), 21 tests nuevos verificados por mutación, 980 en verde.
+Pendiente el despliegue del Worker y del proxy Deno.
 
 **Estado en vivo al auditar** (23-08-2026): `/health` todo en verde; OpenAlex
 $0,97/1,00 de presupuesto diario; Scopus servidor disponible (19.988/20.000).
@@ -251,7 +253,7 @@ Casi todo lo de abajo es latente — salvo F24 (activo en producción) y F40
 
 ## Fallos
 
-- [ ] **F1 · ALTA · Scopus y NASA ADS siguen sin plazo — el fix b295e6f no los cubre**
+- [x] **F1 · ALTA · Scopus y NASA ADS siguen sin plazo — el fix b295e6f no los cubre**
   `worker/report-api.js:1210` (`fetchScopusSearch`), `:1003-1009`
   (`fetchAdsLiterature`), `proxy/scopus-proxy.js:122`.
   Dos rutas `/sources/*` no pasan por `fetchJsonUpstream`: `fetchScopusSearch`
@@ -270,7 +272,7 @@ Casi todo lo de abajo es latente — salvo F24 (activo en producción) y F40
   fallback INSPIRE también ante timeout. **Test:** paramétrico sobre TODAS las
   rutas `/sources/*`, no una.
 
-- [ ] **F2 · media · El plazo solo cubre cabeceras: el cuerpo se lee sin límite (5 puntos)**
+- [x] **F2 · media · El plazo solo cubre cabeceras: el cuerpo se lee sin límite (5 puntos)**
   `worker/report-api.js:323-333` (`fetchJsonWithTimeout`), `:654-669`
   (`handleArxiv`), `src/services/domainSourceService.js:436-454`,
   `src/services/arxivService.js:211-216`, `src/services/openAlexClient.js:339-365`.
@@ -285,7 +287,7 @@ Casi todo lo de abajo es latente — salvo F24 (activo en producción) y F40
   (`const data = await response.json(); return data;`) en los cinco puntos.
   **Test:** un cuerpo que nunca termina (stream sin cierre) debe abortar.
 
-- [ ] **F3 (parte no-email) · media · Fetch sin plazo restantes en el Worker**
+- [x] **F3 (parte no-email) · media · Fetch sin plazo restantes en el Worker**
   `report-api.js:234` (`fetchOpenAlexPeriod`, usada ×2 por `/report/trends`),
   `:317` (`/related`, Semantic Scholar), `:615` (`/oa`, Unpaywall), `:1420`
   (`/openalex/*`), `:1449` (`checkOpenAlexHealth`), y
@@ -299,7 +301,7 @@ Casi todo lo de abajo es latente — salvo F24 (activo en producción) y F40
   (3–5 s) con error propio `AUTH_UNAVAILABLE` 503, distinguible de token
   inválido.
 
-- [ ] **F4 · media · `/openalex/*` es la única ruta sin try/catch: error de red → 500 sin CORS**
+- [x] **F4 · media · `/openalex/*` es la única ruta sin try/catch: error de red → 500 sin CORS**
   `worker/report-api.js:1643-1645` (despacho), `:1420-1423` (fetch).
   Todas las rutas envuelven su handler y devuelven JSON con `corsHeaders`;
   esta no: `return handleOpenAlex(request, env);` a pelo. Un reset de conexión
@@ -310,7 +312,7 @@ Casi todo lo de abajo es latente — salvo F24 (activo en producción) y F40
   `try { return await handleOpenAlex(...) } catch { return json({code:'OPENALEX_UNREACHABLE'}, 502, corsHeaders(origin, env)) }`.
   **Test:** fetch que rechaza por red → verificar estado y cabeceras CORS.
 
-- [ ] **F5 · media · `publicListService` llama al Worker sin plazo — el único cliente que no lo hace**
+- [x] **F5 · media · `publicListService` llama al Worker sin plazo — el único cliente que no lo hace**
   `src/services/publicListService.js:111-128`, `workerApiClient.js:39-48`.
   `callWorker` usa `authenticatedWorkerFetch` sin `AbortController`, y este no
   impone plazo por defecto. Todos los demás llamantes pasan señal (email 25 s,
@@ -321,7 +323,7 @@ Casi todo lo de abajo es latente — salvo F24 (activo en producción) y F40
   sobrescribible por llamante — cierra este hueco y previene el siguiente
   olvido.
 
-- [ ] **F36 · baja · La comparación del bearer del proxy Deno no es del todo constante**
+- [x] **F36 · baja · La comparación del bearer del proxy Deno no es del todo constante**
   `proxy/scopus-proxy.js:49`.
   `if (candidate.length !== expected.length) return false;` retorna temprano,
   filtrando por timing la longitud del secreto, contra lo que promete el
@@ -345,6 +347,29 @@ Casi todo lo de abajo es latente — salvo F24 (activo en producción) y F40
    Deploy, y sondear `/health/scopus` y `/health/openalex` en producción.
    G5 y G8 reutilizan el helper: dejar su nombre y contrato anotados en
    STATE.md.
+
+**Hecho el 23-08-2026.** Helper del Worker: `fetchWithDeadline(url, options = {},
+timeoutMs = UPSTREAM_TIMEOUT_MS)` en `worker/report-api.js` — devuelve el
+`Response` sin leer con la señal **aún armada**, así que el cuerpo también queda
+cubierto; `fetchJsonWithTimeout` se construye sobre él. Constantes:
+`UPSTREAM_TIMEOUT_MS` 8 s, `SOURCE_UPSTREAM_TIMEOUT_MS` 6 s,
+`ARXIV_UPSTREAM_TIMEOUT_MS` 5 s, `IDENTITY_TOOLKIT_TIMEOUT_MS` 4 s
+(`firebase-auth.js`), `UPSTREAM_TIMEOUT_MS` 5 s en el proxy Deno. Equivalente en
+el cliente: `withRequestDeadline(options, timeoutMs)` en
+`src/utils/requestDeadline.js`, con su test. **G5 y G8: usad `fetchWithDeadline`,
+no `fetch` a pelo.** Códigos nuevos: `AUTH_UNAVAILABLE` 503,
+`OPENALEX_UNREACHABLE` 502, `SCOPUS_UPSTREAM_TIMEOUT` / `SCOPUS_UPSTREAM_UNREACHABLE`
+504, motivo de fallback `ads_timeout`.
+
+**Pendiente de despliegue:** `wrangler deploy` (Worker) y redeploy del proxy en
+Deno Deploy. Sin ellos los arreglos del Worker y del proxy no están en producción.
+
+**Fuera del alcance de G2, encontrado al barrer:** el patrón exacto de F2 —
+`return response.json()` con `clearTimeout` en un `finally` — vive también en
+`src/services/rorService.js:150-165`, `src/services/dataCiteService.js:166-176` y
+`src/services/orcidService.js:7-21`, y con forma parecida en `openAireService.js`
+y `openAlexService.js`. Ninguno está en la lista de ficheros de G2, así que se
+dejan sin tocar para no pisar a otra sesión. Merecen su propio grupo.
 
 ---
 

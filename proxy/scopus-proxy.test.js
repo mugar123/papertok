@@ -158,3 +158,67 @@ test('importing the module under Node starts no server and still exposes a handl
   // the guard holds, since Node has no `Deno` global to serve with.
   assert.equal(typeof scopusProxy.fetch, 'function');
 });
+
+// --- G2: plazos de red y comparación del secreto -----------------------------
+
+test('gives the Elsevier call a deadline that covers the body as well', async () => {
+  let seenSignal;
+  const response = await withUpstream(async (_url, options) => {
+    seenSignal = options?.signal;
+    return new Response(JSON.stringify({ 'search-results': { entry: [] } }), { status: 200 });
+  }, () => createScopusProxy(ENV)(request('/scopus?query=test')));
+
+  assert.equal(response.status, 200);
+  // The Worker waits on this proxy and this proxy waits on Elsevier. Without a
+  // deadline here the chain hangs link by link, and the Worker's own deadline
+  // only ever cuts its half of it.
+  assert.ok(seenSignal, 'the Elsevier fetch carries no AbortSignal');
+  assert.equal(seenSignal.aborted, false);
+});
+
+test('answers a stalled Elsevier with a status the Worker can read', async () => {
+  const response = await withUpstream(async () => {
+    throw Object.assign(new Error('The operation was aborted due to timeout'), { name: 'TimeoutError' });
+  }, () => createScopusProxy(ENV)(request('/scopus?query=test')));
+
+  // Putting a deadline on the fetch without catching what it throws would turn a
+  // hang into an uncaught exception, which Deno answers with a bare 500.
+  assert.equal(response.status, 504);
+  assert.deepEqual(await response.json(), { code: 'SCOPUS_UPSTREAM_TIMEOUT' });
+});
+
+test('answers an unreachable Elsevier without leaking the failure as an exception', async () => {
+  const response = await withUpstream(async () => {
+    throw new TypeError('error sending request');
+  }, () => createScopusProxy(ENV)(request('/scopus?query=test')));
+
+  assert.equal(response.status, 504);
+  assert.deepEqual(await response.json(), { code: 'SCOPUS_UPSTREAM_UNREACHABLE' });
+});
+
+test('compares the shared secret without letting its length leak through timing', async () => {
+  const digests = [];
+  const originalDigest = crypto.subtle.digest;
+  crypto.subtle.digest = (algorithm, data) => {
+    digests.push(algorithm);
+    return originalDigest.call(crypto.subtle, algorithm, data);
+  };
+  try {
+    const refuse = secret => withUpstream(async () => {
+      throw new Error('No upstream request should be made');
+    }, () => createScopusProxy(ENV)(request('/scopus?query=test', { secret })));
+
+    const wrongLength = await refuse('b');
+    const wrongValue = await refuse('b'.repeat(SECRET.length));
+
+    assert.equal(wrongLength.status, 401);
+    assert.equal(wrongValue.status, 401);
+    assert.deepEqual(await wrongLength.json(), await wrongValue.json());
+    // Both refusals hashed both values. The early return this replaces did no
+    // hashing at all when the lengths differed, which is how the length of the
+    // secret was readable from the outside.
+    assert.equal(digests.length, 4, 'a wrong-length secret still takes a shorter path');
+  } finally {
+    crypto.subtle.digest = originalDigest;
+  }
+});
