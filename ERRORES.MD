@@ -361,11 +361,12 @@ no `fetch` a pelo.** Códigos nuevos: `AUTH_UNAVAILABLE` 503,
 `OPENALEX_UNREACHABLE` 502, `SCOPUS_UPSTREAM_TIMEOUT` / `SCOPUS_UPSTREAM_UNREACHABLE`
 504, motivo de fallback `ads_timeout`.
 
-**Despliegue:** el frontend está desplegado y verificado (main `2146e45`, Action
-en verde, arreglos de cliente comprobados en el bundle servido). **Falta el
-Worker** (`npx wrangler deploy` — quedó bloqueado por el clasificador de
-auto-mode) y **el proxy Deno**, que es un *Playground* y hay que pegarlo a mano en
-dash.deno.com: no está enlazado al repo, así que ningún push lo redespliega.
+**Despliegue: completo el 23-08-2026.** Las tres piezas —frontend (Action en
+verde, arreglos comprobados en el bundle servido), Worker (`wrangler deploy`
+16:56Z, confirmado porque `/health/email` ya responde con la caché de F26) y
+proxy Deno (Playground, pegado a mano; no está enlazado al repo, así que ningún
+push lo redespliega)— están en producción, con los cuatro `/health` en verde y la
+cadena Scopus completa respondiendo.
 
 **Fuera del alcance de G2, encontrado al barrer:** el patrón exacto de F2 —
 `return response.json()` con `clearTimeout` en un `finally` — vive también en

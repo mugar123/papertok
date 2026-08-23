@@ -116,30 +116,49 @@ otra vía y Node 22 (el de CI, fijado en `deploy.yml`) no. Arreglado con un
 `npm test` en local no es la misma prueba que CI mientras las versiones de Node
 no coincidan.**
 
-**Worker: SIN desplegar.** `npx wrangler deploy` quedó bloqueado por el
-clasificador de auto-mode de Claude Code. Hasta que se ejecute, ni G1 ni la parte
-Worker de G2 están en producción. Comando:
+**Worker: desplegado.** El usuario lanzó `npx wrangler deploy` (el clasificador
+de auto-mode lo bloquea para Claude). Confirmado por dos vías: `wrangler
+deployments list` da una versión creada a las 2026-08-23T16:56:17Z, y —lo que de
+verdad prueba que el código nuevo sirve— `/health/email` responde ahora con
+`cache-control: public, max-age=60, s-maxage=300`, que es F26 y no existía en el
+Worker anterior. Con esto G1 entero y la parte Worker de G2 están en producción.
 
-    npx wrangler deploy
+**Proxy Deno: desplegado.** Es un **Playground** — comprobado: el repo solo tiene
+los entornos `copilot` y `github-pages`, y la única app con check-runs es
+`github-actions`; un proyecto enlazado crearía los suyos en cada push. Hubo que
+pegar `proxy/scopus-proxy.js` a mano. Antes de sobrescribir se comparó el
+contenido vivo con `git show da92bc5^:proxy/scopus-proxy.js`: **byte a byte
+idéntico**, así que no había parches sin commitear que perder.
 
-**Proxy Deno: SIN desplegar, y no se puede desde aquí.** Es un **Playground**, no
-un proyecto enlazado al repo — comprobado: el repo solo tiene los entornos
-`copilot` y `github-pages`, y la única app con check-runs es `github-actions`; un
-proyecto enlazado crearía los suyos en cada push. Hay que pegar
-`proxy/scopus-proxy.js` a mano en dash.deno.com. F1 y F36 viven ahí.
+Las dos versiones del proxy no se distinguen por HTTP —`/health`, el 401 y el 404
+son idénticos— y eso *es* el arreglo: F1 solo se nota con Elsevier colgado y F36
+es un canal lateral de tiempo. Lo que sí se comprobó desde fuera es que el pegado
+no quedó a medias: `secretsMatch` pasó a ser `async`, y si se hubiera pegado la
+función sin el `await` del sitio de llamada, `!Promise` sería siempre `false` y
+cualquier secreto habría entrado. Un `curl` con un bearer inventado devolvió 401.
 
-**Estado de producción sondeado tras el despliegue del frontend** (con el Worker
-todavía antiguo): `/health`, `/health/openalex` (0,95/1,00 USD), `/health/scopus`
-(vista STANDARD, 19.986/20.000) y `/health/email` los cuatro en verde. Hay que
-volver a sondear después de desplegar el Worker.
+**Estado de producción con las tres piezas nuevas** (sondeado 2026-08-23 ~16:57Z,
+usando orígenes distintos para no leer la caché de edge de 10 min): `/health`,
+`/health/openalex` (0,95/1,00 USD), `/health/scopus` (cadena entera navegador →
+Worker → proxy → Elsevier, vista STANDARD, 19.984/20.000) y `/health/email`
+(planificador fresco, ledger `durable` y `ok`) los cuatro en verde.
+
+**Lo que todavía NO está probado, y hay que mirar mañana.** El cron es
+`*/20 7-13 * * *` UTC, así que la última pasada de hoy fue a las 13:40Z, **antes**
+del despliegue de las 16:56Z: las cifras que enseña `/health/email` ahora son del
+código viejo. La prueba de F24 —un suscriptor diario que recibió ayer **también**
+recibe hoy— llega en la ventana de mañana. Esa pasada de las 13:40Z trae además
+`due:1, sent:0, invalid:1` con `EMAIL_SUBSCRIPTION_INVALID`: es anterior a G1 y no
+es el fallo de días alternos (`reconciled:0`), pero conviene ver si persiste ahora
+que F25 exige `emailVerified`.
 
 ### Pendiente
 
-1. `npx wrangler deploy` — bloqueado por el clasificador; lo tiene que lanzar el
-   usuario o autorizar la acción.
-2. Pegar `proxy/scopus-proxy.js` en el Playground de Deno Deploy.
-3. Re-sondear `/health/scopus` y `/health/openalex` después de ambos.
-4. **Fuera del alcance de G2:** el patrón de F2 vive también en
+1. **Mañana, en la ventana del cron (07:00–14:00 UTC): comprobar que un
+   suscriptor que recibió el digest hoy lo recibe también mañana.** Es la única
+   prueba real de F24, y no se puede adelantar.
+2. Vigilar el `EMAIL_SUBSCRIPTION_INVALID` de la pasada de las 13:40Z.
+3. **Fuera del alcance de G2:** el patrón de F2 vive también en
    `src/services/rorService.js:150-165`, `dataCiteService.js:166-176`,
    `orcidService.js:7-21`, y con forma parecida en `openAireService.js` y
    `openAlexService.js`. No se han tocado: no están en la lista de ficheros del
