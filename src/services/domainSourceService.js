@@ -4,8 +4,9 @@ import { isScopusEnabled, ScopusAdapter } from './adapters/ScopusAdapter.js';
 import { isTechnicalClassification } from '../utils/scientificClassification.js';
 import { mapOpenReviewNote } from './openReviewService.js';
 import { mapHuggingFacePaper } from './huggingFaceService.js';
-import { authenticatedWorkerFetch } from './workerApiClient.js';
+import { authenticatedWorkerFetch, hasWorkerSession } from './workerApiClient.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
+import { mapEuropePmcRecord } from '../utils/europePmcRecord.js';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -171,53 +172,45 @@ export function mapBioRxivPaper(raw, requestedCategories = []) {
   return withRequestedCategory(paper, requestedCategories, category);
 }
 
+// The payload is read by `mapEuropePmcRecord`, shared with the enrichment path;
+// what belongs here is the Paper built on top of it.
 export function mapEuropePmcSearchResult(raw, requestedCategories = []) {
-  const providerId = String(raw?.id || '').trim();
-  const pmid = String(raw?.pmid || '').trim();
+  const record = mapEuropePmcRecord(raw);
+  const { pmid, providerId } = record;
   if ((!providerId && !pmid) || !raw?.title) return null;
   const doi = normalizeDoi(raw.doi);
-  const pmcid = String(raw.pmcid || '').trim();
-  const urls = raw.fullTextUrlList?.fullTextUrl || [];
-  const isOpenAccess = String(raw.isOpenAccess || '').toUpperCase() === 'Y';
-  const availableUrls = urls.filter(item => isOpenAccess || ['OA', 'F'].includes(item?.availabilityCode));
-  const pdfUrl = safeUrl(availableUrls.find(item => item.documentStyle === 'pdf')?.url);
-  const htmlUrl = safeUrl(availableUrls.find(item => item.documentStyle === 'html')?.url);
-  const hasOpenFullText = isOpenAccess || availableUrls.length > 0;
-  const keywords = (raw.keywordList?.keyword || []).map(normalizeText).filter(Boolean);
-  const meshTerms = (raw.meshHeadingList?.meshHeading || [])
-    .map(item => normalizeText(typeof item?.descriptorName === 'string' ? item.descriptorName : item?.descriptorName?.$))
-    .filter(Boolean);
-  const terms = [...new Set([...meshTerms, ...keywords])].slice(0, 12);
+  const terms = record.terms.slice(0, 12);
   const published = raw.firstPublicationDate || raw.electronicPublicationDate || raw.dateOfCreation || '';
   const paper = PaperBuilder.create({
     id: pmid ? `pmid:${pmid}` : `europepmc:${raw.source || 'EPMC'}:${providerId}`,
     pmid: pmid || undefined,
-    pmcid: pmcid || undefined,
+    pmcid: record.pmcid || undefined,
     doi: doi || undefined,
     sources: { primary: 'europepmc', enrichedBy: [] },
     title: normalizeText(raw.title),
-    abstract: normalizeText(raw.abstractText),
+    abstract: record.abstract,
     authors: authorObjects(raw.authorList?.author || String(raw.authorString || '').split(',')),
     journal: normalizeText(raw.journalInfo?.journal?.title),
     year: safeYear(published || `${raw.journalInfo?.yearOfPublication || ''}-01-01`),
     published,
     publicationType: 'article',
     publicationStatus: 'published',
-    openAccess: hasOpenFullText,
-    landingPageUrl: htmlUrl || (pmcid ? `https://europepmc.org/articles/${encodeURIComponent(pmcid)}` : `https://europepmc.org/article/${encodeURIComponent(raw.source || 'MED')}/${encodeURIComponent(providerId || pmid)}`),
-    pdfUrl: pdfUrl || undefined,
-    openAccessPdfUrl: pdfUrl || undefined,
-    europePmcUrl: htmlUrl || undefined,
-    license: raw.license || undefined,
-    citationCount: Number(raw.citedByCount) || 0,
+    openAccess: record.openAccess,
+    landingPageUrl: record.europePmcUrl
+      || `https://europepmc.org/article/${encodeURIComponent(raw.source || 'MED')}/${encodeURIComponent(providerId || pmid)}`,
+    pdfUrl: record.pdfUrl || undefined,
+    openAccessPdfUrl: record.pdfUrl || undefined,
+    europePmcUrl: record.htmlUrl || undefined,
+    license: record.license,
+    citationCount: record.citationCount,
     concepts: terms.map((term, index) => ({ id: `europepmc:${providerId || pmid}:${index}`, display_name: term, level: 2 })),
     categories: terms,
     keywords: terms,
     biomedicalTerms: terms,
-    hasReferences: String(raw.hasReferences).toUpperCase() === 'Y',
-    hasData: String(raw.hasData).toUpperCase() === 'Y',
-    hasSupplement: String(raw.hasSuppl).toUpperCase() === 'Y',
-    accessSource: hasOpenFullText ? 'europepmc' : undefined,
+    hasReferences: record.hasReferences,
+    hasData: record.hasData,
+    hasSupplement: record.hasSupplement,
+    accessSource: record.openAccess ? 'europepmc' : undefined,
   });
   return withRequestedCategory(paper, requestedCategories, terms.join(' '));
 }
@@ -434,18 +427,36 @@ export function mapInspirePaper(hit, requestedCategories = []) {
   return withRequestedCategory(paper, requestedCategories, terms.join(' '));
 }
 
+// The Worker guards these three with an ID token; the client has to know which
+// they are before it decides to spend a request on one.
+export const DOMAIN_SOURCE_PATHS = Object.freeze({
+  scopus: '/sources/scopus',
+  biorxiv: '/sources/biorxiv',
+  europepmc: '/sources/europepmc',
+  core: '/sources/core',
+  osti: '/sources/osti',
+  nasa: '/sources/nasa',
+  physics: '/sources/physics',
+  openreview: '/sources/openreview',
+  huggingface: '/sources/huggingface',
+});
+export const PROTECTED_SOURCE_PATHS = Object.freeze(new Set([
+  DOMAIN_SOURCE_PATHS.core,
+  DOMAIN_SOURCE_PATHS.physics,
+  DOMAIN_SOURCE_PATHS.scopus,
+]));
+
 async function fetchJson(path, params) {
   if (!PAPER_API_BASE) return null;
   const url = new URL(`${PAPER_API_BASE}${path}`);
   Object.entries(params).forEach(([key, value]) => {
     if (value !== undefined && value !== null && value !== '') url.searchParams.set(key, String(value));
   });
-  const protectedPath = ['/sources/core', '/sources/physics'].includes(path);
   // One deadline for headers and body alike. These calls run inside the
   // `Promise.allSettled` of `fetchDomainPapers`, so a single source that answers
   // its headers and then stops used to hold the whole feed behind it.
   const options = withRequestDeadline({ headers: { accept: 'application/json' } }, REQUEST_TIMEOUT_MS);
-  const response = protectedPath
+  const response = PROTECTED_SOURCE_PATHS.has(path)
     ? await authenticatedWorkerFetch(url, options)
     : await fetch(url, options);
   if (!response.ok) throw new Error(`${path} returned ${response.status}`);
@@ -475,31 +486,72 @@ export function getDomainSourcePlan(categories = []) {
   };
 }
 
+// Which branches of the plan may actually issue a request right now. A branch
+// that cannot succeed must not run: the three protected paths need an ID token,
+// and without one `authenticatedWorkerFetch` throws inside the browser, the
+// `allSettled` below swallows it, and a source that never had a chance is
+// indistinguishable from one with no results. That is how every guest load
+// asked for physics it was never going to be shown.
+//
+// `isScopusEnabled()` already refuses without a session, so the `hasSession`
+// term on Scopus is redundant at run time -- it is here so the rule reads the
+// same for all three, and so a test can hold the whole invariant at once.
+export function getEligibleDomainSources(plan, { hasSession = false, scopusEnabled = false } = {}) {
+  return {
+    scopus: plan.scopus.length > 0 && scopusEnabled && hasSession,
+    biorxiv: Boolean(plan.biorxivCategory),
+    europepmc: plan.biology.length > 0,
+    core: plan.engineering.length > 0 && hasSession,
+    osti: plan.osti.length > 0,
+    nasa: plan.nasa.length > 0,
+    physics: plan.physics.length > 0 && hasSession,
+    openreview: plan.openReview.length > 0,
+    huggingface: plan.huggingFace.length > 0,
+  };
+}
+
+// `Promise.allSettled` used to drop its rejections on the floor, so a systematic
+// 401, a quota 429 and a source that is simply down all reached the feed as the
+// same thing: nothing. It is what kept the failing physics branch invisible.
+export function reportDomainSourceFailures(settled, entries, logger = console.warn) {
+  settled.forEach((result, index) => {
+    if (result.status !== 'rejected') return;
+    const reason = result.reason;
+    const detail = reason?.code || reason?.status || reason?.message || String(reason);
+    logger(`Domain source ${entries[index]?.path || 'unknown'} failed: ${detail}`, reason);
+  });
+}
+
 export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMode = 'recent') {
   const plan = getDomainSourcePlan(categories);
+  const eligible = getEligibleDomainSources(plan, {
+    hasSession: hasWorkerSession(),
+    scopusEnabled: isScopusEnabled(),
+  });
   const safePage = Math.max(1, Number(page) || 1);
   const safeLimit = Math.max(1, Math.min(10, Number(limit) || 8));
   const requests = [];
+  const request = (path, promise) => requests.push({ path, promise });
 
-  if (plan.scopus.length > 0 && isScopusEnabled()) {
+  if (eligible.scopus) {
     const scopusAdapter = new ScopusAdapter();
-    requests.push(scopusAdapter.search(sourceQuery(plan.scopus.slice(0, 4)), safePage, {
+    request(DOMAIN_SOURCE_PATHS.scopus, scopusAdapter.search(sourceQuery(plan.scopus.slice(0, 4)), safePage, {
       internalCategories: plan.scopus,
       limit: safeLimit,
       sort: queryMode,
     }).then(result => result.papers || []));
   }
 
-  if (plan.biorxivCategory) {
-    requests.push(fetchJson('/sources/biorxiv', {
+  if (eligible.biorxiv) {
+    request(DOMAIN_SOURCE_PATHS.biorxiv, fetchJson('/sources/biorxiv', {
       category: plan.biorxivCategory,
       page: safePage,
       limit: safeLimit,
     }).then(data => (data?.collection || []).slice(0, safeLimit).map(item => mapBioRxivPaper(item, plan.biology))));
   }
 
-  if (plan.biology.length > 0) {
-    requests.push(fetchJson('/sources/europepmc', {
+  if (eligible.europepmc) {
+    request(DOMAIN_SOURCE_PATHS.europepmc, fetchJson('/sources/europepmc', {
       q: sourceQuery(plan.biology.slice(0, 3)),
       page: safePage,
       limit: safeLimit,
@@ -507,16 +559,16 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
     }).then(data => (data?.resultList?.result || []).map(item => mapEuropePmcSearchResult(item, plan.biology))));
   }
 
-  if (plan.engineering.length > 0) {
-    requests.push(fetchJson('/sources/core', {
+  if (eligible.core) {
+    request(DOMAIN_SOURCE_PATHS.core, fetchJson('/sources/core', {
       q: sourceQuery(plan.engineering.slice(0, 4)),
       page: safePage,
       limit: safeLimit,
     }).then(data => (data?.results || []).map(item => mapCoreWork(item, plan.engineering))));
   }
 
-  if (plan.osti.length > 0) {
-    requests.push(fetchJson('/sources/osti', {
+  if (eligible.osti) {
+    request(DOMAIN_SOURCE_PATHS.osti, fetchJson('/sources/osti', {
       q: sourceQuery(plan.osti.slice(0, 3)),
       page: safePage,
       limit: Math.min(6, safeLimit),
@@ -524,8 +576,8 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
     }).then(data => (Array.isArray(data) ? data : []).map(item => mapOstiRecord(item, plan.osti))));
   }
 
-  if (plan.nasa.length > 0) {
-    requests.push(fetchJson('/sources/nasa', {
+  if (eligible.nasa) {
+    request(DOMAIN_SOURCE_PATHS.nasa, fetchJson('/sources/nasa', {
       q: sourceQuery(plan.nasa.slice(0, 3)),
       page: safePage,
       limit: Math.min(6, safeLimit),
@@ -533,11 +585,10 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
     }).then(data => (data?.results || []).map(item => mapNasaRecord(item, plan.nasa))));
   }
 
-  if (plan.physics.length > 0) {
-    requests.push(fetchJson('/sources/physics', {
+  if (eligible.physics) {
+    request(DOMAIN_SOURCE_PATHS.physics, fetchJson('/sources/physics', {
       q: sourceQuery(plan.physics.slice(0, 4)),
       fallback_q: plan.inspirePhysics.length > 0 ? sourceQuery(plan.inspirePhysics.slice(0, 4)) : '',
-      schema: 4,
       page: safePage,
       limit: safeLimit,
       sort: queryMode,
@@ -550,9 +601,9 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
     }));
   }
 
-  if (plan.openReview.length > 0) {
+  if (eligible.openreview) {
     const selectedCategory = plan.openReview[(safePage - 1) % plan.openReview.length];
-    requests.push(fetchJson('/sources/openreview', {
+    request(DOMAIN_SOURCE_PATHS.openreview, fetchJson('/sources/openreview', {
       q: categoryLabel(selectedCategory),
       page: safePage,
       limit: safeLimit,
@@ -560,9 +611,9 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
     }).then(data => (data?.notes || []).map(item => mapOpenReviewNote(item, [selectedCategory]))));
   }
 
-  if (plan.huggingFace.length > 0) {
+  if (eligible.huggingface) {
     const selectedCategory = plan.huggingFace[(safePage - 1) % plan.huggingFace.length];
-    requests.push(fetchJson('/sources/huggingface', {
+    request(DOMAIN_SOURCE_PATHS.huggingface, fetchJson('/sources/huggingface', {
       q: categoryLabel(selectedCategory),
       page: safePage,
       limit: safeLimit,
@@ -571,7 +622,8 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
   }
 
   if (requests.length === 0) return [];
-  const settled = await Promise.allSettled(requests);
+  const settled = await Promise.allSettled(requests.map(entry => entry.promise));
+  reportDomainSourceFailures(settled, requests);
   return PaperBuilder.deduplicate(
     settled.flatMap(result => result.status === 'fulfilled' ? result.value.filter(Boolean) : [])
   ).slice(0, safeLimit * 2);

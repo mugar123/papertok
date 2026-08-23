@@ -1,7 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { GUEST_CATEGORIES } from '../utils/guestFeedPlan.js';
 import {
+  DOMAIN_SOURCE_PATHS,
+  PROTECTED_SOURCE_PATHS,
   getDomainSourcePlan,
+  getEligibleDomainSources,
+  reportDomainSourceFailures,
   mapBioRxivPaper,
   mapCoreWork,
   mapEuropePmcSearchResult,
@@ -149,4 +154,57 @@ test('maps INSPIRE papers as a keyless high-energy physics fallback', () => {
   assert.equal(paper.citationCountKnown, true);
   assert.equal(paper.publicationStatus, 'published');
   assert.match(paper.inspireUrl, /inspirehep\.net\/literature\/12345/);
+});
+
+function eligiblePaths(plan, options) {
+  return Object.entries(getEligibleDomainSources(plan, options))
+    .filter(([, isEligible]) => isEligible)
+    .map(([source]) => DOMAIN_SOURCE_PATHS[source]);
+}
+
+// The guest feed used to spend every load asking `/sources/physics` for papers:
+// the route needs an ID token, the client threw before reaching the network, and
+// the `allSettled` made it look like a source with nothing to say.
+test('a guest plan requests nothing that needs a session', () => {
+  const plan = getDomainSourcePlan(GUEST_CATEGORIES);
+  const paths = eligiblePaths(plan, { hasSession: false, scopusEnabled: true });
+
+  assert.deepEqual(paths.filter(path => PROTECTED_SOURCE_PATHS.has(path)), []);
+  assert.ok(paths.length > 0, 'a guest still has public sources to read');
+});
+
+test('the same categories reach the protected sources once there is a session', () => {
+  const plan = getDomainSourcePlan(['astro-ph.CO', 'mech.aero', 'bio.cell']);
+
+  const guest = getEligibleDomainSources(plan, { hasSession: false, scopusEnabled: true });
+  const member = getEligibleDomainSources(plan, { hasSession: true, scopusEnabled: true });
+
+  assert.equal(guest.physics, false);
+  assert.equal(guest.core, false);
+  assert.equal(guest.scopus, false);
+  assert.equal(member.physics, true);
+  assert.equal(member.core, true);
+  assert.equal(member.scopus, true);
+  assert.equal(guest.europepmc, true, 'public sources are untouched by the gate');
+  assert.equal(getEligibleDomainSources(plan, { hasSession: true }).scopus, false, 'Scopus still needs its own flag');
+});
+
+test('a rejected source names its path instead of vanishing', () => {
+  const logged = [];
+  const settled = [
+    { status: 'fulfilled', value: [] },
+    { status: 'rejected', reason: Object.assign(new Error('WORKER_AUTH_REQUIRED'), { code: 'WORKER_AUTH_REQUIRED' }) },
+    { status: 'rejected', reason: new Error('/sources/nasa returned 429') },
+  ];
+  const entries = [
+    { path: '/sources/biorxiv' },
+    { path: '/sources/physics' },
+    { path: '/sources/nasa' },
+  ];
+
+  reportDomainSourceFailures(settled, entries, message => logged.push(message));
+
+  assert.equal(logged.length, 2);
+  assert.match(logged[0], /\/sources\/physics.*WORKER_AUTH_REQUIRED/);
+  assert.match(logged[1], /\/sources\/nasa.*429/);
 });

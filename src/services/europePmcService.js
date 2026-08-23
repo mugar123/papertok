@@ -1,91 +1,39 @@
+import { mapEuropePmcRecord } from '../utils/europePmcRecord.js';
+
 const API_BASE = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
 const CACHE_PREFIX = 'papertok_epmc_';
 const POSITIVE_TTL = 7 * 24 * 60 * 60 * 1000;
 const NEGATIVE_TTL = 24 * 60 * 60 * 1000;
 const MEMORY_CACHE = new Map();
 
-function isYes(value) {
-  return String(value || '').toUpperCase() === 'Y';
-}
-
-function safeHttpUrl(value) {
-  try {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
-  } catch {
-    return '';
-  }
-}
-
-function stripMarkup(value) {
-  return String(value || '')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#(?:39|x27);/gi, "'")
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
-function uniqueTerms(values) {
-  const seen = new Set();
-  return values
-    .map(stripMarkup)
-    .filter(value => {
-      const key = value.toLowerCase();
-      if (!value || seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-}
-
-function getMeshTerms(result) {
-  const headings = result?.meshHeadingList?.meshHeading || [];
-  return headings.flatMap(heading => {
-    const descriptor = typeof heading?.descriptorName === 'string'
-      ? heading.descriptorName
-      : heading?.descriptorName?.$ || heading?.descriptorName?.value;
-    return descriptor ? [descriptor] : [];
-  });
-}
-
+// One reader for the payload, shared with the domain-source search mapper:
+// `src/utils/europePmcRecord.js` explains why. What stays here is the shape the
+// enrichment path needs -- a patch to merge onto a paper, keyed by PMID.
 export function mapEuropePmcResult(result) {
-  const pmid = String(result?.pmid || result?.id || '').trim();
+  const record = mapEuropePmcRecord(result);
+  const pmid = record.pmid || record.providerId;
   if (!pmid) return null;
-
-  const urls = result?.fullTextUrlList?.fullTextUrl || [];
-  const openUrls = urls.filter(item => item?.availabilityCode === 'OA' || /open access/i.test(item?.availability || ''));
-  const htmlUrl = safeHttpUrl(openUrls.find(item => item?.documentStyle === 'html')?.url);
-  const pdfUrl = safeHttpUrl(openUrls.find(item => item?.documentStyle === 'pdf')?.url);
-  const pmcid = String(result?.pmcid || '').trim();
-  const europePmcUrl = htmlUrl || (pmcid ? `https://europepmc.org/articles/${encodeURIComponent(pmcid)}` : '');
-  const keywords = result?.keywordList?.keyword || [];
-  const biomedicalTerms = uniqueTerms([...getMeshTerms(result), ...keywords]);
-  const openAccess = isYes(result?.isOpenAccess) || openUrls.length > 0;
 
   return {
     pmid,
-    pmcid: pmcid || undefined,
-    abstract: stripMarkup(result?.abstractText),
-    biomedicalTerms,
-    concepts: biomedicalTerms.map((name, index) => ({
+    pmcid: record.pmcid || undefined,
+    abstract: record.abstract,
+    biomedicalTerms: record.terms,
+    concepts: record.terms.map((name, index) => ({
       id: `epmc:${pmid}:${index}`,
       display_name: name,
       level: 2,
     })),
-    citationCount: Number(result?.citedByCount) || 0,
-    openAccess,
-    landingPageUrl: openAccess ? (europePmcUrl || undefined) : undefined,
-    openAccessPdfUrl: pdfUrl || undefined,
-    europePmcUrl: europePmcUrl || undefined,
-    license: result?.license || undefined,
-    hasReferences: isYes(result?.hasReferences),
-    hasData: isYes(result?.hasData),
-    hasSupplement: isYes(result?.hasSuppl),
-    accessSource: openAccess ? 'europepmc' : undefined,
+    citationCount: record.citationCount,
+    openAccess: record.openAccess,
+    landingPageUrl: record.openAccess ? (record.europePmcUrl || undefined) : undefined,
+    openAccessPdfUrl: record.pdfUrl || undefined,
+    europePmcUrl: record.europePmcUrl || undefined,
+    license: record.license,
+    hasReferences: record.hasReferences,
+    hasData: record.hasData,
+    hasSupplement: record.hasSupplement,
+    accessSource: record.openAccess ? 'europepmc' : undefined,
   };
 }
 

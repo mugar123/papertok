@@ -1,7 +1,6 @@
 import { BaseAdapter } from './BaseAdapter.js';
 import { PaperBuilder } from '../PaperBuilder.js';
-import { auth } from '../firebase.js';
-import { authenticatedWorkerFetch } from '../workerApiClient.js';
+import { authenticatedWorkerFetch, hasWorkerSession } from '../workerApiClient.js';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const SCOPUS_ENABLED = import.meta.env?.VITE_SCOPUS_ENABLED === 'true';
@@ -12,7 +11,7 @@ const REQUEST_TIMEOUT_MS = 12_000;
 // there is no session. Reporting Scopus as unavailable keeps callers from
 // queueing a call that cannot succeed.
 export function isScopusEnabled() {
-  return SCOPUS_ENABLED && Boolean(PAPER_API_BASE) && Boolean(auth?.currentUser);
+  return SCOPUS_ENABLED && Boolean(PAPER_API_BASE) && hasWorkerSession();
 }
 
 function normalizeText(value) {

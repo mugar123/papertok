@@ -29,6 +29,14 @@ export function trustedWorkerUrl(input) {
   }
 }
 
+// `authenticatedWorkerFetch` throws before the request leaves the browser when
+// there is no session, and a caller that swallows rejections cannot tell that
+// apart from a source with no results. Anyone who can choose not to ask needs to
+// be able to check first -- and to check it the same way everywhere.
+export function hasWorkerSession() {
+  return Boolean(auth?.currentUser);
+}
+
 export class WorkerApiAuthError extends Error {
   constructor(code = 'WORKER_AUTH_REQUIRED') {
     super(code);
