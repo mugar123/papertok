@@ -27,8 +27,10 @@ import {
   classifyGeminiError,
   normalizeExplanationLanguage,
   normalizePaperForExplanation,
+  releaseAIQuota,
   reserveAIQuota,
   sha256,
+  shouldRefundAIQuota,
   verifyFirebaseUser,
 } from './ai-explanation.js';
 
@@ -527,6 +529,25 @@ async function readCachedRewrite(env, key) {
   }
 }
 
+/**
+ * Whether the model stopped because it had finished, which is the only state a
+ * cache entry may be built from.
+ *
+ * Gemini names its reason, and `STOP` is the only one that means "the document
+ * is complete". Everything else is the answer being cut mid-paper: `MAX_TOKENS`
+ * at the output ceiling, `SAFETY`, `RECITATION`, `BLOCKLIST`,
+ * `PROHIBITED_CONTENT` and `SPII` at a filter, `LANGUAGE` and `OTHER` at the
+ * rest. A stream that ended without naming any reason is not evidence of
+ * completion either, so it is treated as truncated.
+ *
+ * The asymmetry is the point: reading this wrong in the strict direction costs
+ * one regeneration, reading it wrong in the lax direction parks half a paper in
+ * KV for thirty days.
+ */
+export function isCompleteRewrite(finishReason) {
+  return cleanText(finishReason, 40).toUpperCase() === 'STOP';
+}
+
 async function writeCachedRewrite(env, key, value) {
   const target = rewriteStore(env);
   if (!target) return;
@@ -664,10 +685,26 @@ async function streamRewrite({ env, paper, level, language, pdfBase64, meta, cac
     let finishReason = '';
     let rawAll = '';
     let closed = false;
+    let cachedWrite = false;
+    let refunded = false;
 
     const send = async (value) => {
       if (closed) return;
       await writer.write(encoder.encode(ndjsonLine(value)));
+    };
+
+    /**
+     * The reservation outlives the status line. Past the 200 there is no HTTP
+     * code left to refund against, but the day's use is just as unspent as it
+     * would have been had the same failure arrived one millisecond earlier, so
+     * the same predicate decides here as on the pre-commit path. The latch
+     * matters because a broken pipe can fail a `send` after a refund already
+     * ran and drop us into the catch, and a use credited twice is a use minted.
+     */
+    const refund = async (error) => {
+      if (refunded || !shouldRefundAIQuota(error)) return;
+      refunded = true;
+      await releaseAIQuota(env, quota);
     };
 
     await send({ type: 'meta', ...meta, remainingUses: quota.remainingUses, cached: false });
@@ -710,14 +747,28 @@ async function streamRewrite({ env, paper, level, language, pdfBase64, meta, cac
       if (sections.length === 0) {
         // Distinguish "the model said nothing" from "the model said something
         // unparseable": they need different fixes.
-        await send({
-          type: 'error',
-          code: rawLength === 0 ? 'AI_EMPTY_RESPONSE' : 'AI_INVALID_RESPONSE',
-          ...(finishReason ? { finishReason } : {}),
-        });
+        const code = rawLength === 0 ? 'AI_EMPTY_RESPONSE' : 'AI_INVALID_RESPONSE';
+        // Runs the same predicate rather than assuming the answer: today it says
+        // no for both — the provider did read the PDF and did bill for it — but
+        // the rule lives in one place and this path must follow it if it moves.
+        await refund(new AIExplanationError(code, 502));
+        await send({ type: 'error', code, ...(finishReason ? { finishReason } : {}) });
       } else {
-        await writeCachedRewrite(env, cacheKey, { meta, sections });
-        await send({ type: 'done', sectionCount: sections.length });
+        // A rewrite the model cut short is half a paper, and the replay path has
+        // no way to say so: it reprints the sections and closes with `done`, with
+        // no `error` line anywhere, which is the only signal the client reads as
+        // incomplete. Cached, that half would be served as the whole paper for
+        // thirty days, so only a clean finish earns an entry.
+        cachedWrite = isCompleteRewrite(finishReason);
+        if (cachedWrite) await writeCachedRewrite(env, cacheKey, { meta, sections });
+        await send({
+          type: 'done',
+          sectionCount: sections.length,
+          // Says on the wire what the cache decision was based on. The reader is
+          // handed a paper that stops mid-sentence either way, and leaving that
+          // undetectable is the whole failure this guard exists to end.
+          ...(cachedWrite ? {} : { truncated: true, ...(finishReason ? { finishReason } : {}) }),
+        });
       }
 
       console.info('AI rewrite', JSON.stringify({
@@ -729,6 +780,9 @@ async function streamRewrite({ env, paper, level, language, pdfBase64, meta, cac
         firstTextAtMs: firstTextAt,
         finishReason,
         durationMs: Date.now() - startedAt,
+        // A rewrite that succeeded but was not stored is the truncation guard
+        // firing, and it is the only way to see it happening from the logs.
+        cached: cachedWrite,
         outcome: sections.length === 0
           ? (rawLength === 0 ? 'AI_EMPTY_RESPONSE' : 'AI_INVALID_RESPONSE')
           : 'success',
@@ -736,6 +790,10 @@ async function streamRewrite({ env, paper, level, language, pdfBase64, meta, cac
         ...(sections.length === 0 && rawAll ? { rawHead: rawAll.slice(0, 400) } : {}),
       }));
     } catch (error) {
+      // Before the `send`, which is the call most likely to fail next: a reader
+      // that has already hung up cannot be told anything, but the use it
+      // reserved still has to come back.
+      await refund(error);
       // The status line is long gone; the only channel left is the stream.
       await send({
         type: 'error',
@@ -794,30 +852,45 @@ export async function handlePaperRewrite(request, env, extraHeaders = {}) {
   if (cached) return replayCachedRewrite(cached, extraHeaders);
 
   const quota = await reserveAIQuota(env, uid);
-  const pdfBase64 = await fetchPaperPdf(paper.pdfUrl, PDF_FETCH_BUDGET_MS);
-  if (!pdfBase64) throw new AIExplanationError('AI_REWRITE_NEEDS_FULL_TEXT', 422);
+  try {
+    const pdfBase64 = await fetchPaperPdf(paper.pdfUrl, PDF_FETCH_BUDGET_MS);
+    // The paper arrived with a PDF and was accepted on it above, so an empty
+    // download is the source being unreachable, not the paper being unrewritable
+    // — a stalled arXiv mirror reads the same as a paywall from here. The reader
+    // sees the same sentence either way; what changes is that a use is no longer
+    // burnt on a Gemini call nobody made.
+    if (!pdfBase64) throw new AIExplanationError('AI_REWRITE_NEEDS_FULL_TEXT', 422);
 
-  const meta = {
-    level,
-    language,
-    model,
-    provider: 'gemini',
-    promptVersion: REWRITE_PROMPT_VERSION,
-    sourceBasis: 'full_text',
-    title: paper.title,
-    doi: paper.doi,
-    pdfUrl: paper.pdfUrl,
-  };
+    const meta = {
+      level,
+      language,
+      model,
+      provider: 'gemini',
+      promptVersion: REWRITE_PROMPT_VERSION,
+      sourceBasis: 'full_text',
+      title: paper.title,
+      doi: paper.doi,
+      pdfUrl: paper.pdfUrl,
+    };
 
-  return streamRewrite({
-    env,
-    paper,
-    level,
-    language,
-    pdfBase64,
-    meta,
-    cacheKey,
-    quota,
-    extraHeaders,
-  });
+    // Awaited rather than returned bare, so this catch still covers it: every
+    // throw `streamRewrite` produces happens before the response commits to 200
+    // — a refused upstream, a timeout on the request itself — and those are the
+    // ones that are still ours to refund. Once it returns a Response the stream
+    // owns the reservation and refunds it from inside.
+    return await streamRewrite({
+      env,
+      paper,
+      level,
+      language,
+      pdfBase64,
+      meta,
+      cacheKey,
+      quota,
+      extraHeaders,
+    });
+  } catch (error) {
+    if (shouldRefundAIQuota(error)) await releaseAIQuota(env, quota);
+    throw error;
+  }
 }

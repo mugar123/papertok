@@ -8,6 +8,11 @@ import { getUiErrorMessage } from '../../utils/errorMessages';
 import { Button } from '../ui/button.jsx';
 import './AuthPrompt.css';
 
+// The in-context door. It signs the guest in on the spot, which is the whole
+// point — someone who tapped "save" on a paper should still be looking at that
+// paper afterwards — so it deliberately offers no way out to /login: that page
+// exists for the trips that already took the user somewhere else (a direct
+// link, a protected route), and those are the only ones that need a `returnTo`.
 export default function AuthPrompt({ onClose }) {
   const { signInWithGoogle, signInWithGitHub, error, user } = useAuth();
   const { language, isEnglish } = useLanguage();

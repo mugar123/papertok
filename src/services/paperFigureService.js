@@ -18,12 +18,23 @@ const figureCache = new Map();
 const pendingRequests = new Map();
 const REQUEST_TIMEOUT_MS = 10_000;
 
+/**
+ * The two identifier shapes arXiv has issued, mirroring `isArxivFigureId` in
+ * `worker/paper-figures.js`. They have to move together: a client filter that
+ * is narrower than the Worker's silently withholds papers the Worker would
+ * happily serve, which is how the back catalogue stayed invisible even though
+ * ar5iv exists precisely to render it. `paperFigureService.test.js` pins the
+ * two against each other so they cannot diverge in silence.
+ */
+const MODERN_ARXIV_ID = /^\d{4}\.\d{4,5}$/;
+const LEGACY_ARXIV_ID = /^[a-z]+(?:-[a-z]+)?(?:\.[A-Za-z]+(?:-[A-Za-z]+)?)?\/\d{7}$/;
+
 export function normalizeArxivFigureId(paper) {
   const raw = String(paper?.arxivId || '')
     .replace(/^arxiv:/i, '')
     .replace(/v\d+$/i, '')
     .trim();
-  return /^\d{4}\.\d{4,5}$/.test(raw) ? raw : '';
+  return MODERN_ARXIV_ID.test(raw) || LEGACY_ARXIV_ID.test(raw) ? raw : '';
 }
 
 export function canHaveFigures(paper) {

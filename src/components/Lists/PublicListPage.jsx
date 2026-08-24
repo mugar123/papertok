@@ -59,7 +59,7 @@ function AuthCta({ user, onAuthRequired, label }) {
   if (onAuthRequired) {
     return <button type="button" className="public-list-auth-cta" onClick={onAuthRequired}>{label}</button>;
   }
-  return <Link className="public-list-auth-cta" to="/">{label}</Link>;
+  return <Link className="public-list-auth-cta" to="/login" state={{ returnTo: '/lists' }}>{label}</Link>;
 }
 
 export default function PublicListPage({ shareId: shareIdProp, onAuthRequired }) {

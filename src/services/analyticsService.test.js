@@ -8,6 +8,7 @@ import {
   markActivation,
   normalizeAnalyticsPath,
   persistAnalyticsConsent,
+  PRODUCT_ANALYTICS_EVENTS,
   readAnalyticsConsent,
   sanitizeAnalyticsLocation,
   sanitizeProductEventParams,
@@ -325,4 +326,68 @@ test('clears consent-scoped activation state when consent is denied', async t =>
   assert.equal(storage.getItem('papertok_analytics_activation_at'), null);
   assert.equal(storage.getItem('papertok_analytics_activation_sent'), null);
   assert.equal(storage.getItem('papertok_analytics_day_7_return_sent'), null);
+});
+
+/**
+ * Every `trackEvent` call site in the app, checked against the two allowlists
+ * that decide whether it survives.
+ *
+ * `trackProductEvent` returns `false` on its first line for a name that is not
+ * in `EVENT_PARAMETER_SCHEMAS`, and `sanitizeProductEventParams` drops a value
+ * that is not in its category. Neither logs anything. So an unregistered event
+ * is not a smaller event, it is no event, and an unregistered `surface` is an
+ * event that no longer says where it happened — both indistinguishable from
+ * working, from the call site and from the dashboard, until someone goes
+ * looking for numbers that were never collected.
+ *
+ * The light redesign shipped four of these at once: `paper_rewrite` and
+ * `paper_highlight` unregistered entirely, and the `reader` and `auth_prompt`
+ * surfaces stripped off the events that did survive. This test is why that can
+ * only happen once.
+ */
+test('every event the app emits is registered, with a surface that survives', async () => {
+  const { readdir, readFile } = await import('node:fs/promises');
+  const roots = [new URL('../', import.meta.url)];
+  const sources = [];
+  while (roots.length) {
+    const dir = roots.pop();
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);
+      if (entry.isDirectory()) roots.push(child);
+      // `analyticsService.js` is the vocabulary, not a caller: its schema
+      // entries read `surface: 'surface'`, naming the category rather than a
+      // value, and scanning them would flag the declaration as a violation of
+      // itself.
+      else if (
+        /\.jsx?$/.test(entry.name)
+        && !entry.name.endsWith('.test.js')
+        && entry.name !== 'analyticsService.js'
+      ) sources.push(child);
+    }
+  }
+
+  const emitted = new Map();
+  const surfaces = new Map();
+  for (const file of sources) {
+    const code = (await readFile(file, 'utf8')).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+    for (const [, name] of code.matchAll(/\btrackEvent\(\s*'([a-z0-9_]+)'/g)) {
+      emitted.set(name, (emitted.get(name) || []).concat(file.pathname));
+    }
+    for (const [, value] of code.matchAll(/\bsurface:\s*'([a-z0-9_]+)'/g)) {
+      surfaces.set(value, (surfaces.get(value) || []).concat(file.pathname));
+    }
+  }
+
+  assert.ok(emitted.size > 0, 'the scan found call sites at all');
+
+  const unregistered = [...emitted.keys()].filter(name => !PRODUCT_ANALYTICS_EVENTS.includes(name));
+  assert.deepEqual(unregistered, [], `emitted but never recorded: ${unregistered.join(', ')}`);
+
+  // A surface only survives if `sanitizeProductEventParams` keeps it, which is
+  // the same question the dashboard asks. Ask it directly rather than
+  // re-declaring the category list here and letting the two drift.
+  const stripped = [...surfaces.keys()].filter(value => (
+    sanitizeProductEventParams('paper_view', { surface: value }).surface !== value
+  ));
+  assert.deepEqual(stripped, [], `surface dropped by the sanitizer: ${stripped.join(', ')}`);
 });

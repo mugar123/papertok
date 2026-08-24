@@ -84,6 +84,12 @@ export function serializePaperForRewrite(paper) {
   };
 }
 
+/**
+ * Identifies a rewrite by what actually makes one different from another. The
+ * paper half is derived from `id || doi || arxivId || title` rather than from
+ * the object, so a caller handed a freshly rebuilt `paper` with the same
+ * contents can tell that it is not looking at a new request.
+ */
 export function rewriteCacheKey(paper, level, language) {
   return `${paperCacheId(paper)}:${level}:${language}`;
 }
@@ -138,6 +144,12 @@ export async function rewritePaper(paper, level = 'university', {
   if (!PAPER_REWRITE_LEVELS.some(item => item.id === level)) {
     throw new PaperRewriteError('AI_INVALID_LEVEL');
   }
+  // A signal that already fired will never fire again, so the listener installed
+  // further down would never run: the POST would go out and burn one of the ten
+  // daily uses on a stream the caller has already walked away from. Everything
+  // between here and that POST is synchronous, so this is the only place where
+  // an early abort can still be noticed.
+  if (signal?.aborted) throw new PaperRewriteError('AI_CANCELLED');
   const rewriteLanguage = language === 'en' ? 'en' : 'es';
   const cacheKey = rewriteCacheKey(paper, level, rewriteLanguage);
 

@@ -14,6 +14,7 @@ import {
   getCachedRewrite,
   PAPER_REWRITE_LEVELS,
   PaperRewriteError,
+  rewriteCacheKey,
   rewritePaper,
 } from '../../services/paperRewriteService.js';
 import {
@@ -127,6 +128,15 @@ export default function PaperReader({ paper, onClose }) {
   const [showHighlights, setShowHighlights] = useState(true);
   const [userHighlights, setUserHighlights] = useState([]);
   const abortRef = useRef(null);
+  /**
+   * The rewrite this reader has already asked for, keyed the way the rewrite
+   * cache keys itself. The object arriving as `paper` is rebuilt upstream when
+   * the open-access copy resolves (`readablePaper` in PaperCard), and until this
+   * ref existed that new identity re-ran the effect below: the sections already
+   * streamed were thrown away, the reader dropped back to `streaming`, and a
+   * second of the ten daily uses went on the very same paper.
+   */
+  const requestedRewriteRef = useRef('');
   const dialogRef = useDialogFocus(true, onClose);
 
   const supportsRewrite = canRewritePaper(paper);
@@ -152,6 +162,11 @@ export default function PaperReader({ paper, onClose }) {
     setError(null);
     setStatus('streaming');
 
+    // Counted here rather than in the effect: only this branch reaches the
+    // worker, so a cache hit no longer inflates the metric, and a retry — which
+    // does spend a use — is no longer invisible to it.
+    trackEvent('paper_rewrite', { level: targetLevel, surface: 'reader' });
+
     try {
       const result = await rewritePaper(paper, targetLevel, {
         language: isEnglish ? 'en' : 'es',
@@ -166,16 +181,28 @@ export default function PaperReader({ paper, onClose }) {
       setError(caught instanceof PaperRewriteError ? caught.code : 'AI_UNAVAILABLE');
       setStatus('error');
     }
-  }, [isEnglish, paper]);
+  }, [isEnglish, paper, trackEvent]);
 
   useEffect(() => {
+    // The two ways the PDF can change are not the same thing. Going from no
+    // readable PDF to one is a request that never happened, and the gate below
+    // holds the key unclaimed until then, so it fires the moment the open-access
+    // copy produces a URL. One readable PDF swapping for a better one is not:
+    // the key ignores `pdfUrl`, so that re-run recognises its own request and
+    // leaves the stream in flight alone.
     if (!supportsRewrite) return undefined;
-    trackEvent('paper_rewrite', { level, surface: 'reader' });
+    const requestKey = rewriteCacheKey(paper, level, isEnglish ? 'en' : 'es');
+    if (requestedRewriteRef.current === requestKey) return undefined;
     // Deferred so the request starts after this render commits, matching how
-    // the report page kicks off its own fetches.
-    const timerId = setTimeout(() => load(level), 0);
+    // the report page kicks off its own fetches. The key is claimed inside the
+    // timer rather than before it: an effect torn down before its timer fires
+    // has requested nothing, and must leave the rewrite pending, not swallowed.
+    const timerId = setTimeout(() => {
+      requestedRewriteRef.current = requestKey;
+      load(level);
+    }, 0);
     return () => clearTimeout(timerId);
-  }, [level, load, supportsRewrite, trackEvent]);
+  }, [isEnglish, level, load, paper, supportsRewrite]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 

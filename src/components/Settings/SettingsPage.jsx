@@ -481,7 +481,7 @@ export default function SettingsPage() {
 
   const handleSignOut = async () => {
     await signOut();
-    navigate('/');
+    navigate('/login');
   };
 
   const handleLanguageChange = async (nextLanguage) => {

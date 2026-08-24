@@ -1846,3 +1846,131 @@ test('falls back to a minute when the upstream refused without saying for how lo
   assert.equal(response.status, 429);
   assert.equal(response.headers.get('retry-after'), '60');
 });
+
+/* ============================================================
+   /ai/rewrite
+   ============================================================ */
+
+// These go through `reportApi.fetch`, not through `handlePaperRewrite`, and
+// that is the whole point of them. The rewrite handler had a full suite of its
+// own and every test in it imported the module directly, so a `main` entrypoint
+// that never registered the route passed everything green while the browser got
+// the generic 404 on every rewrite.
+
+const REWRITE_ROUTE = 'https://papertok-report-api.example/ai/rewrite';
+
+const REWRITE_ENV = {
+  ...AUTHENTICATED_ENV,
+  GEMINI_API_KEY: 'gemini-test-key',
+};
+
+function rewriteRequest(method = 'POST', origin = 'https://mugar123.github.io') {
+  return new Request(REWRITE_ROUTE, {
+    method,
+    ...(method === 'POST' ? {
+      body: JSON.stringify({
+        paper: { title: 'A study of things', pdfUrl: 'https://arxiv.org/pdf/2601.00001.pdf' },
+        level: 'university',
+        language: 'en',
+      }),
+    } : {}),
+    headers: {
+      origin,
+      'content-type': 'application/json',
+      authorization: 'Bearer test-token',
+    },
+  });
+}
+
+/** One Gemini SSE line, in the CRLF form the real endpoint sends. */
+function geminiFrame(text, extra = {}) {
+  return `data: ${JSON.stringify({
+    candidates: [{ content: { parts: [{ text }] }, ...extra }],
+  })}\r\n\r\n`;
+}
+
+function rewriteUpstream(url, frames) {
+  return String(url).includes('generativelanguage.googleapis.com')
+    ? new Response(frames.join(''), { headers: { 'content-type': 'text/event-stream' } })
+    // Anything else on this route is the PDF download.
+    : new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46]), {
+      headers: { 'content-type': 'application/pdf' },
+    });
+}
+
+test('the router serves POST /ai/rewrite instead of dropping it into the 404', async () => {
+  const section = `${JSON.stringify({
+    kind: 'intro',
+    heading: 'Why it matters',
+    paragraphs: ['Because of this.'],
+  })}\n`;
+
+  const response = await withWorkerFetchMock(
+    async url => rewriteUpstream(url, [geminiFrame(section), geminiFrame('', { finishReason: 'STOP' })]),
+    () => withCachedIdentity(() => reportApi.fetch(rewriteRequest(), REWRITE_ENV)),
+  );
+
+  assert.equal(response.status, 200);
+  // Streamed, not wrapped in `json()`: the first line has to leave before the
+  // last one exists.
+  assert.match(response.headers.get('content-type'), /application\/x-ndjson/);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+
+  const events = (await response.text()).trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(events.map(event => event.type), ['meta', 'section', 'done']);
+  assert.equal(events[1].heading, 'Why it matters');
+});
+
+test('/ai/rewrite refuses anything but POST', async () => {
+  const response = await reportApi.fetch(rewriteRequest('GET'), REWRITE_ENV);
+
+  // Not the generic GET fallthrough further down: a rewrite is a POST, and the
+  // route has to say so itself.
+  assert.equal(response.status, 405);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+});
+
+test('the /ai/rewrite preflight is answered before the route is reached', async () => {
+  const response = await reportApi.fetch(new Request(REWRITE_ROUTE, {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'https://mugar123.github.io',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'authorization, content-type',
+    },
+  }), REWRITE_ENV);
+
+  assert.equal(response.status, 204);
+  assert.match(response.headers.get('access-control-allow-methods'), /(?:^|,\s*)POST(?:,|$)/);
+  assert.match(response.headers.get('access-control-allow-headers'), /authorization/);
+});
+
+test('/ai/rewrite refuses an origin that is not on the list', async () => {
+  const response = await withWorkerFetchMock(async () => {
+    throw new Error('No upstream request should be made');
+  }, () => reportApi.fetch(rewriteRequest('POST', 'https://evil.example'), REWRITE_ENV));
+
+  assert.equal(response.status, 403);
+  assert.equal(response.headers.get('access-control-allow-origin'), null);
+});
+
+test('relays a rewrite refusal with its own status, code and quota', async () => {
+  const response = await withWorkerFetchMock(async () => {
+    throw new Error('No upstream request should be made');
+  }, () => withCachedIdentity(() => reportApi.fetch(rewriteRequest(), {
+    ...REWRITE_ENV,
+    REQUEST_QUOTA_LEDGER: {
+      idFromName: () => 'quota-id',
+      get: () => ({ fetch: async () => new Response(JSON.stringify({ accepted: false, scope: 'user' })) }),
+    },
+  })));
+
+  // The quota block is what tells the reader when the uses come back; flattening
+  // this to a bare 502 would lose both the reason and the reset time.
+  assert.equal(response.status, 429);
+  const payload = await response.json();
+  assert.equal(payload.code, 'AI_QUOTA_EXHAUSTED');
+  assert.equal(payload.quota.scope, 'user');
+  assert.ok(payload.quota.resetAt);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+});

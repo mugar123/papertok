@@ -10,6 +10,15 @@ service cloud.firestore {
       return value is string && value.size() <= maximum;
     }
 
+    // `validString` accepts the empty string, which is right for an optional
+    // label and wrong for a field that identifies something: '' passes `is
+    // string && size() <= max` and lands as a document nothing can resolve.
+    // Used where the client already refuses to write an empty value, so the
+    // database refuses it too rather than trusting the client to keep doing it.
+    function validNonEmptyString(value, maximum) {
+      return value is string && value.size() > 0 && value.size() <= maximum;
+    }
+
     function validBoundedStringList(values, maximumItems, maximumLength) {
       return values is list
         && values.size() <= maximumItems
@@ -849,17 +858,63 @@ service cloud.firestore {
 
       // Reader highlights. Anchored by quote rather than by character offset so
       // they survive a regenerated rewrite, which is why `quote` is required.
+      //
+      // `paperId` and `sectionId` are checked non-empty, not merely bounded:
+      // both are part of the FNV-1a fingerprint that `buildHighlightId` turns
+      // into the document id, and `listUserHighlights` filters by `paperId`. An
+      // empty one produces a highlight that belongs to no paper and no section,
+      // which `userHighlightService.normalizeUserHighlight` already refuses to
+      // write — so this is the same refusal, one layer down. `paperTitle` is
+      // deliberately NOT in that group: the service writes `''` whenever the
+      // title is unknown, and a rule requiring it would deny that write.
+      //
+      // `createdAt` was in the allowlist with no check at all, so any value —
+      // a string, a date in 2019 — went in unchallenged. Pinning it to
+      // `request.time` is what `serverTimestamp()` resolves to, so the only
+      // writer in the app keeps working, and no other stamp is writable. It
+      // also makes the field mandatory, which it already was in practice.
+      //
+      // Not frozen on update, unlike a createdAt elsewhere would be:
+      // `saveUserHighlight` re-saves the whole document with `setDoc` and a
+      // fresh `serverTimestamp()`, so freezing it would deny re-saving a
+      // selection. The consequence is that a partial `updateDoc` — say, to edit
+      // `note` — has to re-stamp `createdAt` too, since a merged write carrying
+      // the stored value forward is not `request.time`. Nothing does that today.
+      // The field is private to its owner, so the "who edited most recently"
+      // leak that removed a createdAt from `userSearchIndex` does not apply.
       match /highlights/{highlightId} {
-        allow read, delete: if ownsUserTree(userId);
+        allow get, delete: if ownsUserTree(userId);
+        // Every sibling collection under this tree carries its page ceiling in
+        // the rules; this one shipped without any, so `read` covered `list` and
+        // `ownsUserTree` never looks at `request.query`. The collection is the
+        // caller's own, so an unbounded list is not a leak — it is a bill: one
+        // document read per highlight the account has ever made, every time a
+        // paper opens. `listUserHighlights` now asks for
+        // `where('paperId', '==', ...)` capped at MAX_HIGHLIGHTS_PER_PAPER
+        // (200, in src/services/userHighlightService.js); the same number is
+        // repeated here because a ceiling that lives only in the client is a
+        // convention, and the read amplification it removes comes back the
+        // moment any client forgets it.
+        allow list: if ownsUserTree(userId) && request.query.limit <= 200;
         allow create, update: if ownsUserTree(userId)
           && request.resource.data.keys().hasOnly([
             'paperId', 'level', 'language', 'sectionId', 'paragraphIndex',
             'quote', 'kind', 'note', 'paperTitle', 'createdAt'
           ])
-          && validString(request.resource.data.paperId, 400)
+          && validNonEmptyString(request.resource.data.paperId, 400)
           && validString(request.resource.data.quote, 400)
           && request.resource.data.quote.size() >= 8
-          && validString(request.resource.data.sectionId, 40)
+          && validNonEmptyString(request.resource.data.sectionId, 40)
+          && request.resource.data.createdAt == request.time
+          // The id is a fingerprint of paperId among other fields, so a write
+          // that moves an existing highlight to a different paper leaves a
+          // document `buildHighlightId` could never have produced: it would
+          // then surface under the new paper while `removeUserHighlight` and
+          // the save-time de-duplication both still address the old id. Re-
+          // saving the same selection carries the same paperId, so the only
+          // writes this refuses are the ones that were already incoherent.
+          && (resource == null
+            || request.resource.data.paperId == resource.data.paperId)
           && request.resource.data.paragraphIndex is int
           && request.resource.data.paragraphIndex >= 0
           && request.resource.data.paragraphIndex <= 100

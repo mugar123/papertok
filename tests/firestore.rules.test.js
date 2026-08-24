@@ -2529,3 +2529,227 @@ test('F12: a private list carries the sync and attribution stamps', async () => 
     createdAt: new Date(), publicSyncedAt: 'nunca',
   }));
 });
+
+// =========================================================================
+// P19: reader highlights — users/{uid}/highlights
+//
+// The clause validates ten fields and shipped with no test at all, which is
+// the exact shape the suite exists to catch: an allowlist reads correct and
+// denies nothing until something writes through it. `src/services/
+// userHighlightService.js` is the only writer, so every body below is one the
+// client could actually produce.
+// =========================================================================
+
+/** A highlight exactly as `normalizeUserHighlight` builds one. */
+function highlightBody(extra = {}) {
+  return {
+    paperId: 'arxiv:2401.00001',
+    level: 'university',
+    language: 'es',
+    sectionId: 'results',
+    paragraphIndex: 3,
+    quote: 'a quote long enough to anchor',
+    kind: 'user',
+    paperTitle: 'A rewritten paper',
+    createdAt: serverTimestamp(),
+    ...extra,
+  };
+}
+
+function highlightWithout(field) {
+  const body = highlightBody();
+  delete body[field];
+  return body;
+}
+
+const highlightRef = (database, id = 'h1', uid = ALICE) => (
+  doc(database, 'users', uid, 'highlights', id)
+);
+
+/** The query `listUserHighlights` actually emits, ceiling and all. */
+const highlightsQuery = (database, uid = ALICE, paperId = 'arxiv:2401.00001', rows = 200) => query(
+  collection(database, 'users', uid, 'highlights'),
+  where('paperId', '==', paperId),
+  limit(rows),
+);
+
+/** Seeds one of Alice's highlights past the rules, for the cross-user tests. */
+async function seedHighlight(id = 'h1') {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), 'users', ALICE, 'highlights', id), {
+      ...highlightBody(), createdAt: new Date(),
+    });
+  });
+}
+
+test('P19: a reader saves, re-saves, reads and deletes their own highlight', async () => {
+  await reset();
+  const db = asAlice();
+  await assertSucceeds(setDoc(highlightRef(db), highlightBody()));
+  await assertSucceeds(getDoc(highlightRef(db)));
+  await assertSucceeds(getDocs(highlightsQuery(db)));
+  // The id is a fingerprint of the selection, so saving the same passage twice
+  // updates one document rather than adding a second.
+  await assertSucceeds(setDoc(highlightRef(db), highlightBody()));
+  await assertSucceeds(deleteDoc(highlightRef(db)));
+});
+
+test('P19: another account can neither read, write nor delete a highlight', async () => {
+  await reset();
+  await seedHighlight();
+  for (const db of [asBob(), asGuest()]) {
+    await assertFails(getDoc(highlightRef(db)));
+    // Capped exactly as the owner's own reader would ask, so the only thing
+    // wrong with this query is who is asking it.
+    await assertFails(getDocs(highlightsQuery(db)));
+    await assertFails(setDoc(highlightRef(db), highlightBody()));
+    await assertFails(setDoc(highlightRef(db, 'planted'), highlightBody()));
+    await assertFails(deleteDoc(highlightRef(db)));
+  }
+  // The document Bob tried to delete is still Alice's, and still there.
+  await assertSucceeds(getDoc(highlightRef(asAlice())));
+});
+
+test('P19: a highlight list has to carry the ceiling the reader uses', async () => {
+  // The accepted case matters as much as the refused ones: it is the exact
+  // query `listUserHighlights` emits, and a rule that refused it would break
+  // the reader rather than protect anything.
+  await reset();
+  const db = asAlice();
+  await assertSucceeds(setDoc(highlightRef(db), highlightBody()));
+  const highlights = () => collection(db, 'users', ALICE, 'highlights');
+  await assertFails(getDocs(highlights()));
+  await assertFails(getDocs(query(highlights(), where('paperId', '==', 'arxiv:2401.00001'))));
+  await assertFails(getDocs(query(highlights(), limit(201))));
+  await assertSucceeds(getDocs(highlightsQuery(db)));
+  await assertSucceeds(getDocs(query(highlights(), limit(200))));
+  // Fetching one highlight by id never went through the ceiling, and still
+  // does not — the id is a fingerprint the client can rebuild.
+  await assertSucceeds(getDoc(highlightRef(db)));
+});
+
+test('P19: a field outside the allowlist is refused', async () => {
+  await reset();
+  const db = asAlice();
+  // The extra key has to ride along with an OTHERWISE VALID document, or
+  // another clause denies the write on its own and `hasOnly` never gets a say.
+  await assertFails(setDoc(highlightRef(db), highlightBody({ smuggled: 'anything' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ color: 'yellow' })));
+  await assertSucceeds(setDoc(highlightRef(db), highlightBody()));
+});
+
+test('P19: a quote under eight characters or over four hundred is refused', async () => {
+  await reset();
+  const db = asAlice();
+  await assertFails(setDoc(highlightRef(db), highlightBody({ quote: 'siete c' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ quote: '' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ quote: 'a'.repeat(401) })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ quote: 42 })));
+  // Both ends of the range the client enforces, asserted so a later trim to
+  // either bound fails here first.
+  await assertSucceeds(setDoc(highlightRef(db), highlightBody({ quote: 'a'.repeat(8) })));
+  await assertSucceeds(setDoc(highlightRef(db), highlightBody({ quote: 'a'.repeat(400) })));
+});
+
+test('P19: paragraphIndex is a whole number from zero to one hundred', async () => {
+  await reset();
+  const db = asAlice();
+  for (const paragraphIndex of [1.5, '3', -1, 101, null]) {
+    await assertFails(setDoc(highlightRef(db), highlightBody({ paragraphIndex })));
+  }
+  for (const paragraphIndex of [0, 100]) {
+    await assertSucceeds(setDoc(highlightRef(db), highlightBody({ paragraphIndex })));
+  }
+});
+
+test('P19: level and language accept only the values the reader can pick', async () => {
+  await reset();
+  const db = asAlice();
+  await assertFails(setDoc(highlightRef(db), highlightBody({ level: 'expert' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ level: '' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ language: 'fr' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ language: 'ES' })));
+  // Absent, not merely wrong: dereferencing a missing key denies the write.
+  await assertFails(setDoc(highlightRef(db), highlightWithout('level')));
+  await assertFails(setDoc(highlightRef(db), highlightWithout('language')));
+  for (const level of ['beginner', 'university', 'researcher']) {
+    await assertSucceeds(setDoc(highlightRef(db), highlightBody({ level })));
+  }
+  for (const language of ['es', 'en']) {
+    await assertSucceeds(setDoc(highlightRef(db), highlightBody({ language })));
+  }
+});
+
+test('P19: an empty sectionId or paperId is refused, an empty paperTitle is not', async () => {
+  // `validString` asks only for `is string && size() <= max`, so '' satisfied
+  // both. The client refuses either — `normalizeUserHighlight` returns null —
+  // and now so does the database, since both feed the id fingerprint and
+  // `listUserHighlights` filters on paperId. `paperTitle` stays permissive on
+  // purpose: the same service writes '' whenever the title is unknown, so
+  // requiring it would deny an ordinary save.
+  await reset();
+  const db = asAlice();
+  await assertFails(setDoc(highlightRef(db), highlightBody({ sectionId: '' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ paperId: '' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ sectionId: 'a'.repeat(41) })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ paperId: 'a'.repeat(401) })));
+  await assertFails(setDoc(highlightRef(db), highlightWithout('sectionId')));
+  await assertSucceeds(setDoc(highlightRef(db), highlightBody({ paperTitle: '' })));
+});
+
+test('P19: createdAt has to be the stamp the server writes', async () => {
+  // It sat in the allowlist with no check of any kind, so a client could date
+  // a highlight to 2019 or store a string there. `serverTimestamp()` resolves
+  // to `request.time`, which is what the service already sends.
+  await reset();
+  const db = asAlice();
+  await assertFails(setDoc(highlightRef(db), highlightBody({ createdAt: new Date('2019-01-01') })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ createdAt: 'ayer' })));
+  await assertFails(setDoc(highlightRef(db), highlightBody({ createdAt: 0 })));
+  await assertFails(setDoc(highlightRef(db), highlightWithout('createdAt')));
+  await assertSucceeds(setDoc(highlightRef(db), highlightBody()));
+});
+
+test('P19: an update cannot move a highlight to a different paper', async () => {
+  await reset();
+  const db = asAlice();
+  await assertSucceeds(setDoc(highlightRef(db), highlightBody()));
+  // A complete, otherwise valid rewrite. The only thing wrong with it is that
+  // the document id is a fingerprint of the paperId it no longer carries, so
+  // the highlight would surface under a paper `buildHighlightId` never keyed.
+  await assertFails(setDoc(highlightRef(db), highlightBody({ paperId: 'arxiv:2401.99999' })));
+  // Re-saving the same selection is untouched, which is what the client does.
+  await assertSucceeds(setDoc(highlightRef(db), highlightBody()));
+  // And a new document is free to carry any paperId at all.
+  await assertSucceeds(setDoc(highlightRef(db, 'h2'), highlightBody({ paperId: 'arxiv:2401.99999' })));
+});
+
+test('P19: kind, note and paperTitle are optional, and bounded when present', async () => {
+  await reset();
+  const db = asAlice();
+  await assertSucceeds(setDoc(highlightRef(db, 'h1'), highlightWithout('kind')));
+  await assertSucceeds(setDoc(highlightRef(db, 'h2'), highlightWithout('paperTitle')));
+  await assertSucceeds(setDoc(highlightRef(db, 'h3'), highlightBody({ note: 'a'.repeat(2000) })));
+  await assertSucceeds(setDoc(highlightRef(db, 'h4'), highlightBody({ kind: 'caveat' })));
+  await assertFails(setDoc(highlightRef(db, 'h5'), highlightBody({ kind: 'sneaky' })));
+  await assertFails(setDoc(highlightRef(db, 'h6'), highlightBody({ note: 'a'.repeat(2001) })));
+  await assertFails(setDoc(highlightRef(db, 'h7'), highlightBody({ paperTitle: 'a'.repeat(1001) })));
+});
+
+test('P19: the heaviest highlight a reader can write is a clean allow', async () => {
+  // The rules engine stops at 1000 evaluated expressions per request, and it
+  // fails with an error rather than a denial — see tests/README.md, and the
+  // note there that only `allowed` is a reliable signal. This is the largest
+  // document the allowlist admits, so a later clause that pushes the
+  // highlights branch past the budget stops saves here first.
+  await reset();
+  await assertSucceeds(setDoc(highlightRef(asAlice()), highlightBody({
+    paperId: 'a'.repeat(400),
+    sectionId: 'a'.repeat(40),
+    quote: 'a'.repeat(400),
+    note: 'a'.repeat(2000),
+    paperTitle: 'a'.repeat(1000),
+    paragraphIndex: 100,
+    kind: 'caveat',
+  })));
+});

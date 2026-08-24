@@ -6,6 +6,24 @@
   color: var(--text-tertiary);
 }
 
+/* A person's row opens with a monogram where every other row opens with an
+   icon: same 14px column, same rhythm. Not a photo — the people index carries
+   none, which is the point rather than an omission. */
+.sc-avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+  font: 600 0.5625rem/1 var(--font-mono);
+  text-transform: uppercase;
+}
+
 .sc-label {
   flex: 1;
   min-width: 0;
@@ -29,6 +47,14 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
+}
+
+/* The answer to the previous query, still up while the new one runs. Keeping it
+   is what stops every keystroke blinking the palette to empty; dimming it is
+   what stops it reading as the answer to what is being typed now. */
+.sc-group--stale {
+  opacity: 0.4;
+  transition: opacity var(--transition-fast);
 }
 
 .sc-follow {
@@ -87,5 +113,11 @@
 @media (max-width: 640px) {
   .sc-meta {
     display: none;
+  }
+
+  /* Except a handle: a year or a country code is decoration on a narrow
+     screen, but "@nico" is half of how you tell two people apart. */
+  .sc-meta--handle {
+    display: block;
   }
 }

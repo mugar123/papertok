@@ -1,9 +1,12 @@
 /* ============================================
-   AuthPrompt — the one sign-in surface
+   AuthPrompt — sign-in without leaving the page
 
-   The login page is gone; this modal carries the whole sign-in. A white sheet
-   on an ink scrim, the brand mark in yellow, the headline in the edition serif,
-   and two provider buttons drawn from the shared Button component.
+   The in-context half of the pair: this modal signs a guest in where they
+   stand, and /login (LoginPage.css) is the same act on a page of its own, for
+   direct links and for guests bounced off a protected route. Both are drawn
+   from the same parts so they cannot drift — a white sheet (here on an ink
+   scrim), the brand mark in yellow, the headline in the edition serif, and two
+   provider buttons from the shared Button component.
    ============================================ */
 
 .auth-modal-backdrop {

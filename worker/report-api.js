@@ -6,6 +6,7 @@ import {
   handleAIExplanation,
   isKimiConfigured,
 } from './ai-explanation.js';
+import { handlePaperRewrite } from './ai-rewrite.js';
 import {
   checkEmailProviderHealth,
   EmailNotificationError,
@@ -2001,6 +2002,29 @@ export default {
           ...corsHeaders(origin, env),
           'cache-control': 'private, no-store',
         });
+      } catch (error) {
+        const knownError = error instanceof AIExplanationError;
+        return json(
+          {
+            code: knownError ? error.code : 'AI_UNAVAILABLE',
+            ...(knownError && error.quota ? { quota: error.quota } : {}),
+          },
+          knownError ? error.status : 502,
+          { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+        );
+      }
+    }
+    if (url.pathname === '/ai/rewrite') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      try {
+        // The handler answers with the response itself rather than a payload to
+        // wrap: a rewrite is streamed as NDJSON and its first line has to leave
+        // before the last one exists, so there is nothing here to serialize. That
+        // is also why CORS goes in as `extraHeaders` — those headers have to be
+        // on the streaming response when it is created, not added to a body this
+        // function never sees.
+        return await handlePaperRewrite(request, env, corsHeaders(origin, env));
       } catch (error) {
         const knownError = error instanceof AIExplanationError;
         return json(
