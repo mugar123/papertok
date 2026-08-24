@@ -1,55 +1,122 @@
 /* ============================================
    PaperTok Design System — CSS Variables
+
+   Light, document-first palette. Paper is white, structure comes from
+   hairline rules instead of shadows, and metadata is set in mono so the
+   interface reads like a machine-generated index over editorial content.
    ============================================ */
 
 :root {
-  /* ── Colors (Dark Mode) ── */
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #0f0f17;
-  --bg-card: #12121a;
-  --bg-elevated: #1a1a26;
-  --bg-glass: rgba(255, 255, 255, 0.04);
-  --bg-glass-strong: rgba(255, 255, 255, 0.08);
-  --bg-glass-hover: rgba(255, 255, 255, 0.1);
+  /* ── Surfaces ── */
+  --bg-primary: #ffffff;
+  --bg-secondary: #f7f7f8;
+  --bg-card: #ffffff;
+  --bg-elevated: #ffffff;
+  --bg-sunken: #fafafa;
+  /* "Glass" now means a faint ink wash: light surfaces read better with a
+     tint of the text color than with translucent white. */
+  --bg-glass: rgba(17, 19, 24, 0.03);
+  --bg-glass-strong: rgba(255, 255, 255, 0.88);
+  --bg-glass-hover: rgba(17, 19, 24, 0.06);
 
-  --accent-primary: #7c3aed;
-  --accent-primary-hover: #6d28d9;
-  --accent-primary-glow: rgba(124, 58, 237, 0.3);
-  --accent-secondary: #06b6d4;
-  --accent-secondary-glow: rgba(6, 182, 212, 0.3);
-  --accent-like: #ef4444;
-  --accent-like-glow: rgba(239, 68, 68, 0.3);
-  --accent-save: #f59e0b;
-  --accent-save-glow: rgba(245, 158, 11, 0.3);
-  --accent-success: #10b981;
-  --accent-danger: #ef4444;
+  /* ── Ink ── */
+  --text-primary: #111318;
+  --text-secondary: #5b6270;
+  --text-tertiary: #8a919e;
+  --text-inverse: #ffffff;
 
-  --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-tertiary: #64748b;
-  --text-inverse: #0a0a0f;
+  /* ── Accents ── */
+  /* Ink is the interactive accent: primary buttons, active tabs, focus. */
+  --accent-primary: #111318;
+  --accent-primary-hover: #2b2f38;
+  --accent-primary-glow: rgba(17, 19, 24, 0.12);
+  --accent-secondary: #1a5fd0;
+  --accent-secondary-glow: rgba(26, 95, 208, 0.16);
 
-  --border-subtle: rgba(255, 255, 255, 0.06);
-  --border-default: rgba(255, 255, 255, 0.1);
-  --border-strong: rgba(255, 255, 255, 0.15);
+  /* Brand marks — the yellow only ever sits behind or beside ink. */
+  --brand-yellow: #ffd21e;
+  --brand-yellow-soft: #fff4c9;
+  --brand-orange: #ff9d00;
 
-  /* ── Category Gradients ── */
-  --gradient-physics: linear-gradient(135deg, #7c3aed, #2563eb);
-  --gradient-bio: linear-gradient(135deg, #059669, #06b6d4);
-  --gradient-cs: linear-gradient(135deg, #f59e0b, #ef4444);
-  --gradient-math: linear-gradient(135deg, #8b5cf6, #ec4899);
-  --gradient-stat: linear-gradient(135deg, #3b82f6, #6366f1);
-  --gradient-econ: linear-gradient(135deg, #10b981, #14b8a6);
-  --gradient-eess: linear-gradient(135deg, #f97316, #eab308);
-  --gradient-qfin: linear-gradient(135deg, #06b6d4, #0ea5e9);
+  /* Action accents. Each pairs a legible foreground with a surface tint, so a
+     control can be coloured without inventing a one-off value at the callsite. */
+  --accent-violet: #6d28d9;
+  --accent-violet-soft: #f3efff;
+  --accent-violet-line: #ded0fb;
+  --accent-teal: #0f766e;
+  --accent-teal-soft: #e6f6f4;
+  --accent-teal-line: #bfe5e0;
+  --accent-rose: #be123c;
+  --accent-rose-soft: #fdeff2;
+  --accent-rose-line: #f8cdd7;
+  --accent-sky: #0369a1;
+  --accent-sky-soft: #e8f4fb;
+  --accent-sky-line: #c2e0f2;
 
-  /* ── Brand Gradient ── */
-  --gradient-brand: linear-gradient(135deg, #7c3aed, #06b6d4);
-  --gradient-brand-hover: linear-gradient(135deg, #6d28d9, #0891b2);
+  --accent-like: #d92d20;
+  --accent-like-glow: rgba(217, 45, 32, 0.16);
+  --accent-save: #b45309;
+  --accent-save-glow: rgba(180, 83, 9, 0.16);
+  --accent-success: #067647;
+  --accent-danger: #d92d20;
+
+  /* Semantic status tints, used by badges and pills across the app. */
+  --tint-blue-bg: #eef4ff;
+  --tint-blue-fg: #1a4fb4;
+  --tint-blue-line: #cddffb;
+  --tint-green-bg: #ecfdf3;
+  --tint-green-fg: #067647;
+  --tint-green-line: #c3ecd5;
+  --tint-amber-bg: #fff8e6;
+  --tint-amber-fg: #96650a;
+  --tint-amber-line: #f6e3b0;
+  --tint-red-bg: #fef3f2;
+  --tint-red-fg: #b42318;
+  --tint-red-line: #fbd3ce;
+  --tint-violet-bg: #f3efff;
+  --tint-violet-fg: #5b21b6;
+  --tint-violet-line: #ded0fb;
+  --tint-neutral-bg: #f4f4f5;
+  --tint-neutral-fg: #4a5160;
+  --tint-neutral-line: #e4e4e7;
+
+  /* ── Borders ── */
+  --border-subtle: #e6e7ea;
+  --border-default: #d3d5db;
+  --border-strong: #a9aeba;
+  --border-ink: #111318;
+
+  /* ── Category accents ──
+     Flat, print-ink colors. The variables keep the `gradient-*` names the
+     components already reference, but they resolve to solid colors so a
+     category can tint a rule, a dot or a label without a haze. */
+  /* Twelve fields, twelve separated hues. They were colliding before —
+     econ and chemeng were the same value, and physics/math/mech were three
+     shades of violet — so cards looked identical across unrelated subjects.
+     Every value is dark enough to be legible as text on white. */
+  --gradient-physics: #4f46e5;  /* indigo */
+  --gradient-cs: #c2410c;       /* burnt orange */
+  --gradient-math: #7e22ce;     /* purple */
+  --gradient-stat: #1d4ed8;     /* blue */
+  --gradient-econ: #0f766e;     /* teal */
+  --gradient-qfin: #0e7490;     /* cyan */
+  --gradient-eess: #a16207;     /* amber */
+  --gradient-mech: #475569;     /* steel */
+  --gradient-civil: #92400e;    /* umber */
+  --gradient-chemeng: #4d7c0f;  /* olive */
+  --gradient-med: #be123c;      /* rose */
+  --gradient-bio: #15803d;      /* green */
+
+  --gradient-brand: #111318;
+  --gradient-brand-hover: #2b2f38;
 
   /* ── Typography ── */
-  --font-heading: 'Outfit', sans-serif;
-  --font-body: 'Inter', sans-serif;
+  --font-heading: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  /* The "machine" voice: IDs, counts, categories, timestamps, source names. */
+  --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  /* Editorial voice, reserved for the Research magazine. */
+  --font-serif: 'Newsreader', 'Iowan Old Style', Georgia, serif;
 
   --fs-xs: 0.75rem;
   --fs-sm: 0.875rem;
@@ -70,6 +137,10 @@
   --lh-normal: 1.5;
   --lh-relaxed: 1.7;
 
+  /* Mono metadata is always uppercase-ish and tightly tracked. */
+  --mono-label: 600 0.6875rem/1 var(--font-mono);
+  --mono-track: 0.06em;
+
   /* ── Spacing ── */
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -84,26 +155,29 @@
   --space-20: 5rem;
   --space-24: 6rem;
 
-  /* ── Border Radius ── */
-  --radius-sm: 0.375rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-  --radius-xl: 1rem;
-  --radius-2xl: 1.5rem;
+  /* ── Border Radius ──
+     Near-square. The design is a printed page, and print has corners: soft
+     radii were rounding every rule and chip into the same blur. */
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 6px;
+  --radius-2xl: 8px;
   --radius-full: 9999px;
 
-  /* ── Shadows ── */
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 30px rgba(0, 0, 0, 0.5);
-  --shadow-xl: 0 16px 50px rgba(0, 0, 0, 0.6);
-  --shadow-glow-primary: 0 0 20px var(--accent-primary-glow);
-  --shadow-glow-secondary: 0 0 20px var(--accent-secondary-glow);
+  /* ── Shadows ──
+     Barely there. Elevation on white comes from a border plus a short drop. */
+  --shadow-sm: 0 1px 2px rgba(17, 19, 24, 0.04);
+  --shadow-md: 0 2px 6px rgba(17, 19, 24, 0.06);
+  --shadow-lg: 0 8px 24px rgba(17, 19, 24, 0.08);
+  --shadow-xl: 0 16px 48px rgba(17, 19, 24, 0.12);
+  --shadow-glow-primary: 0 0 0 3px var(--accent-primary-glow);
+  --shadow-glow-secondary: 0 0 0 3px var(--accent-secondary-glow);
 
   /* ── Transitions ── */
-  --transition-fast: 150ms ease;
-  --transition-base: 250ms ease;
-  --transition-slow: 400ms ease;
+  --transition-fast: 120ms ease;
+  --transition-base: 200ms ease;
+  --transition-slow: 320ms ease;
   --transition-spring: 500ms cubic-bezier(0.16, 1, 0.3, 1);
 
   /* ── Z-index ── */
@@ -114,26 +188,33 @@
   --z-toast: 400;
 
   /* ── Navbar height ── */
-  --nav-height: 60px;
-  --nav-height-mobile: 64px;
+  --nav-height: 56px;
+  --nav-height-mobile: 52px;
 }
 
 /* ============================================
-   Glassmorphism Utilities
+   Surface Utilities
+   (the `glass` names are kept: the whole app calls them)
    ============================================ */
 
 .glass {
-  background: var(--bg-glass);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
 }
 
 .glass-strong {
   background: var(--bg-glass-strong);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: saturate(180%) blur(12px);
+  -webkit-backdrop-filter: saturate(180%) blur(12px);
   border: 1px solid var(--border-default);
+}
+
+/* A mono label: the recurring "robotic" detail across the interface. */
+.mono-label {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
 }
 
 /* ============================================
@@ -181,7 +262,7 @@
 }
 
 @keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.9); }
+  from { opacity: 0; transform: scale(0.98); }
   to { opacity: 1; transform: scale(1); }
 }
 
@@ -233,11 +314,12 @@
    Utility Classes
    ============================================ */
 
+/* Kept for compatibility: on white, the brand mark is ink with a
+   yellow highlight behind it rather than clipped gradient text. */
 .gradient-text {
-  background: var(--gradient-brand);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
+  color: var(--text-primary);
+  -webkit-text-fill-color: currentColor;
+  background: none;
 }
 
 .visually-hidden {

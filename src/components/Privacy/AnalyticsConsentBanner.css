@@ -9,16 +9,16 @@
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
-  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.38);
+  box-shadow: 0 20px 54px rgba(17, 19, 24, 0.12);
   backdrop-filter: blur(18px);
   transition: border-color 0.28s ease, box-shadow 0.28s ease;
 }
 
 .analytics-consent.is-success {
   border-color: rgba(52, 211, 153, 0.38);
-  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(52, 211, 153, 0.06);
+  box-shadow: 0 20px 54px rgba(17, 19, 24, 0.12), 0 0 0 1px rgba(52, 211, 153, 0.06);
 }
 
 .analytics-consent-icon {
@@ -26,10 +26,10 @@
   width: 40px;
   height: 40px;
   place-items: center;
-  border: 1px solid rgba(167, 139, 250, 0.28);
-  border-radius: 8px;
-  color: #b49af8;
-  background: rgba(124, 58, 237, 0.09);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--gradient-physics);
+  background: var(--bg-secondary);
 }
 
 .analytics-consent-copy h2 {
@@ -54,7 +54,7 @@
 .analytics-consent-error {
   grid-column: 2;
   margin: -2px 0 0;
-  color: #fda4af;
+  color: var(--tint-red-fg);
   font-size: 10px;
   line-height: 1.4;
   text-align: right;
@@ -64,7 +64,7 @@
   min-height: 36px;
   padding: 7px 11px;
   border: 1px solid var(--border-default);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 750;
@@ -77,9 +77,9 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border-color: rgba(167, 139, 250, 0.4);
-  color: #fff;
-  background: rgba(124, 58, 237, 0.75);
+  border-color: var(--border-ink);
+  color: var(--text-inverse);
+  background: var(--accent-primary);
 }
 
 .analytics-consent-actions .analytics-consent-accept.is-loading svg {
@@ -88,8 +88,8 @@
 
 .analytics-consent-actions .analytics-consent-accept.is-success {
   border-color: rgba(52, 211, 153, 0.42);
-  color: #d8fff0;
-  background: rgba(16, 185, 129, 0.72);
+  color: var(--tint-green-fg);
+  background: var(--accent-success);
   animation: analyticsConsentConfirmed 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -104,7 +104,7 @@
 @media (hover: hover) and (pointer: fine) {
   .analytics-consent-decline:hover {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--bg-sunken);
   }
 
   .analytics-consent-actions .analytics-consent-accept:hover {

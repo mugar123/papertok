@@ -179,7 +179,7 @@ export const CATEGORIES = {
     label: 'Ingeniería Mecánica y Aeroespacial',
     labelEn: 'Mechanical & Aerospace Engineering',
     icon: Settings,
-    gradient: 'linear-gradient(135deg, #a18cd1, #fbc2eb)',
+    gradient: 'var(--gradient-mech)',
     description: 'Robótica, termodinámica, fluidos y manufactura',
     descriptionEn: 'Robotics, thermodynamics, fluids, and manufacturing',
     subcategories: {
@@ -198,7 +198,7 @@ export const CATEGORIES = {
     label: 'Ingeniería Civil y Ambiental',
     labelEn: 'Civil & Environmental Engineering',
     icon: Building,
-    gradient: 'linear-gradient(135deg, #f6d365, #fda085)',
+    gradient: 'var(--gradient-civil)',
     description: 'Estructuras, transporte, geotecnia y urbanismo',
     descriptionEn: 'Structures, transport, geotechnics, and urban planning',
     subcategories: {
@@ -216,7 +216,7 @@ export const CATEGORIES = {
     label: 'Ingeniería Química y Materiales',
     labelEn: 'Chemical & Materials Engineering',
     icon: Beaker,
-    gradient: 'linear-gradient(135deg, #84fab0, #8fd3f4)',
+    gradient: 'var(--gradient-chemeng)',
     description: 'Procesos químicos, nanotecnología y materiales',
     descriptionEn: 'Chemical processes, nanotechnology, and materials',
     subcategories: {
@@ -234,7 +234,7 @@ export const CATEGORIES = {
     label: 'Medicina',
     labelEn: 'Medicine',
     icon: HeartPulse,
-    gradient: 'linear-gradient(135deg, #ff758c, #ff7eb3)',
+    gradient: 'var(--gradient-med)',
     description: 'Investigación clínica, salud pública y especialidades',
     descriptionEn: 'Clinical research, public health, and specialties',
     subcategories: {
@@ -260,7 +260,7 @@ export const CATEGORIES = {
     label: 'Biología',
     labelEn: 'Biology',
     icon: Dna,
-    gradient: 'linear-gradient(135deg, #11998e, #38ef7d)',
+    gradient: 'var(--gradient-bio)',
     description: 'De la genética a la ecología y microbiología',
     descriptionEn: 'From genetics to ecology and microbiology',
     subcategories: {

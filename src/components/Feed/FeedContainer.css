@@ -1,17 +1,22 @@
 /* ============================================
-   Feed Container — Immersive
+   Feed Container — one paper per screen
+
+   The snap behaviour is unchanged: every child is exactly one viewport
+   tall and snapping is mandatory, so a flick moves exactly one paper.
+   The only difference is that a card now stops below the header bar
+   instead of sliding under it.
    ============================================ */
 
 .feed-wrapper {
   position: relative;
-  height: 100vh;
-  height: 100dvh;
-  background: var(--bg-primary);
+  height: calc(100vh - var(--nav-height));
+  height: calc(100dvh - var(--nav-height));
+  margin-top: var(--nav-height);
+  background: var(--bg-secondary);
 }
 
 .feed-container {
-  height: 100vh;
-  height: 100dvh;
+  height: 100%;
   overflow-y: scroll;
   scroll-snap-type: y mandatory;
   -webkit-overflow-scrolling: touch;
@@ -27,73 +32,78 @@
 }
 
 .feed-snap-item {
-  height: 100vh;
-  height: 100dvh;
+  height: 100%;
   scroll-snap-align: start;
   /* "always" forces momentum scrolls to settle on every card instead of
      sailing past intermediate snap points — one flick, one paper. */
   scroll-snap-stop: always;
   content-visibility: auto;
-  contain-intrinsic-size: 0 100dvh;
+  contain-intrinsic-size: 0 100%;
 }
 
 .feed-sentinel {
   height: 1px;
 }
 
-/* Keep decorative layers visible between cards while reducing their paint work
-   during desktop trackpad movement. Hiding these layers caused a noticeable
-   flash until scroll snapping had completely settled. */
-@media (hover: hover) and (pointer: fine) {
-  .feed-container--scrolling .pc-bg-icon,
-  .feed-container--scrolling .pc-mesh-line,
-  .feed-container--scrolling .pc-mesh-dot {
-    animation-play-state: paused;
-  }
-
-  .feed-container--scrolling .pc-bg-icon {
-    will-change: auto;
+@media (max-width: 768px) {
+  .feed-wrapper {
+    height: calc(100vh - var(--nav-height-mobile));
+    height: calc(100dvh - var(--nav-height-mobile));
+    margin-top: var(--nav-height-mobile);
   }
 }
 
-/* ── Empty State ── */
+/* ── Empty / loading states ── */
 .feed-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 100vh;
-  min-height: 100dvh;
+  min-height: calc(100vh - var(--nav-height));
+  min-height: calc(100dvh - var(--nav-height));
+  margin-top: var(--nav-height);
   padding: var(--space-8);
   text-align: center;
   background: var(--bg-primary);
-  animation: fadeIn 0.5s ease-out;
+  animation: fadeIn 0.4s ease-out;
+}
+
+@media (max-width: 768px) {
+  .feed-empty {
+    min-height: calc(100vh - var(--nav-height-mobile));
+    min-height: calc(100dvh - var(--nav-height-mobile));
+    margin-top: var(--nav-height-mobile);
+  }
 }
 
 .feed-empty--initial-loading {
   animation: none;
 }
 
+.feed-empty-icon {
+  font-size: 2rem;
+  margin-bottom: var(--space-4);
+}
+
 /* ── Atom Loader ── */
 .atom-loader {
   position: relative;
-  width: 120px;
-  height: 120px;
-  margin: 0 auto var(--space-8);
+  width: 96px;
+  height: 96px;
+  margin: 0 auto var(--space-6);
   display: flex;
   align-items: center;
   justify-content: center;
 }
 
 .atom-loader-icon {
-  color: var(--accent-primary);
+  color: var(--text-primary);
   animation: pulseNucleus 2s infinite alternate ease-in-out;
-  filter: drop-shadow(0 0 15px var(--accent-primary));
 }
 
 @keyframes pulseNucleus {
-  0% { transform: scale(0.95); filter: drop-shadow(0 0 10px var(--accent-primary)); }
-  100% { transform: scale(1.05); filter: drop-shadow(0 0 25px var(--accent-primary)); }
+  0% { transform: scale(0.96); opacity: 0.75; }
+  100% { transform: scale(1.04); opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -105,35 +115,34 @@
 
 .feed-empty h2 {
   font-family: var(--font-heading);
-  font-size: var(--fs-2xl);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
   margin-bottom: var(--space-2);
-  background: var(--gradient-brand);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
 }
 
 .feed-empty p {
   color: var(--text-secondary);
+  font-size: var(--fs-sm);
   margin-bottom: var(--space-6);
-  max-width: 300px;
+  max-width: 340px;
 }
 
 .feed-retry-btn {
-  padding: 12px 28px;
-  background: #fff;
-  color: #0a0a0f;
-  border-radius: var(--radius-xl);
+  min-height: 38px;
+  padding: 0 var(--space-5);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  border: 1px solid var(--border-ink);
+  border-radius: var(--radius-md);
   font-weight: var(--fw-semibold);
   font-size: var(--fs-sm);
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  border: none;
   cursor: pointer;
+  transition: background var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .feed-retry-btn:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 8px 25px rgba(255, 255, 255, 0.15);
+    background: var(--accent-primary-hover);
   }
 }

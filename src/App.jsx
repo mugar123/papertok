@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
 import RouteFallback from './components/Layout/RouteFallback'
@@ -10,10 +10,10 @@ import { FeedProvider } from './context/FeedContext'
 import { FollowingProvider } from './context/FollowingContext'
 import { FollowingUpdatesProvider } from './context/FollowingUpdatesContext'
 import { EmailNotificationsProvider } from './context/EmailNotificationsContext'
-import LoginPage from './components/Auth/LoginPage'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import FeedContainer from './components/Feed/FeedContainer'
 import Navbar from './components/Layout/Navbar'
+import SearchCommand from './components/Search/SearchCommand'
 import AnalyticsConsentBanner from './components/Privacy/AnalyticsConsentBanner'
 import GuestFeedPage from './components/Public/GuestFeedPage'
 import AuthPrompt from './components/Public/AuthPrompt'
@@ -54,8 +54,8 @@ function AppContent() {
   const [commentsPaper, setCommentsPaper] = useState(null)
   const [guestFeedReady, setGuestFeedReady] = useState(false)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
   const location = useLocation()
-  const navigate = useNavigate()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const { isEnglish } = useLanguage()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
@@ -77,12 +77,6 @@ function AppContent() {
     setAuthPromptOpen(true)
   }, [])
 
-  const continueToAuthentication = useCallback(() => {
-    setAuthPromptOpen(false)
-    const returnTo = `${location.pathname}${location.search}`
-    navigate('/login', { state: { returnTo } })
-  }, [location.pathname, location.search, navigate])
-
   // Warm the chunks a session is most likely to need next — the three
   // overlays any card can open, and the other navbar feeds — once the first
   // screen has had the network and the main thread to itself for a while.
@@ -101,11 +95,10 @@ function AppContent() {
 
   return (
     <FeedProvider feedRouteActive={normalizedPathname === '/'}>
-      {showNavbar && <Navbar />}
+      {showNavbar && <Navbar onOpenSearch={() => setSearchOpen(true)} />}
       <Suspense fallback={<RouteFallback />}>
       <AnimatePresence mode="wait" initial={false}>
         <Routes location={location} key={location.pathname}>
-          <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
           <Route
             path="/onboarding"
             element={
@@ -324,13 +317,14 @@ function AppContent() {
       </AnimatePresence>
       </Suspense>
 
+      {user && <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} />}
+
       <AnalyticsConsentBanner guestFeedReady={guestFeedReady} />
 
       <AnimatePresence>
         {authPromptOpen && (
           <AuthPrompt
             onClose={() => setAuthPromptOpen(false)}
-            onContinue={continueToAuthentication}
           />
         )}
       </AnimatePresence>

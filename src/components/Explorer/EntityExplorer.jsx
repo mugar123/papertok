@@ -16,6 +16,7 @@ import {
 } from '../../utils/entityExplorer';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
+import { Button } from '../ui/button.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -42,6 +43,25 @@ import './EntityExplorer.css';
 
 const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
 const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
+
+/**
+ * Resolve a research field's flat ink colour from a category id, mirroring the
+ * prefix match PaperCard uses so an entity or paper is tinted by its own field
+ * rather than a decorative default. Returns a `var(--gradient-*)` reference.
+ */
+const getAreaGradient = (categoryId) => {
+  if (!categoryId || typeof categoryId !== 'string') return 'var(--gradient-brand)';
+  const cat = categoryId.trim();
+  if (CATEGORIES[cat]?.gradient) return CATEGORIES[cat].gradient;
+  const prefix = cat.split('.')[0].split('-')[0];
+  for (const area of Object.values(CATEGORIES)) {
+    const subcatKeys = Object.keys(area.subcategories || {});
+    if (area.subcategories?.[cat] || subcatKeys.some(k => k.startsWith(prefix))) {
+      return area.gradient || 'var(--gradient-brand)';
+    }
+  }
+  return 'var(--gradient-brand)';
+};
 
 const handleActivationKey = (event, action) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -112,6 +132,7 @@ export default function EntityExplorer({
   const observerRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState('papers');
+  const [isExperienceOpen, setIsExperienceOpen] = useState(false);
   const [expandedSummary, setExpandedSummary] = useState(false);
   const [participantsExpanded, setParticipantsExpanded] = useState(false);
   const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(false);
@@ -159,6 +180,11 @@ export default function EntityExplorer({
     () => entity ? getPublicEntityPath(type, id) : null,
     [entity, id, type],
   );
+  // The entity's research field, resolved to a flat ink colour so the header
+  // rule, type label and tinted marks read as the field rather than chrome.
+  const entityAccent = useMemo(() => getAreaGradient(
+    entity?.categoryIds?.[0] || entity?.categories?.[0] || entity?.primaryCategory || '',
+  ), [entity]);
   const publicEntityUrl = useMemo(
     () => entity ? getPublicEntityUrl(type, id) : null,
     [entity, id, type],
@@ -319,6 +345,7 @@ export default function EntityExplorer({
       setPdfPaperToView(null);
       setOrcidInfo(null);
       setActiveTab('papers');
+      setIsExperienceOpen(false);
       setExpandedSummary(false);
       setParticipantsExpanded(false);
     }, 0);
@@ -353,6 +380,7 @@ export default function EntityExplorer({
       setWikiInfo(null);
       setOrcidInfo(null);
       setIsLoadingOrcid(false);
+      setIsExperienceOpen(false);
       setExpandedSummary(false);
       setIsWikiDescriptionExpanded(false);
       setIsProjectLinksMenuOpen(false);
@@ -939,19 +967,19 @@ export default function EntityExplorer({
         <div className="explorer-hero">
           <div className="explorer-hero-top">
             <div className="eht-left">
-              <button className="explorer-back-btn" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
+              <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
                 <ArrowLeft size={20} />
-              </button>
-              <div className="skeleton-item" style={{ width: '80px', height: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}></div>
+              </Button>
+              <div className="skeleton-item" style={{ width: '80px', height: '16px' }}></div>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="explorer-action-btn skeleton-item" style={{ border: 'none', background: 'rgba(255,255,255,0.05)' }} aria-hidden="true" tabIndex={-1} disabled></button>
+              <div className="skeleton-item" style={{ width: '40px', height: '40px' }} aria-hidden="true"></div>
             </div>
           </div>
           
           <div className="explorer-hero-content">
             <div className="ehc-main">
-              <div className="ehc-icon skeleton-item" style={{ background: 'rgba(255,255,255,0.05)', borderColor: 'transparent' }}></div>
+              <div className="ehc-icon skeleton-item"></div>
               <div className="ehc-info" style={{ width: '100%' }}>
                 <div className="skeleton-item skeleton-title" style={{ width: '200px', maxWidth: '80%', height: '28px', margin: '0 0 12px 0' }}></div>
                 <div className="skeleton-item skeleton-text medium"></div>
@@ -961,7 +989,7 @@ export default function EntityExplorer({
             
             <div className="ehc-stats-grid">
               {[1, 2, 3].map(i => (
-                <div key={i} className="ehc-stat-box skeleton-item" style={{ height: '60px', background: 'rgba(255,255,255,0.03)' }}></div>
+                <div key={i} className="ehc-stat-box skeleton-item" style={{ height: '60px' }}></div>
               ))}
             </div>
           </div>
@@ -970,7 +998,7 @@ export default function EntityExplorer({
         <div className="explorer-content">
           <div className="explorer-list">
             {[1, 2, 3].map(i => (
-             <div key={i} className="explorer-list-item skeleton-item" style={{ height: '160px', marginBottom: '16px', borderRadius: '16px', background: 'rgba(255,255,255,0.02)' }}></div>
+             <div key={i} className="explorer-list-item skeleton-item" style={{ height: '160px', marginBottom: '16px' }}></div>
             ))}
           </div>
         </div>
@@ -980,16 +1008,16 @@ export default function EntityExplorer({
   if (!entity) {
     return (
       <div className="explorer-error">
-        <button className="explorer-back-btn" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
+        <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
           <ArrowLeft size={24} />
-        </button>
+        </Button>
         <h2>{entityError
           ? (isEnglish ? 'The entity could not be loaded' : 'No se pudo cargar la entidad')
           : (isEnglish ? 'Entity not found' : 'Entidad no encontrada')}</h2>
         {entityError && (
           <>
             <p role="alert">{getUiErrorMessage(entityError, language, 'ENTITY_LOAD_FAILED')}</p>
-            <button className="explorer-clear-btn" onClick={retryEntity}>{isEnglish ? 'Try again' : 'Reintentar'}</button>
+            <Button variant="outline" size="sm" onClick={retryEntity}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
           </>
         )}
       </div>
@@ -1016,7 +1044,7 @@ export default function EntityExplorer({
   const topConcepts = entity.x_concepts ? entity.x_concepts.slice(0, 4) : [];
 
   return (
-    <div className="explorer-container">
+    <div className="explorer-container" style={{ '--area-accent': entityAccent }}>
       {/* Immersive Hero */}
       <div className="explorer-hero">
         <AnimatePresence>
@@ -1034,19 +1062,18 @@ export default function EntityExplorer({
         
         <div className="explorer-hero-top">
           <div className="eht-left">
-            <button className="explorer-back-btn" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
+            <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
               <ArrowLeft size={20} />
-            </button>
+            </Button>
             <span className="ehc-type">{entityTypeLabel}</span>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="explorer-action-btn" onClick={handleShare} aria-label={isEnglish ? 'Share' : 'Compartir'} title={isEnglish ? 'Share' : 'Compartir'}>
-              <Share2 size={18} />
-            </button>
-          </div>
+          <Button variant="ghost" size="icon" onClick={handleShare} aria-label={isEnglish ? 'Share' : 'Compartir'} title={isEnglish ? 'Share' : 'Compartir'}>
+            <Share2 size={18} />
+          </Button>
         </div>
         
         <div className="explorer-hero-content">
+          <div className="ehc-header">
           <div className="ehc-main">
             <div className="ehc-visual-slot">
               <motion.div
@@ -1081,16 +1108,18 @@ export default function EntityExplorer({
             <div className="ehc-info">
               <div className="ehc-title-row">
                 <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName}</h1>
-                {followEntity && (
+                {type === 'author' && orcidInfo?.employments?.length > 0 && (
                   <button
-                    className={`entity-follow-btn ${entityIsFollowing ? 'following' : ''} ${entityFollowPending ? 'is-pending' : ''}`}
-                    onClick={handleFollow}
-                    disabled={entityFollowPending}
-                    aria-pressed={entityIsFollowing}
+                    type="button"
+                    className={`ehc-name-toggle ${isExperienceOpen ? 'is-open' : ''}`}
+                    onClick={() => setIsExperienceOpen(open => !open)}
+                    aria-expanded={isExperienceOpen}
+                    aria-controls="ehc-experience-panel"
+                    aria-label={isEnglish ? 'Professional experience' : 'Experiencia profesional'}
+                    title={isEnglish ? 'Professional experience' : 'Experiencia profesional'}
                   >
-                    {entityIsFollowing
-                        ? <><Check size={14} /> <span>{isEnglish ? 'Following' : 'Siguiendo'}</span></>
-                        : <span>{isEnglish ? 'Follow' : 'Seguir'}</span>}
+                    <Briefcase size={15} aria-hidden="true" />
+                    <ChevronDown size={16} aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -1223,7 +1252,8 @@ export default function EntityExplorer({
             </div>
           </div>
 
-          {/* Stats Grid */}
+          <div className="ehc-hero-aside">
+          {/* Stats Grid — compact, beside the follow action */}
           <div className="ehc-stats-grid">
             {entity?.works_count != null && (
               <div className="ehc-stat-box">
@@ -1286,7 +1316,80 @@ export default function EntityExplorer({
               </div>
             )}
           </div>
-          
+          {followEntity && (
+            <Button
+              variant={entityIsFollowing ? 'outline' : 'default'}
+              size="sm"
+              className="entity-follow-btn"
+              onClick={handleFollow}
+              disabled={entityFollowPending}
+              aria-pressed={entityIsFollowing}
+            >
+              {entityIsFollowing
+                  ? <><Check size={14} /> <span>{isEnglish ? 'Following' : 'Siguiendo'}</span></>
+                  : <span>{isEnglish ? 'Follow' : 'Seguir'}</span>}
+            </Button>
+          )}
+          </div>
+          </div>
+
+          {/* Professional experience — a disclosure opened from the chevron by the name */}
+          {type === 'author' && orcidInfo?.employments?.length > 0 && (
+            <AnimatePresence initial={false}>
+              {isExperienceOpen && (
+                <motion.div
+                  id="ehc-experience-panel"
+                  className="ehc-experience-panel"
+                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6 }}
+                  animate={{ opacity: 1, height: 'auto', y: 0 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -4 }}
+                  transition={prefersReducedMotion
+                    ? { duration: 0 }
+                    : {
+                      opacity: { duration: 0.24 },
+                      height: { duration: 0.36, ease: [0.16, 1, 0.3, 1] },
+                      y: { duration: 0.32, ease: [0.16, 1, 0.3, 1] },
+                    }}
+                >
+                  <div className="ehc-experience-title">
+                    <Briefcase size={13} aria-hidden="true" />
+                    {isEnglish ? 'Professional experience' : 'Experiencia profesional'}
+                  </div>
+                  <div className="orcid-timeline">
+                    {orcidInfo.employments.map((emp, i) => (
+                      <div key={i} className="orcid-timeline-item">
+                        <div
+                          className="orcid-item-org orcid-item-org--link"
+                          onClick={async () => {
+                            const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
+                            if (inst) navigateToEntity('institution', inst.id);
+                          }}
+                          onKeyDown={(event) => handleActivationKey(event, async () => {
+                            const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
+                            if (inst) navigateToEntity('institution', inst.id);
+                          })}
+                          role="link"
+                          tabIndex={0}
+                          title={`${isEnglish ? 'Find and view profile for' : 'Buscar y ver perfil de'} ${emp.organization}`}
+                        >
+                          {emp.organization}
+                        </div>
+                        {emp.role && <div className="orcid-item-role">{emp.role}</div>}
+                        {emp.startDate && (
+                          <div className="orcid-item-dates">
+                            {emp.startDate}
+                            <span className="dot-separator">→</span>
+                            {emp.endDate || (isEnglish ? 'Present' : 'Presente')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          )}
+
           {/* Project metadata chips */}
           {type === 'project' && (entity.callIdentifier || entity.contractType || entity.openAccess || entity.measures?.downloads > 0 || entity.measures?.views > 0) && (
             <div className="project-meta-chips">
@@ -1531,46 +1634,6 @@ export default function EntityExplorer({
                 </div>
               )}
 
-              {/* Work experience timeline */}
-              {orcidInfo.employments?.length > 0 && (
-                <div className="orcid-timeline-block">
-                  <div className="orcid-timeline-title">
-                    <span className="orcid-tl-icon orcid-tl-icon--work"><Briefcase size={12} /></span>
-                    {isEnglish ? 'Professional experience' : 'Experiencia profesional'}
-                  </div>
-                  <div className="orcid-timeline">
-                    {orcidInfo.employments.map((emp, i) => (
-                      <div key={i} className="orcid-timeline-item">
-                        <div
-                          className="orcid-item-org orcid-item-org--link"
-                          onClick={async () => {
-                            const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
-                            if (inst) navigateToEntity('institution', inst.id);
-                          }}
-                          onKeyDown={(event) => handleActivationKey(event, async () => {
-                            const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
-                            if (inst) navigateToEntity('institution', inst.id);
-                          })}
-                          role="link"
-                          tabIndex={0}
-                          title={`${isEnglish ? 'Find and view profile for' : 'Buscar y ver perfil de'} ${emp.organization}`}
-                        >
-                          {emp.organization}
-                        </div>
-                        {emp.role && <div className="orcid-item-role">{emp.role}</div>}
-                        {emp.startDate && (
-                          <div className="orcid-item-dates">
-                            {emp.startDate}
-                            <span className="dot-separator">→</span>
-                            {emp.endDate || (isEnglish ? 'Present' : 'Presente')}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Education timeline */}
               {orcidInfo.educations?.length > 0 && (
                 <div className="orcid-timeline-block">
@@ -1643,20 +1706,21 @@ export default function EntityExplorer({
                 : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} en esta entidad`}
             />
             {searchQuery && (
-              <button className="es-clear" onClick={() => setSearchQuery('')} aria-label={isEnglish ? 'Clear search' : 'Limpiar búsqueda'} title={isEnglish ? 'Clear search' : 'Limpiar búsqueda'}>
+              <Button variant="ghost" size="icon-sm" className="es-clear" onClick={() => setSearchQuery('')} aria-label={isEnglish ? 'Clear search' : 'Limpiar búsqueda'} title={isEnglish ? 'Clear search' : 'Limpiar búsqueda'}>
                 <X size={14} />
-              </button>
+              </Button>
             )}
           </div>
           {activeTab === 'papers' && (
-             <button 
-                className={`filter-btn ${filters?.category || filters?.peerReviewed || filters?.dateRange ? 'active' : ''}`} 
+             <Button
+                variant={filters?.category || filters?.peerReviewed || filters?.dateRange ? 'default' : 'outline'}
+                size="icon"
                 onClick={() => setShowFilters(true)}
                 aria-label={isEnglish ? 'Open filters' : 'Abrir filtros'}
                 title={isEnglish ? 'Filters' : 'Filtros'}
               >
                 <Filter size={16} />
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -1676,7 +1740,7 @@ export default function EntityExplorer({
                   role="button"
                   tabIndex={0}
                   aria-label={`${isEnglish ? 'Open publication' : 'Abrir publicación'}: ${normalizeScientificMarkup(paper.title) || (isEnglish ? 'Untitled' : 'Sin título')}`}
-                  style={{ '--i': Math.min(idx, 8) }}
+                  style={{ '--i': Math.min(idx, 8), '--area-accent': getAreaGradient(paper.categories?.[0]) }}
                 >
                   <div className="eli-header">
                     <span className="eli-cat">{paper.categories && paper.categories.length > 0 ? paper.categories[0] : 'Paper'}</span>
@@ -1707,8 +1771,8 @@ export default function EntityExplorer({
                   <h3 className="eli-title">
                     <ScientificText>{paper.title}</ScientificText>
                     {paper.isPeerReviewed && (
-                      <span className="pc-tooltip" data-tooltip={isEnglish ? 'Published in a peer-reviewed journal' : 'Publicado en revista (revisado por pares)'} style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: '6px' }}>
-                        <BadgeCheck size={16} style={{ color: '#1da1f2' }} />
+                      <span className="pc-tooltip eli-verified" data-tooltip={isEnglish ? 'Published in a peer-reviewed journal' : 'Publicado en revista (revisado por pares)'}>
+                        <BadgeCheck size={16} />
                       </span>
                     )}
                   </h3>
@@ -1752,7 +1816,7 @@ export default function EntityExplorer({
                 {papersError ? (
                   <>
                     <p role="alert">{getUiErrorMessage(papersError, language, 'PUBLICATIONS_LOAD_FAILED')}</p>
-                    <button className="explorer-clear-btn" onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</button>
+                    <Button variant="outline" size="sm" onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
                   </>
                 ) : (
                   <p>{isEnglish
@@ -1764,7 +1828,7 @@ export default function EntityExplorer({
             {!isLoadingPapers && papersError && filteredPapers.length > 0 && (
               <div className="explorer-inline-error" role="alert">
                 <span>{getUiErrorMessage('PARTIAL_PUBLICATIONS_LOAD_FAILED', language)}</span>
-                <button onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</button>
+                <Button variant="ghost" size="sm" onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
               </div>
             )}
           </>
@@ -1818,7 +1882,7 @@ export default function EntityExplorer({
                 {authorsError ? (
                   <>
                     <p role="alert">{getUiErrorMessage(authorsError, language, 'AUTHORS_LOAD_FAILED')}</p>
-                    <button className="explorer-clear-btn" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</button>
+                    <Button variant="outline" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
                   </>
                 ) : (
                   <p>{isEnglish ? 'No authors matched your search.' : 'No se encontraron autores que coincidan con tu búsqueda.'}</p>
@@ -1828,7 +1892,7 @@ export default function EntityExplorer({
             {!isLoadingAuthors && authorsError && entityAuthors.length > 0 && (
               <div className="explorer-inline-error" role="alert">
                 <span>{getUiErrorMessage('PARTIAL_AUTHORS_LOAD_FAILED', language)}</span>
-                <button onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</button>
+                <Button variant="ghost" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
               </div>
             )}
           </div>
@@ -1858,7 +1922,7 @@ export default function EntityExplorer({
             >
               <div className="ee-filter-header">
                 <h3 id="entity-filter-title"><SlidersHorizontal size={18}/> {isEnglish ? 'Advanced filters' : 'Filtros avanzados'}</h3>
-                <button className="close-btn" onClick={() => setShowFilters(false)} aria-label={isEnglish ? 'Close filters' : 'Cerrar filtros'} title={isEnglish ? 'Close' : 'Cerrar'}><X size={20}/></button>
+                <Button variant="ghost" size="icon" onClick={() => setShowFilters(false)} aria-label={isEnglish ? 'Close filters' : 'Cerrar filtros'} title={isEnglish ? 'Close' : 'Cerrar'}><X size={20}/></Button>
               </div>
               <div className="ee-filter-body">
                 <div className="ee-filter-section">
@@ -1929,12 +1993,12 @@ export default function EntityExplorer({
                 </div>
               </div>
               <div className="ee-filter-footer">
-                <button className="ee-filter-reset" onClick={() => { setFilters({category:'', peerReviewed:false, dateRange:''}); setShowFilters(false); }}>
+                <Button variant="outline" className="ee-filter-reset" onClick={() => { setFilters({category:'', peerReviewed:false, dateRange:''}); setShowFilters(false); }}>
                   {isEnglish ? 'Reset' : 'Restablecer'}
-                </button>
-                <button className="ee-filter-apply" onClick={() => setShowFilters(false)}>
+                </Button>
+                <Button className="ee-filter-apply" onClick={() => setShowFilters(false)}>
                   {isEnglish ? 'Apply filters' : 'Aplicar filtros'}
-                </button>
+                </Button>
               </div>
             </motion.div>
           </>
@@ -1965,7 +2029,9 @@ export default function EntityExplorer({
                 ? { duration: 0.1 }
                 : { type: 'spring', damping: 30, stiffness: 330, mass: 0.72 }}
             >
-              <button
+              <Button
+                variant="outline"
+                size="icon"
                 data-dialog-initial-focus
                 className="explorer-overlay-close"
                 onClick={closeSelectedPaper}
@@ -1973,7 +2039,7 @@ export default function EntityExplorer({
                 title={isEnglish ? 'Back' : 'Volver'}
               >
                 <ArrowLeft size={22} />
-              </button>
+              </Button>
               <div className="explorer-overlay-content hide-scroll-hint">
                 <PaperCard
                   paper={selectedPaper}

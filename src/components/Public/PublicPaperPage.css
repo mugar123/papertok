@@ -13,16 +13,6 @@
   height: 100%;
 }
 
-/* Covers the card's box exactly and sits above it, so the card can take its
-   time appearing underneath without any of that showing as empty screen.
-   Below the nav chrome, which stays usable throughout. */
-.public-paper-skeleton {
-  position: absolute;
-  inset: 0;
-  z-index: 800;
-  pointer-events: none;
-}
-
 .public-paper-nav {
   position: fixed;
   z-index: 900;
@@ -35,10 +25,10 @@
   align-items: center;
   gap: 8px;
   padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 8px;
-  background: rgba(17, 15, 31, 0.82);
-  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.26);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-glass-strong);
+  box-shadow: 0 14px 45px rgba(17, 19, 24, 0.09);
   backdrop-filter: blur(18px);
   transform: translateX(-50%);
 }
@@ -48,7 +38,7 @@
   width: 40px;
   height: 40px;
   place-items: center;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
 }
 
@@ -63,38 +53,7 @@
 }
 
 .public-paper-wordmark span {
-  color: #a78bfa;
-}
-
-/* Signed-in view: the app navbar owns the top, so the page keeps only this
-   floating way back, tucked under it on the left. */
-.public-paper-back-floating {
-  position: fixed;
-  z-index: 900;
-  top: calc(var(--nav-height) + 12px);
-  left: max(12px, env(safe-area-inset-left));
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 999px;
-  background: rgba(17, 15, 31, 0.82);
-  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.26);
-  backdrop-filter: blur(18px);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.public-paper-back-floating:hover,
-.public-paper-back-floating:focus-visible {
-  color: var(--text-primary);
-}
-
-@media (max-width: 560px) {
-  .public-paper-back-floating {
-    top: calc(var(--nav-height-mobile) + 12px);
-  }
+  color: var(--accent-primary);
 }
 
 .public-paper-state {
@@ -125,6 +84,11 @@
   line-height: 1.6;
 }
 
+.public-paper-spinner {
+  color: var(--accent-primary);
+  animation: public-paper-spin 0.9s linear infinite;
+}
+
 .public-paper-state-actions {
   display: flex;
   flex-wrap: wrap;
@@ -141,27 +105,27 @@
   justify-content: center;
   gap: 8px;
   padding: 0 15px;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   font-size: 13px;
   font-weight: 750;
 }
 
 .public-paper-primary-action {
-  color: white;
-  background: rgba(124, 58, 237, 0.9);
+  color: var(--text-inverse);
+  background: var(--accent-primary);
 }
 
 .public-paper-secondary-action {
   color: var(--text-primary);
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-default);
+  background: var(--bg-secondary);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .public-paper-nav-button:hover,
   .public-paper-secondary-action:hover {
-    color: white;
-    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    background: var(--bg-glass-hover);
   }
 
   .public-paper-primary-action:hover {
@@ -169,3 +133,12 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .public-paper-spinner {
+    animation: none;
+  }
+}
+
+@keyframes public-paper-spin {
+  to { transform: rotate(360deg); }
+}

@@ -292,16 +292,20 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   ];
 
   const trendItems = trends.items || [];
+  const maxTrendChange = trendItems.reduce(
+    (largest, item) => Math.max(largest, Number(item.changePercent) || 0),
+    0,
+  );
   const currentTrendPeriod = formatTrendPeriod(trends.periods?.current, locale);
   const previousTrendPeriod = formatTrendPeriod(trends.periods?.previous, locale);
 
   return (
     <main className="sr" aria-busy={loading}>
-      {/* Header */}
+      {/* Nameplate */}
       <header className="sr-header">
         <div className="sr-header-top">
           <div className="sr-masthead-block">
-            <span className="sr-eyebrow"><Sparkles size={13} /> {isEnglish ? 'Scientific edition for this period' : 'Edición científica del periodo'}</span>
+            <span className="sr-eyebrow"><Sparkles size={12} /> {isEnglish ? 'Scientific edition for this period' : 'Edición científica del periodo'}</span>
             <h1 className="sr-masthead">Research</h1>
           </div>
           <div className="sr-header-actions">
@@ -313,6 +317,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
         </div>
 
         <nav className="sr-tabs" aria-label={isEnglish ? 'Edition period' : 'Periodo de la edición'}>
+          <span className="sr-tabs-label">{isEnglish ? 'Edition' : 'Edición'}</span>
           {timeOptions.map((o) => (
             <button
               key={o.id}
@@ -427,9 +432,8 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
           {loading && <div className="sr-update-line" aria-label={isEnglish ? 'Updating the edition' : 'Actualizando la edición'} />}
 
-          <ReportCoverage coverage={report.coverage} />
-
-          {/* Stats Bar */}
+          <div className="sr-layout">
+          <aside className="sr-aside">
           <div className="sr-stats-bar">
             <div className="sr-stat" title={isEnglish ? 'Papers included in this editorial selection' : 'Papers incluidos en esta selección editorial'}>
               <BarChart3 size={16} />
@@ -452,6 +456,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
               <div className="sr-stat-info">
                 <span className="sr-stat-number">{oaCount}/{totalPapers}</span>
                 <span className="sr-stat-label">{isEnglish ? 'Selection OA' : 'OA selección'}</span>
+                {/* The ratio is easier to read as a proportion than as a fraction. */}
+                <span
+                  className="sr-stat-meter"
+                  style={{ '--fill': `${totalPapers > 0 ? Math.round((oaCount / totalPapers) * 100) : 0}%` }}
+                  aria-hidden="true"
+                />
               </div>
             </div>
           </div>
@@ -484,7 +494,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                       : `${item.currentCount} trabajos en el periodo actual y ${item.previousCount} en el anterior. Confianza ${item.confidence}.`}
                   >
                     <span className="sr-trend-name">{getLocalizedTopicLabel(item.label, language)}</span>
-                    <strong>+{item.changePercent}% {isEnglish ? 'presence' : 'de presencia'}</strong>
+                    <span
+                      className="sr-trend-bar"
+                      style={{ '--fill': `${maxTrendChange > 0 ? Math.max(6, Math.round((item.changePercent / maxTrendChange) * 100)) : 0}%` }}
+                      aria-hidden="true"
+                    />
+                    <strong>+{item.changePercent}%</strong>
                     <small>{item.currentCount} {isEnglish ? 'works; previously' : 'trabajos; antes'} {item.previousCount}</small>
                   </div>
                 ))}
@@ -517,11 +532,17 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </div>
           )}
 
+          <ReportCoverage coverage={report.coverage} />
+          </aside>
+
+          <div className="sr-main">
           {/* Hero */}
           {hero && (
             <section className="sr-hero" style={{ '--hero-glow': heroGradient }}>
               <div className="sr-hero-glow" />
               <div className="sr-hero-inner">
+                <span className="sr-lead-label">{isEnglish ? 'Lead story' : 'Portada'}</span>
+                <div className="sr-hero-main">
                 <div className="sr-hero-kicker">
                   <span className="sr-kicker-cat">{getHeroCategoryLabel(hero, language).toUpperCase()}</span>
                   <span className="sr-kicker-sep" />
@@ -547,11 +568,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                     : <span className="sr-tag sub"><Lock size={12} /> {isEnglish ? 'Subscription' : 'Suscripción'}</span>}
                   {hero.citationCount > 0 && <span className="sr-tag cites"><Award size={12} /> {hero.citationCount} {isEnglish ? 'citations' : 'citas'}</span>}
                 </div>
-                <blockquote className="sr-hero-abstract">
-                  {hasUsableAIAbstract(hero.abstract)
-                    ? <ScientificText>{hero.abstract}</ScientificText>
-                    : (isEnglish ? 'Abstract unavailable.' : 'Resumen no disponible.')}
-                </blockquote>
                 <div className="sr-hero-actions">
                   <button className="sr-btn primary" onClick={() => setSelectedPaper(accessibleHero)}>
                     {isEnglish ? 'View details' : 'Ver detalle'}
@@ -562,6 +578,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                       : <><Share2 size={15} /> {isEnglish ? 'Share' : 'Compartir'}</>}
                   </button>
                 </div>
+                </div>
+                <blockquote className="sr-hero-abstract">
+                  {hasUsableAIAbstract(hero.abstract)
+                    ? <ScientificText>{hero.abstract}</ScientificText>
+                    : (isEnglish ? 'Abstract unavailable.' : 'Resumen no disponible.')}
+                </blockquote>
               </div>
             </section>
           )}
@@ -587,7 +609,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                       <div className="sr-bento-accent" style={{ background: accent }} />
                       <div className="sr-bento-body">
                         <div className="sr-bento-top">
-                          <span className="sr-bento-cat" style={{ background: accent, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>
+                          <span className="sr-bento-cat" style={{ '--card-accent': accent }}>
                             {cat.split('.')[0]}
                           </span>
                           <span className="sr-bento-year">{paper.year}</span>
@@ -614,6 +636,8 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
               </div>
             </section>
           )}
+          </div>
+          </div>
 
         </motion.div>
         </AnimatePresence>

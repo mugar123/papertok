@@ -4,10 +4,10 @@
 
 .wm {
   width: 100%;
-  border-radius: 12px;
+  border-radius: var(--radius-2xl);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-subtle);
   position: relative; /* For tooltip positioning context if needed, but tooltip is fixed/absolute based on viewport if using clientX/Y */
 }
 
@@ -18,22 +18,22 @@
 
 /* Geography */
 .wm-geo {
-  fill: rgba(255, 255, 255, 0.08);
-  stroke: rgba(255, 255, 255, 0.15);
+  fill: var(--bg-secondary);
+  stroke: var(--border-strong);
   stroke-width: 0.5px;
   transition: fill 0.4s ease-out, stroke 0.4s ease-out;
 }
 
 .wm-geo.unsupported {
-  fill: rgba(255, 255, 255, 0.035);
-  stroke: rgba(255, 255, 255, 0.07);
+  fill: var(--bg-sunken);
+  stroke: var(--border-subtle);
   pointer-events: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .wm-geo:hover {
-    fill: rgba(255, 255, 255, 0.2);
-    stroke: rgba(255, 255, 255, 0.4);
+    fill: var(--bg-glass-hover);
+    stroke: var(--border-strong);
     cursor: pointer;
   }
 }
@@ -60,18 +60,18 @@
 /* Floating Tooltip */
 .wm-tooltip {
   position: fixed;
-  background: rgba(0, 0, 0, 0.85);
-  color: #fff;
+  background: rgba(17, 19, 24, 0.85);
+  color: var(--text-primary);
   padding: 6px 12px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   font-size: 12px;
   font-weight: 600;
   pointer-events: none;
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  border: 1px solid var(--border-strong);
   transform: translate(-50%, -100%);
   z-index: 9999;
   white-space: nowrap;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: 0 4px 12px rgba(17, 19, 24, 0.10);
   animation: wm-tooltip-fade 0.15s ease-out forwards;
 }
 

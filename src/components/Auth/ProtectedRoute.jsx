@@ -76,7 +76,9 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
   }
 
   if (!user) {
-    return <Navigate to="/login" replace state={{ returnTo: `${location.pathname}${location.search}` }} />;
+    // No login page any more: a guest who reaches a gated route lands on the
+    // feed, where the sign-in modal is one tap away.
+    return <Navigate to="/" replace />;
   }
 
   if (profileLoadError) {

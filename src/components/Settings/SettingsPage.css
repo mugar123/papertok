@@ -15,7 +15,7 @@
 }
 
 .settings-heading > span {
-  color: #a98cf7;
+  color: var(--gradient-physics);
   font-size: 12px;
   font-weight: 750;
   letter-spacing: 0;
@@ -43,9 +43,9 @@
   min-height: 130px;
   padding: 22px;
   border: 1px solid var(--border-default);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   background: var(--bg-card);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.18);
+  box-shadow: 0 18px 48px rgba(17, 19, 24, 0.06);
 }
 
 .settings-profile-avatar {
@@ -67,7 +67,7 @@
   display: grid;
   place-items: center;
   background: var(--gradient-brand);
-  color: #fff;
+  color: var(--text-primary);
   font-size: 27px;
   font-weight: 750;
 }
@@ -78,8 +78,9 @@
   display: grid;
   place-items: center;
   border-radius: 50%;
-  color: #fff;
-  background: rgba(10, 10, 15, 0.72);
+  color: var(--text-primary);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
 }
 
 .settings-profile-loading svg {
@@ -121,7 +122,7 @@
   align-items: center;
   gap: 6px;
   margin-top: 9px;
-  color: #73d8bb;
+  color: var(--tint-green-fg);
   font-size: 11px;
 }
 
@@ -142,7 +143,7 @@
   align-items: center;
   justify-content: center;
   border: 1px solid var(--border-default);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   color: var(--text-primary);
   background: var(--bg-elevated);
   font-size: 12px;
@@ -162,9 +163,9 @@
 @media (hover: hover) and (pointer: fine) {
   .settings-photo-button:hover,
   .settings-photo-restore:hover {
-    border-color: rgba(167, 139, 250, 0.45);
-    color: #c4b5fd;
-    background: rgba(124, 58, 237, 0.1);
+    border-color: var(--border-ink);
+    color: var(--accent-primary);
+    background: var(--bg-secondary);
   }
 }
 
@@ -182,11 +183,11 @@
 }
 
 .settings-photo-feedback.is-success {
-  color: #73d8bb;
+  color: var(--tint-green-fg);
 }
 
 .settings-photo-feedback.is-error {
-  color: #f18a9a;
+  color: var(--tint-red-fg);
 }
 
 .settings-section {
@@ -203,7 +204,7 @@
 .settings-section-heading > svg {
   flex: 0 0 auto;
   margin-top: 2px;
-  color: #a98cf7;
+  color: var(--gradient-physics);
 }
 
 .settings-section-heading h2 {
@@ -245,32 +246,32 @@
   height: 38px;
   place-items: center;
   border: 1px solid var(--border-default);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
 }
 
 .settings-row-icon.is-green {
-  color: #66d4a6;
-  background: rgba(16, 185, 129, 0.07);
+  color: var(--tint-green-fg);
+  background: var(--tint-green-bg);
 }
 
 .settings-row-icon.is-purple {
-  color: #b49af8;
-  background: rgba(124, 58, 237, 0.09);
+  color: var(--gradient-physics);
+  background: var(--bg-secondary);
 }
 
 .settings-row-icon.is-amber {
-  color: #f2bd68;
+  color: var(--tint-amber-fg);
   background: rgba(245, 158, 11, 0.07);
 }
 
 .settings-row-icon.is-cyan {
-  color: #5bc8dd;
+  color: var(--gradient-qfin);
   background: rgba(6, 182, 212, 0.07);
 }
 
 .settings-row-icon--github {
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--bg-sunken);
 }
 
 .settings-row-content {
@@ -305,7 +306,7 @@
   gap: 5px;
   padding: 8px 10px 8px 13px;
   border: 1px solid var(--border-default);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 700;
@@ -314,9 +315,9 @@
 
 @media (hover: hover) and (pointer: fine) {
   .settings-row-action:hover {
-    border-color: rgba(167, 139, 250, 0.4);
-    color: #fff;
-    background: rgba(124, 58, 237, 0.08);
+    border-color: var(--border-ink);
+    color: var(--text-primary);
+    background: var(--bg-secondary);
   }
 }
 
@@ -365,14 +366,14 @@
   gap: 6px;
   padding: 4px 7px;
   border: 1px solid var(--border-default);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.018);
+  background: var(--bg-sunken);
   font-size: 10px;
 }
 
 .settings-follow-summary > span > svg {
-  color: #9f83ed;
+  color: var(--gradient-physics);
 }
 
 .settings-follow-summary strong,
@@ -382,9 +383,9 @@
   height: 16px;
   place-items: center;
   padding: 0 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--bg-secondary);
   font-size: 9px;
   font-weight: 750;
 }
@@ -412,7 +413,7 @@
   gap: 8px;
   padding: 11px;
   border: 1px solid var(--border-default);
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   color: var(--text-tertiary);
   text-align: left;
   transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
@@ -422,14 +423,14 @@
   .settings-levels button:hover {
     border-color: var(--border-strong);
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.035);
+    background: var(--bg-sunken);
   }
 }
 
 .settings-levels button.is-active {
-  border-color: rgba(167, 139, 250, 0.45);
-  color: #bda8fa;
-  background: rgba(124, 58, 237, 0.1);
+  border-color: var(--border-ink);
+  color: var(--gradient-physics);
+  background: var(--bg-secondary);
 }
 
 .settings-levels strong,
@@ -457,14 +458,14 @@
   gap: 4px;
   padding: 4px;
   border: 1px solid var(--border-default);
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
+  border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
 }
 
 .settings-language button {
   min-height: 36px;
   padding: 7px 11px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--text-tertiary);
   font-size: 11px;
   font-weight: 750;
@@ -481,9 +482,9 @@
 }
 
 .settings-language button.is-active {
-  color: #fff;
-  background: rgba(124, 58, 237, 0.75);
-  box-shadow: 0 4px 14px rgba(76, 29, 149, 0.2);
+  color: var(--text-inverse);
+  background: var(--accent-primary);
+  box-shadow: 0 4px 14px rgba(17, 19, 24, 0.08);
 }
 
 .settings-language button:disabled {
@@ -499,11 +500,11 @@
 }
 
 .settings-save-feedback.is-saved {
-  color: #66d4a6;
+  color: var(--tint-green-fg);
 }
 
 .settings-save-feedback.is-error {
-  color: #f18a9a;
+  color: var(--tint-red-fg);
 }
 
 .settings-status {
@@ -512,9 +513,9 @@
   align-items: center;
   padding: 3px 7px;
   border: 1px solid var(--border-default);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--bg-sunken);
   font-size: 9px;
   font-weight: 750;
   text-transform: uppercase;
@@ -522,13 +523,13 @@
 
 .settings-status.is-success {
   border-color: rgba(16, 185, 129, 0.28);
-  color: #72d7ae;
-  background: rgba(16, 185, 129, 0.07);
+  color: var(--tint-green-fg);
+  background: var(--tint-green-bg);
 }
 
 .settings-status.is-warning {
   border-color: rgba(245, 158, 11, 0.26);
-  color: #f2bd68;
+  color: var(--tint-amber-fg);
   background: rgba(245, 158, 11, 0.06);
 }
 
@@ -548,8 +549,8 @@
   height: 26px;
   flex: 0 0 auto;
   border: 1px solid var(--border-strong);
-  border-radius: 13px;
-  background: rgba(255, 255, 255, 0.05);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-secondary);
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
@@ -566,12 +567,12 @@
 
 .settings-toggle.is-active {
   border-color: rgba(129, 92, 246, 0.65);
-  background: rgba(124, 58, 237, 0.68);
+  background: var(--accent-primary);
 }
 
 .settings-toggle.is-active > span {
   transform: translateX(18px);
-  background: #fff;
+  background: var(--bg-card);
 }
 
 .settings-section--session {
@@ -589,8 +590,8 @@
   gap: 8px;
   padding: 9px 13px;
   border: 1px solid rgba(239, 68, 68, 0.24);
-  border-radius: 8px;
-  color: #f18a9a;
+  border-radius: var(--radius-lg);
+  color: var(--tint-red-fg);
   font-size: 12px;
   font-weight: 700;
   transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
@@ -599,7 +600,7 @@
 @media (hover: hover) and (pointer: fine) {
   .settings-signout:hover {
     border-color: rgba(239, 68, 68, 0.42);
-    color: #ff9aaa;
+    color: var(--tint-red-fg);
     background: rgba(239, 68, 68, 0.07);
   }
 }
