@@ -1,0 +1,289 @@
+/* ============================================
+   LoginPage — the standalone sign-in sheet
+
+   Same act as the AuthPrompt modal, on a page of its own, so it is drawn from
+   the same parts: a white sheet with a hairline border, the brand mark in
+   yellow with its 2px ink offset, the headline in the edition serif, and the
+   provider buttons from the shared Button component. Copying this file from
+   the dark theme would have dropped a black page into a white app; what is
+   left of that design is the entrance animation and nothing else.
+
+   The blurred orbs and the drifting icon field are gone on purpose: on white
+   they read as smudges rather than depth. The backdrop is graph paper — the
+   flattest possible nod to the subject — faded out before it reaches an edge.
+   ============================================ */
+
+.login-page {
+  --login-cell: 28px;
+  position: relative;
+  flex: 1;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: var(--space-10) var(--space-5);
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+/* ── Graph-paper backdrop ──
+   Three parts, and the split is what keeps the motion cheap: this wrapper
+   clips and holds the vignette still, the plane inside it carries the pattern
+   and is the only thing that ever moves, and the sheet paints above both. */
+.login-grid {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* Oversized by two cells on every side so the drift always has paper under the
+   container, and so a whole-cell translation lands on a frame identical to the
+   first — the loop has no seam to spot.
+
+   Only `transform` and `opacity` are animated, both on the compositor: the
+   pattern is painted once and never repaints, which is the whole reason the
+   drift is not `background-position` on a full-screen element. */
+.login-grid-plane {
+  position: absolute;
+  inset: calc(var(--login-cell) * -2);
+  background-image:
+    linear-gradient(to right, var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border-subtle) 1px, transparent 1px);
+  background-size: var(--login-cell) var(--login-cell);
+  /* The still values are the visible ones. Nothing here uses `animation-fill-mode:
+     both`, so if the animation never runs — reduced motion, a skipped subtree —
+     the grid stays exactly where and as it is drawn below. */
+  opacity: 1;
+  animation:
+    loginGridDrift 48s linear infinite,
+    loginGridBreathe 20s ease-in-out infinite;
+}
+
+/* The fade at the edges is the page's own ground painted back over the grid,
+   not a mask: a token can do the job, and `#000` in a mask stencil cannot. */
+.login-grid::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 62% 58% at 50% 42%, transparent 0%, var(--bg-primary) 78%);
+}
+
+/* One cell of travel, so start and end frames are the same picture. */
+@keyframes loginGridDrift {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(var(--login-cell), var(--login-cell), 0); }
+}
+
+/* A slow tide rather than a pulse: no edge, nothing to catch the eye with. */
+@keyframes loginGridBreathe {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* ── Sheet ── */
+.login-sheet {
+  position: relative;
+  z-index: 1;
+  width: min(420px, 100%);
+  padding: var(--space-8) var(--space-6) var(--space-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+  animation: fadeIn 0.45s ease-out, loginSlideUp 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ── Brand ── */
+.login-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-6);
+}
+
+.login-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-yellow);
+  color: var(--text-primary);
+  font: 600 0.875rem/1 var(--font-mono);
+  letter-spacing: 0.02em;
+  box-shadow: 2px 2px 0 var(--text-primary);
+}
+
+.login-wordmark {
+  font-size: 1.125rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+/* The yellow only underlines the mark; it never carries the text colour. */
+.login-wordmark span {
+  box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
+}
+
+/* ── Copy ── */
+.login-eyebrow {
+  display: block;
+  margin-bottom: var(--space-3);
+  color: var(--text-tertiary);
+}
+
+.login-title {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-serif);
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.14;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.login-lede {
+  margin: 0 auto var(--space-6);
+  max-width: 34ch;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+/* ── Provider buttons ── */
+.login-methods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.login-provider {
+  gap: var(--space-2);
+  font-weight: var(--fw-semibold);
+}
+
+.login-provider-icon {
+  flex: 0 0 auto;
+}
+
+.login-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--text-primary);
+  border-radius: var(--radius-full);
+  animation: spin 0.7s linear infinite;
+}
+
+.login-spinner--on-ink {
+  border-color: color-mix(in srgb, var(--text-inverse) 35%, transparent);
+  border-top-color: var(--text-inverse);
+}
+
+/* ── Guest exit ── */
+.login-alt {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 var(--space-3);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.login-alt::before,
+.login-alt::after {
+  content: '';
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.login-explore {
+  font-weight: var(--fw-medium);
+}
+
+/* ── States ── */
+.login-note {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  text-align: left;
+}
+
+.login-note--warn {
+  border: 1px solid var(--tint-amber-line);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-fg);
+}
+
+.login-note--error {
+  border: 1px solid var(--tint-red-line);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
+}
+
+.login-note h2 {
+  margin-bottom: var(--space-1);
+  color: inherit;
+  font-family: var(--font-heading);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+}
+
+.login-note strong {
+  font-weight: var(--fw-semibold);
+  overflow-wrap: anywhere;
+}
+
+/* ── Footer ── */
+.login-powered {
+  margin: var(--space-6) 0 0;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.login-powered strong {
+  color: var(--text-secondary);
+}
+
+/* ── Responsive ── */
+@media (max-width: 480px) {
+  .login-page {
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .login-sheet {
+    padding: var(--space-6) var(--space-5) var(--space-5);
+    border-radius: var(--radius-xl);
+  }
+
+  .login-title {
+    font-size: 1.5rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .login-sheet {
+    animation: none;
+  }
+
+  /* The grid stops, it does not vanish: the still values above are the ones
+     already drawn, so removing the animation leaves the paper visible. */
+  .login-grid-plane {
+    animation: none;
+  }
+
+  .login-spinner {
+    animation: none;
+  }
+}

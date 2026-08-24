@@ -10,8 +10,8 @@
  *    roughly a year at the front.
  *
  * A feed of brand-new papers is served almost entirely by the first, and a
- * search through older work almost entirely by the second, so both are tried in
- * that order.
+ * search through older work almost entirely by the second, so both are asked at
+ * once and arXiv's answer is preferred when both have one.
  *
  * The client loads the images themselves directly with an <img>, which needs no
  * CORS grant and keeps image bytes off the worker entirely.
@@ -33,17 +33,55 @@ export const FIGURE_CACHE_SECONDS = 30 * 24 * 60 * 60;
  *  yet, or that the fetch was slow, so it is only remembered briefly. */
 export const FIGURE_EMPTY_CACHE_SECONDS = 60 * 60;
 
+/** Identifiers issued since April 2007: `2608.20340`, `1706.03762`. */
+const MODERN_ID = /^\d{4}\.\d{4,5}$/;
+/**
+ * Identifiers issued before then: `math/0309136`, `cond-mat.stat-mech/0102536`.
+ *
+ * That back catalogue is the whole reason the second renderer is here, so
+ * rejecting it made ar5iv unreachable: the route answered 400 for every paper
+ * only ar5iv can render. The pattern stays tight because the identifier is
+ * interpolated into a renderer URL — one slash, exactly seven digits, and an
+ * archive name that cannot hold a second dot, a further path segment, or
+ * anything outside the letter/hyphen set.
+ */
+const LEGACY_ID = /^[a-z]+(?:-[a-z]+)?(?:\.[A-Za-z]+(?:-[A-Za-z]+)?)?\/\d{7}$/;
+
 export function isArxivFigureId(value) {
-  return /^\d{4}\.\d{4,5}$/.test(String(value || '').trim());
+  const id = String(value || '').trim();
+  return MODERN_ID.test(id) || LEGACY_ID.test(id);
 }
 
+/**
+ * `String.fromCharCode` truncates anything above the BMP, so an emoji entity
+ * came out as a single wrong glyph. `fromCodePoint` handles those but throws on
+ * a value out of range or on a lone surrogate half, so both are screened here
+ * and a malformed entity is left as literal text rather than taken as an error.
+ */
+function codePointToText(code) {
+  if (!Number.isInteger(code) || code < 0 || code > 0x10ffff) return null;
+  if (code >= 0xd800 && code <= 0xdfff) return null;
+  return String.fromCodePoint(code);
+}
+
+/**
+ * Turns the entities a renderer emits in captions back into text.
+ *
+ * `&amp;` is decoded last on purpose. Decoding it first turned `&amp;lt;` into
+ * `&lt;`, which the next pass then turned into a real `<`: markup the author
+ * had escaped deliberately came back as markup. Since `replace` does not rescan
+ * what it just wrote, leaving `&amp;` for the end decodes each entity exactly
+ * once.
+ */
 function decodeEntities(text) {
   return String(text || '')
-    .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)));
+    .replace(/&#(\d+);/g, (match, digits) => codePointToText(Number(digits)) ?? match)
+    // LaTeXML writes dashes and quotes as hex entities, which went untouched.
+    .replace(/&#x([0-9a-fA-F]+);/g, (match, digits) => codePointToText(Number.parseInt(digits, 16)) ?? match)
+    .replace(/&amp;/g, '&');
 }
 
 function stripTags(html) {
@@ -115,11 +153,72 @@ export function extractFiguresFromHtml(html, baseUrl, origin) {
   return figures;
 }
 
+/**
+ * Builds a renderer URL for an identifier.
+ *
+ * A legacy identifier carries a real path separator (`math/0309136`), so the id
+ * cannot go through `encodeURIComponent` whole: that turns the slash into `%2F`
+ * and the renderer answers 404. Each segment is escaped on its own, which keeps
+ * the separator meaningful and still escapes anything unexpected.
+ */
+function rendererUrl(renderer, arxivId) {
+  return renderer.url(String(arxivId).split('/').map(encodeURIComponent).join('/'));
+}
+
+/**
+ * Reads a response body and gives up the moment it passes `limit` bytes.
+ *
+ * The ceiling used to be a `content-length` check followed by `text()`. A
+ * chunked response carries no `content-length`, so the check compared against
+ * zero and let the response through, and `text()` then buffered the entire
+ * document before a single byte was measured — the guard only ran once it could
+ * no longer help. ar5iv is a community service rather than arXiv
+ * infrastructure, so an unbounded document is not hypothetical, and the worker
+ * has 128 MB to lose. Reading through the stream holds at most `limit` bytes.
+ *
+ * An oversized page yields null rather than the prefix already read: a
+ * truncated document cuts figures in half, and that damage would be cached for
+ * a month.
+ */
+export async function readHtmlWithinLimit(response, limit = MAX_HTML_BYTES) {
+  // Still worth checking: a declared size spares us reading the body at all.
+  const declared = Number(response.headers?.get('content-length'));
+  if (Number.isFinite(declared) && declared > limit) return null;
+
+  const reader = response.body?.getReader?.();
+  // A response with no stream at all — 204, HEAD, or a stubbed double.
+  if (!reader) {
+    const text = await response.text();
+    return text.length > limit ? null : text;
+  }
+
+  const decoder = new TextDecoder('utf-8');
+  let html = '';
+  let bytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      bytes += value.byteLength;
+      if (bytes > limit) return null;
+      // `stream: true` so a character split across two chunks is not decoded
+      // as a pair of replacement characters.
+      html += decoder.decode(value, { stream: true });
+    }
+    return html + decoder.decode();
+  } finally {
+    // Whether the ceiling tripped or the deadline fired, the connection is
+    // released instead of left draining a document nobody will read.
+    reader.cancel().catch(() => {});
+  }
+}
+
 async function fetchFromRenderer(renderer, arxivId) {
+  const url = rendererUrl(renderer, arxivId);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const response = await fetch(renderer.url(encodeURIComponent(arxivId)), {
+    const response = await fetch(url, {
       signal: controller.signal,
       headers: {
         accept: 'text/html',
@@ -127,11 +226,12 @@ async function fetchFromRenderer(renderer, arxivId) {
       },
     });
     if (!response.ok) return [];
-    if (Number(response.headers.get('content-length') || 0) > MAX_HTML_BYTES) return [];
 
-    const html = await response.text();
-    if (html.length > MAX_HTML_BYTES) return [];
-    return extractFiguresFromHtml(html, response.url || renderer.url(arxivId), renderer.origin);
+    // Awaited inside the try on purpose: `fetch` settles on the headers, so a
+    // body read that escaped this block would run with the deadline disarmed.
+    const html = await readHtmlWithinLimit(response, MAX_HTML_BYTES);
+    if (html === null) return [];
+    return extractFiguresFromHtml(html, response.url || url, renderer.origin);
   } catch {
     return [];
   } finally {
@@ -139,11 +239,33 @@ async function fetchFromRenderer(renderer, arxivId) {
   }
 }
 
+/**
+ * Asks every renderer at once and answers with the first one that is both
+ * preferred and non-empty.
+ *
+ * Asking them one after the other cost two full deadlines — up to 30 s — for a
+ * paper neither has rendered, which is an ordinary result, and that empty
+ * answer is only cached for an hour, so the bill came round again every hour
+ * per paper. Racing them outright would throw away the other half of the
+ * design: arXiv's own conversion is preferred over ar5iv's, and ar5iv is
+ * usually the quicker of the two, so `Promise.any` would quietly demote arXiv.
+ *
+ * So the requests are started together and then awaited in preference order.
+ * The network work overlaps, which puts the worst case at one deadline instead
+ * of two, while the decision still reads arXiv's answer first. The only wait
+ * left is the one preference actually requires: ar5iv's figures cannot be
+ * accepted until it is known that arXiv has none.
+ */
 export async function fetchPaperFigures(arxivId) {
   if (!isArxivFigureId(arxivId)) return { id: arxivId, figures: [], source: null };
 
-  for (const renderer of RENDERERS) {
-    const figures = await fetchFromRenderer(renderer, arxivId);
+  // Started before the first await, so all of them are in flight together.
+  // `fetchFromRenderer` resolves to [] on any failure, so an attempt whose
+  // result is never read cannot surface as an unhandled rejection.
+  const attempts = RENDERERS.map((renderer) => fetchFromRenderer(renderer, arxivId));
+
+  for (const [index, renderer] of RENDERERS.entries()) {
+    const figures = await attempts[index];
     if (figures.length > 0) return { id: arxivId, figures, source: renderer.id };
   }
   return { id: arxivId, figures: [], source: null };

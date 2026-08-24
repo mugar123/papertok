@@ -7,6 +7,8 @@ import {
   createSseLineSplitter,
   extractSseFinishReason,
   extractSseTextDelta,
+  handlePaperRewrite,
+  isCompleteRewrite,
   isRewriteLevel,
   parseRewriteSectionLine,
   salvageSections,
@@ -350,4 +352,302 @@ test('an empty provider stream ends without sections', async () => {
   const events = [];
   for await (const event of streamModelSections(fakeSseBody([]))) events.push(event);
   assert.deepEqual(events, [{ type: 'end', rawText: '', finishReason: '', firstTextAtMs: 0 }]);
+});
+
+/* ============================================================
+   The endpoint: what a failure costs, and what gets kept
+   ============================================================ */
+
+const REWRITE_ENV = {
+  GEMINI_API_KEY: 'gemini-test-key',
+  FIREBASE_WEB_API_KEY: 'firebase-test-key',
+};
+
+/**
+ * A daily ledger that counts what was taken and what was given back separately,
+ * and records the period it was asked for: a refund charged to tomorrow's day is
+ * indistinguishable from no refund at all for the reader who lost the use.
+ */
+function countingQuotaLedger(state, accepted = true) {
+  return {
+    idFromName: name => {
+      state.periodKeys.push(String(name));
+      return `quota-${name}`;
+    },
+    get: () => ({
+      fetch: async (_url, options) => {
+        const { action } = JSON.parse(options.body);
+        state[action] += 1;
+        return new Response(JSON.stringify(accepted
+          ? { accepted: true, remaining: 4 }
+          : { accepted: false, scope: 'global' }));
+      },
+    }),
+  };
+}
+
+function newLedgerState() {
+  return { reserve: 0, release: 0, periodKeys: [] };
+}
+
+/** A KV namespace that remembers what the rewrite decided was worth keeping. */
+function fakeRewriteStore() {
+  const entries = new Map();
+  return {
+    entries,
+    get: async (key, options) => {
+      const stored = entries.get(key);
+      if (stored === undefined) return null;
+      return options?.type === 'json' ? JSON.parse(stored.value) : stored.value;
+    },
+    put: async (key, value, options) => {
+      entries.set(key, { value, ttl: options?.expirationTtl });
+    },
+  };
+}
+
+function rewriteRequest(overrides = {}) {
+  return new Request('https://papertok-report-api.example/ai/rewrite', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer test-token' },
+    body: JSON.stringify({
+      paper: { title: paper.title, pdfUrl: paper.pdfUrl },
+      level: 'university',
+      language: 'en',
+      ...overrides,
+    }),
+  });
+}
+
+const readablePdf = () => new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46]), {
+  headers: { 'content-type': 'application/pdf' },
+});
+
+const sseResponse = frames => new Response(frames.join(''), {
+  headers: { 'content-type': 'text/event-stream' },
+});
+
+const sectionLine = (kind, text) => `${JSON.stringify({ kind, paragraphs: [text] })}\n`;
+
+/**
+ * The handler with nothing real behind it: a signed-in caller seeded into the
+ * identity cache the way the Worker caches one in production, and a `fetch` that
+ * separates the PDF download from the provider so a test can fail exactly one.
+ */
+async function withRewriteHarness({ pdf = readablePdf, provider }, callback) {
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.caches = {
+    default: {
+      match: async request => (String(request.url).includes('/auth/')
+        ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
+        : null),
+      put: async () => undefined,
+    },
+  };
+  globalThis.fetch = async (url, options) => (String(url).includes('generativelanguage.googleapis.com')
+    ? provider(url, options)
+    : pdf(url, options));
+  try {
+    return await callback();
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+}
+
+async function readNdjson(response) {
+  return (await response.text()).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
+}
+
+test('gives the daily use back when the PDF never downloads', async () => {
+  const state = newLedgerState();
+
+  await assert.rejects(
+    () => withRewriteHarness({
+      pdf: async () => new Response('gone', { status: 404 }),
+      provider: async () => { throw new Error('The model must not be asked without a PDF'); },
+    }, () => handlePaperRewrite(rewriteRequest(), {
+      ...REWRITE_ENV,
+      REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+    })),
+    error => error.code === 'AI_REWRITE_NEEDS_FULL_TEXT' && error.status === 422,
+  );
+
+  assert.equal(state.reserve, 1);
+  // The paper was accepted on its PDF before anything was counted, so a download
+  // that fails is the source being unreachable — and Gemini was never asked, so
+  // the use bought nothing.
+  assert.equal(state.release, 1);
+  // Charged and credited against the same day. Recomputing the key at release
+  // time would credit tomorrow for a request that crossed UTC midnight.
+  assert.equal(new Set(state.periodKeys).size, 1);
+  assert.match(state.periodKeys[0], /^ai:\d{4}-\d{2}-\d{2}$/);
+});
+
+test('gives the daily use back when the provider refuses before the stream starts', async () => {
+  const state = newLedgerState();
+
+  await assert.rejects(
+    () => withRewriteHarness({
+      provider: async () => new Response(JSON.stringify({ error: { message: 'overloaded' } }), { status: 503 }),
+    }, () => handlePaperRewrite(rewriteRequest(), {
+      ...REWRITE_ENV,
+      REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+    })),
+    error => error.code === 'AI_BUSY',
+  );
+
+  assert.equal(state.release, 1);
+});
+
+test('gives the daily use back when the provider hits its own daily wall', async () => {
+  const state = newLedgerState();
+
+  await assert.rejects(
+    () => withRewriteHarness({
+      provider: async () => new Response(
+        JSON.stringify({ error: { message: 'Quota exceeded for GenerateRequestsPerDay' } }),
+        { status: 429 },
+      ),
+    }, () => handlePaperRewrite(rewriteRequest(), {
+      ...REWRITE_ENV,
+      REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+    })),
+    error => error.code === 'AI_QUOTA_EXHAUSTED' && error.quota.scope === 'provider',
+  );
+
+  // Somebody else's ceiling, not this reader's: their own use is still theirs.
+  assert.equal(state.release, 1);
+});
+
+test('gives the daily use back when the stream dies after the 200 has committed', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+
+  const response = await withRewriteHarness({
+    // The section has to reach the reader before the socket dies, so the error
+    // is raised on the second pull rather than alongside the enqueue — erroring
+    // a controller discards whatever is still queued behind it.
+    provider: async () => {
+      let sent = false;
+      return new Response(new ReadableStream({
+        pull(controller) {
+          if (sent) throw new Error('Connection reset by peer');
+          sent = true;
+          controller.enqueue(new TextEncoder().encode(sseFrame(sectionLine('intro', 'It began.'))));
+        },
+      }), { headers: { 'content-type': 'text/event-stream' } });
+    },
+  }, () => handlePaperRewrite(rewriteRequest(), {
+    ...REWRITE_ENV,
+    AI_REWRITE_STORE: store,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+  }));
+
+  // Committed to 200 long before the failure, so the only channel left is the
+  // stream — but the reservation is exactly as unspent as it would have been a
+  // millisecond earlier, when there was still a status line to fail with.
+  assert.equal(response.status, 200);
+  const events = await readNdjson(response);
+  assert.equal(events.at(-1).type, 'error');
+  assert.equal(events.at(-1).partial, true);
+  assert.equal(state.release, 1);
+  assert.equal(store.entries.size, 0);
+});
+
+test('does not refund a rewrite the provider actually produced', async () => {
+  const state = newLedgerState();
+
+  const response = await withRewriteHarness({
+    provider: async () => sseResponse([sseFrame('I cannot read this PDF.', { finishReason: 'STOP' })]),
+  }, () => handlePaperRewrite(rewriteRequest(), {
+    ...REWRITE_ENV,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+  }));
+
+  const events = await readNdjson(response);
+  assert.equal(events.at(-1).code, 'AI_INVALID_RESPONSE');
+  // Gemini read the PDF and billed for it. Refunding this would buy unlimited
+  // free retries against the provider's own quota.
+  assert.equal(state.release, 0);
+});
+
+test('only a clean STOP counts as a finished rewrite', () => {
+  assert.equal(isCompleteRewrite('STOP'), true);
+  assert.equal(isCompleteRewrite('stop'), true);
+  for (const reason of [
+    'MAX_TOKENS', 'SAFETY', 'RECITATION', 'BLOCKLIST',
+    'PROHIBITED_CONTENT', 'SPII', 'LANGUAGE', 'OTHER', 'FINISH_REASON_UNSPECIFIED',
+  ]) {
+    assert.equal(isCompleteRewrite(reason), false, `${reason} leaves the document cut short`);
+  }
+  // A stream that ended without naming a reason is not evidence of completion
+  // either, and guessing wrong in that direction is the expensive one.
+  assert.equal(isCompleteRewrite(''), false);
+  assert.equal(isCompleteRewrite(undefined), false);
+});
+
+test('does not cache a rewrite the model cut short, and says so on the wire', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+
+  const response = await withRewriteHarness({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'The setup.')),
+      sseFrame(sectionLine('methods', 'How it was measured.')),
+      sseFrame('', { finishReason: 'MAX_TOKENS' }),
+    ]),
+  }, () => handlePaperRewrite(rewriteRequest(), {
+    ...REWRITE_ENV,
+    AI_REWRITE_STORE: store,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+  }));
+
+  const events = await readNdjson(response);
+  assert.deepEqual(events.map(event => event.type), ['meta', 'section', 'section', 'done']);
+  // The replay path closes with `done` and carries no `error` line, which is the
+  // only thing the client reads as incomplete. Storing this would serve half a
+  // paper as the whole paper for thirty days.
+  assert.equal(store.entries.size, 0);
+  assert.equal(events.at(-1).truncated, true);
+  assert.equal(events.at(-1).finishReason, 'MAX_TOKENS');
+  // The model did the work it was asked for; the use is not coming back.
+  assert.equal(state.release, 0);
+});
+
+test('caches a rewrite that finished, and replays it without a second reservation', async () => {
+  const state = newLedgerState();
+  const store = fakeRewriteStore();
+  const env = {
+    ...REWRITE_ENV,
+    AI_REWRITE_STORE: store,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+  };
+
+  const first = await readNdjson(await withRewriteHarness({
+    provider: async () => sseResponse([
+      sseFrame(sectionLine('intro', 'The setup.')),
+      sseFrame('', { finishReason: 'STOP' }),
+    ]),
+  }, () => handlePaperRewrite(rewriteRequest(), env)));
+
+  assert.equal(first.at(-1).type, 'done');
+  assert.equal(first.at(-1).truncated, undefined);
+  assert.equal(store.entries.size, 1);
+  assert.equal([...store.entries.values()][0].ttl, 30 * 24 * 60 * 60);
+
+  const second = await readNdjson(await withRewriteHarness({
+    pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
+    provider: async () => { throw new Error('A cache hit must not reach the model'); },
+  }, () => handlePaperRewrite(rewriteRequest(), env)));
+
+  assert.deepEqual(second.map(event => event.type), ['meta', 'section', 'done']);
+  assert.equal(second[0].cached, true);
+  assert.equal(second[1].paragraphs[0], 'The setup.');
+  // A rewrite served from KV costs the provider nothing, so it must cost the
+  // reader nothing either.
+  assert.equal(state.reserve, 1);
+  assert.equal(state.release, 0);
 });

@@ -26,6 +26,11 @@ import './App.css'
 // React Router v7 navigations run inside startTransition, so switching to a
 // route whose chunk is still downloading keeps the current screen on instead
 // of flashing a fallback.
+
+// The sign-in page rides in that same list rather than in the boot graph, as it
+// used to: a session that already exists never renders it, and a guest reaches
+// it by a redirect or a direct link — both can afford one chunk.
+const LoginPage = lazy(() => import('./components/Auth/LoginPage'))
 const OnboardingFlow = lazy(() => import('./components/Onboarding/OnboardingFlow'))
 const ListsPage = lazy(() => import('./components/Lists/ListsPage'))
 const PDFViewer = lazy(() => import('./components/PDF/PDFViewer'))
@@ -99,6 +104,7 @@ function AppContent() {
       <Suspense fallback={<RouteFallback />}>
       <AnimatePresence mode="wait" initial={false}>
         <Routes location={location} key={location.pathname}>
+          <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
           <Route
             path="/onboarding"
             element={

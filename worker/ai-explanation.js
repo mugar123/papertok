@@ -1104,6 +1104,13 @@ const REFUNDABLE_AI_CODES = new Set([
   'AI_NOT_CONFIGURED',
   'AI_SOURCE_UNAVAILABLE',
   'AI_FALLBACK_BUDGET_EXHAUSTED',
+  // Only `/ai/rewrite` raises this one, and it raises it twice for two different
+  // reasons: a paper with no PDF at all, refused before anything is reserved,
+  // and a PDF that would not download, discovered after. This predicate is
+  // consulted only past the reservation, so the case it sees here is always the
+  // second — the source being unreachable, which is the same event
+  // `AI_SOURCE_UNAVAILABLE` covers for the explainer.
+  'AI_REWRITE_NEEDS_FULL_TEXT',
 ]);
 
 export function shouldRefundAIQuota(error) {
@@ -1143,7 +1150,16 @@ export async function reserveAIQuota(env, uid) {
   return { remainingUses: reservation.remaining, ledgerRequest };
 }
 
-async function releaseAIQuota(env, quota) {
+/**
+ * Gives back exactly what `reserveAIQuota` took. `quota` has to be the handle it
+ * returned rather than a freshly built one: the ledger request inside it carries
+ * the day the use was charged to, so a request that started before UTC midnight
+ * and failed after it still credits yesterday.
+ *
+ * Exported because `/ai/rewrite` reserves against the same daily ledger and has
+ * more ways to fail than the explainer does.
+ */
+export async function releaseAIQuota(env, quota) {
   try {
     await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, quota.ledgerRequest);
   } catch {

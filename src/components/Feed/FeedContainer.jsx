@@ -20,7 +20,11 @@ const SCROLL_INTERACTION_SETTLE_MS = 220;
  * `source` swaps WHERE the papers come from while every interaction (like,
  * save, read, view tracking) keeps flowing into the recommendation profile
  * through useFeed. Shape: { papers, loading, error, hasMore, loadMore,
- * refresh, isRefreshing, emptyState, showFollowReason, onPaperViewed }.
+ * refresh, isRefreshing, emptyState, endCard, showFollowReason, onPaperViewed }.
+ *
+ * `endCard` is a node the source appends as one more snap item once the feed
+ * has genuinely run out — same height, same snapping, same swipe. The guest
+ * feed uses it to end on a sign-up card instead of on nothing.
  */
 export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments = null, source = null, scrollKey = 'forYou' }) {
   const feed = useFeed();
@@ -46,6 +50,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     [source, feed.refreshFeed],
   );
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
+  // Only once nothing more is coming: a page still loading or still pending
+  // would put the ending in front of papers the guest has not seen yet.
+  const endCard = source?.endCard ?? null;
+  const showEndCard = Boolean(endCard) && papers.length > 0 && !loading && !hasMore;
   const prefersReducedMotion = useReducedMotion();
 
   const handleViewTime = useCallback((paper, seconds) => {
@@ -194,7 +202,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         const currentIndex = Math.round(currentScroll / cardHeight);
         const nextIndex = currentIndex + direction;
 
-        if (nextIndex >= 0 && nextIndex < papers.length + (loading ? 1 : 0)) {
+        const itemCount = papers.length + (loading ? 1 : 0) + (showEndCard ? 1 : 0);
+        if (nextIndex >= 0 && nextIndex < itemCount) {
           isScrollingRef.current = true;
           container.scrollTo({
             top: nextIndex * cardHeight,
@@ -212,7 +221,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [papers.length, loading, prefersReducedMotion]);
+  }, [papers.length, loading, prefersReducedMotion, showEndCard]);
 
   const handleRefresh = useCallback(() => {
     refreshFeed();
@@ -364,6 +373,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
           <div className="feed-snap-item">
             <SkeletonCard />
           </div>
+        )}
+
+        {showEndCard && (
+          <div className="feed-snap-item feed-snap-item--end">{endCard}</div>
         )}
 
         {/* Sentinel for infinite scroll */}

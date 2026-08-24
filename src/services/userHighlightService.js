@@ -1,4 +1,14 @@
-import { collection, deleteDoc, doc, getDocs, serverTimestamp, setDoc } from 'firebase/firestore';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  limit,
+  query,
+  serverTimestamp,
+  setDoc,
+  where,
+} from 'firebase/firestore';
 import { db } from './firebase.js';
 import { HIGHLIGHT_MIN_QUOTE_LENGTH, normalizeHighlightQuote } from '../utils/textHighlights.js';
 
@@ -11,14 +21,45 @@ import { HIGHLIGHT_MIN_QUOTE_LENGTH, normalizeHighlightQuote } from '../utils/te
  * rendered rather than landing on the wrong words.
  */
 
-const MAX_HIGHLIGHTS_PER_PAPER = 200;
+export const MAX_HIGHLIGHTS_PER_PAPER = 200;
 
 function cleanText(value, maxLength) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
-function highlightsCollection(uid) {
-  return collection(db, 'users', uid, 'highlights');
+/**
+ * The Firestore pieces travel as one injectable unit so the shape of the read
+ * query can be asserted without a Firestore behind it, the same seam
+ * `followUserService` and `commentService` use for their own query shapes.
+ */
+function operations(overrides = {}) {
+  return {
+    database: overrides.database || db,
+    collectionRef: overrides.collectionRef || collection,
+    composeQuery: overrides.composeQuery || query,
+    matching: overrides.matching || where,
+    cap: overrides.cap || limit,
+    readDocuments: overrides.readDocuments || getDocs,
+  };
+}
+
+function highlightsCollection(uid, api = operations()) {
+  return api.collectionRef(api.database, 'users', uid, 'highlights');
+}
+
+/**
+ * Filter and cap belong in the query, not in JavaScript afterwards. A reader
+ * with 400 highlights spread over 50 papers was paying 400 document reads every
+ * time the reader opened, to keep the handful that belong to the paper on
+ * screen.
+ */
+export function buildHighlightsQuery(uid, paperId, overrides) {
+  const api = operations(overrides);
+  return api.composeQuery(
+    highlightsCollection(uid, api),
+    api.matching('paperId', '==', paperId),
+    api.cap(MAX_HIGHLIGHTS_PER_PAPER),
+  );
 }
 
 /**
@@ -69,15 +110,18 @@ export function normalizeUserHighlight(input) {
   };
 }
 
-export async function listUserHighlights(uid, paperId) {
+export async function listUserHighlights(uid, paperId, overrides) {
   if (!uid) return [];
   const target = cleanText(paperId, 400);
+  // No paper, no highlights. This used to mean "hand over the whole
+  // collection", which is precisely the read amplification the query above
+  // exists to remove, and `normalizeUserHighlight` refuses to store a highlight
+  // without a `paperId`, so an empty target can never have a legitimate match.
+  if (!target) return [];
+  const api = operations(overrides);
   try {
-    const snapshot = await getDocs(highlightsCollection(uid));
-    return snapshot.docs
-      .map(entry => ({ id: entry.id, ...entry.data() }))
-      .filter(entry => !target || entry.paperId === target)
-      .slice(0, MAX_HIGHLIGHTS_PER_PAPER);
+    const snapshot = await api.readDocuments(buildHighlightsQuery(uid, target, overrides));
+    return snapshot.docs.map(entry => ({ id: entry.id, ...entry.data() }));
   } catch (error) {
     console.warn('Could not load highlights', error);
     return [];

@@ -9,6 +9,7 @@ import {
   Lightbulb,
   LoaderCircle,
   Plus,
+  UserRound,
   Users,
 } from 'lucide-react';
 import {
@@ -28,34 +29,40 @@ import './SearchCommand.css';
 
 const COPY = {
   es: {
-    placeholder: 'Busca papers, autores, temas, instituciones, proyectos...',
+    placeholder: 'Busca papers, personas, autores, temas, instituciones...',
     papers: 'Papers',
+    users: 'Usuarios de PaperTok',
     authors: 'Autores',
     institutions: 'Instituciones',
     topics: 'Temas',
     projects: 'Proyectos',
     empty: 'Sin resultados',
     searching: 'Buscando...',
-    hint: 'Escribe para buscar en papers, autores, temas, instituciones y proyectos financiados.',
+    hint: 'Escribe para buscar en papers, usuarios, autores, temas, instituciones y proyectos financiados.',
     suggested: 'Sugerencias',
     partial: 'Algunas fuentes no respondieron; se muestra lo disponible.',
+    peopleSlow: 'Las personas están tardando más de lo normal.',
+    peopleFailed: 'No se han podido cargar las personas.',
     follow: 'Seguir',
     following: 'Siguiendo',
     citations: 'citas',
     works: 'trabajos',
   },
   en: {
-    placeholder: 'Search papers, authors, topics, institutions, projects...',
+    placeholder: 'Search papers, people, authors, topics, institutions...',
     papers: 'Papers',
+    users: 'PaperTok users',
     authors: 'Authors',
     institutions: 'Institutions',
     topics: 'Topics',
     projects: 'Projects',
     empty: 'No results',
     searching: 'Searching...',
-    hint: 'Type to search papers, authors, topics, institutions and funded projects.',
+    hint: 'Type to search papers, users, authors, topics, institutions and funded projects.',
     suggested: 'Suggestions',
     partial: 'Some sources did not answer; showing what is available.',
+    peopleSlow: 'People are taking longer than usual.',
+    peopleFailed: 'People could not be loaded.',
     follow: 'Follow',
     following: 'Following',
     citations: 'citations',
@@ -70,8 +77,17 @@ const SUGGESTIONS = [
   { labelEs: 'Geoffrey Hinton', labelEn: 'Geoffrey Hinton', queryEs: 'Geoffrey Hinton', queryEn: 'Geoffrey Hinton', Icon: Users },
 ];
 
+// Every section the palette can paint. `users` has to be in here AND in
+// searchRelevance's DEFAULT_SECTION_ORDER: a section the palette renders but
+// the ordering module has never heard of scores 99 and sinks to the bottom of
+// every search, silently.
+const SECTIONS = ['papers', 'users', 'authors', 'institutions', 'topics', 'projects'];
+
 const SECTION_ICONS = {
   papers: FileText,
+  // `users` is somebody with a PaperTok account; `authors` is whoever wrote a
+  // paper, from OpenAlex. Different things, so different icons.
+  users: UserRound,
   authors: Users,
   institutions: Building2,
   topics: Lightbulb,
@@ -80,6 +96,11 @@ const SECTION_ICONS = {
 
 function lastPathSegment(value) {
   return String(value || '').split('/').pop();
+}
+
+function initialOf(name, handle) {
+  const source = (name || handle || '?').trim();
+  return source.charAt(0).toUpperCase() || '?';
 }
 
 /**
@@ -94,8 +115,24 @@ export default function SearchCommand({ open, onOpenChange }) {
   const { isEnglish, language } = useLanguage();
   const copy = COPY[isEnglish ? 'en' : 'es'];
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
-  const { query, setQuery, results, totalResults, isSearching, hasSearched, searchIssue, reset } = useEntitySearch();
+  // The spend gate, in the palette's own terms. The page has filter pills and
+  // only pays for people under the two that render the section; the palette has
+  // one view and no pills, so what decides whether the section is going to be
+  // painted is simply whether the palette is on screen. A closed palette shows
+  // nothing, so it must not spend a Firestore read on anything — including a
+  // query still sitting in state from the last time it was open.
+  const usersRequested = open;
+  const {
+    query, setQuery, results, users, userStatus, totalResults,
+    isSearching, peoplePending, isStale, hasSearched, searchIssue, reset,
+  } = useEntitySearch({ usersRequested });
   const [pendingEntity, setPendingEntity] = useState(null);
+
+  // Both channels, one spinner: the external fan-out settles on its own clock
+  // and people on theirs, and announcing "no results" while either is still
+  // owed an answer is how the palette would end up denying somebody who is
+  // about to appear.
+  const searchPending = isSearching || peoplePending;
 
   useEffect(() => {
     if (!open) reset();
@@ -121,16 +158,25 @@ export default function SearchCommand({ open, onOpenChange }) {
 
   // The section matching the query best is shown first, as on the old page.
   const orderedSections = useMemo(() => {
-    const preferred = resolvePreferredSearchSection(query, {
-      papers: results.papers,
-      authors: results.authors,
-      institutions: results.institutions,
-      topics: results.topics,
-      projects: results.projects,
+    const preferred = resolvePreferredSearchSection({
+      query,
+      sectionValues: {
+        // Both fields: an exact handle and an exact display name are each the
+        // strongest evidence available that a person was meant.
+        users: users.flatMap(person => [person.handle, person.name]),
+        papers: results.papers.map(paper => paper.title),
+        authors: results.authors.map(author => author.display_name),
+        institutions: results.institutions.flatMap(institution => [
+          institution.display_name,
+          ...Object.values(institution.localized_names || {}),
+        ]),
+        topics: results.topics.map(concept => concept.display_name || concept.label),
+        projects: results.projects.flatMap(project => [project.acronym, project.title]),
+      },
     });
-    return ['papers', 'authors', 'institutions', 'topics', 'projects']
+    return [...SECTIONS]
       .sort((left, right) => getSearchSectionOrder(left, preferred) - getSearchSectionOrder(right, preferred));
-  }, [query, results]);
+  }, [query, results, users]);
 
   const renderFollow = (entity) => {
     const following = isFollowing(entity);
@@ -152,6 +198,24 @@ export default function SearchCommand({ open, onOpenChange }) {
     );
   };
 
+  // A monogram, the name, the handle — and nothing else. No photo, because the
+  // people index deliberately carries none, and no follow button: knowing
+  // whether you already follow somebody is one read per row, and the profile
+  // this opens is where following lives.
+  const userRow = (person) => (
+    <CommandItem
+      key={person.uid}
+      value={`user-${person.uid}`}
+      onSelect={() => go(`/public/user/${person.handle}`)}
+    >
+      <span className="sc-avatar" aria-hidden="true">{initialOf(person.name, person.handle)}</span>
+      <span className="sc-label">{person.name || person.handle}</span>
+      <span className="sc-meta sc-meta--handle">@{person.handle}</span>
+    </CommandItem>
+  );
+
+  const sectionItems = { ...results, users };
+
   const sectionContent = {
     papers: () => results.papers.map(paper => (
       <CommandItem
@@ -167,6 +231,7 @@ export default function SearchCommand({ open, onOpenChange }) {
         </span>
       </CommandItem>
     )),
+    users: () => users.map(userRow),
     authors: () => results.authors.map(author => {
       const orcid = author.orcid ? String(author.orcid).replace(/^https?:\/\/orcid\.org\//, '') : '';
       const path = orcid
@@ -238,6 +303,16 @@ export default function SearchCommand({ open, onOpenChange }) {
     )),
   };
 
+  // People speak for themselves, in their own line, never through the banner
+  // above: that one names the external providers, and a Firestore hiccup
+  // announced under somebody else's name is a sentence the palette made up.
+  // 'needs-session' and 'unsupported' say nothing at all — the first cannot
+  // happen (the palette only mounts with a session) and the second is a demo
+  // build without a people index, neither of which is news to anybody.
+  const peopleNote = userStatus === 'failed'
+    ? copy.peopleFailed
+    : userStatus === 'slow' ? copy.peopleSlow : null;
+
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title={copy.placeholder}>
       <CommandInput
@@ -263,28 +338,37 @@ export default function SearchCommand({ open, onOpenChange }) {
           </CommandGroup>
         )}
 
-        {isSearching && (
+        {searchPending && (
           <div className="sc-status" role="status">
             <LoaderCircle size={14} className="spinning" /> {copy.searching}
           </div>
         )}
 
-        {searchIssue && !isSearching && totalResults > 0 && (
+        {searchIssue && !searchPending && totalResults > 0 && (
           <div className="sc-status sc-status--warn" role="status">
             <AlertCircle size={14} /> {copy.partial}
           </div>
         )}
 
-        {hasSearched && !isSearching && totalResults === 0 && (
+        {peopleNote && !searchPending && (
+          <div className="sc-status sc-status--warn" role="status">
+            <UserRound size={14} /> {peopleNote}
+          </div>
+        )}
+
+        {hasSearched && !searchPending && totalResults === 0 && (
           <CommandEmpty>{copy.empty}</CommandEmpty>
         )}
 
         {orderedSections.map(section => {
-          if (results[section].length === 0) return null;
+          if (sectionItems[section].length === 0) return null;
           const SectionIcon = SECTION_ICONS[section];
           return (
             <CommandGroup
               key={section}
+              // Rows that still answer the previous query are dimmed rather
+              // than passed off as this one's.
+              className={isStale ? 'sc-group--stale' : undefined}
               heading={
                 <span className="sc-heading">
                   <SectionIcon size={11} /> {copy[section]}

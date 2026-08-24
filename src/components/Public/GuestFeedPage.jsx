@@ -5,6 +5,7 @@ import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useGuestFeed } from '../../hooks/useGuestFeed.js';
 import { ANALYTICS_CONSENT } from '../../services/analyticsService.js';
 import FeedContainer from '../Feed/FeedContainer.jsx';
+import GuestEndCard from './GuestEndCard.jsx';
 import './GuestFeedPage.css';
 
 export default function GuestFeedPage({ onReady, onAuthRequired, onOpenPdf, onOpenComments = null }) {
@@ -68,7 +69,22 @@ export default function GuestFeedPage({ onReady, onAuthRequired, onOpenPdf, onOp
       </header>
 
       <FeedContainer
-        source={{ ...guestFeed, publicMode: true, onAuthRequired: requestAccount }}
+        source={{
+          ...guestFeed,
+          publicMode: true,
+          onAuthRequired: requestAccount,
+          // One more snap item after the last paper. `requestAccount` is the
+          // same door the header uses: it opens the AuthPrompt modal in place
+          // instead of routing to /login, which would take the guest away from
+          // the feed they were reading.
+          endCard: (
+            <GuestEndCard
+              paperCount={guestFeed.papers.length}
+              position={guestFeed.papers.length + 1}
+              onSignUp={() => requestAccount('other')}
+            />
+          ),
+        }}
         scrollKey="guest"
         onOpenPdf={onOpenPdf}
         onSaveToList={() => requestAccount('list')}

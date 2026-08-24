@@ -81,6 +81,40 @@ arregló en su lugar la causa raíz que el propio F40 nombra en su punto 4 — n
 ataba el estado previsto del flag al bundle publicado. 7 tests nuevos, 1.001 en
 verde, guarda verificada por mutación en las dos direcciones.
 
+**Verificación independiente del 24-08-2026 mediodía (G5, G6, G8, F2-residuo)
+— TODO ARREGLADO. Con esto, los 42 fallos + el residuo están cerrados y
+verificados.** G5: 4/4, 6 mutaciones muertas, techo diario OpenAlex real
+(`OPENALEX_GLOBAL_DAILY_LIMIT=8000` con `amount` por ruta) y el rechazo del
+punto 3 de F32 es sólido. G6: 7/7, las tres correcciones de diagnóstico
+ciertas; **2 mutantes vivos de cableado** encontrados por el verificador: (1)
+nada fija que `fetchDomainPapers` consulte `getEligibleDomainSources` — la
+forma exacta de la regresión de F38 pasaría la suite (sugerido: test que
+afirme que sin sesión no se invoca `authenticatedWorkerFetch`); (2)
+`getAuthorPapers` podría volver a interpolar sin pasar por
+`buildAuthorQuery`. G8+F2-residuo: verificados sobre la rama que resultó ser
+`origin/main` (el main local estaba 5 commits atrás; ya alineado con
+`git pull --ff-only`); rutas `/sources/pubmed` y `/sources/s2` con el patrón
+completo, cero fetch directos a NCBI/S2 en `src/` y en el bundle vivo
+(comprobado byte a byte), y `fetchDigestSource` con `AbortSignal.timeout` —
+más una segunda instancia no fichada que el mismo commit cazó. 1.136 tests en
+verde. Producción verificada: Worker sirve las rutas nuevas, frontend
+`index--LmGLTzJ.js` sin llamadas directas.
+
+Pendientes operativos que NO son código (para @mugar):
+
+- [ ] `wrangler secret put SEMANTIC_SCHOLAR_API_KEY` — sin ella, `/sources/s2`
+  y `/related` están efectivamente muertas (10/10 rechazos anónimos medidos;
+  ya lo decía la memoria del proyecto). `NCBI_API_KEY` opcional (3→10 req/s).
+
+Residuos menores anotados por los verificadores (candidatos a una pasada
+corta, ninguno urgente): `cacheResponse` no libera la reserva del ledger si el
+fetcher lanza tras reservar (fail-closed: una caída larga de OpenAlex podría agotar el techo
+diario sin gasto real); las recomendaciones de invitado corren una rama que
+solo puede fallar (`/related` exige sesión — la silueta de F38 en miniatura);
+tragaderas residuales sin log en `useGuestFeed.js:48` y `FeedContext.jsx:188/880`;
+`all:"${searchPhrase}"` en `arxivService.js:249` fuera del saneado de F37; el
+trim de `/arxiv` sin test directo.
+
 **Verificación independiente del 24-08-2026 (G3, G4, G7):** los 18 fallos de
 G3+G4 re-verificados de forma adversaria contra main — **los 18 ARREGLADOS**
 (G3: 6 mutaciones, 6 mutantes muertos; G4: 10 mutaciones, 9 muertos — el vivo

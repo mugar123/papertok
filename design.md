@@ -162,15 +162,38 @@ Tailwind v4 is wired via `@tailwindcss/vite`; utility classes (`w-full`,
 
 ---
 
-## Auth pattern (no login page)
+## Auth pattern — two doors, and they are not interchangeable
 
-There is **no `/login` route**. Sign-in is the modal
-`src/components/Public/AuthPrompt.jsx`, opened by calling `requestAuthentication`
-(passed to screens as `onAuthRequired`). It does Google + GitHub sign-in
-directly and closes itself once a session exists; `ProtectedRoute` then routes
-on to `/onboarding` or the feed. A guest who hits a gated route is sent to `/`
-(the feed), where the modal is one tap away. Never reintroduce a `/login` page —
-add auth entry points by wiring `onAuthRequired`.
+Sign-in has two entry points. Which one you reach for is decided by a single
+question: **did the user already get taken somewhere else?**
+
+**The modal — `src/components/Public/AuthPrompt.jsx`.** The in-context door,
+opened by calling `requestAuthentication` (passed to screens as
+`onAuthRequired`). It does Google + GitHub sign-in on the spot and closes itself
+once a session exists, leaving the user exactly where they were. That is the
+whole point: someone who tapped "save" on a paper should still be looking at
+that paper afterwards. It deliberately offers **no** way out to `/login` — there
+is nothing to return to.
+
+**The page — `/login`, `src/components/Auth/LoginPage.jsx`.** The destination for
+the trips that already moved the user: a direct link, a shared URL, or
+`ProtectedRoute` intercepting a gated route. Those are the only journeys that
+have somewhere to go back to, so they are the only ones that carry a `returnTo`.
+`ProtectedRoute` redirects with `state={{ returnTo: pathname + search }}`; the
+page reads it back from `location.state` (or a `?returnTo=` query, for links
+built outside the app), validates it, and lands the user there once the session
+exists — or passes it through `/onboarding` first, so it survives that too. The
+route is `lazy`, because a session that already exists never renders it.
+
+**Adding an auth entry point:** wire `onAuthRequired` and use the modal. Reach
+for `/login` only when the user has already been navigated away from what they
+wanted, and then always carry the `returnTo` — a redirect that drops it is the
+bug this pattern exists to prevent.
+
+> Earlier drafts of this file said "never reintroduce a `/login` page". That rule
+> was reversed on 2026-08-24: it optimised for the in-context case and silently
+> broke the other one, leaving a guest who opened a shared link to a gated route
+> stranded on the feed with no memory of where they were going.
 
 ---
 
@@ -188,6 +211,17 @@ add auth entry points by wiring `onAuthRequired`.
 - **Tokens don't reach hardcoded values.** Changing a token fixes nothing while
   a hardcoded hex/rgba/pixel-radius bypasses it. `grep` for literals in any file
   you touch and fold them back onto tokens.
+- **A utility from a plugin you didn't install generates nothing, silently.**
+  Copied shadcn source fades its dialog overlay with `animate-in` / `animate-out`,
+  which belong to `tailwindcss-animate`, not to Tailwind. Without that dependency
+  the classes produce no rule at all — no warning, no missing-class error, just an
+  overlay that appears and vanishes in one frame and reads as "the animation is
+  too fast". When you paste a component from upstream, check every utility it uses
+  actually exists here. The overlay now fades with the `fadeIn` / `fadeOut`
+  keyframes `variables.css` already defines. It must be an `animation`, not a
+  `transition`: `@radix-ui/react-presence` only defers unmount while
+  `getComputedStyle(node).animationName` is not `none`, so a transitioned exit is
+  cut off by the unmount.
 - **Don't cache a failure.** Cache successes long, unknowns briefly, failures
   never — and share in-flight promises so a double mount cannot race itself.
 - **`createContext` must not share a module with a component.** A module that

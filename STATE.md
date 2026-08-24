@@ -1,5 +1,105 @@
 # Estado / pendientes
 
+## PR #19 revisado — el lector no estaba enchufado (2026-08-24)
+
+**Revisión completa de `feat/light-design-system` (@samuelcorsan): 74 ficheros,
++10.300/−6.864, quince fallos, tres bloqueantes. Los arreglos van en
+`fix/pr19-review`, sacada del HEAD del PR. Nada mergeado, nada empujado.**
+
+El PR no es lo que dice su título. Además del sistema de diseño claro trae un
+endpoint de IA nuevo en el Worker (`ai-rewrite.js`, 823 líneas), un lector de
+papers, subrayados persistidos, extracción de figuras de arXiv, una paleta de
+comandos, Tailwind v4 con cinco primitivas de Radix, y cambios en
+`firestore.rules` y `wrangler.toml`. **No toca este fichero**: su documentación
+vive en `design.md`, nuevo y bueno, pero STATE.md se quedó sin entrada.
+
+### Los tres bloqueantes
+
+**1. `/ai/rewrite` nunca se registró.** `wrangler.toml` declara
+`main = "worker/report-api.js"`, y ese fichero no importaba `ai-rewrite.js`: el
+único import del módulo en todo el repo estaba en su propio test. El POST del
+cliente caía en el 404 genérico, así que la funcionalidad estrella del PR estaba
+muerta de origen. Los 1197 tests pasaban porque importan el handler directamente
+y **nunca cruzan el enrutado** — el agujero es ese, no el descuido.
+
+**2. La cuota diaria se reservaba y no se devolvía.** `handlePaperRewrite`
+llamaba a `reserveAIQuota` y no liberaba en ningún camino de fallo: PDF
+inaccesible, 429/502/504 del proveedor, o stream muerto a mitad. Con
+`AI_DAILY_USER_LIMIT = "10"`, unos pocos PDFs caídos dejaban al lector sin
+servicio. `ai-explanation.js` ya tenía el par reserve/release, y el diff
+exportaba `reserveAIQuota` dejando `releaseAIQuota` sin exportar: la huella
+exacta de la mitad olvidada.
+
+**3. Se cacheaban 30 días las reescrituras truncadas, servidas como completas.**
+`finishReason` se capturaba y no se consultaba antes de `writeCachedRewrite`. Un
+corte por `MAX_TOKENS` parkeaba medio paper en KV un mes, replicado a todos los
+lectores cerrando con `done` y sin marca de truncado.
+
+**Ninguno llegó a morder en producción**, porque el 1 hacía el handler
+inalcanzable: no hay cuota quemada ni KV que purgar. El 3 habría empezado a
+morder en el primer despliegue después de registrar la ruta.
+
+### Lo demás, por orden de severidad
+
+| # | Dónde | Qué |
+|---|---|---|
+| 4 | `paper-figures.js:132` | `MAX_HTML_BYTES` se medía sobre `content-length` (ausente si es chunked → 0 → pasa) y luego sobre el cuerpo **ya bufferizado entero**: la guarda solo corría cuando ya no servía |
+| 5 | `useEntitySearch.js:79` | `performSearch` no reseteaba `results`: las secciones aún en vuelo seguían mostrando la consulta anterior mezclada con la nueva |
+| 6 | `userHighlightService.js:76` | `getDocs` de la colección entera sin `where` ni `limit`; el filtro por paper corría con todo ya descargado |
+| 7 | `paper-figures.js:145` | Los dos renderizadores en serie, 15 s cada uno: hasta 30 s por figura fallida, y el vacío solo se cachea 1 h |
+| 8 | `paper-figures.js:37` | El regex de id excluía `math/0309136` y todo lo anterior a 2007 — justo el catálogo que ar5iv existe para cubrir |
+| 9 | `ProtectedRoute.jsx:79` | Al quitar `/login` se perdió el `returnTo`: el invitado aterriza en el feed sin memoria de adónde iba |
+| 10 | `paperRewriteService.js:158` | `addEventListener('abort')` sin comprobar `signal.aborted`: un signal ya disparado no cancela y gasta un uso |
+| 11 | `PaperReader.jsx:178` | El efecto depende de la identidad del objeto `paper`; al resolverse la copia en abierto se relanza la reescritura y gasta otro uso |
+| 12 | `paper-figures.js:41` | `&amp;` decodificado el primero → doble decodificación; `fromCharCode` trunca fuera del BMP; sin entidades hex |
+| 13 | `.env.example` | Borrado entero, y era la única documentación de las once `VITE_*` (el `.env.local` está en `.gitignore`) |
+| 14 | `ui/dialog.jsx:17` | `animate-in`/`animate-out` sin el plugin que las define: clases muertas |
+| 15 | `firestore.rules:850` | Colección `highlights` nueva, veinte líneas de validación encadenada, **cero tests**, pese a existir `npm run test:rules` |
+
+### Dos agujeros adyacentes que aparecieron al arreglar
+
+- **`fetchFromRenderer` hacía `encodeURIComponent(arxivId)` sobre el id entero**,
+  que convierte la barra en `%2F`: ampliar el regex del punto 8 no habría
+  servido de nada porque `arxiv.org/html/math%2F0309136` da 404 en ambos
+  renderizadores. Escapado ahora segmento a segmento.
+- **`paperFigureService.js:26` tiene su propio `/^\d{4}\.\d{4,5}$/`**, así que el
+  navegador nunca pediría figuras de un paper antiguo aunque el Worker ya las
+  sirva. Los dos filtros tienen que moverse juntos.
+
+### El choque de decisión sobre `/login`
+
+`design.md:165` dice, con todas las letras, **«Never reintroduce a `/login`
+page»**: el patrón de auth del PR es el modal `AuthPrompt`, y un invitado que
+toca una ruta cerrada va al feed. @mugar ha decidido lo contrario — la página
+vuelve, con el `returnTo` completo y el CSS re-vestido a los tokens claros; el
+modal se queda para las acciones en contexto. **`design.md` hay que actualizarlo
+en el mismo commit**, o el documento y el código dirán cosas distintas y la
+siguiente sesión creerá al documento.
+
+### Lo verificado de paso
+
+`OPENALEX_API_KEY` **sí está configurada** (`wrangler secret list`, 24-08). La
+API privada de OpenAlex está montada de punta a punta: `identifyOpenAlexUrl`
+reescribe `api.openalex.org/*` a `${VITE_PAPER_API_BASE_URL}/openalex/*` y borra
+cualquier clave del navegador, y el proxy del Worker adjunta la suya en
+`report-api.js:1823`. Importa más que antes: la paleta nueva dispara hasta
+cuatro búsquedas de OpenAlex por tecleo, contra techos de 300/min y 8.000/día.
+
+Punto ciego que queda: `fetchOpenAlexJsonWithFallback` reintenta **sin clave**
+cuando la petición con clave falla, así que una credencial caducada se
+manifiesta como funcionamiento normal contra el pool público, sin un solo log.
+
+`SEMANTIC_SCHOLAR_API_KEY` sigue sin configurar, como decía la entrada de G8.
+
+### Estado del trabajo
+
+Cerrados y verificados con tests ejecutados: los tres bloqueantes (128 tests en
+`worker/ai-rewrite.test.js` + `worker/report-api.test.js`, con casos que
+**entran por el router**) y los cuatro de figuras (25 tests, también en verde
+bajo Node 22, el de CI). En curso: lector, búsqueda, varios y la restauración
+del login. Pendiente al cerrar: pasar la suite completa de CI, actualizar
+`design.md`, y decidir cómo aterriza `fix/pr19-review` sobre el PR.
+
 ## G8 cerrado — PubMed y Semantic Scholar entran por el Worker (2026-08-24)
 
 **Hecho, verificado en vivo y desplegado; quedan dos secretos que solo puede

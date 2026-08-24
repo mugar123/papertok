@@ -5,6 +5,13 @@ dist
 .env
 .env.local
 .env.*
+# `.env.*` above matches `.env.example` too, and that file is documentation, not
+# a secret: it is the only record in the repo of the eleven VITE_* variables the
+# build needs, since `.env.local` is ignored. It survived for a long time only
+# because it was tracked before the `.env.*` rule existed — so once anything
+# removes it from the index it becomes invisible to `git add -A` and silently
+# stops being committed. This negation is what keeps it tracked.
+!.env.example
 .DS_Store
 .claude/
 lint_output.txt

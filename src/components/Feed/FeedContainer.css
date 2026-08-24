@@ -41,6 +41,12 @@
   contain-intrinsic-size: 0 100%;
 }
 
+/* A source's end slot (`source.endCard`) is deliberately a plain
+   .feed-snap-item and nothing more: it inherits the full viewport height, the
+   mandatory snap and the `scroll-snap-stop: always` above, so the swipe that
+   reveals it is the same swipe that reveals a paper. The `--end` modifier on
+   it carries no styles — it is there to name the last item in devtools. */
+
 .feed-sentinel {
   height: 1px;
 }

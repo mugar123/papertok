@@ -25,6 +25,12 @@ export const PRODUCT_ANALYTICS_EVENTS = Object.freeze([
   'newsletter_change',
   'day_7_return',
   'select_content',
+  // The reader added by the light redesign. `trackProductEvent` returns false on
+  // the first line for a name that is not here, so an unregistered event is not
+  // a smaller event — it is no event at all, with nothing at the call site to
+  // say so. Both of these shipped instrumented and silent.
+  'paper_rewrite',
+  'paper_highlight',
 ]);
 
 const ANALYTICS_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -38,6 +44,7 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/',
   '/following',
   '/lists',
+  '/login',
   '/onboarding',
   '/research',
   '/search',
@@ -76,8 +83,14 @@ const CATEGORIES = Object.freeze({
   language: new Set(['en', 'es']),
   method: new Set(['google', 'email', 'link', 'native', 'clipboard', 'other']),
   newsletter_action: new Set(['subscribe', 'unsubscribe']),
+  rewrite_level: new Set(['beginner', 'university', 'researcher']),
   search_type: new Set(['all', 'papers', 'authors', 'institutions', 'projects', 'topics']),
-  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'research', 'search', 'settings', 'explorer', 'other']),
+  // `reader` and `auth_prompt` are the two surfaces the light redesign added.
+  // A surface that is emitted but not listed here is not an error anywhere: the
+  // sanitizer drops the parameter and the event still ships, so the event
+  // arrives stripped of the one field that says where it happened. Adding a
+  // screen means adding it here in the same commit.
+  surface: new Set(['feed', 'following', 'lists', 'login', 'onboarding', 'research', 'search', 'settings', 'explorer', 'reader', 'auth_prompt', 'other']),
 });
 
 const EVENT_PARAMETER_SCHEMAS = Object.freeze({
@@ -98,6 +111,8 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   newsletter_change: { action: 'newsletter_action' },
   day_7_return: {},
   select_content: { content_type: 'content_type', surface: 'surface', position: 'boundedNumber' },
+  paper_rewrite: { level: 'rewrite_level', surface: 'surface' },
+  paper_highlight: { level: 'rewrite_level', surface: 'surface' },
 });
 
 let analyticsInstance = null;
