@@ -1,13 +1,15 @@
 import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
-import { 
-  ArrowLeft, Share2, FileText, Check, Loader2, Monitor, Calculator, Dna, BarChart2, TrendingUp, Zap, CircleDollarSign, Brain, Cpu, Database, Orbit, Microscope, FlaskConical, Network, Sigma, Binary, Activity, BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, Unlock, Lock, ExternalLink,
-  Rocket, Settings, Wrench, Cog, PenTool, Building, Map, Compass, Beaker, TestTube, Thermometer, HeartPulse, Stethoscope, Syringe, Pill, Leaf, Bug, Sprout, Landmark, Coins, Radio, Box, Code2, PackageOpen, History, Sparkles, MessageCircle
+import {
+  ArrowLeft, Share2, FileText, Check, Loader2, Dna, BarChart2, TrendingUp, Zap,
+  CircleDollarSign, Brain, Cpu, Database, Orbit, FlaskConical, Network, Sigma,
+  BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, ExternalLink,
+  Cog, Building, HeartPulse, Code2, PackageOpen, History, Sparkles, MessageCircle,
 } from 'lucide-react';
 import { canonicalPaperIdentity } from '../../utils/paperCanonicalKey.js';
-import AnimatedAtom from './AnimatedAtom';
 import ScientificText from '../ScientificText';
+import { Button } from '../ui/button.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getProjectForPaper } from '../../services/openAireService';
@@ -19,8 +21,9 @@ import { findOpenAccessCopy } from '../../services/unpaywallService';
 import { getRelatedResearchResources } from '../../services/dataCiteService';
 import { getHuggingFaceResearchResources } from '../../services/huggingFaceService';
 import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation';
-import AIExplanationSheet from './AIExplanationSheet';
-import { canExplainPaper } from '../../services/aiExplanationService';
+import PaperReader from '../Reader/PaperReader.jsx';
+import { canRewritePaper } from '../../services/paperRewriteService.js';
+import { getPaperFigures } from '../../services/paperFigureService.js';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
 import { buildPaperTopicTags } from '../../utils/paperTopicTags.js';
 import { buildFollowReasonLabel } from '../../utils/followingFeed.js';
@@ -44,20 +47,22 @@ import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/publicNavigation.js';
 
-// Pool of icons for the background constellation per area
-const AREA_BG_ICONS = {
-  physics: [AnimatedAtom, Orbit, Zap, Activity, Rocket, Microscope],
-  cs: [Monitor, Cpu, Database, Brain, Network, Binary],
-  math: [Calculator, Sigma, Activity, Orbit, Network, Box],
-  stat: [BarChart2, TrendingUp, Sigma, Activity, Database, Brain],
-  econ: [TrendingUp, BarChart2, CircleDollarSign, Landmark, Coins, Activity],
-  'q-fin': [CircleDollarSign, TrendingUp, BarChart2, Network, Sigma, Activity],
-  eess: [Zap, Monitor, Radio, Cpu, Network, Orbit],
-  mech: [Settings, Wrench, Cog, PenTool, Activity, Box],
-  civil: [Building, Map, Compass, Activity, Box, Network],
-  chemeng: [Beaker, FlaskConical, TestTube, Thermometer, AnimatedAtom, Activity],
-  med: [HeartPulse, Activity, Stethoscope, Syringe, Pill, Microscope],
-  bio: [Dna, Leaf, Microscope, Bug, Sprout, FlaskConical],
+// One quiet watermark per research area, drawn as a hairline in the corner of
+// the sheet. It replaces the old animated icon constellation: the same visual
+// cue about the field, without the haze competing with the type.
+const AREA_WATERMARK_ICONS = {
+  physics: Orbit,
+  cs: Cpu,
+  math: Sigma,
+  stat: BarChart2,
+  econ: TrendingUp,
+  'q-fin': CircleDollarSign,
+  eess: Zap,
+  mech: Cog,
+  civil: Building,
+  chemeng: FlaskConical,
+  med: HeartPulse,
+  bio: Dna,
 };
 
 const RESOURCE_KIND_CONFIG = {
@@ -137,7 +142,7 @@ const PaperCard = memo(function PaperCard({
   const [isMarkingRead, setIsMarkingRead] = useState(false);
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
-  const [showAIExplanation, setShowAIExplanation] = useState(false);
+  const [showReader, setShowReader] = useState(false);
   const [pendingRelatedPaper, setPendingRelatedPaper] = useState(null);
   const [selectedRelatedPaper, setSelectedRelatedPaper] = useState(null);
   const [isClosingRelatedCard, setIsClosingRelatedCard] = useState(false);
@@ -146,6 +151,7 @@ const PaperCard = memo(function PaperCard({
   const [linkedResources, setLinkedResources] = useState({ paperId: null, items: [] });
   const [isCardVisible, setIsCardVisible] = useState(false);
   const [isCardSettled, setIsCardSettled] = useState(false);
+  const [figures, setFigures] = useState([]);
   const { followedByType, isFollowing } = useFollowing();
   const { language, isEnglish } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
@@ -266,6 +272,16 @@ const PaperCard = memo(function PaperCard({
       }
     };
   }, [analyticsSurface, paper, paperViewKey, position, selectedRelatedPaper, showRelated, trackEvent, trackViewTime, trackSkip]);
+
+  useEffect(() => {
+    let active = true;
+    if (!isCardSettled) return () => { active = false; };
+    getPaperFigures(paper).then(found => {
+      // Four is what the margins hold either side of the sheet.
+      if (active && found.length > 0) setFigures(found.slice(0, 4));
+    });
+    return () => { active = false; };
+  }, [isCardSettled, paper]);
 
   const [project, setProject] = useState(null);
   const prefersReducedMotion = useReducedMotion();
@@ -420,7 +436,7 @@ const PaperCard = memo(function PaperCard({
         return area;
       }
     }
-    return { icon: FileText, gradient: 'linear-gradient(135deg, #667eea, #764ba2)' };
+    return { icon: FileText, gradient: 'var(--gradient-brand)' };
   };
 
   const getCategoryLabelText = () => {
@@ -470,35 +486,16 @@ const PaperCard = memo(function PaperCard({
     if (path) navigate(path);
   }, [analyticsSurface, navigate, position, publicMode, trackEvent]);
 
-  // Generate scattered background icons (stable per paper id)
-  const bgIcons = useMemo(() => {
+  // Watermark icon for the paper's research area.
+  const WatermarkIcon = useMemo(() => {
     const cat = visiblePrimaryCategory;
-    let areaKey = 'physics';
     for (const [key, area] of Object.entries(CATEGORIES)) {
       if (area.subcategories && area.subcategories[cat]) {
-        areaKey = key;
-        break;
+        return AREA_WATERMARK_ICONS[key] || AREA_WATERMARK_ICONS.physics;
       }
     }
-    const iconPool = AREA_BG_ICONS[areaKey] || AREA_BG_ICONS.physics;
-    let seed = 0;
-    for (let i = 0; i < (paper.id || '').length; i++) seed += paper.id.charCodeAt(i);
-    const seededRandom = (i) => {
-      const x = Math.sin(seed + i * 127.1) * 43758.5453;
-      return x - Math.floor(x);
-    };
-    return Array.from({ length: 12 }).map((_, i) => ({
-      id: i,
-      Icon: iconPool[i % iconPool.length],
-      x: 5 + seededRandom(i * 2) * 90,
-      y: 5 + seededRandom(i * 2 + 1) * 60,
-      size: 18 + seededRandom(i * 3) * 40,
-      opacity: 0.03 + seededRandom(i * 4) * 0.06,
-      delay: seededRandom(i * 5) * 6,
-      duration: 10 + seededRandom(i * 6) * 8,
-      rotate: seededRandom(i * 7) * 360,
-    }));
-  }, [paper.id, visiblePrimaryCategory]);
+    return AREA_WATERMARK_ICONS.physics;
+  }, [visiblePrimaryCategory]);
 
   const handleDoubleTap = useCallback(() => {
     const now = Date.now();
@@ -617,18 +614,12 @@ const PaperCard = memo(function PaperCard({
   const isPreprint = paper.publicationStatus === 'preprint';
   const resolvedOpenCopy = resolvedAccess.paperId === paper.id ? resolvedAccess.copy : null;
   const researchResources = linkedResources.paperId === paper.id ? linkedResources.items : [];
-  const isOpenAccess = Boolean(paper.openAccess || resolvedOpenCopy);
-  const aiExplanationPaper = useMemo(() => resolvedOpenCopy ? {
+  const readablePaper = useMemo(() => resolvedOpenCopy ? {
     ...paper,
     openAccess: true,
     openAccessPdfUrl: resolvedOpenCopy.pdfUrl || paper.openAccessPdfUrl,
   } : paper, [paper, resolvedOpenCopy]);
-  const canRequestAIExplanation = canExplainPaper(aiExplanationPaper);
-  const openAccessLabel = resolvedOpenCopy
-    ? (isEnglish ? 'Open version available' : 'Versión abierta disponible')
-    : paper.accessSource === 'europepmc'
-      ? (isEnglish ? 'Open full text' : 'Texto completo abierto')
-      : 'Open Access';
+  const canRequestRewrite = canRewritePaper(readablePaper);
   const bestAvailableUrl = safeExternalUrl(resolvedOpenCopy?.pdfUrl)
     || safeExternalUrl(resolvedOpenCopy?.landingPageUrl)
     || safeExternalUrl(paper.openAccessPdfUrl)
@@ -675,9 +666,6 @@ const PaperCard = memo(function PaperCard({
 
   return (
     <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''} ${isMarkingRead ? 'pc--fade-out' : ''}`} onClick={handleDoubleTap}>
-      <div className="pc-bg" style={{ background: areaInfo.gradient }} />
-      <div className="pc-bg-overlay" />
-
       {/* DEBUG PANEL */}
       {showRankingDebug && paper._debugScore && (
         <div className="pc-debug-panel">
@@ -702,41 +690,22 @@ const PaperCard = memo(function PaperCard({
         </div>
       )}
 
-      <div className="pc-bg-constellation">
-        {bgIcons.map((item) => (
-          <span
-            key={item.id}
-            className="pc-bg-icon"
-            style={{
-              '--bg-x': `${item.x}%`,
-              '--bg-y': `${item.y}%`,
-              '--bg-delay': `${item.delay}s`,
-              '--bg-duration': `${item.duration}s`,
-              '--bg-rotate': `${item.rotate}deg`,
-              '--bg-opacity': item.Icon === AnimatedAtom ? Math.max(item.opacity, 0.10) : item.opacity,
-            }}
-          >
-            <item.Icon size={item.size} strokeWidth={1} />
-          </span>
-        ))}
-      </div>
+      {figures.length > 0 && (
+        <div className="pc-figures" aria-hidden="true">
+          {figures.map(item => (
+            <figure key={item.url} className="pc-figure">
+              <img src={item.url} alt="" decoding="async" />
+            </figure>
+          ))}
+        </div>
+      )}
 
-      <svg className="pc-mesh" viewBox="0 0 400 400" preserveAspectRatio="none">
-        <line x1="0" y1="80" x2="400" y2="120" className="pc-mesh-line" style={{ '--mesh-delay': '0s' }} />
-        <line x1="50" y1="0" x2="350" y2="200" className="pc-mesh-line" style={{ '--mesh-delay': '1s' }} />
-        <line x1="400" y1="0" x2="0" y2="300" className="pc-mesh-line" style={{ '--mesh-delay': '2s' }} />
-        <line x1="200" y1="0" x2="100" y2="400" className="pc-mesh-line" style={{ '--mesh-delay': '3s' }} />
-        <line x1="0" y1="200" x2="400" y2="350" className="pc-mesh-line" style={{ '--mesh-delay': '0.5s' }} />
-        <line x1="300" y1="0" x2="380" y2="400" className="pc-mesh-line" style={{ '--mesh-delay': '1.5s' }} />
-        <circle cx="80" cy="90" r="2" className="pc-mesh-dot" style={{ '--mesh-delay': '0s' }} />
-        <circle cx="320" cy="140" r="2.5" className="pc-mesh-dot" style={{ '--mesh-delay': '1s' }} />
-        <circle cx="200" cy="60" r="1.5" className="pc-mesh-dot" style={{ '--mesh-delay': '2s' }} />
-        <circle cx="150" cy="220" r="2" className="pc-mesh-dot" style={{ '--mesh-delay': '3s' }} />
-        <circle cx="350" cy="280" r="2" className="pc-mesh-dot" style={{ '--mesh-delay': '0.5s' }} />
-        <circle cx="50" cy="300" r="1.5" className="pc-mesh-dot" style={{ '--mesh-delay': '1.5s' }} />
-      </svg>
+      <article className="pc-sheet" style={{ '--area-accent': areaInfo.gradient }}>
+        <span className="pc-watermark" aria-hidden="true">
+          <WatermarkIcon size={220} strokeWidth={0.6} />
+        </span>
 
-      <div className="pc-body">
+        <div className="pc-body">
         {showFollowReason && (() => {
           const reason = buildFollowReasonLabel(
             (paper._followedEntityMatches || []).filter(match => typeof match === 'object'),
@@ -785,7 +754,6 @@ const PaperCard = memo(function PaperCard({
               {paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
                 <a
                   className="pc-citations"
-                  style={{ display: 'flex', alignItems: 'center', gap: '4px' }}
                   href={safeExternalUrl(paper.scopusCitedByUrl) || undefined}
                   target="_blank"
                   rel="noopener noreferrer"
@@ -795,83 +763,32 @@ const PaperCard = memo(function PaperCard({
                   {paper.citationCount} {isEnglish ? 'Citations on Scopus' : 'Citas en Scopus'}
                 </a>
               ) : (
-                <span className="pc-citations" style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <span className="pc-citations">
                   {paper.citationCount} {isEnglish ? 'Citations' : 'Citas'}
                 </span>
               )}
             </>
           )}
         </div>
-        
-        <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '8px', marginBottom: '12px', fontSize: '11px', fontWeight: '500' }}>
-          {isPreprint ? (
-             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#10b981', background: 'rgba(16, 185, 129, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
-               <FileText size={12} /> Preprint
-             </span>
-           ) : (
-             <>
-               <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#3b82f6', background: 'rgba(59, 130, 246, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
-                 <BadgeCheck size={12} /> Verified
-               </span>
-               {paper.doi && (
-                 <a 
-                   href={safeDoiUrl(paper.doi)}
-                   target="_blank" 
-                   rel="noopener noreferrer"
-                   style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.1)', padding: '2px 6px', borderRadius: '4px', textDecoration: 'none' }}
-                   onClick={(e) => e.stopPropagation()}
-                 >
-                   <ExternalLink size={12} /> DOI
-                 </a>
-               )}
-             </>
-          )}
 
-          {isOpenAccess ? (
-             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#f59e0b', background: 'rgba(245, 158, 11, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
-               <Unlock size={12} /> {openAccessLabel}
-             </span>
-          ) : (
-             <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', color: '#ef4444', background: 'rgba(239, 68, 68, 0.1)', padding: '2px 6px', borderRadius: '4px' }}>
-               <Lock size={12} /> {isEnglish ? 'Subscription' : 'Suscripción'}
-             </span>
-          )}
-        </div>
-        
-        <AnimatePresence initial={false}>
-        {paperTopicTags.length > 0 && (
-          <motion.div
-            className="pc-semantic-tags-slot"
-            initial={prefersReducedMotion ? false : { gridTemplateRows: '0fr', opacity: 0 }}
-            animate={{ gridTemplateRows: '1fr', opacity: 1 }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { gridTemplateRows: '0fr', opacity: 0 }}
-            transition={prefersReducedMotion
-              ? { duration: 0 }
-              : { gridTemplateRows: { duration: 0.32, ease: [0.16, 1, 0.3, 1] }, opacity: { duration: 0.2 } }}
-          >
-          <div className="pc-semantic-tags">
-            {paperTopicTags.map((tag) => {
-              const topic = resolvePaperTopic(tag.value, language);
-              if (!topic) return null;
-              return (
-                <motion.button
-                  key={tag.key}
-                  type="button"
-                  className={`pc-semantic-tag pc-topic-link ${tag.source === 'concept' && !topic.reliable ? 'pc-topic-link--external' : ''}`}
-                  onClick={(event) => openTopic(event, topic)}
-                  title={`${isEnglish ? 'Explore' : 'Explorar'} ${topic.label}`}
-                  initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  {tag.label}
-                </motion.button>
-              );
-            })}
+        {!isPreprint && (
+          <div className="pc-chips">
+            <span className="pc-chip pc-chip--verified">
+              <BadgeCheck size={12} /> Verified
+            </span>
+            {paper.doi && (
+              <a
+                className="pc-chip pc-chip--doi"
+                href={safeDoiUrl(paper.doi)}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <ExternalLink size={12} /> DOI
+              </a>
+            )}
           </div>
-          </motion.div>
         )}
-        </AnimatePresence>
 
         <AnimatePresence initial={false}>
           {project && (
@@ -959,10 +876,11 @@ const PaperCard = memo(function PaperCard({
               </div>
             ))}
           </div>
-          <div className="pc-author-names" style={{ position: 'relative' }}>
+          <div className="pc-author-names">
             {(paper.authors || []).slice(0, 3).map((author, index) => (
                <span
                  key={index}
+                 className="pc-author-link"
                  onClick={(e) => {
                    e.stopPropagation(); 
                    const pId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
@@ -977,9 +895,6 @@ const PaperCard = memo(function PaperCard({
                    });
                    if (path) navigate(path);
                  }}
-                 style={{ cursor: 'pointer', padding: '4px 0' }}
-                 onMouseOver={(e) => e.currentTarget.style.textDecoration = 'underline'}
-                 onMouseOut={(e) => e.currentTarget.style.textDecoration = 'none'}
                >
                  {author.name || author}{index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
                </span>
@@ -1072,68 +987,112 @@ const PaperCard = memo(function PaperCard({
           )}
         </AnimatePresence>
 
+        {/* Two reading actions first, then the utilities behind a rule: what to
+            read is the decision, sharing and related work are afterthoughts. */}
         <div className="pc-action-bar">
-          <button 
-            className="pc-read-btn"
-            onClick={handleOpenPaper}
-            disabled={isResolvingAccess}
-          >
-            {isResolvingAccess ? <Loader2 className="spinning" size={18} /> : <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-              <polyline points="14 2 14 8 20 8" />
-            </svg>}
-            <span>{primaryActionLabel}</span>
-          </button>
-          <button
-            className="pc-read-btn pc-read-btn--secondary"
-            onClick={handleShare}
-            style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-          >
-            {copied
-              ? <><Check size={16} /><span className="pc-share-label">{isEnglish ? 'Copied' : 'Copiado'}</span></>
-              : <><Share2 size={16} /><span className="pc-share-label">{isEnglish ? 'Share' : 'Compartir'}</span></>}
-          </button>
-          {canRequestAIExplanation && (
-            <button
-              className="pc-ai-btn"
-              onClick={(event) => {
-                event.stopPropagation();
-                if (publicMode) {
-                  requireAuthentication('ai_explanation');
-                  return;
-                }
-                setShowAIExplanation(true);
-              }}
-              aria-label={isEnglish ? 'Explain this paper with AI' : 'Explicar este paper con IA'}
-              title={isEnglish ? 'Explain with AI' : 'Explicar con IA'}
+          <div className="pc-action-primary">
+            <Button onClick={handleOpenPaper} disabled={isResolvingAccess}>
+              {isResolvingAccess ? <Loader2 className="spinning" size={16} /> : <FileText size={16} />}
+              <span className="pc-action-label">{primaryActionLabel}</span>
+            </Button>
+
+            {canRequestRewrite && (
+              <Button
+                variant="brand"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  if (publicMode) {
+                    requireAuthentication('paper_rewrite');
+                    return;
+                  }
+                  setShowReader(true);
+                }}
+                aria-label={isEnglish ? 'Read this paper in plain words' : 'Leer este paper en simple'}
+              >
+                <Sparkles size={16} />
+                <span className="pc-action-label">{isEnglish ? 'Read in plain words' : 'Leer en simple'}</span>
+                <span className="pc-action-label--short">{isEnglish ? 'Simple' : 'Simple'}</span>
+              </Button>
+            )}
+          </div>
+
+        <AnimatePresence initial={false}>
+            {paperTopicTags.length > 0 && (
+              <motion.div
+                className="pc-semantic-tags-slot"
+                initial={prefersReducedMotion ? false : { gridTemplateRows: '0fr', opacity: 0 }}
+                animate={{ gridTemplateRows: '1fr', opacity: 1 }}
+                exit={prefersReducedMotion ? { opacity: 0 } : { gridTemplateRows: '0fr', opacity: 0 }}
+                transition={prefersReducedMotion
+                  ? { duration: 0 }
+                  : { gridTemplateRows: { duration: 0.32, ease: [0.16, 1, 0.3, 1] }, opacity: { duration: 0.2 } }}
+              >
+              <div className="pc-semantic-tags">
+                {paperTopicTags.map((tag) => {
+                  const topic = resolvePaperTopic(tag.value, language);
+                  if (!topic) return null;
+                  return (
+                    <motion.button
+                      key={tag.key}
+                      type="button"
+                      className={`pc-semantic-tag pc-topic-link ${tag.source === 'concept' && !topic.reliable ? 'pc-topic-link--external' : ''}`}
+                      onClick={(event) => openTopic(event, topic)}
+                      title={`${isEnglish ? 'Explore' : 'Explorar'} ${topic.label}`}
+                      initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+                    >
+                      {tag.label}
+                    </motion.button>
+                  );
+                })}
+              </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          <div className="pc-action-utilities">
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleShare}
+              aria-label={isEnglish ? 'Share' : 'Compartir'}
+              title={copied
+                ? (isEnglish ? 'Copied' : 'Copiado')
+                : (isEnglish ? 'Share' : 'Compartir')}
             >
-              <Sparkles size={17} />
-              <span className="pc-ai-label pc-ai-label--full">{isEnglish ? 'Explain with AI' : 'Explicar con IA'}</span>
-              <span className="pc-ai-label pc-ai-label--short">{isEnglish ? 'Explain' : 'Explicar'}</span>
-            </button>
-          )}
-          {(paper.doi || paper.arxivId || paper.semanticScholarId) && (
-            <button
-              className="pc-related-btn"
-              onClick={(event) => { event.stopPropagation(); setShowRelated(true); }}
-              aria-label={isEnglish ? 'View related papers' : 'Ver papers relacionados'}
-              title={isEnglish ? 'Related papers' : 'Papers relacionados'}
-            >
-              <Network size={18} />
-            </button>
-          )}
+              {copied ? <Check size={16} /> : <Share2 size={16} />}
+            </Button>
+
+            {(paper.doi || paper.arxivId || paper.semanticScholarId) && (
+              <Button
+                variant="sky"
+                size="icon"
+                onClick={(event) => { event.stopPropagation(); setShowRelated(true); }}
+                aria-label={isEnglish ? 'View related papers' : 'Ver papers relacionados'}
+                title={isEnglish ? 'Related papers' : 'Papers relacionados'}
+              >
+                <Network size={17} />
+              </Button>
+            )}
+          </div>
         </div>
-      </div>
+        </div>
+      </article>
 
       {/* Side actions (TikTok style) */}
       <div className="pc-side-actions">
-        <button className={`pc-side-btn ${isLiked ? 'pc-side-btn--liked' : ''}`} onClick={handleLike}>
-          <div className="pc-side-icon">
-            <svg viewBox="0 0 24 24" fill={isLiked ? '#ff2d55' : 'none'} stroke={isLiked ? '#ff2d55' : 'currentColor'} strokeWidth="2" style={isLiked ? { filter: 'drop-shadow(0 0 8px rgba(255, 45, 85, 0.6))' } : {}}>
+        <button
+          className={`pc-side-btn pc-side-btn--like ${isLiked ? 'pc-side-btn--liked' : ''}`}
+          onClick={handleLike}
+          aria-pressed={isLiked}
+        >
+          <span className="pc-side-icon">
+            <svg viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.75">
               <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
             </svg>
-          </div>
-          <span style={isLiked ? { color: '#ff2d55' } : {}}>{isEnglish ? 'Like' : 'Me gusta'}</span>
+          </span>
+          <span className="pc-side-label">{isEnglish ? 'Like' : 'Me gusta'}</span>
         </button>
 
         {canOpenComments && (
@@ -1142,27 +1101,35 @@ const PaperCard = memo(function PaperCard({
             onClick={() => onOpenComments(paper)}
             aria-haspopup="dialog"
           >
-            <div className="pc-side-icon">
-              <MessageCircle size={24} />
-            </div>
-            <span>{isEnglish ? 'Comments' : 'Comentarios'}</span>
+            <span className="pc-side-icon">
+              <MessageCircle size={20} />
+            </span>
+            <span className="pc-side-label">{isEnglish ? 'Comments' : 'Comentarios'}</span>
           </button>
         )}
 
-        <button className={`pc-side-btn ${isSaved ? 'pc-side-btn--saved' : ''}`} onClick={handleSave}>
-          <div className="pc-side-icon">
-            <svg viewBox="0 0 24 24" fill={isSaved ? '#ffd60a' : 'none'} stroke={isSaved ? '#ffd60a' : 'currentColor'} strokeWidth="2" style={isSaved ? { filter: 'drop-shadow(0 0 8px rgba(255, 214, 10, 0.6))' } : {}}>
+        <button
+          className={`pc-side-btn pc-side-btn--bookmark ${isSaved ? 'pc-side-btn--saved' : ''}`}
+          onClick={handleSave}
+          aria-pressed={isSaved}
+        >
+          <span className="pc-side-icon">
+            <svg viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.75">
+
               <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
             </svg>
-          </div>
-          <span style={isSaved ? { color: '#ffd60a' } : {}}>{isEnglish ? 'Save' : 'Guardar'}</span>
+          </span>
+          <span className="pc-side-label">{isEnglish ? 'Save' : 'Guardar'}</span>
         </button>
 
-        <button className={`pc-side-btn ${isReadActive ? 'pc-side-btn--read' : ''}`} onClick={handleMarkAsRead}>
-          <div className="pc-side-icon">
-            {isReadActive ? <CheckCircle2 size={24} color="#10b981" /> : <Eye size={24} />}
-          </div>
-          <span style={{ fontSize: '10px', textAlign: 'center', lineHeight: '1.2' }}>
+        <button
+          className={`pc-side-btn pc-side-btn--seen ${isReadActive ? 'pc-side-btn--read' : ''}`}
+          onClick={handleMarkAsRead}
+        >
+          <span className="pc-side-icon">
+            {isReadActive ? <CheckCircle2 size={20} /> : <Eye size={20} />}
+          </span>
+          <span className="pc-side-label">
             {resolvedOpenCopy || paper.openAccessPdfUrl
               ? (isEnglish ? 'Open version' : 'Versión abierta')
               : paper.pdfUrl
@@ -1174,20 +1141,20 @@ const PaperCard = memo(function PaperCard({
         </button>
 
         <button className="pc-side-btn pc-side-btn--skip" onClick={handleNotInterested}>
-          <div className="pc-side-icon">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <span className="pc-side-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75">
               <circle cx="12" cy="12" r="10" />
               <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
             </svg>
-          </div>
-          <span>{isEnglish ? 'Skip' : 'Pasar'}</span>
+          </span>
+          <span className="pc-side-label">{isEnglish ? 'Skip' : 'Pasar'}</span>
         </button>
       </div>
 
       {/* Double-tap heart */}
       {showHeart && (
         <div className="pc-heart-burst">
-          <svg viewBox="0 0 24 24" fill="#ff2d55" width="90" height="90">
+          <svg viewBox="0 0 24 24" fill="currentColor" width="88" height="88">
             <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
           </svg>
           <div className="pc-heart-ring" />
@@ -1197,11 +1164,12 @@ const PaperCard = memo(function PaperCard({
       {/* Scroll hint on first card */}
       {!hideScrollHint && (
         <div className="pc-scroll-hint">
-          <div className="pc-scroll-hint-arrow">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <span className="pc-scroll-hint-label">{isEnglish ? 'Scroll' : 'Desliza'}</span>
+          <span className="pc-scroll-hint-arrow">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="6 9 12 15 18 9" />
             </svg>
-          </div>
+          </span>
         </div>
       )}
 
@@ -1273,10 +1241,10 @@ const PaperCard = memo(function PaperCard({
         document.body,
         `papertok-related-sheet:${getRelatedPaperIdentity(paper) || 'current'}`,
       )}
-      {showAIExplanation && createPortal(
-        <AIExplanationSheet paper={aiExplanationPaper} onClose={() => setShowAIExplanation(false)} />,
+      {showReader && createPortal(
+        <PaperReader paper={readablePaper} onClose={() => setShowReader(false)} />,
         document.body,
-        'papertok-ai-explanation',
+        'papertok-paper-reader',
       )}
       {activeRelatedPaper && createPortal(
         <div

@@ -45,24 +45,24 @@ export default function GuestFeedPage({ onReady, onAuthRequired, onOpenPdf, onOp
   return (
     <main className="guest-feed-page">
       <header className="guest-feed-header" aria-label={isEnglish ? 'PaperTok guest navigation' : 'Navegación de invitado de PaperTok'}>
-        <button
-          type="button"
-          className={`guest-header-button ${guestFeed.isRefreshing ? 'is-spinning' : ''}`}
-          onClick={guestFeed.refresh}
-          aria-label={isEnglish ? 'Refresh papers' : 'Recargar papers'}
-        >
-          <RotateCw size={19} />
-        </button>
         <div className="guest-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
         <div className="guest-header-actions">
+          <button
+            type="button"
+            className={`guest-header-button ${guestFeed.isRefreshing ? 'is-spinning' : ''}`}
+            onClick={guestFeed.refresh}
+            aria-label={isEnglish ? 'Refresh papers' : 'Recargar papers'}
+          >
+            <RotateCw size={17} />
+          </button>
           <button type="button" className="guest-language-button" onClick={() => setLanguage(isEnglish ? 'es' : 'en')}>
             {isEnglish ? 'ES' : 'EN'}
           </button>
           <button type="button" className="guest-header-button" onClick={() => requestAccount('other')} aria-label={isEnglish ? 'Search' : 'Buscar'}>
-            <Search size={19} />
+            <Search size={17} />
           </button>
           <button type="button" className="guest-sign-in-button" onClick={() => requestAccount('other')}>
-            <LogIn size={17} /> {isEnglish ? 'Sign in' : 'Entrar'}
+            <LogIn size={15} /> {isEnglish ? 'Sign in' : 'Entrar'}
           </button>
         </div>
       </header>

@@ -38,7 +38,6 @@ const STATIC_ANALYTICS_PATHS = new Set([
   '/',
   '/following',
   '/lists',
-  '/login',
   '/onboarding',
   '/research',
   '/search',

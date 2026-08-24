@@ -4,175 +4,211 @@
 
 @import './variables.css';
 
+/* Tailwind, for the shadcn/ui primitives.
+   Theme and utilities only — preflight is deliberately left out. It is a second
+   opinionated reset, and this file already owns the base layer; loading both
+   made the two fight over headings, borders and form controls. */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+@import 'tailwindcss/utilities.css' layer(utilities);
+/* Importing Tailwind piecewise skips its automatic source detection, so the
+   class scan has to be declared: without this no utility is ever generated. */
+@source '../**/*.{js,jsx}';
+
+/* shadcn expects semantic token names. Rather than a parallel palette, they are
+   aliases onto the design system above, so there is one source of colour. */
+@theme inline {
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-card);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--bg-card);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent-primary);
+  --color-primary-foreground: var(--text-inverse);
+  --color-secondary: var(--bg-secondary);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--bg-secondary);
+  --color-muted-foreground: var(--text-secondary);
+  --color-accent: var(--bg-secondary);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--accent-danger);
+  --color-destructive-foreground: var(--text-inverse);
+  --color-border: var(--border-default);
+  --color-input: var(--border-default);
+  --color-ring: var(--accent-primary);
+  --color-brand: var(--brand-yellow);
+  --color-brand-soft: var(--brand-yellow-soft);
+
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 6px;
+}
+
 /* ── Reset ── */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* Element resets live in the base layer on purpose. Unlayered CSS beats
+   every cascade layer, so an unlayered `button { background: none }` silently
+   defeated every Tailwind background utility on shadcn buttons. */
+@layer base {
 
-html {
-  /* No global smooth scrolling: it fights the feed's `scroll-snap-type: y
-     mandatory` and made every programmatic jump animate. Whoever wants a
-     smooth scroll must ask for it per call (scrollTo/scrollIntoView with
-     behavior: 'smooth'), which is what FeedContainer already does. */
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
 
-body {
-  font-family: var(--font-body);
-  font-size: var(--fs-base);
-  line-height: var(--lh-normal);
-  color: var(--text-primary);
-  background-color: var(--bg-primary);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
-}
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar {
-  width: 6px;
-}
+  body {
+    font-family: var(--font-body);
+    font-size: var(--fs-base);
+    line-height: var(--lh-normal);
+    color: var(--text-primary);
+    background-color: var(--bg-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
 
-::-webkit-scrollbar-thumb {
-  background: var(--border-default);
-  border-radius: var(--radius-full);
-}
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-@media (hover: hover) and (pointer: fine) {
-  ::-webkit-scrollbar-thumb:hover {
+  ::-webkit-scrollbar-thumb {
     background: var(--border-strong);
+    border: 3px solid var(--bg-primary);
+    border-radius: var(--radius-full);
   }
-}
 
-/* Firefox */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-default) transparent;
-}
-
-/* ── Selection ── */
-::selection {
-  background: var(--accent-primary);
-  color: var(--text-primary);
-}
-
-/* ── Links ── */
-a {
-  color: var(--accent-secondary);
-  text-decoration: none;
-  transition: color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  a:hover {
-    color: var(--accent-primary);
+  @media (hover: hover) and (pointer: fine) {
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-tertiary);
+    }
   }
-}
 
-/* ── Headings ── */
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading);
-  line-height: var(--lh-tight);
-  color: var(--text-primary);
-}
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
 
-/* ── Focus ──
-   Without this, keyboard focus renders the OS default ring (whatever accent
-   color the system uses), which reads as a stray warning on this palette.
-   :where() keeps specificity at zero so any component can restyle it. */
-:where(button, a, [role='button'], [role='tab'], summary):focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
-}
+  /* ── Selection ── */
+  ::selection {
+    background: var(--brand-yellow);
+    color: var(--text-primary);
+  }
 
-/* A dialog opened with showModal() can end up focused itself; the ring around
-   the whole sheet reads as a broken border, and focus styling belongs to the
-   controls inside. */
-dialog:focus,
-dialog:focus-visible {
-  outline: none;
-}
+  /* ── Links ── */
+  a {
+    color: var(--accent-secondary);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+  }
 
-/* ── Buttons ── */
-button {
-  font-family: var(--font-body);
-  cursor: pointer;
-  border: none;
-  background: none;
-  color: var(--text-primary);
-  font-size: var(--fs-base);
-  /* Only paint-cheap properties animate. `all` also animated layout
-     (width/height/padding), which is what made every button feel spongy. */
-  transition:
-    color var(--transition-base),
-    background-color var(--transition-base),
-    border-color var(--transition-base),
-    opacity var(--transition-base),
-    box-shadow var(--transition-base),
-    transform var(--transition-base);
-}
+  @media (hover: hover) and (pointer: fine) {
+    a:hover {
+      color: var(--accent-primary);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+  }
 
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+  /* ── Headings ── */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    line-height: var(--lh-tight);
+    letter-spacing: -0.015em;
+    color: var(--text-primary);
+  }
 
-/* ── Inputs ── */
-input, textarea, select {
-  font-family: var(--font-body);
-  font-size: var(--fs-base);
-  color: var(--text-primary);
-  background: var(--bg-glass);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-  outline: none;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
+  /* ── Buttons ── */
+  button {
+    font-family: var(--font-body);
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--text-primary);
+    font-size: var(--fs-base);
+    transition: all var(--transition-base);
+  }
 
-input:focus, textarea:focus, select:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px var(--accent-primary-glow);
-}
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
-input::placeholder, textarea::placeholder {
-  color: var(--text-tertiary);
-}
+  /* Keyboard users get a visible ink ring everywhere, since the light
+     theme no longer relies on glow to signal focus. */
+  :focus-visible {
+    outline: 2px solid var(--brand-orange);
+    outline-offset: 2px;
+  }
 
-/* ── Images ── */
-img, svg {
-  display: block;
-  max-width: 100%;
-}
+  /* ── Inputs ── */
+  input, textarea, select {
+    font-family: var(--font-body);
+    font-size: var(--fs-base);
+    color: var(--text-primary);
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    outline: none;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
 
-/* ── Lists ── */
-ul, ol {
-  list-style: none;
-}
+  input:focus, textarea:focus, select:focus {
+    border-color: var(--accent-primary);
+    box-shadow: var(--shadow-glow-primary);
+  }
 
-/* ── Dialog reset ── */
-dialog {
-  border: none;
-  padding: 0;
-  background: transparent;
-  color: var(--text-primary);
-  max-width: 100vw;
-  max-height: 100vh;
-}
+  input::placeholder, textarea::placeholder {
+    color: var(--text-tertiary);
+  }
 
-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  /* ── Images ── */
+  img, svg {
+    display: block;
+    max-width: 100%;
+  }
+
+  /* ── Lists ── */
+  ul, ol {
+    list-style: none;
+  }
+
+  /* ── Dialog reset ── */
+  dialog {
+    border: none;
+    padding: 0;
+    background: transparent;
+    color: var(--text-primary);
+    max-width: 100vw;
+    max-height: 100vh;
+  }
+
+  dialog::backdrop {
+    background: rgba(17, 19, 24, 0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+  }
 }
 
 /* Utility Animations */

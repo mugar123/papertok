@@ -119,7 +119,7 @@ const LEVELS = {
   },
 };
 
-function normalizeExplanationLanguage(language) {
+export function normalizeExplanationLanguage(language) {
   return language === 'en' ? 'en' : 'es';
 }
 
@@ -229,7 +229,7 @@ export class AIExplanationError extends Error {
   }
 }
 
-function cleanText(value, maxLength) {
+export function cleanText(value, maxLength) {
   return String(value || '').replace(/\0/g, '').trim().slice(0, maxLength);
 }
 
@@ -354,7 +354,7 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
-async function fetchPaperPdf(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOnlySourceMs) {
+export async function fetchPaperPdf(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOnlySourceMs) {
   if (!isAIReadablePdfUrl(pdfUrl)) return null;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -416,7 +416,7 @@ function hasOddEscapingBackslash(text, index) {
   return count % 2 === 1;
 }
 
-function escapeLatexBackslashesInJson(value, { broad = false } = {}) {
+export function escapeLatexBackslashesInJson(value, { broad = false } = {}) {
   const text = String(value || '');
   let output = '';
   let mathDelimiter = '';
@@ -1060,7 +1060,7 @@ export async function checkAIProviderHealth(env) {
   };
 }
 
-async function verifyFirebaseUser(request, env) {
+export async function verifyFirebaseUser(request, env) {
   try {
     const identity = await verifyFirebaseIdentity(request, env);
     return identity.uid;
@@ -1115,7 +1115,7 @@ export function shouldRefundAIQuota(error) {
   return REFUNDABLE_AI_CODES.has(error.code);
 }
 
-async function reserveAIQuota(env, uid) {
+export async function reserveAIQuota(env, uid) {
   // The day is fixed once and travels with the reservation: recomputing it at
   // release time would refund against tomorrow's ledger for a request that
   // straddles UTC midnight.
@@ -1151,7 +1151,7 @@ async function releaseAIQuota(env, quota) {
   }
 }
 
-async function sha256(value) {
+export async function sha256(value) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }

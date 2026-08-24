@@ -847,6 +847,32 @@ service cloud.firestore {
             || validString(request.resource.data.landingPageUrl, 2000));
       }
 
+      // Reader highlights. Anchored by quote rather than by character offset so
+      // they survive a regenerated rewrite, which is why `quote` is required.
+      match /highlights/{highlightId} {
+        allow read, delete: if ownsUserTree(userId);
+        allow create, update: if ownsUserTree(userId)
+          && request.resource.data.keys().hasOnly([
+            'paperId', 'level', 'language', 'sectionId', 'paragraphIndex',
+            'quote', 'kind', 'note', 'paperTitle', 'createdAt'
+          ])
+          && validString(request.resource.data.paperId, 400)
+          && validString(request.resource.data.quote, 400)
+          && request.resource.data.quote.size() >= 8
+          && validString(request.resource.data.sectionId, 40)
+          && request.resource.data.paragraphIndex is int
+          && request.resource.data.paragraphIndex >= 0
+          && request.resource.data.paragraphIndex <= 100
+          && request.resource.data.level in ['beginner', 'university', 'researcher']
+          && request.resource.data.language in ['es', 'en']
+          && (!('kind' in request.resource.data)
+            || request.resource.data.kind in ['user', 'finding', 'method', 'caveat', 'number'])
+          && (!('note' in request.resource.data)
+            || validString(request.resource.data.note, 2000))
+          && (!('paperTitle' in request.resource.data)
+            || validString(request.resource.data.paperTitle, 1000));
+      }
+
       match /{document=**} {
         allow read, write: if false;
       }

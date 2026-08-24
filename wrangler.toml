@@ -3,13 +3,17 @@ main = "worker/report-api.js"
 compatibility_date = "2026-07-16"
 
 [vars]
-ALLOWED_ORIGINS = "https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4175,http://127.0.0.1:4175"
+# 5174/5175 are here because Vite increments the port when 5173 is taken, and a
+# missing origin only shows up as a blocked POST after a successful preflight.
+ALLOWED_ORIGINS = "https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175,http://localhost:4175,http://127.0.0.1:4175"
 AI_PROVIDER = "gemini"
 AI_FALLBACK_PROVIDER = "modal-kimi"
 AI_MODEL = "gemini-3.5-flash"
 AI_FALLBACK_MODEL = "gemini-3.5-flash-lite"
 AI_DAILY_USER_LIMIT = "10"
 AI_DAILY_GLOBAL_LIMIT = "1000"
+# Paper rewrites stream from this model. Falls back to AI_MODEL when unset.
+AI_REWRITE_MODEL = "gemini-3.5-flash"
 MODAL_KIMI_MODEL = "moonshotai/Kimi-K3"
 KIMI_MONTHLY_HARD_CAP_USD = "27"
 KIMI_PROMPT_USD_PER_MILLION = "3"
@@ -49,6 +53,15 @@ S2_GLOBAL_MINUTE_LIMIT = "60"
 [[kv_namespaces]]
 binding = "NOTIFICATION_STORE"
 id = "45c1519982dd48f8a0ea08403c159ae1"
+
+# A rewrite is identical for every reader, so it is cached globally in KV rather
+# than per edge. Until a dedicated namespace exists, ai-rewrite.js falls back to
+# NOTIFICATION_STORE under a "rewrite:" prefix. To separate them, run
+# `npx wrangler kv namespace create AI_REWRITE_STORE` and uncomment this block
+# with the id it prints.
+# [[kv_namespaces]]
+# binding = "AI_REWRITE_STORE"
+# id = "<id from wrangler kv namespace create>"
 
 [[durable_objects.bindings]]
 name = "KIMI_BUDGET_LEDGER"

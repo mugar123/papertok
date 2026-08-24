@@ -1,210 +1,272 @@
 /* ============================================
-   Navbar Styles
+   Navbar — flat document header
+
+   A solid white bar with a hairline bottom rule instead of a floating
+   glass pill: content below it starts at a predictable offset, which is
+   what lets the snap feed measure a full card height.
    ============================================ */
 
-/* ── Desktop Top Navbar ── */
 .navbar {
   position: fixed;
-  top: var(--space-4);
-  left: 50%;
-  transform: translateX(-50%);
-  height: auto;
-  min-height: 56px;
-  width: calc(100% - var(--space-8));
-  max-width: 1000px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 16px;
-  border-radius: 100px;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: var(--nav-height);
   z-index: var(--z-nav);
-  background: rgba(20, 20, 25, 0.65);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border-default);
 }
 
-.navbar-left {
+.navbar-inner {
+  height: 100%;
+  max-width: 1600px;
+  margin: 0 auto;
+  padding: 0 var(--space-5);
   display: flex;
   align-items: center;
+  gap: var(--space-4);
+}
+
+/* ── Wordmark ── */
+.navbar-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+}
+
+.navbar-brand-mark {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-yellow);
+  color: var(--text-primary);
+  font: 600 0.6875rem/1 var(--font-mono);
+  letter-spacing: 0.02em;
+  box-shadow: 2px 2px 0 var(--text-primary);
+}
+
+.navbar-brand-word {
+  font-size: 0.9375rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+/* The yellow only underlines the mark; it never carries text color. */
+.navbar-brand-word span {
+  box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
+}
+
+/* ── Search field (opens the search page) ── */
+.navbar-search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: 0 1 320px;
+  min-width: 0;
+  height: 34px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.navbar-search span {
   flex: 1;
   min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.navbar-center-pill {
-  position: relative;
+.navbar-search kbd {
+  flex: 0 0 auto;
+  padding: 1px 5px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-primary);
+  color: var(--text-tertiary);
+  font: 500 0.6875rem/1.4 var(--font-mono);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .navbar-search:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-primary);
+  }
+}
+
+/* ── Primary links ── */
+.navbar-links {
   display: flex;
   align-items: center;
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 30px;
-  padding: 4px;
+  gap: var(--space-1);
+  margin-left: auto;
 }
 
-.navbar-tab {
-  position: relative;
-  z-index: 1;
+.navbar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
   border: none;
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-secondary);
   font-family: var(--font-body);
   font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  padding: 8px 16px;
-  cursor: pointer;
-  transition: color 0.3s ease;
+  font-weight: var(--fw-medium);
   text-decoration: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 110px;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .navbar-tab:hover {
-    color: #fff;
-  }
-}
-
-.navbar-tab.active {
-  color: #fff;
-}
-
-.navbar-slider {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  height: calc(100% - 8px);
-  width: 110px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 20px;
-  transition:
-    transform 0.3s cubic-bezier(0.25, 1, 0.5, 1),
-    opacity 0.2s ease;
-  pointer-events: none;
-}
-
-.navbar-slider.is-hidden {
-  opacity: 0;
-}
-
-.navbar-action-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-secondary);
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.navbar-link svg {
+  color: var(--text-tertiary);
+  transition: color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .navbar-action-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
+  .navbar-link:hover {
+    background: var(--bg-glass);
+    color: var(--text-primary);
+    text-decoration: none;
+  }
+
+  .navbar-link:hover svg {
+    color: var(--text-secondary);
   }
 }
 
-.navbar-action-btn.active {
-  color: #fff;
-  background: rgba(139, 92, 246, 0.18);
-}
-
-.navbar-inbox-btn {
+.navbar-link.active {
   position: relative;
+  background: transparent;
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
 }
 
-.navbar-inbox-count {
+.navbar-link.active::after {
+  content: '';
   position: absolute;
-  top: -2px;
-  right: -4px;
-  display: grid;
-  place-items: center;
-  min-width: 17px;
-  height: 17px;
-  padding: 0 4px;
-  border: 2px solid #17171c;
-  border-radius: 9px;
-  background: var(--accent-primary);
-  color: #fff;
-  font-size: 9px;
-  font-weight: 800;
-  line-height: 1;
+  left: 10px;
+  right: 10px;
+  bottom: -2px;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: var(--brand-yellow);
 }
 
-.navbar-action-btn.spinning svg {
-  animation: spin 1s linear infinite;
+.navbar-link.active svg {
+  color: var(--text-primary);
 }
 
+/* ── Right-hand actions ── */
 .navbar-right {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: var(--space-2);
-  flex: 1;
-  min-width: 0;
+  gap: var(--space-1);
+  flex: 0 0 auto;
+  padding-left: var(--space-3);
+  margin-left: var(--space-2);
+  border-left: 1px solid var(--border-default);
+}
+
+.navbar-icon-btn {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .navbar-icon-btn:hover {
+    background: var(--bg-glass);
+    color: var(--text-primary);
+  }
+}
+
+/* The inline search field already covers this on wide screens. */
+.navbar-icon-btn--search-compact {
+  display: none;
+}
+
+.navbar-icon-btn.spinning svg {
+  animation: spin 1s linear infinite;
 }
 
 /* ── Profile ── */
 .navbar-profile {
   position: relative;
-  margin-left: var(--space-2);
   display: flex;
   align-items: center;
-  justify-content: center;
+  margin-left: var(--space-1);
 }
 
 .navbar-avatar-btn {
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   padding: 0;
   border: none;
   background: none;
   cursor: pointer;
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   display: grid;
   place-items: center;
   line-height: 0;
 }
 
-.navbar-avatar-btn.active .navbar-avatar {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.16);
-}
-
 .navbar-avatar {
   display: block;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-full);
   object-fit: cover;
-  border: 2px solid var(--border-default);
+  border: 1px solid var(--border-default);
   transition: border-color var(--transition-fast);
+}
+
+.navbar-avatar-btn.active .navbar-avatar {
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 2px var(--brand-yellow);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .navbar-avatar:hover {
-    border-color: var(--accent-primary);
+    border-color: var(--border-strong);
   }
 }
 
 .navbar-avatar--small {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
 }
 
 .navbar-avatar--fallback {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--gradient-brand);
-  color: white;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-bold);
+  background: var(--brand-yellow);
+  color: var(--text-primary);
+  font: 600 0.6875rem/1 var(--font-mono);
+  border-color: var(--border-default);
 }
 
 /* ── Dropdown ── */
@@ -212,27 +274,30 @@
   position: absolute;
   top: calc(100% + var(--space-2));
   right: 0;
-  width: 220px;
-  background: var(--bg-primary);
+  width: 228px;
+  background: var(--bg-card);
   border: 1px solid var(--border-default);
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8);
-  border-radius: var(--radius-xl);
-  padding: var(--space-3);
-  animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-lg);
+  border-radius: var(--radius-lg);
+  padding: var(--space-2);
+  animation: scaleIn 0.14s ease-out;
+  transform-origin: top right;
   z-index: var(--z-modal);
 }
 
 .navbar-dropdown-header {
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) var(--space-3) var(--space-3);
 }
 
 .navbar-dropdown-name {
   font-weight: var(--fw-semibold);
   font-size: var(--fs-sm);
+  color: var(--text-primary);
 }
 
 .navbar-dropdown-email {
-  font-size: var(--fs-xs);
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
   color: var(--text-tertiary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -252,90 +317,100 @@
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
   color: var(--text-secondary);
   text-align: left;
-  transition: all var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.navbar-dropdown-item svg {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .navbar-dropdown-item:hover {
-    background: var(--bg-glass-hover);
+    background: var(--bg-secondary);
     color: var(--text-primary);
+  }
+
+  .navbar-dropdown-item:hover svg {
+    color: var(--text-primary);
+  }
+
+  .navbar-dropdown-item--danger:hover {
+    background: var(--tint-red-bg);
+    color: var(--tint-red-fg);
+  }
+
+  .navbar-dropdown-item--danger:hover svg {
+    color: var(--tint-red-fg);
   }
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .navbar-dropdown-item--danger:hover {
-    color: var(--accent-danger);
+/* ── Responsive ── */
+@media (max-width: 1080px) {
+  .navbar-search {
+    flex-basis: 220px;
+  }
+
+  .navbar-search kbd {
+    display: none;
+  }
+}
+
+@media (max-width: 900px) {
+  .navbar-search {
+    display: none;
+  }
+
+  .navbar-icon-btn--search-compact {
+    display: grid;
   }
 }
 
 @media (max-width: 768px) {
   .navbar {
-    top: var(--space-2);
-    width: calc(100% - var(--space-2));
-    padding: 6px 8px;
-    justify-content: space-between;
+    height: var(--nav-height-mobile);
   }
-  
-  .navbar-left {
-    flex: 0 0 auto;
+
+  .navbar-inner {
+    padding: 0 var(--space-3);
+    gap: var(--space-2);
+  }
+
+  .navbar-brand-word {
+    display: none;
+  }
+
+  .navbar-links {
+    gap: 0;
+  }
+
+  .navbar-link {
+    padding: 6px 8px;
+    font-size: 0.8125rem;
+  }
+
+  .navbar-link svg {
+    display: none;
   }
 
   .navbar-right {
-    flex: 0 0 auto;
-    gap: 8px;
-  }
-  
-  .navbar-profile {
-    margin-left: 0;
-  }
-
-  .navbar-center-pill {
-    /* "Research" and "Siguiendo" need more room than the old labels. */
-    width: 246px;
-  }
-
-  .navbar-tab {
-    width: 33.333%;
-    min-width: unset;
-    font-size: 11px;
-    padding: 6px 0;
-    text-align: center;
-    justify-content: center;
-  }
-
-  .navbar-slider {
-    width: calc(33.333% - 2.6px); /* Account for pill padding and 3 tabs */
-  }
-
-  .navbar-action-btn {
-    width: 32px;
-    height: 32px;
-  }
-
-  .navbar-avatar {
-    width: 28px;
-    height: 28px;
-  }
-
-  .navbar-avatar-btn {
-    width: 32px;
-    height: 32px;
+    padding-left: var(--space-2);
+    margin-left: var(--space-1);
   }
 }
 
 @media (max-width: 420px) {
-  .navbar-center-pill {
-    width: 222px;
+  .navbar-link {
+    padding: 6px 6px;
+    font-size: 0.75rem;
   }
 
-  .navbar-tab {
-    font-size: 10px;
-  }
-
-  .navbar-right {
-    gap: 4px;
+  .navbar-icon-btn {
+    width: 28px;
+    height: 28px;
   }
 }
 
@@ -345,15 +420,16 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .navbar-slider,
-  .navbar-action-btn,
+  .navbar-link,
+  .navbar-icon-btn,
   .navbar-avatar,
-  .navbar-dropdown {
+  .navbar-dropdown,
+  .navbar-search {
     transition: none;
     animation: none;
   }
 
-  .navbar-action-btn.spinning svg {
+  .navbar-icon-btn.spinning svg {
     animation: none;
   }
 }

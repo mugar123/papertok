@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { fileURLToPath, URL } from 'node:url'
 import { describeDeployFlagDrift, findDeployFlagDrift } from './src/utils/deployFlags.js'
 
 // Fifteen services read `VITE_PAPER_API_BASE_URL` — arXiv, OpenAlex, Scopus, AI
@@ -52,7 +54,12 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     base: '/papertok/',
-    plugins: [react()],
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      alias: {
+        '@': fileURLToPath(new URL('./src', import.meta.url)),
+      },
+    },
     server: {
       // Honors the harness-assigned port when two sessions run dev servers at
       // once; without PORT set, the default 5173 stands.

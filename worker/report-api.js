@@ -28,6 +28,12 @@ import {
   PUBLIC_LIST_PATHS,
   PublicListApiError,
 } from './public-list-api.js';
+import {
+  fetchPaperFigures,
+  FIGURE_CACHE_SECONDS,
+  FIGURE_EMPTY_CACHE_SECONDS,
+  isArxivFigureId,
+} from './paper-figures.js';
 import { isServiceAccountConfigured } from './firestore-admin.js';
 import { reserveRequestQuota } from './request-quota-ledger.js';
 
@@ -1234,6 +1240,27 @@ async function handleHuggingFaceResources(request, env) {
   }, { canonicalParams: { arxiv_id: arxivId } });
 }
 
+async function handlePaperFigures(request, env) {
+  const requestUrl = new URL(request.url);
+  const origin = request.headers.get('origin') || '';
+  if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+  const arxivId = String(requestUrl.searchParams.get('arxiv_id') || '').trim().replace(/v\d+$/i, '');
+  if (!isArxivFigureId(arxivId)) {
+    return json({ error: 'Invalid arXiv identifier' }, 400, corsHeaders(origin, env));
+  }
+
+  // A paper that yielded nothing is retried in an hour rather than in a month:
+  // the renderers publish HTML for new papers on their own schedule.
+  return cacheResponse(
+    request,
+    origin,
+    env,
+    (payload) => (payload?.figures?.length ? FIGURE_CACHE_SECONDS : FIGURE_EMPTY_CACHE_SECONDS),
+    () => fetchPaperFigures(arxivId),
+    { canonicalParams: { arxiv_id: arxivId } },
+  );
+}
+
 async function handleCore(request, env, identity) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
@@ -1908,6 +1935,7 @@ const DOMAIN_SOURCE_HANDLERS = {
   '/sources/huggingface': handleHuggingFacePapers,
   '/enrich/icite': handleICite,
   '/resources/huggingface': handleHuggingFaceResources,
+  '/resources/figures': handlePaperFigures,
 };
 
 export default {

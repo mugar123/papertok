@@ -156,7 +156,7 @@
   height: 24px;
   border-radius: 50%;
   background: var(--accent-primary);
-  color: white;
+  color: var(--text-inverse);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -244,14 +244,14 @@
 .subcat-chip--selected {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
-  color: white;
+  color: var(--text-inverse);
   box-shadow: 0 0 12px var(--accent-primary-glow);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .subcat-chip--selected:hover {
     background: var(--accent-primary-hover);
-    color: white;
+    color: var(--text-inverse);
   }
 }
 
@@ -310,7 +310,7 @@
   background: var(--gradient-brand);
   border: none;
   border-radius: var(--radius-xl);
-  color: white;
+  color: var(--text-primary);
   font-family: var(--font-heading);
   font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
@@ -334,8 +334,8 @@
 .onboarding-spinner {
   width: 24px;
   height: 24px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
+  border: 3px solid var(--border-strong);
+  border-top-color: var(--text-primary);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -375,7 +375,7 @@
 
 .onboarding-nav-btn--next {
   background: var(--gradient-brand);
-  color: white;
+  color: var(--text-primary);
   margin-left: auto;
   box-shadow: var(--shadow-glow-primary);
 }

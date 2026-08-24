@@ -1,8 +1,4 @@
-/* Save and organize.
-   Two sections with two save models, each labeled: destinations (read later,
-   lists, new list) save on tap; the note and tags wait for their button.
-   Centered card on desktop, bottom sheet on phones. */
-
+/* Save to List Modal */
 .save-modal-dialog {
   border: none;
   background: transparent;
@@ -17,20 +13,19 @@
 }
 
 .save-modal-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.7);
+  background: rgba(17, 19, 24, 0.70);
   backdrop-filter: blur(4px);
   -webkit-backdrop-filter: blur(4px);
-  animation: fadeIn 0.2s ease;
 }
 
 .save-modal {
   width: 90%;
-  max-width: 440px;
-  max-height: 84vh;
+  max-width: 420px;
+  max-height: 80vh;
   overflow-y: auto;
   border-radius: var(--radius-2xl);
   padding: var(--space-6);
-  animation: scaleIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: scaleIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .save-modal-header {
@@ -66,46 +61,21 @@
 .save-modal-paper-title {
   font-size: var(--fs-sm);
   color: var(--text-tertiary);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-6);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-/* --- Section chrome --- */
-
-.save-modal-section-head {
+.save-modal-personal {
   display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-  margin-bottom: var(--space-3);
-}
-
-.save-modal-section-title {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.save-modal-section-hint {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: var(--fs-xs);
-}
-
-.save-modal-destinations {
+  flex-direction: column;
+  gap: var(--space-3);
   padding-bottom: var(--space-5);
-  margin-bottom: var(--space-5);
+  margin-bottom: var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
 }
-
-/* --- Read later --- */
 
 .save-modal-read-later {
   display: flex;
@@ -134,174 +104,6 @@
 .save-modal-read-later strong { font-size: var(--fs-sm); }
 .save-modal-read-later small { color: var(--text-tertiary); font-size: var(--fs-xs); }
 
-/* --- Lists --- */
-
-.save-modal-lists {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-  margin-top: var(--space-2);
-}
-
-.save-modal-list-skeleton {
-  height: 44px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-glass);
-  animation: save-modal-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes save-modal-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
-
-.save-modal-loading {
-  text-align: center;
-  color: var(--text-tertiary);
-  font-size: var(--fs-sm);
-  padding: var(--space-5) var(--space-4);
-}
-
-/* Selection must be readable at a glance: the whole row carries the state
-   (accent border + tint), and the checkbox is a real box with a real check,
-   not a discreet tick. */
-.save-modal-list-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid transparent;
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-list-item:hover {
-    background: var(--bg-glass-hover);
-  }
-}
-
-.save-modal-list-item.is-selected {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary-glow);
-}
-
-.save-modal-list-item input[type="checkbox"] {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.save-modal-checkbox {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-sm);
-  border: 2px solid var(--border-strong);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: transparent;
-  transition: background var(--transition-fast), border-color var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.save-modal-checkbox svg {
-  transform: scale(0.6);
-  transition: transform var(--transition-fast);
-}
-
-.save-modal-list-item input:checked + .save-modal-checkbox {
-  background: var(--accent-primary);
-  border-color: var(--accent-primary);
-  color: #fff;
-}
-
-.save-modal-list-item input:checked + .save-modal-checkbox svg {
-  transform: scale(1);
-}
-
-.save-modal-list-item input:focus-visible + .save-modal-checkbox {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
-}
-
-.save-modal-list-item.is-selected .save-modal-list-name {
-  color: var(--text-primary);
-  font-weight: var(--fw-semibold);
-}
-
-.save-modal-list-emoji {
-  display: flex;
-  color: var(--text-secondary);
-}
-
-.save-modal-list-name {
-  flex: 1;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-}
-
-.save-modal-list-count {
-  font-size: var(--fs-xs);
-  color: var(--text-tertiary);
-}
-
-.save-modal-empty {
-  color: var(--text-tertiary);
-  font-size: var(--fs-sm);
-  padding: var(--space-2) var(--space-3);
-}
-
-/* --- New list ---------------------------------------------------------------
-   Folded behind its own button under the lists; pressing it unfolds the
-   creation form (icon, name). Lists are born private — publishing is an act
-   on a list with content, over in My lists. */
-
-.save-modal-create-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  width: 100%;
-  min-height: 42px;
-  margin-top: var(--space-3);
-  border: 1px dashed var(--border-default);
-  border-radius: var(--radius-lg);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  transition: border-color var(--transition-fast), color var(--transition-fast),
-    background var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-create-toggle:hover {
-    border-color: var(--accent-primary);
-    background: var(--bg-glass);
-    color: var(--text-primary);
-  }
-}
-
-/* Its own window over the save modal: a small centered card in a nested
-   <dialog>, with a real header, labeled fields and a footer — not a dashed
-   box crammed between the lists and the note. */
-
-/* --- Note and tags --- */
-
-.save-modal-personal {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
-.save-modal-personal .save-modal-section-head {
-  margin-bottom: 0;
-}
-
 .save-modal-field { display: flex; flex-direction: column; gap: var(--space-2); }
 .save-modal-field > span { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); font-weight: var(--fw-medium); }
 .save-modal-field textarea,
@@ -320,261 +122,162 @@
 .save-modal-field textarea:focus,
 .save-modal-field input:focus { outline: none; border-color: var(--accent-primary); }
 
-/* --- Tags as chips ---------------------------------------------------------
-   One bordered field that holds the chips and the input together: typing and
-   Enter grows it, ✕ (or Backspace on an empty input) shrinks it. */
-
-.save-modal-tag-editor {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: var(--space-1);
-  min-height: 46px;
-  padding: var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-glass);
-  cursor: text;
-}
-
-.save-modal-tag-editor:focus-within {
-  border-color: var(--accent-primary);
-}
-
-.save-modal-tag-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 3px var(--space-1) 3px var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-glass-strong);
-  color: var(--text-primary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  overflow-wrap: anywhere;
-}
-
-.save-modal-tag-remove {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-full);
-  color: var(--text-tertiary);
-  transition: color var(--transition-fast), background var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-tag-remove:hover {
-    background: var(--bg-glass-hover);
-    color: var(--text-primary);
-  }
-}
-
-/* Scoped under the editor to outrank the generic `.save-modal-field input`
-   rule: the chip input is borderless — the editor box is the field. */
-.save-modal-tag-editor .save-modal-tag-input {
-  flex: 1;
-  width: auto;
-  min-width: 120px;
-  padding: var(--space-1);
-  border: none;
-  background: none;
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-}
-
-.save-modal-tag-editor .save-modal-tag-input:focus {
-  border: none;
-  box-shadow: none;
-  outline: none;
-}
-
-/* --- Footer: export --- */
-
-.save-modal-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
-  margin-top: var(--space-5);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-}
-
-.save-modal-footer-label {
-  color: var(--text-tertiary);
-  font-size: var(--fs-xs);
-}
-
-.save-modal-export { display: flex; gap: var(--space-2); }
+.save-modal-personal-actions { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); flex-wrap: wrap; }
+.save-modal-metadata-btn,
 .save-modal-export button {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  min-height: 30px;
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
+  min-height: 34px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
 }
+.save-modal-metadata-btn { background: var(--accent-primary); color: var(--text-inverse); }
+.save-modal-export { display: flex; gap: var(--space-2); }
+.save-modal-export button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid var(--border-default); color: var(--text-secondary); }
 @media (hover: hover) and (pointer: fine) {
   .save-modal-export button:hover { background: var(--bg-glass-hover); color: var(--text-primary); }
 }
+.save-modal-section-title { padding: var(--space-1) var(--space-4); color: var(--text-tertiary); font-size: var(--fs-xs); font-weight: var(--fw-semibold); text-transform: uppercase; }
 
-/* The retry beside "your lists could not be loaded". A read that did not
-   answer is a retryable state, not an empty account, so it needs a way out
-   that is not reloading the page. */
-.save-modal-retry {
-  display: block;
-  margin: var(--space-3) auto 0;
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-glass);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
+.save-modal-loading {
+  text-align: center;
+  color: var(--text-tertiary);
+  padding: var(--space-8);
+}
+
+.save-modal-lists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-6);
+}
+
+.save-modal-list-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
   cursor: pointer;
-}
-.save-modal-retry:hover { background: var(--bg-glass-hover); color: var(--text-primary); }
-
-/* --- The save bar -----------------------------------------------------------
-   One button confirms everything. Sticky at the modal's bottom edge (the
-   negative margins re-occupy the modal's padding), so it stays reachable
-   however far the sheet scrolls — which on a phone is the whole point. When
-   closing would lose changes, the bar becomes the discard confirmation. */
-
-.save-modal-savebar {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  margin: var(--space-5) calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
-  padding: var(--space-3) var(--space-6) var(--space-4);
-  border-top: 1px solid var(--border-subtle);
-  border-radius: 0 0 var(--radius-2xl) var(--radius-2xl);
-  background: var(--bg-elevated);
-}
-
-.save-modal-save-btn {
-  display: block;
-  width: 100%;
-  min-height: 42px;
-  border-radius: var(--radius-full);
-  background: var(--accent-primary);
-  color: #fff;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  transition: background var(--transition-fast), opacity var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-save-btn:not(:disabled):hover {
-    background: var(--accent-primary-hover);
-  }
-}
-
-.save-modal-save-error {
-  margin: 0 0 var(--space-2);
-  color: var(--accent-danger);
-  font-size: var(--fs-xs);
-}
-
-.save-modal-discard {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
-}
-
-.save-modal-discard p {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-}
-
-.save-modal-discard-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.save-modal-discard-btn {
-  min-height: 36px;
-  padding: 0 var(--space-4);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  border-radius: var(--radius-full);
-  color: var(--accent-danger);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
   transition: background var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .save-modal-discard-btn:hover {
-    background: rgba(239, 68, 68, 0.08);
-  }
-}
-
-.save-modal-keep-btn {
-  min-height: 36px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-glass);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-keep-btn:hover {
+  .save-modal-list-item:hover {
     background: var(--bg-glass-hover);
   }
 }
 
-/* --- Phone: bottom sheet, like the comments sheet --- */
+.save-modal-list-item input[type="checkbox"] {
+  display: none;
+}
 
-@media (max-width: 600px) {
-  .save-modal-dialog {
-    align-items: flex-end;
-  }
+.save-modal-checkbox {
+  width: 20px;
+  height: 20px;
+  border-radius: var(--radius-sm);
+  border: 2px solid var(--border-default);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all var(--transition-fast);
+}
 
-  .save-modal {
-    width: 100%;
-    max-width: none;
-    max-height: 88dvh;
-    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
-    padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
-    animation: slideInFromBottom 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  }
+.save-modal-list-item input:checked + .save-modal-checkbox {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
 
-  .save-modal-savebar {
-    margin-bottom: calc(-1 * (var(--space-6) + env(safe-area-inset-bottom, 0px)));
-    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
-    border-radius: 0;
+.save-modal-list-item input:checked + .save-modal-checkbox::after {
+  content: '✓';
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.save-modal-list-emoji {
+  font-size: 1.2rem;
+}
+
+.save-modal-list-name {
+  flex: 1;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.save-modal-list-count {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+.save-modal-empty {
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+  padding: var(--space-4);
+}
+
+/* Create new list */
+.save-modal-create {
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-4);
+}
+
+.save-modal-emoji-picker {
+  display: flex;
+  gap: var(--space-1);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.save-modal-emoji-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  transition: all var(--transition-fast);
+  border: 1px solid transparent;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .save-modal-emoji-btn:hover {
+    background: var(--bg-glass-hover);
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .save-modal,
-  .save-modal-dialog::backdrop {
-    animation: none;
-  }
-
-  .save-modal-list-skeleton {
-    animation: none;
-  }
-
-  .save-modal-read-later:active {
-    transform: none;
-  }
+.save-modal-emoji-btn.active {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary-glow);
 }
 
-/* fadeIn / scaleIn / slideInFromBottom come from variables.css. */
+.save-modal-create-row {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.save-modal-input {
+  flex: 1;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-default);
+  background: var(--bg-glass);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+}
+
+.save-modal-create-btn {
+  padding: var(--space-2) var(--space-4);
+  background: var(--gradient-brand);
+  color: var(--text-primary);
+  border-radius: var(--radius-md);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+}
+
+.save-modal-create-btn:disabled {
+  opacity: 0.4;
+}
