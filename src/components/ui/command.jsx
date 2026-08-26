@@ -33,18 +33,34 @@ function CommandDialog({ children, title = 'Search', ...props }) {
 }
 
 /**
- * The field sat flush against the top edge of the sheet — `h-12` and nothing
- * above it — so the palette opened with its one control jammed into the corner.
- * The extra top padding is the only air the search bar gets, since the sheet
- * has no chrome of its own above it.
+ * The field is a line inside the sheet, not a box on top of one.
+ *
+ * `border-0 shadow-none` are load-bearing. The element reset in `global.css`
+ * gives every `input` a border and a radius, and `input:focus` an ink border
+ * plus `--shadow-glow-primary` — so this field, which opens `autoFocus`ed,
+ * painted a heavy black rectangle around itself the instant the palette
+ * appeared, and read as "your text got selected". The sheet already has a
+ * border and a rule under this row; a second box inside it is noise. `px-0`
+ * likewise drops the reset's `--space-4` inset, so the placeholder sits next to
+ * the magnifier rather than 24px away from it.
+ *
+ * Overriding it needs no `!important`: `global.css` declares
+ * `@layer theme, base, components, utilities`, so any utility beats the base
+ * reset whatever its specificity. `SearchPage.css` predates that and still
+ * fights the same rule with `!important`.
+ *
+ * `py-2` on the row is the air around the field. It was `pt-2`, which pushed
+ * the field down without giving it the matching room underneath, so it sat off
+ * centre in its own band.
  */
 function CommandInput({ className, ...props }) {
   return (
-    <div className="flex items-center gap-2 border-b border-border px-4 pt-2">
+    <div className="flex items-center gap-2 border-b border-border px-4 py-2">
       <Search size={16} className="shrink-0 text-muted-foreground" />
       <CommandPrimitive.Input
         className={cn(
-          'flex h-12 w-full bg-transparent py-3 text-[0.9375rem] outline-none placeholder:text-[var(--text-tertiary)]',
+          'flex h-12 w-full border-0 bg-transparent px-0 py-3 text-[0.9375rem] shadow-none outline-none',
+          'placeholder:text-[var(--text-tertiary)]',
           className,
         )}
         {...props}

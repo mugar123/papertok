@@ -203,7 +203,14 @@ test('neither surface paints a section while an answer is still owed', () => {
   // down under a reader who had already started reading. So the gate is the
   // pending state that covers BOTH channels, never the external one alone.
   assert.match(page, /hasVisibleResults && !searchPending/, 'the page gates its sections');
-  assert.match(palette, /!searchPending && orderedSections\.map/, 'the palette gates its sections');
+  assert.match(palette, /!searchPending && renderedSections/, 'the palette gates its sections');
+  // And what it gates is the real list, not some other variable that happens to
+  // be named like one: `renderedSections` is built from the ranked order.
+  assert.match(
+    palette,
+    /const renderedSections = orderedSections\.map\(/,
+    'the gated value is the ranked section list',
+  );
   // And what stands in the gap is a skeleton, not an empty sheet: waiting for
   // every source is only tolerable if the wait has a shape.
   assert.match(page, /className="search-loading-state"/, 'the page shows a skeleton while it waits');
@@ -269,6 +276,81 @@ test('the wait covers the people channel, not just the external one', () => {
     assert.match(surface.code, /const searchPending = [\s\S]{0,200}?peoplePending/, surface.name);
   }
 });
+
+/**
+ * Reduced motion must not mean no content.
+ *
+ * A row that starts at `opacity: 0` and only reaches 1 through an animation is
+ * invisible the moment that animation does not run, and `forwards`/`both` then
+ * pins it there. The trap is written up in `design.md`, it has already shipped
+ * once in this very stylesheet (the comment in the reduced-motion block of
+ * `SearchPage.css` is the post-mortem), and every new entrance animation is
+ * another chance to reintroduce it — silently, for exactly the users who asked
+ * not to be shown motion.
+ *
+ * So the rule is mechanical: declare `opacity: 0` next to an `animation` and
+ * you owe the same selector an `opacity: 1` under
+ * `@media (prefers-reduced-motion: reduce)`.
+ */
+function withoutComments(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
+/** Innermost `selector { body }` pairs; at-rule wrappers fall out on their own. */
+function innermostRules(css) {
+  const rules = [];
+  const pattern = /([^{}]+)\{([^{}]*)\}/g;
+  let match;
+  while ((match = pattern.exec(css)) !== null) {
+    rules.push({ selectors: match[1].trim().split(',').map(one => one.trim()).filter(Boolean), body: match[2] });
+  }
+  return rules;
+}
+
+/** The body of every `prefers-reduced-motion: reduce` block, brace-balanced. */
+function reducedMotionBlocks(css) {
+  const blocks = [];
+  const opener = /@media \(prefers-reduced-motion: reduce\)\s*\{/g;
+  let match;
+  while ((match = opener.exec(css)) !== null) {
+    const start = match.index + match[0].length;
+    let depth = 1;
+    let cursor = start;
+    while (cursor < css.length && depth > 0) {
+      if (css[cursor] === '{') depth += 1;
+      else if (css[cursor] === '}') depth -= 1;
+      cursor += 1;
+    }
+    blocks.push(css.slice(start, cursor - 1));
+  }
+  return blocks;
+}
+
+for (const stylesheet of ['./SearchPage.css', './SearchCommand.css']) {
+  test(`${stylesheet.replace('./', '')} keeps its content visible without motion`, async () => {
+    const css = withoutComments(await readFile(new URL(stylesheet, import.meta.url), 'utf8'));
+
+    const restored = new Set();
+    for (const block of reducedMotionBlocks(css)) {
+      for (const rule of innermostRules(block)) {
+        if (/opacity:\s*1\b/.test(rule.body)) rule.selectors.forEach(one => restored.add(one));
+      }
+    }
+
+    const atRisk = innermostRules(css)
+      .filter(rule => /opacity:\s*0\s*;/.test(rule.body) && /animation:/.test(rule.body))
+      .flatMap(rule => rule.selectors);
+
+    assert.ok(atRisk.length > 0, 'expected to have found the animated entrances at all');
+    for (const selector of atRisk) {
+      assert.ok(
+        restored.has(selector),
+        `${selector} starts at opacity 0 and is only revealed by its animation, `
+        + 'so it needs an opacity: 1 under prefers-reduced-motion or it is invisible there',
+      );
+    }
+  });
+}
 
 test('the outage description speaks only for the external sources', () => {
   // Mirrors the rule above for setSearchIssue: a Firestore hiccup must not be

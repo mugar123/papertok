@@ -91,6 +91,19 @@
       calc(var(--fig-in-duration, 620ms) + 2.6s) infinite;
 }
 
+/* Until the bytes are actually here, the clipping is not.
+   The frame carries its own card background, border and shadow, so painting it
+   the moment the URL is known meant the entrance animation played on an empty
+   white rectangle and the figure filled in afterwards — the reader watched the
+   arrival twice. Gating on `load` (not on the URL existing) means the animation
+   runs once, on something that already has a picture in it.
+   No fill mode here either, for the same reason as above: this only withholds
+   the pose, it never holds one. */
+.pc-figure:not(.is-loaded) {
+  opacity: 0;
+  animation: none;
+}
+
 /* Laid down rather than switched on: the clipping arrives flat and a touch
    low, then settles into its slot. The first fifth of the run is a hold, which
    is what staggers the four — a longer `--fig-in-duration` means a later
@@ -163,8 +176,12 @@
 }
 
 /* A quiet field glyph in the corner of the sheet. */
+/* The field glyph stays when the paper brings figures. Hiding it outright took
+   away the one mark that says which science this is, and it is the constant of
+   the card: every paper has a field, only some have clippings. Behind the
+   figures it steps back rather than leaving. */
 .pc-figures ~ .pc-sheet .pc-watermark {
-  display: none;
+  opacity: 0.1;
 }
 
 .pc-watermark {
