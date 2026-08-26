@@ -86,7 +86,18 @@ Dialogs, palettes, toggles and tooltips already exist in `src/components/ui/`.
 ### 6. Group actions by intent
 Primary actions cluster left. Utility icons cluster right behind a `1px` rule.
 Push the gap from the primary group with `margin-right: auto` so the layout
-holds whether or not the middle group renders.
+holds whether or not the middle group renders. Nothing that is not an action
+belongs on that row — metadata rides in the metadata band, with the meta line
+and the status chips. And let a group of actions wrap (`flex-wrap`): button
+labels are `whitespace-nowrap` and cannot compress, so a row that cannot wrap
+has to clip, and what it clips is the last action.
+
+> The card's topic tags used to sit on that row, between the reading buttons
+> and the utility icons. Moved out on 2026-08-25: on a paper carrying several
+> concepts they pushed the action row to two, three, four lines, and where the
+> sheet is narrowest they left `Read in plain words` clipped off the edge of
+> the card. They are index terms, not actions. They now sit above the headline
+> as one scrolling line, so fifteen of them cost exactly what two do.
 
 ### 7. Sizes bend to the viewport
 Any clamp on content height uses viewport units, never a fixed `em`, or content
@@ -157,6 +168,14 @@ Tailwind v4 is wired via `@tailwindcss/vite`; utility classes (`w-full`,
   Motion for enter/exit; respect `prefers-reduced-motion`.
 - **Chips / tags** — `1px` border, `--radius-sm`, mono or small Inter, tinted
   from the field or a status tint.
+- **One scrolling line** — a strip of chips whose length comes from the data
+  gets a fixed single row rather than a wrap: `overflow-x: auto`, no scrollbar,
+  `overscroll-behavior-inline: contain`, and a `mask-image` fading the right
+  edge. The fade lands on empty ground when the strip fits and cuts the last
+  chip when it does not, so it is the crop's own signal, with no measuring.
+  Nothing leaves the DOM: every chip stays clickable and keyboard focus scrolls
+  it into view. Use it wherever a card of fixed height shows a list it does not
+  control the length of (`.pc-topics`, `.pc-linked-resources-list`).
 - **Stat block** — mono tabular-nums value over a mono uppercase label, in a
   ruled grid (`.ehc-stats-grid`, `.sr-stat`).
 

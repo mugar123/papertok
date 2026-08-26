@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import {
   canRewritePaper,
+  fetchRemainingAIUses,
   getCachedRewrite,
   PAPER_REWRITE_LEVELS,
   PaperRewriteError,
@@ -49,6 +50,15 @@ const COPY = {
     original: 'Ver el paper original',
     adaptation: 'Adaptación generada por IA a partir del texto completo. No sustituye al artículo original.',
     remaining: (count) => `${count} ${count === 1 ? 'uso' : 'usos'} hoy`,
+    uses: (left, total) => `${left}/${total} hoy`,
+    usesTitle: (left, total) => (left === 0
+      ? `Has gastado los ${total} usos de IA de hoy. Vuelven mañana.`
+      : `Te ${left === 1 ? 'queda' : 'quedan'} ${left} de ${total} usos de IA hoy.`),
+    stages: {
+      source: 'Descargando el paper',
+      reading: 'El modelo está leyendo el paper',
+      writing: 'Reescribiendo el paper',
+    },
     retry: 'Reintentar',
     incomplete: 'La reescritura se cortó antes de terminar. Puedes reintentarlo.',
     yourHighlight: 'Quitar destacado',
@@ -69,6 +79,15 @@ const COPY = {
     original: 'View the original paper',
     adaptation: 'AI adaptation generated from the full text. It does not replace the original article.',
     remaining: (count) => `${count} ${count === 1 ? 'use' : 'uses'} today`,
+    uses: (left, total) => `${left}/${total} today`,
+    usesTitle: (left, total) => (left === 0
+      ? `You have used all ${total} of today's AI uses. They return tomorrow.`
+      : `${left} of ${total} AI uses left today.`),
+    stages: {
+      source: 'Downloading the paper',
+      reading: 'The model is reading the paper',
+      writing: 'Rewriting the paper',
+    },
     retry: 'Try again',
     incomplete: 'The rewrite stopped before finishing. You can try again.',
     yourHighlight: 'Remove highlight',
@@ -127,6 +146,14 @@ export default function PaperReader({ paper, onClose }) {
   const [error, setError] = useState(null);
   const [showHighlights, setShowHighlights] = useState(true);
   const [userHighlights, setUserHighlights] = useState([]);
+  /**
+   * The day's AI allowance, read without spending any of it. `meta.remainingUses`
+   * only exists once a rewrite is under way — after it has already cost a use,
+   * and never on a cache hit or a failure — so the reader asks for the number
+   * itself and then keeps it up to date from whatever the stream reports.
+   */
+  const [quota, setQuota] = useState(null);
+  const [stage, setStage] = useState('source');
   const abortRef = useRef(null);
   /**
    * The rewrite this reader has already asked for, keyed the way the rewrite
@@ -160,6 +187,7 @@ export default function PaperReader({ paper, onClose }) {
     setSections([]);
     setMeta(null);
     setError(null);
+    setStage('source');
     setStatus('streaming');
 
     // Counted here rather than in the effect: only this branch reaches the
@@ -172,14 +200,27 @@ export default function PaperReader({ paper, onClose }) {
         language: isEnglish ? 'en' : 'es',
         force,
         signal: controller.signal,
-        onMeta: (nextMeta) => setMeta(nextMeta),
+        onMeta: (nextMeta) => {
+          setMeta(nextMeta);
+          // The reservation has already happened by the time this arrives, so it
+          // is the freshest count there is — fresher than what the reader asked
+          // for when it opened.
+          if (typeof nextMeta.remainingUses === 'number') {
+            setQuota(current => ({ dailyLimit: current?.dailyLimit ?? null, remainingUses: nextMeta.remainingUses }));
+          }
+        },
         onSection: (section) => setSections(current => [...current, section]),
+        onProgress: ({ stage: nextStage }) => setStage(nextStage),
       });
       setStatus(result.incomplete ? 'incomplete' : 'ready');
     } catch (caught) {
       if (caught instanceof PaperRewriteError && caught.code === 'AI_CANCELLED') return;
       setError(caught instanceof PaperRewriteError ? caught.code : 'AI_UNAVAILABLE');
       setStatus('error');
+      // Most failures hand the use back, and the worker does it after the count
+      // on the `meta` line was already sent. Re-reading is the only way the chip
+      // can show the refund rather than a use the reader never actually spent.
+      fetchRemainingAIUses({ signal: controller.signal }).then(fresh => { if (fresh) setQuota(fresh); });
     }
   }, [isEnglish, paper, trackEvent]);
 
@@ -205,6 +246,17 @@ export default function PaperReader({ paper, onClose }) {
   }, [isEnglish, level, load, paper, supportsRewrite]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  useEffect(() => {
+    if (!uid) return undefined;
+    const controller = new AbortController();
+    fetchRemainingAIUses({ signal: controller.signal }).then(fresh => {
+      // Only when nothing better has arrived: a rewrite that started while this
+      // was in flight already reported a newer number on its `meta` line.
+      if (fresh) setQuota(current => current ?? fresh);
+    });
+    return () => controller.abort();
+  }, [uid]);
 
   useEffect(() => {
     if (!uid || !paperId) return;
@@ -290,8 +342,28 @@ export default function PaperReader({ paper, onClose }) {
       <div className="rd-status">
         <span className="rd-status-kicker"><Sparkles size={11} /> {copy.title}</span>
         {meta?.cached && <span className="rd-status-chip">{copy.cached}</span>}
-        {typeof meta?.remainingUses === 'number' && (
-          <span className="rd-status-chip">{copy.remaining(meta.remainingUses)}</span>
+        {quota && (
+          <span
+            className="rd-uses"
+            data-level={quota.remainingUses === 0 ? 'out' : quota.remainingUses <= 2 ? 'low' : 'ok'}
+            title={quota.dailyLimit ? copy.usesTitle(quota.remainingUses, quota.dailyLimit) : undefined}
+          >
+            {/* A meter rather than a number alone: "three left" reads as plenty
+                until you see how short the row is. Segments only while there are
+                few enough to count at a glance. */}
+            {quota.dailyLimit > 0 && quota.dailyLimit <= 12 && (
+              <span className="rd-uses-meter" aria-hidden="true">
+                {Array.from({ length: quota.dailyLimit }, (_, index) => (
+                  <i key={index} data-spent={index >= quota.remainingUses ? '' : undefined} />
+                ))}
+              </span>
+            )}
+            <span className="rd-uses-count">
+              {quota.dailyLimit
+                ? copy.uses(quota.remainingUses, quota.dailyLimit)
+                : copy.remaining(quota.remainingUses)}
+            </span>
+          </span>
         )}
       </div>
 
@@ -396,7 +468,7 @@ export default function PaperReader({ paper, onClose }) {
               {isStreaming && (
                 <p className="rd-writing" role="status" aria-live="polite">
                   <Loader2 size={15} className="spinning" />
-                  <span>{copy.writing}</span>
+                  <span>{copy.stages[stage] || copy.writing}</span>
                   <small>{sections.length > 0 ? `${sections.length} ${copy.sections}` : copy.writingHint}</small>
                 </p>
               )}

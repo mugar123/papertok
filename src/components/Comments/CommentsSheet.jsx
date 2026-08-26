@@ -22,6 +22,9 @@ import { profileIsPublic, readOwnUserProfile } from '../../services/userProfileS
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
 import { isReadTimeout, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
+import { CATEGORIES } from '../../data/categories.js';
+import { Button } from '../ui/button.jsx';
 import './CommentsSheet.css';
 
 // Opening the sheet used to start from nothing every time: anchor, pages and
@@ -151,6 +154,29 @@ function initialOf(name) {
 }
 
 /**
+ * The paper's research field as a flat ink colour, mirroring the prefix match
+ * PaperCard and EntityExplorer make, so the thread is tinted by the paper it
+ * hangs off rather than by a decorative default. Returns a `var(--gradient-*)`
+ * reference for `--area-accent`.
+ */
+function getAreaGradient(paper) {
+  const candidates = [paper?.primaryCategory, ...(paper?.categories || [])]
+    .filter(value => typeof value === 'string' && value.trim());
+  for (const candidate of candidates) {
+    const category = candidate.trim();
+    if (CATEGORIES[category]?.gradient) return CATEGORIES[category].gradient;
+    const prefix = category.split('.')[0].split('-')[0];
+    for (const area of Object.values(CATEGORIES)) {
+      const subcategories = Object.keys(area.subcategories || {});
+      if (area.subcategories?.[category] || subcategories.some(key => key.startsWith(prefix))) {
+        return area.gradient || 'var(--gradient-brand)';
+      }
+    }
+  }
+  return 'var(--gradient-brand)';
+}
+
+/**
  * Turns a denied write into the honest sentence for it: the killswitch, the
  * throttle, or a plain failure. One extra read (the config doc) and only on
  * the error path — the happy path never pays for the diagnosis.
@@ -165,7 +191,9 @@ async function explainDenial(error, text) {
 function CommentBody({ comment, isEnglish, text, onNavigate }) {
   return (
     <>
+      {/* The machine line: who, when, and whether it was touched since. */}
       <div className="comment-row-meta">
+        <span className="comment-avatar" aria-hidden="true">{initialOf(comment.authorHandle)}</span>
         {/* Navigating from inside a modal closes the modal (the FollowSheet
             contract) — otherwise the sheet would sit over the profile. */}
         <Link
@@ -175,12 +203,18 @@ function CommentBody({ comment, isEnglish, text, onNavigate }) {
         >
           @{comment.authorHandle}
         </Link>
+        <span className="comment-row-dot" aria-hidden="true">·</span>
         <span className="comment-row-time">{relativeTime(comment.createdAt, isEnglish)}</span>
-        {comment.editedAt && <span className="comment-row-edited">{text(COPY.edited)}</span>}
+        {comment.editedAt && (
+          <>
+            <span className="comment-row-dot" aria-hidden="true">·</span>
+            <span className="comment-row-edited">{text(COPY.edited)}</span>
+          </>
+        )}
       </div>
       {comment.status === 'hidden' && (
         <div className="comment-row-hidden-badge">
-          {text(COPY.hiddenBadge)} · {text(COPY.hiddenExplain)}
+          {text(COPY.hiddenBadge)}. {text(COPY.hiddenExplain)}
         </div>
       )}
       <p className="comment-row-text">{comment.text}</p>
@@ -195,62 +229,72 @@ function CommentRow({
   const [confirming, setConfirming] = useState(null); // 'delete' | 'report'
   const own = viewerUid && comment.authorUid === viewerUid;
 
+  // `own` implies a viewer, so the two groups between them cover every case a
+  // signed-in reader has; a guest only ever sees the thread.
+  const hasActions = canInteract || Boolean(viewerUid);
+
   return (
     <div className={`comment-row${isReply ? ' comment-row--reply' : ''}`}>
-      <span className="comment-avatar" aria-hidden="true">{initialOf(comment.authorHandle)}</span>
-      <div className="comment-row-main">
-        <CommentBody comment={comment} isEnglish={isEnglish} text={text} onNavigate={onNavigate} />
+      <CommentBody comment={comment} isEnglish={isEnglish} text={text} onNavigate={onNavigate} />
 
-        {confirming === 'delete' ? (
-          <div className="comment-row-confirm" role="alert">
-            <span>{text(isReply ? COPY.deleteReplyConfirm : COPY.deleteConfirm)}</span>
-            <button type="button" className="comment-action comment-action--danger" disabled={busy}
-              onClick={() => { setConfirming(null); onDelete(comment); }}>
-              {text(COPY.confirm)}
-            </button>
-            <button type="button" className="comment-action" onClick={() => setConfirming(null)}>
-              {text(COPY.cancel)}
-            </button>
-          </div>
-        ) : confirming === 'report' ? (
-          <div className="comment-row-confirm" role="alert">
-            <span>{text(COPY.reportWhy)}:</span>
-            {[['spam', COPY.reportSpam], ['abuse', COPY.reportAbuse], ['other', COPY.reportOther]].map(([reason, label]) => (
-              <button key={reason} type="button" className="comment-action" disabled={busy}
-                onClick={() => { setConfirming(null); onReport(comment, reason); }}>
-                {text(label)}
-              </button>
-            ))}
-            <button type="button" className="comment-action" onClick={() => setConfirming(null)}>
-              {text(COPY.cancel)}
-            </button>
-          </div>
-        ) : (
-          <div className="comment-row-actions">
+      {confirming === 'delete' ? (
+        <div className="comment-row-confirm comment-row-confirm--danger" role="alert">
+          <span>{text(isReply ? COPY.deleteReplyConfirm : COPY.deleteConfirm)}</span>
+          <Button type="button" variant="destructive" size="sm" className="px-3" disabled={busy}
+            onClick={() => { setConfirming(null); onDelete(comment); }}>
+            {text(COPY.confirm)}
+          </Button>
+          <Button type="button" variant="ghost" size="sm" className="px-2" onClick={() => setConfirming(null)}>
+            {text(COPY.cancel)}
+          </Button>
+        </div>
+      ) : confirming === 'report' ? (
+        <div className="comment-row-confirm" role="alert">
+          <span>{text(COPY.reportWhy)}:</span>
+          {[['spam', COPY.reportSpam], ['abuse', COPY.reportAbuse], ['other', COPY.reportOther]].map(([reason, label]) => (
+            <Button key={reason} type="button" variant="outline" size="sm" className="px-3" disabled={busy}
+              onClick={() => { setConfirming(null); onReport(comment, reason); }}>
+              {text(label)}
+            </Button>
+          ))}
+          <Button type="button" variant="ghost" size="sm" className="px-2" onClick={() => setConfirming(null)}>
+            {text(COPY.cancel)}
+          </Button>
+        </div>
+      ) : hasActions && (
+        /* Primary on the left, the one thing you can do *about* a comment
+           behind a rule on the right. */
+        <div className="comment-row-actions">
+          <div className="comment-row-actions-primary">
             {canInteract && (
-              <button type="button" className="comment-action" onClick={() => onReply(comment)}>
-                <CornerDownRight size={13} aria-hidden="true" /> {text(COPY.reply)}
-              </button>
+              <Button type="button" variant="ghost" size="sm" className="px-2" onClick={() => onReply(comment)}>
+                <CornerDownRight size={14} aria-hidden="true" /> {text(COPY.reply)}
+              </Button>
             )}
             {own && (
-              <>
-                <button type="button" className="comment-action" onClick={() => onEdit(comment)}>
-                  <Pencil size={13} aria-hidden="true" /> {text(COPY.edit)}
-                </button>
-                <button type="button" className="comment-action comment-action--danger"
-                  onClick={() => setConfirming('delete')}>
-                  <Trash2 size={13} aria-hidden="true" /> {text(COPY.delete)}
-                </button>
-              </>
-            )}
-            {!own && viewerUid && (
-              <button type="button" className="comment-action" onClick={() => setConfirming('report')}>
-                <Flag size={13} aria-hidden="true" /> {text(COPY.report)}
-              </button>
+              <Button type="button" variant="ghost" size="sm" className="px-2" onClick={() => onEdit(comment)}>
+                <Pencil size={14} aria-hidden="true" /> {text(COPY.edit)}
+              </Button>
             )}
           </div>
-        )}
-      </div>
+          {viewerUid && (
+            <div className="comment-row-actions-utility">
+              {own ? (
+                <Button type="button" variant="ghost" size="sm"
+                  className="px-2 hover:text-[var(--accent-rose)]"
+                  onClick={() => setConfirming('delete')}>
+                  <Trash2 size={14} aria-hidden="true" /> {text(COPY.delete)}
+                </Button>
+              ) : (
+                <Button type="button" variant="ghost" size="sm" className="px-2"
+                  onClick={() => setConfirming('report')}>
+                  <Flag size={14} aria-hidden="true" /> {text(COPY.report)}
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -284,11 +328,15 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   const [replyTarget, setReplyTarget] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
 
-  const sheet = useRef(null);
-  const closeButton = useRef(null);
+  // The modal keyboard contract — Escape, a focus trap, and handing focus back
+  // to whatever opened the sheet — comes from the shared hook rather than from
+  // a copy of it here. The sheet only exists while it is open, so `open` is
+  // constant.
+  const sheet = useDialogFocus(true, onClose);
   const composerInput = useRef(null);
   const dupReported = useRef(false);
   const viewerUid = ownProfile.uid || null;
+  const areaAccent = useMemo(() => getAreaGradient(paper), [paper]);
 
   const slidesFromBottom = useMemo(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 599px)').matches,
@@ -439,33 +487,6 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       note: `also: ${anchor.alternates.map(alternate => `papers/${alternate.key}`).join(', ')}`,
     }).catch(() => { /* throttled or offline: the condition resurfaces */ });
   }, [anchor, isAuthenticated]);
-
-  // Modal keyboard contract, same as FollowSheet: Escape closes, Tab cycles.
-  useEffect(() => {
-    closeButton.current?.focus();
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab' || !sheet.current) return;
-      const focusable = [...sheet.current.querySelectorAll(
-        'button:not(:disabled), a[href], textarea:not(:disabled)',
-      )];
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
 
   const visibleRows = useMemo(() => rows.filter(row => (
     (row.status !== 'hidden' || row.authorUid === viewerUid)
@@ -679,36 +700,43 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       <motion.div
         ref={sheet}
         className="comments-sheet"
+        style={{ '--area-accent': areaAccent }}
         role="dialog"
         aria-modal="true"
         aria-label={text(COPY.title)}
+        tabIndex={-1}
         {...sheetMotion}
         onClick={event => event.stopPropagation()}
       >
         <header className="comments-sheet-header">
-          <h2 className="comments-sheet-title">
-            {text(COPY.title)}
-            {count != null && (
-              <span className="comments-sheet-count">{count.capped ? '1000+' : count.count}</span>
-            )}
-          </h2>
-          <button
-            ref={closeButton}
+          <div className="comments-sheet-heading">
+            <div className="comments-sheet-titles">
+              <h2 className="comments-sheet-title">{text(COPY.title)}</h2>
+              {count != null && (
+                <span className="comments-sheet-count">{count.capped ? '1000+' : count.count}</span>
+              )}
+            </div>
+          </div>
+          <Button
             type="button"
+            variant="ghost"
+            size="icon-sm"
             className="comments-sheet-close"
             onClick={onClose}
             aria-label={text(COPY.close)}
           >
-            <X size={18} />
-          </button>
+            <X size={16} />
+          </Button>
         </header>
 
         <div className="comments-sheet-body">
           {status === 'loading' && (
             <div className="comments-sheet-loading" aria-label={text(COPY.loading)} aria-busy="true">
-              <div className="comment-row-skeleton" />
-              <div className="comment-row-skeleton" />
-              <div className="comment-row-skeleton" />
+              {[0, 1, 2].map(index => (
+                <div className="comment-skeleton" key={index} aria-hidden="true">
+                  <span /><span /><span />
+                </div>
+              ))}
             </div>
           )}
           {WAITING_COPY[status] && (
@@ -716,16 +744,17 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
             // the retry loop behind them. Only 'error' is a verdict.
             <div className="comments-sheet-state" aria-busy={status !== 'error'}>
               <p>{text(WAITING_COPY[status])}</p>
-              <button
+              <Button
                 type="button"
-                className="comments-sheet-more"
+                variant="outline"
+                className="comments-sheet-state-action"
                 onClick={() => {
                   setStatus('loading');
                   setAttempt(value => value + 1);
                 }}
               >
                 {text(COPY.retry)}
-              </button>
+              </Button>
             </div>
           )}
           {status === 'ready' && thread.length === 0 && (
@@ -733,7 +762,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               <span className="comments-sheet-state-icon" aria-hidden="true">
                 <MessageCircle size={20} />
               </span>
-              <p className="comments-sheet-state-title">{text(COPY.emptyTitle)}</p>
+              <h3 className="comments-sheet-state-title">{text(COPY.emptyTitle)}</h3>
               <p>{text(COPY.empty)}</p>
             </div>
           )}
@@ -782,9 +811,15 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
             </ul>
           )}
           {status === 'ready' && hasMore && (
-            <button type="button" className="comments-sheet-more" onClick={loadMore} disabled={paging}>
+            <Button
+              type="button"
+              variant="outline"
+              className="comments-sheet-more w-full"
+              onClick={loadMore}
+              disabled={paging}
+            >
               {paging ? text(COPY.loading) : text(COPY.more)}
-            </button>
+            </Button>
           )}
           {notice && <p className="comments-sheet-notice" role="status">{notice}</p>}
         </div>
@@ -793,25 +828,25 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
           {composerState === 'signed-out' && (
             <div className="comments-gate">
               <p>{text(COPY.signInPrompt)}</p>
-              <button type="button" className="comments-gate-cta" onClick={onAuthRequired}>
+              <Button type="button" onClick={onAuthRequired}>
                 {text(COPY.signIn)}
-              </button>
+              </Button>
             </div>
           )}
           {composerState === 'no-profile' && (
             <div className="comments-gate">
               <p><strong>{text(COPY.needProfileTitle)}.</strong> {text(COPY.needProfileBody)}</p>
-              <Link className="comments-gate-cta" to="/settings/profile" onClick={onClose}>
-                {text(COPY.needProfileCta)}
-              </Link>
+              <Button asChild variant="outline">
+                <Link to="/settings/profile" onClick={onClose}>{text(COPY.needProfileCta)}</Link>
+              </Button>
             </div>
           )}
           {composerState === 'private' && (
             <div className="comments-gate">
               <p><strong>{text(COPY.privateTitle)}.</strong> {text(COPY.privateBody)}</p>
-              <Link className="comments-gate-cta" to="/settings/profile" onClick={onClose}>
-                {text(COPY.privateCta)}
-              </Link>
+              <Button asChild variant="outline">
+                <Link to="/settings/profile" onClick={onClose}>{text(COPY.privateCta)}</Link>
+              </Button>
             </div>
           )}
           {composerState === 'ready' && (
@@ -820,18 +855,20 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                 <div className="comments-composer-context">
                   <CornerDownRight size={13} aria-hidden="true" />
                   <span>{text(COPY.replyingTo)} @{replyTarget.authorHandle}</span>
-                  <button type="button" onClick={() => setReplyTarget(null)} aria-label={text(COPY.cancel)}>
-                    <X size={13} />
-                  </button>
+                  <Button type="button" variant="ghost" size="icon-sm"
+                    onClick={() => setReplyTarget(null)} aria-label={text(COPY.cancel)}>
+                    <X size={14} />
+                  </Button>
                 </div>
               )}
               {editTarget && (
                 <div className="comments-composer-context">
                   <Pencil size={13} aria-hidden="true" />
                   <span>{text(COPY.editing)}</span>
-                  <button type="button" onClick={resetComposer} aria-label={text(COPY.cancel)}>
-                    <X size={13} />
-                  </button>
+                  <Button type="button" variant="ghost" size="icon-sm"
+                    onClick={resetComposer} aria-label={text(COPY.cancel)}>
+                    <X size={14} />
+                  </Button>
                 </div>
               )}
               <div className="comments-composer-row">
@@ -850,14 +887,14 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                     }
                   }}
                 />
-                <button
+                <Button
                   type="button"
                   className="comments-composer-send"
                   onClick={submit}
                   disabled={busy || !draft.trim()}
                 >
                   {text(editTarget ? COPY.save : COPY.send)}
-                </button>
+                </Button>
               </div>
               <AnimatePresence>
                 {composerError && (

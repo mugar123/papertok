@@ -24,7 +24,11 @@ import { useEntitySearch } from '../../hooks/useEntitySearch.js';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
-import { resolvePreferredSearchSection, getSearchSectionOrder } from '../../utils/searchRelevance';
+import {
+  buildSearchSectionValues,
+  getSearchSectionOrder,
+  resolvePreferredSearchSection,
+} from '../../utils/searchRelevance';
 import './SearchCommand.css';
 
 const COPY = {
@@ -128,10 +132,11 @@ export default function SearchCommand({ open, onOpenChange }) {
   } = useEntitySearch({ usersRequested });
   const [pendingEntity, setPendingEntity] = useState(null);
 
-  // Both channels, one spinner: the external fan-out settles on its own clock
-  // and people on theirs, and announcing "no results" while either is still
-  // owed an answer is how the palette would end up denying somebody who is
-  // about to appear.
+  // Both channels, one wait: the external fan-out settles on its own clock and
+  // people on theirs, and announcing "no results" while either is still owed an
+  // answer is how the palette would end up denying somebody who is about to
+  // appear. It is also what holds the paint back until the whole answer exists
+  // — see the skeleton and the section gate below.
   const searchPending = isSearching || peoplePending;
 
   useEffect(() => {
@@ -160,19 +165,19 @@ export default function SearchCommand({ open, onOpenChange }) {
   const orderedSections = useMemo(() => {
     const preferred = resolvePreferredSearchSection({
       query,
-      sectionValues: {
-        // Both fields: an exact handle and an exact display name are each the
-        // strongest evidence available that a person was meant.
-        users: users.flatMap(person => [person.handle, person.name]),
-        papers: results.papers.map(paper => paper.title),
-        authors: results.authors.map(author => author.display_name),
-        institutions: results.institutions.flatMap(institution => [
-          institution.display_name,
-          ...Object.values(institution.localized_names || {}),
-        ]),
-        topics: results.topics.map(concept => concept.display_name || concept.label),
-        projects: results.projects.flatMap(project => [project.acronym, project.title]),
-      },
+      // Shared with the page. This block used to be written out here as well
+      // and the copies had drifted: the palette left out `aliases` and
+      // `acronyms`, so it alone could not match the "USAL" or "MIT" that ROR
+      // had already handed it — and an acronym carries no organisation word,
+      // so the exact sweep is the only way such a search can land.
+      sectionValues: buildSearchSectionValues({
+        users,
+        papers: results.papers,
+        authors: results.authors,
+        institutions: results.institutions,
+        topics: results.topics,
+        projects: results.projects,
+      }),
     });
     return [...SECTIONS]
       .sort((left, right) => getSearchSectionOrder(left, preferred) - getSearchSectionOrder(right, preferred));
@@ -338,9 +343,20 @@ export default function SearchCommand({ open, onOpenChange }) {
           </CommandGroup>
         )}
 
+        {/* Rows of the real height rather than a lone spinner. The palette now
+            waits for every source before painting anything, so the wait needs a
+            shape: a spinner over an empty sheet reads as nothing happening, and
+            a sheet that fills from nothing shifts everything under the cursor
+            when it does. */}
         {searchPending && (
-          <div className="sc-status" role="status">
-            <LoaderCircle size={14} className="spinning" /> {copy.searching}
+          <div className="sc-skeleton" role="status" aria-label={copy.searching}>
+            {[0, 1, 2, 3, 4].map(index => (
+              <div className="sc-skeleton-row" key={index}>
+                <span className="sc-skeleton-icon" />
+                <span className="sc-skeleton-line" />
+                <span className="sc-skeleton-meta" />
+              </div>
+            ))}
           </div>
         )}
 
@@ -360,7 +376,11 @@ export default function SearchCommand({ open, onOpenChange }) {
           <CommandEmpty>{copy.empty}</CommandEmpty>
         )}
 
-        {orderedSections.map(section => {
+        {/* Nothing paints while an answer is still owed. The five external
+            sources land in one commit, but people run on their own 400 ms clock
+            and used to appear on their own — one section arriving alone, after
+            the rest, and pushing them down. The gate covers both channels. */}
+        {!searchPending && orderedSections.map(section => {
           if (sectionItems[section].length === 0) return null;
           const SectionIcon = SECTION_ICONS[section];
           return (

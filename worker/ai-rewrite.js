@@ -604,25 +604,19 @@ function replayCachedRewrite(cached, extraHeaders) {
 }
 
 /**
- * Runs the model and pipes sections out as they close.
- *
- * Errors that happen before the first byte are thrown so the caller can answer
- * with a real HTTP status. Once the response has committed to 200, a failure
- * can only be reported as an `error` line inside the stream.
+ * Asks the model for the rewrite. Throws `AIExplanationError` for anything that
+ * stops the stream from starting, so one catch upstream can turn every refusal
+ * into the same `error` line.
  */
-async function streamRewrite({ env, paper, level, language, pdfBase64, meta, cacheKey, quota, extraHeaders }) {
-  const model = meta.model;
+async function requestModelStream({ env, paper, level, language, pdfBase64, model, signal }) {
   const config = REWRITE_LEVELS[level];
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), STREAM_BUDGET_MS);
-
   let upstream;
   try {
     upstream = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:streamGenerateContent?alt=sse`,
       {
         method: 'POST',
-        signal: controller.signal,
+        signal,
         headers: {
           'content-type': 'application/json',
           'x-goog-api-key': env.GEMINI_API_KEY,
@@ -645,14 +639,12 @@ async function streamRewrite({ env, paper, level, language, pdfBase64, meta, cac
       },
     );
   } catch (error) {
-    clearTimeout(timeout);
     throw error?.name === 'AbortError'
       ? new AIExplanationError('AI_TIMEOUT', 504)
       : new AIExplanationError('AI_UNAVAILABLE', 502);
   }
 
   if (!upstream.ok || !upstream.body) {
-    clearTimeout(timeout);
     const payload = await upstream.json().catch(() => ({}));
     const code = classifyGeminiError(upstream.status, payload);
     throw new AIExplanationError(
@@ -667,6 +659,28 @@ async function streamRewrite({ env, paper, level, language, pdfBase64, meta, cac
     );
   }
 
+  return upstream;
+}
+
+/**
+ * Runs the model and pipes sections out as they close.
+ *
+ * **The 200 commits before any of the slow work starts, and that is the point.**
+ * The browser arms a stall timer when it sends the POST and resets it only when
+ * bytes arrive, so a rewrite that says nothing while the PDF downloads and the
+ * model reads it is, from the browser, indistinguishable from a dead socket —
+ * and at forty-five seconds it was being killed as one. A full paper routinely
+ * needs longer than that before the model emits its first token, which made the
+ * feature fail for exactly the papers it exists to handle.
+ *
+ * So everything that can take real time — the download, the model's own silence
+ * — now happens behind a committed response with a heartbeat running over it.
+ * The cost is that those failures no longer have a status line to be reported
+ * on: every throw below becomes an `error` line instead, refunding the day's use
+ * through the same predicate the pre-commit path used.
+ */
+function streamRewrite({ env, paper, level, language, meta, cacheKey, quota, extraHeaders }) {
+  const model = meta.model;
   const encoder = new TextEncoder();
   const startedAt = Date.now();
 
@@ -687,6 +701,10 @@ async function streamRewrite({ env, paper, level, language, pdfBase64, meta, cac
     let closed = false;
     let cachedWrite = false;
     let refunded = false;
+    // What the heartbeat is currently waiting on. The reader shows it, because
+    // "downloading the paper" and "the model is reading it" are a minute of
+    // waiting either way and only one of them is worth staying for.
+    let stage = 'source';
 
     const send = async (value) => {
       if (closed) return;
@@ -709,14 +727,40 @@ async function streamRewrite({ env, paper, level, language, pdfBase64, meta, cac
 
     await send({ type: 'meta', ...meta, remainingUses: quota.remainingUses, cached: false });
 
-    // The model ingests the PDF and thinks before emitting a single token, which
-    // can outlast any reasonable client stall timeout. A heartbeat proves the
-    // connection is alive during that silence.
+    // The download, and then the model ingesting the PDF and thinking, together
+    // outlast any reasonable client stall timeout before a single token exists.
+    // A heartbeat proves the connection is alive through that silence.
     const heartbeat = setInterval(() => {
-      void send({ type: 'ping', elapsedMs: Date.now() - startedAt }).catch(() => {});
+      void send({ type: 'ping', stage, elapsedMs: Date.now() - startedAt }).catch(() => {});
     }, HEARTBEAT_INTERVAL_MS);
 
+    // Armed around the model alone. Folding the download into the same budget
+    // would let a slow mirror eat the time the rewrite itself needs.
+    const modelDeadline = new AbortController();
+    let modelTimer = null;
+
     try {
+      const pdfBase64 = await fetchPaperPdf(paper.pdfUrl, PDF_FETCH_BUDGET_MS);
+      // The paper arrived with a PDF and was accepted on it, so an empty download
+      // is the source being unreachable, not the paper being unrewritable — a
+      // stalled arXiv mirror reads the same as a paywall from here. The reader
+      // sees the same sentence either way; what changes is that a use is no
+      // longer burnt on a Gemini call nobody made.
+      if (!pdfBase64) throw new AIExplanationError('AI_REWRITE_NEEDS_FULL_TEXT', 422);
+
+      stage = 'reading';
+      modelTimer = setTimeout(() => modelDeadline.abort(), STREAM_BUDGET_MS);
+      const upstream = await requestModelStream({
+        env,
+        paper,
+        level,
+        language,
+        pdfBase64,
+        model,
+        signal: modelDeadline.signal,
+      });
+
+      stage = 'writing';
       for await (const event of streamModelSections(upstream.body)) {
         if (event.type === 'section') {
           await send({ type: 'section', index: sections.length, ...event.section });
@@ -794,10 +838,18 @@ async function streamRewrite({ env, paper, level, language, pdfBase64, meta, cac
       // that has already hung up cannot be told anything, but the use it
       // reserved still has to come back.
       await refund(error);
-      // The status line is long gone; the only channel left is the stream.
+      // The status line is long gone; the only channel left is the stream. The
+      // refusals that used to arrive as an HTTP status — an unreachable PDF, a
+      // provider that said no — come through here now, so their own code has to
+      // survive rather than being flattened to `AI_UNAVAILABLE`.
+      const known = error instanceof AIExplanationError;
+      const code = known
+        ? error.code
+        : error?.name === 'AbortError' ? 'AI_TIMEOUT' : 'AI_UNAVAILABLE';
       await send({
         type: 'error',
-        code: error?.name === 'AbortError' ? 'AI_TIMEOUT' : 'AI_UNAVAILABLE',
+        code,
+        ...(known && error.quota ? { quota: error.quota } : {}),
         ...(sections.length > 0 ? { partial: true } : {}),
       }).catch(() => {});
       console.warn('AI rewrite', JSON.stringify({
@@ -808,11 +860,13 @@ async function streamRewrite({ env, paper, level, language, pdfBase64, meta, cac
         rawLength,
         firstTextAtMs: firstTextAt,
         durationMs: Date.now() - startedAt,
+        stage,
+        code,
         outcome: 'stream_failed',
       }));
     } finally {
       clearInterval(heartbeat);
-      clearTimeout(timeout);
+      if (modelTimer) clearTimeout(modelTimer);
       closed = true;
       await writer.close().catch(() => {});
     }
@@ -851,16 +905,11 @@ export async function handlePaperRewrite(request, env, extraHeaders = {}) {
   const cached = await readCachedRewrite(env, cacheKey);
   if (cached) return replayCachedRewrite(cached, extraHeaders);
 
+  // Last thing before the response commits, and deliberately so: everything
+  // above is cheap and can still answer with a real status line, and everything
+  // below is slow enough that the browser needs to hear something first.
   const quota = await reserveAIQuota(env, uid);
   try {
-    const pdfBase64 = await fetchPaperPdf(paper.pdfUrl, PDF_FETCH_BUDGET_MS);
-    // The paper arrived with a PDF and was accepted on it above, so an empty
-    // download is the source being unreachable, not the paper being unrewritable
-    // — a stalled arXiv mirror reads the same as a paywall from here. The reader
-    // sees the same sentence either way; what changes is that a use is no longer
-    // burnt on a Gemini call nobody made.
-    if (!pdfBase64) throw new AIExplanationError('AI_REWRITE_NEEDS_FULL_TEXT', 422);
-
     const meta = {
       level,
       language,
@@ -873,23 +922,12 @@ export async function handlePaperRewrite(request, env, extraHeaders = {}) {
       pdfUrl: paper.pdfUrl,
     };
 
-    // Awaited rather than returned bare, so this catch still covers it: every
-    // throw `streamRewrite` produces happens before the response commits to 200
-    // — a refused upstream, a timeout on the request itself — and those are the
-    // ones that are still ours to refund. Once it returns a Response the stream
-    // owns the reservation and refunds it from inside.
-    return await streamRewrite({
-      env,
-      paper,
-      level,
-      language,
-      pdfBase64,
-      meta,
-      cacheKey,
-      quota,
-      extraHeaders,
-    });
+    // Returns immediately: the download and the model both run behind the 200,
+    // under a heartbeat, and refund the reservation from inside the stream.
+    return streamRewrite({ env, paper, level, language, meta, cacheKey, quota, extraHeaders });
   } catch (error) {
+    // Nothing between the reservation and the response is expected to throw, but
+    // a use reserved for a rewrite that never started is still owed back.
     if (shouldRefundAIQuota(error)) await releaseAIQuota(env, quota);
     throw error;
   }

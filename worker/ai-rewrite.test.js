@@ -461,20 +461,141 @@ async function readNdjson(response) {
   return (await response.text()).trim().split('\n').filter(Boolean).map(line => JSON.parse(line));
 }
 
+/**
+ * The handler *and* the stream behind it, with the doubles still installed.
+ *
+ * The response commits before the download and the model run, so the pump is
+ * still calling `fetch` long after the handler has returned. Wrapping only the
+ * handler — which is what these tests used to do — restores the real `fetch`
+ * underneath a rewrite that has not started working yet, and the test then
+ * measures the open internet.
+ */
+async function runRewrite(harnessOptions, env, requestOverrides) {
+  return withRewriteHarness(harnessOptions, async () => {
+    const response = await handlePaperRewrite(rewriteRequest(requestOverrides), env);
+    return { response, events: await readNdjson(response) };
+  });
+}
+
+/* ============================================================
+   The silence before the first byte
+   ============================================================ */
+
+/**
+ * A stage that hangs until the test lets it go. The slow half of a rewrite is
+ * not simulated with a timer here on purpose: a wall-clock threshold would make
+ * these tests flaky on a loaded machine, and what is being asserted is an
+ * ordering — the reader hears from us *before* the slow stage finishes — not a
+ * duration.
+ */
+function heldOpen() {
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  return { gate, release };
+}
+
+const SILENCE = Symbol('nothing reached the reader');
+
+/**
+ * The first NDJSON event, or `SILENCE` if none arrived in time.
+ *
+ * The browser arms its stall timer before the POST and resets it only when bytes
+ * arrive, so a rewrite fails at 45s not because the model is slow but because
+ * nothing at all came back while it worked. That is what this measures.
+ */
+async function firstEventWithin(pending, ms) {
+  let timer;
+  const silence = new Promise(resolve => { timer = setTimeout(() => resolve(SILENCE), ms); });
+  const firstEvent = pending.then(async (response) => {
+    const reader = response.body.getReader();
+    const { value } = await reader.read();
+    reader.releaseLock();
+    return JSON.parse(new TextDecoder().decode(value).trim().split('\n')[0]);
+  });
+  try {
+    return await Promise.race([firstEvent, silence]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+test('the reader hears from the worker while the model is still thinking', async () => {
+  const state = newLedgerState();
+  const model = heldOpen();
+
+  await withRewriteHarness({
+    provider: async () => {
+      await model.gate;
+      return sseResponse([sseFrame(sectionLine('intro', 'It began.'), { finishReason: 'STOP' })]);
+    },
+  }, async () => {
+    const pending = handlePaperRewrite(rewriteRequest(), {
+      ...REWRITE_ENV,
+      REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+    });
+    try {
+      const first = await firstEventWithin(pending, 200);
+      assert.notEqual(
+        first,
+        SILENCE,
+        'the model had not answered yet and neither had we: the browser sat on a dead-looking socket',
+      );
+      // `meta` first, and it carries the remaining uses — which is the number the
+      // reader shows, so committing early is also what makes it appear at once
+      // rather than after the whole paper has been written.
+      assert.equal(first.type, 'meta');
+      assert.equal(first.remainingUses, 4);
+    } finally {
+      model.release();
+      // Draining matters: a transform nobody reads blocks its writer on the
+      // second line, and the pump then never reaches the `close` that lets the
+      // test runner exit.
+      await pending.then(response => response.body.cancel()).catch(() => {});
+    }
+  });
+});
+
+test('the reader hears from the worker while the PDF is still downloading', async () => {
+  const state = newLedgerState();
+  const download = heldOpen();
+
+  await withRewriteHarness({
+    pdf: async () => {
+      await download.gate;
+      return readablePdf();
+    },
+    provider: async () => sseResponse([sseFrame(sectionLine('intro', 'It began.'), { finishReason: 'STOP' })]),
+  }, async () => {
+    const pending = handlePaperRewrite(rewriteRequest(), {
+      ...REWRITE_ENV,
+      REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+    });
+    try {
+      const first = await firstEventWithin(pending, 200);
+      assert.notEqual(first, SILENCE, 'the PDF download gets up to twelve seconds of it, in total silence');
+      assert.equal(first.type, 'meta');
+    } finally {
+      download.release();
+      await pending.then(response => response.body.cancel()).catch(() => {});
+    }
+  });
+});
+
 test('gives the daily use back when the PDF never downloads', async () => {
   const state = newLedgerState();
 
-  await assert.rejects(
-    () => withRewriteHarness({
-      pdf: async () => new Response('gone', { status: 404 }),
-      provider: async () => { throw new Error('The model must not be asked without a PDF'); },
-    }, () => handlePaperRewrite(rewriteRequest(), {
-      ...REWRITE_ENV,
-      REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
-    })),
-    error => error.code === 'AI_REWRITE_NEEDS_FULL_TEXT' && error.status === 422,
-  );
+  const { response, events } = await runRewrite({
+    pdf: async () => new Response('gone', { status: 404 }),
+    provider: async () => { throw new Error('The model must not be asked without a PDF'); },
+  }, {
+    ...REWRITE_ENV,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+  });
 
+  // The download happens behind the committed 200 now, so its refusal is a line
+  // rather than a 422. The reader reads `code` either way.
+  assert.equal(response.status, 200);
+  assert.equal(events.at(-1).code, 'AI_REWRITE_NEEDS_FULL_TEXT');
   assert.equal(state.reserve, 1);
   // The paper was accepted on its PDF before anything was counted, so a download
   // that fails is the source being unreachable — and Gemini was never asked, so
@@ -489,35 +610,35 @@ test('gives the daily use back when the PDF never downloads', async () => {
 test('gives the daily use back when the provider refuses before the stream starts', async () => {
   const state = newLedgerState();
 
-  await assert.rejects(
-    () => withRewriteHarness({
-      provider: async () => new Response(JSON.stringify({ error: { message: 'overloaded' } }), { status: 503 }),
-    }, () => handlePaperRewrite(rewriteRequest(), {
-      ...REWRITE_ENV,
-      REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
-    })),
-    error => error.code === 'AI_BUSY',
-  );
+  const { events } = await runRewrite({
+    provider: async () => new Response(JSON.stringify({ error: { message: 'overloaded' } }), { status: 503 }),
+  }, {
+    ...REWRITE_ENV,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+  });
 
+  assert.equal(events.at(-1).code, 'AI_BUSY');
   assert.equal(state.release, 1);
 });
 
 test('gives the daily use back when the provider hits its own daily wall', async () => {
   const state = newLedgerState();
 
-  await assert.rejects(
-    () => withRewriteHarness({
-      provider: async () => new Response(
-        JSON.stringify({ error: { message: 'Quota exceeded for GenerateRequestsPerDay' } }),
-        { status: 429 },
-      ),
-    }, () => handlePaperRewrite(rewriteRequest(), {
-      ...REWRITE_ENV,
-      REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
-    })),
-    error => error.code === 'AI_QUOTA_EXHAUSTED' && error.quota.scope === 'provider',
-  );
+  const { events } = await runRewrite({
+    provider: async () => new Response(
+      JSON.stringify({ error: { message: 'Quota exceeded for GenerateRequestsPerDay' } }),
+      { status: 429 },
+    ),
+  }, {
+    ...REWRITE_ENV,
+    REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
+  });
 
+  // The scope has to survive the move into the stream: without it the reader
+  // cannot tell somebody else's ceiling from its own, and its own is the one
+  // that means "come back tomorrow".
+  assert.equal(events.at(-1).code, 'AI_QUOTA_EXHAUSTED');
+  assert.equal(events.at(-1).quota.scope, 'provider');
   // Somebody else's ceiling, not this reader's: their own use is still theirs.
   assert.equal(state.release, 1);
 });
@@ -526,7 +647,7 @@ test('gives the daily use back when the stream dies after the 200 has committed'
   const state = newLedgerState();
   const store = fakeRewriteStore();
 
-  const response = await withRewriteHarness({
+  const { response, events } = await runRewrite({
     // The section has to reach the reader before the socket dies, so the error
     // is raised on the second pull rather than alongside the enqueue — erroring
     // a controller discards whatever is still queued behind it.
@@ -540,17 +661,16 @@ test('gives the daily use back when the stream dies after the 200 has committed'
         },
       }), { headers: { 'content-type': 'text/event-stream' } });
     },
-  }, () => handlePaperRewrite(rewriteRequest(), {
+  }, {
     ...REWRITE_ENV,
     AI_REWRITE_STORE: store,
     REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
-  }));
+  });
 
   // Committed to 200 long before the failure, so the only channel left is the
   // stream — but the reservation is exactly as unspent as it would have been a
   // millisecond earlier, when there was still a status line to fail with.
   assert.equal(response.status, 200);
-  const events = await readNdjson(response);
   assert.equal(events.at(-1).type, 'error');
   assert.equal(events.at(-1).partial, true);
   assert.equal(state.release, 1);
@@ -560,14 +680,13 @@ test('gives the daily use back when the stream dies after the 200 has committed'
 test('does not refund a rewrite the provider actually produced', async () => {
   const state = newLedgerState();
 
-  const response = await withRewriteHarness({
+  const { events } = await runRewrite({
     provider: async () => sseResponse([sseFrame('I cannot read this PDF.', { finishReason: 'STOP' })]),
-  }, () => handlePaperRewrite(rewriteRequest(), {
+  }, {
     ...REWRITE_ENV,
     REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
-  }));
+  });
 
-  const events = await readNdjson(response);
   assert.equal(events.at(-1).code, 'AI_INVALID_RESPONSE');
   // Gemini read the PDF and billed for it. Refunding this would buy unlimited
   // free retries against the provider's own quota.
@@ -593,19 +712,18 @@ test('does not cache a rewrite the model cut short, and says so on the wire', as
   const state = newLedgerState();
   const store = fakeRewriteStore();
 
-  const response = await withRewriteHarness({
+  const { events } = await runRewrite({
     provider: async () => sseResponse([
       sseFrame(sectionLine('intro', 'The setup.')),
       sseFrame(sectionLine('methods', 'How it was measured.')),
       sseFrame('', { finishReason: 'MAX_TOKENS' }),
     ]),
-  }, () => handlePaperRewrite(rewriteRequest(), {
+  }, {
     ...REWRITE_ENV,
     AI_REWRITE_STORE: store,
     REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
-  }));
+  });
 
-  const events = await readNdjson(response);
   assert.deepEqual(events.map(event => event.type), ['meta', 'section', 'section', 'done']);
   // The replay path closes with `done` and carries no `error` line, which is the
   // only thing the client reads as incomplete. Storing this would serve half a
@@ -626,22 +744,22 @@ test('caches a rewrite that finished, and replays it without a second reservatio
     REQUEST_QUOTA_LEDGER: countingQuotaLedger(state),
   };
 
-  const first = await readNdjson(await withRewriteHarness({
+  const { events: first } = await runRewrite({
     provider: async () => sseResponse([
       sseFrame(sectionLine('intro', 'The setup.')),
       sseFrame('', { finishReason: 'STOP' }),
     ]),
-  }, () => handlePaperRewrite(rewriteRequest(), env)));
+  }, env);
 
   assert.equal(first.at(-1).type, 'done');
   assert.equal(first.at(-1).truncated, undefined);
   assert.equal(store.entries.size, 1);
   assert.equal([...store.entries.values()][0].ttl, 30 * 24 * 60 * 60);
 
-  const second = await readNdjson(await withRewriteHarness({
+  const { events: second } = await runRewrite({
     pdf: async () => { throw new Error('A cache hit must not download the PDF'); },
     provider: async () => { throw new Error('A cache hit must not reach the model'); },
-  }, () => handlePaperRewrite(rewriteRequest(), env)));
+  }, env);
 
   assert.deepEqual(second.map(event => event.type), ['meta', 'section', 'done']);
   assert.equal(second[0].cached, true);

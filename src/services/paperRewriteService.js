@@ -61,6 +61,33 @@ export function getRewritablePdfUrl(paper) {
   return candidates.find(isAIReadablePdfUrl) || '';
 }
 
+/**
+ * How many of the day's AI uses are left, without spending one.
+ *
+ * The rewrite already reports `remainingUses` on the `meta` line, but only once
+ * a rewrite is under way — which is to say, only after it has cost a use, and
+ * never at all when the answer comes from cache or the request fails. The reader
+ * shows the number the moment it opens, so it needs a way to ask.
+ *
+ * Returns `null` rather than throwing: a reader that cannot show the count is
+ * still a working reader, and this must never be the thing that breaks it.
+ */
+export async function fetchRemainingAIUses({ signal } = {}) {
+  const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
+  if (!apiBase) return null;
+  try {
+    const response = await authenticatedWorkerFetch(`${apiBase}/ai/quota`, { method: 'GET', signal });
+    if (!response.ok) return null;
+    const payload = await response.json();
+    const remainingUses = Number(payload?.remainingUses);
+    const dailyLimit = Number(payload?.dailyLimit);
+    if (!Number.isFinite(remainingUses) || !Number.isFinite(dailyLimit)) return null;
+    return { remainingUses, dailyLimit };
+  } catch {
+    return null;
+  }
+}
+
 export function canRewritePaper(paper) {
   return Boolean(getRewritablePdfUrl(paper));
 }
@@ -140,6 +167,7 @@ export async function rewritePaper(paper, level = 'university', {
   signal,
   onMeta,
   onSection,
+  onProgress,
 } = {}) {
   if (!PAPER_REWRITE_LEVELS.some(item => item.id === level)) {
     throw new PaperRewriteError('AI_INVALID_LEVEL');
@@ -207,6 +235,9 @@ export async function rewritePaper(paper, level = 'university', {
       if (event.type === 'meta') {
         meta = event;
         onMeta?.(event);
+        // The first ping is eight seconds out; without this the reader would
+        // spend those eight seconds on a generic label.
+        onProgress?.({ stage: 'source', elapsedMs: 0 });
         return;
       }
       if (event.type === 'section') {
@@ -220,6 +251,7 @@ export async function rewritePaper(paper, level = 'university', {
         };
         onSection?.(section, sections.length);
         sections.push(section);
+        onProgress?.({ stage: 'writing', elapsedMs: 0 });
         return;
       }
       if (event.type === 'error') {
@@ -229,8 +261,16 @@ export async function rewritePaper(paper, level = 'university', {
           { partial: Boolean(event.partial) },
         );
         if (event.finishReason) streamError.finishReason = event.finishReason;
+        return;
       }
-      // `ping` frames carry no content; receiving one is the point.
+      // A `ping` carries no rewrite, and receiving one is most of the point: it
+      // is what keeps the stall timer above from firing while the worker is
+      // downloading the paper and the model is reading it. What it does carry is
+      // which of those two the wait is currently in, which is the difference
+      // between a minute that looks broken and a minute that looks busy.
+      if (event.type === 'ping') {
+        onProgress?.({ stage: event.stage || 'reading', elapsedMs: event.elapsedMs || 0 });
+      }
     };
 
     for (;;) {

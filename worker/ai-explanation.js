@@ -6,7 +6,7 @@ import {
   microsToUsd,
   usdToMicros,
 } from './kimi-budget-ledger.js';
-import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.js';
+import { peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.js';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.js';
 
 const PROMPT_VERSION = 'paper-explainer-v4';
@@ -1120,6 +1120,36 @@ export function shouldRefundAIQuota(error) {
   // user's own — that one is refused before anything is counted.
   if (error.code === 'AI_QUOTA_EXHAUSTED') return error.quota?.scope !== 'user';
   return REFUNDABLE_AI_CODES.has(error.code);
+}
+
+/**
+ * The daily allowance as it stands, without touching it.
+ *
+ * Split out from `reserveAIQuota` rather than derived from it because the reader
+ * needs the number *before* it decides to spend one: the rewrite shows how many
+ * uses are left, and reserving to find out would cost a use per look. The limit
+ * travels with the answer so the client does not have to hardcode a ten it does
+ * not own.
+ */
+export async function peekAIQuota(env, uid) {
+  const subjectLimit = safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100);
+  const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
+  const reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `ai:${todayKey()}`,
+    subject: `ai:${uid}`,
+    subjectLimit,
+    globalLimit,
+  });
+  if (reading.code) {
+    throw reading.code === 'QUOTA_LEDGER_NOT_CONFIGURED'
+      ? new AIExplanationError('AI_NOT_CONFIGURED', 503)
+      : new AIExplanationError('AI_UNAVAILABLE', 503);
+  }
+  return {
+    remainingUses: Math.max(0, Number(reading.remaining) || 0),
+    dailyLimit: subjectLimit,
+    ...getDailyQuotaReset(),
+  };
 }
 
 export async function reserveAIQuota(env, uid) {

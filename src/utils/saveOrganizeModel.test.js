@@ -5,6 +5,8 @@ import {
   commitTagInput,
   diffListSelection,
   hasUnsavedChanges,
+  resolveSelection,
+  toggleListIntent,
   removeTag,
 } from './saveOrganizeModel.js';
 
@@ -117,4 +119,63 @@ test('SOURCE: the dialog cancel path goes through the unsaved-changes guard', as
   const source = await readFile(new URL('../components/Lists/SaveToListModal.jsx', import.meta.url), 'utf8');
   assert.ok(source.includes('onCancel'), 'the <dialog> Escape path must be intercepted');
   assert.ok(source.includes('requestClose'), 'every close path funnels through requestClose');
+});
+
+/* --- The selection is an INTENT over the membership, not a frozen snapshot ---
+   The modal paints from a session cache that can be up to thirty seconds
+   stale, and revalidates behind it. The old model kept the whole pending set
+   as state and stopped updating it the moment the user touched one checkbox,
+   so a membership that arrived AFTER that first touch became `initial` while
+   `pending` stayed frozen on the stale snapshot — and every list the fresh
+   read knew about but the stale one did not turned into a REMOVAL the user
+   never asked for.
+
+   The fix is to store only what the user actually did (checked / unchecked)
+   and derive the selection from whatever membership is current. */
+
+const NO_INTENT = { checked: [], unchecked: [] };
+
+test('THE BUG: a list the fresh read reveals is not silently unchecked by an unrelated toggle', () => {
+  // The cache said the paper was only in A. The user unticks A. Then the
+  // revalidation lands: the paper is in A *and* B — B was added on a phone.
+  const intent = toggleListIntent(NO_INTENT, 'a', ['a']);
+  const selection = resolveSelection({ membership: ['a', 'b'], ...intent });
+
+  assert.deepEqual([...selection], ['b'], 'B was never touched; it must stay selected');
+  const { toAdd, toRemove } = diffListSelection(['a', 'b'], selection);
+  assert.deepEqual(toRemove, ['a'], 'only the list the user actually unticked is removed');
+  assert.deepEqual(toAdd, []);
+});
+
+test('an untouched selection follows the membership wherever it lands', () => {
+  assert.deepEqual([...resolveSelection({ membership: ['a'], ...NO_INTENT })], ['a']);
+  assert.deepEqual([...resolveSelection({ membership: ['a', 'b'], ...NO_INTENT })], ['a', 'b']);
+  assert.deepEqual([...resolveSelection({ membership: [], ...NO_INTENT })], []);
+});
+
+test('what the user checked survives a membership that does not mention it', () => {
+  const intent = toggleListIntent(NO_INTENT, 'new', ['a']);
+  assert.deepEqual([...resolveSelection({ membership: ['a'], ...intent })], ['a', 'new']);
+});
+
+test('toggling the same row twice leaves no intent behind', () => {
+  let intent = toggleListIntent(NO_INTENT, 'a', ['a']);
+  assert.deepEqual(intent.unchecked, ['a']);
+  intent = toggleListIntent(intent, 'a', ['a']);
+  assert.deepEqual(intent.checked, [], 'checking back on clears the removal');
+  assert.deepEqual(intent.unchecked, [], 'and does not leave a redundant addition');
+  assert.deepEqual([...resolveSelection({ membership: ['a'], ...intent })], ['a']);
+});
+
+test('an intent about a list that no longer exists cannot resurrect it', () => {
+  const intent = toggleListIntent(NO_INTENT, 'gone', []);
+  const selection = resolveSelection({ membership: ['a'], ...intent, known: ['a'] });
+  assert.deepEqual([...selection], ['a'], 'a deleted list must not be written to');
+});
+
+test('a membership that arrives is never gated by the lists on screen', () => {
+  // `known` bounds what the user's own ticks can reach, never the server truth:
+  // a membership filtered by a half-painted screen would become a removal.
+  const selection = resolveSelection({ membership: ['a', 'b'], ...NO_INTENT, known: [] });
+  assert.deepEqual([...selection], ['a', 'b']);
 });

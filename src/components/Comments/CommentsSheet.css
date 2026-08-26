@@ -1,3 +1,19 @@
+/* ============================================
+   CommentsSheet — the thread of one paper, set as an index of reader notes
+
+   Drawn from the same parts as the rest of the light system: an ink scrim, a
+   white sheet with a hairline border, and inside it ruled rows instead of
+   chat bubbles. Three voices, as everywhere — mono for the machine line
+   (handle, age, counts), the edition serif for what a person actually wrote,
+   Inter for the controls, which come from `ui/button.jsx` rather than from
+   this file. Colour arrives from the paper's own research field through
+   `--area-accent`, set on the sheet by the component.
+
+   Reference files: `Public/AuthPrompt.css` (the scrim and the sheet),
+   `Reader/PaperReader.css` (mono chrome, near-square chips),
+   `Feed/PaperCard.css` (the field rule and the area-tinted monogram).
+   ============================================ */
+
 .comments-sheet-backdrop {
   position: fixed;
   inset: 0;
@@ -6,8 +22,11 @@
   align-items: flex-end;
   justify-content: center;
   padding: 0;
-  background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
+  /* The system scrim: ink, not black. There is no token for it — AuthPrompt
+     writes the same value, and design.md names it. */
+  background: rgba(17, 19, 24, 0.4);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 /* Bottom-anchored on phones, floating centered on anything wider — the same
@@ -20,7 +39,7 @@
   border: 1px solid var(--border-default);
   border-bottom: none;
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
-  background: var(--bg-elevated);
+  background: var(--bg-card);
   box-shadow: var(--shadow-xl);
   overflow: hidden;
   /* The sheet grows out of the edge it is anchored to, and it is promoted to
@@ -30,69 +49,86 @@
   will-change: transform, opacity;
 }
 
+/* ── Masthead ──
+   The field rule over a serif nameplate and a mono count: the same opening
+   move a card makes, at the scale of a sheet. */
 .comments-sheet-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-4) var(--space-3);
+  padding: var(--space-4);
   border-bottom: 1px solid var(--border-subtle);
 }
 
-.comments-sheet-title {
+.comments-sheet-heading {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-2);
+  min-width: 0;
+}
+
+.comments-sheet-heading::before {
+  content: '';
+  width: 34px;
+  height: 3px;
+  background: var(--area-accent, var(--accent-primary));
+}
+
+.comments-sheet-titles {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.comments-sheet-title {
   margin: 0;
   color: var(--text-primary);
-  font-family: var(--font-heading);
-  font-size: var(--fs-base);
+  font-family: var(--font-serif);
+  font-size: var(--fs-xl);
   font-weight: var(--fw-semibold);
+  line-height: var(--lh-tight);
+  letter-spacing: -0.015em;
 }
 
 .comments-sheet-count {
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--bg-glass);
-  color: var(--text-secondary);
-  font-family: var(--font-body);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  line-height: 1.7;
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-tertiary);
+  font: 500 0.625rem/1.5 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .comments-sheet-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast);
-}
-
-.comments-sheet-close:hover,
-.comments-sheet-close:focus-visible {
-  border-color: var(--border-strong);
-  color: var(--text-primary);
 }
 
 .comments-sheet-body {
   height: min(58dvh, 520px);
   overflow-y: auto;
-  padding: var(--space-3);
+  /* The feed underneath snap-scrolls: without this, running out of thread
+     hands the wheel straight to the next paper. */
+  overscroll-behavior: contain;
+  padding: 0 var(--space-4);
 }
 
-/* Most papers have no thread at all and answer in a couple of hundred
+/* ── Loading ──
+   Most papers have no thread at all and answer in a couple of hundred
    milliseconds. Holding the placeholder back means that common open shows the
    sheet and its composer with nothing flashing grey, and the skeleton appears
    only when there is genuinely a wait to describe. It stays in the DOM
-   throughout, so `aria-busy` still announces the load to a screen reader. */
+   throughout, so `aria-busy` still announces the load to a screen reader.
+
+   `animation: … forwards` from `opacity: 0` is the pattern that dies inside a
+   `content-visibility: auto` subtree. This sheet is mounted at the root of
+   App/PublicPaperPage, never inside `.feed-snap-item`, so it runs — keep it
+   that way if the sheet is ever moved. */
 .comments-sheet-loading {
   opacity: 0;
   animation: comments-skeleton-reveal 140ms ease-out 320ms forwards;
@@ -102,240 +138,264 @@
   to { opacity: 1; }
 }
 
-.comments-sheet-loading {
+.comment-skeleton {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
+  padding: var(--space-4) 0;
 }
 
-.comment-row-skeleton {
-  height: 64px;
-  border-radius: var(--radius-lg);
+.comment-skeleton + .comment-skeleton {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.comment-skeleton span {
+  display: block;
+  height: 10px;
+  border-radius: var(--radius-sm);
   background: var(--bg-secondary);
   animation: comments-sheet-pulse 1.4s ease-in-out infinite;
 }
+
+.comment-skeleton span:nth-child(1) { width: 38%; }
+.comment-skeleton span:nth-child(2) { width: 100%; }
+.comment-skeleton span:nth-child(3) { width: 64%; }
 
 @keyframes comments-sheet-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.55; }
 }
 
+/* ── Empty, waiting and failed ── */
 .comments-sheet-state {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: var(--space-2);
+  gap: var(--space-3);
   height: 100%;
-  color: var(--text-tertiary);
+  padding: var(--space-6) 0;
+  color: var(--text-secondary);
   font-size: var(--fs-sm);
   text-align: center;
 }
 
 .comments-sheet-state-title {
   margin: 0;
-  font-family: var(--font-heading);
-  font-size: var(--fs-base);
-  font-weight: var(--fw-semibold);
   color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.01em;
 }
 
 .comments-sheet-state p {
   margin: 0;
   max-width: 34ch;
+  line-height: var(--lh-normal);
 }
 
 .comments-sheet-state-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
   background: var(--bg-secondary);
-  color: var(--accent-primary);
+  color: var(--area-accent, var(--accent-primary));
 }
 
+.comments-sheet-state-action {
+  margin-top: var(--space-1);
+}
+
+/* ── Ruled rows ── */
 .comments-list {
   list-style: none;
   margin: 0;
   padding: 0;
+}
+
+.comments-list-item {
+  padding: var(--space-4) 0;
+}
+
+.comments-list-item + .comments-list-item {
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* A reply hangs off its parent behind a soft bar of the paper's field
+   colour — the nesting is the rule, no indent-by-avatar needed. */
+.comments-replies {
+  list-style: none;
+  margin: var(--space-3) 0 0 var(--space-2);
+  padding: 0 0 0 var(--space-4);
+  border-left: 3px solid color-mix(in srgb, var(--area-accent, var(--accent-primary)) 22%, var(--bg-card));
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
 }
 
-.comments-replies {
-  list-style: none;
-  margin: var(--space-3) 0 0;
-  padding: 0 0 0 var(--space-8);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-3);
-}
-
 .comment-row {
   display: flex;
-  gap: var(--space-3);
-  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
 }
 
+/* ── The machine line ── */
+.comment-row-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  font: 500 0.6875rem/1.6 var(--font-mono);
+  letter-spacing: 0.01em;
+  color: var(--text-tertiary);
+}
+
+/* Not a photo: the people index carries none. A monogram tinted by the
+   paper's field, like the author chips on the card. */
 .comment-avatar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  width: 22px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--area-accent, var(--accent-primary)) 24%, var(--bg-card));
   border-radius: var(--radius-full);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font-family: var(--font-heading);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
+  background: color-mix(in srgb, var(--area-accent, var(--accent-primary)) 10%, var(--bg-card));
+  color: var(--area-accent, var(--text-secondary));
+  font: 500 0.625rem/1 var(--font-mono);
+  text-transform: uppercase;
 }
 
 .comment-row--reply .comment-avatar {
-  width: 28px;
-  height: 28px;
-  font-size: var(--fs-xs);
-}
-
-.comment-row-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.comment-row-meta {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  flex-wrap: wrap;
+  width: 18px;
+  height: 18px;
+  font-size: 0.5625rem;
 }
 
 .comment-row-handle {
   color: var(--text-primary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
+  font: inherit;
   text-decoration: none;
 }
 
-.comment-row-handle:hover,
+@media (hover: hover) and (pointer: fine) {
+  .comment-row-handle:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+}
+
 .comment-row-handle:focus-visible {
   text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.comment-row-dot {
+  color: var(--border-strong);
 }
 
 .comment-row-time,
 .comment-row-edited {
   color: var(--text-tertiary);
-  font-size: var(--fs-xs);
 }
 
+/* Moderation is visible only to the moderated, and it is a note, not a chip:
+   it carries two sentences. */
 .comment-row-hidden-badge {
-  margin-top: var(--space-1);
-  display: inline-block;
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--bg-glass);
-  color: var(--accent-danger);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--tint-red-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
   font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  line-height: 1.8;
+  line-height: var(--lh-normal);
 }
 
+/* What the reader wrote is prose, so it is set in the edition serif — the
+   one thing on this surface that is neither chrome nor machine data. */
 .comment-row-text {
-  margin: var(--space-1) 0 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  line-height: var(--lh-relaxed);
+  margin: 0;
+  color: var(--text-primary);
+  font-family: var(--font-serif);
+  font-size: var(--fs-base);
+  line-height: 1.55;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
-.comment-row-actions,
+/* ── Actions, grouped by intent ──
+   What you can do to the conversation on the left; the one thing you can do
+   about the comment behind a rule on the right. */
+.comment-row-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+}
+
+.comment-row-actions-primary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  flex-wrap: wrap;
+  margin-right: auto;
+}
+
+.comment-row-actions-utility {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding-left: var(--space-2);
+  border-left: 1px solid var(--border-subtle);
+}
+
 .comment-row-confirm {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
-  margin-top: var(--space-2);
-}
-
-.comment-row-confirm {
-  color: var(--text-secondary);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--tint-neutral-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
   font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
 }
 
-.comment-action {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: var(--space-1) var(--space-2);
-  border: none;
-  border-radius: var(--radius-full);
-  background: none;
-  color: var(--text-tertiary);
-  font-family: var(--font-body);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-  transition: color var(--transition-fast), background var(--transition-fast);
-}
-
-.comment-action:hover:not(:disabled),
-.comment-action:focus-visible:not(:disabled) {
-  background: var(--bg-glass-hover);
-  color: var(--text-primary);
-}
-
-.comment-action--danger:hover:not(:disabled),
-.comment-action--danger:focus-visible:not(:disabled) {
-  color: var(--accent-danger);
-}
-
-.comment-action:disabled {
-  cursor: default;
-  opacity: 0.6;
+.comment-row-confirm--danger {
+  border-color: var(--tint-red-line);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
 }
 
 .comments-sheet-more {
-  display: block;
-  width: 100%;
-  margin-top: var(--space-4);
-  padding: var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-  transition: border-color var(--transition-fast);
-}
-
-.comments-sheet-more:hover:not(:disabled),
-.comments-sheet-more:focus-visible:not(:disabled) {
-  border-color: var(--border-strong);
-}
-
-.comments-sheet-more:disabled {
-  cursor: default;
-  opacity: 0.6;
+  margin: var(--space-4) 0;
 }
 
 .comments-sheet-notice {
-  margin: var(--space-3) 0 0;
-  color: var(--text-secondary);
+  margin: var(--space-3) 0 var(--space-4);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--tint-neutral-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
   font-size: var(--fs-xs);
-  text-align: center;
+  line-height: var(--lh-normal);
 }
 
+/* ── The composer, and the three doors that stand in for it ── */
 .comments-sheet-footer {
   border-top: 1px solid var(--border-subtle);
-  padding: var(--space-3) var(--space-3) calc(var(--space-3) + env(safe-area-inset-bottom, 0px));
-  background: var(--bg-elevated);
+  padding: var(--space-4) var(--space-4) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  background: var(--bg-card);
 }
 
 /* The three refusals (sign in / create profile / go public) share one calm
@@ -343,7 +403,7 @@
 .comments-gate {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  gap: var(--space-3);
   align-items: flex-start;
 }
 
@@ -351,33 +411,12 @@
   margin: 0;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
-  line-height: var(--lh-relaxed);
+  line-height: var(--lh-normal);
 }
 
 .comments-gate strong {
   color: var(--text-primary);
-}
-
-.comments-gate-cta {
-  display: inline-flex;
-  align-items: center;
-  padding: var(--space-2) var(--space-4);
-  border: none;
-  border-radius: var(--radius-full);
-  background: var(--accent-primary);
-  color: #fff;
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
-  text-decoration: none;
-  cursor: pointer;
-  transition: background var(--transition-fast);
-}
-
-.comments-gate-cta:hover,
-.comments-gate-cta:focus-visible {
-  background: var(--accent-primary-hover);
-  color: #fff;
 }
 
 .comments-composer {
@@ -391,22 +430,16 @@
   align-items: center;
   gap: var(--space-2);
   color: var(--text-tertiary);
-  font-size: var(--fs-xs);
+  font: 500 0.6875rem/1.6 var(--font-mono);
+  letter-spacing: 0.01em;
 }
 
-.comments-composer-context button {
-  display: inline-flex;
-  align-items: center;
-  border: none;
-  background: none;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  padding: var(--space-1);
-}
-
-.comments-composer-context button:hover,
-.comments-composer-context button:focus-visible {
-  color: var(--text-primary);
+.comments-composer-context span {
+  margin-right: auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .comments-composer-row {
@@ -415,61 +448,43 @@
   gap: var(--space-2);
 }
 
+/* Set in the serif it will be read in once it is posted, one step down so a
+   single row still holds a whole line. The clamp is in viewport units so a
+   short screen is not asked to give up rows it has not got. */
 .comments-composer-input {
   flex: 1;
   min-height: 40px;
-  max-height: 120px;
+  max-height: min(9rem, 22vh);
   resize: none;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   color: var(--text-primary);
-  font-family: var(--font-body);
+  font-family: var(--font-serif);
   font-size: var(--fs-sm);
   line-height: var(--lh-normal);
-  transition: border-color var(--transition-fast);
 }
 
-.comments-composer-input:focus {
-  outline: none;
-  border-color: var(--accent-primary);
-}
-
+/* The prompt is a control, not prose. */
 .comments-composer-input::placeholder {
   color: var(--text-tertiary);
+  font-family: var(--font-body);
 }
 
-/* Solid accent like every other primary action; gradients stay with the brand
-   marks. */
 .comments-composer-send {
   flex: 0 0 auto;
-  padding: var(--space-2) var(--space-4);
-  border: none;
-  border-radius: var(--radius-full);
-  background: var(--accent-primary);
-  color: #fff;
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-  transition: background var(--transition-fast), opacity var(--transition-fast);
-}
-
-.comments-composer-send:hover:not(:disabled),
-.comments-composer-send:focus-visible:not(:disabled) {
-  background: var(--accent-primary-hover);
-}
-
-.comments-composer-send:disabled {
-  cursor: default;
-  opacity: 0.5;
 }
 
 .comments-composer-error {
   margin: 0;
-  color: var(--accent-danger);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--tint-red-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
   font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
 }
 
 @media (min-width: 600px) {
@@ -485,12 +500,15 @@
   }
 
   .comments-sheet-body {
-    height: min(48vh, 460px);
+    height: min(48dvh, 460px);
   }
 }
 
+/* The pulse is motion; the 320 ms hold before the skeleton appears is not —
+   it is the load policy, and dropping it here would put the grey back on the
+   common open that never needed it. */
 @media (prefers-reduced-motion: reduce) {
-  .comment-row-skeleton {
+  .comment-skeleton span {
     animation: none;
   }
 }

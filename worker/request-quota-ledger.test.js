@@ -278,3 +278,41 @@ test('a release gives back as much as was reserved, not one unit of it', async (
   assert.equal(released.subjectUsage, 0);
   assert.equal(released.globalUsage, 0);
 });
+
+test('peeking reports the allowance without spending any of it', async () => {
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const subjectKey = 'b'.repeat(64);
+  const call = body => ledger.fetch(new Request('https://internal', {
+    method: 'POST', body: JSON.stringify({ subjectKey, subjectLimit: 10, globalLimit: 100, ...body }),
+  }));
+
+  await call({ action: 'reserve' });
+  await call({ action: 'reserve' });
+
+  const first = await (await call({ action: 'peek' })).json();
+  const second = await (await call({ action: 'peek' })).json();
+
+  assert.deepEqual(first, { accepted: true, subjectUsage: 2, globalUsage: 2, remaining: 8 });
+  // The number the reader is shown must not move because the reader looked at
+  // it: two peeks in a row have to agree, and agree with the reservation count.
+  assert.deepEqual(second, first);
+  assert.equal(harness.values.get(`subject:${subjectKey}`), 2);
+  assert.equal(harness.values.get('global'), 2);
+});
+
+test('a peek past the ceiling reports nothing left rather than a negative', async () => {
+  const harness = storageHarness();
+  const ledger = new RequestQuotaLedger({ storage: harness.storage });
+  const subjectKey = 'c'.repeat(64);
+  const call = body => ledger.fetch(new Request('https://internal', {
+    method: 'POST', body: JSON.stringify({ subjectKey, subjectLimit: 1, globalLimit: 100, ...body }),
+  }));
+
+  await call({ action: 'reserve' });
+  // The allowance can be over-spent across a limit change, and "-3 uses today"
+  // is not a thing the reader can render.
+  harness.values.set(`subject:${subjectKey}`, 4);
+
+  assert.equal((await (await call({ action: 'peek' })).json()).remaining, 0);
+});

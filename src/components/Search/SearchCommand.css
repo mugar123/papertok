@@ -121,3 +121,76 @@
     display: block;
   }
 }
+
+/* ─── Skeleton ───
+   The palette waits for every source before it paints anything, so the wait
+   needs a shape. A lone spinner over an empty sheet reads as nothing
+   happening, and a sheet that fills from nothing shifts every row under the
+   cursor the moment the answer lands. These are the height of a real row. */
+
+.sc-skeleton {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1);
+}
+
+.sc-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: var(--space-2);
+  opacity: 0;
+  animation: fadeIn 200ms ease-out forwards;
+}
+
+/* The stagger lives in the stylesheet rather than in an inline custom property,
+   because the count is fixed here and a `style={{ '--index': n }}` would owe
+   `profileStyles.test.js` an entry in INJECTED_PROPERTIES. */
+.sc-skeleton-row:nth-child(2) { animation-delay: 45ms; }
+.sc-skeleton-row:nth-child(3) { animation-delay: 90ms; }
+.sc-skeleton-row:nth-child(4) { animation-delay: 135ms; }
+.sc-skeleton-row:nth-child(5) { animation-delay: 180ms; }
+
+.sc-skeleton-row > span {
+  height: 9px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary) 0%,
+    var(--border-subtle) 50%,
+    var(--bg-secondary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* The same three columns a painted row has: the 14px icon slot, the label, and
+   the mono meta pushed to the edge. */
+.sc-skeleton-icon {
+  flex: 0 0 14px;
+  height: 14px;
+}
+
+.sc-skeleton-line {
+  flex: 1 1 auto;
+  max-width: 62%;
+}
+
+.sc-skeleton-meta {
+  flex: 0 0 18%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The row starts at `opacity: 0` and only reaches 1 through the animation
+     just cancelled above. Turning the motion off must not turn the content off
+     with it — the same trap already documented in `SearchPage.css`. */
+  .sc-skeleton-row {
+    opacity: 1;
+    animation: none;
+  }
+
+  .sc-skeleton-row > span {
+    animation: none;
+  }
+}

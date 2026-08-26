@@ -80,3 +80,26 @@ export function withPaperMembership(lists, paperId, { added = [], removed = [] }
     return list;
   });
 }
+
+/**
+ * The lists a read found, plus the ones created since it was issued.
+ *
+ * "Create a new list" is on screen from the first frame, before the lists have
+ * landed. The document is written the moment the button is pressed, but the
+ * `getDocs` already on the wire was issued BEFORE it existed and its snapshot
+ * cannot contain it — and neither can a late answer delivered minutes later by
+ * `patientRead`'s healing loop. Applying that snapshot wholesale took the list
+ * the user had just made off the screen and out of the shared session cache,
+ * which `rememberOwnLists` then stamped fresh: for the next thirty seconds
+ * every screen in the app agreed the list did not exist.
+ *
+ * The fetched lists win on content — a rename made elsewhere is real — and only
+ * the ids the snapshot has never heard of are carried over. Returns the very
+ * same array when there is nothing to merge, so the common case costs nothing.
+ */
+export function mergeCreatedLists(fetched, created) {
+  if (!Array.isArray(fetched) || !Array.isArray(created) || created.length === 0) return fetched;
+  const known = new Set(fetched.map((list) => list?.id));
+  const missing = created.filter((list) => list?.id && !known.has(list.id));
+  return missing.length === 0 ? fetched : [...fetched, ...missing];
+}

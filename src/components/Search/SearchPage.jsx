@@ -57,8 +57,11 @@ import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import {
+  authorProminenceWeight,
+  buildSearchSectionValues,
   filterRelevantSearchResults,
   getSearchSectionOrder,
+  isOrganisationAuthorRecord,
   resolvePreferredSearchSection,
 } from '../../utils/searchRelevance';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
@@ -283,8 +286,15 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
           throwOnError: true,
         }).then(results => filterRelevantSearchResults(
           searchTerm,
-          results,
+          // OpenAlex answers an organisation name with institution-as-author
+          // records: four of them are called "University of Salamanca". They
+          // score 100 and took the top of this section from the people who
+          // actually wrote something.
+          results.filter(author => !isOrganisationAuthorRecord(author)),
           author => [author.display_name],
+          // Several exact matches all score 100; prominence decides which of
+          // them a reader was looking for.
+          { getWeight: authorProminenceWeight },
         )).then(results => Promise.all(
           results.map(author => enrichAuthorInstitutionLocalization(author, { timeoutMs: 1500 })),
         )),
@@ -565,31 +575,20 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   // change, not on every render. With the whole page landing in one commit,
   // that means once per search — the ordering churn that used to run 6-10 times
   // while stragglers trickled in is gone with the staggered reveal.
+  // The values each section votes with come from `buildSearchSectionValues`,
+  // which the palette calls too. They had drifted apart — the palette left out
+  // aliases and acronyms, so it alone could not answer "USAL" or "MIT".
   const preferredSection = useMemo(() => resolvePreferredSearchSection({
     query,
     hint: searchIntent,
-    sectionValues: {
-      // Both fields: an exact handle and an exact display name are each the
-      // strongest evidence available that a person was meant.
-      users: userResults.flatMap(person => [person.handle, person.name]),
-      papers: paperResults.map(paper => paper.title),
-      topics: conceptResults.flatMap(concept => [
-        concept.display_name,
-        concept.labelEs,
-        concept.labelEn,
-      ]),
-      authors: authorResults.map(author => author.display_name),
-      institutions: institutionResults.flatMap(institution => [
-        institution.display_name,
-        ...Object.values(institution.localized_names || {}),
-        ...(institution.aliases || []),
-        ...(institution.acronyms || []),
-      ]),
-      projects: projectResults.flatMap(project => [
-        project.acronym,
-        project.title,
-      ]),
-    },
+    sectionValues: buildSearchSectionValues({
+      users: userResults,
+      papers: paperResults,
+      topics: conceptResults,
+      authors: authorResults,
+      institutions: institutionResults,
+      projects: projectResults,
+    }),
   }), [
     query, searchIntent, userResults, paperResults,
     conceptResults, authorResults, institutionResults, projectResults,

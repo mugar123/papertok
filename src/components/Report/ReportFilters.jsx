@@ -2,8 +2,9 @@ import { useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
 import { getCountryName, searchCountries } from '../../data/countries';
-import { Check, ChevronDown, Filter, LoaderCircle, MapPin, Search, X } from 'lucide-react';
+import { Check, ChevronDown, LoaderCircle, MapPin, Search, X } from 'lucide-react';
 import WorldMap from './WorldMap';
+import { Button } from '../ui/button.jsx';
 import { useLanguage } from '../../context/LanguageContext';
 import './ReportFilters.css';
 
@@ -133,6 +134,8 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
 
   return (
     <div className="rf">
+      {/* The row reads as the twin of the EDITION row above it: a mono label,
+          the state set in running text, and one hairline rule underneath. */}
       <button
         type="button"
         className={`rf-toggle ${isOpen ? 'is-open' : ''}`}
@@ -140,25 +143,24 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
         aria-expanded={isOpen}
         aria-controls="rf-panel"
       >
-        <span className="rf-toggle-left">
-          <Filter size={15} />
-          <span>{isEnglish ? 'Filters' : 'Filtros'}</span>
-          <AnimatePresence>
-            {appliedCount > 0 && (
-              <motion.span
-                className="rf-badge"
-                initial={reduced ? false : { scale: 0.6, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={reduced ? { opacity: 0 } : { scale: 0.6, opacity: 0 }}
-                transition={{ duration: 0.18 }}
-              >
-                {appliedCount}
-              </motion.span>
-            )}
-          </AnimatePresence>
+        <span className="rf-toggle-label">{isEnglish ? 'Filters' : 'Filtros'}</span>
+        <span className={`rf-toggle-summary ${appliedCount > 0 ? '' : 'is-empty'}`}>
+          {appliedCount > 0 ? (
+            <>
+              <span className="rf-toggle-count">{appliedCount}</span>
+              {isEnglish ? ' active' : ' activos'}
+            </>
+          ) : (
+            isEnglish ? 'All disciplines and countries' : 'Todas las disciplinas y países'
+          )}
         </span>
         <span className="rf-toggle-status">
           {loading && <LoaderCircle className="rf-loading-icon" size={14} aria-hidden="true" />}
+          <span className="rf-toggle-action">
+            {isOpen
+              ? (isEnglish ? 'Close' : 'Cerrar')
+              : (isEnglish ? 'Refine' : 'Afinar')}
+          </span>
           <Chevron isOpen={isOpen} reduced={reduced} />
         </span>
       </button>
@@ -392,27 +394,27 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
           </div>
 
           <div className="rf-actions">
-            <button
+            <Button
               type="button"
-              className="rf-clear"
+              variant="ghost"
+              className="pl-0"
               onClick={() => setDraftFilters({ categories: [], countries: [] })}
               disabled={draftCount === 0}
             >
               <X size={13} /> {isEnglish ? 'Clear selection' : 'Limpiar selección'}
-            </button>
+            </Button>
             <div className="rf-actions-primary">
-              <button type="button" className="rf-cancel" onClick={closePanel}>
+              <Button type="button" variant="ghost" onClick={closePanel}>
                 {isEnglish ? 'Cancel' : 'Cancelar'}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="rf-apply"
                 onClick={applyFilters}
                 disabled={!hasPendingChanges || loading}
               >
                 {loading ? <LoaderCircle className="rf-loading-icon" size={15} aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
                 {isEnglish ? 'Apply filters' : 'Aplicar filtros'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

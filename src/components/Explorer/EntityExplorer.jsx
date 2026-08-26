@@ -132,7 +132,11 @@ export default function EntityExplorer({
   const observerRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState('papers');
-  const [isExperienceOpen, setIsExperienceOpen] = useState(false);
+  // Open by default: the experience is the answer to "who is this person", which
+  // is what the page is for. Hiding it behind the briefcase made the page open
+  // on numbers alone and left the one human fact a click away. The toggle stays,
+  // so it can still be folded out of the way.
+  const [isExperienceOpen, setIsExperienceOpen] = useState(true);
   const [expandedSummary, setExpandedSummary] = useState(false);
   const [participantsExpanded, setParticipantsExpanded] = useState(false);
   const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(false);
@@ -345,7 +349,7 @@ export default function EntityExplorer({
       setPdfPaperToView(null);
       setOrcidInfo(null);
       setActiveTab('papers');
-      setIsExperienceOpen(false);
+      setIsExperienceOpen(true);
       setExpandedSummary(false);
       setParticipantsExpanded(false);
     }, 0);
@@ -380,7 +384,7 @@ export default function EntityExplorer({
       setWikiInfo(null);
       setOrcidInfo(null);
       setIsLoadingOrcid(false);
-      setIsExperienceOpen(false);
+      setIsExperienceOpen(true);
       setExpandedSummary(false);
       setIsWikiDescriptionExpanded(false);
       setIsProjectLinksMenuOpen(false);

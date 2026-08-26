@@ -179,21 +179,38 @@ test('the search never announces itself as unavailable', () => {
   }
 });
 
-test('the page settles once', () => {
+test('both surfaces settle once', () => {
   // Results used to be revealed in two phases — whatever had arrived by 520 ms,
-  // then every straggler painting on its own — which assembled the page on
+  // then every straggler painting on its own — which assembled the search on
   // screen over several seconds and reshuffled the ranking as it went.
   //
-  // Page only. The palette keeps the two-phase reveal on purpose: it opens over
-  // the feed with no skeleton to hide behind, so waiting on the slowest of six
-  // sources before showing anything is the worse trade there. What it may not
-  // do is let the two phases mix two searches — the test below.
-  assert.doesNotMatch(page, /SEARCH_INITIAL_REVEAL_MS/);
-  assert.doesNotMatch(page, /Promise\.race/, 'no partial reveal race');
-  assert.match(page, /await Promise\.all\(tasks\)/, 'one settle for the whole fan-out');
+  // The page was fixed first and the palette was deliberately left out, with
+  // the reason written down right here: it "opens over the feed with no
+  // skeleton to hide behind", so waiting on the slowest of six sources before
+  // showing anything was the worse trade there. That reason is gone — the
+  // palette has a skeleton now, which is exactly what buys the wait — and the
+  // exception went with it.
+  for (const [name, code] of [['the page', page], ['the palette', paletteSearch]]) {
+    assert.doesNotMatch(code, /SEARCH_INITIAL_REVEAL_MS/, name);
+    assert.doesNotMatch(code, /Promise\.race/, `${name}: no partial reveal race`);
+    assert.match(code, /await Promise\.all\(tasks\)/, `${name}: one settle for the whole fan-out`);
+  }
 });
 
-test('the palette never shows two searches at once', () => {
+test('neither surface paints a section while an answer is still owed', () => {
+  // The five external sources land in one commit, but people run on their own
+  // 400 ms clock and used to arrive alone, after the rest, pushing everything
+  // down under a reader who had already started reading. So the gate is the
+  // pending state that covers BOTH channels, never the external one alone.
+  assert.match(page, /hasVisibleResults && !searchPending/, 'the page gates its sections');
+  assert.match(palette, /!searchPending && orderedSections\.map/, 'the palette gates its sections');
+  // And what stands in the gap is a skeleton, not an empty sheet: waiting for
+  // every source is only tolerable if the wait has a shape.
+  assert.match(page, /className="search-loading-state"/, 'the page shows a skeleton while it waits');
+  assert.match(palette, /className="sc-skeleton"/, 'the palette shows a skeleton while it waits');
+});
+
+test('a search never paints on top of the last one', () => {
   // The reveal used to apply only the sections that had resolved, on top of
   // whatever the previous query had left on screen. A source that ran out its
   // timeout never wrote its section, so its old rows survived the whole next
@@ -205,11 +222,40 @@ test('the palette never shows two searches at once', () => {
     'a search paints from empty, never on top of the last one',
   );
   assert.match(paletteSearch, /setResults\(revealedResults\);/, 'and in one commit');
-  // Not fixed by clearing on the way in, which would blink the palette to
-  // nothing on every keystroke: the previous answer stays up until the commit,
-  // marked as the previous answer.
+  // Still not fixed by clearing on the way in, which would blink the palette to
+  // nothing on every keystroke. Rows survive the debounce gap — the window
+  // before the pending gate above closes — and say they are the old ones.
   assert.match(paletteSearch, /const isStale = /, 'the kept rows know they are the old ones');
   assert.match(palette, /className=\{isStale \? 'sc-group--stale' : undefined\}/, 'and say so on screen');
+});
+
+test('both surfaces build their section values in one place', () => {
+  // They were written out twice and had already drifted: the palette left
+  // `aliases` and `acronyms` off its institutions, so it alone could not match
+  // the "USAL" or "MIT" that ROR had handed it — and an acronym carries no
+  // organisation word, so the exact sweep is the only way such a search lands.
+  // A ranking that depends on which file you opened is not a ranking.
+  for (const surface of SURFACES) {
+    assert.match(surface.code, /buildSearchSectionValues\(/, surface.name);
+    assert.doesNotMatch(surface.code, /sectionValues: \{/, `${surface.name}: no second copy`);
+  }
+});
+
+test('both surfaces drop the institutions OpenAlex files as authors', () => {
+  // `authors?search=university of salamanca` answers with four records whose
+  // display_name IS "University of Salamanca" — no ORCID, no institution, a
+  // handful of works. They score a flat 100, which took the top of the Authors
+  // section and, with it, first place on the whole page from the real
+  // university. A section that only one surface cleans is a bug with a
+  // fifty-fifty chance of being seen.
+  for (const surface of SURFACES) {
+    assert.match(surface.code, /isOrganisationAuthorRecord/, surface.name);
+    assert.match(
+      surface.code,
+      /getWeight: authorProminenceWeight/,
+      `${surface.name}: and ranks what is left by prominence`,
+    );
+  }
 });
 
 test('the wait covers the people channel, not just the external one', () => {

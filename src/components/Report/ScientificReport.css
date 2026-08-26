@@ -30,10 +30,18 @@
   flex-wrap: wrap;
 }
 
+/* The nameplate's `line-height: 0.95` is tighter than Newsreader's own font
+   box (1.008em), so the half-leading is negative and the cap of the "R"
+   escapes the h1's border box by ~2.4px at the desktop size. A `gap` measured
+   between boxes therefore buys less air than it says: the old `2px` left the
+   kicker's baseline sitting 0.4px *inside* the R. The gap below is chosen
+   against the ink, not the box — 12px of gap reads as ~9.6px of real air at
+   1280px and ~10.6px at 375px. Re-measure it if the nameplate's line-height
+   or family changes. */
 .sr-masthead-block {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--space-4);
   min-width: 0;
 }
 
@@ -54,6 +62,12 @@
   line-height: 0.95;
   letter-spacing: -0.03em;
   color: var(--text-primary);
+  /* `line-height: 0.95` is right for a masthead that wraps, but it makes the
+     line box shorter than the type: the serif's ascenders ride above it and eat
+     into the eyebrow, which is what made the two read as one block. Half the
+     leading deficit is reclaimed here so the optical gap matches the flex gap.
+     In `em`, so it tracks the clamp instead of drifting at 375px. */
+  padding-top: 0.025em;
 }
 
 .sr-header-actions {
