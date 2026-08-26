@@ -573,7 +573,10 @@ a.pc-citations {
   max-height: min(30em, 46vh);
   overflow: hidden;
   position: relative;
-  transition: max-height 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+  transition:
+    max-height 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    -webkit-mask-size 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    mask-size 0.42s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
   margin-bottom: var(--space-4);
   /* The one part of the card that yields. Everything else — kicker, badges,
@@ -584,9 +587,22 @@ a.pc-citations {
   min-height: 0;
 }
 
-.pc-abstract:not(.pc-abstract--open) {
+/* The bottom fade is always the same mask; what changes is how far down its
+   gradient is stretched. Toggling `mask-image` on and off cannot be animated —
+   the edge simply blinked — but `mask-size` is a length pair and interpolates,
+   so at 400% the transparent stop is pushed four heights below the panel and
+   the fade eases away instead of vanishing between frames. It rides the same
+   curve and duration as the height, so opening reads as one gesture. */
+.pc-abstract {
   -webkit-mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
   mask-image: linear-gradient(to bottom, black 60%, transparent 100%);
+  -webkit-mask-size: 100% 100%;
+  mask-size: 100% 100%;
+}
+
+.pc-abstract--open {
+  -webkit-mask-size: 100% 400%;
+  mask-size: 100% 400%;
 }
 
 .pc-abstract p {
@@ -609,10 +625,16 @@ a.pc-citations {
 /* Expanded, it takes the space the rest of the card is not using and scrolls
    inside it, rather than growing to a fixed 62vh and taking the sheet with it.
    `overscroll-behavior: contain` stops a flick that reaches the end of the
-   abstract from carrying on into the feed and skipping to the next paper. */
+   abstract from carrying on into the feed and skipping to the next paper.
+
+   `100%` and not `none`: nothing interpolates towards `none`, so the keyword
+   made the panel jump open instead of easing, and — worse — killed the
+   `max-height` transitionend that `handleAbstractTransitionEnd` listens on to
+   put the reader back at the first line on the way closed. A percentage of the
+   body is both a real ceiling and an animatable one. */
 .pc-abstract--open {
   flex: 1 1 auto;
-  max-height: none;
+  max-height: 100%;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
