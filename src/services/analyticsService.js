@@ -31,6 +31,12 @@ export const PRODUCT_ANALYTICS_EVENTS = Object.freeze([
   // say so. Both of these shipped instrumented and silent.
   'paper_rewrite',
   'paper_highlight',
+  // The far end of the guest run. `guest_demo_start` already marks where a
+  // visitor begins; without its pair, the only thing measurable was how many
+  // people started, never how many reached the wall. It was being sent as
+  // `select_content`, which is GA4's name for a *click*, so an impression
+  // arrived counted as one and the card looked like it converted every viewer.
+  'guest_demo_end',
 ]);
 
 const ANALYTICS_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -113,6 +119,9 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   select_content: { content_type: 'content_type', surface: 'surface', position: 'boundedNumber' },
   paper_rewrite: { level: 'rewrite_level', surface: 'surface' },
   paper_highlight: { level: 'rewrite_level', surface: 'surface' },
+  // Mirrors `guest_demo_start`'s shape so the two ends of the run can be read
+  // as one funnel; `position` is how many papers were behind the reader.
+  guest_demo_end: { position: 'boundedNumber', language: 'language' },
 });
 
 let analyticsInstance = null;
