@@ -379,7 +379,7 @@ export default function SearchCommand({ open, onOpenChange }) {
   });
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} title={copy.placeholder}>
+    <CommandDialog open={open} onOpenChange={onOpenChange} title={copy.placeholder} className="sc-sheet">
       <CommandInput
         value={query}
         onValueChange={setQuery}

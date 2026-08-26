@@ -154,7 +154,7 @@ export default function LoginPage() {
         </div>
 
         <div className="login-alt" aria-hidden="true">
-          <span>{isEnglish ? 'or' : 'o'}</span>
+          <span>{isEnglish ? 'or' : 'o bien'}</span>
         </div>
 
         <Button

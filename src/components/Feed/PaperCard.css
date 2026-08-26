@@ -38,8 +38,15 @@
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  /* The sheet itself never scrolls. It used to: a long abstract made the whole
+     page draggable, so the title, the authors and the action row slid away
+     under the reader's thumb and the card stopped being a fixed frame with a
+     text well in it. The abstract is the only thing here that can be any
+     length, so the abstract is the only thing that scrolls — see
+     `.pc-abstract`, which yields space to its siblings and takes the overflow
+     on itself. */
   overflow-x: hidden;
-  overflow-y: auto;
+  overflow-y: hidden;
   padding: clamp(20px, 2.5vw, 32px) 0;
   animation: cardSlideUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
@@ -209,6 +216,9 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  /* Without this the body refuses to go below its content height, and a long
+     abstract pushes the action row out of a sheet that no longer scrolls. */
+  min-height: 0;
 }
 
 .pc-body::before {
@@ -566,6 +576,12 @@ a.pc-citations {
   transition: max-height 0.42s cubic-bezier(0.16, 1, 0.3, 1);
   cursor: pointer;
   margin-bottom: var(--space-4);
+  /* The one part of the card that yields. Everything else — kicker, badges,
+     title, authors, actions — keeps its natural height; the abstract shrinks
+     into whatever is left, which is what keeps the frame still on a short
+     screen now that the sheet cannot scroll. */
+  flex: 0 1 auto;
+  min-height: 0;
 }
 
 .pc-abstract:not(.pc-abstract--open) {
@@ -590,10 +606,15 @@ a.pc-citations {
   color: var(--area-accent, var(--text-primary));
 }
 
+/* Expanded, it takes the space the rest of the card is not using and scrolls
+   inside it, rather than growing to a fixed 62vh and taking the sheet with it.
+   `overscroll-behavior: contain` stops a flick that reaches the end of the
+   abstract from carrying on into the feed and skipping to the next paper. */
 .pc-abstract--open {
-  max-height: 62vh;
+  flex: 1 1 auto;
+  max-height: none;
   overflow-y: auto;
-  overscroll-behavior: auto;
+  overscroll-behavior: contain;
 }
 
 /* Structural wrappers for the animated linked-resources row (no colour). */

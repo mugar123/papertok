@@ -16,7 +16,7 @@ import './GuestEndCard.css';
 
 const COPY = {
   es: {
-    end: 'Fin de la demo',
+    end: 'Fin de la prueba',
     count: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
     heading: '¿Quieres continuar?',
     lede: 'Esto es todo lo que se ve sin cuenta. Al otro lado, el feed no se acaba.',
@@ -30,7 +30,7 @@ const COPY = {
     region: 'Continúa en PaperTok con una cuenta',
   },
   en: {
-    end: 'End of the demo',
+    end: 'End of the preview',
     count: count => `${count} ${count === 1 ? 'paper' : 'papers'}`,
     heading: 'Want to keep going?',
     lede: 'This is everything you get without an account. On the other side, the feed does not end.',
@@ -48,7 +48,7 @@ const COPY = {
 const PERK_ICONS = [InfinityIcon, Bookmark, Users];
 
 export default function GuestEndCard({ paperCount = 0, position = 0, onSignUp }) {
-  const { isEnglish } = useLanguage();
+  const { isEnglish, language } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
   const copy = COPY[isEnglish ? 'en' : 'es'];
   const cardRef = useRef(null);
@@ -65,17 +65,13 @@ export default function GuestEndCard({ paperCount = 0, position = 0, onSignUp })
       ([entry]) => {
         if (trackedRef.current || !entry.isIntersecting || entry.intersectionRatio <= 0.5) return;
         trackedRef.current = true;
-        trackEvent('select_content', {
-          content_type: 'signup_cta',
-          surface: 'feed',
-          position,
-        });
+        trackEvent('guest_demo_end', { position, language });
       },
       { threshold: [0, 0.5] },
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [position, trackEvent]);
+  }, [language, position, trackEvent]);
 
   return (
     <section className="gec" ref={cardRef} aria-label={copy.region}>

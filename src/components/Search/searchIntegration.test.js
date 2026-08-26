@@ -352,6 +352,37 @@ for (const stylesheet of ['./SearchPage.css', './SearchCommand.css']) {
   });
 }
 
+test('an exit is animated, because a transitioned one never finishes', async () => {
+  // `@radix-ui/react-presence` keeps a closing node mounted only while
+  // `getComputedStyle(node).animationName` is not `none`. A `transition` sets no
+  // animation name, so Presence unmounts on the spot and the exit is cut off at
+  // its first frame — which reads as "the animation is too fast" rather than as
+  // a bug, and is why `design.md` has a paragraph about it.
+  //
+  // So: anything this stylesheet styles for the closed state owes that state an
+  // `animation`. `both` comes with it, to hold the last frame instead of
+  // snapping back to full opacity on the way out.
+  const css = withoutComments(
+    await readFile(new URL('./SearchCommand.css', import.meta.url), 'utf8'),
+  );
+  const closing = innermostRules(css)
+    .filter(rule => rule.selectors.some(one => one.includes("[data-state='closed']")));
+
+  assert.ok(closing.length > 0, 'expected to have found the exit at all');
+  for (const rule of closing) {
+    // The reduced-motion block turns the animation off on purpose; that one is
+    // allowed to say `none`, and Presence unmounting at once is then correct.
+    if (/animation:\s*none/.test(rule.body)) continue;
+    assert.match(rule.body, /animation:/, `${rule.selectors.join(', ')} must animate its exit`);
+    assert.doesNotMatch(
+      rule.body,
+      /transition:/,
+      `${rule.selectors.join(', ')} must not lean on a transition to leave`,
+    );
+    assert.match(rule.body, /\bboth\b/, `${rule.selectors.join(', ')} should hold its last frame`);
+  }
+});
+
 test('the outage description speaks only for the external sources', () => {
   // Mirrors the rule above for setSearchIssue: a Firestore hiccup must not be
   // able to reach a banner that names OpenAlex.

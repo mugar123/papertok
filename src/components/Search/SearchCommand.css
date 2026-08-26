@@ -231,3 +231,77 @@
     animation: none;
   }
 }
+
+/* ─── The sheet arriving and leaving ───
+   The scrim behind it already faded in and out (`dialog.jsx`); the sheet itself
+   did not, so it snapped into existence over a fading ground and snapped out of
+   it again. It is anchored near the top of the window and its results grow
+   downwards, so it arrives from above and leaves back the way it came.
+
+   Two things this depends on, both verified rather than assumed:
+
+   1. Tailwind v4 centres the sheet with the `translate` PROPERTY
+      (`translate: -50%` from `-translate-x-1/2`), not with `transform`. The two
+      are separate properties that compose, so these keyframes can own
+      `transform` outright. Had the centring been a `transform`, animating one
+      here would have replaced it and thrown the sheet at the left edge for the
+      length of the animation.
+   2. The exit must be an `animation`, never a `transition`:
+      `@radix-ui/react-presence` only defers unmount while
+      `getComputedStyle(node).animationName` is not `none`. `both` holds the
+      last frame so the sheet cannot flash back before it goes. This is the same
+      rule the overlay in `dialog.jsx` follows, and the trap `design.md`
+      documents.
+
+   The exit is shorter than the entrance (140ms against 200ms): getting out of
+   the way should never make anybody wait. It also finishes just inside the
+   scrim's own 150ms, so the sheet is gone before the ground clears. */
+
+@keyframes scSheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.985);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes scSheetOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+  }
+}
+
+.sc-sheet {
+  /* Anchored at the top edge, so the scale reads as the sheet dropping into
+     place rather than as a zoom about its middle. */
+  transform-origin: 50% 0;
+}
+
+.sc-sheet[data-state='open'] {
+  animation: scSheetIn 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sc-sheet[data-state='closed'] {
+  animation: scSheetOut 140ms ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No `opacity: 0` to undo here — the sheet's resting state is fully visible
+     and the keyframes only ever move it away from that — so dropping the
+     animation is enough. Presence then reads `animationName: none` and unmounts
+     the sheet immediately, which is the correct behaviour for this preference. */
+  .sc-sheet[data-state='open'],
+  .sc-sheet[data-state='closed'] {
+    animation: none;
+  }
+}

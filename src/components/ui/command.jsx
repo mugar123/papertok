@@ -15,13 +15,19 @@ function Command({ className, ...props }) {
 /**
  * The palette itself: anchored near the top rather than centred, so results
  * grow downwards from the field the way a search dropdown does.
+ *
+ * `className` reaches the sheet so a caller can give it its own enter/exit
+ * motion. It is passed in rather than written here because the shorthand for
+ * that motion belongs in a stylesheet — a Tailwind arbitrary value carrying a
+ * `cubic-bezier(...)` is a lot of escaping for something a `.css` file says
+ * plainly — and this module has no stylesheet of its own to put it in.
  */
-function CommandDialog({ children, title = 'Search', ...props }) {
+function CommandDialog({ children, className, title = 'Search', ...props }) {
   return (
     <Dialog {...props}>
       <DialogContent
         showClose={false}
-        className="top-[8vh] max-w-2xl translate-y-0 overflow-hidden p-0"
+        className={cn('top-[8vh] max-w-2xl translate-y-0 overflow-hidden p-0', className)}
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
         <Command shouldFilter={false} loop>
