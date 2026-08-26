@@ -1905,9 +1905,19 @@ test('the router serves POST /ai/rewrite instead of dropping it into the 404', a
     paragraphs: ['Because of this.'],
   })}\n`;
 
-  const response = await withWorkerFetchMock(
+  // The body is drained inside the mock's scope on purpose. The 200 now commits
+  // before the download and the model run — that is what keeps the browser's
+  // stall timer from killing a long paper — so by the time `fetch` resolves the
+  // detached pump has not made a single upstream call yet. Reading the body
+  // afterwards, as this test first did, restores the real `globalThis.fetch`
+  // first and sends the pump to the actual network: three seconds of it, and an
+  // `error` line instead of the sections.
+  const { response, body } = await withWorkerFetchMock(
     async url => rewriteUpstream(url, [geminiFrame(section), geminiFrame('', { finishReason: 'STOP' })]),
-    () => withCachedIdentity(() => reportApi.fetch(rewriteRequest(), REWRITE_ENV)),
+    () => withCachedIdentity(async () => {
+      const streamed = await reportApi.fetch(rewriteRequest(), REWRITE_ENV);
+      return { response: streamed, body: await streamed.text() };
+    }),
   );
 
   assert.equal(response.status, 200);
@@ -1916,7 +1926,7 @@ test('the router serves POST /ai/rewrite instead of dropping it into the 404', a
   assert.match(response.headers.get('content-type'), /application\/x-ndjson/);
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
 
-  const events = (await response.text()).trim().split('\n').map(line => JSON.parse(line));
+  const events = body.trim().split('\n').map(line => JSON.parse(line));
   assert.deepEqual(events.map(event => event.type), ['meta', 'section', 'done']);
   assert.equal(events[1].heading, 'Why it matters');
 });

@@ -713,13 +713,29 @@
   scroll-behavior: smooth;
 }
 
+/* The rules span the whole content width, like the header and the tabs above
+   them; only the prose inside a row is held to a measure. A cap on the row
+   itself pinned the entire list to the left of a wide screen — 820px of list
+   against 940px of nothing on a 1800px viewport — and it read as a layout bug
+   rather than as a reading measure, because nothing else on the page was
+   narrow. This is the horizontal case of rule 7 in `design.md`: a fixed clamp
+   leaves the screen sitting empty. */
 .explorer-grid {
+  --explorer-measure: 776px;
   display: flex;
   flex-direction: column;
   gap: 0;
-  max-width: 820px;
   margin: 0;
   border-top: 1px solid var(--border-default);
+}
+
+/* 776px is what the prose actually measured inside the old 820px row, so the
+   line length nobody complained about is exactly preserved; what changes is
+   that the rule, the field label and the metrics now reach the full width. */
+.eli-title,
+.eli-authors,
+.eli-summary {
+  max-width: var(--explorer-measure);
 }
 
 /* Ruled rows rather than floating cards; the field reads as a rule down the
@@ -1170,11 +1186,13 @@
 }
 
 /* ─── Authors grid ─── */
+/* Same treatment as `.explorer-grid`: the author rows are an index, so the
+   name goes left and the metrics go to the far right edge. There is no prose
+   here to hold to a measure. */
 .ee-authors-grid {
   display: flex;
   flex-direction: column;
   gap: 0;
-  max-width: 820px;
   margin: 0;
   border-top: 1px solid var(--border-default);
 }

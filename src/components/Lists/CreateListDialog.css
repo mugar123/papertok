@@ -16,18 +16,18 @@
 }
 
 .create-list-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  background: rgba(17, 19, 24, 0.4);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
   animation: fadeIn 0.15s ease;
 }
 
 .create-list-card {
-  width: min(calc(100vw - 32px), 380px);
+  width: min(calc(100vw - var(--space-8)), 380px);
   padding: var(--space-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
+  background: var(--bg-card);
   box-shadow: var(--shadow-xl);
   animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -47,22 +47,6 @@
   font-weight: var(--fw-semibold);
 }
 
-.create-list-close {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  transition: color var(--transition-fast), background var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .create-list-close:hover {
-    color: var(--text-primary);
-    background: var(--bg-glass-hover);
-  }
-}
-
 .create-list-field {
   display: flex;
   flex-direction: column;
@@ -71,11 +55,10 @@
 }
 
 .create-list-field > span {
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--text-secondary);
 }
 
 .create-list-input {
@@ -83,9 +66,16 @@
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-default);
-  background: var(--bg-glass);
+  background: var(--bg-card);
   color: var(--text-primary);
+  font-family: var(--font-body);
   font-size: var(--fs-sm);
+}
+
+.create-list-input:focus {
+  outline: 2px solid var(--brand-orange);
+  outline-offset: -1px;
+  border-color: var(--border-strong);
 }
 
 .create-list-icon-picker {
@@ -108,13 +98,13 @@
 
 @media (hover: hover) and (pointer: fine) {
   .create-list-icon-btn:hover {
-    background: var(--bg-glass-hover);
+    background: var(--bg-secondary);
   }
 }
 
 .create-list-icon-btn.is-active {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary-glow);
+  border-color: var(--border-ink);
+  background: var(--bg-sunken);
   color: var(--text-primary);
 }
 
@@ -126,7 +116,11 @@
 
 .create-list-error {
   margin: var(--space-3) 0 0;
-  color: var(--accent-danger, #f87171);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--tint-red-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
   font-size: var(--fs-xs);
 }
 
@@ -136,44 +130,6 @@
   justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-4);
-}
-
-.create-list-cancel {
-  min-height: 38px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  transition: color var(--transition-fast), border-color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .create-list-cancel:hover {
-    color: var(--text-primary);
-    border-color: var(--border-strong);
-  }
-}
-
-.create-list-confirm {
-  min-height: 38px;
-  padding: 0 var(--space-4);
-  background: var(--accent-primary);
-  color: #fff;
-  border-radius: var(--radius-full);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .create-list-confirm:not(:disabled):hover {
-    background: var(--accent-primary-hover);
-  }
-}
-
-.create-list-confirm:disabled {
-  opacity: 0.4;
 }
 
 @media (prefers-reduced-motion: reduce) {

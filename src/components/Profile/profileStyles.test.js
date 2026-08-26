@@ -27,6 +27,10 @@ const INJECTED_PROPERTIES = new Map([
   ['--search-item-index', '../Search/SearchPage.jsx'],
   ['--settings-index', '../Settings/SettingsPage.jsx'],
   ['--follow-rows', '../Public/FollowSheet.jsx'],
+  // The comments sheet takes the research field of the paper it hangs off, the
+  // same way a card or an entity header does, so its rules and monogram are
+  // tinted by the data rather than by a decorative default.
+  ['--area-accent', '../Comments/CommentsSheet.jsx'],
 ]);
 
 const OWNED = [

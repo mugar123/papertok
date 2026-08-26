@@ -32,9 +32,15 @@ function CommandDialog({ children, title = 'Search', ...props }) {
   );
 }
 
+/**
+ * The field sat flush against the top edge of the sheet — `h-12` and nothing
+ * above it — so the palette opened with its one control jammed into the corner.
+ * The extra top padding is the only air the search bar gets, since the sheet
+ * has no chrome of its own above it.
+ */
 function CommandInput({ className, ...props }) {
   return (
-    <div className="flex items-center gap-2 border-b border-border px-4">
+    <div className="flex items-center gap-2 border-b border-border px-4 pt-2">
       <Search size={16} className="shrink-0 text-muted-foreground" />
       <CommandPrimitive.Input
         className={cn(

@@ -1,90 +1,134 @@
-/* Research filters */
+/* ============================================
+   Research — the filter row
+
+   Dressed as a continuation of the EDITION row directly above it, not as a
+   framework accordion: a mono label, the state set in running text, one
+   hairline rule, and a panel that is white paper with ruled sections rather
+   than a sunken rounded card. The panel still has to hold twelve discipline
+   chips, a country search, eight quick picks and a world map, so the
+   disclosure stays a disclosure — only its voice changed.
+   ============================================ */
+
 .rf {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-6);
   animation: sr-fade-up 0.4s both;
   animation-delay: 0.05s;
 }
 
-.rf button,
-.rf input {
-  font: inherit;
+/* There used to be a `.rf button, .rf input { font: inherit }` here. It is the
+   trap from design.md in miniature: unlayered, and one specificity step above
+   every `.rf-*` rule in this file, so it silently reset each control back to
+   the inherited 16px/400 — the panel's own type scale, and the shared Button's
+   `text-sm font-semibold`, never rendered. The `@layer base` reset in
+   global.css already gives `button` and `input` the body family, so nothing
+   here needs to repeat it. */
+
+/* The base layer also rings every `:focus-visible` in brand orange, but the
+   rules in this file are unlayered and would beat it — `.rf-search` in
+   particular clears its own outline. Spell the ring out so it survives. */
+.rf button:focus-visible,
+.rf input:focus-visible {
+  outline: 2px solid var(--brand-orange);
+  outline-offset: 2px;
 }
 
+/* ── The row ── */
 .rf-toggle {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--space-3);
   width: 100%;
   min-height: 44px;
-  padding: 10px 15px;
-  background: var(--bg-sunken);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  padding: var(--space-3) 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: none;
   color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 650;
+  text-align: left;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .rf-toggle.is-open {
-  background: var(--bg-secondary);
-  border-color: var(--border-default);
   color: var(--text-primary);
+  border-bottom-color: var(--border-default);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .rf-toggle:hover {
-    background: var(--bg-secondary);
-    border-color: var(--border-default);
     color: var(--text-primary);
+    border-bottom-color: var(--border-default);
   }
 }
 
-.rf-toggle-left,
+/* Twin of `.sr-tabs-label`, down to the extra 4px it carries, so the state
+   below starts on the same x as "Today and yesterday" above. */
+.rf-toggle-label {
+  flex: 0 0 auto;
+  margin-right: var(--space-1);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* The state, set as running text the way the period options are. */
+.rf-toggle-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A count is machine data. */
+.rf-toggle-count {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* The auto margin keeps the disclosure pinned right whether the summary reads
+   long, short, or (at 375px) not at all. */
 .rf-toggle-status {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
-.rf-badge {
-  min-width: 20px;
-  padding: 2px 7px;
-  border-radius: var(--radius-full);
-  background: var(--gradient-brand);
-  color: var(--text-primary);
-  font-size: 10px;
-  font-weight: 750;
-  text-align: center;
+.rf-toggle-action {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
 }
 
+/* ── The panel ── */
 .rf-panel {
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  margin-top: 10px;
-  padding: 20px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-2xl);
-  background: var(--bg-sunken);
-  box-shadow: inset 0 1px 0 rgba(17, 19, 24, 0.01);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .rf-section {
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .rf-section-label,
 .rf-country-toggle > span,
 .rf-quick-label {
-  font-size: 11px;
-  font-weight: 750;
-  color: var(--text-secondary);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
 }
 
 .rf-country-toggle {
@@ -103,26 +147,15 @@
 .rf-country-toggle > span {
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.rf-country-toggle:focus-visible,
-.rf-toggle:focus-visible,
-.rf-pill:focus-visible,
-.rf-search-result:focus-visible,
-.rf-quick-country:focus-visible,
-.rf-active-chip:focus-visible,
-.rf-country-pill button:focus-visible,
-.rf-clear:focus-visible,
-.rf-cancel:focus-visible,
-.rf-apply:focus-visible,
-.rf-search-clear:focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
+  gap: var(--space-2);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .rf-country-toggle:hover {
+    color: var(--text-primary);
+  }
+
+  .rf-country-toggle:hover > span {
     color: var(--text-primary);
   }
 }
@@ -130,62 +163,70 @@
 .rf-country-controls {
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  padding-top: 4px;
+  gap: var(--space-3);
+  padding-top: var(--space-2);
 }
 
 .rf-country-note {
   margin: 0;
   color: var(--text-tertiary);
-  font-size: 11.5px;
-  line-height: 1.45;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
 }
 
+/* ── Discipline chips ── */
 .rf-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
 .rf-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 36px;
-  padding: 7px 12px;
+  min-height: 34px;
+  padding: 6px 12px;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-sunken);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
   color: var(--text-secondary);
-  font-size: 12px;
-  font-weight: 650;
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .rf-pill:hover {
     border-color: var(--border-strong);
-    background: var(--bg-secondary);
     color: var(--text-primary);
   }
 }
 
+/* Selection is marked with the discipline's own field colour, derived from it
+   rather than hardcoded — the chip is the only place on this row where colour
+   carries data. */
 .rf-pill.active {
-  border-color: var(--border-strong);
-  background: var(--rf-pill-accent, var(--gradient-brand));
+  border-color: color-mix(in srgb, var(--rf-pill-accent, var(--gradient-brand)) 40%, var(--border-default));
+  background: color-mix(in srgb, var(--rf-pill-accent, var(--gradient-brand)) 8%, var(--bg-card));
   color: var(--text-primary);
-  box-shadow: 0 5px 16px rgba(17, 19, 24, 0.07);
+  font-weight: var(--fw-semibold);
 }
 
+.rf-pill.active svg {
+  color: var(--rf-pill-accent, var(--gradient-brand));
+}
+
+/* ── Country search ── */
 .rf-search-wrap {
   position: relative;
 }
 
 .rf-search-icon {
   position: absolute;
-  left: 13px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
   color: var(--text-tertiary);
@@ -195,14 +236,14 @@
 .rf-search {
   width: 100%;
   min-height: 44px;
-  padding: 10px 38px 10px 38px;
+  padding: 10px 38px;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   outline: none;
-  background: var(--bg-sunken);
+  background: var(--bg-card);
   color: var(--text-primary);
-  font-size: 14px;
-  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  font-size: var(--fs-sm);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .rf-search::-webkit-search-cancel-button {
@@ -215,13 +256,12 @@
 
 .rf-search:focus {
   border-color: var(--border-ink);
-  background: var(--bg-secondary);
-  box-shadow: 0 0 0 3px rgba(17, 19, 24, 0.08);
+  box-shadow: var(--shadow-glow-primary);
 }
 
 .rf-search-clear {
   position: absolute;
-  right: 9px;
+  right: 8px;
   top: 50%;
   display: flex;
   align-items: center;
@@ -230,20 +270,21 @@
   height: 26px;
   padding: 0;
   transform: translateY(-50%);
-  border: 0;
-  border-radius: 50%;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
   background: var(--bg-secondary);
   color: var(--text-secondary);
   cursor: pointer;
 }
 
+/* Hairline-separated rows, the pattern the report's own lists use. */
 .rf-search-results {
   display: flex;
   flex-direction: column;
-  max-height: 224px;
+  max-height: min(28em, 40vh);
   overflow-y: auto;
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   background: var(--bg-card);
 }
 
@@ -253,15 +294,15 @@
   justify-content: space-between;
   width: 100%;
   min-height: 44px;
-  padding: 10px 13px;
+  padding: 10px 12px;
   border: 0;
   border-bottom: 1px solid var(--border-subtle);
   background: transparent;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-sm);
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .rf-search-result:last-child {
@@ -276,42 +317,37 @@
 }
 
 .rf-search-result.selected {
-  color: var(--accent-primary);
+  color: var(--text-primary);
   background: var(--bg-secondary);
-  font-weight: 650;
+  font-weight: var(--fw-semibold);
 }
 
 .rf-country-result-meta {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .rf-country-code {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
   color: var(--text-tertiary);
-  font-size: 10.5px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
 }
 
 .rf-search-empty {
   margin: 0;
   padding: 12px 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-sm);
   color: var(--text-tertiary);
-  font-size: 12px;
+  font-size: var(--fs-xs);
 }
 
+/* ── Quick picks, selected countries, applied chips ── */
 .rf-quick-countries {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.rf-quick-label {
-  color: var(--text-tertiary);
-  font-size: 10px;
+  gap: var(--space-2);
 }
 
 .rf-quick-list {
@@ -320,171 +356,105 @@
   gap: 6px;
 }
 
-.rf-quick-country {
-  min-height: 34px;
-  padding: 6px 10px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 11.5px;
-  cursor: pointer;
-  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
-}
-
-.rf-quick-country.selected {
-  border-color: var(--border-ink);
-  background: var(--bg-secondary);
-  color: var(--accent-primary);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .rf-quick-country:hover {
-    border-color: var(--border-strong);
-    color: var(--text-primary);
-  }
-}
-
-.rf-map-wrap {
-  position: relative;
-  width: min(100%, 780px);
-}
-
-.rf-map-hint {
-  margin: 8px 0 0;
-  color: var(--text-tertiary);
-  font-size: 11px;
-  text-align: center;
-}
-
-.rf-selected-countries {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.rf-country-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 5px 7px 5px 11px;
-  border: 1px solid var(--border-ink);
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
-  color: var(--accent-primary);
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.rf-country-pill button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: var(--bg-secondary);
-  color: inherit;
-  cursor: pointer;
-}
-
-.rf-active-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  padding-top: 9px;
-}
-
+.rf-quick-country,
+.rf-country-pill,
 .rf-active-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-height: 32px;
   padding: 5px 10px;
-  border: 1px solid var(--border-ink);
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
-  color: var(--accent-primary);
-  font-size: 11.5px;
-  font-weight: 650;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.rf-quick-country,
+.rf-active-chip {
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .rf-quick-country:hover,
   .rf-active-chip:hover {
-    border-color: var(--border-ink);
-    background: var(--bg-secondary);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
   }
 }
 
+.rf-quick-country.selected,
+.rf-country-pill,
+.rf-active-chip {
+  border-color: var(--border-ink);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.rf-country-pill {
+  padding-right: 4px;
+}
+
+.rf-country-pill button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.rf-selected-countries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The applied set, shown under the row while the panel is closed. */
+.rf-active-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: var(--space-3);
+}
+
+/* ── Map ── */
+.rf-map-wrap {
+  position: relative;
+  width: min(100%, 780px);
+}
+
+.rf-map-hint {
+  margin: var(--space-2) 0 0;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* ── Actions (buttons come from ui/button.jsx) ── */
 .rf-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border-subtle);
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
 }
 
 .rf-actions-primary {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.rf-clear,
-.rf-cancel,
-.rf-apply {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 40px;
-  padding: 8px 14px;
-  border-radius: var(--radius-lg);
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, opacity 0.18s ease;
-}
-
-.rf-clear,
-.rf-cancel {
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--text-secondary);
-}
-
-.rf-clear {
-  padding-left: 0;
-}
-
-.rf-apply {
-  border: 1px solid var(--border-ink);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-}
-
-.rf-clear:disabled,
-.rf-apply:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .rf-clear:not(:disabled):hover,
-  .rf-cancel:hover {
-    color: var(--text-primary);
-  }
-
-  .rf-apply:not(:disabled):hover {
-    border-color: var(--border-ink);
-    background: var(--accent-primary);
-  }
+  gap: var(--space-2);
 }
 
 .rf-chevron {
@@ -503,13 +473,12 @@
 
 @media (max-width: 700px) {
   .rf {
-    margin-bottom: 18px;
+    margin-bottom: var(--space-5);
   }
 
-  .rf-panel {
-    gap: 18px;
-    padding: 15px;
-    border-radius: var(--radius-lg);
+  /* The default sentence is too long for a 375px row; a live count is not. */
+  .rf-toggle-summary.is-empty {
+    display: none;
   }
 
   .rf-pill {
@@ -518,7 +487,7 @@
   }
 
   .rf-search {
-    font-size: 16px;
+    font-size: var(--fs-base);
   }
 
   .rf-map-wrap {
@@ -527,8 +496,8 @@
 
   .rf-quick-list {
     flex-wrap: nowrap;
-    margin: 0 -15px;
-    padding: 0 15px 3px;
+    margin: 0 calc(-1 * var(--space-4));
+    padding: 0 var(--space-4) 3px;
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -552,7 +521,7 @@
     flex-direction: column;
   }
 
-  .rf-clear {
+  .rf-actions > button {
     align-self: flex-start;
   }
 
@@ -561,8 +530,8 @@
     grid-template-columns: 1fr 1.3fr;
   }
 
-  .rf-cancel,
-  .rf-apply {
+  .rf-actions-primary > button {
+    height: auto;
     min-height: 44px;
   }
 }

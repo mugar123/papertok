@@ -75,6 +75,64 @@ const RESOURCE_KIND_CONFIG = {
 const ENRICHMENT_SETTLE_DELAY_MS = 240;
 const RELATED_PAPER_HYDRATION_TIMEOUT_MS = 8_000;
 
+// How far a clipping may stray from the corner it belongs to. Small on
+// purpose: the point is that no two papers pin their figures at exactly the
+// same angle, not that a figure could turn up anywhere.
+const FIGURE_TILT_JITTER_DEG = 2.4;
+const FIGURE_SHIFT_JITTER_PX = 14;
+const FIGURE_DRIFT_MIN_PX = 5;
+const FIGURE_DRIFT_JITTER_PX = 5;
+const FIGURE_DRIFT_MIN_MS = 6_000;
+const FIGURE_DRIFT_JITTER_MS = 3_500;
+const FIGURE_ENTRANCE_BASE_MS = 620;
+const FIGURE_ENTRANCE_STEP_MS = 140;
+
+/** FNV-1a, the same one `buildHighlightId` uses: short, stable, and enough to
+ *  tell four slots of one paper apart. */
+function figureHash(fingerprint) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < fingerprint.length; index += 1) {
+    hash ^= fingerprint.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash;
+}
+
+/**
+ * The scatter of one clipping, as custom properties the stylesheet reads.
+ *
+ * Derived from the paper's own identity and the figure's slot, never from
+ * `Math.random()`: a re-render must not walk the figures around the card while
+ * someone is reading. Two hashes because five values need more than the four
+ * bytes one gives.
+ */
+function figureScatterStyle(identity, index) {
+  // The slot goes in front of the identity, not behind it. FNV-1a only
+  // avalanches forwards: with the index last, four figures of one paper came
+  // out with the same middle bytes and so with the same shift — measured, not
+  // assumed. Fed in first, it stirs the whole hash.
+  const angles = figureHash(`${index}#${identity}`);
+  const motion = figureHash(`${index}#drift#${identity}`);
+  const unit = (hash, shift) => ((hash >>> shift) & 0xff) / 255;
+  const signed = (hash, shift) => unit(hash, shift) * 2 - 1;
+  // Slots one and two hug the left edge of the card, three and four the right,
+  // so the shift always pushes inward and no amount of jitter can walk a
+  // clipping off the page or over the text column.
+  const inward = index < 2 ? 1 : -1;
+  return {
+    '--fig-tilt': `${(signed(angles, 0) * FIGURE_TILT_JITTER_DEG).toFixed(2)}deg`,
+    '--fig-shift-x': `${(unit(angles, 8) * FIGURE_SHIFT_JITTER_PX * inward).toFixed(1)}px`,
+    '--fig-shift-y': `${(signed(angles, 16) * FIGURE_SHIFT_JITTER_PX).toFixed(1)}px`,
+    '--fig-drift': `${(FIGURE_DRIFT_MIN_PX + unit(motion, 0) * FIGURE_DRIFT_JITTER_PX).toFixed(1)}px`,
+    '--fig-drift-duration': `${Math.round(FIGURE_DRIFT_MIN_MS + unit(motion, 8) * FIGURE_DRIFT_JITTER_MS)}ms`,
+    // The stagger is duration, not delay. A delayed entrance would need
+    // `animation-fill-mode: backwards` to hold its first frame, and inside the
+    // feed's `content-visibility: auto` subtree a held first frame is how a
+    // figure ends up invisible for good.
+    '--fig-in-duration': `${FIGURE_ENTRANCE_BASE_MS + index * FIGURE_ENTRANCE_STEP_MS}ms`,
+  };
+}
+
 function mergeResearchResources(...groups) {
   const seen = new Set();
   return groups.flat().filter(Boolean).filter(resource => {
@@ -282,6 +340,13 @@ const PaperCard = memo(function PaperCard({
     });
     return () => { active = false; };
   }, [isCardSettled, paper]);
+
+  // Held still across renders: the scatter is already deterministic, and a
+  // stable object means React never rewrites the inline styles either.
+  const scatteredFigures = useMemo(
+    () => figures.map((item, index) => ({ item, style: figureScatterStyle(paperViewKey, index) })),
+    [figures, paperViewKey],
+  );
 
   const [project, setProject] = useState(null);
   const prefersReducedMotion = useReducedMotion();
@@ -690,10 +755,10 @@ const PaperCard = memo(function PaperCard({
         </div>
       )}
 
-      {figures.length > 0 && (
+      {scatteredFigures.length > 0 && (
         <div className="pc-figures" aria-hidden="true">
-          {figures.map(item => (
-            <figure key={item.url} className="pc-figure">
+          {scatteredFigures.map(({ item, style }) => (
+            <figure key={item.url} className="pc-figure" style={style}>
               <img src={item.url} alt="" decoding="async" />
             </figure>
           ))}
@@ -787,6 +852,34 @@ const PaperCard = memo(function PaperCard({
                 <ExternalLink size={12} /> DOI
               </a>
             )}
+          </div>
+        )}
+
+        {/* What the paper is filed under. Machine data, so it belongs with the
+            meta line and the status chips above the headline — not in the
+            action row, where a paper with many concepts used to push the
+            reading buttons past the sheet and out of sight. */}
+        {paperTopicTags.length > 0 && (
+          <div
+            className="pc-topics"
+            role="group"
+            aria-label={isEnglish ? 'Paper topics' : 'Temas del paper'}
+          >
+            {paperTopicTags.map((tag) => {
+              const topic = resolvePaperTopic(tag.value, language);
+              if (!topic) return null;
+              return (
+                <button
+                  key={tag.key}
+                  type="button"
+                  className={`pc-semantic-tag pc-topic-link ${tag.source === 'concept' && !topic.reliable ? 'pc-topic-link--external' : ''}`}
+                  onClick={(event) => openTopic(event, topic)}
+                  title={`${isEnglish ? 'Explore' : 'Explorar'} ${topic.label}`}
+                >
+                  {tag.label}
+                </button>
+              );
+            })}
           </div>
         )}
 
@@ -1015,41 +1108,6 @@ const PaperCard = memo(function PaperCard({
               </Button>
             )}
           </div>
-
-        <AnimatePresence initial={false}>
-            {paperTopicTags.length > 0 && (
-              <motion.div
-                className="pc-semantic-tags-slot"
-                initial={prefersReducedMotion ? false : { gridTemplateRows: '0fr', opacity: 0 }}
-                animate={{ gridTemplateRows: '1fr', opacity: 1 }}
-                exit={prefersReducedMotion ? { opacity: 0 } : { gridTemplateRows: '0fr', opacity: 0 }}
-                transition={prefersReducedMotion
-                  ? { duration: 0 }
-                  : { gridTemplateRows: { duration: 0.32, ease: [0.16, 1, 0.3, 1] }, opacity: { duration: 0.2 } }}
-              >
-              <div className="pc-semantic-tags">
-                {paperTopicTags.map((tag) => {
-                  const topic = resolvePaperTopic(tag.value, language);
-                  if (!topic) return null;
-                  return (
-                    <motion.button
-                      key={tag.key}
-                      type="button"
-                      className={`pc-semantic-tag pc-topic-link ${tag.source === 'concept' && !topic.reliable ? 'pc-topic-link--external' : ''}`}
-                      onClick={(event) => openTopic(event, topic)}
-                      title={`${isEnglish ? 'Explore' : 'Explorar'} ${topic.label}`}
-                      initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      transition={{ duration: prefersReducedMotion ? 0 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-                    >
-                      {tag.label}
-                    </motion.button>
-                  );
-                })}
-              </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
 
           <div className="pc-action-utilities">
             <Button

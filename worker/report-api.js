@@ -5,6 +5,8 @@ import {
   checkAIProviderHealth,
   handleAIExplanation,
   isKimiConfigured,
+  peekAIQuota,
+  verifyFirebaseUser,
 } from './ai-explanation.js';
 import { handlePaperRewrite } from './ai-rewrite.js';
 import {
@@ -2138,6 +2140,27 @@ export default {
         // An uncacheable health response is still a valid answer.
       }
       return response;
+    }
+    // Read-only, and deliberately its own route rather than a field on
+    // `/health/ai`: this one is per user and needs a session, and health is
+    // public. The reader asks for it when it opens so it can show the remaining
+    // daily uses without spending one to find out.
+    if (url.pathname === '/ai/quota') {
+      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      try {
+        const uid = await verifyFirebaseUser(request, env);
+        return json(await peekAIQuota(env, uid), 200, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'private, no-store',
+        });
+      } catch (error) {
+        const knownError = error instanceof AIExplanationError;
+        return json(
+          { code: knownError ? error.code : 'AI_UNAVAILABLE' },
+          knownError ? error.status : 502,
+          { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+        );
+      }
     }
     if (url.pathname === '/health/ai') {
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);

@@ -1,4 +1,4 @@
-const LEDGER_ACTIONS = new Set(['reserve', 'release']);
+const LEDGER_ACTIONS = new Set(['reserve', 'release', 'peek']);
 const MAX_SUBJECT_KEY_LENGTH = 96;
 const MAX_LIMIT = 1_000_000;
 const RETENTION_MS = 3 * 24 * 60 * 60 * 1000;
@@ -50,6 +50,18 @@ export class RequestQuotaLedger {
       ]);
       const subjectUsage = Math.max(0, Number(subjectValue) || 0);
       const globalUsage = Math.max(0, Number(globalValue) || 0);
+
+      // Reading the allowance must not spend it. The reader shows how many uses
+      // are left before you commit one, and a peek that reserved would make the
+      // number wrong by the act of looking at it.
+      if (action === 'peek') {
+        return {
+          accepted: true,
+          subjectUsage,
+          globalUsage,
+          remaining: Math.max(0, subjectLimit - subjectUsage),
+        };
+      }
 
       if (action === 'release') {
         // Nothing was delivered, so the use goes back -- as much of it as was
@@ -140,6 +152,15 @@ async function callRequestQuotaLedger(namespace, action, {
 
 export function reserveRequestQuota(namespace, options) {
   return callRequestQuotaLedger(namespace, 'reserve', options);
+}
+
+/**
+ * What is left, without taking any of it. The reader shows the remaining daily
+ * uses before you spend one, and the only other way to learn the number was to
+ * reserve — which is to say, to make it wrong by asking.
+ */
+export function peekRequestQuota(namespace, options) {
+  return callRequestQuotaLedger(namespace, 'peek', options);
 }
 
 /**

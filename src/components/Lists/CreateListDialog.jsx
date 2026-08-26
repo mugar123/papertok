@@ -21,7 +21,9 @@
  * otherwise carry up the component tree to the parent dialog's handlers.
  */
 import { useEffect, useReducer, useRef } from 'react';
+import { X } from 'lucide-react';
 import { AVAILABLE_ICONS, getIcon } from '../../utils/icons.js';
+import { Button } from '../ui/button.jsx';
 import {
   canSubmitCreateList,
   createListFormReducer,
@@ -140,12 +142,14 @@ export default function CreateListDialog({ open, isEnglish = false, onClose, onC
       <div className="create-list-card">
         <div className="create-list-header">
           <h3>{copy.title}</h3>
-          <button
-            type="button"
-            className="create-list-close"
+          <Button
+            variant="ghost"
+            size="icon-sm"
             onClick={requestClose}
             aria-label={copy.close}
-          >✕</button>
+          >
+            <X size={16} aria-hidden="true" />
+          </Button>
         </div>
 
         <label className="create-list-field">
@@ -195,17 +199,12 @@ export default function CreateListDialog({ open, isEnglish = false, onClose, onC
         )}
 
         <div className="create-list-actions">
-          <button type="button" className="create-list-cancel" onClick={requestClose}>
+          <Button variant="outline" onClick={requestClose}>
             {copy.cancel}
-          </button>
-          <button
-            type="button"
-            className="create-list-confirm"
-            onClick={submit}
-            disabled={!canSubmitCreateList(state)}
-          >
+          </Button>
+          <Button onClick={submit} disabled={!canSubmitCreateList(state)}>
             {state.busy ? copy.creating : copy.create}
-          </button>
+          </Button>
         </div>
       </div>
     </dialog>

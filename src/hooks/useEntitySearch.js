@@ -12,7 +12,11 @@ import { PaperBuilder } from '../services/PaperBuilder';
 import { useAuth } from '../context/AuthContext';
 import { useLanguage } from '../context/LanguageContext';
 import { useAnalyticsConsent } from '../context/AnalyticsContext';
-import { filterRelevantSearchResults } from '../utils/searchRelevance';
+import {
+  authorProminenceWeight,
+  filterRelevantSearchResults,
+  isOrganisationAuthorRecord,
+} from '../utils/searchRelevance';
 import { isTransientReadError, patientRead } from '../utils/boundedRead.js';
 import {
   USER_SEARCH_DEBOUNCE_MS,
@@ -27,9 +31,10 @@ import {
  * The search behind the command palette: five external sources and people.
  *
  * The five — papers, authors, institutions, topics, projects — are OpenAlex and
- * OpenAIRE over HTTP. Each has its own timeout and settles independently, so
- * one slow provider cannot hold up the rest; results appear together after a
- * short reveal window, and a stale search can never overwrite a newer one nor
+ * OpenAIRE over HTTP. Each has its own timeout, and the palette waits for all
+ * of them before painting anything: the whole answer lands in one commit, so
+ * no section can appear late or reshuffle the ranking under a reader who has
+ * already started reading. A stale search can never overwrite a newer one nor
  * survive underneath it (see the commit in `performSearch`).
  *
  * People are the sixth section and deliberately NOT the sixth task. They come
@@ -45,7 +50,6 @@ const paperSearchAdapter = new OpenAlexAdapter();
 const SEARCH_DEBOUNCE_MS = 320;
 const SEARCH_TIMEOUT_MS = 6_000;
 const SEARCH_MIN_LOADING_MS = 180;
-const SEARCH_INITIAL_REVEAL_MS = 520;
 /** Firestore has no client-side timeout; this is the one the palette imposes. */
 const USER_SEARCH_TIMEOUT_MS = 6_000;
 
@@ -132,20 +136,14 @@ export function useEntitySearch({ usersRequested = false } = {}) {
     setHasSearched(true);
     setSearchIssue(null);
 
-    const resolvedOutcomes = new Map();
-    let initialResultsRevealed = false;
     const isCurrentSearch = () => (
       searchId === searchIdRef.current && !requestController.signal.aborted
     );
-    const applySection = (section, value) => {
-      setResults(current => ({ ...current, [section]: value }));
-    };
-    const track = (section, promise) => promise.then((outcome) => {
-      const trackedOutcome = { ...outcome, section };
-      resolvedOutcomes.set(section, trackedOutcome);
-      if (initialResultsRevealed && isCurrentSearch()) applySection(section, outcome.value);
-      return trackedOutcome;
-    });
+    // Only tags the outcome with its section. Painting used to happen here as
+    // well, one straggler at a time, which is what assembled the palette on
+    // screen over several seconds; the whole search now lands in a single
+    // commit below, exactly as the page already did it.
+    const track = (section, promise) => promise.then(outcome => ({ ...outcome, section }));
 
     const tasks = [
       track('papers', settleSearch(
@@ -158,8 +156,15 @@ export function useEntitySearch({ usersRequested = false } = {}) {
           throwOnError: true,
         }).then(items => filterRelevantSearchResults(
           searchTerm,
-          items,
+          // OpenAlex answers an organisation name with institution-as-author
+          // records: four of them are called "University of Salamanca". They
+          // score 100 and took the top of this section from the people who
+          // actually wrote something.
+          items.filter(author => !isOrganisationAuthorRecord(author)),
           author => [author.display_name],
+          // Several exact matches all score 100; prominence decides which of
+          // them a reader was looking for.
+          { getWeight: authorProminenceWeight },
         )).then(items => Promise.all(
           items.map(author => enrichAuthorInstitutionLocalization(author, { timeoutMs: 1500 })),
         )),
@@ -195,38 +200,39 @@ export function useEntitySearch({ usersRequested = false } = {}) {
       )),
     ];
 
-    const allOutcomesPromise = Promise.all(tasks);
-    await Promise.race([allOutcomesPromise, wait(SEARCH_INITIAL_REVEAL_MS)]);
+    // One settle. Every source is bounded by its own deadline above, so this
+    // waits at most as long as the slowest deadline and then commits the whole
+    // palette at once.
+    //
+    // It used to reveal twice — whatever had arrived by 520 ms, then every
+    // straggler painting on its own. Institutions can land 4.5 s in and authors
+    // 5 s in, so sections appeared minutes apart in interface time and the
+    // ranking was recomputed on each one, moving groups that were already being
+    // read. Waiting costs the slowest source; the skeleton covers the wait.
+    const outcomes = await Promise.all(tasks);
     const remainingMinimumDelay = Math.max(
       0,
       SEARCH_MIN_LOADING_MS - (Date.now() - searchStartedAt),
     );
     if (remainingMinimumDelay > 0) await wait(remainingMinimumDelay);
-
     if (!isCurrentSearch()) return;
-    // The first paint of a search REPLACES the whole object; it does not merge
-    // into whatever the last search left behind. Merging is what used to leave
-    // the previous query's authors and institutions sitting under the new
-    // query's papers: a source that ran out its timeout never wrote its
-    // section, so its old rows survived the entire search with nothing on
-    // screen to say they answered a different question.
+
+    // The commit REPLACES the whole object; it does not merge into whatever the
+    // last search left behind. Merging is what used to leave the previous
+    // query's authors and institutions sitting under the new query's papers: a
+    // source that ran out its timeout never wrote its section, so its old rows
+    // survived the entire search with nothing on screen to say they answered a
+    // different question.
     //
     // The trade, deliberately: `results` is NOT emptied when a search starts.
-    // Emptying it there is the obvious fix and the wrong one — the reveal is
-    // held back to 520 ms precisely so the sections land together, and clearing
-    // at the top would turn every keystroke into a blink to nothing and back.
-    // So the previous answers stay up until this single commit, whole and never
-    // interleaved with the new ones, and `isStale` below marks them while they
-    // do. Worst case they linger one debounce plus one reveal (~840 ms), dimmed
-    // and under a spinner, instead of forever and indistinguishable.
+    // Emptying it there is the obvious fix and the wrong one — it would turn
+    // every keystroke into a blink to nothing and back. So the previous answers
+    // stay up until this single commit, whole and never interleaved with the
+    // new ones, and `isStale` below marks them while they do.
     const revealedResults = { ...EMPTY_RESULTS };
-    resolvedOutcomes.forEach((outcome) => { revealedResults[outcome.section] = outcome.value; });
+    outcomes.forEach((outcome) => { revealedResults[outcome.section] = outcome.value; });
     setResults(revealedResults);
     setResultsTerm(searchTerm);
-    initialResultsRevealed = true;
-
-    const outcomes = await allOutcomesPromise;
-    if (!isCurrentSearch()) return;
 
     const resultCount = outcomes.reduce(
       (total, outcome) => total + (Array.isArray(outcome.value) ? outcome.value.length : 0),

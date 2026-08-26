@@ -56,6 +56,51 @@
   white-space: nowrap;
 }
 
+/* The day's AI allowance. Ten segments that empty left to right, because the
+   count alone ("3 left") reads as plenty until you see how short the row is. */
+.rd-uses {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-tertiary);
+  font: 500 0.625rem/1.5 var(--font-mono);
+  white-space: nowrap;
+}
+
+.rd-uses-meter {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.rd-uses-meter i {
+  width: 3px;
+  height: 9px;
+  border-radius: 1px;
+  background: var(--accent-primary);
+}
+
+.rd-uses-meter i[data-spent] {
+  background: var(--border-default);
+}
+
+.rd-uses[data-level='low'] {
+  color: var(--accent-save);
+  border-color: var(--accent-save);
+}
+
+.rd-uses[data-level='low'] .rd-uses-meter i:not([data-spent]) {
+  background: var(--accent-save);
+}
+
+.rd-uses[data-level='out'] {
+  color: var(--accent-danger);
+  border-color: var(--accent-danger);
+}
+
 /* The panel: grouped and labelled, like a properties palette. */
 .rd-panel {
   position: absolute;
