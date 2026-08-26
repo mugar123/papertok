@@ -89,7 +89,7 @@ function formatTrendPeriod(period, locale = 'es-ES') {
   return from === to ? from : `${from} - ${to}`;
 }
 
-function ReportCoverage({ coverage }) {
+function ReportCoverage({ coverage, enterOrder }) {
   const { language, isEnglish } = useLanguage();
   if (!coverage?.sources?.length) return null;
 
@@ -97,7 +97,10 @@ function ReportCoverage({ coverage }) {
     || coverage.sources.some(source => !['active', 'not-applicable'].includes(source.status));
 
   return (
-    <div className={`sr-coverage ${hasLimitedCoverage ? 'limited' : ''}`}>
+    <div
+      className={`sr-coverage ${hasLimitedCoverage ? 'limited' : ''} ${enterOrder == null ? '' : 'sr-enter'}`}
+      style={enterOrder == null ? undefined : { '--enter-order': enterOrder }}
+    >
       <Database size={15} aria-hidden="true" />
       <div className="sr-coverage-content">
         <span className="sr-coverage-label">
@@ -291,6 +294,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     { id: 'custom', label: isEnglish ? 'Custom' : 'Otro' },
   ];
 
+  /* Reading order of the entrance, not DOM order: the sidebar is first in the
+     DOM so screen readers announce the measurements before the stories, but on
+     screen the lead story and the stats bar start together. */
+  const ENTER = { hero: 0, stats: 0, trends: 1, topics: 2, coverage: 3, label: 1, cards: 2 };
+
   const trendItems = trends.items || [];
   const maxTrendChange = trendItems.reduce(
     (largest, item) => Math.max(largest, Number(item.changePercent) || 0),
@@ -434,7 +442,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
           <div className="sr-layout">
           <aside className="sr-aside">
-          <div className="sr-stats-bar">
+          <div className="sr-stats-bar sr-enter" style={{ '--enter-order': ENTER.stats }}>
             <div className="sr-stat" title={isEnglish ? 'Papers included in this editorial selection' : 'Papers incluidos en esta selección editorial'}>
               <BarChart3 size={16} />
               <div className="sr-stat-info">
@@ -466,7 +474,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </div>
           </div>
 
-          <section className={`sr-real-trends ${trends.loading ? 'updating' : ''}`} aria-label={isEnglish ? 'Scientific trends' : 'Tendencias científicas'}>
+          <section
+            className={`sr-real-trends sr-enter ${trends.loading ? 'updating' : ''}`}
+            style={{ '--enter-order': ENTER.trends }}
+            aria-label={isEnglish ? 'Scientific trends' : 'Tendencias científicas'}
+          >
             <div className="sr-trends-heading">
               <span><TrendingUp size={15} /> {isEnglish ? 'Growing topics' : 'Temas en crecimiento'}</span>
               {currentTrendPeriod && previousTrendPeriod && (
@@ -519,7 +531,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
           {/* These describe the selected edition; they are not presented as measured trends. */}
           {trends.status !== 'active' && report.featuredConcepts?.length > 0 && (
-            <div className="sr-trending-topics">
+            <div className="sr-trending-topics sr-enter" style={{ '--enter-order': ENTER.topics }}>
               <span className="sr-trending-label">
                 <Flame size={14} className="sr-flame-icon" />
                 {isEnglish ? 'Topics in this selection:' : 'Temas de esta selección:'}
@@ -532,13 +544,13 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </div>
           )}
 
-          <ReportCoverage coverage={report.coverage} />
+          <ReportCoverage coverage={report.coverage} enterOrder={ENTER.coverage} />
           </aside>
 
           <div className="sr-main">
           {/* Hero */}
           {hero && (
-            <section className="sr-hero" style={{ '--hero-glow': heroGradient }}>
+            <section className="sr-hero sr-enter" style={{ '--hero-glow': heroGradient, '--enter-order': ENTER.hero }}>
               <div className="sr-hero-glow" />
               <div className="sr-hero-inner">
                 <span className="sr-lead-label">{isEnglish ? 'Lead story' : 'Portada'}</span>
@@ -591,20 +603,28 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           {/* Bento Highlights */}
           {report.highlights?.length > 0 && (
             <section className="sr-highlights">
-              <h2 className="sr-section-label">{isEnglish ? 'Other highlighted research' : 'Otras investigaciones destacadas'}</h2>
+              <h2 className="sr-section-label sr-enter" style={{ '--enter-order': ENTER.label }}>
+                {isEnglish ? 'Other highlighted research' : 'Otras investigaciones destacadas'}
+              </h2>
               <div className="sr-bento">
                 {report.highlights.map((paper, i) => {
                   const cat = (paper.categories && paper.categories[0]) || paper.primaryCategory || 'General';
                   const accent = getCategoryGradient(cat);
                   // Pattern: wide, narrow, narrow, wide, narrow, narrow...
                   const isWide = i % 3 === 0;
+                  /* Which grid column the card lands in. CSS cannot recover it
+                     from the DOM index, because a wide card is one child and
+                     two columns. */
+                  const column = isWide ? 'col-full' : i % 3 === 1 ? 'col-left' : 'col-right';
 
                   return (
                     <article
                       key={paper.id}
-                      className={`sr-bento-card ${isWide ? 'wide' : 'narrow'}`}
+                      className={`sr-bento-card ${isWide ? 'wide' : 'narrow'} ${column} sr-enter`}
                       onClick={() => setSelectedPaper(paper)}
-                      style={{ animationDelay: `${0.3 + i * 0.08}s` }}
+                      /* Capped: the cards below the fold gain nothing from a
+                         longer wait, and the page should feel settled by then. */
+                      style={{ '--enter-order': ENTER.cards + Math.min(i, 7) }}
                     >
                       <div className="sr-bento-accent" style={{ background: accent }} />
                       <div className="sr-bento-body">

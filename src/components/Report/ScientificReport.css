@@ -8,6 +8,13 @@
    ============================================ */
 
 .sr {
+  /* `PageTransition` wraps every route in a column flex container, and the auto
+     side margins below suppress the default `stretch`: without an explicit
+     width this becomes a shrink-to-fit item, so the page was laid out against
+     its own content. While the edition was compiling that measured 558px, and
+     the whole masthead jumped to 1240px the moment the papers landed. The
+     width is declared so the column is the same before and after the fetch. */
+  width: 100%;
   max-width: 1240px;
   margin: 0 auto;
   padding: calc(var(--nav-height) + var(--space-8)) var(--space-6) var(--space-16);
@@ -142,6 +149,36 @@
 .sr-body {
   position: relative;
   transition: opacity var(--transition-base);
+}
+
+/* ── Entrance ──
+   The edition used to land in a single frame. `AnimatePresence` is mounted
+   with `initial={false}`, so the body's own fade never ran on the first
+   reveal: the spinner was replaced by a full page of papers with nothing in
+   between. Each region now rises into place off one shared cascade — the lead
+   story and the measurements first, then the ruled columns — so the page
+   assembles as one movement instead of a dozen unrelated ones. The order is
+   passed in from the JSX, which is the only place that knows the reading
+   order of the two columns. */
+.sr-enter {
+  animation: srEnter 0.5s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--enter-order, 0) * 45ms);
+}
+
+@keyframes srEnter {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* The spinner is the first thing on the page, and it was popping in too. */
+.sr-state {
+  animation: srStateIn 0.35s ease-out backwards;
+  animation-delay: 60ms;
+}
+
+@keyframes srStateIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .sr-update-line {
@@ -729,11 +766,9 @@
   min-width: 0;
   padding: var(--space-5) var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--border-default);
-  border-right: 1px solid var(--border-default);
   cursor: pointer;
   background: var(--bg-primary);
   transition: background var(--transition-fast);
-  animation: srFadeUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 /* A wide item opens each row of three. */
@@ -741,13 +776,24 @@
   grid-column: span 2;
 }
 
-.sr-bento-card:nth-child(2n) {
-  border-right: none;
+/* Which side of the rule a card sits on is declared by the JSX, not read from
+   `nth-child`: a wide card is one child but two grid columns, so DOM parity
+   stops matching column parity after the first row. Read from parity, the
+   second row got `padding-right: 0` on its *left* column — the year ran flush
+   into the rule — and pulled the *right* column's accent 20px left, straight
+   on top of that same year. */
+.sr-bento-card.col-full {
+  padding-left: 0;
   padding-right: 0;
 }
 
-.sr-bento-card:nth-child(2n + 1) {
+.sr-bento-card.col-left {
   padding-left: 0;
+  border-right: 1px solid var(--border-default);
+}
+
+.sr-bento-card.col-right {
+  padding-right: 0;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -766,7 +812,10 @@
   border-radius: var(--radius-full);
 }
 
-.sr-bento-card:nth-child(2n + 1) .sr-bento-accent {
+/* The hairline lives in the gutter to the left of the text. A card that is
+   already flush left has no gutter of its own, so it borrows the page margin. */
+.sr-bento-card.col-full .sr-bento-accent,
+.sr-bento-card.col-left .sr-bento-accent {
   left: calc(var(--space-5) * -1);
 }
 
@@ -1058,40 +1107,6 @@
   }
 }
 
-@media (max-width: 1024px) {
-  .sr-bento {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .sr-bento-card.wide {
-    grid-column: span 2;
-  }
-
-  .sr-bento-card:nth-child(3n),
-  .sr-bento-card:nth-child(3n + 1) {
-    padding-left: var(--space-5);
-    padding-right: var(--space-5);
-    border-right: 1px solid var(--border-default);
-  }
-
-  .sr-bento-card:nth-child(2n) {
-    border-right: none;
-    padding-right: 0;
-  }
-
-  .sr-bento-card:nth-child(2n + 1) {
-    padding-left: 0;
-  }
-
-  .sr-bento-card:nth-child(3n + 1) .sr-bento-accent {
-    left: 0;
-  }
-
-  .sr-bento-card:nth-child(2n + 1) .sr-bento-accent {
-    left: calc(var(--space-5) * -1);
-  }
-}
-
 @media (max-width: 860px) {
   .sr-hero-inner {
     grid-template-columns: minmax(0, 1fr);
@@ -1156,18 +1171,17 @@
 
   .sr-bento-card,
   .sr-bento-card.wide,
-  .sr-bento-card:nth-child(3n),
-  .sr-bento-card:nth-child(3n + 1),
-  .sr-bento-card:nth-child(2n),
-  .sr-bento-card:nth-child(2n + 1) {
+  .sr-bento-card.col-full,
+  .sr-bento-card.col-left,
+  .sr-bento-card.col-right {
     grid-column: span 1;
     padding: var(--space-5) 0;
     border-right: none;
   }
 
   .sr-bento-accent,
-  .sr-bento-card:nth-child(3n + 1) .sr-bento-accent,
-  .sr-bento-card:nth-child(2n + 1) .sr-bento-accent {
+  .sr-bento-card.col-full .sr-bento-accent,
+  .sr-bento-card.col-left .sr-bento-accent {
     left: 0;
     top: 0;
     width: 24px;
@@ -1192,6 +1206,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sr-body,
+  .sr-enter,
+  .sr-state,
   .sr-bento-card,
   .sr-trend-item--enter,
   .sr-real-trends,

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Children, cloneElement, useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
@@ -86,6 +86,17 @@ const SUGGESTIONS = [
 // the ordering module has never heard of scores 99 and sinks to the bottom of
 // every search, silently.
 const SECTIONS = ['papers', 'users', 'authors', 'institutions', 'topics', 'projects'];
+
+/**
+ * How far down the list the entrance cascade runs before every remaining row
+ * shares the last delay.
+ *
+ * A forty-row answer staggered end to end takes a second to finish arriving,
+ * and a second of things still moving is a wait, not an animation — the reader
+ * has already started on row one and the rest is movement in the corner of
+ * their eye. Ten steps of 24 ms puts the last row in at 240 ms.
+ */
+const ENTER_STAGGER_CAP = 10;
 
 const SECTION_ICONS = {
   papers: FileText,
@@ -318,6 +329,55 @@ export default function SearchCommand({ open, onOpenChange }) {
     ? copy.peopleFailed
     : userStatus === 'slow' ? copy.peopleSlow : null;
 
+  /**
+   * The answer arriving, as one movement.
+   *
+   * Everything lands in a single commit now, so without this the skeleton
+   * vanishes and a finished page is simply there — the least fluid thing an
+   * interface can do with half a second of work behind it. Each heading and row
+   * rises 6px into place, one after the next.
+   *
+   * The counter runs across the WHOLE list rather than restarting per group, so
+   * what the eye follows is one cascade down the sheet instead of four that
+   * start at once. Headings take a step of their own, which is what makes a
+   * group read as a group rather than as a label bolted to its first row.
+   *
+   * The index is injected here rather than written into each of the six row
+   * renderers: they build plain `CommandItem`s and know nothing about where
+   * they sit in the final order, which is decided by `orderedSections` after
+   * the fact.
+   */
+  let enterIndex = 0;
+  const renderedSections = orderedSections.map((section) => {
+    if (sectionItems[section].length === 0) return null;
+    const SectionIcon = SECTION_ICONS[section];
+    const headingIndex = Math.min(enterIndex, ENTER_STAGGER_CAP);
+    enterIndex += 1;
+    const rows = Children.map(sectionContent[section](), (child, offset) => cloneElement(child, {
+      className: [child.props.className, 'sc-enter'].filter(Boolean).join(' '),
+      style: {
+        ...child.props.style,
+        '--sc-enter-index': Math.min(enterIndex + offset, ENTER_STAGGER_CAP),
+      },
+    }));
+    enterIndex += sectionItems[section].length;
+    return (
+      <CommandGroup
+        key={section}
+        // Rows that still answer the previous query are dimmed rather
+        // than passed off as this one's.
+        className={isStale ? 'sc-group--stale' : undefined}
+        heading={
+          <span className="sc-heading sc-enter" style={{ '--sc-enter-index': headingIndex }}>
+            <SectionIcon size={11} /> {copy[section]}
+          </span>
+        }
+      >
+        {rows}
+      </CommandGroup>
+    );
+  });
+
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title={copy.placeholder}>
       <CommandInput
@@ -380,25 +440,7 @@ export default function SearchCommand({ open, onOpenChange }) {
             sources land in one commit, but people run on their own 400 ms clock
             and used to appear on their own — one section arriving alone, after
             the rest, and pushing them down. The gate covers both channels. */}
-        {!searchPending && orderedSections.map(section => {
-          if (sectionItems[section].length === 0) return null;
-          const SectionIcon = SECTION_ICONS[section];
-          return (
-            <CommandGroup
-              key={section}
-              // Rows that still answer the previous query are dimmed rather
-              // than passed off as this one's.
-              className={isStale ? 'sc-group--stale' : undefined}
-              heading={
-                <span className="sc-heading">
-                  <SectionIcon size={11} /> {copy[section]}
-                </span>
-              }
-            >
-              {sectionContent[section]()}
-            </CommandGroup>
-          );
-        })}
+        {!searchPending && renderedSections}
 
         {!query.trim() && (
           <div className="sc-status sc-status--hint">{copy.hint}</div>

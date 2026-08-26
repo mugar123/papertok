@@ -31,6 +31,11 @@ import {
   readOpenAlexPersistent,
   writeOpenAlexPersistent,
 } from './openAlexClient.js';
+import {
+  filterRelevantSearchResults,
+  institutionProminenceWeight,
+  institutionSearchValues,
+} from '../utils/searchRelevance.js';
 
 const CACHE = new Map();
 const GRAPH_CACHE = new Map(); // caches W... to arxivId mappings
@@ -716,16 +721,133 @@ export async function searchAuthors(query, options = {}) {
   return [];
 }
 
+// ROR answers a search with one page of twenty. Asking for all of them and
+// cutting to five only after the tie-break is the entire fix: cutting first is
+// what threw away Massachusetts Institute of Technology, which ROR puts seventh.
+const INSTITUTION_SEARCH_CANDIDATES = 20;
+const INSTITUTION_SEARCH_LIMIT = 5;
+
+// The same 1 500 ms this search path already allows `enrichAuthorInstitutionLocalization`,
+// for the same reason. `settleSearch` gives the institutions task 4 500 ms and
+// ROR spends ~250 ms of it (measured against the live API, 2026-08-26), so a
+// second-and-a-half is affordable while still leaving the section time to
+// render. `retries: 0` is load-bearing: the client retries twice by default,
+// which would put three timeouts inside a budget that only has room for one.
+const INSTITUTION_PROMINENCE_TIMEOUT_MS = 1500;
+
+/**
+ * `ror:a|b|c` — values of ONE filter, never `ror:a|ror:b`.
+ *
+ * The same trap `buildOpenAlexIdFilter` documents for work identifiers:
+ * OpenAlex refuses an OR across filters with «It looks like you're trying to do
+ * an OR query between filters and it's not supported».
+ */
+export function buildRorIdFilter(rorIds) {
+  const values = [...new Set((Array.isArray(rorIds) ? rorIds : [])
+    .map(id => normalizeRorId(id))
+    .filter(Boolean))];
+  return values.length > 0 ? `ror:${encodeURIComponent(values.join('|'))}` : '';
+}
+
+/**
+ * The counts ROR does not carry, for a whole candidate list in one request.
+ *
+ * Filtering by the ROR identifiers we already hold, rather than searching
+ * OpenAlex for the same words a second time, is what makes the coverage
+ * complete: measured against the live APIs on 2026-08-26, this answered for
+ * 20 of 20 candidates, where `?search=MIT` covered 14 and spent 11 of its 25
+ * slots on organisations that were never candidates. A candidate OpenAlex's own
+ * relevance leaves out would weigh nothing and sink for a reason that has
+ * nothing to do with how prominent it is.
+ */
+export async function fetchInstitutionProminence(rorIds, options = {}) {
+  const filter = buildRorIdFilter(rorIds);
+  if (!filter) return new Map();
+
+  // Injectable for the test, the way `OpenAlexClient` already takes `fetchImpl`
+  // and `storage`. The shared client binds `globalThis.fetch` when the module
+  // loads — deliberately, so Safari keeps the native receiver — so swapping the
+  // global does NOT reach it, and a test that tried would quietly hit the live
+  // API and pass on whatever OpenAlex happened to say that day.
+  const requestJson = options.openAlexJson || openAlexJson;
+  const url = `https://api.openalex.org/institutions?filter=${filter}`
+    + `&per-page=${INSTITUTION_SEARCH_CANDIDATES}`
+    + '&select=ror,works_count,cited_by_count,summary_stats';
+  const data = await requestJson(url, {
+    timeoutMs: INSTITUTION_PROMINENCE_TIMEOUT_MS,
+    retries: 0,
+    cacheTtlMs: 10 * 60 * 1000,
+    signal: options.signal,
+  });
+
+  const prominenceByRorId = new Map();
+  (data?.results || []).forEach((result) => {
+    const rorId = normalizeRorId(result?.ror);
+    if (rorId) prominenceByRorId.set(rorId, result);
+  });
+  return prominenceByRorId;
+}
+
+/**
+ * Fills in the three fields `normalizeRorInstitution` ships as null, and only
+ * those.
+ *
+ * Deliberately NOT `mergeInstitutionWithRor`, which takes `id` from the
+ * OpenAlex side. Both search surfaces navigate with
+ * `institution.id.split('/').pop()` and expect a ROR identifier there
+ * (SearchPage.jsx, SearchCommand.jsx), so swapping in an OpenAlex id would
+ * hand the explorer an `I…` where it wants an `0…` on every institution result.
+ */
+export function applyInstitutionProminence(institutions, prominenceByRorId) {
+  if (!prominenceByRorId?.size) return institutions;
+  return institutions.map((institution) => {
+    const prominence = prominenceByRorId.get(institution._rorId);
+    if (!prominence) return institution;
+    return {
+      ...institution,
+      works_count: prominence.works_count ?? institution.works_count,
+      cited_by_count: prominence.cited_by_count ?? institution.cited_by_count,
+      summary_stats: prominence.summary_stats ?? institution.summary_stats,
+    };
+  });
+}
+
+/**
+ * Best-effort by construction: the prominence lookup can only change the ORDER.
+ *
+ * OpenAlex is metered and rate-limited and this runs on a 4 500 ms budget, so
+ * every way the second request can fail — down, throttled, slow, cancelled —
+ * has to leave the candidates exactly as ROR sent them. Losing the tie-break is
+ * a worse answer; losing the section is a bug.
+ */
+async function rankInstitutionsByProminence(query, candidates, options = {}) {
+  if (candidates.length <= 1) return candidates;
+
+  const prominenceByRorId = await fetchInstitutionProminence(
+    candidates.map(candidate => candidate._rorId),
+    options,
+  ).catch(() => null);
+  if (!prominenceByRorId?.size) return candidates;
+
+  return filterRelevantSearchResults(
+    query,
+    applyInstitutionProminence(candidates, prominenceByRorId),
+    institutionSearchValues,
+    { getWeight: institutionProminenceWeight },
+  );
+}
+
 /**
  * Search institutions by name.
- * @param {string} query 
+ * @param {string} query
  * @returns {Promise<Array>}
  */
 export async function searchInstitutions(query, options = {}) {
   if (!query) return [];
   try {
-    const institutions = await searchRorInstitutions(query, 5, options);
-    return institutions.map(institution => ({
+    const candidates = await searchRorInstitutions(query, INSTITUTION_SEARCH_CANDIDATES, options);
+    const ranked = await rankInstitutionsByProminence(query, candidates, options);
+    return ranked.slice(0, INSTITUTION_SEARCH_LIMIT).map(institution => ({
       ...institution,
       country_code: institution.geo?.country || institution.country_code || '',
     }));

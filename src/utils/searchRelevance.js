@@ -85,6 +85,12 @@ export function isOrganisationAuthorRecord(author = {}) {
   return true;
 }
 
+// Citations scaled clear of any believable works count, so works only ever
+// decide between records whose citations already tied.
+function prominenceWeight(record) {
+  return (record?.cited_by_count || 0) * 1e6 + (record?.works_count || 0);
+}
+
 /**
  * Prominence as one number, for breaking a tie in `filterRelevantSearchResults`.
  *
@@ -95,7 +101,25 @@ export function isOrganisationAuthorRecord(author = {}) {
  * fullest, not which person is the famous one.
  */
 export function authorProminenceWeight(author) {
-  return (author?.cited_by_count || 0) * 1e6 + (author?.works_count || 0);
+  return prominenceWeight(author);
+}
+
+/**
+ * The same number, asked of a building.
+ *
+ * Deliberately the same arithmetic, because it is the same question — several
+ * rows tied on text, which one did the reader mean? A search for "MIT" gets
+ * six organisations carrying MIT as an acronym, all scoring exactly 100, and
+ * Massachusetts Institute of Technology sitting seventh in ROR's own order,
+ * below the slice.
+ *
+ * A ROR record on its own weighs 0 here and is meant to: `normalizeRorInstitution`
+ * ships all three counting fields as null because ROR does not carry them, so
+ * this is only a tie-break once something has filled them in. Un-enriched, every
+ * institution weighs the same and the text order stands untouched.
+ */
+export function institutionProminenceWeight(institution) {
+  return prominenceWeight(institution);
 }
 
 export function scoreSearchMatch(query, values = []) {
@@ -161,6 +185,24 @@ export function filterRelevantSearchResults(
 }
 
 /**
+ * What an institution votes with, in one place.
+ *
+ * Three call sites read this list — the page, the palette, and the ROR search
+ * itself — and they had already drifted apart once: the palette was missing
+ * `acronyms`, so it could not see "USAL" on the Salamanca record. An acronym is
+ * the ONLY way an acronym query can match at all, since "MIT" carries no
+ * organisation word for the intent check to read.
+ */
+export function institutionSearchValues(institution) {
+  return [
+    institution.display_name,
+    ...Object.values(institution.localized_names || {}),
+    ...(institution.aliases || []),
+    ...(institution.acronyms || []),
+  ];
+}
+
+/**
  * The values each section votes with, in one place.
  *
  * The page and the palette used to build this separately and had drifted: the
@@ -189,12 +231,7 @@ export function buildSearchSectionValues({
       concept.labelEn,
     ])),
     authors: clean(authors.map(author => author.display_name)),
-    institutions: clean(institutions.flatMap(institution => [
-      institution.display_name,
-      ...Object.values(institution.localized_names || {}),
-      ...(institution.aliases || []),
-      ...(institution.acronyms || []),
-    ])),
+    institutions: clean(institutions.flatMap(institutionSearchValues)),
     projects: clean(projects.flatMap(project => [project.acronym, project.title])),
   };
 }

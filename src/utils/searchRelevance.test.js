@@ -15,6 +15,7 @@ import {
   buildSearchSectionValues,
   filterRelevantSearchResults,
   getSearchSectionOrder,
+  institutionProminenceWeight,
   isOrganisationAuthorRecord,
   resolvePreferredSearchSection,
   scoreSearchMatch,
@@ -403,6 +404,54 @@ test('the weight is opt-in, so the three-argument callers are untouched', () => 
     filterRelevantSearchResults('Same', ties, result => [result.name]).map(r => r.id),
     [1, 2],
     'without a weight, equal scores keep the order they arrived in',
+  );
+});
+
+test('an acronym half a dozen organisations share still puts the famous one first', () => {
+  // Live ROR, 2026-08-26: "MIT" answers with 47 organisations, 20 on the page,
+  // six of which carry MIT in `acronyms` and so score exactly 100. Massachusetts
+  // Institute of Technology is SEVENTH in ROR's own order, so the slice at five
+  // dropped it and the search answered "MIT" without MIT in it.
+  //
+  // Counts are the real OpenAlex figures for these ROR ids, which is the point:
+  // nothing in the ROR record itself separates these seven.
+  const institutions = [
+    { display_name: 'University of Southern Mindanao', acronyms: ['MIT', 'USM'], works_count: 974, cited_by_count: 8769 },
+    { display_name: 'Management Intelligenter Technologien (Germany)', acronyms: ['MIT'], works_count: 128, cited_by_count: 1225 },
+    { display_name: 'Manukau Institute of Technology', acronyms: ['MIT'], works_count: 1004, cited_by_count: 22797 },
+    { display_name: 'Myanmar Institute of Theology', acronyms: ['MIT'], works_count: 255, cited_by_count: 4328 },
+    { display_name: 'Ministry of Infrastructures and Transport', acronyms: ['MIT'], works_count: 150, cited_by_count: 3472 },
+    { display_name: 'International Tourism Institute', acronyms: ['ITI', 'MIT'], works_count: 122, cited_by_count: 338 },
+    { display_name: 'Massachusetts Institute of Technology', acronyms: ['MIT'], works_count: 355652, cited_by_count: 65816719 },
+  ];
+
+  const ranked = filterRelevantSearchResults(
+    'MIT',
+    institutions,
+    institution => [institution.display_name, ...(institution.acronyms || [])],
+    { getWeight: institutionProminenceWeight },
+  );
+
+  assert.equal(ranked[0].display_name, 'Massachusetts Institute of Technology');
+  // The bug was the slice, not just the order: five is what `searchInstitutions`
+  // shows, so surviving the cut is the thing worth pinning.
+  assert.ok(
+    ranked.slice(0, 5).some(institution => institution.display_name === 'Massachusetts Institute of Technology'),
+    'MIT survives the slice at five',
+  );
+});
+
+test('an institution nobody enriched weighs nothing instead of throwing', () => {
+  // `normalizeRorInstitution` ships works_count, cited_by_count and
+  // summary_stats as null on purpose — ROR does not carry them. A weight read
+  // off an un-enriched record has to come out 0, so the text order survives
+  // untouched rather than the sort blowing up or going NaN.
+  assert.equal(institutionProminenceWeight({ works_count: null, cited_by_count: null }), 0);
+  assert.equal(institutionProminenceWeight(undefined), 0);
+  assert.ok(
+    institutionProminenceWeight({ cited_by_count: 1, works_count: 0 })
+      > institutionProminenceWeight({ cited_by_count: 0, works_count: 999999 }),
+    'citations lead, exactly as they do for authors',
   );
 });
 

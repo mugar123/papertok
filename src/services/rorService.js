@@ -1,4 +1,4 @@
-import { filterRelevantSearchResults } from '../utils/searchRelevance.js';
+import { filterRelevantSearchResults, institutionSearchValues } from '../utils/searchRelevance.js';
 import { withEnforcedDeadline } from '../utils/requestDeadline.js';
 
 const API_BASE = 'https://api.ror.org/v2/organizations';
@@ -192,12 +192,7 @@ export async function searchRorInstitutions(query, limit = 8, options = {}) {
   const institutions = filterRelevantSearchResults(
     cleanQuery,
     normalizedInstitutions,
-    institution => [
-      institution.display_name,
-      ...Object.values(institution.localized_names || {}),
-      ...(institution.aliases || []),
-      ...(institution.acronyms || []),
-    ],
+    institutionSearchValues,
   )
     .slice(0, limit);
   SEARCH_CACHE.set(cacheKey, { value: institutions, timestamp: Date.now() });

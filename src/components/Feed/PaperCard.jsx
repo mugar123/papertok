@@ -348,6 +348,18 @@ const PaperCard = memo(function PaperCard({
     [figures, paperViewKey],
   );
 
+  // Which clippings have their picture. A figure is not shown on the strength of
+  // having a URL — see `.pc-figure:not(.is-loaded)` — so this is what lets it in.
+  const [loadedFigures, setLoadedFigures] = useState(() => new Set());
+
+  // A new paper means new URLs; carrying the old set over would flash the next
+  // paper's frames in before their images.
+  useEffect(() => { setLoadedFigures(new Set()); }, [paperViewKey]);
+
+  const markFigureLoaded = useCallback((url) => {
+    setLoadedFigures(current => (current.has(url) ? current : new Set(current).add(url)));
+  }, []);
+
   const [project, setProject] = useState(null);
   const prefersReducedMotion = useReducedMotion();
 
@@ -758,8 +770,22 @@ const PaperCard = memo(function PaperCard({
       {scatteredFigures.length > 0 && (
         <div className="pc-figures" aria-hidden="true">
           {scatteredFigures.map(({ item, style }) => (
-            <figure key={item.url} className="pc-figure" style={style}>
-              <img src={item.url} alt="" decoding="async" />
+            <figure
+              key={item.url}
+              className={`pc-figure${loadedFigures.has(item.url) ? ' is-loaded' : ''}`}
+              style={style}
+            >
+              <img
+                src={item.url}
+                alt=""
+                decoding="async"
+                // A cached image can finish before React attaches `onLoad`, and
+                // then the event never comes and the clipping never appears. The
+                // ref catches the ones that were already done on mount; `onLoad`
+                // catches the rest.
+                ref={(node) => { if (node?.complete && node.naturalWidth > 0) markFigureLoaded(item.url); }}
+                onLoad={() => markFigureLoaded(item.url)}
+              />
             </figure>
           ))}
         </div>
