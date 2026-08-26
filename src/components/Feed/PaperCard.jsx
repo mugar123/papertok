@@ -377,8 +377,16 @@ const PaperCard = memo(function PaperCard({
   const toggleExpanded = (e, newState) => {
     e.stopPropagation();
     setExpanded(newState);
-    if (!newState && prefersReducedMotion && abstractRef.current) {
-      abstractRef.current.scrollTop = 0;
+    // Closing puts the reader back at the first line. The scroll starts here
+    // rather than waiting for the height to land, so the text glides up while
+    // the panel shrinks — one gesture instead of a snap once it has finished.
+    // `handleAbstractTransitionEnd` still runs and is now only a backstop, for
+    // the case where the smooth scroll is interrupted by a second tap.
+    if (!newState && abstractRef.current) {
+      abstractRef.current.scrollTo({
+        top: 0,
+        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      });
     }
   };
 
