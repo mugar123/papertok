@@ -58,7 +58,7 @@ import {
 } from '../utils/feedEnrichment';
 import { resolveWithin, settleWithin } from '../utils/asyncTiming';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard';
-import { dedupeInteractionPapers } from '../utils/feedInteractions';
+import { dedupeInteractionPapers, definedFields } from '../utils/feedInteractions';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
 // once a feed load actually ranks followed topics, so it loads on first use
@@ -1524,14 +1524,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       });
       try {
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        await setDoc(ref, definedFields({
           liked: !isCurrentlyLiked,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
           paperCategory: paper.primaryCategory,
           paperAbstract: paper.summary?.substring(0, 500),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error saving like:', err);
         setLikedPaperIds(likedPaperIds);
@@ -1564,12 +1564,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
         });
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        await setDoc(ref, definedFields({
           notInterested: true, paperCategory: paper.primaryCategory,
           paperAbstract: paper.summary?.substring(0, 500),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error saving not interested:', err);
       }
@@ -1615,15 +1615,15 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           timestamp: readAt,
         });
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        await setDoc(ref, definedFields({
           read: true,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
-          paperCategory: paper.primaryCategory, 
+          paperCategory: paper.primaryCategory,
           timestamp: readAt,
           readAt,
           paper: storedPaper,
           deviceType: getDeviceInfo().type,
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error saving read status:', err);
       }
@@ -1663,11 +1663,11 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           viewTime: timeInSeconds,
         });
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        await setDoc(ref, definedFields({
           viewTime: increment(timeInSeconds),
           paperCategory: paper.primaryCategory,
           timestamp: new Date().toISOString(),
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error tracking view time:', err);
       }
@@ -1692,13 +1692,13 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
         });
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        await setDoc(ref, definedFields({
           openedPdf: true,
           paperCategory: paper.primaryCategory,
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
           context: 'feed',
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error tracking PDF open:', err);
       }
@@ -1731,13 +1731,13 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             timestamp,
           });
           const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-          batch.set(ref, {
+          batch.set(ref, definedFields({
             skip: increment(1),
             paperCategory: paper.primaryCategory,
             timestamp,
             deviceType,
             context: 'feed',
-          }, { merge: true });
+          }), { merge: true });
         });
 
         await batch.commit();
@@ -1763,13 +1763,13 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
         });
         const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        await setDoc(ref, definedFields({
           pdfBounce: increment(1),
           paperCategory: paper.primaryCategory,
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
           context: 'feed',
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error tracking PDF bounce:', err);
       }
@@ -1893,14 +1893,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           timestamp: updatedAt,
         });
-        await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), {
+        await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), definedFields({
           readLater: nextValue,
           paper: storedPaper,
           paperTitle: paper.title,
           paperAuthors: paper.authors?.slice(0, 3) || [],
           paperCategory: paper.primaryCategory || '',
           libraryUpdatedAt: updatedAt,
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error updating read later:', err);
       }
@@ -1938,7 +1938,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           timestamp: updatedAt,
         });
-        await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), {
+        await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), definedFields({
           note: note.trim(),
           tags: normalizedTags,
           paper: storedPaper,
@@ -1946,7 +1946,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           paperAuthors: paper.authors?.slice(0, 3) || [],
           paperCategory: paper.primaryCategory || '',
           libraryUpdatedAt: updatedAt,
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error saving reading metadata:', err);
       }

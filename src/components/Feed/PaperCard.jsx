@@ -438,7 +438,119 @@ const PaperCard = memo(function PaperCard({
     }
   };
 
+  /**
+   * What the panel is showing, and a key that changes only when the words do.
+   *
+   * The screens that hand this card a stored copy of a paper — a list, a
+   * profile tab — carry no abstract at all: `serializeLibraryPaper` keeps a
+   * title, authors and a truncated summary, not the text. So a paper opened
+   * from Favourites paints "Abstract unavailable." and then, a beat later,
+   * arXiv and OpenAlex answer with the real thing.
+   *
+   * The key is not the text itself. A 1,500-character paragraph as a React key
+   * is paid for on every render, and all this has to answer is whether these
+   * are the same words as before.
+   */
+  const abstractText = hasUsableAIAbstract(paper.abstract) ? paper.abstract : null;
+  const abstractKey = abstractText
+    ? `abstract:${abstractText.length}:${abstractText.slice(0, 24)}`
+    : 'abstract:none';
+
+  // The paragraph the panel is showing, the height it stands at, and the way to
+  // end a resize that is still running.
+  const lastAbstractParagraph = useRef(null);
+  const lastAbstractHeight = useRef(null);
+  const settleAbstractResize = useRef(null);
+
+  /**
+   * The height is tracked by an observer rather than measured on every render,
+   * and that is not a micro-optimisation: the swap below is committed by
+   * AnimatePresence's own state, which re-renders the paragraph WITHOUT
+   * re-rendering this card. Measuring per render was therefore both too often
+   * and, at the one moment it matters, not often enough — the first build of
+   * this ran the panel's growth 390ms after the words had already changed,
+   * which is the jump it was meant to remove plus a bounce afterwards.
+   */
+  useEffect(() => {
+    const node = abstractRef.current;
+    if (!node) return undefined;
+    lastAbstractHeight.current = node.offsetHeight;
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(() => {
+      lastAbstractHeight.current = node.offsetHeight;
+    });
+    observer.observe(node);
+    return () => {
+      observer.disconnect();
+      settleAbstractResize.current?.();
+    };
+  }, []);
+
+  /**
+   * The other half of the swap: the panel eases between the height it had and
+   * the height the new words need, on the card's own curve and duration.
+   *
+   * The words were the smaller half of the problem. The sheet is bottom
+   * anchored (`justify-content: flex-end`), so one line of "Abstract
+   * unavailable." becoming a full column of text threw the title, the authors
+   * and the badges upward in a single frame — the reader's eye lost the line it
+   * was on.
+   *
+   * It hangs off the paragraph's ref, which is the only hook that fires in the
+   * commit that actually replaces the element, and it fires before the browser
+   * paints it: the height the panel jumped to is measured and put back in the
+   * same breath, so what is painted is the first frame of the transition rather
+   * than the jump.
+   */
+  const attachAbstractBody = useCallback((paragraph) => {
+    const previous = lastAbstractParagraph.current;
+    // Detaching. `previous` has to survive it: it is what the attach of the
+    // paragraph replacing this one compares itself against.
+    if (!paragraph) return;
+    lastAbstractParagraph.current = paragraph;
+
+    const node = abstractRef.current;
+    const from = lastAbstractHeight.current;
+    // First words on the card, or a re-attach of the same ones (this callback
+    // changes identity when the panel opens): nothing has been replaced.
+    if (!node || !previous || previous === paragraph || from === null) return;
+    // Open, the panel is sized by the room its siblings leave rather than by
+    // its own text, so there is no height to travel — only the words change.
+    if (expanded || prefersReducedMotion) return;
+
+    // A swap on top of a swap starts from wherever the panel has got to, which
+    // is what `from` already holds; this only hands the height back so the
+    // measurement below is of the text and not of the animation.
+    settleAbstractResize.current?.();
+    const target = node.offsetHeight;
+    if (Math.abs(target - from) < 1) return;
+
+    node.style.height = `${from}px`;
+    node.classList.add('pc-abstract--resizing');
+    // Read back, or the browser folds both heights into one style change and
+    // there is nothing left to transition between.
+    void node.offsetHeight;
+    node.style.height = `${target}px`;
+
+    let backstop = null;
+    const settle = () => {
+      clearTimeout(backstop);
+      settleAbstractResize.current = null;
+      node.style.height = '';
+      node.classList.remove('pc-abstract--resizing');
+      lastAbstractHeight.current = node.offsetHeight;
+    };
+    // `transitionend` below does the finishing. This only covers the case where
+    // it never arrives — an interrupted transition fires nothing — because an
+    // inline height left behind would pin the panel at that size for good.
+    backstop = setTimeout(settle, CARD_DURATION_MS + 120);
+    settleAbstractResize.current = settle;
+  }, [expanded, prefersReducedMotion]);
+
   const handleAbstractTransitionEnd = (event) => {
+    // The panel has finished travelling between two abstracts: hand its height
+    // back to the layout before anything else moves it.
+    if (event.propertyName === 'height') settleAbstractResize.current?.();
     if (!expanded && event.propertyName === 'max-height' && abstractRef.current) {
       abstractRef.current.scrollTop = 0;
     }
@@ -1123,11 +1235,38 @@ const PaperCard = memo(function PaperCard({
           onClick={(e) => toggleExpanded(e, !expanded)}
           onTransitionEnd={handleAbstractTransitionEnd}
         >
-          <p>
-            {hasUsableAIAbstract(paper.abstract)
-              ? <ScientificText>{paper.abstract}</ScientificText>
-              : (isEnglish ? 'Abstract unavailable.' : 'Resumen no disponible.')}
-          </p>
+          {/* The words are replaced, not swapped. A stored copy of a paper
+              carries no abstract, so this panel goes from "Abstract
+              unavailable." to a full column of text the moment the providers
+              answer, and doing that in one frame reads as a glitch — the same
+              reason the access chip above cross-fades.
+
+              `mode="wait"` rather than two paragraphs at once: superimposing
+              two different texts at half opacity is not a cross-fade, it is a
+              smudge. The old text leaves, the new one arrives as the panel
+              makes room for it — the ref below is what starts that. */}
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.p
+              key={abstractKey}
+              ref={attachAbstractBody}
+              initial={{ opacity: 0 }}
+              animate={{
+                opacity: 1,
+                transition: {
+                  duration: prefersReducedMotion ? 0.1 : 0.34,
+                  ease: [0.16, 1, 0.3, 1],
+                },
+              }}
+              exit={{
+                opacity: 0,
+                transition: { duration: prefersReducedMotion ? 0.08 : 0.18, ease: 'easeIn' },
+              }}
+            >
+              {abstractText
+                ? <ScientificText>{abstractText}</ScientificText>
+                : (isEnglish ? 'Abstract unavailable.' : 'Resumen no disponible.')}
+            </motion.p>
+          </AnimatePresence>
         </div>
 
         <AnimatePresence initial={false}>

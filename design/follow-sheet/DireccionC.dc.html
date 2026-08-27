@@ -1,0 +1,253 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif; }
+    a { color: #1a5fd0; text-decoration: none; }
+    a:hover { color: #144aa3; }
+
+    .pt {
+      --bg-primary: #ffffff;
+      --bg-elevated: #ffffff;
+      --bg-card: #ffffff;
+      --bg-secondary: #f7f7f8;
+      --bg-sunken: #fafafa;
+      --text-primary: #111318;
+      --text-secondary: #5b6270;
+      --text-tertiary: #8a919e;
+      --border-subtle: #e6e7ea;
+      --border-default: #d3d5db;
+      --border-strong: #a9aeba;
+      --glass-hover: rgba(17, 19, 24, 0.06);
+      --brand-yellow: #ffd21e;
+      --shadow-lg: 0 8px 24px rgba(17, 19, 24, 0.08);
+      --font-body: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+      --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .pt[data-theme='dark'] {
+      --bg-primary: #111318;
+      --bg-elevated: #1c2029;
+      --bg-card: #16191f;
+      --bg-secondary: #1a1d24;
+      --bg-sunken: #16191f;
+      --text-primary: #f2f3f5;
+      --text-secondary: #a1a8b5;
+      --text-tertiary: #757c8a;
+      --border-subtle: #23262e;
+      --border-default: #2e323b;
+      --border-strong: #474d59;
+      --glass-hover: rgba(255, 255, 255, 0.08);
+      --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    .page { box-sizing: border-box; min-height: 640px; padding: 36px 40px; background: var(--bg-primary); }
+
+    .head { display: flex; align-items: flex-start; gap: 20px; margin-bottom: 24px; }
+    .face { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 64px; height: 64px; border-radius: 9999px; background: #6b21a8; color: #ffffff; font: 600 1.5rem/1 var(--font-body); }
+    .name { margin: 0 0 6px; font: 700 1.5rem/1.15 var(--font-body); letter-spacing: -0.015em; color: var(--text-primary); }
+    .meta { margin: 0; font: 400 0.75rem/1.4 var(--font-mono); color: var(--text-tertiary); }
+    .bio { margin: 8px 0 0; max-width: 46ch; font: 400 0.875rem/1.5 var(--font-body); color: var(--text-secondary); }
+
+    /* La rejilla reglada real del perfil, tal cual: tres cajas de datos. */
+    .anchor { position: relative; }
+    .stats { display: grid; grid-template-columns: repeat(3, 140px); gap: 0; border-top: 1px solid var(--border-default); border-left: 1px solid var(--border-default); width: 421px; }
+    .cell {
+      position: relative; display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 8px 12px;
+      border: none; border-right: 1px solid var(--border-default); border-bottom: 1px solid var(--border-default);
+      background: var(--bg-card); text-align: left; cursor: pointer; transition: background 120ms ease;
+    }
+    .cell:hover { background: var(--bg-secondary); }
+    .cell--on { background: var(--bg-secondary); }
+    .cell--flat { cursor: default; }
+    .cell-bar { position: absolute; left: -1px; right: -1px; top: -1px; height: 3px; background: var(--brand-yellow); }
+    .cell-value { font-family: var(--font-mono); font-size: 1.05rem; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-primary); }
+    .cell-label { font: 600 0.625rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); }
+
+    /* Sin modal, sin telón, sin bloquear la página: la lista cuelga del dato
+       que se ha pulsado, como un índice desplegado. */
+    .pop {
+      position: absolute; top: 100%; width: 340px; margin-top: -1px;
+      border: 1px solid var(--border-default); border-radius: 0 3px 3px 3px;
+      background: var(--bg-elevated); box-shadow: var(--shadow-lg); overflow: hidden;
+    }
+    .pop-hd { display: flex; align-items: center; justify-content: space-between; padding: 9px 12px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-sunken); }
+    .pop-title { font: 600 0.625rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); }
+    .pop-close { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border: none; border-radius: 2px; background: none; color: var(--text-tertiary); cursor: pointer; }
+    .pop-close:hover { color: var(--text-primary); background: var(--glass-hover); }
+
+    .row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; transition: background 120ms ease; }
+    .row + .row { border-top: 1px solid var(--border-subtle); }
+    .row:hover { background: var(--glass-hover); }
+    .av { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; width: 30px; height: 30px; border-radius: 9999px; overflow: hidden; font: 600 0.75rem/1 var(--font-body); }
+    .who { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+    .nm { font: 600 0.8125rem/1.2 var(--font-body); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hnd { font: 400 0.625rem/1 var(--font-mono); color: var(--text-tertiary); }
+
+    .pop-more {
+      display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 11px 12px;
+      border: none; border-top: 1px solid var(--border-subtle); background: var(--bg-sunken); color: var(--text-primary);
+      font: 600 0.625rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+    }
+    .pop-more:hover { background: var(--bg-secondary); }
+    .pop-empty { padding: 22px 16px 24px; text-align: center; font: 400 0.8125rem/1.5 var(--font-body); color: var(--text-tertiary); }
+
+    .hint { margin: 22px 0 0; font: 400 0.75rem/1.5 var(--font-body); color: var(--text-tertiary); }
+  </style>
+</helmet>
+
+<div class="pt" data-theme="{{view.theme}}">
+  <div class="page">
+
+    <div class="head">
+      <span class="face">N</span>
+      <div>
+        <p class="name">Nicolás Muñoz García</p>
+        <p class="meta">@nicomg60 · miembro desde ago 2026</p>
+        <p class="bio">Construyendo PaperTok. Papers de física y de sistemas, casi siempre de madrugada.</p>
+      </div>
+    </div>
+
+    <div class="anchor">
+      <div class="stats">
+        <sc-for list="{{view.cells}}" as="cell" hint-placeholder-count="3">
+          <button type="button" class="{{cell.cls}}" onClick="{{cell.pick}}">
+            <sc-if value="{{cell.active}}" hint-placeholder-val="{{true}}">
+              <span class="cell-bar"></span>
+            </sc-if>
+            <span class="cell-value">{{cell.value}}</span>
+            <span class="cell-label">{{cell.label}}</span>
+          </button>
+        </sc-for>
+      </div>
+
+      <sc-if value="{{view.open}}" hint-placeholder-val="{{true}}">
+        <div class="pop" style="{{view.popStyle}}" role="dialog">
+          <div class="pop-hd">
+            <span class="pop-title">{{view.popTitle}}</span>
+            <button type="button" class="pop-close" aria-label="Cerrar" onClick="{{view.close}}">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M18 6 6 18M6 6l12 12"></path>
+              </svg>
+            </button>
+          </div>
+
+          <sc-if value="{{view.hasRows}}" hint-placeholder-val="{{true}}">
+            <div>
+              <sc-for list="{{view.rows}}" as="r" hint-placeholder-count="5">
+                <div class="row">
+                  <span class="av" style="{{r.avStyle}}">{{r.initial}}</span>
+                  <span class="who">
+                    <span class="nm">{{r.name}}</span>
+                    <span class="hnd">@{{r.handle}}</span>
+                  </span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <sc-if value="{{view.empty}}" hint-placeholder-val="{{false}}">
+            <p class="pop-empty">{{view.emptyHint}}</p>
+          </sc-if>
+
+          <sc-if value="{{view.showAll}}" hint-placeholder-val="{{true}}">
+            <button type="button" class="pop-more">
+              <span>{{view.allLabel}}</span>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14M13 6l6 6-6 6"></path>
+              </svg>
+            </button>
+          </sc-if>
+        </div>
+      </sc-if>
+    </div>
+
+    <p class="hint">{{view.hint}}</p>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":760,"height":640},"dark":{"editor":"boolean","default":false,"section":"Prototipo"}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { open: 'followers' };
+  }
+
+  people() {
+    return {
+      following: [
+        { name: 'Elena Ruiz Sáez', handle: 'eruiz', initial: 'E', color: '' },
+        { name: 'Priya Raghavan', handle: 'praghavan', initial: 'P', color: '#5b4bc4' },
+        { name: 'Kenji Watanabe', handle: 'kwatanabe', initial: 'K', color: '' },
+        { name: 'Sofía Marchetti', handle: 'smarchetti', initial: 'S', color: '#0e7490' },
+        { name: 'Alex Nwosu', handle: 'anwosu', initial: 'A', color: '' }
+      ],
+      followers: [
+        { name: 'mugar', handle: 'mugar', initial: 'm', color: '#ef6c00' },
+        { name: 'Elena Ruiz Sáez', handle: 'eruiz', initial: 'E', color: '' },
+        { name: 'Tomás Bernal', handle: 'tbernal', initial: 'T', color: '' },
+        { name: 'Nadia Ostrovska', handle: 'nadiao', initial: 'N', color: '#2f6f4e' },
+        { name: 'Jonás Herrera', handle: 'jherrera', initial: 'J', color: '' }
+      ]
+    };
+  }
+
+  renderVals() {
+    const counts = { following: 12, followers: 128, likes: 340 };
+    const open = this.state.open;
+    const list = open ? this.people()[open] : [];
+
+    const cells = [
+      { key: 'following', label: 'Siguiendo', value: '12' },
+      { key: 'followers', label: 'Seguidores', value: '128' },
+      { key: 'likes', label: 'Likes', value: '340' }
+    ].map((cell) => {
+      const isList = cell.key !== 'likes';
+      const active = open === cell.key;
+      return {
+        label: cell.label,
+        value: cell.value,
+        active: active,
+        cls: (isList ? 'cell' : 'cell cell--flat') + (active ? ' cell--on' : ''),
+        pick: isList ? () => this.setState({ open: active ? null : cell.key }) : () => {}
+      };
+    });
+
+    const rows = list.map((p) => ({
+      name: p.name,
+      handle: p.handle,
+      initial: p.initial,
+      avStyle: p.color
+        ? 'background: ' + p.color + '; color: #ffffff'
+        : 'background: var(--bg-secondary); color: var(--text-secondary)'
+    }));
+
+    const total = open ? counts[open] : 0;
+
+    return {
+      theme: this.props.dark === true ? 'dark' : 'light',
+      cells: cells,
+      open: open !== null,
+      popStyle: 'left: ' + (open === 'followers' ? '139px' : '-1px'),
+      popTitle: (open === 'followers' ? 'Seguidores' : 'Siguiendo') + ' · ' + total,
+      rows: rows,
+      hasRows: rows.length > 0,
+      empty: rows.length === 0,
+      emptyHint: 'Cuando alguien siga esta cuenta, aparecerá aquí.',
+      showAll: total > rows.length,
+      allLabel: 'Ver los ' + total,
+      close: () => this.setState({ open: null }),
+      hint: 'Pulsa el otro contador para cambiar de lista, o la × para cerrar.'
+    };
+  }
+}
+</script>
+</body>
+</html>

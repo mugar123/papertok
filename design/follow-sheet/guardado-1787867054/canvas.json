@@ -1,0 +1,81 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 560,
+      "h": 700,
+      "title": "A · Índice (escritorio)",
+      "is_interactive": true
+    },
+    {
+      "file": "Movil.dc.html",
+      "x": 640,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "A · Índice (móvil)",
+      "is_interactive": true
+    },
+    {
+      "file": "DireccionB.dc.html",
+      "x": 0,
+      "y": 1080,
+      "w": 560,
+      "h": 700,
+      "title": "B · Directorio",
+      "is_interactive": true
+    },
+    {
+      "file": "DireccionC.dc.html",
+      "x": 640,
+      "y": 1080,
+      "w": 760,
+      "h": 640,
+      "title": "C · Anclado al contador",
+      "is_interactive": true
+    }
+  ],
+  "annotations": [
+    {
+      "id": "resumen",
+      "x": 11,
+      "y": -565,
+      "w": 560,
+      "text": "A · ÍNDICE — la propuesta principal\n\nLo que cambia respecto a hoy:\n\n1. La altura se ajusta al contenido. Hoy el cuerpo mide min(52vh, 440px, filas×58+72), así que un seguidor deja el pozo de la captura. Aquí el diálogo se ancla arriba y crece sólo hacia abajo: no se recentra al cambiar de pestaña, que es lo que aquella altura fija evitaba.\n\n2. Las pestañas hablan el idioma del propio perfil: mono en versalitas con subrayado amarillo de 3px, no píldoras redondas. Eran la única forma blanda en un sistema de esquinas de 2–8px.\n\n3. Filas a sangre separadas por filete, sin tarjeta flotante. Los @handle pasan a IBM Plex Mono: en esta app los identificadores van en mono.\n\n4. «Cargar más» deja de irse con el scroll: es una banda fija abajo.\n\n5. Vacío y error son bandas cortas, no un icono centrado en 440px de vacío.\n\nTweaks arriba: estado (lista / uno / vacío / cargando / error) y modo oscuro."
+    },
+    {
+      "id": "nota-movil",
+      "x": 640,
+      "y": -250,
+      "w": 390,
+      "text": "La otra mitad del mismo componente: por debajo de 600px sigue entrando desde el borde inferior.\n\nFila de 64px porque el botón de acción mide 44, el mínimo táctil. Sin barra de estado ni indicador de inicio dibujados: los pinta el sistema encima."
+    },
+    {
+      "id": "nota-b",
+      "x": -7,
+      "y": 802,
+      "w": 560,
+      "text": "B · DIRECTORIO — por qué\n\nLa pestaña ES el contador: la misma rejilla reglada de la cabecera del perfil desde la que se abre la hoja, así que la cifra deja de ser una viñeta dentro de una píldora y vuelve a ser un dato. Añade filtro y segunda línea con el bio — que ya viene en el mismo readUserProfile de cada fila, sin lectura extra — y la marca «TE SIGUE».\n\nContra: mucho cromo para el caso real de hoy (1 seguidor), y el filtro sólo puede mirar la página ya cargada, lo que es fácil de malinterpretar.\n\nEscribe en el filtro para verlo funcionar."
+    },
+    {
+      "id": "nota-c",
+      "x": 640,
+      "y": 890,
+      "w": 760,
+      "text": "C · ANCLADO AL CONTADOR — por qué\n\nNi modal ni telón: la lista cuelga del dato que has pulsado. Para 1 seguidor —o para 12— un diálogo modal a pantalla completa con desenfoque detrás es maquinaria desproporcionada. Se abre, se lee y se cierra sin perder la página.\n\nContra: es la más cara. Necesita una ruta de página entera para las listas largas («Ver los 128»), y en el móvil hay que caer igualmente a la hoja inferior, así que son dos superficies en vez de una.\n\nPulsa Siguiendo / Seguidores para cambiar de lista."
+    },
+    {
+      "id": "aviso-accion",
+      "x": 0,
+      "y": 780,
+      "w": 560,
+      "text": "OJO: el botón «Seguir» por fila es una propuesta, no existe hoy. followUserService ya lo soporta, pero es funcionalidad nueva, no sólo pintura. Los nombres y bios son datos de muestra; mugar es el único real."
+    }
+  ],
+  "launch": {
+    "view": "focused",
+    "file": "Main.dc.html"
+  }
+}

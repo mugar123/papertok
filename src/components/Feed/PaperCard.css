@@ -685,6 +685,23 @@ a.pc-citations {
   mask-size: 100% 400%;
 }
 
+/* While the panel is travelling between two abstracts it takes an explicit
+   height, set from JS: the height it had before the words changed cannot be
+   named in a stylesheet, and nothing interpolates towards `auto`. Same curve
+   and same duration as opening it, so a paper that fills itself in under the
+   reader moves the way this card always moves.
+
+   The other three are repeated because `transition` is a shorthand: without
+   them the panel would lose its open/close animation for as long as this class
+   is on, which is exactly when a reader might tap it. */
+.pc-abstract--resizing {
+  transition:
+    height 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    max-height 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    -webkit-mask-size 0.42s cubic-bezier(0.16, 1, 0.3, 1),
+    mask-size 0.42s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .pc-abstract p {
   font-family: var(--font-serif);
   font-size: 1rem;

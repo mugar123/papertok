@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { motion, useReducedMotion } from 'framer-motion';
 import { UsersRound, X } from 'lucide-react';
 import {
   FOLLOW_PAGE_SIZE,
@@ -187,17 +187,26 @@ export default function FollowSheet({
     [],
   );
 
-  // The body height tracks the LARGER of the two counts (both are known when
-  // the sheet opens), so switching tabs still never resizes the dialog — the
-  // rule the old fixed height existed for — while a two-row list no longer
-  // floats in a full-height void. Capped at 8 rows: past that the list
-  // scrolls. "1000+" parses as 1000 and lands on the cap.
+  // The body height tracks THIS tab's count, not the larger of the two — the
+  // old rule is what left 440px of void under a single follower. Switching
+  // tabs therefore changes the height, which is fine now for two reasons: the
+  // sheet is anchored (top on desktop, bottom on phones) so it grows in one
+  // direction instead of re-centering, and the height is a calculated length,
+  // so CSS transitions it with the house spring instead of snapping.
+  //
+  // Once the page has landed the rows on screen are the truth; before that the
+  // counter is the best promise there is, and it is the same number the
+  // skeleton draws, so the box does not resettle when the real rows replace the
+  // bars. Capped at 8, past which the list scrolls; a list with nothing in it —
+  // and the two states that gave up — get three rows of box to put a band in.
   const expectedRows = useMemo(() => {
-    const known = [numericCount(counts?.followers), numericCount(counts?.following)]
-      .filter(value => value != null);
-    if (known.length === 0) return null;
-    return Math.min(8, Math.max(3, Math.max(...known)));
-  }, [counts]);
+    if (current.status === 'error' || current.status === 'stalled') return 3;
+    const rows = current.status === 'ready'
+      ? current.rows.length
+      : numericCount(counts?.[mode]);
+    if (rows == null) return null;
+    return rows === 0 ? 3 : Math.min(8, Math.max(1, rows));
+  }, [counts, mode, current.status, current.rows.length]);
 
   // The skeleton, on the other hand, promises exactly what THIS tab says it
   // holds. Three bars for one follower was the shape of the wait disagreeing
@@ -223,6 +232,8 @@ export default function FollowSheet({
     error: 'This list could not be loaded.',
     retry: 'Try again',
     unavailable: 'Account unavailable',
+    showing: 'Showing',
+    of: 'of',
   } : {
     followers: 'Seguidores',
     following: 'Siguiendo',
@@ -239,6 +250,8 @@ export default function FollowSheet({
     error: 'No se pudo cargar esta lista.',
     retry: 'Reintentar',
     unavailable: 'Cuenta no disponible',
+    showing: 'Mostrando',
+    of: 'de',
   };
 
   /**
@@ -428,98 +441,132 @@ export default function FollowSheet({
                 {counts?.[name] != null && (
                   <span className="follow-sheet-tab-count">{counts[name]}</span>
                 )}
+                {/* The shared layoutId is the whole point: the yellow rule
+                    slides from one tab to the other instead of blinking off
+                    here and on over there — the same gesture the profile's own
+                    tabs make, so the two rows of tabs move alike. */}
+                {mode === name && (
+                  <motion.span
+                    className="follow-sheet-tab-indicator"
+                    layoutId="follow-sheet-tab-indicator"
+                    transition={prefersReducedMotion
+                      ? { duration: 0 }
+                      : { type: 'spring', stiffness: 520, damping: 42 }}
+                  />
+                )}
               </button>
             ))}
           </div>
-          <button
-            ref={closeButton}
-            type="button"
-            className="follow-sheet-close"
-            onClick={onClose}
-            aria-label={copy.close}
-          >
-            <X size={18} />
-          </button>
+          <div className="follow-sheet-close-wrap">
+            <button
+              ref={closeButton}
+              type="button"
+              className="follow-sheet-close"
+              onClick={onClose}
+              aria-label={copy.close}
+            >
+              <X size={16} />
+            </button>
+          </div>
         </header>
 
+        {/* Only once the list is genuinely paged: with three followers this
+            would repeat the number already sitting in the tab. */}
+        {current.status === 'ready' && current.hasMore && (
+          <p className="follow-sheet-meta">
+            {`${copy.showing} ${current.rows.length} ${copy.of} ${counts?.[mode] ?? '—'}`}
+          </p>
+        )}
+
         <div className="follow-sheet-body">
-          {FOLLOW_WAITING.includes(current.status) && (
-            <div className="follow-sheet-loading" aria-label={copy.loading} aria-busy="true">
-              {Array.from({ length: skeletonRows }, (unused, index) => (
-                <div key={index} className="follow-row-skeleton" />
-              ))}
-              {current.status !== 'loading' && (
-                <p role="status">{current.status === 'offline' ? copy.offline : copy.slow}</p>
+          {/* One panel per tab. Deliberately NOT an AnimatePresence crossfade:
+              a `mode="wait"` swap makes every tab change wait on an exit
+              animation before the next tab exists, and the motion it would buy
+              is already there — the rows stagger in on their own, under a box
+              whose height is easing at the same time. */}
+          <div className="follow-sheet-panel">
+              {FOLLOW_WAITING.includes(current.status) && (
+                <div className="follow-sheet-loading" aria-label={copy.loading} aria-busy="true">
+                  {Array.from({ length: skeletonRows }, (unused, index) => (
+                    <div key={index} className="follow-row-skeleton">
+                      <span className="follow-avatar follow-row-pending-block" />
+                      <span className="follow-row-body">
+                        <span className="follow-row-pending-line" />
+                        <span className="follow-row-pending-line follow-row-pending-line--short" />
+                      </span>
+                    </div>
+                  ))}
+                  {current.status !== 'loading' && (
+                    <p className="follow-sheet-loading-note" role="status">
+                      {current.status === 'offline' ? copy.offline : copy.slow}
+                    </p>
+                  )}
+                </div>
               )}
-            </div>
-          )}
-          {(current.status === 'error' || current.status === 'stalled') && (
-            // 'stalled' still has a read running behind it; 'error' does not.
-            <div className="follow-sheet-state" aria-busy={current.status === 'stalled'}>
-              <p>{current.status === 'stalled' ? copy.stalled : copy.error}</p>
-              <button
-                type="button"
-                className="follow-sheet-more"
-                onClick={() => setAttempt(value => value + 1)}
-              >
-                {copy.retry}
-              </button>
-            </div>
-          )}
-          {current.status === 'ready' && current.rows.length === 0 && (
-            <div className="follow-sheet-state">
-              <span className="follow-sheet-state-icon" aria-hidden="true">
-                <UsersRound size={20} />
-              </span>
-              <p className="follow-sheet-state-title">{copy.emptyTitle}</p>
-              <p>{copy.emptyHint}</p>
-            </div>
-          )}
-          <AnimatePresence initial={false}>
-            {current.rows.length > 0 && (
-              <motion.ul
-                className="follow-list"
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: prefersReducedMotion ? 0.1 : 0.2 }}
-              >
-                {current.rows.map((row, index) => (
-                  <motion.li
-                    key={row.uid}
-                    className={`follow-row${row.profile === null ? ' follow-row--gone' : ''}`}
-                    initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
-                    animate={{
-                      opacity: 1,
-                      y: 0,
-                      transition: {
-                        delay: prefersReducedMotion ? 0 : Math.min(index * 0.02, 0.16),
-                        duration: prefersReducedMotion ? 0.08 : 0.18,
-                        ease: 'easeOut',
-                      },
-                    }}
+              {(current.status === 'error' || current.status === 'stalled') && (
+                // 'stalled' still has a read running behind it; 'error' does not.
+                <div className="follow-sheet-state" aria-busy={current.status === 'stalled'}>
+                  <p>{current.status === 'stalled' ? copy.stalled : copy.error}</p>
+                  <button
+                    type="button"
+                    className="follow-sheet-retry"
+                    onClick={() => setAttempt(value => value + 1)}
                   >
-                    <Row
-                      uid={row.uid}
-                      profile={row.profile}
-                      unavailableLabel={copy.unavailable}
-                      onNavigate={onClose}
-                    />
-                  </motion.li>
-                ))}
-              </motion.ul>
-            )}
-          </AnimatePresence>
-          {current.hasMore && (
-            <button
-              type="button"
-              className="follow-sheet-more"
-              onClick={loadMore}
-              disabled={paging}
-            >
-              {paging ? copy.loading : copy.more}
-            </button>
-          )}
+                    {copy.retry}
+                  </button>
+                </div>
+              )}
+              {current.status === 'ready' && current.rows.length === 0 && (
+                <div className="follow-sheet-state">
+                  <span className="follow-sheet-state-icon" aria-hidden="true">
+                    <UsersRound size={18} />
+                  </span>
+                  <p className="follow-sheet-state-title">{copy.emptyTitle}</p>
+                  <p>{copy.emptyHint}</p>
+                </div>
+              )}
+              {current.rows.length > 0 && (
+                <ul className="follow-list">
+                  {current.rows.map((row, index) => (
+                    <motion.li
+                      key={row.uid}
+                      className={`follow-row${row.profile === null ? ' follow-row--gone' : ''}`}
+                      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+                      animate={{
+                        opacity: 1,
+                        y: 0,
+                        transition: {
+                          delay: prefersReducedMotion ? 0 : Math.min(index * 0.02, 0.16),
+                          duration: prefersReducedMotion ? 0.08 : 0.18,
+                          ease: 'easeOut',
+                        },
+                      }}
+                    >
+                      <Row
+                        uid={row.uid}
+                        profile={row.profile}
+                        unavailableLabel={copy.unavailable}
+                        onNavigate={onClose}
+                      />
+                    </motion.li>
+                  ))}
+                </ul>
+              )}
+          </div>
         </div>
+
+        {/* Outside the body on purpose: inside it, the button scrolled away
+            exactly when it was needed. */}
+        {current.hasMore && (
+          <button
+            type="button"
+            className="follow-sheet-more"
+            onClick={loadMore}
+            disabled={paging}
+          >
+            {paging ? copy.loading : copy.more}
+          </button>
+        )}
       </motion.div>
     </motion.div>
   );
