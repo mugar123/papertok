@@ -84,6 +84,31 @@ test('does not mark a repository-hosted preprint as peer reviewed', () => {
   assert.equal(paper.peerReviewed, false);
 });
 
+test('a merged twin contributes the arXiv id the base was missing', () => {
+  const merged = PaperBuilder.merge(
+    { id: 'openalex:W1', title: 'A paper', sources: { primary: 'openalex', enrichedBy: [] } },
+    { arxivId: '2401.12345', citationCount: 30 },
+    'arxiv',
+  );
+
+  assert.equal(merged.arxivId, '2401.12345');
+});
+
+test('a base that knows its own arXiv id keeps it through a merge', () => {
+  const merged = PaperBuilder.merge(
+    {
+      id: 'arxiv:2401.00001',
+      arxivId: '2401.00001',
+      title: 'A preprint',
+      sources: { primary: 'arxiv', enrichedBy: [] },
+    },
+    { arxivId: '9999.99999' },
+    'openalex',
+  );
+
+  assert.equal(merged.arxivId, '2401.00001');
+});
+
 test('deduplicates the same title and author when only one source has a DOI', () => {
   const deduplicated = PaperBuilder.deduplicate([
     {

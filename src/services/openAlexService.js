@@ -78,7 +78,15 @@ function extractArxivId(value) {
   return match?.[1] || '';
 }
 
-function getArxivIdFromWork(work) {
+/**
+ * The arXiv id an OpenAlex work is hosted under, if any.
+ *
+ * OpenAlex indexes the preprint and the published version as one work, and the
+ * arXiv id is never a field of its own: it has to be read out of whichever of
+ * the identifiers happens to carry it. Worth extracting for any work, not just
+ * during enrichment — a paper without this id can never be asked for figures.
+ */
+export function getArxivIdFromWork(work) {
   const direct = extractArxivId(work?.ids?.arxiv);
   if (direct) return direct;
 
@@ -1674,6 +1682,7 @@ function formatOpenAlexWorkAsPaper(work) {
     pdfUrl: work.open_access?.oa_url,
     landingPageUrl: work.primary_location?.landing_page_url || work.id,
     doi: work.doi,
+    arxivId: getArxivIdFromWork(work) || undefined,
     journal: work.primary_location?.source?.display_name,
     publisher: work.primary_location?.source?.host_organization_name,
     citationCount: work.cited_by_count || 0,

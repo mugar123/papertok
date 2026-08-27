@@ -9,7 +9,7 @@ import { PubmedAdapter } from './adapters/PubmedAdapter.js';
 import { PaperBuilder } from './PaperBuilder.js';
 import { CATEGORIES, getCategoryArea } from '../data/categories.js';
 import { openAlexJson } from './openAlexClient.js';
-import { enrichPapersBatch } from './openAlexService.js';
+import { enrichPapersBatch, getArxivIdFromWork } from './openAlexService.js';
 import { reconstructOpenAlexAbstract } from '../utils/openAlexAbstract.js';
 import { REPORT_OPENALEX_FIELDS } from './openAlexReportQuery.js';
 import { normalizeScientificMarkup } from '../utils/latex.js';
@@ -90,8 +90,11 @@ export async function lendCitationsToArxivCandidates(candidates, lookup = enrich
   const byArxivId = new Map();
   for (const paper of candidates) {
     // A paper that already carries a count got one from a source that knows,
-    // usually its own OpenAlex twin during deduplication.
-    if (!paper?.arxivId || Number(paper.citationCount) > 0) continue;
+    // usually its own OpenAlex twin during deduplication. `citationCountKnown`
+    // covers the honest zero: a paper that came from OpenAlex itself carries an
+    // arXiv id now, and asking OpenAlex again about a count it just gave us
+    // would spend the budget to learn nothing.
+    if (!paper?.arxivId || Number(paper.citationCount) > 0 || paper.citationCountKnown === true) continue;
     const id = String(paper.arxivId).replace(/^arxiv:/i, '').replace(/v\d+$/i, '').trim();
     if (!id) continue;
     if (!byArxivId.has(id)) byArxivId.set(id, []);
@@ -255,9 +258,16 @@ export function formatOpenAlexWork(work) {
     pdfUrl: work.open_access?.oa_url || null,
     landingPageUrl: work.primary_location?.landing_page_url || work.id,
     doi: work.doi || null,
+    // OpenAlex wins nearly every place in the selection, so until this was read
+    // out no selected paper had an arXiv id and the edition came out plateless.
+    // It is a minority of works that carry one — measured 2026-08-28, one to
+    // three of the eleven a selection holds — but a minority is not none, and
+    // OpenAlex is the only source whose papers reach the page at all.
+    arxivId: getArxivIdFromWork(work) || undefined,
     journal: work.primary_location?.source?.display_name || null,
     publisher: work.primary_location?.source?.host_organization_name || null,
     citationCount: work.cited_by_count || 0,
+    citationCountKnown: Number.isFinite(work.cited_by_count),
     concepts,
     topics,
     primaryTopic: work.primary_topic || topics[0] || null,

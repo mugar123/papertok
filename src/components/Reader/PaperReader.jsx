@@ -19,6 +19,7 @@ import {
   rewritePaper,
 } from '../../services/paperRewriteService.js';
 import { indexHighlightsByParagraph } from '../../services/userHighlightService.js';
+import ScientificText from '../ScientificText.js';
 import { usePassageAnnotations } from '../../hooks/usePassageAnnotations.js';
 import {
   buildSectionOrder,
@@ -388,7 +389,13 @@ const MAX_STAGGER_STEPS = 6;
 
 /** Uneven on purpose: five bars of equal length read as a table, not as prose,
  *  and the short last line is most of what makes a block look like a paragraph. */
-const GHOST_LINES = Object.freeze(['100%', '97%', '99%', '93%', '61%']);
+/* Five lines fill a laptop's measure and leave the bottom half of a phone
+   empty. The tail past the fifth is drawn for every screen and hidden again
+   above 640px, so the desktop ghost is the exact block it always was. */
+const GHOST_LINES = Object.freeze([
+  '100%', '97%', '99%', '93%', '61%',
+  '100%', '96%', '98%', '91%', '58%',
+]);
 
 const EASE_OUT = [0.16, 1, 0.3, 1];
 
@@ -1150,7 +1157,10 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
           onScroll={() => { panel.onScrolled(); annotations.dismiss(); }}
         >
           <article className="rd-doc" data-marks={showHighlights ? undefined : 'off'}>
-            <h1 className="rd-doc-title">{paper?.title}</h1>
+            {/* The one title in the app that used to be printed raw: every other
+                surface sends it through the same renderer, so a paper called
+                "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
+            <h1 className="rd-doc-title"><ScientificText>{paper?.title}</ScientificText></h1>
             <p className="rd-doc-byline">
               {(paper?.authors || []).slice(0, 6).map(author => author?.name || author).join(', ')}
               {(paper?.authors || []).length > 6 && ' et al.'}

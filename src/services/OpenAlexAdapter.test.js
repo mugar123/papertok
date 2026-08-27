@@ -27,6 +27,25 @@ test('keeps OpenAlex citations and semantic concepts on discovered papers', () =
   assert.equal(paper.publicationStatus, 'published');
 });
 
+test('a search result hosted on arXiv carries its arXiv id', () => {
+  const paper = new OpenAlexAdapter().mapToStandard({
+    id: 'https://openalex.org/W2626778328',
+    title: 'Attention Is All You Need',
+    type: 'preprint',
+    cited_by_count: 6590,
+    authorships: [],
+    open_access: { is_oa: true, oa_url: 'https://arxiv.org/pdf/1706.03762' },
+    primary_location: { is_published: false, source: { type: 'repository' } },
+    locations: [{
+      landing_page_url: 'http://arxiv.org/abs/1706.03762',
+      pdf_url: 'https://arxiv.org/pdf/1706.03762',
+      is_published: false,
+    }],
+  });
+
+  assert.equal(paper.arxivId, '1706.03762');
+});
+
 test('does not mark repository preprints as published', () => {
   const paper = new OpenAlexAdapter().mapToStandard({
     id: 'https://openalex.org/W456',
