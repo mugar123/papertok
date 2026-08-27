@@ -345,6 +345,15 @@
   }
 }
 
+/* On phones the brand yields its corner to the links: "For you" wraps onto
+   two lines at ≤430px with the PT mark present, and "For you" is itself a
+   route home, so the mark buys nothing the row can't already do. */
+@media (max-width: 480px) {
+  .navbar-brand {
+    display: none;
+  }
+}
+
 @media (max-width: 420px) {
   .navbar-link {
     padding: 6px 6px;
@@ -354,6 +363,23 @@
   .navbar-icon-btn {
     width: 28px;
     height: 28px;
+  }
+}
+
+/* The last squeeze: below 380px even a hidden brand leaves the three links
+   short of one line, so the row gives up its remaining slack instead. */
+@media (max-width: 380px) {
+  .navbar-inner {
+    padding: 0 var(--space-2);
+  }
+
+  .navbar-link {
+    padding: 6px 4px;
+  }
+
+  .navbar-right {
+    padding-left: var(--space-1);
+    margin-left: 0;
   }
 }
 
