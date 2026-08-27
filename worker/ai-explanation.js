@@ -1060,10 +1060,40 @@ export async function checkAIProviderHealth(env) {
   };
 }
 
-export async function verifyFirebaseUser(request, env) {
+/**
+ * Accounts the per-user daily allowance does not apply to.
+ *
+ * A wrangler secret rather than a `[vars]` entry in `wrangler.toml`: the repo
+ * already carries an admin uid with the note that a uid is not a secret, and an
+ * email is not the same thing. Matched against the *verified* address only —
+ * an unverified email is a claim, and this is the one place in the Worker where
+ * a claim would buy something.
+ *
+ * The global daily ceiling still applies. That one is not a product limit, it is
+ * the cost ceiling on the provider key, and an exemption from it is how a
+ * runaway loop becomes a bill.
+ */
+export function hasUnlimitedAI(env, identity) {
+  if (!identity?.emailVerified || !identity.email) return false;
+  const allowed = String(env.AI_UNLIMITED_EMAILS || '')
+    .split(',')
+    .map(entry => entry.trim().toLowerCase())
+    .filter(Boolean);
+  return allowed.includes(identity.email);
+}
+
+/**
+ * The verified identity, plus whether the daily allowance applies to it.
+ *
+ * Replaced a `verifyFirebaseUser` that returned a bare uid: every AI route now
+ * has to know *which* account is asking, not merely that some account is, and a
+ * second lookup to find out would have doubled the Identity Toolkit traffic in
+ * front of every protected route.
+ */
+export async function verifyFirebaseAccount(request, env) {
   try {
     const identity = await verifyFirebaseIdentity(request, env);
-    return identity.uid;
+    return { ...identity, unlimitedAI: hasUnlimitedAI(env, identity) };
   } catch (error) {
     if (error instanceof WorkerAuthError) {
       throw new AIExplanationError(
@@ -1131,9 +1161,14 @@ export function shouldRefundAIQuota(error) {
  * travels with the answer so the client does not have to hardcode a ten it does
  * not own.
  */
-export async function peekAIQuota(env, uid) {
-  const subjectLimit = safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100);
+export async function peekAIQuota(env, uid, { unlimited = false } = {}) {
   const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
+  // An exempt account is not given a separate code path: its per-user ceiling is
+  // simply raised to the global one, so the ledger still counts what it spends
+  // and the only thing that can refuse it is the cost ceiling.
+  const subjectLimit = unlimited
+    ? globalLimit
+    : safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100);
   const reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER, {
     periodKey: `ai:${todayKey()}`,
     subject: `ai:${uid}`,
@@ -1148,19 +1183,26 @@ export async function peekAIQuota(env, uid) {
   return {
     remainingUses: Math.max(0, Number(reading.remaining) || 0),
     dailyLimit: subjectLimit,
+    // Said plainly rather than left for the client to infer from a suspiciously
+    // round number: a reader showing "1000/1000 today" is telling the truth in a
+    // way nobody reads as "no limit".
+    ...(unlimited ? { unlimited: true } : {}),
     ...getDailyQuotaReset(),
   };
 }
 
-export async function reserveAIQuota(env, uid) {
+export async function reserveAIQuota(env, uid, { unlimited = false } = {}) {
+  const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
   // The day is fixed once and travels with the reservation: recomputing it at
   // release time would refund against tomorrow's ledger for a request that
   // straddles UTC midnight.
   const ledgerRequest = {
     periodKey: `ai:${todayKey()}`,
     subject: `ai:${uid}`,
-    subjectLimit: safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100),
-    globalLimit: safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000),
+    subjectLimit: unlimited
+      ? globalLimit
+      : safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100),
+    globalLimit,
   };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {
@@ -1213,7 +1255,8 @@ export async function handleAIExplanation(request, env, { now = Date.now } = {})
   const deadline = createRequestDeadline(now);
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_REQUEST_BYTES) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
-  const uid = await verifyFirebaseUser(request, env);
+  const account = await verifyFirebaseAccount(request, env);
+  const uid = account.uid;
   const payload = await request.json().catch(() => null);
   if (!payload || JSON.stringify(payload).length > MAX_REQUEST_BYTES) {
     throw new AIExplanationError('AI_INVALID_REQUEST', 400);
@@ -1235,7 +1278,7 @@ export async function handleAIExplanation(request, env, { now = Date.now } = {})
   const cached = await caches.default.match(cacheKey);
   if (cached) return { ...(await cached.json()), remainingUses: null, cached: true };
 
-  const quota = await reserveAIQuota(env, uid);
+  const quota = await reserveAIQuota(env, uid, { unlimited: account.unlimitedAI });
   let result;
   try {
     const pdfBudgetMs = stageBudgetMs(

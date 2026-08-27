@@ -1,0 +1,181 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #1a5fd0; } a:hover { color: #12459b; }
+    * { box-sizing: border-box; }
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.5 'IBM Plex Mono', monospace; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+    .lead { font-size: 0.8125rem; line-height: 1.55; color: #5b6270; margin: 0; }
+
+    .stage { --k: 1; }
+    .frame { position: relative; height: 196px; overflow: hidden; border: 1px solid #d3d5db; border-radius: 3px; }
+    .layer { position: absolute; inset: 0; background: var(--paper); color: var(--ink);
+      --paper: #ffffff; --paper-2: #f7f7f8; --ink: #111318; --ink-2: #5b6270; --ink-3: #8a919e; --rule-2: #d3d5db; }
+    .layer.is-dark { --paper: #111318; --paper-2: #1a1d24; --ink: #f2f3f5; --ink-2: #a1a8b5; --ink-3: #757c8a; --rule-2: #2e323b; }
+    .layer.over { transition: clip-path calc(320ms * var(--k)) cubic-bezier(0.4, 0, 1, 1); }
+    .stage.is-dark .layer.over { transition: clip-path calc(420ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1); }
+
+    .nav { height: 48px; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid var(--rule-2); }
+    .mark { display: grid; place-items: center; width: 24px; height: 24px; border-radius: 2px; background: #ffd21e; color: #111318; font: 600 0.625rem/1 'IBM Plex Mono', monospace; box-shadow: 2px 2px 0 var(--ink); }
+    .word { font-size: 0.875rem; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
+    .ibtn { display: grid; place-items: center; width: 32px; height: 32px; margin-left: auto; border: none; border-radius: 3px; background: transparent; color: var(--ink-2); }
+    .body { padding: 20px 16px; }
+    .fieldrule { width: 34px; height: 3px; margin-bottom: 12px; background: #c2410c; }
+    .meta { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); margin-bottom: 10px; }
+    .title { font-family: 'Newsreader', Georgia, serif; font-size: 1.25rem; font-weight: 600; line-height: 1.16; color: var(--ink); margin: 0 0 8px; }
+    .abs { font-family: 'Newsreader', Georgia, serif; font-size: 0.875rem; line-height: 1.55; color: var(--ink-2); margin: 0; }
+
+    .disc .rays, .disc .core, .disc .bite { transform-box: fill-box; transform-origin: center; }
+    .disc .rays { opacity: 1; transform: scale(1);
+      transition: opacity calc(180ms * var(--k)) ease calc(140ms * var(--k)), transform calc(220ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1) calc(120ms * var(--k)); }
+    .disc .core { transform: scale(0.5); fill-opacity: 0;
+      transition: transform calc(240ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1), fill-opacity calc(140ms * var(--k)) ease; }
+    .disc .bite { transform: translate(14px, -14px); transition: transform calc(200ms * var(--k)) ease; }
+    .is-dark .disc .rays { opacity: 0; transform: scale(0.35);
+      transition: opacity calc(140ms * var(--k)) ease, transform calc(140ms * var(--k)) cubic-bezier(0.4, 0, 1, 1); }
+    .is-dark .disc .core { transform: scale(1); fill-opacity: 1;
+      transition: transform calc(180ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1) calc(60ms * var(--k)), fill-opacity calc(140ms * var(--k)) ease calc(60ms * var(--k)); }
+    .is-dark .disc .bite { transform: translate(4px, -4px);
+      transition: transform calc(220ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1) calc(100ms * var(--k)); }
+
+    /* Tira de fotogramas */
+    .strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .mini { position: relative; height: 84px; overflow: hidden; border: 1px solid #e6e7ea; border-radius: 3px; }
+    .mlayer { position: absolute; inset: 0; padding: 0; background: #ffffff; }
+    .mlayer.ink { background: #111318; }
+    .mnav { height: 16px; border-bottom: 1px solid #e6e7ea; display: flex; align-items: center; padding: 0 6px; }
+    .mlayer.ink .mnav { border-color: #2e323b; }
+    .mmark { width: 7px; height: 7px; border-radius: 1px; background: #ffd21e; }
+    .mdot { width: 7px; height: 7px; margin-left: auto; border-radius: 50%; background: #8a919e; }
+    .mlayer.ink .mdot { background: #a1a8b5; }
+    .mbars { padding: 9px 6px; display: grid; gap: 5px; }
+    .mbars i { display: block; height: 4px; border-radius: 1px; background: #e6e7ea; }
+    .mbars i.w1 { width: 22px; background: #c2410c; height: 3px; }
+    .mbars i.w2 { width: 80%; }
+    .mbars i.w3 { width: 62%; }
+    .mbars i.w4 { width: 72%; }
+    .mlayer.ink .mbars i { background: #2e323b; }
+    .mlayer.ink .mbars i.w1 { background: #f67145; }
+
+    .ladder { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 14px; padding: 11px 0; border-top: 1px solid #e6e7ea; }
+    @media (prefers-reduced-motion: reduce) { .stage * { transition-duration: 1ms !important; } }
+  </style>
+</helmet>
+
+<div class="{{rootClass}}" style="width: 680px; min-height: 720px; background: #ffffff; padding: 34px 36px; --k: 1">
+
+  <span class="k" style="color: #8a919e">Animación de página</span>
+  <h1 class="serif" style="font-size: 1.5rem; font-weight: 600; line-height: 1.15; margin: 8px 0 6px">El barrido de tinta</h1>
+  <p class="lead" style="margin-bottom: 18px">La página no se funde: se entinta desde el botón. Un círculo se abre en el centro exacto del disco y cubre la pantalla en 420&nbsp;ms; al volver, la tinta se retira por el mismo agujero en 320&nbsp;ms. El gesto y el cambio comparten origen, que es lo único que separa un cambio de tema de un parpadeo.</p>
+
+  <div class="frame">
+    <sc-for list="{{layers}}" as="layer" hint-placeholder-count="2">
+      <div class="layer {{layer.cls}}" style="clip-path: circle({{layer.r}} at calc(100% - 32px) 24px)">
+        <div class="nav">
+          <span class="mark">PT</span>
+          <span class="word">PaperTok</span>
+          <span class="ibtn">
+            <svg class="disc" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <g class="rays"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></g>
+              <mask id="{{layer.mask}}"><rect x="-6" y="-6" width="36" height="36" fill="#ffffff"></rect><circle class="bite" cx="12" cy="12" r="8" fill="#000000"></circle></mask>
+              <circle class="core" cx="12" cy="12" r="8" fill="currentColor" fill-opacity="0" vector-effect="non-scaling-stroke" mask="url({{layer.maskRef}})"></circle>
+            </svg>
+          </span>
+        </div>
+        <div class="body">
+          <div class="fieldrule"></div>
+          <div class="meta">cs.LG · 1 240 citas</div>
+          <h2 class="title">Un estimador de importancia que no necesita conocer la partición</h2>
+          <p class="abs">El coste de normalizar domina el entrenamiento en cuanto el vocabulario crece.</p>
+        </div>
+      </div>
+    </sc-for>
+  </div>
+  <p class="k" style="color: #8a919e; margin: 10px 0 24px">{{clock}} · se repite cada 2,6 s</p>
+
+  <span class="k" style="color: #8a919e">La curva por dentro</span>
+  <div class="strip" style="margin: 12px 0 10px">
+    <sc-for list="{{frames}}" as="f" hint-placeholder-count="4">
+      <div>
+        <div class="mini">
+          <div class="mlayer">
+            <div class="mnav"><span class="mmark"></span><span class="mdot"></span></div>
+            <div class="mbars"><i class="w1"></i><i class="w2"></i><i class="w3"></i><i class="w4"></i></div>
+          </div>
+          <div class="mlayer ink" style="clip-path: circle({{f.r}} at calc(100% - 9px) 8px)">
+            <div class="mnav"><span class="mmark"></span><span class="mdot"></span></div>
+            <div class="mbars"><i class="w1"></i><i class="w2"></i><i class="w3"></i><i class="w4"></i></div>
+          </div>
+        </div>
+        <p class="m" style="color: #8a919e; margin: 7px 0 0">{{f.t}}</p>
+      </div>
+    </sc-for>
+  </div>
+  <p class="lead" style="margin-bottom: 24px">La curva de la casa carga al principio: a los 40&nbsp;ms el círculo ya ha hecho la mitad del camino y a los 125&nbsp;ms cubre casi todo. Los 300&nbsp;ms que quedan son sólo el frenazo, y son los que evitan que el cambio se sienta como un corte.</p>
+
+  <span class="k" style="color: #8a919e">Cómo se implementa, y qué pasa si no se puede</span>
+  <div style="margin-top: 12px">
+    <div class="ladder">
+      <span class="m" style="color: #111318">View Transitions</span>
+      <p class="lead"><span style="color: #111318; font-weight: 600">El camino bueno.</span> <span class="m" style="color: #111318">document.startViewTransition()</span> y el círculo en <span class="m" style="color: #111318">::view-transition-new(root)</span>, con el centro tomado del <span class="m" style="color: #111318">getBoundingClientRect()</span> del botón. Para volver se anima <span class="m" style="color: #111318">::view-transition-old(root)</span> con más <span class="m" style="color: #111318">z-index</span>: la tinta se encoge en vez de que el papel crezca.</p>
+    </div>
+    <div class="ladder">
+      <span class="m" style="color: #111318">Sin soporte</span>
+      <p class="lead"><span style="color: #111318; font-weight: 600">Fundido de 200 ms.</span> Donde no exista la API, los colores cruzan con <span class="m" style="color: #111318">--transition-base</span> y ya está. Nada de recrear el barrido con capas duplicadas: dos copias del DOM para un adorno no se pagan.</p>
+    </div>
+    <div class="ladder" style="border-bottom: 1px solid #e6e7ea">
+      <span class="m" style="color: #111318">Reducido</span>
+      <p class="lead"><span style="color: #111318; font-weight: 600">Sin barrido.</span> Con <span class="m" style="color: #111318">prefers-reduced-motion</span> se salta la transición entera: el tema cambia en un fotograma. Un círculo de 420&nbsp;ms cubriendo la pantalla es exactamente el tipo de movimiento que esa preferencia existe para evitar.</p>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":680,"height":720}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { dark: false };
+  }
+
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      this.setState((prev) => ({ dark: !prev.dark }));
+    }, 2600);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+  }
+
+  renderVals() {
+    const dark = this.state.dark;
+    return {
+      rootClass: dark ? 'stage is-dark' : 'stage',
+      clock: dark ? 'entrando · 420 ms' : 'saliendo · 320 ms',
+      layers: [
+        { cls: '', r: '145%', mask: 'bar-paper', maskRef: '#bar-paper' },
+        { cls: 'is-dark over', r: dark ? '145%' : '0%', mask: 'bar-ink', maskRef: '#bar-ink' },
+      ],
+      frames: [
+        { r: '0%', t: '0 ms' },
+        { r: '71%', t: '40 ms' },
+        { r: '127%', t: '125 ms' },
+        { r: '145%', t: '420 ms' },
+      ],
+    };
+  }
+}
+</script>
+</body>
+</html>

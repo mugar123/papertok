@@ -1,0 +1,136 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #1a5fd0; } a:hover { color: #12459b; }
+    * { box-sizing: border-box; }
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.5 'IBM Plex Mono', monospace; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+    .lead { font-size: 0.8125rem; line-height: 1.55; color: #5b6270; margin: 0; }
+
+    .matrix { display: grid; grid-template-columns: 54px repeat(4, minmax(0, 1fr)); gap: 8px; align-items: center; }
+    .cell { display: grid; place-items: center; height: 74px; border: 1px solid #e6e7ea; border-radius: 3px; }
+    .cell.paper { background: #ffffff; color: #5b6270; }
+    .cell.ink { background: #111318; border-color: #2e323b; color: #a1a8b5; }
+    .b { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 3px; background: transparent; color: inherit; }
+    .cell.paper .b.hover { background: rgba(17, 19, 24, 0.03); color: #111318; }
+    .cell.ink .b.hover { background: rgba(255, 255, 255, 0.045); color: #f2f3f5; }
+    .b.focus { outline: 2px solid #ff9d00; outline-offset: 2px; }
+    .b.press { transform: scale(0.92); }
+    .cell.paper .b.press { background: rgba(17, 19, 24, 0.03); color: #111318; }
+    .cell.ink .b.press { background: rgba(255, 255, 255, 0.045); color: #f2f3f5; }
+
+    .disc .rays, .disc .core, .disc .bite { transform-box: fill-box; transform-origin: center; }
+    .cell.paper .core { transform: scale(0.5); fill-opacity: 0; }
+    .cell.paper .bite { transform: translate(14px, -14px); }
+    .cell.ink .rays { opacity: 0; transform: scale(0.35); }
+    .cell.ink .core { transform: scale(1); fill-opacity: 1; }
+    .cell.ink .bite { transform: translate(4px, -4px); }
+
+    .sw { display: grid; gap: 6px; }
+    .swatch { height: 42px; border: 1px solid #e6e7ea; border-radius: 3px; }
+    .row { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 14px; padding: 11px 0; border-top: 1px solid #e6e7ea; }
+  </style>
+</helmet>
+
+<div style="width: 640px; min-height: 760px; background: #ffffff; padding: 34px 36px">
+
+  <span class="k" style="color: #8a919e">Estados · Opción A</span>
+  <h1 class="serif" style="font-size: 1.5rem; font-weight: 600; line-height: 1.15; margin: 8px 0 6px">Cuatro estados, dos modos</h1>
+  <p class="lead" style="margin-bottom: 20px">Tamaño real: 32&nbsp;×&nbsp;32 con el icono a 17&nbsp;px. Reposo, encima y foco son los que ya tiene <span class="m" style="color: #111318">.navbar-icon-btn</span>. El pulsado es lo único que estrena: la barra no tenía <span class="m" style="color: #111318">:active</span>, y un botón que cambia la página entera tiene que acusar recibo antes de que la página conteste.</p>
+
+  <div class="matrix" style="margin-bottom: 8px">
+    <span></span>
+    <span class="k" style="color: #8a919e; text-align: center">Reposo</span>
+    <span class="k" style="color: #8a919e; text-align: center">Encima</span>
+    <span class="k" style="color: #8a919e; text-align: center">Foco</span>
+    <span class="k" style="color: #8a919e; text-align: center">Pulsado</span>
+  </div>
+
+  <div class="matrix">
+    <span class="k" style="color: #111318">Papel</span>
+    <sc-for list="{{paperStates}}" as="s" hint-placeholder-count="4">
+      <div class="cell paper">
+        <span class="b {{s.cls}}">
+          <svg class="disc" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <g class="rays"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></g>
+            <mask id="st-lit"><rect x="-6" y="-6" width="36" height="36" fill="#ffffff"></rect><circle class="bite" cx="12" cy="12" r="8" fill="#000000"></circle></mask>
+            <circle class="core" cx="12" cy="12" r="8" fill="currentColor" fill-opacity="0" vector-effect="non-scaling-stroke" mask="url(#st-lit)"></circle>
+          </svg>
+        </span>
+      </div>
+    </sc-for>
+
+    <span class="k" style="color: #111318">Tinta</span>
+    <sc-for list="{{inkStates}}" as="s" hint-placeholder-count="4">
+      <div class="cell ink">
+        <span class="b {{s.cls}}">
+          <svg class="disc" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <g class="rays"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></g>
+            <mask id="st-ink"><rect x="-6" y="-6" width="36" height="36" fill="#ffffff"></rect><circle class="bite" cx="12" cy="12" r="8" fill="#000000"></circle></mask>
+            <circle class="core" cx="12" cy="12" r="8" fill="currentColor" fill-opacity="0" vector-effect="non-scaling-stroke" mask="url(#st-ink)"></circle>
+          </svg>
+        </span>
+      </div>
+    </sc-for>
+  </div>
+
+  <p class="lead" style="margin: 14px 0 26px">Contraste del icono contra su fondo: <span class="m" style="color: #111318">≈6,1:1</span> en papel y <span class="m" style="color: #111318">≈7,8:1</span> en tinta — por encima del 3:1 que pide un control, y por encima del 4,5:1 de texto. En reposo el icono va en gris secundario como sus vecinos; sólo al pasar por encima sube a tinta o a papel pleno.</p>
+
+  <span class="k" style="color: #8a919e">La paleta oscura que esto da por supuesta</span>
+  <p class="lead" style="margin: 8px 0 12px">Ya están en <span class="m" style="color: #111318">variables.css</span>, bajo <span class="m" style="color: #111318">[data-theme='dark']</span>. Estos ocho son los que el botón toca; el bloque trae además los acentos, los tintes y las doce tintas de campo, levantadas en oklch a <span class="m" style="color: #111318">L 0.70</span> — mismo tono, misma familia, otra claridad — porque sobre tinta las de imprenta se quedan en 3:1.</p>
+  <div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 26px">
+    <div class="sw"><span class="swatch" style="background: #111318"></span><span class="m" style="color: #111318">--bg-primary</span><span class="m" style="color: #8a919e">#111318</span></div>
+    <div class="sw"><span class="swatch" style="background: #1a1d24"></span><span class="m" style="color: #111318">--bg-secondary</span><span class="m" style="color: #8a919e">#1a1d24</span></div>
+    <div class="sw"><span class="swatch" style="background: #0d0f13"></span><span class="m" style="color: #111318">--bg-sunken</span><span class="m" style="color: #8a919e">#0d0f13</span></div>
+    <div class="sw"><span class="swatch" style="background: #f2f3f5"></span><span class="m" style="color: #111318">--text-primary</span><span class="m" style="color: #8a919e">#f2f3f5</span></div>
+    <div class="sw"><span class="swatch" style="background: #a1a8b5"></span><span class="m" style="color: #111318">--text-secondary</span><span class="m" style="color: #8a919e">#a1a8b5</span></div>
+    <div class="sw"><span class="swatch" style="background: #757c8a"></span><span class="m" style="color: #111318">--text-tertiary</span><span class="m" style="color: #8a919e">#757c8a</span></div>
+    <div class="sw"><span class="swatch" style="background: #2e323b"></span><span class="m" style="color: #111318">--border-default</span><span class="m" style="color: #8a919e">#2e323b</span></div>
+    <div class="sw"><span class="swatch" style="background: #23262e"></span><span class="m" style="color: #111318">--border-subtle</span><span class="m" style="color: #8a919e">#23262e</span></div>
+  </div>
+
+  <span class="k" style="color: #8a919e">Ficha</span>
+  <div style="margin-top: 12px">
+    <div class="row">
+      <span class="m" style="color: #111318">Marcado</span>
+      <p class="lead"><span class="m" style="color: #111318">&lt;button aria-pressed&gt;</span> dentro de <span class="m" style="color: #111318">.navbar-right</span> — y en la cabecera de invitado, que es la única barra que ve quien no ha entrado —, no <span class="m" style="color: #111318">role="switch"</span>: es un botón que hace algo, no un ajuste con dos posiciones. El de Ajustes (opción B) sí sería <span class="m" style="color: #111318">switch</span>.</p>
+    </div>
+    <div class="row">
+      <span class="m" style="color: #111318">Rótulos</span>
+      <p class="lead">Bilingüe, como toda la barra: <span class="m" style="color: #111318">Modo oscuro</span> / <span class="m" style="color: #111318">Dark mode</span>, el mismo texto en <span class="m" style="color: #111318">title</span> y en <span class="m" style="color: #111318">aria-label</span>. Fijo, no de destino: con <span class="m" style="color: #111318">aria-pressed</span> el estado ya se anuncia, y un nombre que también cambiara se leería como «Cambiar a modo claro, botón, pulsado».</p>
+    </div>
+    <div class="row">
+      <span class="m" style="color: #111318">Área táctil</span>
+      <p class="lead">A partir de 420&nbsp;px la barra encoge sus iconos a 28&nbsp;px. Aquí no: 32 fijos, y el área que se toca se estira a 44 con un <span class="m" style="color: #111318">::after</span> transparente, sin mover el dibujo.</p>
+    </div>
+    <div class="row" style="border-bottom: 1px solid #e6e7ea">
+      <span class="m" style="color: #111318">Al arrancar</span>
+      <p class="lead">La preferencia se guarda en el navegador — por dispositivo, no en la cuenta: de noche en el móvil y de día en el escritorio son dos respuestas distintas — y, si no hay ninguna, manda <span class="m" style="color: #111318">prefers-color-scheme</span>, y lo sigue mandando mientras nadie elija. El atributo se pone en <span class="m" style="color: #111318">&lt;html&gt;</span> antes del primer pintado: si se decide en React, quien tenga tinta ve un fogonazo blanco en cada carga.</p>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":640,"height":760}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const states = ['', 'hover', 'focus', 'press'].map((cls) => ({ cls }));
+    return {
+      paperStates: states,
+      inkStates: states,
+    };
+  }
+}
+</script>
+</body>
+</html>

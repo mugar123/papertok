@@ -29,6 +29,7 @@ import {
 import { db } from './firebase';
 import { serializeInteractionProfile } from '../utils/interactionProfile.js';
 import { mapWithConcurrency } from '../utils/mapWithConcurrency.js';
+import { FIRESTORE_IN_FILTER_MAX } from '../utils/firestoreLimits.js';
 
 export const INTERACTION_PROFILE_COLLECTION = 'aggregates';
 export const INTERACTION_PROFILE_DOC_ID = 'interactions';
@@ -37,16 +38,19 @@ export const INTERACTION_PROFILE_DOC_ID = 'interactions';
 // events and the aggregate only has to be durable, not instantaneous. The
 // in-memory profile is updated synchronously, so nothing the user sees waits.
 const FLUSH_DELAY_MS = 4000;
-const LIBRARY_BATCH_SIZE = 10;
+const LIBRARY_BATCH_SIZE = FIRESTORE_IN_FILTER_MAX;
 /**
  * How many library batches may be in flight at once.
  *
- * The batch size is fixed by the `in` operator; the number of batches is not —
- * it scales with the account, up to PERSONAL_LIBRARY_MAX_RECORDS / 10 = 60. All
- * sixty used to start together on the one WebChannel the app has, and the reads
- * belonging to whatever screen asked for the library queued behind them. Six at
- * a time keeps a large library from monopolising the connection while still
- * covering the common case (an account with sixty saved papers) in one round.
+ * The batch size is capped by the `in` operator (firestoreLimits.js owns that
+ * number, and this comment deliberately does not repeat it — the last two that
+ * did were still quoting a cap Firestore had already raised). The number of
+ * batches is not capped: it scales with the account, up to
+ * PERSONAL_LIBRARY_MAX_RECORDS worth of ids. All of them used to start together
+ * on the one WebChannel the app has, and the reads belonging to whatever screen
+ * asked for the library queued behind them. Six at a time keeps a large library
+ * from monopolising the connection while still covering the common case in one
+ * round.
  */
 export const LIBRARY_READ_CONCURRENCY = 6;
 
@@ -169,8 +173,8 @@ export function flushAllInteractionProfiles() {
  *
  * The reading library used to arrive as a side effect of scanning every
  * interaction document on feed load. It is now loaded on demand by the screens
- * that render it, from the ids the aggregate already holds, in batches the
- * `in` operator accepts.
+ * that render it, from the ids the aggregate already holds, in the largest
+ * batches the `in` operator accepts.
  */
 /**
  * Returns `{ records, fromCache }`, not a bare array, because the caller has

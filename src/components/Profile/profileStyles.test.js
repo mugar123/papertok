@@ -31,6 +31,11 @@ const INJECTED_PROPERTIES = new Map([
   // same way a card or an entity header does, so its rules and monogram are
   // tinted by the data rather than by a decorative default.
   ['--area-accent', '../Comments/CommentsSheet.jsx'],
+  // A list's colour is the owner's choice, so it cannot be a token: the lists
+  // page resolves it per list and sets it on the card. It is deliberately not
+  // `--area-accent` — inside an open list both appear at once, the header
+  // wearing the list's colour and each row its paper's field.
+  ['--list-accent', '../Lists/ListsPage.jsx'],
 ]);
 
 const OWNED = [

@@ -23,6 +23,9 @@ import { useLanguage } from '../../context/LanguageContext';
 import { getCategoryLabel } from '../../data/categories';
 import { getIcon } from '../../utils/icons';
 import CreateListDialog from './CreateListDialog.jsx';
+import { Button } from '../ui/button.jsx';
+import { resolveListColor } from '../../utils/listColors.js';
+import { areaAccentForPaper } from '../../utils/areaAccent.js';
 import ScientificText from '../ScientificText.js';
 import { paperLegacyAdapter } from '../../models/Paper';
 import { AlertTriangle, Check, Download, Globe2, Library, Lock, Pencil, Plus, Share2, Unlink, X } from 'lucide-react';
@@ -51,12 +54,51 @@ import {
 import { getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService.js';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
-import { rememberOwnLists } from '../../utils/profileSessionCaches.js';
+import {
+  ownListsCache,
+  readListPapers,
+  rememberListPapers,
+  rememberOwnLists,
+} from '../../utils/profileSessionCaches.js';
 import { snapshotIsAuthoritative } from '../../utils/ownLists.js';
+import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.js';
+import { queryIsAuthoritative } from '../../utils/cacheAuthority.js';
+import {
+  PAPER_METADATA_BATCH_SIZE,
+  planMetadataRequests,
+  planRetryRequests,
+} from '../../utils/listPaperMetadataPlan.js';
 import './ListsPage.css';
 
+/**
+ * How long a read may take before it is allowed to draw a placeholder.
+ *
+ * Under roughly a third of a second a wait reads as instantaneous, so a
+ * placeholder that appears immediately is not a loading state — it is a flash
+ * on every healthy visit, which is worse than the wait it describes.
+ */
+const LIST_PLACEHOLDER_DELAY_MS = 320;
 const PAPER_METADATA_LOAD_DEADLINE_MS = 4_000;
-const PAPER_METADATA_BATCH_SIZE = 10;
+/**
+ * The ceiling on the whole open, as opposed to on one request.
+ *
+ * Every other deadline here bounds a single read, and a read that passes its
+ * deadline deliberately keeps running so it can still paint the row when it
+ * lands. That is right, and it left the fan-out as a whole bounded by nothing:
+ * a request that never settles is a row that shimmers forever.
+ *
+ * Twenty seconds, because it must not fire on anything that is merely slow.
+ * A healthy open measures under a third of a second, and Firestore reports a
+ * stalled channel as `unavailable` at about ten — so this only ever bites when
+ * something has gone wrong in a way the SDK itself has not noticed.
+ *
+ * What happens at expiry is the part that matters: the rows stop waiting AND
+ * the banner appears. Stopping the wait without the banner is the bug this
+ * screen just had — a row falling back to its raw id as though the answer were
+ * "this paper has no metadata". The banner is what keeps it "we could not find
+ * out", which is the one thing the rows alone cannot say.
+ */
+const PAPER_METADATA_TOTAL_BUDGET_MS = 20_000;
 const PRIVATE_LIST_IDS = new Set(['__favorites__', '__read__', '__read_later__']);
 
 function demoGet(key, fallback) {
@@ -116,6 +158,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     toggleLike,
     personalLibrary,
     ensurePersonalLibrary,
+    libraryPapers,
     toggleReadLater,
     likedPaperIds,
     readPaperIds,
@@ -127,15 +170,65 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   useEffect(() => {
     void ensurePersonalLibrary?.();
   }, [ensurePersonalLibrary]);
-  const [lists, setLists] = useState([]);
-  const [savedPapers, setSavedPapers] = useState({});
+  /**
+   * Seeded from the session cache, not from nothing.
+   *
+   * This screen wrote `rememberOwnLists` on every visit and never read it back,
+   * which made it the one screen the cache was built for that did not use it.
+   * The cost was visible: Favorites, Read later and Reading history are
+   * synthesised from contexts already in memory, so three cards painted in the
+   * first frame and the owner's own lists appeared seconds later when the read
+   * resolved — the grid growing under someone already reading it.
+   *
+   * The save modal next door has seeded from this cache since it was written
+   * (`useState(() => seededLists ?? [])`). Same cache, same key, same rule here.
+   */
+  /**
+   * Two seeds, in order of freshness: the session cache first, then what this
+   * device stored last time. The cache covers re-entry within a tab; storage
+   * covers the first visit after a reload, which is the one where the seam
+   * showed — three synthesised cards painting instantly and the owner's own
+   * lists dropping in behind them.
+   */
+  const seededLists = user?.uid
+    ? (ownListsCache.get(user.uid) ?? readStoredLists(user.uid))
+    : null;
+  const [lists, setLists] = useState(() => seededLists ?? []);
+  // Seeded, for the same reason the lists are. Leaving a list to read a paper
+  // and coming back used to re-fetch every document the tab had in its hands
+  // seconds earlier — Firestore's own cache cannot cover it, because this app
+  // deliberately runs the in-memory one with no persistence (firebase.js).
+  const [savedPapers, setSavedPapers] = useState(
+    () => (user?.uid ? readListPapers(user.uid) : null) ?? {},
+  );
   const [expandedList, setExpandedList] = useState(null);
   // True while the expanded list is the one a profile card navigated to: its
   // back control then returns to the profile instead of collapsing to the
   // index the visitor never asked for.
   const [openedFromRoute, setOpenedFromRoute] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [metadataLoadingListId, setMetadataLoadingListId] = useState(null);
+  // Placeholder tiles for the cold case, and only for it. Seeding from the
+  // session cache covers a revisit and the IndexedDB read covers this device,
+  // so what is left is a first visit — where three system cards alone look like
+  // a finished grid right up until the owner's own lists shove them aside.
+  const [placeholdersDue, setPlaceholdersDue] = useState(false);
+  /**
+   * The papers whose metadata is still on its way, by id.
+   *
+   * A single "is this list loading" flag could not express what actually
+   * happens here. `openList` gives each request four seconds and then returns —
+   * but a request that merely ran out of time is still running, and the handler
+   * that merges it when it lands is deliberate (counting those as failures is
+   * what used to put "some metadata could not be loaded" on screen for data
+   * that arrived a second later). The flag was cleared at the deadline, so from
+   * that moment every paper still in flight rendered the "nothing is coming"
+   * placeholder: its raw arXiv id. On Favorites — the biggest list, ten
+   * concurrent queries — that was the whole list.
+   *
+   * A row now waits while its own id is in this set, so the late window the
+   * loader already supports is visible rather than contradicted.
+   */
+  const [pendingPaperIds, setPendingPaperIds] = useState(() => new Set());
   const [metadataError, setMetadataError] = useState(null);
   const [error, setError] = useState(null);
   const [reloadToken, setReloadToken] = useState(0);
@@ -153,7 +246,16 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // The index needs its own door to a new list: the only other one in the app is
   // inside the save modal, and it opens the very same window (CreateListDialog).
   const [creating, setCreating] = useState(false);
+  // The list the edit window is open on, or null. Holding the list rather than
+  // its id keeps the window's preset off a lookup that can miss mid-refresh.
+  const [editing, setEditing] = useState(null);
+  // Whether this session has had one authoritative answer about which lists
+  // exist. Until it has, `lists` is a seed or a guess, and persisting it could
+  // overwrite what this device knew with an emptiness nobody confirmed.
+  const listsHeardFromServer = useRef(false);
   const metadataRequestId = useRef(0);
+  // The ceiling on the whole metadata fan-out; a new open cancels the last one's.
+  const metadataBudgetTimer = useRef(null);
   const failedMetadataRequests = useRef(new Map());
   const prefersReducedMotion = useReducedMotion();
 
@@ -174,8 +276,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   }, [isEnglish, likedPaperIds, lists, personalLibrary, readPaperIds]);
 
   const getPaper = useCallback((paperId) => {
+    // `libraryPapers` last of the three, because it is the broadest and the
+    // least specific: it is whatever the mount's bounded read happened to
+    // fetch, and either of the other two is a deliberate fetch of this paper.
     const libraryPaper = personalLibrary[paperId]?.paper;
-    const savedPaper = savedPapers[paperId];
+    const savedPaper = savedPapers[paperId] ?? libraryPapers[paperId];
     if (!libraryPaper) return savedPaper;
     if (!savedPaper) return libraryPaper;
     const mergedPaper = {
@@ -191,7 +296,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       concepts: libraryPaper.concepts?.length ? libraryPaper.concepts : savedPaper.concepts,
     };
     return mergedPaper.sources ? mergedPaper : paperLegacyAdapter(mergedPaper);
-  }, [personalLibrary, savedPapers]);
+  }, [libraryPapers, personalLibrary, savedPapers]);
 
   useEffect(() => subscribeToPublicListSync((key, state) => {
     setSyncStates((current) => {
@@ -224,6 +329,16 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       }
     }
   }), []);
+
+  // Only the turning-on is state, and it happens in the timer. Turning off is
+  // derived below, because writing it here would set state synchronously in an
+  // effect body and cascade a render on every load that beats the threshold —
+  // which is most of them.
+  useEffect(() => {
+    if (!loading || lists.length > 0) return undefined;
+    const timer = setTimeout(() => setPlaceholdersDue(true), LIST_PLACEHOLDER_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [loading, lists.length]);
 
   useEffect(() => {
     let active = true;
@@ -261,6 +376,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         // The save modal paints from this same cache. Stamping it here means
         // a visit to Mis listas refreshes what the modal will show next.
         rememberOwnLists(user.uid, customLists);
+        // The gate on persisting: from here on this session has heard from the
+        // server at least once, so `lists` is worth writing to disk — including
+        // after a create, a rename or a delete.
+        listsHeardFromServer.current = true;
         return true;
       };
 
@@ -346,12 +465,19 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     const paperIds = [...new Set(
       (list.paperIds || []).filter((paperId) => typeof paperId === 'string' && paperId),
     )];
+    // The mount's library read now keeps what it fetches, so most lists open
+    // with nothing missing at all — which is the difference between a list that
+    // paints instantly and one that goes back out for every paper it holds.
     const missingIds = paperIds.filter(
-      (paperId) => !savedPapers[paperId] && !personalLibrary[paperId]?.paper,
+      (paperId) => !savedPapers[paperId]
+        && !personalLibrary[paperId]?.paper
+        && !libraryPapers[paperId],
     );
+    // Whatever the last list left waiting is not this list's business.
+    setPendingPaperIds(new Set());
+
     if (missingIds.length === 0) {
       failedMetadataRequests.current.delete(list.id);
-      setMetadataLoadingListId(null);
       return;
     }
 
@@ -365,40 +491,92 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       });
       setSavedPapers((current) => ({ ...current, ...requestedPapers }));
       failedMetadataRequests.current.delete(list.id);
-      setMetadataLoadingListId(null);
       return;
     }
 
-    if (!user) {
-      setMetadataLoadingListId(null);
-      return;
-    }
-    setMetadataLoadingListId(list.id);
+    if (!user) return;
+    setPendingPaperIds(new Set(missingIds));
+
+    /**
+     * The same set, in the closure.
+     *
+     * The budget below has to know whether anything is STILL waiting, and it
+     * fires long after `openList` has returned — so it cannot ask React for the
+     * current state, and an updater is no place to decide whether to raise a
+     * banner. `dropPending` is the single funnel through which rows stop
+     * waiting, so it keeps both copies in step.
+     */
+    const stillPending = new Set(missingIds);
+
+    // Deliberately NOT cleared when openList returns: a request past its own
+    // deadline is still running and can still paint its rows, and this is the
+    // ceiling on that window too. A previous open's timer is cancelled by the
+    // ref below, and a fire that finds nothing waiting does nothing.
+    clearTimeout(metadataBudgetTimer.current);
+    metadataBudgetTimer.current = setTimeout(() => {
+      if (metadataRequestId.current !== requestId || stillPending.size === 0) return;
+      stillPending.clear();
+      setPendingPaperIds(new Set());
+      setMetadataError('LIST_METADATA_LOAD_FAILED');
+    }, PAPER_METADATA_TOTAL_BUDGET_MS);
+
+    /** Stops a superseded open from clearing the rows of the current one. */
+    const dropPending = (ids) => {
+      if (metadataRequestId.current !== requestId || ids.length === 0) return;
+      ids.forEach((paperId) => stillPending.delete(paperId));
+      setPendingPaperIds((current) => {
+        if (!ids.some((paperId) => current.has(paperId))) return current;
+        const next = new Set(current);
+        ids.forEach((paperId) => next.delete(paperId));
+        return next;
+      });
+    };
 
     try {
-      const missingIdSet = new Set(missingIds);
       const retryRequests = retryFailedOnly
         ? (failedMetadataRequests.current.get(list.id) || [])
         : [];
       failedMetadataRequests.current.delete(list.id);
 
-      const requestDefinitions = retryRequests.length > 0
-        ? retryRequests
-          .map((request) => ({
-            ...request,
-            paperIds: request.paperIds.filter((paperId) => missingIdSet.has(paperId)),
-          }))
-          .filter((request) => request.paperIds.length > 0)
-        : (() => {
-            const batches = [];
-            for (let index = 0; index < missingIds.length; index += PAPER_METADATA_BATCH_SIZE) {
-              batches.push(missingIds.slice(index, index + PAPER_METADATA_BATCH_SIZE));
-            }
-            return batches.flatMap((paperIds) => [
-              { source: 'interaction', paperIds },
-              { source: 'saved', paperIds },
-            ]);
-          })();
+      // The batching lives in listPaperMetadataPlan.js, where it can be tested:
+      // a batch one value over Firestore's cap is not caught by the SDK, and a
+      // legacy arXiv id carrying a slash rejects the entire query it rides in.
+      const { requests: requestDefinitions, unfetchable } = retryRequests.length > 0
+        ? planRetryRequests({ failedRequests: retryRequests, missingIds })
+        : planMetadataRequests({ missingIds, batchSize: PAPER_METADATA_BATCH_SIZE });
+
+      // Nothing is ever going to answer for these, so they must not sit under a
+      // skeleton waiting for a request that was never made.
+      dropPending(unfetchable);
+
+      /**
+       * How many requests still cover each paper, so a row stops waiting only
+       * when nothing is left that could answer for it.
+       *
+       * Every batch is asked of two collections. Dropping an id the moment one
+       * of them came back empty would put the placeholder under a paper the
+       * other request was about to deliver.
+       */
+      const outstanding = new Map();
+      requestDefinitions.forEach((requestDefinition) => {
+        requestDefinition.paperIds.forEach((paperId) => {
+          outstanding.set(paperId, (outstanding.get(paperId) || 0) + 1);
+        });
+      });
+      // Retrying re-asks only the batches that failed, so anything the retry
+      // does not cover has nothing left coming for it. Without this those rows
+      // would wait on a request that is never going to be made.
+      dropPending(missingIds.filter((paperId) => !outstanding.has(paperId)));
+
+      const settleRequest = (requestDefinition) => {
+        const exhausted = [];
+        requestDefinition.paperIds.forEach((paperId) => {
+          const left = (outstanding.get(paperId) ?? 1) - 1;
+          outstanding.set(paperId, left);
+          if (left <= 0) exhausted.push(paperId);
+        });
+        dropPending(exhausted);
+      };
 
       const resolvedIds = new Set();
       const mergeSnapshot = (source, snapshot) => {
@@ -426,6 +604,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         });
 
         if (Object.keys(loadedPapers).length === 0) return;
+        // A row with data in hand stops waiting immediately; it does not sit
+        // under a skeleton until the other collection also reports back.
+        dropPending(Object.keys(loadedPapers));
+        // Kept for the rest of the session, so leaving this list to read a
+        // paper and coming back costs nothing.
+        rememberListPapers(user.uid, loadedPapers);
         setSavedPapers((current) => {
           const next = { ...current };
           Object.entries(loadedPapers).forEach(([paperId, paper]) => {
@@ -448,28 +632,60 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
           where(documentId(), 'in', requestDefinition.paperIds),
         );
 
-        const cachedRequest = settleWithin(
-          getDocsFromCache(metadataQuery),
-          500,
-        ).then((cachedResult) => {
-          if (cachedResult.status === 'fulfilled') {
-            mergeSnapshot(requestDefinition.source, cachedResult.value);
-          }
-        });
-
+        /**
+         * No local-cache leg here, and it took two reversals to be sure.
+         *
+         * It was justified while the mount fetched paper documents and threw
+         * most of them away: this read then found them still sitting in
+         * Firestore's memory cache, which — measured against the emulator, not
+         * assumed — does retain them, across other query traffic, for a
+         * DIFFERENT `in` filter over a subset. That was a real hit rate.
+         *
+         * `ensurePersonalLibrary` now keeps what it fetches, so those documents
+         * arrive as `libraryPapers` and never reach `missingIds` at all. What is
+         * left for a cache leg to find is a document this session has never
+         * fetched — which is exactly what a cache cannot have. It would only
+         * buy a second `mergeSnapshot` racing the first.
+         */
         const networkRequest = getDocs(metadataQuery);
         const networkResultRequest = settleWithin(
           networkRequest,
           PAPER_METADATA_LOAD_DEADLINE_MS,
         ).then((networkResult) => {
           if (networkResult.status === 'fulfilled') {
+            // Documents in hand are documents whatever their provenance; it is
+            // an ABSENCE that needs the server to have said so. Offline, this
+            // read fulfils empty off the in-memory cache in a fraction of a
+            // millisecond, and counting that as "these papers have no metadata"
+            // is the lie the lists read one screen up already refuses to tell.
             mergeSnapshot(requestDefinition.source, networkResult.value);
+
+            // Settling means "nothing more is coming for these rows", so it may
+            // only happen on an answer worth believing. An EMPTY snapshot off
+            // the local cache is not one: offline, `getDocs` fulfils in a
+            // fraction of a millisecond with nothing in it, and settling on that
+            // would put the raw arXiv id under every row — "this paper has no
+            // metadata" — for a question that was never actually asked. The rows
+            // keep waiting, the banner below says so, and the total budget is
+            // what stops the wait being unbounded.
+            if (!queryIsAuthoritative(networkResult.value)) {
+              return { status: 'unauthoritative' };
+            }
+            // The early return here used to skip the `else` below, so a request
+            // that came back WITHOUT a document for some id never decremented
+            // that id's outstanding count and the row waited under a skeleton
+            // for an answer already given. A server saying "no such document"
+            // is an answer.
+            settleRequest(requestDefinition);
             return networkResult;
           }
 
           if (networkResult.status === 'timed_out') {
+            // Still running. The rows it covers keep waiting until it lands or
+            // gives up — the deadline above bounds the caller, not the read.
             networkRequest.then((lateSnapshot) => {
               mergeSnapshot(requestDefinition.source, lateSnapshot);
+              settleRequest(requestDefinition);
               if (
                 metadataRequestId.current === requestId
                 && missingIds.every((paperId) => resolvedIds.has(paperId))
@@ -477,19 +693,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                 failedMetadataRequests.current.delete(list.id);
                 setMetadataError(null);
               }
-            }).catch(() => {});
+            }).catch(() => settleRequest(requestDefinition));
+          } else {
+            settleRequest(requestDefinition);
           }
           return networkResult;
         });
 
-        const [, networkOutcome] = await Promise.allSettled([
-          cachedRequest,
-          networkResultRequest,
-        ]);
-        if (networkOutcome.status === 'rejected') {
-          throw networkOutcome.reason;
-        }
-        return networkOutcome.value;
+        // `settleWithin` resolves rather than rejects, so this only throws if
+        // the handler above did — the caller classifies everything else from
+        // the value it returns.
+        return networkResultRequest;
       };
 
       // Every source/batch has its own deadline and paints as soon as it
@@ -506,10 +720,49 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       const failedRequests = requestResults.flatMap((result, index) => {
         const timedOut = result.status === 'fulfilled' && result.value?.status === 'timed_out';
         if (!timedOut && (result.status === 'rejected' || result.value?.status !== 'fulfilled')) {
-          return [requestDefinitions[index]];
+          // `settleWithin` resolves with the reason rather than throwing it, so
+          // without this every cause reaches the owner as the same sentence and
+          // reaches the console as nothing at all. A batch one value over
+          // Firestore's cap fails as `invalid-argument` on every attempt and is
+          // otherwise indistinguishable from a flaky channel.
+          const definition = requestDefinitions[index];
+          const reason = result.status === 'rejected' ? result.reason : result.value?.reason;
+          console.warn(
+            `List metadata request failed (${definition.source}, ${definition.paperIds.length} ids):`,
+            reason?.code ?? result.value?.status ?? 'unknown',
+            reason?.message ?? '',
+          );
+          return [definition];
         }
         return [];
       });
+      /**
+       * The safety net under the per-id accounting.
+       *
+       * `outstanding` is a counter, and a counter that misses a decrement is a
+       * row that shimmers forever — the failure mode with no natural end, and
+       * the one worth being paranoid about. So after the burst the question is
+       * asked the other way round: which ids could STILL be answered?
+       *
+       *   timed out      — the read is genuinely still running, and its late
+       *                    handler will merge and settle when it lands.
+       *   unauthoritative — an empty answer off the local cache. We did not
+       *                    find out, so the row keeps waiting under the banner.
+       *
+       * Anything else has had its answer, whatever the answer was. If the
+       * counter says otherwise, the counter is wrong and this frees the row.
+       * The total budget is what bounds the two cases above.
+       */
+      const stillAnswerable = new Set(
+        requestResults.flatMap((result, index) => {
+          const status = result.status === 'fulfilled' ? result.value?.status : 'rejected';
+          return status === 'timed_out' || status === 'unauthoritative'
+            ? requestDefinitions[index].paperIds
+            : [];
+        }),
+      );
+      dropPending(missingIds.filter((paperId) => !stillAnswerable.has(paperId)));
+
       const unresolvedIds = missingIds.filter((paperId) => !resolvedIds.has(paperId));
 
       if (failedRequests.length > 0 && unresolvedIds.length > 0) {
@@ -525,13 +778,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       console.error('Error loading list paper metadata:', metadataLoadError);
       if (metadataRequestId.current === requestId) {
         setMetadataError('LIST_METADATA_LOAD_FAILED');
-      }
-    } finally {
-      if (metadataRequestId.current === requestId) {
-        setMetadataLoadingListId(null);
+        // Nothing is coming: a throw here means the requests were never
+        // dispatched, and rows left in the pending set would wait forever.
+        setPendingPaperIds(new Set());
       }
     }
-  }, [personalLibrary, savedPapers, user]);
+  }, [libraryPapers, personalLibrary, savedPapers, user]);
 
   // A profile list card arrives with the list it wants opened. Once per id:
   // the state survives in the history entry, so coming back after closing the
@@ -585,6 +837,22 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     navigate(path, { state: { paper } });
   };
 
+  useEffect(() => () => clearTimeout(metadataBudgetTimer.current), []);
+
+  /**
+   * Keeps the stored copy in step with the screen.
+   *
+   * One write point rather than a call in every handler that mutates a list:
+   * creating, renaming, recolouring, deleting and adding or removing a paper
+   * all end at `setLists`, and a persisted copy that misses one of them is a
+   * deleted list coming back to life on the next reload — which is worse than
+   * not persisting at all.
+   */
+  useEffect(() => {
+    if (IS_DEMO || !user?.uid || !listsHeardFromServer.current) return;
+    saveStoredLists(user.uid, lists);
+  }, [user?.uid, lists]);
+
   const closeExpandedList = () => {
     metadataRequestId.current += 1;
     setOpenedFromRoute(false);
@@ -594,7 +862,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     if (location.state?.openListId) {
       navigate(location.pathname, { replace: true, state: null });
     }
-    setMetadataLoadingListId(null);
+    setPendingPaperIds(new Set());
     setMetadataError(null);
     setShareFeedback(null);
   };
@@ -602,9 +870,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // The dialog owns the form and its busy/error states; this owns the write.
   // Letting the failure through is the contract: CreateListDialog keeps itself
   // open and says so, instead of the caller guessing what to render.
-  const handleCreateList = async (name, icon) => {
+  const handleCreateList = async (name, icon, color) => {
     const listId = `list_${Date.now()}`;
-    const newList = { id: listId, name, emoji: icon, paperIds: [], createdAt: new Date().toISOString() };
+    const newList = { id: listId, name, emoji: icon, color, paperIds: [], createdAt: new Date().toISOString() };
     if (IS_DEMO) {
       const allLists = demoGet('lists', []);
       allLists.push(newList);
@@ -613,6 +881,42 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       await setDoc(doc(db, 'users', user.uid, 'lists', listId), newList);
     }
     setLists((prev) => [...prev, newList]);
+  };
+
+  /**
+   * Renaming, re-icon-ing or recolouring a list the owner made.
+   *
+   * A partial update rather than a `setDoc`: the document also carries
+   * `paperIds`, `createdAt` and the public-share bookkeeping, and rewriting it
+   * whole from a form that knows about three fields would drop the rest. Left
+   * to throw, so a failed save keeps the window open with its message instead of
+   * closing over a change that never landed.
+   *
+   * `updatedAt` is not bookkeeping here: the published copy carries the list's
+   * NAME, and the sync effect below rebuilds it only when `updatedAt` runs ahead
+   * of `publicSyncedAt`. Renaming a published list without leaving that mark
+   * would rename it everywhere except on the page strangers actually read.
+   */
+  const handleEditList = async (listId, fields) => {
+    if (PRIVATE_LIST_IDS.has(listId)) return;
+    const edit = { name: fields.name, emoji: fields.icon, color: fields.color };
+    const editedAt = new Date();
+
+    if (IS_DEMO) {
+      const allLists = demoGet('lists', []);
+      demoSet('lists', allLists.map(item => (
+        item.id === listId ? { ...item, ...edit, updatedAt: editedAt.toISOString() } : item
+      )));
+    } else {
+      await updateDoc(doc(db, 'users', user.uid, 'lists', listId), {
+        ...edit,
+        updatedAt: serverTimestamp(),
+      });
+    }
+
+    setLists((prev) => prev.map(item => (
+      item.id === listId ? { ...item, ...edit, updatedAt: editedAt } : item
+    )));
   };
 
   const handleDeleteList = async (listId) => {
@@ -880,9 +1184,19 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   const queuedSyncs = useRef(new Map());
   useEffect(() => {
     if (IS_DEMO || !user || !expandedList) return;
+    // Never from a seed. A list read back from this device's storage carries
+    // the name it had when the tab last closed, and republishing THAT would
+    // push a stale title onto the page strangers read — the seed is for
+    // painting, not for deciding what the world sees. The read that confirms
+    // the lists sets this, and setting `lists` re-runs the effect.
+    if (!listsHeardFromServer.current) return;
     const list = lists.find((entry) => entry.id === expandedList);
     if (!list?.publicShareId) return;
-    if (metadataLoadingListId === list.id || metadataError) return;
+    // The pending set, not the loading flag. The flag went false when the
+    // four-second deadline elapsed, not when the papers landed, so this guard
+    // released while reads were still in flight — and a sync that fires then
+    // republishes the list short, which is the thing the guard exists to stop.
+    if (pendingPaperIds.size > 0 || metadataError) return;
 
     // `listPaperId` ALONGSIDE the paper's own id, never over it: the public
     // copy is joined on the stored id (R8), but the paper's identity lives in
@@ -919,7 +1233,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       papers,
     });
   }, [
-    expandedList, getPaper, language, lists, metadataError, metadataLoadingListId,
+    expandedList, getPaper, language, lists, metadataError, pendingPaperIds,
     publicSnapshots, user,
   ]);
 
@@ -939,6 +1253,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // opens it, hold a skeleton instead of flashing an index the visitor did not
   // ask for. Falls through to the index if the list never shows up; closing
   // the list clears the state, so this cannot re-trap a closed list.
+  // Derived, never stored: the placeholders must vanish the instant real cards
+  // exist, and a stale `true` left over from a failed load is harmless — by
+  // then the wait is already known to be long.
+  const showListPlaceholders = placeholdersDue && loading && lists.length === 0;
+
   const targetOpenId = location.state?.openListId;
   const pendingOpen = Boolean(
     targetOpenId
@@ -951,7 +1270,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       {/* Only on the index. This line reports the LIST COLLECTION refresh, and
           showing it over an open list put a second spinner on screen next to
           the one that was actually about the papers being looked at. */}
-      {loading && !expandedList && (
+      {/* `lists.length === 0` as well: a revalidation running behind a grid the
+          owner is already reading is not a loading state, and announcing it
+          puts a spinner over a finished screen. Same rule as the save modal. */}
+      {loading && !expandedList && lists.length === 0 && (
         <div className="lists-inline-status" aria-live="polite">
           <div className="lists-loading-spinner" />
           <span>{isEnglish ? 'Updating personal lists...' : 'Actualizando listas personales...'}</span>
@@ -1019,12 +1341,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
             }[badgeState];
             return (
               <>
-                <header className="lists-expanded-header">
+                <header
+                  className={`lists-expanded-header${resolveListColor(list) ? '' : ' lists-expanded-header--uncoloured'}`}
+                  style={resolveListColor(list) ? { '--list-accent': resolveListColor(list) } : undefined}
+                >
                   <div className="lists-expanded-titleblock">
                     <span className="lists-expanded-icon" aria-hidden="true">
                       {(() => {
                         const Icon = getIcon(list.emoji);
-                        return <Icon size={22} strokeWidth={2} />;
+                        return <Icon size={22} strokeWidth={1.6} />;
                       })()}
                     </span>
                     <div className="lists-expanded-copy">
@@ -1072,7 +1397,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                           type="button"
                           className="is-primary"
                           onClick={() => handlePublishList(list, publicPapers)}
-                          disabled={shareBusy || metadataLoadingListId === list.id}
+                          disabled={shareBusy || pendingPaperIds.size > 0}
                         >
                           <Globe2 size={16} /> {isEnglish ? 'Publish & share' : 'Publicar y compartir'}
                         </button>
@@ -1152,7 +1477,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                         : `Al publicarla entrarían ${publicPapers.length} de ${listTotal} papers: del resto aún no hay datos guardados.`}
                     </p>
                   ))}
-                {(exportPapers.length > 0 || (isCustomList && !IS_DEMO && list.publicShareId)) && (
+                {(exportPapers.length > 0 || isCustomList) && (
                   <div className="lists-expanded-tools">
                     {exportPapers.length > 0 && (
                       <div className="lists-export-actions">
@@ -1160,6 +1485,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                         <button type="button" onClick={() => downloadCitationFile(exportPapers, 'bibtex', `papertok-${list.name}`)}><Download size={14} /> BibTeX</button>
                         <button type="button" onClick={() => downloadCitationFile(exportPapers, 'ris', `papertok-${list.name}`)}><Download size={14} /> RIS</button>
                       </div>
+                    )}
+                    {isCustomList && (
+                      <button
+                        type="button"
+                        className="lists-edit-btn"
+                        onClick={() => setEditing(list)}
+                      >
+                        <Pencil size={14} aria-hidden="true" /> {isEnglish ? 'Edit list' : 'Editar lista'}
+                      </button>
                     )}
                     {isCustomList && !IS_DEMO && list.publicShareId && (
                       <button
@@ -1188,12 +1522,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                 )}
                 <div
                   className="lists-expanded-papers"
-                  aria-busy={metadataLoadingListId === list.id ? 'true' : undefined}
-                  aria-label={metadataLoadingListId === list.id
+                  aria-busy={pendingPaperIds.size > 0 ? 'true' : undefined}
+                  aria-label={pendingPaperIds.size > 0
                     ? (isEnglish ? 'Loading papers in this list...' : 'Cargando los papers de esta lista...')
                     : undefined}
                 >
-                  {(list.paperIds || []).map((paperId) => {
+                  {(list.paperIds || []).map((paperId, idx) => {
+                    // Capped: past the eighth row the stagger is delaying
+                    // content nobody has scrolled to yet.
+                    const stagger = Math.min(idx, 8);
                     const paper = getPaper(paperId);
                     const record = personalLibrary[paperId];
                     if (!paper) return (
@@ -1203,12 +1540,24 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                       <div
                         key={paperId}
                         className="lists-paper-item lists-paper-item--skeleton"
-                        aria-hidden={metadataLoadingListId === list.id ? 'true' : undefined}
+                        style={{ '--stagger-index': stagger }}
+                        aria-hidden={pendingPaperIds.has(paperId) ? 'true' : undefined}
                       >
-                        {metadataLoadingListId === list.id ? (
+                        {/* This paper's own id, not the list's loading flag.
+                            The flag went false at the deadline while the read
+                            behind it was still running, so every row still in
+                            flight fell through to its raw id. */}
+                        {pendingPaperIds.has(paperId) ? (
+                          // Three bars, not two, and each the height of the line
+                          // it stands in for: the field label, the title, the
+                          // authors. The old two-bar silhouette measured ~79px
+                          // against a finished row's ~100–140px, so the moment
+                          // the metadata landed every row in the list grew at
+                          // once and the page shoved itself down.
                           <div className="lists-paper-skeleton">
-                            <span className="lists-skeleton-bar lists-skeleton-bar--wide" />
-                            <span className="lists-skeleton-bar" />
+                            <span className="lists-skeleton-bar lists-skeleton-bar--cat" />
+                            <span className="lists-skeleton-bar lists-skeleton-bar--title" />
+                            <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
                           </div>
                         ) : (
                           <p className="lists-paper-title lists-paper-placeholder">{paperId}</p>
@@ -1217,18 +1566,21 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     );
                     return (
                       <div key={paperId} className="lists-paper-item"
+                        style={{ '--area-accent': areaAccentForPaper(paper), '--stagger-index': stagger }}
                         onClick={() => openPaperCard(paper)}>
                         <div className="lists-paper-item-content">
-                          {paper.categories && paper.categories.length > 0 && (
-                            <span className="lists-paper-cat">{getCategoryLabel(paper.categories[0], language)}</span>
-                          )}
+                          <div className="lists-paper-head">
+                            {paper.categories && paper.categories.length > 0 && (
+                              <span className="lists-paper-cat">{getCategoryLabel(paper.categories[0], language)}</span>
+                            )}
+                            {paper.year && <span className="lists-paper-date">{paper.year}</span>}
+                          </div>
                           <p className="lists-paper-title"><ScientificText>{paper.title}</ScientificText></p>
                           {paper.authors && (
                             <p className="lists-paper-authors">
                               {paper.authors.slice(0, 3).map(a => typeof a === 'string' ? a : a.name).filter(Boolean).join(', ')}{paper.authors.length > 3 && ' et al.'}
                             </p>
                           )}
-                          {paper.year && <span className="lists-paper-date">{paper.year}</span>}
                           {record?.tags?.length > 0 && (
                             <div className="lists-paper-tags">
                               {record.tags.map((tag) => <span key={tag}>{tag}</span>)}
@@ -1291,16 +1643,36 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
           aria-busy="true"
           aria-label={isEnglish ? 'Opening list...' : 'Abriendo la lista...'}
         >
-          <div className="lists-skeleton-row" />
-          <div className="lists-skeleton-row" />
-          <div className="lists-skeleton-row" />
-          <div className="lists-skeleton-row" />
+          {/* The same three-bar rhythm the finished rows have, so opening a
+              list settles into its content instead of swapping silhouettes. */}
+          {[0, 1, 2, 3].map((slot) => (
+            <div key={slot} className="lists-skeleton-row" style={{ '--stagger-index': slot }}>
+              <span className="lists-skeleton-bar lists-skeleton-bar--cat" />
+              <span className="lists-skeleton-bar lists-skeleton-bar--title" />
+              <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
+            </div>
+          ))}
         </motion.div>
       ) : (
         <motion.div key="index" {...viewMotion}>
+          {/* A nameplate, the same block the Report opens with: mono kicker,
+              serif masthead, a 3px double rule. The `h1` used to be Inter with
+              a clipped gradient over it, and the kicker and standfirst below
+              rendered with no rule behind them at all. */}
           <header className="lists-header">
-            <p className="lists-eyebrow">{isEnglish ? 'Personal library' : 'Biblioteca personal'}</p>
-            <h1>{isEnglish ? 'My lists' : 'Mis listas'}</h1>
+            <div className="lists-masthead-row">
+              <div className="lists-masthead-block">
+                <p className="lists-eyebrow">{isEnglish ? 'Personal library' : 'Biblioteca personal'}</p>
+                <h1>{isEnglish ? 'My lists' : 'Mis listas'}</h1>
+              </div>
+              {/* The primary action rides the nameplate rather than trailing the
+                  grid as a ghost tile, so it stays reachable however long the
+                  grid gets. */}
+              <Button className="lists-create-btn" onClick={() => setCreating(true)}>
+                <Plus size={16} aria-hidden="true" />
+                {isEnglish ? 'New list' : 'Nueva lista'}
+              </Button>
+            </div>
             <p className="lists-subtitle">
               {isEnglish
                 ? 'Organize, annotate and share the papers you keep.'
@@ -1308,22 +1680,46 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
             </p>
           </header>
           <div className="lists-grid">
-            {displayLists.map((list, idx) => (
-              <div key={list.id} className="list-card glass" onClick={() => { setOpenedFromRoute(false); openList(list); }} style={{ '--stagger-index': idx }}>
+            {displayLists.map((list, idx) => {
+              const Icon = getIcon(list.emoji);
+              const isCustomList = !PRIVATE_LIST_IDS.has(list.id);
+              const accent = resolveListColor(list);
+              return (
+              <div
+                key={list.id}
+                className={`list-card${accent ? '' : ' list-card--uncoloured'}`}
+                onClick={() => { setOpenedFromRoute(false); openList(list); }}
+                style={{ '--stagger-index': idx, ...(accent ? { '--list-accent': accent } : {}) }}
+              >
                 <div className="list-card-top">
-                  <span className="list-card-emoji">
-                    {(() => {
-                      const Icon = getIcon(list.emoji);
-                      return <Icon size={32} strokeWidth={1.5} />;
-                    })()}
+                  <span className="list-card-icon" aria-hidden="true">
+                    <Icon size={19} strokeWidth={1.6} />
                   </span>
-                  {!['__favorites__', '__read__', '__read_later__'].includes(list.id) && (
-                    <button className="list-card-delete" onClick={(e) => { e.stopPropagation(); handleDeleteList(list.id); }}
-                      title={isEnglish ? 'Delete list' : 'Eliminar lista'}>✕</button>
+                  {isCustomList && (
+                    <div className="list-card-tools">
+                      <button
+                        className="list-card-tool"
+                        onClick={(e) => { e.stopPropagation(); setEditing(list); }}
+                        aria-label={isEnglish ? `Edit ${list.name}` : `Editar ${list.name}`}
+                        title={isEnglish ? 'Edit list' : 'Editar lista'}
+                      >
+                        <Pencil size={13} aria-hidden="true" />
+                      </button>
+                      <button
+                        className="list-card-tool list-card-tool--danger"
+                        onClick={(e) => { e.stopPropagation(); handleDeleteList(list.id); }}
+                        aria-label={isEnglish ? `Delete ${list.name}` : `Eliminar ${list.name}`}
+                        title={isEnglish ? 'Delete list' : 'Eliminar lista'}
+                      >
+                        <X size={13} aria-hidden="true" />
+                      </button>
+                    </div>
                   )}
                 </div>
                 <h3 className="list-card-name">{list.name}</h3>
                 <div className="list-card-footer">
+                  {/* A count is machine data, so it is set in mono with tabular
+                      figures. It used to say nothing but its own size in Inter. */}
                   <span className="list-card-count">{papersCount(list.paperIds?.length || 0)}</span>
                   {/* The profile card says Public; its twin here said nothing. */}
                   {list.publicShareId && (
@@ -1332,36 +1728,64 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     </span>
                   )}
                 </div>
-                {list.paperIds?.some((paperId) => getPaper(paperId)) && (
-                  <div className="list-card-preview">
-                    {list.paperIds
+                {/* "Nothing saved yet" is about the LIST, never about what we
+                    have managed to fetch. It used to key off whether any title
+                    had resolved, so on a cold index every card said it — a list
+                    of forty-six papers announcing itself as empty until the
+                    metadata landed. A list with papers whose titles are not
+                    here yet simply shows no preview. */}
+                <div className="list-card-preview">
+                  {(list.paperIds?.length ?? 0) === 0 ? (
+                    <p className="list-card-preview-empty">
+                      {isEnglish ? 'Nothing saved yet.' : 'Nada guardado todavía.'}
+                    </p>
+                  ) : (
+                    list.paperIds
                       .map((paperId) => getPaper(paperId))
                       .filter(Boolean)
                       .slice(0, 2)
-                      .map((paper) => <p key={paper.id} className="list-card-preview-title"><ScientificText>{paper.title}</ScientificText></p>)}
-                  </div>
-                )}
+                      .map((paper) => <p key={paper.id} className="list-card-preview-title"><ScientificText>{paper.title}</ScientificText></p>)
+                  )}
+                </div>
+              </div>
+              );
+            })}
+            {showListPlaceholders && [0, 1].map((slot) => (
+              <div
+                key={`list-placeholder-${slot}`}
+                className="list-card list-card--placeholder"
+                aria-hidden="true"
+                style={{ '--stagger-index': displayLists.length + slot }}
+              >
+                <div className="list-card-top"><span className="list-card-icon" /></div>
+                <span className="lists-skeleton-bar lists-skeleton-bar--title" />
+                <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
+                <div className="list-card-preview">
+                  <span className="lists-skeleton-bar" />
+                </div>
               </div>
             ))}
-            <button
-              type="button"
-              className="list-card list-card--create"
-              onClick={() => setCreating(true)}
-              style={{ '--stagger-index': displayLists.length }}
-            >
-              <span className="list-card-create-icon" aria-hidden="true"><Plus size={22} /></span>
-              <span>{isEnglish ? 'New list' : 'Nueva lista'}</span>
-            </button>
-            <CreateListDialog
-              open={creating}
-              isEnglish={isEnglish}
-              onClose={() => setCreating(false)}
-              onCreate={handleCreateList}
-            />
           </div>
         </motion.div>
       )}
       </AnimatePresence>
+
+      {/* Outside the AnimatePresence on purpose: Edit is reachable from a card
+          in the grid AND from inside an open list, and a window that lived in
+          one branch would unmount the moment the other took over. */}
+      <CreateListDialog
+        open={creating}
+        isEnglish={isEnglish}
+        onClose={() => setCreating(false)}
+        onCreate={handleCreateList}
+      />
+      <CreateListDialog
+        open={Boolean(editing)}
+        isEnglish={isEnglish}
+        list={editing}
+        onClose={() => setEditing(null)}
+        onSave={handleEditList}
+      />
     </div>
   );
 }

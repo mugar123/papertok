@@ -1,0 +1,25 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Perfil propio", "is_interactive": true },
+    { "file": "Movil.dc.html", "x": 1560, "y": 0, "w": 390, "h": 900, "title": "Móvil", "is_interactive": true },
+    { "file": "Visitante.dc.html", "x": 0, "y": 1020, "w": 1040, "h": 740, "title": "Perfil visitado", "is_interactive": true },
+    { "file": "Estados.dc.html", "x": 1160, "y": 1020, "w": 1040, "h": 1240, "title": "Estados y anatomía" }
+  ],
+  "annotations": [
+    {
+      "id": "tesis",
+      "x": 0,
+      "y": -252,
+      "w": 660,
+      "text": "CONSTRUIDO. Esta dirección — «la ficha» — ya está en el código: PublicProfilePage.jsx y su hoja de estilos, reescritos enteros.\n\nEl perfil era la única pantalla que nunca se convirtió al sistema claro: doce esquinas de píldora en cosas que no son redondas, tarjetas grises que se levantaban 2px con sombra, y ni una línea en serif ni en mono.\n\nAhora: nombre en Newsreader sobre regla doble, contadores en la rejilla reglada del Explorer, hilo amarillo en la sección activa, baldosas con el color de su dueño y filas de paper con el color de su campo."
+    },
+    {
+      "id": "divergencias",
+      "x": 720,
+      "y": -252,
+      "w": 520,
+      "text": "Dos cosas cambiaron al implementar, y estos artboards ya lo reflejan:\n\n· La baldosa perdió la tira de vista previa y el alto de 204px. Los dos títulos que la llenan en Mis listas salen del plan de metadatos de esa página — lecturas que el perfil evita a propósito. Reservar el hueco solo dejaba una caja medio vacía.\n\n· En móvil la cabecera es una columna. La bio y los botones viven dentro del bloque de identidad, así que junto al avatar se maquetaban contra 255px: «Editar perfil» ocupaba una línea entera y «Contenido seguido» la siguiente.\n\nSigue sin decidir: los vacíos no ofrecen salida (icono, título y frase). ¿Les ponemos una acción?"
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

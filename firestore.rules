@@ -688,6 +688,24 @@ service cloud.firestore {
           && request.resource.data.pinnedLists.size() <= 6;
       }
 
+      // No `request.query.limit` ceiling here, unlike `highlights` above and
+      // every other listable collection under this tree — deliberately, and for
+      // a reason that does not apply to the others.
+      //
+      // Every client query against this collection is
+      // `where(documentId(), 'in', [...])`. That filter is itself the ceiling:
+      // Firestore refuses more than thirty comparison values, measured (31
+      // returns `invalid-argument: 'IN' supports up to 30 comparison values.`),
+      // so a caller cannot read more than thirty documents per query no matter
+      // what it asks for. The read amplification a limit clause exists to stop
+      // is already impossible.
+      //
+      // Adding the clause anyway would not be free: it would refuse every
+      // existing caller that omits `limit()`, which is all of them, and the
+      // refusal arrives at the user as the same generic "could not load" as a
+      // flaky network. If a caller is ever added that lists this collection
+      // WITHOUT an `in` filter, this exception stops applying and the ceiling
+      // has to come back.
       match /interactions/{paperId} {
         allow read, delete: if ownsUserTree(userId);
         allow create, update: if ownsUserTree(userId)
@@ -836,6 +854,24 @@ service cloud.firestore {
               && request.resource.data.publicShareId.matches('^[a-f0-9]{32}$'));
       }
 
+      // No `request.query.limit` ceiling here, unlike `highlights` above and
+      // every other listable collection under this tree — deliberately, and for
+      // a reason that does not apply to the others.
+      //
+      // Every client query against this collection is
+      // `where(documentId(), 'in', [...])`. That filter is itself the ceiling:
+      // Firestore refuses more than thirty comparison values, measured (31
+      // returns `invalid-argument: 'IN' supports up to 30 comparison values.`),
+      // so a caller cannot read more than thirty documents per query no matter
+      // what it asks for. The read amplification a limit clause exists to stop
+      // is already impossible.
+      //
+      // Adding the clause anyway would not be free: it would refuse every
+      // existing caller that omits `limit()`, which is all of them, and the
+      // refusal arrives at the user as the same generic "could not load" as a
+      // flaky network. If a caller is ever added that lists this collection
+      // WITHOUT an `in` filter, this exception stops applying and the ceiling
+      // has to come back.
       match /savedPapers/{paperId} {
         allow read, delete: if ownsUserTree(userId);
         allow create, update: if ownsUserTree(userId)
@@ -920,8 +956,13 @@ service cloud.firestore {
           && request.resource.data.paragraphIndex <= 100
           && request.resource.data.level in ['beginner', 'university', 'researcher']
           && request.resource.data.language in ['es', 'en']
+          // 'ai' joins the list rather than arriving as a second `origin`
+          // field: `kind` already answers "what sort of mark is this", the mark
+          // colour and the annotation's origin are the same fact, and a new
+          // field would have cost a new clause in a rule whose expression
+          // budget is already measured.
           && (!('kind' in request.resource.data)
-            || request.resource.data.kind in ['user', 'finding', 'method', 'caveat', 'number'])
+            || request.resource.data.kind in ['user', 'ai', 'finding', 'method', 'caveat', 'number'])
           && (!('note' in request.resource.data)
             || validString(request.resource.data.note, 2000))
           && (!('paperTitle' in request.resource.data)

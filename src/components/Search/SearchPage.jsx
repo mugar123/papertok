@@ -17,8 +17,7 @@ import {
   RotateCw,
   UserRound,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   searchAuthors,
   searchInstitutions,
@@ -53,6 +52,7 @@ import {
   outageAffectsFilter,
 } from '../../utils/searchOutage.js';
 import PaperCard from '../Feed/PaperCard';
+import PaperOverlay from '../Feed/PaperOverlay';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
@@ -64,7 +64,6 @@ import {
   isOrganisationAuthorRecord,
   resolvePreferredSearchSection,
 } from '../../utils/searchRelevance';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 
 import './SearchPage.css';
 
@@ -188,7 +187,6 @@ function formatPaperDate(paper, locale) {
 
 export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = () => {} }) {
   const navigate = useNavigate();
-  const prefersReducedMotion = useReducedMotion();
   const { language, isEnglish, locale } = useLanguage();
   const { user } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
@@ -198,7 +196,14 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
     toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip,
   } = useFeed();
   
-  const [query, setQuery] = useState('');
+  // Seeded from the URL, so a search is a place you can be sent to. The
+  // palette needs this for the one paper in fifty that carries neither a DOI
+  // nor an arXiv id: it has no public paper URL of its own, so the row hands
+  // the reader to this page with the query intact rather than to a dead link.
+  // The search effect below already keys on `query`, so seeding it is the
+  // whole of the wiring.
+  const [searchParams] = useSearchParams();
+  const [query, setQuery] = useState(() => searchParams.get('q')?.trim() || '');
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchIntent, setSearchIntent] = useState(null);
@@ -224,7 +229,6 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaper, setPdfPaper] = useState(null);
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
-  const selectedPaperDialogRef = useDialogFocus(Boolean(selectedPaper && !pdfPaper), closeSelectedPaper);
   
   const timeoutRef = useRef(null);
   const requestAbortRef = useRef(null);
@@ -1255,50 +1259,29 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
       </div>
 
       {/* Paper Card Overlay */}
-      <AnimatePresence initial={false}>
-      {selectedPaper && !pdfPaper && (
-        <motion.div
-          ref={selectedPaperDialogRef}
-          className="search-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label={isEnglish ? 'Paper details' : 'Detalles del paper'}
-          tabIndex={-1}
-          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.99 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.995 }}
-          transition={prefersReducedMotion
-            ? { duration: 0 }
-            : { duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-        >
-          <button 
-            data-dialog-initial-focus
-            className="search-back-btn" 
-            onClick={closeSelectedPaper}
-            aria-label={isEnglish ? 'Back to search results' : 'Volver a los resultados'}
-            style={{ position: 'absolute', top: 'max(16px, env(safe-area-inset-top))', left: '16px', zIndex: 1200, background: 'rgba(255,255,255,0.1)', width: '40px', height: '40px' }}
-          >
-            <ArrowLeft size={22} />
-          </button>
-          <div style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
-            <PaperCard 
-              paper={selectedPaper} 
-              isLiked={likedPaperIds.has(selectedPaper.id)}
-              isSaved={savedPaperIds.has(selectedPaper.id)}
-              isRead={readPaperIds.has(selectedPaper.id)}
-              onLike={toggleLike}
-              onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
-              onMarkAsRead={markAsRead}
-              onOpenPdf={(paper) => setPdfPaper(paper)}
-              onSaveToList={onSaveToList}
-              getInteractionState={getInteractionState}
-              trackViewTime={trackViewTime}
-              trackSkip={trackSkip}
-            />
-          </div>
-        </motion.div>
-      )}
-      </AnimatePresence>
+      <PaperOverlay
+        open={Boolean(selectedPaper && !pdfPaper)}
+        onClose={closeSelectedPaper}
+        isEnglish={isEnglish}
+        label={isEnglish ? 'Paper details' : 'Detalles del paper'}
+      >
+        {selectedPaper && (
+          <PaperCard
+            paper={selectedPaper}
+            isLiked={likedPaperIds.has(selectedPaper.id)}
+            isSaved={savedPaperIds.has(selectedPaper.id)}
+            isRead={readPaperIds.has(selectedPaper.id)}
+            onLike={toggleLike}
+            onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
+            onMarkAsRead={markAsRead}
+            onOpenPdf={(paper) => setPdfPaper(paper)}
+            onSaveToList={onSaveToList}
+            getInteractionState={getInteractionState}
+            trackViewTime={trackViewTime}
+            trackSkip={trackSkip}
+          />
+        )}
+      </PaperOverlay>
 
       {/* PDF Viewer */}
       {pdfPaper && (

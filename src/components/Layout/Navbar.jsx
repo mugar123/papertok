@@ -1,33 +1,22 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { useFollowingUpdates } from '../../context/FollowingUpdatesContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { Bookmark, LogOut, Settings2, RotateCw, Search, Layers, Newspaper, UserCheck } from 'lucide-react';
+import { RotateCw, Search, Layers, Newspaper, UserCheck } from 'lucide-react';
+import ThemeToggle from './ThemeToggle';
 import './Navbar.css';
 
-export default function Navbar({ onOpenSearch = () => {} }) {
-  const { user, profilePhoto, signOut } = useAuth();
+export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) {
+  const { user, profilePhoto } = useAuth();
   const { feedMode, setFeedMode, refreshFeed, isRefreshing } = useFeed();
   const { refresh: refreshFollowing, refreshing: isFollowingRefreshing } = useFollowingUpdates();
   const { isEnglish } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
-  const [showDropdown, setShowDropdown] = useState(false);
   const [isReportRefreshing, setIsReportRefreshing] = useState(false);
-  const dropdownRef = useRef(null);
-
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
-        setShowDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
 
   useEffect(() => {
     const handleShortcut = (event) => {
@@ -55,11 +44,6 @@ export default function Navbar({ onOpenSearch = () => {} }) {
     };
   }, []);
 
-  const handleSignOut = async () => {
-    await signOut();
-    navigate('/');
-  };
-
   const isFollowingActive = pathname === '/following';
   const isResearchActive = pathname === '/research' || pathname === '/report';
   const isHomeActive = pathname === '/';
@@ -82,7 +66,6 @@ export default function Navbar({ onOpenSearch = () => {} }) {
           type="button"
           className="navbar-brand"
           onClick={() => {
-            setShowDropdown(false);
             if (location.pathname !== '/') navigate('/');
           }}
           aria-label="PaperTok"
@@ -91,10 +74,16 @@ export default function Navbar({ onOpenSearch = () => {} }) {
           <span className="navbar-brand-word">Paper<span>Tok</span></span>
         </button>
 
+        {/* Open, the bar holds the state it put the reader in. Without it you
+            clicked a bar and a sheet appeared somewhere else, with nothing
+            connecting the two — and closing left nothing behind either. The
+            transition is already on the element, so the state fades in and out
+            rather than snapping. */}
         <button
           type="button"
-          className="navbar-search"
-          onClick={() => { setShowDropdown(false); onOpenSearch(); }}
+          className={`navbar-search ${searchOpen ? 'is-open' : ''}`}
+          onClick={onOpenSearch}
+          aria-expanded={searchOpen}
         >
           <Search size={15} aria-hidden="true" />
           <span>{isEnglish ? 'Search papers, authors, topics...' : 'Buscar papers, autores, temas...'}</span>
@@ -106,7 +95,6 @@ export default function Navbar({ onOpenSearch = () => {} }) {
             type="button"
             className={`navbar-link ${isHomeActive && feedMode === 'top' ? 'active' : ''}`}
             onClick={() => {
-              setShowDropdown(false);
               if (location.pathname !== '/') navigate('/');
               setFeedMode('top');
             }}
@@ -118,7 +106,6 @@ export default function Navbar({ onOpenSearch = () => {} }) {
           <NavLink
             to="/research"
             className={`navbar-link ${isResearchActive ? 'active' : ''}`}
-            onClick={() => setShowDropdown(false)}
           >
             <Newspaper size={15} aria-hidden="true" />
             Research
@@ -127,7 +114,6 @@ export default function Navbar({ onOpenSearch = () => {} }) {
           <NavLink
             to="/following"
             className={`navbar-link ${isFollowingActive ? 'active' : ''}`}
-            onClick={() => setShowDropdown(false)}
           >
             <UserCheck size={15} aria-hidden="true" />
             {isEnglish ? 'Following' : 'Siguiendo'}
@@ -147,23 +133,34 @@ export default function Navbar({ onOpenSearch = () => {} }) {
           )}
 
           <button
-            className="navbar-icon-btn navbar-icon-btn--search-compact"
-            onClick={() => { setShowDropdown(false); onOpenSearch(); }}
+            className={`navbar-icon-btn navbar-icon-btn--search-compact ${searchOpen ? 'is-open' : ''}`}
+            aria-expanded={searchOpen}
+            onClick={onOpenSearch}
             title={isEnglish ? 'Search' : 'Buscar'}
             aria-label={isEnglish ? 'Search' : 'Buscar'}
           >
             <Search size={17} />
           </button>
 
+          {/* Rule 6: utilities cluster on the right, behind the 1px rule. The
+              theme belongs with reload, not with the feeds — it changes how the
+              app looks, not what it is showing. */}
+          <ThemeToggle />
+
           {user && (
-            <div className="navbar-profile" ref={dropdownRef}>
+            <div className="navbar-profile">
+              {/* Straight to the profile, TikTok-style: no menu in between.
+                  Settings and sign-out live behind the gear on that page, and
+                  My lists behind the profile's own Lists tab, so the menu this
+                  replaces costs nothing. The navigation is synchronous on
+                  purpose — <Routes> sits inside an AnimatePresence with
+                  mode="wait", and a navigate() from an async continuation can
+                  leave it stalled. */}
               <button
-                className={`navbar-avatar-btn ${location.pathname === '/settings' ? 'active' : ''}`}
-                aria-label={isEnglish ? 'Open user menu' : 'Abrir menú de usuario'}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setShowDropdown(!showDropdown);
-                }}
+                className={`navbar-avatar-btn ${pathname === '/profile' ? 'active' : ''}`}
+                aria-label={isEnglish ? 'My profile' : 'Mi perfil'}
+                title={isEnglish ? 'My profile' : 'Mi perfil'}
+                onClick={() => navigate('/profile')}
               >
                 {profilePhoto || user.photoURL ? (
                   <img src={profilePhoto || user.photoURL} alt="Profile" className="navbar-avatar" referrerPolicy="no-referrer" />
@@ -173,38 +170,6 @@ export default function Navbar({ onOpenSearch = () => {} }) {
                   </div>
                 )}
               </button>
-
-              {showDropdown && (
-                <div className="navbar-dropdown">
-                  <div className="navbar-dropdown-header">
-                    <p className="navbar-dropdown-name">{user?.displayName}</p>
-                    <p className="navbar-dropdown-email">{user?.email}</p>
-                  </div>
-                  <div className="navbar-dropdown-divider" />
-                  <button
-                    className="navbar-dropdown-item"
-                    onClick={() => { navigate('/lists'); setShowDropdown(false); }}
-                  >
-                    <Bookmark size={15} strokeWidth={2} aria-hidden="true" />
-                    {isEnglish ? 'My lists' : 'Mis listas'}
-                  </button>
-                  <button
-                    className="navbar-dropdown-item"
-                    onClick={() => { navigate('/settings'); setShowDropdown(false); }}
-                  >
-                    <Settings2 size={15} strokeWidth={2} aria-hidden="true" />
-                    {isEnglish ? 'Settings' : 'Ajustes'}
-                  </button>
-                  <div className="navbar-dropdown-divider" />
-                  <button
-                    className="navbar-dropdown-item navbar-dropdown-item--danger"
-                    onClick={handleSignOut}
-                  >
-                    <LogOut size={15} strokeWidth={2} aria-hidden="true" />
-                    {isEnglish ? 'Sign out' : 'Cerrar sesión'}
-                  </button>
-                </div>
-              )}
             </div>
           )}
         </div>

@@ -1,0 +1,32 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1280, "h": 900, "title": "Paso 1 — Áreas", "is_interactive": true },
+    { "file": "Paso2.dc.html", "x": 1400, "y": 0, "w": 1280, "h": 1140, "title": "Paso 2 — Categorías", "is_interactive": true },
+    { "file": "Paso3.dc.html", "x": 2800, "y": 0, "w": 1280, "h": 620, "title": "Paso 3 — Tu feed" },
+    { "file": "Movil.dc.html", "x": 4200, "y": 0, "w": 390, "h": 1060, "title": "Paso 1 en móvil", "is_interactive": true }
+  ],
+  "annotations": [
+    {
+      "id": "tesis",
+      "x": 0,
+      "y": -620,
+      "w": 620,
+      "text": "LA IDEA. El onboarding es la única pantalla que se quedó en el tema oscuro: baldosas grises redondeadas, doce descripciones compitiendo entre sí, y las doce tintas de campo desperdiciadas como un lavado del 8 % que no se ve.\n\nAquí es la misma app que LoginPage, que está justo antes: titular en Newsreader, etiquetas en IBM Plex Mono, esquinas casi rectas, y la regla izquierda con la tinta del campo — el mismo recurso que ya usan las baldosas de Mis listas y las filas de paper del perfil. El papel cuadriculado solo entra en el paso 1, que es donde se enlaza con la pantalla de entrada; detrás de 62 chips sería ruido.\n\nEl gesto nuevo: marcar un área subraya su nombre en amarillo, el mismo trazo que lleva el logotipo. Seleccionar se parece a marcar una página."
+    },
+    {
+      "id": "bugs",
+      "x": 700,
+      "y": -620,
+      "w": 620,
+      "text": "TRES COSAS QUE ESTABAN ROTAS, no solo feas:\n\n· El botón «Siguiente» era tinta sobre tinta — .onboarding-nav-btn--next pinta background: var(--gradient-brand) (#111318) con color: var(--text-primary) (#111318). Es la mancha gris de la esquina inferior derecha de la captura. Lo mismo en .onboarding-finish-btn.\n\n· El titular seguía recortando texto sobre un degradado que ya no existe (background-clip: text sobre un color plano).\n\n· «Seleccionar todo» del paso 2 y el check del paso 3 usan cian y violeta del tema oscuro (rgba(6,182,212,…), #7c3aed → #06b6d4). No hay ningún otro sitio de la app con esos colores.\n\nLos tres desaparecen en este rediseño."
+    },
+    {
+      "id": "abierto",
+      "x": 1400,
+      "y": -620,
+      "w": 560,
+      "text": "DECISIONES QUE NO TOMÉ SOLO:\n\n· No añadí «Omitir por ahora». Hoy no existe salida del onboarding, y darle una cambia el producto, no el diseño. Si la quieres, va de ghost a la izquierda del contador.\n\n· No añadí áreas sugeridas ni preselección. El estado por defecto de los artboards (Física, Computación, Biología) es solo para que se vea el aspecto marcado; al abrir, la app arranca en cero.\n\n· El paso 2 con las tres áreas abiertas mide 62 chips. Es la densidad real y por eso está dibujada así; si te parece demasiado, la alternativa es plegar cada área y abrir solo la primera."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

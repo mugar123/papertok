@@ -1,0 +1,25 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Lector con anotaciones", "is_interactive": true },
+    { "file": "Movil.dc.html", "x": 1560, "y": 0, "w": 390, "h": 844, "title": "Móvil", "is_interactive": true },
+    { "file": "Anatomia.dc.html", "x": 0, "y": 1020, "w": 900, "h": 880, "title": "Anatomía y estados" },
+    { "file": "Microanimaciones.dc.html", "x": 980, "y": 1020, "w": 1000, "h": 1160, "title": "Microanimaciones" }
+  ],
+  "annotations": [
+    {
+      "id": "flujo",
+      "x": 0,
+      "y": -168,
+      "w": 620,
+      "text": "Pruébalo: haz clic en cualquier frase subrayada con puntitos.\n\nMenú → «Escribir nota» abre el compositor; «Que me lo explique» gasta un uso, enseña los tres puntos en el carril y la respuesta llega con el mismo barrido que el reescrito."
+    },
+    {
+      "id": "decidir",
+      "x": 660,
+      "y": -168,
+      "w": 460,
+      "text": "Pendiente de decidir antes de implementar:\n\n· ¿La anotación de IA gasta uso completo o media cuota?\n· ¿Se puede editar una nota ya guardada, o solo borrar y rehacer?\n· ¿Las anotaciones sobreviven al cambio de nivel? (el anclaje por cita dice que sí, salvo que la reescritura cambie las palabras)"
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

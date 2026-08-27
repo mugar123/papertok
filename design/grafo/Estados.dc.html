@@ -1,0 +1,120 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    a { color: #1a5fd0; text-decoration: none; }
+    a:hover { color: #12459b; }
+    .k { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.55 'IBM Plex Mono', monospace; }
+    .tile { border: 1px solid #e6e7ea; border-radius: 3px; overflow: hidden; background: #ffffff; }
+    .cap { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 13px; border-bottom: 1px solid #e6e7ea; background: #fafafa; }
+    .body { position: relative; height: 196px; padding: 12px 14px; }
+    .txt { font-size: 0.8125rem; line-height: 1.55; color: #5b6270; }
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 34px; padding: 0 13px; border: 1px solid #d3d5db; border-radius: 3px; background: #ffffff; color: #111318; font-size: 0.8125rem; font-weight: 600; cursor: pointer; }
+    .btn:hover { border-color: #111318; background: #f7f7f8; }
+    .skel { position: absolute; width: 11px; height: 11px; border-radius: 50%; background: #e6e7ea; animation: pul 1.3s ease-in-out infinite; }
+    @keyframes pul { 0%, 100% { opacity: 1; } 50% { opacity: 0.34; } }
+    .mid { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; text-align: center; padding: 0 22px; }
+  </style>
+</helmet>
+
+<div style="width: 900px; padding: 34px 38px 40px; background: #ffffff">
+
+  <header style="margin-bottom: 24px">
+    <span class="k" style="color: #a9aeba">PaperTok · Conexiones del paper</span>
+    <h1 style="margin: 10px 0 8px; font-size: 1.625rem; line-height: 1.15; font-weight: 700; letter-spacing: -0.015em">Los cinco estados</h1>
+    <p style="margin: 0; max-width: 640px; font-size: 0.8125rem; line-height: 1.6; color: #5b6270">Cuatro de ellos ya los devuelve el servicio hoy. El quinto —datos incompletos— viaja desde el worker y se pierde en el cliente; está dibujado para que se vea qué se gana al dejarlo pasar.</p>
+  </header>
+
+  <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 22px">
+
+    <!-- 1 · Cargando -->
+    <div class="tile">
+      <div class="cap"><span class="k">Trazando</span><span class="k" style="color: #a9aeba">status: loading</span></div>
+      <div class="body">
+        <div class="k" style="display: flex; justify-content: space-between; color: #c9ccd3"><span>Antes · lo que cita</span><span>—</span></div>
+        <div style="position: absolute; left: 0; right: 0; top: 98px; height: 1px; background: #e6e7ea"></div>
+        <div style="position: absolute; left: 196px; top: 90px; width: 16px; height: 16px; border-radius: 50%; background: #111318; box-shadow: 0 0 0 3px #ffffff"></div>
+        <span class="skel" style="left: 62px; top: 42px; animation-delay: 0ms"></span>
+        <span class="skel" style="left: 128px; top: 58px; animation-delay: 90ms"></span>
+        <span class="skel" style="left: 214px; top: 34px; animation-delay: 180ms"></span>
+        <span class="skel" style="left: 292px; top: 62px; animation-delay: 270ms"></span>
+        <span class="skel" style="left: 96px; top: 132px; animation-delay: 360ms"></span>
+        <span class="skel" style="left: 178px; top: 150px; animation-delay: 450ms"></span>
+        <span class="skel" style="left: 262px; top: 124px; animation-delay: 540ms"></span>
+        <span class="skel" style="left: 330px; top: 146px; animation-delay: 630ms"></span>
+        <div class="k" style="position: absolute; left: 14px; right: 14px; bottom: 12px; display: flex; justify-content: space-between; color: #c9ccd3"><span>Después · quien lo cita</span><span>—</span></div>
+      </div>
+    </div>
+
+    <!-- 2 · Sin enlaces -->
+    <div class="tile">
+      <div class="cap"><span class="k">Sin enlaces</span><span class="k" style="color: #a9aeba">status: empty</span></div>
+      <div class="body">
+        <div class="mid">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c9ccd3" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3" stroke-dasharray="2 3"></path><path d="M12 12V8" stroke-dasharray="2 3"></path></svg>
+          <p class="txt" style="margin: 0">OpenCitations no tiene enlaces para <b style="color: #111318">LLaMA</b>. Es habitual en trabajos muy recientes o publicados fuera de las editoriales que depositan sus citas.</p>
+          <button class="btn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg>Volver a Vaswani</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3 · Error -->
+    <div class="tile">
+      <div class="cap"><span class="k">No se pudo cargar</span><span class="k" style="color: #a9aeba">status: error</span></div>
+      <div class="body">
+        <div class="mid">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#c9ccd3" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"></path><path d="M12 17h.01"></path><circle cx="12" cy="12" r="9"></circle></svg>
+          <p class="txt" style="margin: 0">No se pudieron cargar estas conexiones ahora. El resto de PaperTok sigue funcionando con normalidad.</p>
+          <button class="btn">Reintentar</button>
+          <span class="m" style="color: #c9ccd3">12 s de espera · sin reintento automático</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 4 · Sin DOI -->
+    <div class="tile">
+      <div class="cap"><span class="k">Sin DOI</span><span class="k" style="color: #a9aeba">status: unavailable</span></div>
+      <div class="body">
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; padding: 3px; border: 1px solid #d3d5db; border-radius: 3px; background: #f7f7f8; margin-bottom: 16px">
+          <span style="min-height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 2px; color: #c9ccd3; font-size: 0.8125rem; font-weight: 500">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>Grafo
+          </span>
+          <span style="min-height: 32px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #d3d5db; border-radius: 2px; background: #ffffff; color: #111318; font-size: 0.8125rem; font-weight: 600">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"></path></svg>Similares
+          </span>
+        </div>
+        <p class="txt" style="margin: 0">Sin DOI no hay grafo: la pestaña queda apagada y la hoja abre directamente en Similares, que no lo necesita.</p>
+        <span class="m" style="position: absolute; left: 14px; bottom: 12px; color: #c9ccd3">es el comportamiento actual, sin cambios</span>
+      </div>
+    </div>
+
+    <!-- 5 · Datos incompletos -->
+    <div class="tile" style="grid-column: span 2">
+      <div class="cap"><span class="k">Datos incompletos</span><span class="k" style="color: #b45309">degraded — hoy se descarta en el cliente</span></div>
+      <div class="body" style="height: 168px">
+        <div style="display: flex; align-items: center; gap: 9px; padding: 7px 11px; border: 1px solid #f6e3b0; border-radius: 3px; background: #fff8e6; margin-bottom: 14px">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#96650a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 auto"><path d="M12 9v4"></path><path d="M12 17h.01"></path><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"></path></svg>
+          <span class="k" style="color: #96650a">Vecindario incompleto — una fuente no respondió y esto es lo que la otra pudo dar</span>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 26px">
+          <p class="txt" style="margin: 0">Sin este aviso, un grafo a medias se lee como un grafo completo: el lector concluye que el paper tiene cuatro referencias cuando lo que pasa es que la fuente no respondió. La banda amarilla es la misma de los avisos del resto de la app.</p>
+          <p class="txt" style="margin: 0">El worker ya distingue los dos casos —<span class="m" style="color: #111318">partial</span> cuando una fuente completó a la otra, <span class="m" style="color: #111318">degraded</span> cuando algo falló de verdad— y los manda en la respuesta. <span class="m" style="color: #111318">mapCitationGraphPayload</span> se queda con <span class="m" style="color: #111318">partial</span> y tira <span class="m" style="color: #111318">degraded</span>.</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

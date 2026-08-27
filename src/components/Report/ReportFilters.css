@@ -34,6 +34,7 @@
 
 /* ── The row ── */
 .rf-toggle {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-3);
@@ -94,6 +95,39 @@
 
 /* The auto margin keeps the disclosure pinned right whether the summary reads
    long, short, or (at 375px) not at all. */
+/* The sweep rides the row's own hairline rather than adding one: clipped to the
+   row's width, centred on the border so the rule reads as thickening where the
+   light passes. */
+.rf-sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.rf-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 34%;
+  background: var(--text-primary);
+  animation: rf-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes rf-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rf-sweep::after {
+    animation: none;
+  }
+}
+
 .rf-toggle-status {
   display: flex;
   align-items: center;

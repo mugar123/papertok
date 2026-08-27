@@ -6,6 +6,7 @@ import {
   CircleDollarSign, Brain, Cpu, Database, Orbit, FlaskConical, Network, Sigma,
   BadgeCheck, Eye, CheckCircle2, UserCheck, Briefcase, ExternalLink,
   Cog, Building, HeartPulse, Code2, PackageOpen, History, Sparkles, MessageCircle,
+  Lock, Unlock,
 } from 'lucide-react';
 import { canonicalPaperIdentity } from '../../utils/paperCanonicalKey.js';
 import ScientificText from '../ScientificText';
@@ -24,8 +25,25 @@ import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '..
 import PaperReader from '../Reader/PaperReader.jsx';
 import { canRewritePaper } from '../../services/paperRewriteService.js';
 import { getPaperFigures } from '../../services/paperFigureService.js';
+import { CARD_DURATION_MS, tweenScrollTop } from '../../utils/scrollTween.js';
+import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
+import { accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.js';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
 import { buildPaperTopicTags } from '../../utils/paperTopicTags.js';
+
+/**
+ * A glyph per status, keyed the same way the tags are.
+ *
+ * The icons stay here rather than in `paperStatus.js` so that module holds no
+ * React and can be read straight by `node --test`.
+ */
+const STATUS_CHIP_ICONS = {
+  preprint: FileText,
+  verified: BadgeCheck,
+  open: Unlock,
+  openCopy: Unlock,
+  subscription: Lock,
+};
 import { buildFollowReasonLabel } from '../../utils/followingFeed.js';
 import { isTechnicalClassification } from '../../utils/scientificClassification.js';
 import {
@@ -80,10 +98,16 @@ const RELATED_PAPER_HYDRATION_TIMEOUT_MS = 8_000;
 // same angle, not that a figure could turn up anywhere.
 const FIGURE_TILT_JITTER_DEG = 2.4;
 const FIGURE_SHIFT_JITTER_PX = 14;
-const FIGURE_DRIFT_MIN_PX = 5;
-const FIGURE_DRIFT_JITTER_PX = 5;
-const FIGURE_DRIFT_MIN_MS = 6_000;
-const FIGURE_DRIFT_JITTER_MS = 3_500;
+/* The idle float, retuned. It was 5–10px over a 6–9.5s round trip — under
+   2px per second — behind a 3.2s wait before it even began, so a clipping
+   appeared, sat perfectly still for three and a half seconds, and then crept.
+   Slow enough that it read as something broken rather than as something
+   floating. Twice the distance in half the time is about 4px per second: still
+   a drift you would not call motion if asked, but one the eye registers. */
+const FIGURE_DRIFT_MIN_PX = 8;
+const FIGURE_DRIFT_JITTER_PX = 6;
+const FIGURE_DRIFT_MIN_MS = 4_000;
+const FIGURE_DRIFT_JITTER_MS = 2_000;
 const FIGURE_ENTRANCE_BASE_MS = 620;
 const FIGURE_ENTRANCE_STEP_MS = 140;
 
@@ -106,7 +130,7 @@ function figureHash(fingerprint) {
  * someone is reading. Two hashes because five values need more than the four
  * bytes one gives.
  */
-function figureScatterStyle(identity, index) {
+function figureScatterStyle(identity, index, total) {
   // The slot goes in front of the identity, not behind it. FNV-1a only
   // avalanches forwards: with the index last, four figures of one paper came
   // out with the same middle bytes and so with the same shift — measured, not
@@ -117,8 +141,12 @@ function figureScatterStyle(identity, index) {
   const signed = (hash, shift) => unit(hash, shift) * 2 - 1;
   // Slots one and two hug the left edge of the card, three and four the right,
   // so the shift always pushes inward and no amount of jitter can walk a
-  // clipping off the page or over the text column.
-  const inward = index < 2 ? 1 : -1;
+  // clipping off the page or over the text column. The exception is the pair:
+  // with exactly two clippings the second one crosses to the bottom-right
+  // corner — see `.pc-figure:nth-child(2):last-child` — and inward for it
+  // means leftward, like the right-hand slots.
+  const onRight = total === 2 ? index === 1 : index >= 2;
+  const inward = onRight ? -1 : 1;
   return {
     '--fig-tilt': `${(signed(angles, 0) * FIGURE_TILT_JITTER_DEG).toFixed(2)}deg`,
     '--fig-shift-x': `${(unit(angles, 8) * FIGURE_SHIFT_JITTER_PX * inward).toFixed(1)}px`,
@@ -201,6 +229,10 @@ const PaperCard = memo(function PaperCard({
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
   const [showReader, setShowReader] = useState(false);
+  /* Where the reader should grow from. The rewrite button's rectangle at the
+     moment it was pressed, so the full-screen reader can open out of it and
+     collapse back into it rather than appearing from nowhere. */
+  const [readerOrigin, setReaderOrigin] = useState(null);
   const [pendingRelatedPaper, setPendingRelatedPaper] = useState(null);
   const [selectedRelatedPaper, setSelectedRelatedPaper] = useState(null);
   const [isClosingRelatedCard, setIsClosingRelatedCard] = useState(false);
@@ -226,6 +258,12 @@ const PaperCard = memo(function PaperCard({
 
   const lastTap = useRef(0);
   const abstractRef = useRef(null);
+  // Cancels the in-flight return to the first line, if there is one.
+  const stopAbstractScroll = useRef(null);
+
+  // A card swiped away mid-collapse would otherwise leave its frame loop
+  // running against a node nobody can see any more.
+  useEffect(() => () => stopAbstractScroll.current?.(), []);
   const cardRef = useRef(null);
   const viewStartTime = useRef(null);
   const totalViewTime = useRef(0);
@@ -344,7 +382,10 @@ const PaperCard = memo(function PaperCard({
   // Held still across renders: the scatter is already deterministic, and a
   // stable object means React never rewrites the inline styles either.
   const scatteredFigures = useMemo(
-    () => figures.map((item, index) => ({ item, style: figureScatterStyle(paperViewKey, index) })),
+    () => figures.map((item, index) => ({
+      item,
+      style: figureScatterStyle(paperViewKey, index, figures.length),
+    })),
     [figures, paperViewKey],
   );
 
@@ -377,15 +418,22 @@ const PaperCard = memo(function PaperCard({
   const toggleExpanded = (e, newState) => {
     e.stopPropagation();
     setExpanded(newState);
-    // Closing puts the reader back at the first line. The scroll starts here
-    // rather than waiting for the height to land, so the text glides up while
-    // the panel shrinks — one gesture instead of a snap once it has finished.
-    // `handleAbstractTransitionEnd` still runs and is now only a backstop, for
-    // the case where the smooth scroll is interrupted by a second tap.
+
+    // Whichever way this goes, the previous run stops first. Tapping twice
+    // quickly used to leave a scroll still travelling into a panel that had
+    // already reopened, so the text crawled while the reader was trying to
+    // read it.
+    stopAbstractScroll.current?.();
+
+    // Closing puts the reader back at the first line, on the same clock as the
+    // panel's height: `scrollTo({ behavior: 'smooth' })` animates on a duration
+    // and a curve the browser chooses, so the text and the panel finished at
+    // different moments and the motion read as two things, one dragging behind
+    // the other. Same easing, same 420ms, and they land together.
     if (!newState && abstractRef.current) {
-      abstractRef.current.scrollTo({
-        top: 0,
-        behavior: prefersReducedMotion ? 'auto' : 'smooth',
+      stopAbstractScroll.current = tweenScrollTop(abstractRef.current, 0, {
+        durationMs: CARD_DURATION_MS,
+        immediate: prefersReducedMotion,
       });
     }
   };
@@ -508,22 +556,6 @@ const PaperCard = memo(function PaperCard({
   };
 
   // Get area info for the gradient background
-  const getAreaInfo = () => {
-    const cat = visiblePrimaryCategory;
-    const prefix = cat.split('.')[0].split('-')[0];
-    for (const [, area] of Object.entries(CATEGORIES)) {
-      if (area.subcategories && area.subcategories[cat]) {
-        return area;
-      }
-      // Try prefix match
-      const subcatKeys = Object.keys(area.subcategories || {});
-      if (subcatKeys.some(k => k.startsWith(prefix))) {
-        return area;
-      }
-    }
-    return { icon: FileText, gradient: 'var(--gradient-brand)' };
-  };
-
   const getCategoryLabelText = () => {
     const cat = visiblePrimaryCategory;
     const area = Object.values(CATEGORIES).find(a => a.subcategories && a.subcategories[cat]);
@@ -532,12 +564,16 @@ const PaperCard = memo(function PaperCard({
         ? area.subcategories[cat].labelEn || area.subcategories[cat].label
         : area.subcategories[cat].label;
     }
-    if (cat) return cat;
+    // Not `cat` raw. For anything from OpenAlex that is a concept, not a
+    // field — "QUBIT", "Toric code" — so the kicker announced a keyword where
+    // it meant to announce a branch of science, and disagreed with the colour
+    // beside it. The branch, resolved through the same chain as the ink.
+    const branch = areaLabelForPaper(paper, { english: isEnglish });
+    if (branch) return branch;
     if (paper.journal) return paper.journal;
-    return 'Research Paper';
+    return isEnglish ? 'Research Paper' : 'Artículo científico';
   };
 
-  const areaInfo = getAreaInfo();
   const categoryLabel = getCategoryLabelText();
   const primaryTopic = useMemo(
     () => visiblePrimaryCategory ? resolvePaperTopic({
@@ -571,16 +607,18 @@ const PaperCard = memo(function PaperCard({
     if (path) navigate(path);
   }, [analyticsSurface, navigate, position, publicMode, trackEvent]);
 
-  // Watermark icon for the paper's research area.
-  const WatermarkIcon = useMemo(() => {
-    const cat = visiblePrimaryCategory;
-    for (const [key, area] of Object.entries(CATEGORIES)) {
-      if (area.subcategories && area.subcategories[cat]) {
-        return AREA_WATERMARK_ICONS[key] || AREA_WATERMARK_ICONS.physics;
-      }
-    }
-    return AREA_WATERMARK_ICONS.physics;
-  }, [visiblePrimaryCategory]);
+  /* The watermark for the paper's branch of science.
+   *
+   * It used to accept only an exact arXiv subcategory and fall back to physics
+   * for everything else — so a `cs.NE` paper, and every paper in Research,
+   * whose categories are OpenAlex topic names rather than arXiv codes, wore an
+   * atom. Resolved through the same chain as the accent ink now, so the mark
+   * and the colour cannot disagree, and nothing is drawn at all when the branch
+   * is genuinely unknown: a wrong field is worse than no field. */
+  const WatermarkIcon = useMemo(
+    () => AREA_WATERMARK_ICONS[areaKeyForPaper(paper)] || null,
+    [paper],
+  );
 
   const handleDoubleTap = useCallback(() => {
     const now = Date.now();
@@ -696,8 +734,17 @@ const PaperCard = memo(function PaperCard({
     openExternalUrl(fallbackUrl);
   };
 
-  const isPreprint = paper.publicationStatus === 'preprint';
   const resolvedOpenCopy = resolvedAccess.paperId === paper.id ? resolvedAccess.copy : null;
+  // What the status row is allowed to claim. `resolvedOpenCopy` is only ever
+  // set by the Unpaywall lookup, and that lookup only runs for a paper with no
+  // readable copy of its own, so its presence means exactly "the published
+  // version is closed and we found a free one elsewhere" — a weaker claim than
+  // open access, and the tag says so.
+  const reviewTag = reviewTagForPaper(paper, { english: isEnglish });
+  const accessTag = accessTagForPaper(paper, {
+    english: isEnglish,
+    openCopyFound: Boolean(resolvedOpenCopy),
+  });
   const researchResources = linkedResources.paperId === paper.id ? linkedResources.items : [];
   const readablePaper = useMemo(() => resolvedOpenCopy ? {
     ...paper,
@@ -799,10 +846,12 @@ const PaperCard = memo(function PaperCard({
         </div>
       )}
 
-      <article className="pc-sheet" style={{ '--area-accent': areaInfo.gradient }}>
-        <span className="pc-watermark" aria-hidden="true">
-          <WatermarkIcon size={220} strokeWidth={0.6} />
-        </span>
+      <article className="pc-sheet" style={{ '--area-accent': areaAccentForPaper(paper) }}>
+        {WatermarkIcon && (
+          <span className="pc-watermark" aria-hidden="true">
+            <WatermarkIcon size={220} strokeWidth={0.6} />
+          </span>
+        )}
 
         <div className="pc-body">
         {showFollowReason && (() => {
@@ -870,24 +919,62 @@ const PaperCard = memo(function PaperCard({
           )}
         </div>
 
-        {!isPreprint && (
-          <div className="pc-chips">
-            <span className="pc-chip pc-chip--verified">
-              <BadgeCheck size={12} /> Verified
-            </span>
-            {paper.doi && (
-              <a
-                className="pc-chip pc-chip--doi"
-                href={safeDoiUrl(paper.doi)}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ExternalLink size={12} /> DOI
-              </a>
-            )}
-          </div>
-        )}
+        {/* Two facts and a link: what this paper is, whether it opens, and where
+            the record of it lives. The row used to hang off `!isPreprint`, so a
+            preprint — the one case where the caveat is the whole point — showed
+            no chips at all, and the availability chips had no JSX left anywhere.
+            Each chip carries the sentence behind its word in `title`, because
+            "Preprint" is not a word a reader outside academia arrives knowing. */}
+        <div className="pc-chips">
+          {reviewTag && (() => {
+            const Glyph = STATUS_CHIP_ICONS[reviewTag.key];
+            return (
+              <span className="pc-chip" data-tone={reviewTag.tone} title={reviewTag.hint}>
+                <Glyph size={12} /> {reviewTag.label}
+              </span>
+            );
+          })()}
+
+          {/* The availability chip resolves late: a paper with no readable copy
+              of its own goes to Unpaywall after the card settles, and the answer
+              can turn Suscripción into Versión abierta a second in. Swapping the
+              word outright reads as a glitch, so the slot cross-fades. */}
+          <AnimatePresence mode="wait" initial={false}>
+            {accessTag && (() => {
+              const Glyph = STATUS_CHIP_ICONS[accessTag.key];
+              return (
+                <motion.span
+                  key={accessTag.key}
+                  className="pc-chip"
+                  data-tone={accessTag.tone}
+                  title={accessTag.hint}
+                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.92 }}
+                  transition={{
+                    duration: prefersReducedMotion ? 0.1 : 0.24,
+                    ease: [0.16, 1, 0.3, 1],
+                  }}
+                >
+                  <Glyph size={12} /> {accessTag.label}
+                </motion.span>
+              );
+            })()}
+          </AnimatePresence>
+
+          {paper.doi && (
+            <a
+              className="pc-chip pc-chip--link"
+              href={safeDoiUrl(paper.doi)}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              title={isEnglish ? 'Open the DOI record' : 'Abrir el registro DOI'}
+            >
+              <ExternalLink size={12} /> DOI
+            </a>
+          )}
+        </div>
 
         {/* What the paper is filed under. Machine data, so it belongs with the
             meta line and the status chips above the headline — not in the
@@ -1132,6 +1219,13 @@ const PaperCard = memo(function PaperCard({
                     requireAuthentication('paper_rewrite');
                     return;
                   }
+                  const bounds = event.currentTarget.getBoundingClientRect();
+                  setReaderOrigin({
+                    left: bounds.left,
+                    top: bounds.top,
+                    width: bounds.width,
+                    height: bounds.height,
+                  });
                   setShowReader(true);
                 }}
                 aria-label={isEnglish ? 'Read this paper in plain words' : 'Leer este paper en simple'}
@@ -1334,7 +1428,11 @@ const PaperCard = memo(function PaperCard({
         `papertok-related-sheet:${getRelatedPaperIdentity(paper) || 'current'}`,
       )}
       {showReader && createPortal(
-        <PaperReader paper={readablePaper} onClose={() => setShowReader(false)} />,
+        <PaperReader
+          paper={readablePaper}
+          originRect={readerOrigin}
+          onClose={() => setShowReader(false)}
+        />,
         document.body,
         'papertok-paper-reader',
       )}

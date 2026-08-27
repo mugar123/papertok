@@ -274,7 +274,7 @@
 
 .eim-save-btn {
   background: var(--bg-card);
-  color: #000;
+  color: var(--text-primary);
   border: none;
   padding: 12px 28px;
   border-radius: var(--radius-2xl);
@@ -306,7 +306,7 @@
   width: 16px;
   height: 16px;
   border: 2px solid var(--border-default);
-  border-top-color: #000;
+  border-top-color: var(--text-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
-  BadgeCheck, Bookmark, FolderOpen, Globe2, Heart, Lock, RefreshCw, Rss,
+  ArrowRight, BadgeCheck, Bookmark, FolderOpen, Globe2, Heart, Lock, RefreshCw, Rss,
   Settings2, UserCheck, UserPlus, UserX,
 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext.jsx';
@@ -31,6 +31,8 @@ import { fetchLibraryRecords } from '../../services/interactionProfileStore.js';
 import { IS_DEMO } from '../../services/firebase.js';
 import { getPublicListPath, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import { resolveProfileView } from '../../utils/profileAccess.js';
+import { resolveListColor } from '../../utils/listColors.js';
+import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import {
   createPendingIdRequests,
   requestMissingRecords,
@@ -113,13 +115,41 @@ const rowMotion = (prefersReducedMotion, index) => ({
   },
 });
 
-function PaperRow({ row, fallbackTitle }) {
+function PaperRow({ row, isEnglish, libraryReady }) {
+  /**
+   * A row with no title is a row we have not heard about, and it must not say
+   * otherwise. It used to print "Untitled paper" — fifty of them at once on a
+   * cold Liked tab, each stating as a fact something no read had established.
+   *
+   * While the library read is still out, the row is a shimmer. Once it has
+   * answered and this id still has nothing, the row shows the id in mono, which
+   * is what it actually is and matches how the lists screen says the same thing.
+   */
+  if (row.unresolved) {
+    return (
+      <div className={`profile-row profile-row--unresolved${libraryReady ? '' : ' profile-row--waiting'}`}>
+        {libraryReady
+          ? <span className="profile-row-title profile-row-title--placeholder">{row.id}</span>
+          : <span className="public-profile-skeleton public-profile-skeleton--row" aria-hidden="true" />}
+      </div>
+    );
+  }
+
   // Titles arrive with source dirt (literal <sub> tags, $LaTeX$): HTML is
   // cleaned here at paint time — the stored documents keep the debt visible —
   // and the math is rendered by the same component the feed cards use.
-  const title = cleanPaperText(row.title) || fallbackTitle;
+  const title = cleanPaperText(row.title);
+  // The row carries its paper's research field, the same gesture the Explorer's
+  // rows and the feed's cards make: a 3px rule of `--area-accent` down the
+  // inner edge and a kicker in that same ink. A row whose seed never arrived
+  // simply has no kicker and no colour — nothing is guessed.
+  const paper = row.seed;
+  const field = paper ? areaLabelForPaper(paper, { english: isEnglish }) : null;
+  const kicker = [field, paper?.year].filter(Boolean).join(' · ');
+  const style = paper ? { '--area-accent': areaAccentForPaper(paper) } : undefined;
   const body = (
     <>
+      {kicker && <span className="profile-row-kicker">{kicker}</span>}
       <span className="profile-row-title"><ScientificText>{title}</ScientificText></span>
       {row.subtitle && <span className="profile-row-meta">{row.subtitle}</span>}
     </>
@@ -133,19 +163,39 @@ function PaperRow({ row, fallbackTitle }) {
     ? (
       <Link
         className="profile-row"
+        style={style}
         to={row.path}
         state={row.seed ? { paper: row.seed } : undefined}
       >
         {body}
       </Link>
     )
-    : <div className="profile-row profile-row--static">{body}</div>;
+    : <div className="profile-row profile-row--static" style={style}>{body}</div>;
+}
+
+/**
+ * "Member since March 2026", or nothing at all.
+ *
+ * `createdAt` is written in the same batch that reserves the handle, so a
+ * profile that exists carries one — but it arrives as whatever Firestore
+ * stored, and a shape this cannot read (a legacy document, a Timestamp that
+ * never resolved) leaves the line out rather than printing a date nobody can
+ * vouch for. Month and year only: the day is noise on a profile.
+ */
+function joinedLabel(createdAt, isEnglish) {
+  const millis = createdAt?.toMillis?.()
+    ?? (typeof createdAt?.seconds === 'number' ? createdAt.seconds * 1000 : Date.parse(createdAt));
+  if (!Number.isFinite(millis)) return '';
+  return new Date(millis).toLocaleDateString(isEnglish ? 'en' : 'es', {
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 function EmptyState({ Icon, title, hint, action }) {
   return (
     <div className="profile-empty-state">
-      <span className="profile-empty-icon" aria-hidden="true"><Icon size={22} /></span>
+      <span className="profile-empty-icon" aria-hidden="true"><Icon size={20} /></span>
       <p className="profile-empty-title">{title}</p>
       {hint && <p className="profile-empty-hint">{hint}</p>}
       {action}
@@ -198,7 +248,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     user, profilePhoto, onboardingComplete, profileLoadError,
   } = useAuth();
   const {
-    likedPaperIds, personalLibrary, ensurePersonalLibrary, getCuratedInteractionIds,
+    likedPaperIds, personalLibrary, libraryPapers, ensurePersonalLibrary, getCuratedInteractionIds,
   } = useFeed();
   const { followedEntities, loading: followingLoading } = useFollowing();
 
@@ -471,7 +521,12 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
 
   useEffect(() => {
     if (!view.isOwner || activeTab !== 'liked' || IS_DEMO || !user?.uid) return undefined;
-    const wanted = likedOrder.filter(id => !personalLibrary[id]?.paper && !likedExtra[id]);
+    // `libraryPapers` is the mount's own read, which now KEEPS what it fetches.
+    // Every liked paper is in its id set, so in the ordinary case this filter
+    // empties and the second fan-out over the same collection never happens.
+    const wanted = likedOrder.filter(
+      id => !personalLibrary[id]?.paper && !libraryPapers[id] && !likedExtra[id],
+    );
     if (wanted.length === 0) return undefined;
     let abandoned = false;
     let retryTimer = null;
@@ -516,7 +571,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       if (retryTimer) clearTimeout(retryTimer);
     };
   }, [
-    view.isOwner, activeTab, likedOrder, personalLibrary, likedExtra, user?.uid, likedRetry,
+    view.isOwner, activeTab, likedOrder, personalLibrary, libraryPapers, likedExtra,
+    user?.uid, likedRetry,
   ]);
 
   // Write-through: every title that lands survives the next unmount, so
@@ -530,17 +586,21 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const likedRows = useMemo(() => likedOrder.map(id => {
     const library = personalLibrary[id]?.paper;
     const extra = likedExtra[id];
-    const paper = library || extra?.paper;
+    const paper = library || libraryPapers[id] || extra?.paper;
     const title = paper?.title || extra?.paperTitle || '';
     const authors = paper?.authors || extra?.paperAuthors || [];
     return {
       id,
       title,
+      // No title is never "this paper has no title" — a paper always has one.
+      // It means the read has not answered for this id, and the row has to say
+      // that rather than print a definite-sounding "Untitled paper".
+      unresolved: !title,
       subtitle: authorLine(authors),
       path: paper ? getPublicPaperPath(paper) || getPublicPaperPath(id) : getPublicPaperPath(id),
       seed: seedPaperFor(id, paper, title, authors, extra?.paperCategory),
     };
-  }), [likedOrder, personalLibrary, likedExtra]);
+  }), [likedOrder, personalLibrary, libraryPapers, likedExtra]);
 
   // Same source and ordering as the "Leer después" pseudo-list in Mis listas.
   const savedRows = useMemo(() => {
@@ -606,6 +666,9 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     unsupportedBody: 'Open this link in the full PaperTok app.',
     retry: 'Try again',
     verified: 'Verified researcher',
+    kicker: 'Profile',
+    joined: label => `Member since ${label}`,
+    publicLists: count => `${count} public ${count === 1 ? 'list' : 'lists'}`,
     settings: 'Settings',
     editProfile: 'Edit profile',
     createProfile: 'Create your public profile',
@@ -640,7 +703,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     emptyLikedHint: 'Papers you like will show up here.',
     truncated: count => `Showing the ${count} most recent.`,
     loadingRows: 'Loading...',
-    untitled: 'Untitled paper',
     authCta: 'Sign in to build your own',
   } : {
     brand: 'PaperTok',
@@ -654,6 +716,9 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     unsupportedBody: 'Abre este enlace en la aplicación completa de PaperTok.',
     retry: 'Reintentar',
     verified: 'Investigador verificado',
+    kicker: 'Perfil',
+    joined: label => `Miembro desde ${label}`,
+    publicLists: count => `${count} ${count === 1 ? 'pública' : 'públicas'}`,
     settings: 'Ajustes',
     editProfile: 'Editar perfil',
     createProfile: 'Crea tu perfil público',
@@ -688,7 +753,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     emptyLikedHint: 'Los papers que te gusten aparecerán aquí.',
     truncated: count => `Se muestran los ${count} más recientes.`,
     loadingRows: 'Cargando...',
-    untitled: 'Paper sin título',
     authCta: 'Inicia sesión para crear el tuyo',
   };
 
@@ -703,12 +767,16 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       return (
         <main className={pageClass} aria-busy="true" aria-label={copy.loading}>
           <div className="public-profile-shell">
-            {!hasAppChrome && <p className="public-profile-brand">{copy.brand} · {copy.publicProfile}</p>}
             <header className="public-profile-header">
-              <div className="public-profile-avatar public-profile-skeleton" />
-              <div className="public-profile-identity">
-                <div className="public-profile-skeleton public-profile-skeleton--title" />
-                <div className="public-profile-skeleton public-profile-skeleton--line" />
+              <div className="profile-masthead-top">
+                <p className="profile-kicker">{copy.kicker}</p>
+              </div>
+              <div className="profile-masthead">
+                <div className="public-profile-avatar public-profile-skeleton" />
+                <div className="public-profile-identity">
+                  <div className="public-profile-skeleton public-profile-skeleton--title" />
+                  <div className="public-profile-skeleton public-profile-skeleton--line" />
+                </div>
                 <div className="profile-skeleton-stats">
                   <div className="public-profile-skeleton public-profile-skeleton--stat" />
                   <div className="public-profile-skeleton public-profile-skeleton--stat" />
@@ -736,7 +804,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     return (
       <main className={`${pageClass} public-profile-page--state`}>
         <div className="public-profile-shell">
-          <p className="public-profile-brand">{copy.brand}</p>
+          <p className="profile-kicker">{copy.brand}</p>
           <h1>{state.title}</h1>
           {state.body && <p className="public-profile-state-body">{state.body}</p>}
           {status === 'error' && (
@@ -764,7 +832,19 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const followedContentCount = followedEntities?.length ?? 0;
   const likesCount = likedPaperIds?.size ?? 0;
 
+  const joined = joinedLabel(profile?.createdAt, isEnglish);
   const statValue = value => (typeof value === 'number' ? value.toLocaleString() : value);
+  // A dangling "0" reads as something broken, and a count that has not been
+  // read yet is not zero — both render as no number at all, the same way the
+  // followed-content door already withholds its own.
+  const tabCount = (tab) => {
+    const value = {
+      lists: ownLists?.length ?? null,
+      saved: libraryReady ? savedRows.length : null,
+      liked: likesCount,
+    }[tab];
+    return typeof value === 'number' && value > 0 ? statValue(value) : null;
+  };
   // Held back 320ms in CSS, so an aggregation that answers quickly never flashes
   // a placeholder for a wait that did not happen. The slot keeps its space
   // either way, so nothing jumps when the number lands.
@@ -806,22 +886,27 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       {lists.map((list, index) => {
         // `emoji` holds a lucide icon name, not a literal emoji.
         const Icon = getIcon(list.emoji);
+        // The owner's colour, resolved the same way the lists page resolves
+        // it, so one list is one object wherever it is shown. A showcase card
+        // a visitor sees carries no list document, and therefore no colour:
+        // the tile falls back to a neutral rule rather than inventing one.
+        const accent = own ? resolveListColor(list) : null;
         const inner = (
           <>
-            <span className="public-profile-list-emoji" aria-hidden="true">
+            <span className="public-profile-list-icon" aria-hidden="true">
               <Icon size={18} />
             </span>
-            <span className="public-profile-list-copy">
-              <span className="public-profile-list-title">{list.title}</span>
+            <span className="public-profile-list-title">{list.title}</span>
+            <span className="public-profile-list-meta">
               <span className="public-profile-list-count">
                 {copy.papers(list.paperCount ?? 0)}
               </span>
+              {own && list.isPublished && (
+                <span className="profile-badge-public">
+                  <Globe2 size={11} aria-hidden="true" /> {copy.publicBadge}
+                </span>
+              )}
             </span>
-            {own && list.isPublished && (
-              <span className="profile-badge-public">
-                <Globe2 size={12} aria-hidden="true" /> {copy.publicBadge}
-              </span>
-            )}
           </>
         );
         return (
@@ -830,6 +915,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
               <button
                 type="button"
                 className="public-profile-list-card profile-list-card--own"
+                style={accent ? { '--list-accent': accent } : undefined}
                 onClick={() => navigate('/lists', { state: { openListId: list.id } })}
                 aria-label={copy.open(list.title)}
               >
@@ -854,7 +940,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     <div className="profile-row-list">
       {rows.map((row, index) => (
         <motion.div key={row.id} {...rowMotion(prefersReducedMotion, index)}>
-          <PaperRow row={row} fallbackTitle={copy.untitled} />
+          <PaperRow row={row} isEnglish={isEnglish} libraryReady={libraryReady} />
         </motion.div>
       ))}
     </div>
@@ -878,8 +964,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
           ? { duration: 0.12 }
           : { duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
       >
-        {!hasAppChrome && <p className="public-profile-brand">{copy.brand} · {copy.publicProfile}</p>}
-
         {view.isOwner && profile && !profileIsPublic(profile) && (
           <div className="profile-private-notice">
             <Lock size={14} aria-hidden="true" />
@@ -891,19 +975,27 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
         )}
 
         <header className="public-profile-header">
-          {/* Anchored to the header's own corner, not floated over the page:
-              the gear belongs to the identity block at every width. */}
-          {view.isOwner && (
-            <button
-              type="button"
-              className="profile-gear"
-              onClick={() => navigate('/settings')}
-              aria-label={copy.settings}
-              title={copy.settings}
-            >
-              <Settings2 size={20} />
-            </button>
-          )}
+          {/* The kicker names the page and the gear closes the row — a utility
+              icon behind a hairline, the way rule 6 groups them everywhere
+              else. It is part of the masthead's composition, not a float. */}
+          <div className="profile-masthead-top">
+            <p className="profile-kicker">
+              {hasAppChrome ? copy.kicker : `${copy.brand} · ${copy.publicProfile}`}
+            </p>
+            {view.isOwner && (
+              <button
+                type="button"
+                className="profile-gear"
+                onClick={() => navigate('/settings')}
+                aria-label={copy.settings}
+                title={copy.settings}
+              >
+                <Settings2 size={18} />
+              </button>
+            )}
+          </div>
+
+          <div className="profile-masthead">
           <div className="public-profile-avatar">
             {avatar
               ? <img src={avatar} alt="" referrerPolicy="no-referrer" />
@@ -928,7 +1020,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
             {profile
               ? (
                 <p className="public-profile-handle">
-                  @{profile.handle}
+                  <span>@{profile.handle}</span>
+                  {joined && <span className="profile-joined">{copy.joined(joined)}</span>}
                   {/* Only the owner ever renders this: for anyone else the
                       document is unreadable, so there is no page to badge. */}
                   {view.isOwner && !profileIsPublic(profile) && (
@@ -948,46 +1041,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                 </button>
               ))}
             {profile?.bio && <p className="public-profile-bio">{profile.bio}</p>}
-
-            <ul className="profile-stats">
-              <li>
-                <button
-                  type="button"
-                  className="profile-stat"
-                  onClick={() => setFollowSheet('following')}
-                  disabled={!statsUid}
-                  title={copy.openFollowing}
-                >
-                  <strong>{followedView ? followCount(followedView) : pendingCount}</strong>
-                  <span>{copy.stats.following}</span>
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  className="profile-stat"
-                  onClick={() => setFollowSheet('followers')}
-                  disabled={!statsUid}
-                  title={copy.openFollowers}
-                >
-                  <strong>{followersView ? followCount(followersView) : pendingCount}</strong>
-                  <span>{copy.stats.followers}</span>
-                </button>
-              </li>
-              {view.isOwner && (
-                <li>
-                  <button
-                    type="button"
-                    className="profile-stat"
-                    onClick={() => setRequestedTab('liked')}
-                    title={copy.openLiked}
-                  >
-                    <strong>{statValue(likesCount)}</strong>
-                    <span>{copy.stats.likes}</span>
-                  </button>
-                </li>
-              )}
-            </ul>
 
             <div className="profile-owner-actions">
               {view.isOwner ? (
@@ -1036,12 +1089,63 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
             </div>
             {followError && <p className="profile-follow-error">{copy.followFailed}</p>}
           </div>
+
+          {/* A count is machine data, so it sits in the ruled grid the
+              Explorer's entity header uses rather than in a row of pills. The
+              grid takes its column count from its children: three for the
+              owner, two for a visitor, who has no Likes counter at all. */}
+          <ul className="profile-stats">
+            <li>
+              <button
+                type="button"
+                className="profile-stat"
+                onClick={() => setFollowSheet('following')}
+                disabled={!statsUid}
+                title={copy.openFollowing}
+              >
+                <span className="profile-stat-value">
+                  {followedView ? followCount(followedView) : pendingCount}
+                </span>
+                <span className="profile-stat-label">{copy.stats.following}</span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="profile-stat"
+                onClick={() => setFollowSheet('followers')}
+                disabled={!statsUid}
+                title={copy.openFollowers}
+              >
+                <span className="profile-stat-value">
+                  {followersView ? followCount(followersView) : pendingCount}
+                </span>
+                <span className="profile-stat-label">{copy.stats.followers}</span>
+              </button>
+            </li>
+            {view.isOwner && (
+              <li>
+                <button
+                  type="button"
+                  className="profile-stat"
+                  onClick={() => setRequestedTab('liked')}
+                  title={copy.openLiked}
+                >
+                  <span className="profile-stat-value">{statValue(likesCount)}</span>
+                  <span className="profile-stat-label">{copy.stats.likes}</span>
+                </button>
+              </li>
+            )}
+          </ul>
+          </div>
         </header>
 
         {view.isOwner ? (
           <>
             <div className="profile-tabs" role="tablist" aria-label={copy.tabsLabel}>
-              {view.tabs.map(tab => (
+              {view.tabs.map(tab => {
+                const count = tabCount(tab);
+                return (
                 <button
                   key={tab}
                   type="button"
@@ -1053,6 +1157,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   onClick={() => setRequestedTab(tab)}
                 >
                   {copy.tabs[tab]}
+                  {count && <span className="profile-tab-count">{count}</span>}
                   {activeTab === tab && (
                     <motion.span
                       className="profile-tab-indicator"
@@ -1064,7 +1169,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                     />
                   )}
                 </button>
-              ))}
+                );
+              })}
             </div>
 
             <AnimatePresence mode="wait" initial={false}>
@@ -1083,7 +1189,10 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   <>
                     <div className="profile-panel-header">
                       <p className="profile-panel-note">{copy.ownListsNote}</p>
-                      <Link className="profile-manage-link" to="/lists">{copy.manageLists}</Link>
+                      <Link className="profile-manage-link" to="/lists">
+                        {copy.manageLists}
+                        <ArrowRight size={13} aria-hidden="true" />
+                      </Link>
                     </div>
                     {ownListsFailed && (
                       <EmptyState
@@ -1139,8 +1248,15 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
             </AnimatePresence>
           </>
         ) : (
-          <section className="profile-visitor-lists" aria-label={copy.pinnedHeading}>
-            <h2 className="profile-visitor-heading">{copy.pinnedHeading}</h2>
+          <section aria-label={copy.pinnedHeading}>
+            <div className="profile-visitor-lists">
+              <h2 className="profile-visitor-heading">{copy.pinnedHeading}</h2>
+              {visitorLists.length > 0 && (
+                <span className="profile-visitor-count">
+                  {copy.publicLists(visitorLists.length)}
+                </span>
+              )}
+            </div>
             {visitorLists.length === 0 ? (
               // The empty state waits for the showcase to answer: claiming
               // "no lists" while the read is in flight would be a guess.

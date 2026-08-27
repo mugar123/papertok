@@ -6,18 +6,30 @@ import { getUiErrorMessage } from '../../utils/errorMessages';
 import { getScientificReport } from '../../services/scientificReportService';
 import { getScientificTrends } from '../../services/scientificTrendService';
 import { findOpenAccessCopy } from '../../services/unpaywallService';
+import { accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.js';
 import CustomDateSelector from './CustomDateSelector';
 import ReportFilters from './ReportFilters';
 import PaperCard from '../Feed/PaperCard';
-import { CATEGORIES, getCategoryGradient, getCategoryLabel } from '../../data/categories';
+import ResearchForme from './ResearchForme';
+import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
+import PaperOverlay from '../Feed/PaperOverlay';
+import { CATEGORIES, getCategoryLabel } from '../../data/categories';
 import { resolvePaperTopic } from '../../utils/topicNavigation';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
-import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, X, Flame, Database, Sparkles } from 'lucide-react';
+import { Calendar, Award, Share2, Check, BadgeCheck, Unlock, Lock, ExternalLink, FileText, BarChart3, TrendingUp, Flame, Database, Sparkles, ArrowRight, ArrowLeft } from 'lucide-react';
 import ScientificText from '../ScientificText';
 import 'katex/dist/katex.min.css';
 import './ScientificReport.css';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
+
+/** The same glyph per status the feed card uses, keyed the same way. */
+const STATUS_TAG_ICONS = {
+  preprint: FileText,
+  verified: BadgeCheck,
+  open: Unlock,
+  openCopy: Unlock,
+  subscription: Lock,
+};
 
 function getHeroCategoryLabel(paper, language = 'es') {
   const category = typeof paper?.primaryCategory === 'string' ? paper.primaryCategory.trim() : '';
@@ -89,6 +101,51 @@ function formatTrendPeriod(period, locale = 'es-ES') {
   return from === to ? from : `${from} - ${to}`;
 }
 
+/* Reading order of the entrance, not DOM order: the sidebar is first in the DOM
+   so screen readers announce the measurements before the stories, but on screen
+   the lead story and the stats bar start together. */
+const ENTER = { hero: 0, stats: 0, trends: 1, topics: 2, coverage: 3, label: 1, cards: 2 };
+
+/**
+ * The lead story while the next edition compiles.
+ *
+ * Without this the hero was the one thing left standing at full strength once
+ * the rest of the page had gone grey — and worse, standing there showing the
+ * *previous* edition's paper as though it were the answer to the period the
+ * reader had just asked for. It joins the same grey vocabulary as the forme and
+ * the trends, in its own shape, so the whole edition reads as being replaced.
+ */
+function LeadStorySkeleton() {
+  return (
+    <section className="sr-hero sr-hero--skeleton sr-enter" style={{ '--enter-order': ENTER.hero }} aria-hidden="true">
+      <div className="sr-hero-glow" />
+      <div className="sr-hero-inner">
+        <span className="sr-bone sr-bone--lead" />
+        <div className="sr-hero-main">
+          <span className="sr-bone sr-bone--kicker" />
+          <span className="sr-bone sr-bone--hero-title" />
+          <span className="sr-bone sr-bone--hero-title sr-bone--short" />
+          <span className="sr-bone sr-bone--authors" />
+          <div className="sr-hero-tags">
+            <span className="sr-bone sr-bone--tag" />
+            <span className="sr-bone sr-bone--tag" />
+            <span className="sr-bone sr-bone--tag" />
+          </div>
+          <div className="sr-hero-actions">
+            <span className="sr-bone sr-bone--btn" />
+            <span className="sr-bone sr-bone--btn" />
+          </div>
+        </div>
+        <div className="sr-hero-abstract">
+          {[0, 1, 2, 3, 4, 5].map(line => (
+            <span key={line} className={`sr-bone sr-bone--dek${line === 5 ? ' sr-bone--short' : ''}`} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ReportCoverage({ coverage, enterOrder }) {
   const { language, isEnglish } = useLanguage();
   if (!coverage?.sources?.length) return null;
@@ -139,7 +196,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
   const reportRequestId = useRef(0);
   const trendsRef = useRef(null);
   const closeOverlay = useCallback(() => setSelectedPaper(null), []);
-  const paperDialogRef = useDialogFocus(Boolean(selectedPaper), closeOverlay);
 
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
@@ -153,8 +209,20 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
   const fetchReport = useCallback(async (tf, currentFilters, targetPage = 1, options = {}) => {
     const requestId = ++reportRequestId.current;
-    setLoading(true);
-    window.dispatchEvent(new Event('reportLoadingStart'));
+    /* Turning to another selection reads a slice of an ordering that is already
+       ranked and cached, so it normally resolves in a frame or two and the
+       loading treatment would be a flash of grey for nothing. It is armed on a
+       delay instead — the same 320 ms the rest of the app waits before it
+       admits to a placeholder — so a cold corpus still says something. */
+    let quietTimer = null;
+    const goLoud = () => {
+      if (requestId !== reportRequestId.current) return;
+      setLoading(true);
+      window.dispatchEvent(new Event('reportLoadingStart'));
+    };
+    if (options.quiet) quietTimer = setTimeout(goLoud, 320);
+    else goLoud();
+    const stopWaiting = () => { if (quietTimer) { clearTimeout(quietTimer); quietTimer = null; } };
     setError(null);
     let reportFinished = false;
     try {
@@ -166,8 +234,10 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       const data = await getScientificReport(tf, targetPage, currentFilters, {
         forceRefresh: options.forceRefresh,
         trends: trendsRef.current,
+        selection: options.selection,
       });
       if (requestId === reportRequestId.current) {
+        stopWaiting();
         setReport(data);
         setLoading(false);
         window.dispatchEvent(new Event('reportLoadingEnd'));
@@ -182,6 +252,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           try {
             const reranked = await getScientificReport(tf, targetPage, currentFilters, {
               trends: nextTrends,
+              selection: options.selection,
             });
             if (requestId === reportRequestId.current) setReport(reranked);
           } catch (rerankError) {
@@ -201,6 +272,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       }
       return false;
     } finally {
+      stopWaiting();
       if (!reportFinished && requestId === reportRequestId.current) {
         setLoading(false);
         window.dispatchEvent(new Event('reportLoadingEnd'));
@@ -238,6 +310,22 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     return () => window.removeEventListener('refreshScientificReport', handleGlobalRefresh);
   }, [timeframe, filters, fetchReport]);
 
+  /* Which selection is on the page, read from what was actually built rather
+     than from what was asked for: a period that shrank hands back the last
+     selection it has, and the chrome has to agree with the papers. */
+  const currentSelection = report.selection || 1;
+  const totalSelections = report.selectionCount || 1;
+
+  const goToSelection = useCallback((next) => {
+    fetchReport(timeframe, filters, 1, { selection: next, quiet: true }).then(() => {
+      /* The reader pressed this at the foot of the page; leaving them there
+         would drop them into the middle of a selection they have not started.
+         All the way to the top, not just to the lead story: a new selection is
+         a new front page, and the nameplate says which one they are on. */
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }, [fetchReport, timeframe, filters]);
+
   const getContextText = () => {
     if (typeof timeframe === 'object' && timeframe.type === 'custom') {
       if (timeframe.from === timeframe.to) return `${timeframe.from}`;
@@ -270,7 +358,8 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
   const hero = report.mainDiscovery;
   const accessibleHero = heroOpenCopy ? { ...hero, ...heroOpenCopy, openAccess: true } : hero;
-  const heroGradient = hero ? getCategoryGradient(hero.primaryCategory || '') : 'var(--gradient-brand)';
+  // Same resolution as the forme below it and as the card it opens.
+  const heroGradient = hero ? areaAccentForPaper(hero) : 'var(--gradient-brand)';
   const reportContentKey = [
     hero?.id || 'no-hero',
     ...(report.highlights || []).map(paper => paper.id),
@@ -294,11 +383,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     { id: 'custom', label: isEnglish ? 'Custom' : 'Otro' },
   ];
 
-  /* Reading order of the entrance, not DOM order: the sidebar is first in the
-     DOM so screen readers announce the measurements before the stories, but on
-     screen the lead story and the stats bar start together. */
-  const ENTER = { hero: 0, stats: 0, trends: 1, topics: 2, coverage: 3, label: 1, cards: 2 };
-
   const trendItems = trends.items || [];
   const maxTrendChange = trendItems.reduce(
     (largest, item) => Math.max(largest, Number(item.changePercent) || 0),
@@ -313,7 +397,22 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       <header className="sr-header">
         <div className="sr-header-top">
           <div className="sr-masthead-block">
-            <span className="sr-eyebrow"><Sparkles size={12} /> {isEnglish ? 'Scientific edition for this period' : 'Edición científica del periodo'}</span>
+            <span className="sr-eyebrow">
+              <Sparkles size={12} />
+              {isEnglish ? 'Scientific edition for this period' : 'Edición científica del periodo'}
+              {/* Only where there is somewhere to go: a period thin enough for
+                  one selection must not offer a count of one. */}
+              {totalSelections > 1 && (
+                <>
+                  <span className="sr-eyebrow-sep" aria-hidden="true">·</span>
+                  <span className="sr-eyebrow-count">
+                    {isEnglish
+                      ? `Selection ${currentSelection} of ${totalSelections}`
+                      : `Tanda ${currentSelection} de ${totalSelections}`}
+                  </span>
+                </>
+              )}
+            </span>
             <h1 className="sr-masthead">Research</h1>
           </div>
           <div className="sr-header-actions">
@@ -438,7 +537,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22 }}
         >
 
-          {loading && <div className="sr-update-line" aria-label={isEnglish ? 'Updating the edition' : 'Actualizando la edición'} />}
 
           <div className="sr-layout">
           <aside className="sr-aside">
@@ -548,15 +646,17 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           </aside>
 
           <div className="sr-main">
-          {/* Hero */}
-          {hero && (
+          {/* Hero. While the next edition compiles it gives way to its own
+              skeleton rather than standing there showing the previous one. */}
+          {loading && hero && <LeadStorySkeleton />}
+          {!loading && hero && (
             <section className="sr-hero sr-enter" style={{ '--hero-glow': heroGradient, '--enter-order': ENTER.hero }}>
               <div className="sr-hero-glow" />
               <div className="sr-hero-inner">
                 <span className="sr-lead-label">{isEnglish ? 'Lead story' : 'Portada'}</span>
                 <div className="sr-hero-main">
                 <div className="sr-hero-kicker">
-                  <span className="sr-kicker-cat">{getHeroCategoryLabel(hero, language).toUpperCase()}</span>
+                  <span className="sr-kicker-cat">{(areaLabelForPaper(hero, { english: isEnglish }) || getHeroCategoryLabel(hero, language)).toUpperCase()}</span>
                   <span className="sr-kicker-sep" />
                   {hero.journal && <span className="sr-kicker-venue">{hero.journal}</span>}
                   <span className="sr-kicker-year"><Calendar size={13} /> {hero.year}</span>
@@ -566,19 +666,26 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   {hero.authors?.slice(0, 4).map(a => a.name || a).join(', ')}
                   {hero.authors?.length > 4 && ' et al.'}
                 </p>
+                {/* The same two facts the feed card states, resolved by the same
+                    module: this hero and the card had each grown their own copy
+                    of the tests and had already drifted over what counts as a
+                    preprint. The DOI is no longer nested inside the "not a
+                    preprint" branch either — arXiv mints DOIs, and a preprint
+                    that has one was losing its only link to the record. */}
                 <div className="sr-hero-tags">
-                  {hero.publicationType === 'preprint' || hero.publicationStatus === 'preprint' ? (
-                    <span className="sr-tag preprint"><FileText size={12} /> Preprint</span>
-                  ) : (
-                    <>
-                      <span className="sr-tag verified"><BadgeCheck size={12} /> Verified</span>
-                      {safeDoiUrl(hero.doi) && <a href={safeDoiUrl(hero.doi)} target="_blank" rel="noopener noreferrer" className="sr-tag doi" onClick={e => e.stopPropagation()}><ExternalLink size={12} /> DOI</a>}
-                    </>
-                  )}
-                  {accessibleHero.openAccess
-                    ? <span className="sr-tag oa"><Unlock size={12} /> {heroOpenCopy ? (isEnglish ? 'Open version available' : 'Versión abierta disponible') : 'Open Access'}</span>
-                    : <span className="sr-tag sub"><Lock size={12} /> {isEnglish ? 'Subscription' : 'Suscripción'}</span>}
-                  {hero.citationCount > 0 && <span className="sr-tag cites"><Award size={12} /> {hero.citationCount} {isEnglish ? 'citations' : 'citas'}</span>}
+                  {[
+                    reviewTagForPaper(hero, { english: isEnglish }),
+                    accessTagForPaper(hero, { english: isEnglish, openCopyFound: Boolean(heroOpenCopy) }),
+                  ].filter(Boolean).map(tag => {
+                    const Glyph = STATUS_TAG_ICONS[tag.key];
+                    return (
+                      <span key={tag.key} className="sr-tag" data-tone={tag.tone} title={tag.hint}>
+                        <Glyph size={12} /> {tag.label}
+                      </span>
+                    );
+                  })}
+                  {hero.citationCount > 0 && <span className="sr-tag"><Award size={12} /> {hero.citationCount} {isEnglish ? 'citations' : 'citas'}</span>}
+                  {safeDoiUrl(hero.doi) && <a href={safeDoiUrl(hero.doi)} target="_blank" rel="noopener noreferrer" className="sr-tag sr-tag--link" onClick={e => e.stopPropagation()} title={isEnglish ? 'Open the DOI record' : 'Abrir el registro DOI'}><ExternalLink size={12} /> DOI</a>}
                 </div>
                 <div className="sr-hero-actions">
                   <button className="sr-btn primary" onClick={() => setSelectedPaper(accessibleHero)}>
@@ -600,60 +707,103 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </section>
           )}
 
-          {/* Bento Highlights */}
+          {/* The forme: the selection set as a newspaper section front. The
+              composition is planned from the edition's own identity, so one
+              edition always lays out the same way and the next one differs. */}
           {report.highlights?.length > 0 && (
             <section className="sr-highlights">
               <h2 className="sr-section-label sr-enter" style={{ '--enter-order': ENTER.label }}>
                 {isEnglish ? 'Other highlighted research' : 'Otras investigaciones destacadas'}
               </h2>
-              <div className="sr-bento">
-                {report.highlights.map((paper, i) => {
-                  const cat = (paper.categories && paper.categories[0]) || paper.primaryCategory || 'General';
-                  const accent = getCategoryGradient(cat);
-                  // Pattern: wide, narrow, narrow, wide, narrow, narrow...
-                  const isWide = i % 3 === 0;
-                  /* Which grid column the card lands in. CSS cannot recover it
-                     from the DOM index, because a wide card is one child and
-                     two columns. */
-                  const column = isWide ? 'col-full' : i % 3 === 1 ? 'col-left' : 'col-right';
+              <ResearchForme
+                papers={report.highlights}
+                editionKey={reportContentKey}
+                loading={loading}
+                onSelect={setSelectedPaper}
+                enterFrom={ENTER.cards}
+                isEnglish={isEnglish}
+              />
+            </section>
+          )}
 
-                  return (
-                    <article
-                      key={paper.id}
-                      className={`sr-bento-card ${isWide ? 'wide' : 'narrow'} ${column} sr-enter`}
-                      onClick={() => setSelectedPaper(paper)}
-                      /* Capped: the cards below the fold gain nothing from a
-                         longer wait, and the page should feel settled by then. */
-                      style={{ '--enter-order': ENTER.cards + Math.min(i, 7) }}
-                    >
-                      <div className="sr-bento-accent" style={{ background: accent }} />
-                      <div className="sr-bento-body">
-                        <div className="sr-bento-top">
-                          <span className="sr-bento-cat" style={{ '--card-accent': accent }}>
-                            {cat.split('.')[0]}
-                          </span>
-                          <span className="sr-bento-year">{paper.year}</span>
-                        </div>
-                        <h3 className="sr-bento-title"><ScientificText>{paper.title}</ScientificText></h3>
-                        {isWide && (
-                          <p className="sr-bento-abstract">
-                            {hasUsableAIAbstract(paper.abstract)
-                              ? <ScientificText>{paper.abstract}</ScientificText>
-                              : (isEnglish ? 'Abstract unavailable.' : 'Resumen no disponible.')}
-                          </p>
-                        )}
-                        <div className="sr-bento-bottom">
-                          <div className="sr-bento-tags">
-                            {paper.openAccess && <span className="sr-micro oa"><Unlock size={11} /> Open Access</span>}
-                            {paper.citationCount > 0 && <span className="sr-micro">{paper.citationCount} {isEnglish ? 'citations' : 'citas'}</span>}
-                            {paper.journal && <span className="sr-micro venue">{paper.journal}</span>}
-                          </div>
-                        </div>
-                      </div>
-                    </article>
-                  );
-                })}
-              </div>
+          {/* The turn. A reader who reaches the foot of a selection has read
+              everything this period ranked highest; the question is only
+              whether there is more of it. */}
+          {totalSelections > 1 && !loading && (
+            <section className={`sr-turn ${currentSelection >= totalSelections ? 'is-exhausted' : ''}`}>
+              <span className="sr-turn-kicker">
+                {currentSelection >= totalSelections
+                  ? (isEnglish ? 'End of the last selection' : 'Fin de la última tanda')
+                  : (isEnglish ? `End of selection ${currentSelection}` : `Fin de la tanda ${currentSelection}`)}
+              </span>
+              {currentSelection >= totalSelections ? (
+                <>
+                  <p className="sr-turn-line">
+                    {isEnglish
+                      ? 'That is every paper this period had to rank. To read more, widen the period or clear a filter.'
+                      : 'Eso es todo lo que este periodo tenía que ordenar. Para leer más, amplía el periodo o quita un filtro.'}
+                  </p>
+                  <div className="sr-turn-row">
+                    {currentSelection > 1 && (
+                      <button className="sr-btn" onClick={() => goToSelection(currentSelection - 1)}>
+                        <ArrowLeft size={15} />
+                        {isEnglish ? `Selection ${currentSelection - 1}` : `Tanda ${currentSelection - 1}`}
+                      </button>
+                    )}
+                    {broaderTimeframe && (
+                      <button
+                        className="sr-btn"
+                        onClick={() => { setTimeframe(broaderTimeframe); setCustomRange(null); setShowCustomPicker(false); }}
+                      >
+                        {isEnglish ? 'Widen the period' : 'Ampliar el periodo'}
+                      </button>
+                    )}
+                    <span className="sr-turn-note">
+                      {isEnglish
+                        ? `${totalSelections} selections · ${report.corpusSize || 0} candidates ranked`
+                        : `${totalSelections} tandas · ${report.corpusSize || 0} candidatos ordenados`}
+                    </span>
+                    {currentSelection > 2 && (
+                      <button className="sr-turn-back" onClick={() => goToSelection(1)}>
+                        {isEnglish ? 'Back to selection 1' : 'Volver a la tanda 1'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <p className="sr-turn-line">
+                    {isEnglish
+                      ? `You have read the ${currentSelection * (report.editions?.perSelection || 11)} papers this period ranked highest.`
+                      : `Has leído los ${currentSelection * (report.editions?.perSelection || 11)} papers mejor situados de este periodo.`}
+                  </p>
+                  <div className="sr-turn-row">
+                    {/* Stepping back one, beside the step forward. A reader who
+                        turned the page by mistake should not have to go all the
+                        way to the start to undo it. */}
+                    {currentSelection > 1 && (
+                      <button className="sr-btn" onClick={() => goToSelection(currentSelection - 1)}>
+                        <ArrowLeft size={15} />
+                        {isEnglish ? `Selection ${currentSelection - 1}` : `Tanda ${currentSelection - 1}`}
+                      </button>
+                    )}
+                    <button className="sr-btn primary" onClick={() => goToSelection(currentSelection + 1)}>
+                      {isEnglish ? `Read selection ${currentSelection + 1}` : `Leer la tanda ${currentSelection + 1}`}
+                      <ArrowRight size={15} />
+                    </button>
+                    <span className="sr-turn-note">
+                      {isEnglish
+                        ? `${totalSelections} selections in this period · ${report.corpusSize || 0} candidates ranked`
+                        : `${totalSelections} tandas en este periodo · ${report.corpusSize || 0} candidatos ordenados`}
+                    </span>
+                    {currentSelection > 2 && (
+                      <button className="sr-turn-back" onClick={() => goToSelection(1)}>
+                        {isEnglish ? 'Back to selection 1' : 'Volver a la tanda 1'}
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
             </section>
           )}
           </div>
@@ -663,54 +813,33 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
         </AnimatePresence>
       )}
 
-      {/* Paper Detail Overlay */}
-      <AnimatePresence>
+      {/* Opening a paper takes the screen, with a back arrow in the corner —
+          the same move the explorer and search already made. */}
+      <PaperOverlay
+        open={Boolean(selectedPaper)}
+        onClose={closeOverlay}
+        isEnglish={isEnglish}
+        label={isEnglish ? 'Paper details' : 'Detalles del paper'}
+      >
         {selectedPaper && (
-          <motion.div 
-            ref={paperDialogRef}
-            className="sr-paper-overlay" 
-            onClick={closeOverlay}
-            role="dialog"
-            aria-modal="true"
-            aria-label={isEnglish ? 'Paper details' : 'Detalles del paper'}
-            tabIndex={-1}
-            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, backdropFilter: 'blur(0px)' }}
-            animate={prefersReducedMotion ? { opacity: 1 } : { opacity: 1, backdropFilter: 'blur(12px)' }}
-            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, backdropFilter: 'blur(0px)' }}
-            transition={{ duration: prefersReducedMotion ? 0 : 0.3 }}
-          >
-            <motion.div 
-              className="sr-paper-overlay-inner" 
-              onClick={(e) => e.stopPropagation()}
-              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85, y: 40 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.85, y: 40 }}
-              transition={{ duration: prefersReducedMotion ? 0 : 0.3, ease: [0.16, 1, 0.3, 1] }}
-            >
-              <button data-dialog-initial-focus className="sr-overlay-close" onClick={closeOverlay} aria-label={isEnglish ? 'Close paper' : 'Cerrar paper'}>
-                <X size={20} />
-              </button>
-              <div className="sr-paper-card-wrapper">
-                <PaperCard
-                  paper={selectedPaper}
-                  isLiked={likedPaperIds.has(selectedPaper.id)}
-                  isSaved={savedPaperIds.has(selectedPaper.id)}
-                  isRead={readPaperIds.has(selectedPaper.id)}
-                  onLike={toggleLike}
-                  onNotInterested={(paper) => { markNotInterested(paper); closeOverlay(); }}
-                  onMarkAsRead={markAsRead}
-                  trackViewTime={trackViewTime}
-                  trackSkip={trackSkip}
-                  onOpenPdf={onOpenPdf}
-                  onSaveToList={onSaveToList}
-                  getInteractionState={getInteractionState}
-                  hideScrollHint
-                />
-              </div>
-            </motion.div>
-          </motion.div>
+          <PaperCard
+            paper={selectedPaper}
+            isLiked={likedPaperIds.has(selectedPaper.id)}
+            isSaved={savedPaperIds.has(selectedPaper.id)}
+            isRead={readPaperIds.has(selectedPaper.id)}
+            onLike={toggleLike}
+            onNotInterested={(paper) => { markNotInterested(paper); closeOverlay(); }}
+            onMarkAsRead={markAsRead}
+            trackViewTime={trackViewTime}
+            trackSkip={trackSkip}
+            onOpenPdf={onOpenPdf}
+            onSaveToList={onSaveToList}
+            getInteractionState={getInteractionState}
+            hideScrollHint
+          />
         )}
-      </AnimatePresence>
+      </PaperOverlay>
+
     </main>
   );
 }

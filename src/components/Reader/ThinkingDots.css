@@ -1,0 +1,40 @@
+/* ============================================
+   Thinking dots — the wait before the first byte
+
+   Three dots on the text baseline, each one rising and brightening 160ms after
+   the one before it. The cycle is long (1.4s) on purpose: a fast pulse reads as
+   a progress bar that is lying, a slow one reads as breathing.
+   ============================================ */
+
+.td {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* Sits on the line with the label rather than above it. */
+  vertical-align: middle;
+}
+
+.td i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.32;
+  animation: thinkingDot 1.4s ease-in-out infinite;
+}
+
+.td i:nth-child(2) { animation-delay: 160ms; }
+.td i:nth-child(3) { animation-delay: 320ms; }
+
+@keyframes thinkingDot {
+  0%, 72%, 100% { opacity: 0.32; transform: translateY(0); }
+  32% { opacity: 1; transform: translateY(-3px); }
+}
+
+/* Still three dots, still legible as "busy" — just no movement. */
+@media (prefers-reduced-motion: reduce) {
+  .td i {
+    animation: none;
+    opacity: 0.6;
+  }
+}

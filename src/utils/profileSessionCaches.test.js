@@ -156,3 +156,35 @@ test('rubbish is refused rather than cached by the follow slots too', () => {
   assert.equal(readFollowList('uid-r', 'followers'), undefined);
   assert.equal(followListKey('uid-r', null), null);
 });
+
+/* --- Both readers of the collection paint from the cache both of them stamp ---
+   The lists page called `rememberOwnLists` on every visit and never read it
+   back, which made it the one screen this cache was written for that did not
+   use it. It was not a quiet inefficiency: Favorites, Read later and Reading
+   history are synthesised from contexts already in memory, so three cards
+   painted in the first frame and the owner's own lists dropped in seconds
+   later, growing the grid under someone already reading it. The save modal has
+   seeded from `ownListsCache.get(uid)` since it was written; the difference
+   between the two files was the bug. */
+
+const OWN_LISTS_READERS = [
+  '../components/Lists/ListsPage.jsx',
+  '../components/Lists/SaveToListModal.jsx',
+];
+
+test('SOURCE: every screen that reads the lists collection seeds from the session cache', async () => {
+  const { readFile } = await import('node:fs/promises');
+  for (const path of OWN_LISTS_READERS) {
+    const source = await readFile(new URL(path, import.meta.url), 'utf8');
+
+    assert.ok(source.includes('rememberOwnLists'),
+      `${path}: a screen that reads the collection must stamp the cache`);
+    assert.ok(source.includes('ownListsCache.get'),
+      `${path}: it must also PAINT from it — stamping a cache nobody reads is the bug`);
+    // Seeded in the initialiser, not in an effect: a seed that lands after the
+    // first commit still paints the empty state for a frame, which is the
+    // flicker this exists to remove.
+    assert.match(source, /useState\(\(\)\s*=>\s*seededLists\s*\?\?\s*\[\]\)/,
+      `${path}: the seed belongs in the useState initialiser`);
+  }
+});

@@ -1,0 +1,740 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    a { color: #1a5fd0; text-decoration: none; }
+    a:hover { color: #12459b; }
+    button { font: inherit; }
+
+    /* La voz "de máquina" de PaperTok: mono, versalitas, tracking abierto. */
+    .k { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 500 0.6875rem/1.4 'IBM Plex Mono', monospace; }
+
+    /* ── Nodo ──
+       El objetivo del botón es 44 px aunque el punto mida 11: el punto es
+       tipografía, el objetivo es dedo. */
+    .node { position: absolute; display: flex; align-items: center; border: 0; background: none; padding: 0; cursor: pointer; white-space: nowrap; }
+    .node .dot { flex: 0 0 44px; height: 100%; display: grid; place-items: center; }
+    .node .dot i { display: block; width: 11px; height: 11px; border-radius: 50%; transition: transform 140ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 140ms ease; }
+    .node .lab { max-width: 84px; overflow: hidden; text-overflow: ellipsis; font: 500 0.625rem/1 'IBM Plex Mono', monospace; color: #8a919e; transition: color 120ms ease; }
+    .node .lab b { font-weight: 600; color: #5b6270; transition: color 120ms ease; }
+    .node:hover .lab, .node:hover .lab b { color: #111318; }
+    .node:hover .dot i { transform: scale(1.18); }
+    .node.on .lab { color: #5b6270; }
+    .node.on .lab b { color: #111318; }
+    .node.on .dot i { transform: scale(1.28); box-shadow: 0 0 0 4px rgba(17, 19, 24, 0.1); }
+    .node:focus-visible { outline: 2px solid #111318; outline-offset: 1px; border-radius: 3px; }
+
+    .lrow { width: 100%; min-height: 70px; display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 0; border-bottom: 1px solid #e6e7ea; background: transparent; text-align: left; cursor: pointer; position: relative; transition: background 120ms ease; }
+    .lrow:hover { background: #f7f7f8; }
+    .lrow::before { position: absolute; top: 0; bottom: 0; left: 0; width: 2px; background: #111318; content: ''; transform: scaleY(0); transition: transform 120ms ease; }
+    .lrow:hover::before, .lrow.on::before { transform: scaleY(1); }
+    .lrow.on { background: #f7f7f8; }
+
+    .tab { min-height: 34px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 0; border-radius: 2px; background: transparent; color: #5b6270; font-size: 0.8125rem; font-weight: 500; cursor: pointer; transition: background 120ms ease, color 120ms ease; }
+    .tab:hover { color: #111318; }
+    .tab.on { background: #ffffff; border: 1px solid #d3d5db; color: #111318; font-weight: 600; }
+
+    .icb { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: #8a919e; cursor: pointer; transition: color 120ms ease, border-color 120ms ease, background 120ms ease; }
+    .icb:hover { color: #111318; }
+    .icb.on { border-color: #d3d5db; background: #f7f7f8; color: #111318; }
+    .icb.inerte { opacity: 0.32; pointer-events: none; }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 44px; padding: 0 15px; border-radius: 3px; font-size: 0.8125rem; font-weight: 600; cursor: pointer; transition: background 120ms ease, border-color 120ms ease, color 120ms ease; }
+    .btn-ink { border: 1px solid #111318; background: #111318; color: #ffffff; }
+    .btn-ink:hover { background: #2b2f38; border-color: #2b2f38; }
+    .btn-gh { border: 1px solid #d3d5db; background: #ffffff; color: #111318; }
+    .btn-gh:hover { border-color: #111318; background: #f7f7f8; }
+
+    .crumb { border: 0; background: none; padding: 0; cursor: pointer; color: #8a919e; max-width: 118px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .crumb:hover { color: #111318; text-decoration: underline; text-underline-offset: 3px; }
+    .crumb.actual { pointer-events: none; }
+
+    /* ── Movimiento ──
+       Las dos curvas de la hoja y sus tiempos, sin añadir una tercera. Primero
+       la estructura, después el contenido; lo que sale tarda la mitad. */
+    .peek { animation: fichaIn 240ms cubic-bezier(0.16, 1, 0.3, 1); }
+    .peek.sale { animation: fichaOut 180ms ease-out forwards; pointer-events: none; }
+    @keyframes fichaIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+    @keyframes fichaOut { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(14px); } }
+
+    .regla { animation: reglaIn 320ms cubic-bezier(0.16, 1, 0.3, 1) 120ms backwards; }
+    @keyframes reglaIn { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    .marca { animation: itemIn 280ms cubic-bezier(0.16, 1, 0.3, 1) 140ms backwards; }
+    .edge { animation: aristaIn 220ms ease-out backwards; }
+    @keyframes aristaIn { from { opacity: 0; } to { opacity: 1; } }
+    /* itemIn es el fotograma con el que ya entra una fila de la lista. */
+    .fall { animation: itemIn 280ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+    @keyframes itemIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+    /* El salto: el nodo sube por su vertical hasta la regla y el centro
+       anterior baja a la banda que le toca. */
+    .apaga { opacity: 0; transition: opacity 160ms ease-out; }
+    .oculto { opacity: 0; }
+    .viaje { position: absolute; width: 11px; height: 11px; margin: -5.5px 0 0 -5.5px; border-radius: 50%; z-index: 8; transition: top 320ms cubic-bezier(0.16, 1, 0.3, 1) 60ms, transform 320ms cubic-bezier(0.16, 1, 0.3, 1) 60ms, background 320ms ease 60ms; }
+    .baja-a { animation: bajaA 280ms cubic-bezier(0.16, 1, 0.3, 1); }
+    .baja-b { animation: bajaB 280ms cubic-bezier(0.16, 1, 0.3, 1); }
+    @keyframes bajaA { from { transform: translateY(30px) scale(1.4); } to { transform: none; } }
+    @keyframes bajaB { from { transform: translateY(-30px) scale(1.4); } to { transform: none; } }
+
+    .skel { border-radius: 50%; background: #e6e7ea; animation: pul 1.3s ease-in-out infinite; }
+    @keyframes pul { 0%, 100% { opacity: 1; } 50% { opacity: 0.38; } }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 390px; height: 844px; background: #ffffff; overflow: hidden; display: flex; flex-direction: column; justify-content: flex-end">
+
+  <!-- La tarjeta del feed, debajo. Sin barra de estado falsa: ese hueco es del sistema. -->
+  <div style="position: absolute; left: 0; right: 0; top: 0; padding: 62px 20px 0">
+    <div class="k" style="display: flex; align-items: center; gap: 6px; color: #5b6270; margin-bottom: 14px"><span style="color: #c2410c">CS.CL</span><span style="color: #d3d5db">·</span><span>2017</span><span style="color: #d3d5db">·</span><span>131.204 citas</span></div>
+    <h1 style="margin: 0 0 10px; font-size: 1.75rem; line-height: 1.16; font-weight: 700; letter-spacing: -0.01em">Attention Is All You Need</h1>
+    <p class="m" style="margin: 0; color: #8a919e">Vaswani, Shazeer, Parmar, Uszkoreit…</p>
+  </div>
+  <div style="position: absolute; inset: 0; background: rgba(17, 19, 24, 0.35); backdrop-filter: blur(3px)"></div>
+
+  <section style="position: relative; flex: 0 0 auto; height: 674px; display: flex; flex-direction: column; background: #ffffff; border: 1px solid #d3d5db; border-bottom: none; border-radius: 8px 8px 0 0; box-shadow: 0 -16px 48px rgba(17, 19, 24, 0.12); overflow: hidden">
+
+    <div style="width: 34px; height: 4px; flex: 0 0 auto; margin: 9px auto 0; border-radius: 9999px; background: #a9aeba"></div>
+
+    <!-- ── Cabecera ── -->
+    <header style="min-height: 56px; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; padding: 0 8px 0 14px; border-bottom: 1px solid #e6e7ea">
+      <div style="display: flex; align-items: center; gap: 9px">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8a919e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"></path><path d="M12 12V8"></path></svg>
+        <h3 style="margin: 0; font-size: 0.9375rem; font-weight: 600">Conexiones del paper</h3>
+      </div>
+      <div style="display: flex; align-items: center; gap: 2px">
+        <button class="{{ mapaClass }}" onClick="{{ verMapa }}" title="Mapa" aria-label="Ver como mapa">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3"></path><path d="M12 12V8"></path></svg>
+        </button>
+        <button class="{{ listaClass }}" onClick="{{ verLista }}" title="Lista" aria-label="Ver como lista">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6h13"></path><path d="M8 12h13"></path><path d="M8 18h13"></path><path d="M3 6h.01"></path><path d="M3 12h.01"></path><path d="M3 18h.01"></path></svg>
+        </button>
+        <span style="width: 1px; height: 20px; margin: 0 6px; background: #e6e7ea"></span>
+        <button class="icb" title="Cerrar" aria-label="Cerrar">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── Grafo / Similares: el conmutador que ya existe, intacto ── -->
+    <div style="flex: 0 0 auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px; margin: 10px 12px 0; padding: 3px; border: 1px solid #d3d5db; border-radius: 3px; background: #f7f7f8" role="tablist">
+      <button class="{{ grafoClass }}" onClick="{{ verGrafo }}" role="tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" x2="6" y1="3" y2="15"></line><circle cx="18" cy="6" r="3"></circle><circle cx="6" cy="18" r="3"></circle><path d="M18 9a9 9 0 0 1-9 9"></path></svg>Grafo
+      </button>
+      <button class="{{ similaresClass }}" onClick="{{ verSimilares }}" role="tab">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"></path></svg>Similares
+      </button>
+    </div>
+
+    <!-- ── El rastro: dónde estás dentro del grafo ── -->
+    <div style="min-height: 40px; flex: 0 0 auto; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid #e6e7ea">
+      <sc-if value="{{ enRecorrido }}" hint-placeholder-val="{{ false }}">
+        <button class="icb" style="width: 26px; height: 26px; margin-left: -6px" onClick="{{ atras }}" title="Atrás" aria-label="Atrás">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg>
+        </button>
+      </sc-if>
+      <span class="k" style="color: #8a919e; flex: 0 0 auto">{{ rastroEtiqueta }}</span>
+      <div style="min-width: 0; display: flex; align-items: center; gap: 6px; overflow: hidden">
+        <sc-for list="{{ rastro }}" as="paso" hint-placeholder-count="1">
+          <sc-if value="{{ paso.sep }}" hint-placeholder-val="{{ false }}">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#c9ccd3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 auto"><path d="m9 18 6-6-6-6"></path></svg>
+          </sc-if>
+          <button class="{{ paso.clase }}" style="{{ paso.style }}" onClick="{{ paso.ir }}">{{ paso.titulo }}</button>
+        </sc-for>
+      </div>
+    </div>
+
+    <!-- ══════════════ EL MAPA ══════════════ -->
+    <sc-if value="{{ esMapa }}" hint-placeholder-val="{{ true }}">
+      <div style="flex: 1 1 auto; min-height: 0; position: relative; padding: 12px 14px 10px">
+
+        <sc-if value="{{ hayVecinos }}" hint-placeholder-val="{{ true }}">
+          <div>
+            <!-- Cabecera de la banda de arriba -->
+            <div style="height: 18px; display: flex; align-items: center; justify-content: space-between">
+              <span class="k" style="color: #5b6270">Antes · lo que cita</span>
+              <span class="k" style="color: #a9aeba">{{ resumenAntes }}</span>
+            </div>
+
+            <!-- El lienzo -->
+            <div style="{{ lienzoStyle }}">
+              <svg width="{{ geo.w }}" height="{{ geo.h }}" viewBox="{{ geo.viewBox }}" style="position: absolute; inset: 0; overflow: visible">
+                <sc-for list="{{ guias }}" as="g" hint-placeholder-count="2">
+                  <line x1="{{ g.x }}" y1="0" x2="{{ g.x }}" y2="{{ geo.h }}" stroke="#f2f3f5" stroke-width="1"></line>
+                </sc-for>
+                <sc-for list="{{ aristas }}" as="e" hint-placeholder-count="8">
+                  <line class="edge" x1="{{ e.x1 }}" y1="{{ e.y1 }}" x2="{{ e.x2 }}" y2="{{ e.y2 }}" stroke="{{ e.color }}" stroke-width="{{ e.w }}" style="{{ e.style }}"></line>
+                </sc-for>
+              </svg>
+
+              <!-- La regla del centro: el paper que estás mirando -->
+              <div class="regla" style="{{ reglaStyle }}"></div>
+              <div class="{{ marcaClase }}" style="{{ marcaStyle }}"></div>
+              <div class="k" style="{{ chipCentroStyle }}">{{ chipCentro }}</div>
+
+              <sc-for list="{{ nodos }}" as="n" hint-placeholder-count="8">
+                <button class="{{ n.clase }}" style="{{ n.style }}" onClick="{{ n.abrir }}" title="{{ n.titulo }}">
+                  <span class="dot"><i style="{{ n.puntoStyle }}"></i></span>
+                  <span class="lab" style="{{ n.labStyle }}"><b>{{ n.autor }}</b> {{ n.anio }}</span>
+                </button>
+              </sc-for>
+
+              <sc-for list="{{ esqueletos }}" as="s" hint-placeholder-count="0">
+                <span class="skel" style="{{ s.style }}"></span>
+              </sc-for>
+
+              <sc-if value="{{ viajando }}" hint-placeholder-val="{{ false }}">
+                <span class="viaje" style="{{ viajeStyle }}"></span>
+              </sc-if>
+            </div>
+
+            <!-- Cabecera de la banda de abajo -->
+            <div style="height: 18px; display: flex; align-items: center; justify-content: space-between">
+              <span class="k" style="color: #5b6270">Después · quien lo cita</span>
+              <span class="k" style="color: #a9aeba">{{ resumenDespues }}</span>
+            </div>
+
+            <!-- El eje horizontal: impacto, en potencias de diez -->
+            <div style="{{ ejeStyle }}">
+              <sc-if value="{{ ejeEtiquetaVisible }}" hint-placeholder-val="{{ true }}">
+                <span class="k" style="position: absolute; left: 0; top: 5px; color: #c9ccd3">{{ ejeEtiqueta }}</span>
+              </sc-if>
+              <sc-for list="{{ guias }}" as="g" hint-placeholder-count="2">
+                <span class="k" style="{{ g.style }}">{{ g.etiqueta }}</span>
+              </sc-for>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- Un nodo sin enlaces conocidos: estado real, no callejón sin salida -->
+        <sc-if value="{{ sinVecinos }}" hint-placeholder-val="{{ false }}">
+          <div style="height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 0 40px">
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#c9ccd3" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="16" y="16" width="6" height="6" rx="1"></rect><rect x="2" y="16" width="6" height="6" rx="1"></rect><rect x="9" y="2" width="6" height="6" rx="1"></rect><path d="M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3" stroke-dasharray="2 3"></path><path d="M12 12V8" stroke-dasharray="2 3"></path></svg>
+            <p style="margin: 0; max-width: 300px; font-size: 0.875rem; line-height: 1.5; color: #5b6270">OpenCitations no tiene enlaces para <b style="color: #111318">{{ centroTitulo }}</b>. Pasa con lo muy reciente, y también con lo que se publicó donde nadie deposita sus citas.</p>
+            <button class="btn btn-gh" onClick="{{ atras }}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg>Volver a {{ anteriorTitulo }}
+            </button>
+          </div>
+        </sc-if>
+      </div>
+    </sc-if>
+
+    <!-- ══════════════ LA LISTA (mismo grafo, sin lienzo) ══════════════ -->
+    <sc-if value="{{ esLista }}" hint-placeholder-val="{{ false }}">
+      <div style="flex: 1 1 auto; min-height: 0; overflow-y: auto">
+        <sc-for list="{{ secciones }}" as="s" hint-placeholder-count="2">
+          <div>
+            <div style="display: flex; align-items: center; justify-content: space-between; padding: 9px 14px; background: #fafafa; border-bottom: 1px solid #e6e7ea">
+              <span class="k" style="color: #5b6270">{{ s.titulo }}</span>
+              <span class="k" style="color: #a9aeba">{{ s.resumen }}</span>
+            </div>
+            <sc-for list="{{ s.filas }}" as="f" hint-placeholder-count="4">
+              <button class="{{ f.clase }}" onClick="{{ f.abrir }}">
+                <span style="{{ f.puntoStyle }}"></span>
+                <span style="min-width: 0; flex: 1; display: grid; gap: 5px">
+                  <strong style="font-size: 0.9rem; line-height: 1.35; font-weight: 600; color: #111318">{{ f.titulo }}</strong>
+                  <small class="m" style="color: #8a919e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ f.meta }}</small>
+                </span>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8a919e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 auto"><path d="m9 18 6-6-6-6"></path></svg>
+              </button>
+            </sc-for>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- ══════════════ SIMILARES: la otra pestaña, sin tocar ══════════════ -->
+    <sc-if value="{{ esSimilares }}" hint-placeholder-val="{{ false }}">
+      <div style="flex: 1 1 auto; min-height: 0; overflow-y: auto">
+        <sc-for list="{{ similares }}" as="f" hint-placeholder-count="4">
+          <button class="lrow">
+            <span style="min-width: 0; flex: 1; display: grid; gap: 5px">
+              <strong style="font-size: 0.9rem; line-height: 1.35; font-weight: 600; color: #111318">{{ f.titulo }}</strong>
+              <small class="m" style="color: #8a919e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ f.meta }}</small>
+            </span>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8a919e" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 auto"><path d="m9 18 6-6-6-6"></path></svg>
+          </button>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- ── Ficha del nodo tocado ── -->
+    <sc-if value="{{ hayFicha }}" hint-placeholder-val="{{ false }}">
+      <div class="{{ fichaClase }}" style="position: absolute; left: 0; right: 0; bottom: 30px; background: #ffffff; border-top: 1px solid #d3d5db; box-shadow: 0 -10px 28px rgba(17, 19, 24, 0.09); padding: 13px 14px 15px">
+        <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin-bottom: 7px">
+          <div class="k" style="display: flex; align-items: center; gap: 7px; color: #8a919e; padding-top: 2px">
+            <span style="{{ ficha.campoStyle }}">{{ ficha.campo }}</span>
+            <span style="color: #d3d5db">·</span>
+            <span>{{ ficha.anio }}</span>
+            <span style="color: #d3d5db">·</span>
+            <span>{{ ficha.citas }}</span>
+            <sc-if value="{{ ficha.oa }}" hint-placeholder-val="{{ true }}">
+              <span style="display: inline-flex; align-items: center; gap: 4px; color: #067647"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"></rect><path d="M7 11V7a5 5 0 0 1 9.9-1"></path></svg>Acceso abierto</span>
+            </sc-if>
+          </div>
+          <button class="icb" style="width: 40px; height: 40px; margin: -9px -11px 0 0" onClick="{{ cerrarFicha }}" title="Cerrar" aria-label="Cerrar ficha">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+          </button>
+        </div>
+        <strong style="display: block; font-size: 0.9375rem; line-height: 1.32; font-weight: 600; color: #111318">{{ ficha.titulo }}</strong>
+        <small class="m" style="display: block; margin-top: 5px; color: #8a919e; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{ ficha.autores }}</small>
+        <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px">
+          <button class="btn btn-ink">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 7v14"></path><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"></path></svg>Abrir
+          </button>
+          <button class="btn btn-gh" onClick="{{ ficha.centrar }}">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="22" x2="18" y1="12" y2="12"></line><line x1="6" x2="2" y1="12" y2="12"></line><line x1="12" x2="12" y1="6" y2="2"></line><line x1="12" x2="12" y1="22" y2="18"></line></svg>Centrar aquí
+          </button>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- ── Procedencia ── -->
+    <div style="min-height: 30px; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 5px 14px 8px; border-top: 1px solid #e6e7ea">
+      <span class="k" style="color: #a9aeba">{{ fuente }}</span>
+      <span class="k" style="color: #c9ccd3">{{ fuenteNota }}</span>
+    </div>
+
+  </section>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":390,"height":844},"porBanda":{"editor":"range","default":8,"min":4,"max":10,"step":1,"unit":" por banda","section":"Datos","tsType":"number"},"ejeImpacto":{"editor":"boolean","default":true,"section":"Traza","tsType":"boolean"},"colorPorCampo":{"editor":"boolean","default":true,"section":"Traza","tsType":"boolean"}}'>
+/* ──────────────────────────────────────────────────────────────────────────
+   Datos de muestra. Papers reales; los recuentos de citas son aproximados y
+   están para que la traza tenga rango, no para citarlos.
+   Tupla: [autor, año, citas, campo, categoría, título, autores, doi, acceso abierto]
+   ────────────────────────────────────────────────────────────────────────── */
+const CAMPO = {
+  cs:   '#c2410c',
+  stat: '#1d4ed8',
+  bio:  '#15803d',
+  otro: '#475569',
+};
+
+const P = {
+  vaswani17:  ['Vaswani', 2017, 131204, 'cs', 'CS.CL', 'Attention Is All You Need', 'Vaswani, Shazeer, Parmar, Uszkoreit, Jones, Gomez, Kaiser, Polosukhin', '10.48550/arXiv.1706.03762', true],
+
+  hochreiter97: ['Hochreiter', 1997, 110000, 'cs', 'CS.NE', 'Long Short-Term Memory', 'Hochreiter, Schmidhuber', '10.1162/neco.1997.9.8.1735', false],
+  kingma15:   ['Kingma', 2015, 190000, 'cs', 'CS.LG', 'Adam: A Method for Stochastic Optimization', 'Kingma, Ba', '10.48550/arXiv.1412.6980', true],
+  srivastava14: ['Srivastava', 2014, 52000, 'cs', 'CS.LG', 'Dropout: A Simple Way to Prevent Neural Networks from Overfitting', 'Srivastava, Hinton, Krizhevsky, Sutskever, Salakhutdinov', '', true],
+  bahdanau14: ['Bahdanau', 2014, 38000, 'cs', 'CS.CL', 'Neural Machine Translation by Jointly Learning to Align and Translate', 'Bahdanau, Cho, Bengio', '10.48550/arXiv.1409.0473', true],
+  sutskever14: ['Sutskever', 2014, 31000, 'cs', 'CS.LG', 'Sequence to Sequence Learning with Neural Networks', 'Sutskever, Vinyals, Le', '10.48550/arXiv.1409.3215', true],
+  cho14:      ['Cho', 2014, 26000, 'cs', 'CS.CL', 'Learning Phrase Representations using RNN Encoder-Decoder for Statistical Machine Translation', 'Cho, van Merrienboer, Gulcehre, Bahdanau, Bougares, Schwenk, Bengio', '10.3115/v1/D14-1179', true],
+  ba16:       ['Ba', 2016, 12000, 'stat', 'STAT.ML', 'Layer Normalization', 'Ba, Kiros, Hinton', '10.48550/arXiv.1607.06450', true],
+  gehring17:  ['Gehring', 2017, 3200, 'cs', 'CS.LG', 'Convolutional Sequence to Sequence Learning', 'Gehring, Auli, Grangier, Yarats, Dauphin', '10.48550/arXiv.1705.03122', true],
+
+  devlin19:   ['Devlin', 2019, 98000, 'cs', 'CS.CL', 'BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding', 'Devlin, Chang, Lee, Toutanova', '10.18653/v1/N19-1423', true],
+  dosovitskiy21: ['Dosovitskiy', 2021, 42000, 'cs', 'CS.CV', 'An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale', 'Dosovitskiy, Beyer, Kolesnikov, Weissenborn, Zhai, Unterthiner', '10.48550/arXiv.2010.11929', true],
+  brown20:    ['Brown', 2020, 34000, 'cs', 'CS.CL', 'Language Models are Few-Shot Learners', 'Brown, Mann, Ryder, Subbiah, Kaplan, Dhariwal, Neelakantan', '10.48550/arXiv.2005.14165', true],
+  jumper21:   ['Jumper', 2021, 29000, 'bio', 'Q-BIO.BM', 'Highly accurate protein structure prediction with AlphaFold', 'Jumper, Evans, Pritzel, Green, Figurnov, Ronneberger', '10.1038/s41586-021-03819-2', true],
+  raffel20:   ['Raffel', 2020, 21000, 'cs', 'CS.LG', 'Exploring the Limits of Transfer Learning with a Unified Text-to-Text Transformer', 'Raffel, Shazeer, Roberts, Lee, Narang, Matena, Zhou', '10.48550/arXiv.1910.10683', true],
+  rombach22:  ['Rombach', 2022, 15000, 'cs', 'CS.CV', 'High-Resolution Image Synthesis with Latent Diffusion Models', 'Rombach, Blattmann, Lorenz, Esser, Ommer', '10.48550/arXiv.2112.10752', true],
+  touvron23:  ['Touvron', 2023, 9800, 'cs', 'CS.CL', 'LLaMA: Open and Efficient Foundation Language Models', 'Touvron, Lavril, Izacard, Martinet, Lachaux, Lacroix', '10.48550/arXiv.2302.13971', true],
+  radford22:  ['Radford', 2022, 4100, 'cs', 'CS.SD', 'Robust Speech Recognition via Large-Scale Weak Supervision', 'Radford, Kim, Xu, Brockman, McLeavey, Sutskever', '10.48550/arXiv.2212.04356', true],
+
+  peters18:   ['Peters', 2018, 14000, 'cs', 'CS.CL', 'Deep Contextualized Word Representations', 'Peters, Neumann, Iyyer, Gardner, Clark, Lee, Zettlemoyer', '10.18653/v1/N18-1202', true],
+  radford18:  ['Radford', 2018, 12000, 'cs', 'CS.CL', 'Improving Language Understanding by Generative Pre-Training', 'Radford, Narasimhan, Salimans, Sutskever', '', false],
+  wu16:       ['Wu', 2016, 8300, 'cs', 'CS.CL', 'Google Neural Machine Translation: Bridging the Gap between Human and Machine Translation', 'Wu, Schuster, Chen, Le, Norouzi, Macherey', '10.48550/arXiv.1609.08144', true],
+  taylor53:   ['Taylor', 1953, 5900, 'otro', 'LING', 'Cloze Procedure: A New Tool for Measuring Readability', 'Taylor', '10.1177/107769905303000401', false],
+  howard18:   ['Howard', 2018, 4300, 'cs', 'CS.CL', 'Universal Language Model Fine-tuning for Text Classification', 'Howard, Ruder', '10.18653/v1/P18-1031', true],
+
+  liu19:      ['Liu', 2019, 21000, 'cs', 'CS.CL', 'RoBERTa: A Robustly Optimized BERT Pretraining Approach', 'Liu, Ott, Goyal, Du, Joshi, Chen, Levy', '10.48550/arXiv.1907.11692', true],
+  reimers19:  ['Reimers', 2019, 9500, 'cs', 'CS.CL', 'Sentence-BERT: Sentence Embeddings using Siamese BERT-Networks', 'Reimers, Gurevych', '10.18653/v1/D19-1410', true],
+  sanh19:     ['Sanh', 2019, 8100, 'cs', 'CS.CL', 'DistilBERT, a distilled version of BERT', 'Sanh, Debut, Chaumond, Wolf', '10.48550/arXiv.1910.01108', true],
+  lan20:      ['Lan', 2020, 7900, 'cs', 'CS.CL', 'ALBERT: A Lite BERT for Self-supervised Learning of Language Representations', 'Lan, Chen, Goodman, Gimpel, Sharma, Soricut', '10.48550/arXiv.1909.11942', true],
+  lee20:      ['Lee', 2020, 6200, 'bio', 'Q-BIO', 'BioBERT: a pre-trained biomedical language representation model', 'Lee, Yoon, Kim, Kim, Kim, So, Kang', '10.1093/bioinformatics/btz682', true],
+  clark20:    ['Clark', 2020, 3900, 'cs', 'CS.CL', 'ELECTRA: Pre-training Text Encoders as Discriminators Rather Than Generators', 'Clark, Luong, Le, Manning', '10.48550/arXiv.2003.10555', true],
+  beltagy19:  ['Beltagy', 2019, 3400, 'cs', 'CS.CL', 'SciBERT: A Pretrained Language Model for Scientific Text', 'Beltagy, Lo, Cohan', '10.18653/v1/D19-1371', true],
+  khattab20:  ['Khattab', 2020, 1400, 'cs', 'CS.IR', 'ColBERT: Efficient and Effective Passage Search via Contextualized Late Interaction over BERT', 'Khattab, Zaharia', '10.1145/3397271.3401075', true],
+
+  bengio03:   ['Bengio', 2003, 9800, 'cs', 'CS.CL', 'A Neural Probabilistic Language Model', 'Bengio, Ducharme, Vincent, Jauvin', '', false],
+  graves13:   ['Graves', 2013, 5200, 'cs', 'CS.NE', 'Generating Sequences With Recurrent Neural Networks', 'Graves', '10.48550/arXiv.1308.0850', true],
+  luong15:    ['Luong', 2015, 12000, 'cs', 'CS.CL', 'Effective Approaches to Attention-based Neural Machine Translation', 'Luong, Pham, Manning', '10.18653/v1/D15-1166', true],
+  xu15:       ['Xu', 2015, 12000, 'cs', 'CS.CV', 'Show, Attend and Tell: Neural Image Caption Generation with Visual Attention', 'Xu, Ba, Kiros, Cho, Courville, Salakhutdinov', '', true],
+};
+
+/* Vecindarios de un salto. `antes` va ordenado por citas (así los devuelve el
+   worker) y `despues` por año descendente. `nAntes`/`nDespues` son los
+   recuentos totales: lo que se dibuja es siempre un recorte. */
+const VECINOS = {
+  vaswani17: {
+    antes: ['kingma15', 'hochreiter97', 'srivastava14', 'bahdanau14', 'sutskever14', 'cho14', 'ba16', 'gehring17'],
+    despues: ['touvron23', 'radford22', 'rombach22', 'jumper21', 'dosovitskiy21', 'brown20', 'raffel20', 'devlin19'],
+    nAntes: 42, nDespues: 131204,
+  },
+  devlin19: {
+    antes: ['vaswani17', 'peters18', 'radford18', 'wu16', 'taylor53', 'howard18'],
+    despues: ['lee20', 'clark20', 'lan20', 'khattab20', 'liu19', 'reimers19', 'sanh19', 'beltagy19'],
+    nAntes: 38, nDespues: 98000,
+  },
+  bahdanau14: {
+    antes: ['hochreiter97', 'sutskever14', 'cho14', 'bengio03', 'graves13'],
+    despues: ['vaswani17', 'gehring17', 'wu16', 'luong15', 'xu15'],
+    nAntes: 24, nDespues: 38000,
+  },
+};
+
+const SIMILARES = ['luong15', 'wu16', 'gehring17', 'raffel20'];
+
+/* ── Geometría del lienzo ── */
+const G = {
+  w: 360, h: 396,
+  bandaA: [10, 172],
+  regla: 198,
+  bandaB: [224, 386],
+  pad: 22,
+  hueco: 20,          // separación vertical mínima entre dos nodos
+  anchoEtiqueta: 84,
+};
+
+function paper(id) {
+  const t = P[id];
+  if (!t) return null;
+  return { id: id, autor: t[0], anio: t[1], citas: t[2], campo: t[3], cat: t[4], titulo: t[5], autores: t[6], doi: t[7], oa: t[8] };
+}
+
+function num(n) { return n.toLocaleString('es-ES'); }
+
+function corto(texto, max) {
+  const s = String(texto || '');
+  return s.length > max ? s.slice(0, max).trim() + '…' : s;
+}
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      rastro: ['vaswani17'],
+      sel: null,
+      vista: 'mapa',
+      pestana: 'grafo',
+      fase: 'idle',
+      viaje: null,
+      arriba: false,
+      desdeCx: 0,
+      deslizado: true,
+    };
+    this.relojes = [];
+  }
+
+  componentWillUnmount() { this.relojes.forEach(clearTimeout); }
+
+  luego(ms, fn) { this.relojes.push(setTimeout(fn, ms)); }
+
+  centro() { return this.state.rastro[this.state.rastro.length - 1]; }
+
+  vecindario() {
+    const v = VECINOS[this.centro()];
+    if (!v) return null;
+    const tope = Math.max(4, Math.min(10, Number(this.props.porBanda) || 8));
+    return { antes: v.antes.slice(0, tope), despues: v.despues.slice(0, tope), nAntes: v.nAntes, nDespues: v.nDespues };
+  }
+
+  /* El eje horizontal es logarítmico porque las citas lo son: sin logaritmo,
+     un paper de 190.000 aplasta contra el margen a todos los demás. El dominio
+     se estira 0,2 décadas a cada lado del vecindario real. */
+  escala(lista) {
+    let bajo = Infinity, alto = -Infinity;
+    lista.forEach(function (p) {
+      const l = Math.log10(Math.max(p.citas, 10));
+      if (l < bajo) bajo = l;
+      if (l > alto) alto = l;
+    });
+    if (!isFinite(bajo)) { bajo = 2; alto = 5; }
+    if (alto - bajo < 0.6) { bajo -= 0.3; alto += 0.3; }
+    return { lo: bajo - 0.2, hi: alto + 0.2 };
+  }
+
+  x(citas, esc) {
+    const frac = (Math.log10(Math.max(citas, 10)) - esc.lo) / (esc.hi - esc.lo);
+    return G.pad + Math.max(0, Math.min(1, frac)) * (G.w - G.pad * 2);
+  }
+
+  /* Vertical = tiempo. Si dos años caen a menos de 20 px se separan, se
+     conserva el orden y el año viaja en la etiqueta. */
+  banda(lista, rango, esc, i0) {
+    const self = this;
+    const y0 = rango[0], y1 = rango[1];
+    let min = Infinity, max = -Infinity;
+    lista.forEach(function (p) { if (p.anio < min) min = p.anio; if (p.anio > max) max = p.anio; });
+    const span = Math.max(1, max - min);
+    const puestos = lista.map(function (p, i) {
+      const frac = (p.anio - min) / span;
+      return {
+        p: p,
+        i: i0 + i,
+        j: i,
+        cx: self.props.ejeImpacto ? self.x(p.citas, esc) : G.pad + ((i + 0.5) / lista.length) * (G.w - G.pad * 2),
+        cy: y0 + frac * (y1 - y0),
+      };
+    });
+    /* El hueco cede antes que la banda: con diez nodos en 156 px no caben
+       veinte píxeles entre cada uno, y desbordar sobre la regla sería peor. */
+    const hueco = Math.min(G.hueco, (y1 - y0) / Math.max(1, puestos.length - 1));
+    puestos.sort(function (a, b) { return a.cy - b.cy; });
+    for (let k = 1; k < puestos.length; k++) {
+      if (puestos[k].cy - puestos[k - 1].cy < hueco) puestos[k].cy = puestos[k - 1].cy + hueco;
+    }
+    const desborde = puestos.length ? puestos[puestos.length - 1].cy - y1 : 0;
+    if (desborde > 0) puestos.forEach(function (n) { n.cy = Math.max(y0, n.cy - desborde); });
+    /* Cada nodo se lleva su hueco: es la altura de su objetivo, y así las filas
+       se tocan sin solaparse -- dos objetivos nunca comparten un píxel. */
+    puestos.forEach(function (n) { n.h = hueco; });
+    return { nodos: puestos, min: min, max: max };
+  }
+
+  renderVals() {
+    const self = this;
+    const st = this.state;
+    const esMapa = st.vista === 'mapa' && st.pestana === 'grafo';
+    const esLista = st.vista === 'lista' && st.pestana === 'grafo';
+    const centro = paper(this.centro());
+    const v = this.vecindario();
+
+    const antes = v ? v.antes.map(paper) : [];
+    const despues = v ? v.despues.map(paper) : [];
+    const esc = this.escala(antes.concat(despues).concat([centro]));
+    const bandaA = this.banda(antes, G.bandaA, esc, 0);
+    const bandaB = this.banda(despues, G.bandaB, esc, antes.length);
+    const cx0 = this.props.ejeImpacto ? this.x(centro.citas, esc) : G.w / 2;
+
+    const tinta = function (p) { return self.props.colorPorCampo ? (CAMPO[p.campo] || CAMPO.otro) : '#111318'; };
+
+    /* ── Nodos ── */
+    const puestos = bandaA.nodos.concat(bandaB.nodos);
+    const saliendo = st.fase === 'saliendo';
+    const entrando = st.fase === 'entrando';
+    const anterior = entrando && st.rastro.length > 1 ? st.rastro[st.rastro.length - 2] : '';
+    const nodos = puestos.map(function (n) {
+      const arriba = n.cy < G.regla;
+      const sel = st.sel === n.p.id;
+      const color = tinta(n.p);
+      const izquierda = n.cx > G.w - G.anchoEtiqueta - 40;
+      const pos = izquierda
+        ? 'right: ' + (G.w - n.cx - 22) + 'px; flex-direction: row-reverse; text-align: right;'
+        : 'left: ' + (n.cx - 22) + 'px;';
+      let clase = 'node';
+      let mov = '';
+      if (saliendo) {
+        /* El elegido se esconde: quien viaja hasta la regla es un punto suelto. */
+        clase += st.viaje && st.viaje.id === n.p.id ? ' oculto' : ' apaga';
+      } else if (n.p.id === anterior) {
+        clase += arriba ? ' baja-a' : ' baja-b';
+      } else {
+        clase += ' fall';
+        mov = ' animation-delay: ' + (220 + n.j * 24) + 'ms';
+      }
+      return {
+        clase: clase + (sel ? ' on' : ''),
+        style: pos + ' top: ' + (n.cy - n.h / 2) + 'px; height: ' + n.h + 'px; z-index: ' + (sel ? 6 : 3) + ';' + mov,
+        puntoStyle: arriba
+          ? 'background: #ffffff; box-shadow: inset 0 0 0 2px ' + color + (sel ? ', 0 0 0 4px rgba(17,19,24,0.1)' : '')
+          : 'background: ' + color + (sel ? '; box-shadow: 0 0 0 4px rgba(17,19,24,0.1)' : ''),
+        labStyle: izquierda ? 'text-align: right' : '',
+        autor: corto(n.p.autor, 10),
+        anio: '’' + String(n.p.anio).slice(2),
+        titulo: n.p.titulo,
+        abrir: function () { self.setState({ sel: sel ? null : n.p.id }); },
+      };
+    });
+
+    /* ── Aristas: todas convergen en la marca del centro ── */
+    const aristas = puestos.map(function (n) {
+      const sel = st.sel === n.p.id;
+      const apagada = st.sel && !sel;
+      return {
+        x1: cx0, y1: G.regla, x2: n.cx, y2: n.cy,
+        color: sel ? '#111318' : (apagada ? '#eff0f2' : '#d9dbe0'),
+        w: sel ? 1.5 : 1,
+        style: saliendo
+          ? 'opacity: 0; transition: opacity 160ms ease-out; animation: none'
+          : 'animation-delay: ' + (160 + n.j * 16) + 'ms',
+      };
+    });
+
+    /* ── Guías: potencias de diez dentro del dominio ── */
+    const guias = [];
+    if (this.props.ejeImpacto) {
+      for (let e = Math.ceil(esc.lo); e <= Math.floor(esc.hi); e++) {
+        const gx = this.x(Math.pow(10, e), esc);
+        const valor = Math.pow(10, e);
+        guias.push({
+          x: gx,
+          etiqueta: valor >= 1000000 ? (valor / 1000000) + 'M' : (valor >= 1000 ? (valor / 1000) + 'K' : String(valor)),
+          style: 'position: absolute; left: ' + gx + 'px; top: 5px; transform: translateX(-50%); color: #c9ccd3',
+        });
+      }
+    }
+
+    /* ── Esqueletos de carga ── */
+    const esqueletos = [];
+    if (st.fase === 'cargando') {
+      for (let s = 0; s < 12; s++) {
+        const arriba = s < 6;
+        const gx = G.pad + ((s % 6) + 0.5) / 6 * (G.w - G.pad * 2) + (arriba ? 0 : 26);
+        const gy = arriba ? G.bandaA[0] + 24 + (s % 6) * 24 : G.bandaB[0] + 20 + (s % 6) * 24;
+        esqueletos.push({ style: 'position: absolute; left: ' + gx + 'px; top: ' + gy + 'px; width: 11px; height: 11px; animation-delay: ' + (s * 70) + 'ms' });
+      }
+    }
+
+    /* ── Rastro ── */
+    const rastro = st.rastro.map(function (id, i) {
+      const p = paper(id);
+      const ultimo = i === st.rastro.length - 1;
+      return {
+        titulo: corto(p.titulo, ultimo ? 22 : 14),
+        sep: i > 0,
+        clase: 'crumb m' + (ultimo ? ' actual' : ''),
+        style: ultimo ? 'color: #111318; font-weight: 600; cursor: default' : '',
+        ir: function () { if (!ultimo) self.setState({ rastro: st.rastro.slice(0, i + 1), sel: null, fase: 'idle', viaje: null, deslizado: true }); },
+      };
+    });
+
+    const sel = st.sel ? paper(st.sel) : null;
+
+    /* ── Lista: el mismo grafo sin lienzo, que es la versión que un lector de
+       pantalla puede recorrer ── */
+    const fila = function (p) {
+      return {
+        clase: 'lrow' + (st.sel === p.id ? ' on' : ''),
+        puntoStyle: 'flex: 0 0 auto; width: 11px; height: 11px; border-radius: 50%; ' + (p.anio <= centro.anio
+          ? 'background: #ffffff; box-shadow: inset 0 0 0 2px ' + tinta(p)
+          : 'background: ' + tinta(p)),
+        titulo: p.titulo,
+        meta: p.cat + ' · ' + p.autores.split(',')[0] + ' · ' + p.anio + ' · ' + num(p.citas) + ' citas',
+        abrir: function () { self.setState({ sel: st.sel === p.id ? null : p.id }); },
+      };
+    };
+
+    const espera = st.fase === 'cargando';
+    const resumenAntes = v ? (antes.length + ' más citadas de ' + num(v.nAntes)) : (espera ? '—' : '');
+    const resumenDespues = v ? (despues.length + ' más recientes de ' + num(v.nDespues)) : (espera ? '—' : '');
+
+    return {
+      /* chrome */
+      mapaClass: 'icb' + (st.vista === 'mapa' ? ' on' : '') + (st.pestana === 'similares' ? ' inerte' : ''),
+      listaClass: 'icb' + (st.vista === 'lista' ? ' on' : '') + (st.pestana === 'similares' ? ' inerte' : ''),
+      grafoClass: 'tab' + (st.pestana === 'grafo' ? ' on' : ''),
+      similaresClass: 'tab' + (st.pestana === 'similares' ? ' on' : ''),
+      verMapa: function () { self.setState({ vista: 'mapa' }); },
+      verLista: function () { self.setState({ vista: 'lista' }); },
+      verGrafo: function () { self.setState({ pestana: 'grafo' }); },
+      verSimilares: function () { self.setState({ pestana: 'similares', sel: null }); },
+
+      esMapa: esMapa,
+      esLista: esLista,
+      esSimilares: st.pestana === 'similares',
+      /* Cargando se dibuja el marco -- cabeceras, regla, eje -- y dentro los
+         puntos que laten: la estructura promete dónde va a haber algo. */
+      hayVecinos: Boolean(v) || st.fase === 'cargando',
+      sinVecinos: !v && esMapa && st.fase !== 'cargando',
+
+      /* rastro */
+      enRecorrido: st.rastro.length > 1,
+      rastroEtiqueta: st.rastro.length > 1 ? 'Recorrido' : 'Este paper',
+      rastro: rastro,
+      atras: function () {
+        if (st.rastro.length < 2) return;
+        self.setState({ rastro: st.rastro.slice(0, -1), sel: null, fase: 'idle', viaje: null, deslizado: true });
+      },
+      centroTitulo: corto(centro.titulo, 46),
+      anteriorTitulo: st.rastro.length > 1 ? corto(paper(st.rastro[st.rastro.length - 2]).titulo, 24) : '',
+
+      /* lienzo */
+      geo: { w: G.w, h: G.h, viewBox: '0 0 ' + G.w + ' ' + G.h },
+      lienzoStyle: 'position: relative; width: ' + G.w + 'px; height: ' + G.h + 'px',
+      reglaStyle: 'position: absolute; left: 0; right: 0; top: ' + G.regla + 'px; height: 1px; background: #111318; transform-origin: ' + cx0 + 'px 50%',
+      marcaClase: saliendo ? 'apaga' : (entrando ? '' : 'marca'),
+      marcaStyle: 'position: absolute; left: ' + ((entrando && !st.deslizado ? st.desdeCx : cx0) - 8) + 'px; top: ' + (G.regla - 8) + 'px; width: 16px; height: 16px; border-radius: 50%; background: #111318; box-shadow: 0 0 0 3px #ffffff'
+        + (entrando ? '; transition: left 280ms cubic-bezier(0.16, 1, 0.3, 1)' : ''),
+      viajando: saliendo && Boolean(st.viaje),
+      viajeStyle: st.viaje
+        ? 'left: ' + st.viaje.x + 'px; top: ' + (st.arriba ? G.regla : st.viaje.y) + 'px; background: ' + (st.arriba ? '#111318' : st.viaje.ink) + '; transform: scale(' + (st.arriba ? 1.45 : 1.28) + ')'
+        : '',
+      chipCentroStyle: cx0 > G.w - 150
+        ? 'position: absolute; right: ' + (G.w - cx0 + 16) + 'px; top: ' + G.regla + 'px; transform: translateY(-50%); background: #ffffff; padding: 0 7px; color: #111318'
+        : 'position: absolute; left: ' + (cx0 + 16) + 'px; top: ' + G.regla + 'px; transform: translateY(-50%); background: #ffffff; padding: 0 7px; color: #111318',
+      chipCentro: (st.rastro.length > 1 ? 'Centro' : 'Este paper') + ' · ' + centro.anio,
+      nodos: nodos,
+      aristas: aristas,
+      guias: guias,
+      esqueletos: esqueletos,
+
+      resumenAntes: resumenAntes,
+      resumenDespues: resumenDespues,
+      ejeStyle: 'position: relative; width: ' + G.w + 'px; height: 20px; border-top: 1px solid #f2f3f5; margin-top: 4px',
+      ejeEtiqueta: this.props.ejeImpacto ? 'Citas recibidas' : 'Sin eje de impacto',
+      /* La leyenda solo cabe a la izquierda si la primera potencia de diez no
+         está ahí: si no, el eje se explica solo con sus marcas. */
+      ejeEtiquetaVisible: guias.length === 0 || guias[0].x > 110,
+
+      /* lista */
+      secciones: v ? [
+        { titulo: 'Antes · lo que cita', resumen: resumenAntes, filas: antes.map(fila) },
+        { titulo: 'Después · quien lo cita', resumen: resumenDespues, filas: despues.map(fila) },
+      ] : [],
+      similares: SIMILARES.map(paper).map(function (p) {
+        return { titulo: p.titulo, meta: p.cat + ' · ' + p.autores.split(',')[0] + ' · ' + p.anio + ' · ' + num(p.citas) + ' citas' };
+      }),
+
+      /* ficha */
+      hayFicha: Boolean(sel),
+      fichaClase: 'peek' + (saliendo ? ' sale' : ''),
+      ficha: sel ? {
+        campo: sel.cat,
+        campoStyle: 'font-weight: 600; color: ' + tinta(sel),
+        anio: String(sel.anio),
+        citas: num(sel.citas) + ' citas',
+        oa: sel.oa,
+        titulo: sel.titulo,
+        autores: sel.autores,
+        doi: sel.doi ? 'doi:' + sel.doi : '',
+        centrar: function () {
+          const puesto = puestos.filter(function (q) { return q.p.id === sel.id; })[0];
+          if (!puesto) return;
+          self.relojes.forEach(clearTimeout);
+          self.relojes = [];
+          self.setState({ fase: 'saliendo', viaje: { id: sel.id, x: puesto.cx, y: puesto.cy, ink: tinta(sel) }, arriba: false, vista: 'mapa' });
+          self.luego(40, function () { self.setState({ arriba: true }); });
+          self.luego(440, function () {
+            /* Con el vecindario en caché el trazado arranca aquí y no se ve
+               ningún esqueleto; sólo la espera de verdad lo saca. */
+            const hay = Boolean(VECINOS[sel.id]);
+            /* Si ya estabas ahí, el rastro no crece: se recorta hasta ese
+               paso. Un grafo tiene ciclos; la miga de pan no debe tenerlos. */
+            const previo = self.state.rastro.indexOf(sel.id);
+            self.setState({
+              rastro: previo >= 0 ? self.state.rastro.slice(0, previo + 1) : self.state.rastro.concat([sel.id]),
+              sel: null,
+              viaje: null,
+              desdeCx: cx0,
+              deslizado: false,
+              fase: hay ? 'entrando' : 'cargando',
+            });
+            self.luego(40, function () { self.setState({ deslizado: true }); });
+            if (!hay) self.luego(520, function () { self.setState({ fase: 'entrando' }); });
+            self.luego(1200, function () { self.setState({ fase: 'idle' }); });
+          });
+        },
+      } : { campo: '', campoStyle: '', anio: '', citas: '', oa: false, titulo: '', autores: '', doi: '', centrar: function () {} },
+      cerrarFicha: function () { self.setState({ sel: null }); },
+
+      /* procedencia */
+      fuente: st.pestana === 'similares' ? 'Semantic Scholar' : 'OpenCitations + OpenAlex',
+      fuenteNota: st.pestana === 'similares' ? 'Recomendaciones' : (v ? 'Un salto · en caché 24 h' : ''),
+    };
+  }
+}
+</script>
+</body>
+</html>

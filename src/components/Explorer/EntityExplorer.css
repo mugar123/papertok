@@ -68,7 +68,11 @@
   pointer-events: none;
   mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
   -webkit-mask-image: linear-gradient(to bottom, black 40%, transparent 100%);
-  animation: bgPulseFade 3s ease-out forwards;
+  /* No animation here. It used to fade this in over 3s while the component
+     faded the same property in over 1s to a different target, and a property
+     with two animators has no defined look for as long as both are running. The
+     component owns it now; 0.1 below is the resting weight, and the reason the
+     photograph reads as a wash rather than as a picture. */
 }
 
 .explorer-hero-top {
@@ -253,8 +257,11 @@
   outline-offset: 2px;
 }
 
+/* The chevron turns on the panel's clock, not on the generic 120ms one. It is
+   the same gesture: the arrow finishing a fifth of the way through the fold
+   made them read as two separate events, one of them already over. */
 .ehc-name-toggle > svg:last-child {
-  transition: transform var(--transition-fast);
+  transition: transform 0.34s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .ehc-name-toggle.is-open > svg:last-child {
@@ -262,8 +269,38 @@
 }
 
 /* The experience disclosure: a bordered panel dropping below the header. */
+/* The disclosure is two elements on purpose, and this is the whole fix.
+
+   It used to be one: the animated element carried the padding, the border and
+   the background itself. Animating its height to zero then left 16px of padding
+   top and bottom plus two 1px borders standing — so "closed" was a 34px empty
+   bordered strip that then blinked out of existence when the node unmounted,
+   and "open" started from that same strip rather than from nothing. Neither end
+   of the movement was the one the curve described.
+
+   Now the outer element only collapses, and everything with a size of its own
+   lives inside it, where the clip hides it as the height comes down. Zero
+   means zero. */
 .ehc-experience-panel {
   overflow: hidden;
+  /* And the second residue, one level up from the first.
+
+     The parent is a flex column with a 16px row gap, and a gap does not
+     collapse with height: folded to zero the panel still held its share of it,
+     so the fold finished 16px short of closed and those last 16px went in one
+     frame when `AnimatePresence` unmounted the node. Same shape of bug as the
+     padding, same tell — the curve described a movement that ended somewhere
+     the layout did not.
+
+     Pulling the panel up by exactly that gap cancels it, and the inner element
+     pays the space back from inside the clip, where it is folded away with
+     everything else instead of outliving it. Both sides are the same token, so
+     they cannot drift apart. */
+  margin-top: calc(-1 * var(--space-4));
+}
+
+.ehc-experience-inner {
+  margin-top: var(--space-4);
   padding: var(--space-4);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
@@ -543,18 +580,34 @@
   max-height: var(--wiki-description-expanded-height, 72rem);
 }
 
+/* No `min-height` and no centring any more. Both existed to prop up shapes that
+   were too small for the text they stood in for; now the shapes carry the
+   height themselves, so the reservation follows the paragraph's own metrics
+   instead of a number that had to be re-guessed every time they changed. */
 .ehc-wiki.is-loading {
-  min-height: 92px;
-  display: flex;
-  align-items: center;
+  display: block;
 }
 
+/* The rows are the paragraph's own line box, not a spacing guess.
+   `.ehc-wiki p` is clamped to `max-height: 4.8em` at `line-height: 1.6` — three
+   lines, 24px each, 72px exactly — so three 24px rows reserve the prose to the
+   pixel and the bars ride centred inside them. Before this the shapes measured
+   45px and the block leaned on a `min-height: 92px` to look about right, while
+   what actually arrived was 155px: the description landing pushed the whole
+   list down by the difference, on a fetch that finishes after the entity's. */
 .ehc-wiki-skeleton {
   width: 100%;
   display: grid;
-  gap: 9px;
-  padding: 3px 0;
+  grid-auto-rows: 1.6em;
+  align-items: center;
+  gap: 0;
+  padding: 0;
 }
+
+/* The two rows under the prose. Same line box, so the reservation stays one
+   rule rather than a stack of magic numbers. */
+.ehc-wiki-skeleton-toggle { width: 96px; }
+.ehc-wiki-skeleton-links { width: 168px; }
 
 .ehc-wiki-skeleton span {
   position: relative;
@@ -747,8 +800,13 @@
   background: var(--bg-card);
   cursor: pointer;
   transition: background var(--transition-fast);
-  opacity: 0;
-  animation: staggerFadeUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  /* `both`, not `forwards`, and no `opacity: 0` underneath it. Each row waits
+     out its share of the stagger before its animation starts, and with only a
+     forwards fill that wait was spent at the base opacity — which was zero, so
+     the rows blinked in from nothing one after another. `backwards` hands them
+     the first keyframe during the delay instead, so a row that has not started
+     yet is already sitting at 0.35 where its skeleton shape was. */
+  animation: staggerFadeUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: calc(var(--i, 0) * 0.035s);
 }
 
@@ -777,43 +835,183 @@
   outline-offset: -2px;
 }
 
-/* ─── Skeleton loading ─── */
-.skeleton-item {
-  pointer-events: none;
-  background: var(--bg-sunken) !important;
-  border-color: var(--border-subtle) !important;
+/* ─── Skeleton loading ───
+
+   The same shimmer the feed's `SkeletonCard` uses, off the same keyframes in
+   `variables.css`. Two surfaces standing in for content that is on its way
+   should not wait in two different ways, and this one waited with a bare
+   opacity pulse — a grey slab breathing, which reads as "something is broken"
+   rather than "something is coming".
+
+   The shapes matter as much as the motion. The list used to be three
+   featureless 160px blocks sitting in `.explorer-list`, a container the real
+   rows never occupy: when the data landed, the page rebuilt itself under the
+   reader. These trace the row that is actually arriving — the field label and
+   the metrics on one line, the title beneath it, the authors under that — in
+   the real `.explorer-grid`, so the shimmer is replaced by text of the same
+   shape in the same place. */
+.ex-skel {
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary) 25%,
+    var(--border-subtle) 50%,
+    var(--bg-secondary) 75%
+  );
+  background-size: 200% 100%;
+  border-radius: var(--radius-sm);
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+/* A row of the index before it has any words in it. It carries no box of its
+   own on purpose — it is worn alongside `.explorer-list-item`, so the padding
+   and the rule are literally the live row's rather than a copy that drifts the
+   first time someone adjusts one and not the other. All this class does is
+   phase the shimmer.
+
+   The shimmer walks down the list rather than flashing all at once: a fraction
+   of a cycle between rows is enough to read as a direction. */
+.ex-skel-row:nth-child(2) .ex-skel { animation-delay: 0.12s; }
+.ex-skel-row:nth-child(3) .ex-skel { animation-delay: 0.24s; }
+.ex-skel-row:nth-child(4) .ex-skel { animation-delay: 0.36s; }
+.ex-skel-row:nth-child(5) .ex-skel { animation-delay: 0.48s; }
+
+.ex-skel-row-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-bottom: var(--space-3);
+}
+
+/* Mono-cased field label on the left, citations and year on the right — the
+   two ends the real header row occupies. */
+.ex-skel-kicker { width: 108px; height: 10px; }
+.ex-skel-metrics { width: 96px; height: 10px; }
+
+/* Two lines of serif title, the second one short, the way a title wraps. */
+.ex-skel-title { height: 19px; margin-bottom: 9px; max-width: var(--explorer-measure); }
+.ex-skel-title:last-of-type { width: 58%; }
+
+.ex-skel-authors { height: 12px; width: 42%; margin-top: var(--space-4); }
+
+/* The stat cells keep their own box and rules — flattening each one into a
+   single shimmer block merged the four into one grey slab, which is not what
+   arrives. Inside, a number and its label, at the sizes the real ones set. */
+.ex-skel-stat-value { width: 46px; height: 17px; }
+.ex-skel-stat-label { width: 68px; height: 9px; margin-top: 5px; }
+
+/* The ORCID career block, while it is being fetched. */
+.ex-skel-stack { flex: 1; }
+.ex-skel-orcid-id { width: 25%; }
+.ex-skel-orcid-action { width: 84px; height: 20px; margin-left: auto; }
+
+/* ── The parts only one kind of page has ──
+   The skeleton is composed from the route, so these are worn by the live
+   containers — `.ehc-tags`, `.ehc-institution-identity`, `.ehc-ror-relations` —
+   rather than by copies of them. The gaps, the wrapping and the horizontal
+   scroll are therefore literally the ones the real strip uses, and cannot drift
+   from it the first time someone adjusts one and not the other. */
+/* No margin of its own: `.ehc-info` is a flex column with an 8px gap and the
+   live strips rely on it, so adding one here spaced the placeholders wider than
+   the strips they stand in for — 24px of it, on a hero that was otherwise
+   within 13. */
+.ex-skel-strip {
+  min-width: 0;
+}
+
+/* An author's subject chips and an institution's ROR credentials: the same
+   line box, since both are small inline labels in a wrapping row. */
+.ex-skel-chip {
+  height: 25px;
+  flex: 0 0 auto;
+}
+
+/* A related-organisation card, which is taller: two lines of text behind a
+   chevron. `min-height` on the live button, matched here exactly. */
+.ex-skel-relation {
+  height: 30px;
+  flex: 0 0 auto;
+}
+
+/* The follow button. Every entity the Explorer serves can be followed, so this
+   is spine, not variant — and leaving it out was taking 32px out of the hero on
+   all three kinds of page. */
+.ex-skel-follow {
+  width: 96px;
+  height: 32px;
   border-radius: var(--radius-md);
-  animation: pulseGlow 1.5s infinite alternate;
+  margin-top: var(--space-4);
 }
 
-.skeleton-pill {
-  width: 80px;
-  height: 22px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-sm);
-}
+/* ── The sweep ──
+   One shimmer cycle, phase-shifted down the page in the order the hero is
+   built, so the light travels through the shape that is arriving instead of
+   every block pulsing in unison. It costs nothing — `animation-delay` on an
+   infinite loop shifts the phase, it does not hold anything back — and it is
+   what makes the three skeletons legible as three different pages before a
+   single word has loaded: the wave passes through a chip row and an ORCID card
+   on an author, through credentials, a relations strip and a paragraph on an
+   institution, and reaches the tabs almost immediately on a project. */
+.explorer-skeleton .ex-skel-type { animation-delay: 0s; }
+.explorer-skeleton .ehc-icon.ex-skel,
+.explorer-skeleton .ex-skel-name { animation-delay: 0.06s; }
+.explorer-skeleton .ehc-info .ex-skel-sub { animation-delay: 0.12s; }
+.explorer-skeleton .ex-skel-strip .ex-skel { animation-delay: 0.18s; }
+.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(2) { animation-delay: 0.21s; }
+.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(3) { animation-delay: 0.24s; }
+.explorer-skeleton .ex-skel-strip .ex-skel:nth-child(4) { animation-delay: 0.27s; }
+.explorer-skeleton .ehc-stats-grid .ex-skel { animation-delay: 0.3s; }
+.explorer-skeleton .ex-skel-follow,
+.explorer-skeleton .ex-skel-meta { animation-delay: 0.36s; }
+.explorer-skeleton .orcid-skeleton .ex-skel { animation-delay: 0.42s; }
+.explorer-skeleton .ex-skel-tab { animation-delay: 0.48s; }
+.explorer-skeleton .ex-skel-search { animation-delay: 0.54s; }
 
-.skeleton-text {
-  height: 12px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-sm);
-  margin-bottom: 8px;
+/* The list picks the wave up where the chrome left it, instead of restarting
+   the count at zero and reading as a second, unrelated animation. */
+.explorer-skeleton .ex-skel-row:nth-child(1) .ex-skel { animation-delay: 0.6s; }
+.explorer-skeleton .ex-skel-row:nth-child(2) .ex-skel { animation-delay: 0.72s; }
+.explorer-skeleton .ex-skel-row:nth-child(3) .ex-skel { animation-delay: 0.84s; }
+.explorer-skeleton .ex-skel-row:nth-child(4) .ex-skel { animation-delay: 0.96s; }
+
+/* An institution's Wikipedia paragraph shimmers from its own `::after`, so it
+   is phased there rather than through `.ex-skel`. */
+.explorer-skeleton .ehc-wiki-skeleton span:nth-child(1)::after { animation-delay: 0.42s; }
+.explorer-skeleton .ehc-wiki-skeleton span:nth-child(2)::after { animation-delay: 0.45s; }
+.explorer-skeleton .ehc-wiki-skeleton span:nth-child(3)::after { animation-delay: 0.48s; }
+.explorer-skeleton .ehc-wiki-skeleton span:nth-child(4)::after { animation-delay: 0.51s; }
+.explorer-skeleton .ehc-wiki-skeleton span:nth-child(5)::after { animation-delay: 0.54s; }
+
+/* Reserved rather than live: the standing copy of the block, held open while
+   the entity resolves so the hero it belongs to does not grow underneath the
+   reader when the real one mounts. */
+.ehc-wiki--reserved {
   width: 100%;
 }
 
-.skeleton-text.short { width: 40%; }
-.skeleton-text.medium { width: 70%; }
-.skeleton-text.long { width: 90%; }
+/* The authors tab of an institution: a round tile, a name, an affiliation. */
+.ex-skel-avatar { width: 40px; height: 40px; border-radius: var(--radius-full); }
+.ex-skel-name-line { width: 62%; height: 16px; margin-bottom: 8px; }
 
-.skeleton-title {
-  height: 18px;
-  background: var(--bg-secondary);
-  border-radius: var(--radius-sm);
-  margin-bottom: 12px;
-  width: 85%;
-}
+/* The chrome that always arrives, at the heights it arrives at, so the list
+   below does not move when it does. */
+.ex-skel-meta { width: 34%; height: 13px; }
+.ex-skel-tab { width: 58px; height: 15px; }
+.ex-skel-search { width: 100%; height: 38px; border-radius: var(--radius-md); }
 
-.skeleton-title.short { width: 60%; margin-bottom: 20px; }
+/* Header shapes, so the hero does not jump either. */
+.ex-skel-type { width: 80px; height: 14px; }
+.ex-skel-action { width: 40px; height: 40px; border-radius: var(--radius-md); }
+.ex-skel-name { width: 240px; max-width: 80%; height: 26px; margin-bottom: var(--space-3); }
+.ex-skel-sub { height: 12px; margin-bottom: 8px; }
+.ex-skel-sub--medium { width: 70%; }
+.ex-skel-sub--short { width: 40%; }
+
+
+
+
+
+
 
 .eli-header {
   display: flex;
@@ -939,43 +1137,41 @@
 }
 
 /* ─── Overlay ─── */
-.explorer-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: var(--bg-primary);
-  overflow: hidden;
-}
-
-.explorer-overlay-surface {
-  position: absolute;
-  inset: 0;
-  overflow: hidden;
-  background: var(--bg-secondary);
-  transform-origin: 50% 55%;
-}
-
-.explorer-overlay-close {
-  position: absolute;
-  top: max(16px, env(safe-area-inset-top));
-  left: 16px;
-  z-index: 1000;
-}
-
-.explorer-overlay-content {
-  height: 100%;
-  width: 100%;
-  overflow: hidden;
-}
-
 /* ─── Animations ─── */
+/* No vertical travel, on purpose.
+   The hero used to rise 20px into place — right when content arrives out of
+   nothing, wrong here, because a skeleton has been holding that exact frame
+   for the whole wait. Sliding into an occupied position reads as the page
+   jumping, and undoes the one thing a structural skeleton is for: that nothing
+   moves when the words land. What is left is the crossfade, which is the only
+   honest description of what actually happens. */
+/* It starts at 0.35, not at 0, and that is the whole trick.
+
+   The skeleton and the content are separate branches of the component, so React
+   swaps them in a single frame — and an entrance beginning at zero meant that
+   frame was blank: shapes, nothing, then text fading up. The blank is what read
+   as a cut. Beginning part-way visible removes it: the first frame after the
+   swap already carries the words, in the same places the shapes were, and what
+   the eye follows is the grey resolving into type rather than one thing leaving
+   and another arriving.
+
+   It only works because the skeleton is always there first — `isLoadingEntity`
+   starts true on every entity — so this never plays against an empty page,
+   where starting at 0.35 would look like a pop. */
 @keyframes slideUpFade {
-  from { opacity: 0; transform: translateY(20px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0.35; }
+  to { opacity: 1; }
 }
 
+/* The rows keep a little rise: each one replaces a shape of its own size, so
+   the movement is local and reads as settling rather than as the list
+   arriving. Halved all the same — 12px was tuned against an empty page. */
+/* Same reasoning for the rows, and the same starting opacity: each one takes
+   the place of a shape of its own size, so it resolves in place rather than
+   arriving. The 6px of rise is what is left of a 12px travel that was tuned
+   against an empty page. */
 @keyframes staggerFadeUp {
-  0% { opacity: 0; transform: translateY(12px); }
+  0% { opacity: 0.35; transform: translateY(6px); }
   100% { opacity: 1; transform: translateY(0); }
 }
 
@@ -985,15 +1181,6 @@
   animation-delay: calc(min(var(--i, 0), 8) * 0.035s);
 }
 
-@keyframes pulseGlow {
-  from { opacity: 0.6; }
-  to { opacity: 1; }
-}
-
-@keyframes bgPulseFade {
-  from { opacity: 0; }
-  to { opacity: 0.1; }
-}
 
 /* ─── Tabs ─── */
 .ee-tabs {
@@ -1278,11 +1465,6 @@
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
-}
-
-/* Hide the PaperCard scroll hint inside the explorer overlay */
-.explorer-overlay-content.hide-scroll-hint .pc-scroll-hint {
-  display: none !important;
 }
 
 /* ─── Project detail ─── */
@@ -1605,8 +1787,12 @@
 }
 
 /* ─── ORCID skeleton ─── */
+/* The card's own box, rule for rule: same padding, same header height, same
+   hairline under it, same space beneath. Built this way the placeholder
+   measures 96px because the card measures 96px, rather than because someone
+   typed 96 — and the two cannot drift when the card is next adjusted. */
 .orcid-skeleton {
-  padding: var(--space-5);
+  padding: var(--space-5) var(--space-5) 4px;
   display: flex;
   flex-direction: column;
 }
@@ -1615,25 +1801,26 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
+  min-height: 52px;
+  padding: 0 0 var(--space-4) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  margin-bottom: var(--space-5);
 }
 
-.skel {
-  background: linear-gradient(90deg, var(--border-subtle) 25%, var(--border-default) 50%, var(--border-subtle) 75%);
-  background-size: 200% 100%;
-  animation: skelShimmer 1.5s ease-in-out infinite;
-  border-radius: var(--radius-sm);
+/* Sized to the badge it stands in for, not to the author-list avatar the class
+   is shared with. */
+.orcid-skeleton .ex-skel-avatar {
+  width: 28px;
+  height: 28px;
 }
 
-.skel-circle {
-  width: 36px;
-  height: 36px;
-  border-radius: var(--radius-full);
-  flex-shrink: 0;
+.orcid-skeleton .ex-skel-sub {
+  height: 11px;
+  margin-bottom: 6px;
 }
 
-.skel-line {
-  height: 12px;
-}
+
+
 
 @keyframes skelShimmer {
   0% { background-position: 200% 0; }
@@ -1987,12 +2174,12 @@
   .project-summary-toggle svg,
   .ee-author-card.staggerFadeUp,
   .skeleton-item,
+  .ex-skel,
   .skel,
   .orcid-career-section--animate,
   .orcid-career-section--animate > *,
   .ehc-spinner,
   .ee-tab,
-  .bgPulseFade,
   .ehc-bg-blur {
     animation: none;
     transition: none;

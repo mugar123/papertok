@@ -6,9 +6,10 @@ import {
   handleAIExplanation,
   isKimiConfigured,
   peekAIQuota,
-  verifyFirebaseUser,
+  verifyFirebaseAccount,
 } from './ai-explanation.js';
 import { handlePaperRewrite } from './ai-rewrite.js';
+import { handlePassageAnnotation } from './ai-annotation.js';
 import {
   checkEmailProviderHealth,
   EmailNotificationError,
@@ -2016,6 +2017,31 @@ export default {
         );
       }
     }
+    // One passage, explained in place. Same daily allowance as the other two —
+    // it is the same model doing the same kind of work, just less of it — so it
+    // is deliberately NOT free: a route that spends nothing is a route with no
+    // ceiling.
+    if (url.pathname === '/ai/annotate') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      try {
+        const payload = await handlePassageAnnotation(request, env);
+        return json(payload, 200, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'private, no-store',
+        });
+      } catch (error) {
+        const knownError = error instanceof AIExplanationError;
+        return json(
+          {
+            code: knownError ? error.code : 'AI_UNAVAILABLE',
+            ...(knownError && error.quota ? { quota: error.quota } : {}),
+          },
+          knownError ? error.status : 502,
+          { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+        );
+      }
+    }
     if (url.pathname === '/ai/rewrite') {
       if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -2148,8 +2174,8 @@ export default {
     if (url.pathname === '/ai/quota') {
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
       try {
-        const uid = await verifyFirebaseUser(request, env);
-        return json(await peekAIQuota(env, uid), 200, {
+        const account = await verifyFirebaseAccount(request, env);
+        return json(await peekAIQuota(env, account.uid, { unlimited: account.unlimitedAI }), 200, {
           ...corsHeaders(origin, env),
           'cache-control': 'private, no-store',
         });

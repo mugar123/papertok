@@ -1,0 +1,105 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #1a5fd0; } a:hover { color: #12459b; }
+    * { box-sizing: border-box; }
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.5 'IBM Plex Mono', monospace; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+    .lead { font-size: 0.8125rem; line-height: 1.55; color: #5b6270; margin: 0; }
+
+    .frame { position: relative; height: 132px; overflow: hidden; border: 1px solid #d3d5db; border-radius: 3px; }
+    .layer { position: absolute; inset: 0; padding: 20px; background: var(--paper); color: var(--ink);
+      --paper: #ffffff; --paper-2: #f7f7f8; --sunken: #fafafa; --ink: #111318; --ink-2: #5b6270; --ink-3: #8a919e; --rule: #e6e7ea; --rule-2: #d3d5db; --rule-3: #a9aeba; }
+    .layer.is-dark { --paper: #111318; --paper-2: #1a1d24; --sunken: #0d0f13; --ink: #f2f3f5; --ink-2: #a1a8b5; --ink-3: #757c8a; --rule: #23262e; --rule-2: #2e323b; --rule-3: #474d59; }
+    .layer.over { transition: clip-path calc(320ms * var(--k, 1)) cubic-bezier(0.4, 0, 1, 1); }
+    .stage.is-dark .layer.over { transition: clip-path calc(420ms * var(--k, 1)) cubic-bezier(0.16, 1, 0.3, 1); }
+
+    /* Fila de Ajustes, calcada de SettingsPage.css */
+    .row { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto; align-items: center; gap: 14px; }
+    .rowicon { display: grid; place-items: center; width: 38px; height: 38px; border: 1px solid var(--rule); border-radius: 4px; background: var(--paper-2); color: var(--ink-2); }
+    .row h3 { margin: 0 0 3px; font-size: 0.8125rem; font-weight: 600; color: var(--ink); }
+    .row p { margin: 0; font-size: 0.6875rem; line-height: 1.45; color: var(--ink-3); }
+    .control { display: inline-flex; align-items: center; gap: 9px; color: var(--ink-3); font: 750 0.625rem/1 'Inter', sans-serif; text-transform: uppercase; letter-spacing: 0.04em; }
+    .sw { position: relative; width: 44px; height: 26px; flex: 0 0 auto; padding: 0; border: 1px solid var(--rule-3); border-radius: 8px; background: var(--paper-2); cursor: pointer;
+      transition: border-color calc(120ms * var(--k, 1)) ease, background calc(120ms * var(--k, 1)) ease; }
+    .sw > span { position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--ink-2);
+      transition: transform calc(120ms * var(--k, 1)) ease, background calc(120ms * var(--k, 1)) ease; }
+    .sw:focus-visible { outline: 2px solid #ff9d00; outline-offset: 2px; }
+    .stage.is-dark .sw { border-color: var(--ink); background: var(--ink); }
+    .stage.is-dark .sw > span { transform: translateX(18px); background: var(--paper); }
+    @media (prefers-reduced-motion: reduce) { .stage * { transition-duration: 1ms !important; } }
+  </style>
+</helmet>
+
+<div style="width: 620px; min-height: 460px; background: #ffffff; padding: 34px 36px">
+
+  <span class="k" style="color: #8a919e">Opción B</span>
+  <h1 class="serif" style="font-size: 1.4rem; font-weight: 600; line-height: 1.15; margin: 8px 0 6px">El interruptor de Ajustes</h1>
+  <p class="lead" style="margin-bottom: 18px">El control que la app ya tiene — el mismo 44&nbsp;×&nbsp;26 con el que se acepta la analítica — puesto una fila más abajo. Vocabulario cero nuevo.</p>
+
+  <div class="{{rootClass}}" style="--k: 1">
+    <div class="frame">
+      <sc-for list="{{layers}}" as="layer" hint-placeholder-count="2">
+        <div class="layer {{layer.cls}}" style="clip-path: circle({{layer.r}} at calc(100% - 42px) 50%)">
+          <div class="row">
+            <span class="rowicon">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"></path></svg>
+            </span>
+            <div>
+              <h3>Modo oscuro</h3>
+              <p>Cambia el papel por tinta en toda la app. Se recuerda en este navegador.</p>
+            </div>
+            <div class="control">
+              <span>{{stateWord}}</span>
+              <button type="button" class="sw" role="switch" aria-checked="{{checked}}" aria-label="Modo oscuro" onClick="{{ toggle }}">
+                <span aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: grid; gap: 10px; margin-top: 20px">
+    <p class="lead"><strong style="color: #111318; font-weight: 600">A favor.</strong> No inventa nada: es <span class="m" style="color: #111318">.settings-toggle</span> tal cual, con su recorrido de 18&nbsp;px en 120&nbsp;ms. El estado se lee sin ambigüedad — encendido o apagado, con la palabra al lado.</p>
+    <p class="lead"><strong style="color: #111318; font-weight: 600">En contra.</strong> Vive a dos toques: hay que entrar en Ajustes. Un ajuste que se prueba de noche y se deshace de día pide estar a mano, no guardado. Y no sabe decir «lo que diga el sistema».</p>
+    <p class="lead"><strong style="color: #111318; font-weight: 600">Un arreglo de paso.</strong> El interruptor de hoy se activa con borde <span class="m" style="color: #111318">rgba(129,92,246,.65)</span> — violeta de una paleta anterior. Aquí va tinta sobre tinta, que es lo que dice el sistema actual.</p>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":620,"height":460}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { dark: false };
+  }
+
+  renderVals() {
+    const dark = this.state.dark;
+    return {
+      rootClass: dark ? 'stage is-dark' : 'stage',
+      checked: dark ? 'true' : 'false',
+      stateWord: dark ? 'Activado' : 'Desactivado',
+      layers: [
+        { cls: '', r: '145%' },
+        { cls: 'is-dark over', r: dark ? '145%' : '0%' },
+      ],
+      toggle: () => this.setState({ dark: !this.state.dark }),
+    };
+  }
+}
+</script>
+</body>
+</html>

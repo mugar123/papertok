@@ -1,0 +1,244 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    button { font-family: inherit; border: none; background: none; cursor: pointer; }
+    a { color: #111318; text-decoration: none; }
+    a:hover { color: #2b2f38; }
+
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .k-sm { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+
+    .rail { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+    .seg { display: flex; align-items: baseline; gap: 6px; padding: 0 0 8px; border-bottom: 3px solid #e6e7ea; color: #8a919e; }
+    .seg .n { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; }
+    .seg .t { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .seg.on { border-bottom-color: var(--hl, #ffd21e); color: #111318; }
+    .seg.done { border-bottom-color: #111318; color: #5b6270; }
+
+    /* ── En móvil la ficha se vuelve fila: 52px de alto, todo el ancho, un solo golpe de vista ──
+       El objetivo de 44px se cumple con holgura. */
+    .row {
+      display: flex; align-items: center; gap: 10px; width: 100%; height: 52px;
+      padding: 0 12px 0 11px; text-align: left;
+      border: none; border-bottom: 1px solid #e6e7ea; border-left: 3px solid var(--fa, #d3d5db);
+      background: #ffffff;
+      transition: background 120ms ease;
+    }
+    .row:active { background: #f7f7f8; }
+    .row.on { background: #fafafa; }
+
+    .row-ic { flex: 0 0 auto; display: grid; place-items: center; color: var(--fa, #8a919e); }
+    .row-n { flex: 1 1 auto; min-width: 0; font-size: 0.875rem; font-weight: 600; letter-spacing: -0.01em; color: #111318; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .row.on .row-n span { box-shadow: inset 0 -0.3em 0 var(--hl, #ffd21e); }
+    .row-c { flex: 0 0 auto; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #5b6270; font-variant-numeric: tabular-nums; }
+    .row.on .row-c { color: #111318; }
+
+    .box { flex: 0 0 auto; display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid #d3d5db; border-radius: 2px; background: #ffffff; color: #ffffff; transition: background 120ms ease, border-color 120ms ease; }
+    .box svg { opacity: 0; transition: opacity 120ms ease; }
+    .row.on .box { background: #111318; border-color: #111318; }
+    .row.on .box svg { opacity: 1; }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; height: 48px; border-radius: 3px; font-size: 0.9375rem; font-weight: 600; transition: background 120ms ease, border-color 120ms ease, color 120ms ease; }
+    .btn-ink { border: 1px solid #111318; background: #111318; color: #ffffff; }
+    .btn-off { border: 1px solid #e6e7ea; background: #f7f7f8; color: #a9aeba; }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 390px; height: 1060px; background: #ffffff; overflow: hidden; --hl: {{ hl }}">
+
+  <!-- ═══ Cabecera. Sin barra de estado falsa: en el móvil real la pinta el sistema. ═══ -->
+  <div style="display: flex; align-items: center; height: 52px; padding: 0 16px; border-bottom: 1px solid #e6e7ea; background: #ffffff">
+    <div style="display: flex; align-items: center; gap: 7px">
+      <div style="display: grid; place-items: center; width: 26px; height: 26px; border-radius: 2px; background: #ffd21e; color: #111318; font: 600 0.75rem/1 'IBM Plex Mono', monospace; box-shadow: 2px 2px 0 #111318">P</div>
+      <div style="font-size: 0.9375rem; font-weight: 700; letter-spacing: -0.02em">Paper<span style="box-shadow: inset 0 -0.32em 0 var(--hl, #ffd21e)">Tok</span></div>
+    </div>
+    <div class="k-sm" style="margin-left: auto; color: #8a919e">Paso <span class="mono" style="color: #111318">01</span> / 03</div>
+  </div>
+
+  <div style="padding: 20px 16px 0">
+
+    <div class="rail" style="margin-bottom: 22px">
+      <div class="seg on"><span class="n">01</span><span class="t">Áreas</span></div>
+      <div class="seg"><span class="n">02</span><span class="t">Categorías</span></div>
+      <div class="seg"><span class="n">03</span><span class="t">Tu feed</span></div>
+    </div>
+
+    <div class="k-sm" style="color: #8a919e; margin-bottom: 10px">Empecemos</div>
+    <h1 class="serif" style="margin: 0; font-size: 1.625rem; font-weight: 600; line-height: 1.14; letter-spacing: -0.02em; color: #111318">Elige tus áreas de interés</h1>
+    <p style="margin: 10px 0 0; font-size: 0.8125rem; line-height: 1.55; color: #5b6270; text-wrap: pretty">Con esto armamos tu feed. En el paso siguiente afinas las categorías concretas.</p>
+
+    <div style="display: flex; align-items: baseline; gap: 8px; margin: 18px 0 6px">
+      <span class="mono" style="font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.01em; color: #111318">{{ sel.areas }}<span style="color: #d3d5db">/12</span></span>
+      <span class="k-sm" style="color: #8a919e">Marcadas</span>
+      <span style="flex: 1 1 auto; height: 1px; background: #e6e7ea"></span>
+    </div>
+  </div>
+
+  <!-- ═══ Las doce áreas, en filas ═══ -->
+  <div style="border-top: 1px solid #e6e7ea">
+
+    <button class="row {{ f.physics.cls }}" onClick="{{ f.physics.pick }}" style="--fa: #4f46e5">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z"/><path d="M15.7 15.7c4.52-4.54 6.54-9.87 4.5-11.9-2.03-2.04-7.36-.02-11.9 4.5-4.52 4.54-6.54 9.87-4.5 11.9 2.03 2.04 7.36.02 11.9-4.5Z"/></svg></span>
+      <span class="row-n"><span>Física</span></span>
+      <span class="row-c">26</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+    <button class="row {{ f.cs.cls }}" onClick="{{ f.cs.pick }}" style="--fa: #c2410c">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></span>
+      <span class="row-n"><span>Ciencias de la Computación</span></span>
+      <span class="row-c">21</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+    <button class="row {{ f.math.cls }}" onClick="{{ f.math.pick }}" style="--fa: #7e22ce">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="16" height="20" x="4" y="2" rx="2"/><line x1="8" x2="16" y1="6" y2="6"/><line x1="16" x2="16" y1="14" y2="18"/><path d="M16 10h.01"/><path d="M12 10h.01"/><path d="M8 10h.01"/><path d="M12 14h.01"/><path d="M8 14h.01"/><path d="M12 18h.01"/><path d="M8 18h.01"/></svg></span>
+      <span class="row-n"><span>Matemáticas</span></span>
+      <span class="row-c">17</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+    <button class="row {{ f.stat.cls }}" onClick="{{ f.stat.pick }}" style="--fa: #1d4ed8">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 21v-6"/><path d="M12 21V3"/><path d="M19 21V9"/></svg></span>
+      <span class="row-n"><span>Estadística</span></span>
+      <span class="row-c">5</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+    <button class="row {{ f.econ.cls }}" onClick="{{ f.econ.pick }}" style="--fa: #0f766e">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 7h6v6"/><path d="m22 7-8.5 8.5-5-5L2 17"/></svg></span>
+      <span class="row-n"><span>Economía</span></span>
+      <span class="row-c">3</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+    <button class="row {{ f.qfin.cls }}" onClick="{{ f.qfin.pick }}" style="--fa: #0e7490">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M16 8h-6a2 2 0 1 0 0 4h4a2 2 0 1 1 0 4H8"/><path d="M12 18V6"/></svg></span>
+      <span class="row-n"><span>Finanzas Cuantitativas</span></span>
+      <span class="row-c">7</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+    <button class="row {{ f.eess.cls }}" onClick="{{ f.eess.pick }}" style="--fa: #a16207">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></svg></span>
+      <span class="row-n"><span>Ingeniería Eléctrica y Electrónica</span></span>
+      <span class="row-c">7</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+    <button class="row {{ f.mech.cls }}" onClick="{{ f.mech.pick }}" style="--fa: #475569">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915"/><circle cx="12" cy="12" r="3"/></svg></span>
+      <span class="row-n"><span>Ingeniería Mecánica y Aeroespacial</span></span>
+      <span class="row-c">9</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+    <button class="row {{ f.civil.cls }}" onClick="{{ f.civil.pick }}" style="--fa: #92400e">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10h.01"/><path d="M12 14h.01"/><path d="M12 6h.01"/><path d="M16 10h.01"/><path d="M16 14h.01"/><path d="M16 6h.01"/><path d="M8 10h.01"/><path d="M8 14h.01"/><path d="M8 6h.01"/><path d="M9 22v-3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v3"/><rect x="4" y="2" width="16" height="20" rx="2"/></svg></span>
+      <span class="row-n"><span>Ingeniería Civil y Ambiental</span></span>
+      <span class="row-c">8</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+    <button class="row {{ f.chemeng.cls }}" onClick="{{ f.chemeng.pick }}" style="--fa: #4d7c0f">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4.5 3h15"/><path d="M6 3v16a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V3"/><path d="M6 14h12"/></svg></span>
+      <span class="row-n"><span>Ingeniería Química y Materiales</span></span>
+      <span class="row-c">8</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+    <button class="row {{ f.med.cls }}" onClick="{{ f.med.pick }}" style="--fa: #be123c">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 9.5a5.5 5.5 0 0 1 9.591-3.676.56.56 0 0 0 .818 0A5.49 5.49 0 0 1 22 9.5c0 2.29-1.5 4-3 5.5l-5.492 5.313a2 2 0 0 1-3 .019L5 15c-1.5-1.5-3-3.2-3-5.5"/><path d="M3.22 13H9.5l.5-1 2 4.5 2-7 1.5 3.5h5.27"/></svg></span>
+      <span class="row-n"><span>Medicina</span></span>
+      <span class="row-c">16</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+    <button class="row {{ f.bio.cls }}" onClick="{{ f.bio.pick }}" style="--fa: #15803d; border-bottom: none">
+      <span class="row-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10 16 1.5 1.5"/><path d="m14 8-1.5-1.5"/><path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993"/><path d="m16.5 10.5 1 1"/><path d="m17 6-2.891-2.891"/><path d="M2 15c6.667-6 13.333 0 20-6"/><path d="m20 9 .891.891"/><path d="M3.109 14.109 4 15"/><path d="m6.5 12.5 1 1"/><path d="m7 18 2.891 2.891"/><path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993"/></svg></span>
+      <span class="row-n"><span>Biología</span></span>
+      <span class="row-c">15</span>
+      <span class="box"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    </button>
+
+  </div>
+
+  <!-- ═══ Barra fija: el recuento encima del botón, que ahora se lee ═══ -->
+  <div style="position: absolute; left: 0; right: 0; bottom: 0; padding: 12px 16px 16px; border-top: 1px solid #d3d5db; background: #ffffff">
+    <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px">
+      <span class="mono" style="font-size: 0.75rem; font-weight: 500; color: {{ sel.tallyColor }}">{{ sel.tally }}</span>
+      <span style="margin-left: auto; font-size: 0.6875rem; color: #5b6270">{{ sel.hint }}</span>
+    </div>
+    <button class="btn {{ sel.btnCls }}">
+      Siguiente
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+    </button>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{
+  "resalte": { "editor": "color", "default": "#ffd21e", "options": ["#ffd21e", "#ff9d00", "#c9e8ff", "#ffe0e6"], "section": "Marca" },
+  "$preview": { "width": 390, "height": 1060 }
+}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { picked: { physics: true, cs: true, bio: true } };
+  }
+
+  renderVals() {
+    const COUNTS = {
+      physics: 26, cs: 21, math: 17, stat: 5, econ: 3, qfin: 7,
+      eess: 7, mech: 9, civil: 8, chemeng: 8, med: 16, bio: 15,
+    };
+    const picked = this.state.picked || {};
+    const keys = Object.keys(COUNTS);
+
+    const f = {};
+    keys.forEach((k) => {
+      f[k] = {
+        cls: picked[k] ? 'on' : '',
+        pick: () => this.setState((s) => {
+          const next = { ...(s.picked || {}) };
+          if (next[k]) delete next[k]; else next[k] = true;
+          return { picked: next };
+        }),
+      };
+    });
+
+    const on = keys.filter((k) => picked[k]);
+    const cats = on.reduce((sum, k) => sum + COUNTS[k], 0);
+    const any = on.length > 0;
+
+    return {
+      f,
+      sel: {
+        areas: on.length,
+        tally: any
+          ? `${on.length} ${on.length === 1 ? 'área' : 'áreas'} · ${cats} ${cats === 1 ? 'categoría' : 'categorías'}`
+          : 'Ninguna área marcada',
+        tallyColor: any ? '#111318' : '#8a919e',
+        hint: any ? '' : 'Marca al menos una',
+        btnCls: any ? 'btn-ink' : 'btn-off',
+      },
+      hl: this.props.resalte ?? '#ffd21e',
+    };
+  }
+}
+</script>
+</body>
+</html>

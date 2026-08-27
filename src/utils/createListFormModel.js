@@ -16,9 +16,19 @@
  * with two identical lists to clean up.
  */
 
+import { LIST_COLORS } from './listColors.js';
+
+/**
+ * `color` starts on the first of the palette rather than on a random one,
+ * because a reducer that reaches for `Math.random()` is no longer a function of
+ * its arguments and cannot be tested by comparing states. The window dispatches
+ * `open` with the colour it wants — a random one when creating, the list's own
+ * when editing — and the default here is only what `open` falls back to.
+ */
 export const CREATE_LIST_FORM_INITIAL = Object.freeze({
   name: '',
   icon: 'Folder',
+  color: LIST_COLORS[0],
   busy: false,
   error: false,
 });
@@ -30,14 +40,23 @@ export function canSubmitCreateList(state) {
 
 export function createListFormReducer(state, action) {
   switch (action.type) {
-    case 'open':
-      return CREATE_LIST_FORM_INITIAL;
+    case 'open': {
+      // The same window creates and edits, so `open` seeds it: nothing when
+      // creating (bar the random colour the caller rolled), and the list's own
+      // name, icon and colour when editing. Anything the preset omits falls
+      // back to the initial state, so a partial preset cannot carry a field
+      // over from the last time the window was open.
+      const { name, icon, color } = { ...CREATE_LIST_FORM_INITIAL, ...action.preset };
+      return { ...CREATE_LIST_FORM_INITIAL, name, icon, color };
+    }
     case 'name':
       // Typing clears the error: keeping it would say "it failed" about a
       // request the owner has not made yet.
       return { ...state, name: action.value, error: false };
     case 'icon':
       return { ...state, icon: action.value };
+    case 'color':
+      return { ...state, color: action.value };
     case 'submit':
       // The guard is here as well as on the button's `disabled`, because Enter
       // reaches the handler by its own path and a disabled attribute is not a

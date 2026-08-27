@@ -392,3 +392,85 @@ test('the outage description speaks only for the external sources', () => {
     assert.doesNotMatch(call, /user/i, 'people never enter the provider outage');
   }
 });
+
+/**
+ * Every destination a search result offers has to be a route the app declares.
+ *
+ * This is the rule the palette broke: papers were pointed at
+ * `/explorer/paper/<id>`, which has never been a route. `/explorer/:type/:id`
+ * matched the shape, so the click was not a 404 — it mounted the entity
+ * explorer, which asked OpenAlex for a *work* id at the *authors* endpoint and
+ * printed "Entity not found". A destination that is merely shaped like a route
+ * is exactly the failure a person notices and a test never does, so the test
+ * reads the router.
+ */
+const app = await readCode('../../App.jsx');
+const destinations = await readCode('../../utils/searchDestinations.js');
+const { PUBLIC_ENTITY_TYPES } = await import('../../utils/publicNavigation.js');
+
+/** Route patterns App.jsx declares, minus the catch-all, which matches all. */
+const ROUTES = [...app.matchAll(/path="([^"]+)"/g)]
+  .map(match => match[1])
+  .filter(path => path !== '*');
+
+/** Path templates a surface navigates to, as segment lists. */
+function navigationPaths(code) {
+  return [...code.matchAll(/`(\/[^`]*)`/g)]
+    .map(match => match[1].split('?')[0])
+    .filter(path => !path.includes('://'))
+    .map(path => path.replace(/\$\{[^}]*\}/g, '*'));
+}
+
+function routeAccepts(route, path) {
+  const routeSegments = route.split('/').filter(Boolean);
+  const pathSegments = path.split('/').filter(Boolean);
+  if (routeSegments.length !== pathSegments.length) return false;
+  return routeSegments.every((segment, index) => (
+    // `:param` takes anything, including the literal `author` in
+    // `/explorer/author/*`; a literal route segment has to be matched exactly.
+    segment.startsWith(':') || segment === pathSegments[index]
+  ));
+}
+
+test('every path a search result navigates to is a declared route', () => {
+  assert.ok(ROUTES.length > 5, 'the routes were read out of App.jsx');
+  for (const surface of [
+    { name: 'the command palette', code: palette },
+    { name: 'the search page', code: page },
+    { name: 'the shared destinations', code: destinations },
+  ]) {
+    for (const path of navigationPaths(surface.code)) {
+      assert.ok(
+        ROUTES.some(route => routeAccepts(route, path)),
+        `${surface.name}: "${path}" is not a route this app declares`,
+      );
+    }
+  }
+});
+
+/**
+ * `/explorer/:type/:id` matches on shape, which is why the test above passes
+ * for `/explorer/paper/<id>` too: three segments, first one `explorer`. The
+ * route accepted it and the explorer then asked OpenAlex for a work id at the
+ * authors endpoint. So the rule that actually bites is that `:type` is not a
+ * free slot — it is the closed set the explorer knows how to resolve.
+ */
+test('the explorer is only ever asked for a type it can resolve', () => {
+  const types = new Set(PUBLIC_ENTITY_TYPES);
+  assert.ok(types.has('author') && types.has('institution') && !types.has('paper'));
+
+  for (const surface of [
+    { name: 'the command palette', code: palette },
+    { name: 'the search page', code: page },
+    { name: 'the shared destinations', code: destinations },
+  ]) {
+    for (const path of navigationPaths(surface.code)) {
+      const [root, type] = path.split('/').filter(Boolean);
+      if (root !== 'explorer' || type === '*') continue;
+      assert.ok(
+        types.has(type),
+        `${surface.name}: the entity explorer cannot resolve "${type}" (${path})`,
+      );
+    }
+  }
+});

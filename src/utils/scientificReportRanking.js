@@ -331,12 +331,38 @@ function editionFromRows(rows, personalized) {
   }));
   return {
     mainDiscovery: papers[0] || null,
-    highlights: papers.slice(1, 11),
+    // The rows handed in are already exactly one selection, so the tail is the
+    // whole of it. It used to be capped at ten here as well, which silently
+    // dropped a paper the moment a selection held more than eleven.
+    highlights: papers.slice(1),
     featuredConcepts: extractFeaturedConcepts(papers),
     personalized,
   };
 }
 
+/** How many papers one selection holds: a lead story and ten alongside it. */
+export const PAPERS_PER_SELECTION = 11;
+
+/**
+ * How many selections a period's candidates can fill.
+ *
+ * The last one is usually short — it holds whatever the one before it left
+ * over — which is why the forme has to close a ragged row.
+ */
+export function countSelections(candidateCount, perSelection = PAPERS_PER_SELECTION) {
+  const total = Math.max(0, Number(candidateCount) || 0);
+  return Math.max(1, Math.ceil(total / perSelection));
+}
+
+/**
+ * Builds one selection of an edition.
+ *
+ * `selectRows` picks greedily, one paper at a time, and each pick depends only
+ * on the picks before it — so asking for 33 papers returns the same first 11 as
+ * asking for 11. That is what makes a selection a stable *slice* of one
+ * ordering rather than a re-run of it: the reader can walk out to selection 4
+ * and back and find selection 1 exactly as they left it.
+ */
 export function buildScientificReportEditions(candidates, options = {}) {
   const currentDate = options.currentDate instanceof Date ? options.currentDate : new Date(options.currentDate || Date.now());
   const trendLookup = buildTrendMomentumLookup(options.trends);
@@ -357,15 +383,28 @@ export function buildScientificReportEditions(candidates, options = {}) {
     ),
     personalScore: personalScore(paper, profile, currentDate),
   }));
-  const maxToSelect = Math.min(options.limit || 11, rows.length);
-  const panoramaRows = selectRows(rows, 'panorama', profile, maxToSelect);
+  const perSelection = Math.max(1, options.limit || PAPERS_PER_SELECTION);
+  const selectionCount = countSelections(rows.length, perSelection);
+  // A selection the corpus cannot fill falls back to the last one that exists,
+  // so a stale link or a period that shrank never lands on an empty page.
+  const selection = Math.min(
+    Math.max(1, Number(options.selection) || 1),
+    selectionCount,
+  );
+  const upto = Math.min(selection * perSelection, rows.length);
+  const from = (selection - 1) * perSelection;
+
+  const panoramaRows = selectRows(rows, 'panorama', profile, upto).slice(from);
   const hasPersonalization = profileHasSignals(profile);
   const personalRows = hasPersonalization
-    ? selectRows(rows, 'personal', profile, maxToSelect)
+    ? selectRows(rows, 'personal', profile, upto).slice(from)
     : panoramaRows;
 
   return {
     panorama: editionFromRows(panoramaRows, false),
     personal: editionFromRows(personalRows, hasPersonalization),
+    selection,
+    selectionCount,
+    perSelection,
   };
 }

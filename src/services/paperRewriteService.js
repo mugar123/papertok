@@ -82,7 +82,9 @@ export async function fetchRemainingAIUses({ signal } = {}) {
     const remainingUses = Number(payload?.remainingUses);
     const dailyLimit = Number(payload?.dailyLimit);
     if (!Number.isFinite(remainingUses) || !Number.isFinite(dailyLimit)) return null;
-    return { remainingUses, dailyLimit };
+    // An exempt account has a ceiling too — the global one — but showing it as
+    // "993/1000 today" would be a true sentence nobody reads as "no limit".
+    return { remainingUses, dailyLimit, unlimited: payload?.unlimited === true };
   } catch {
     return null;
   }

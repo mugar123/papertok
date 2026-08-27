@@ -268,13 +268,29 @@ test('SOURCE: the lists page has no manual public-list update control', async ()
     'edits reach the public copy through the sync engine');
 });
 
+/**
+ * Counted on `updateDoc`, not on `arrayUnion`/`arrayRemove`.
+ *
+ * It used to count membership writes, which was right while membership was the
+ * only thing that changed about a list. Then lists became editable — a rename
+ * reaches the published copy, because the payload's title is the list's name —
+ * and the old count started reading an edit that correctly stamps `updatedAt`
+ * as one stamp too many.
+ *
+ * So the invariant is stated where it actually lives: every write to a list
+ * document from these two screens leaves the mark the sync engine looks for. If
+ * a write ever lands here that must NOT stamp — the publish bookkeeping that
+ * sets `publicSyncedAt`, say, which would chase its own tail — that is a reason
+ * to think about it, not to stamp it to keep this quiet.
+ */
 test('SOURCE: every list edit stamps updatedAt, or the recovery check goes blind', async () => {
   for (const path of ['../components/Lists/ListsPage.jsx', '../components/Lists/SaveToListModal.jsx']) {
     const source = await readFile(new URL(path, import.meta.url), 'utf8');
-    const edits = source.match(/arrayUnion\(|arrayRemove\(/g) || [];
+    const writes = source.match(/updateDoc\(/g) || [];
+    const membership = source.match(/arrayUnion\(|arrayRemove\(/g) || [];
     const stamps = source.match(/updatedAt: serverTimestamp\(\)/g) || [];
-    assert.ok(edits.length > 0, `${path}: expected membership writes`);
-    assert.equal(stamps.length, edits.length,
-      `${path}: every membership write must stamp updatedAt so a lost sync can be found later`);
+    assert.ok(membership.length > 0, `${path}: expected membership writes`);
+    assert.equal(stamps.length, writes.length,
+      `${path}: every write to a list must stamp updatedAt so a lost sync can be found later`);
   }
 });

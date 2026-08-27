@@ -1,0 +1,73 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 720,
+      "h": 700,
+      "title": "Mapa · escritorio",
+      "is_interactive": true
+    },
+    {
+      "file": "Movil.dc.html",
+      "x": 820,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Móvil",
+      "is_interactive": true
+    },
+    {
+      "file": "Anatomia.dc.html",
+      "x": 0,
+      "y": 964,
+      "w": 900,
+      "h": 1660,
+      "title": "Anatomía del mapa"
+    },
+    {
+      "file": "Estados.dc.html",
+      "x": 1020,
+      "y": 964,
+      "w": 900,
+      "h": 980,
+      "title": "Estados"
+    },
+    {
+      "file": "Movimiento.dc.html",
+      "x": 0,
+      "y": 2744,
+      "w": 1120,
+      "h": 2000,
+      "title": "Movimiento",
+      "is_interactive": true
+    }
+  ],
+  "annotations": [
+    {
+      "id": "probar",
+      "x": 0,
+      "y": -380,
+      "w": 620,
+      "text": "Pruébalo: toca cualquier nodo del mapa.\n\nLa ficha sube por abajo con año, citas y campo; «Centrar aquí» convierte a ese vecino en el nuevo centro y deja el rastro arriba. Attention → BERT → BioBERT recorre dos saltos; los nodos sin vecindario preparado caen en «sin enlaces», que también es un estado real del servicio.\n\nArriba a la derecha, el conmutador mapa/lista: la lista es el mismo grafo para quien navega con lector de pantalla.\n\nEsto ya está construido: el mapa, el recorrido y estas animaciones viven en RelatedPapersSheet.jsx y en PaperCard.css, con la geometría en utils/citationMap.js."
+    },
+    {
+      "id": "pendiente",
+      "x": 700,
+      "y": -380,
+      "w": 470,
+      "text": "Pendiente de decidir antes de implementar:\n\n· ¿El eje horizontal son citas o percentil por año? Las citas castigan lo reciente; el percentil ya viaja en citedByPercentileYear.\n· ¿Cuántos nodos por banda? El worker admite hasta 10 y el control «por banda» mueve el número.\n· ¿Se marca la auto-cita? OpenCitations la da y se pierde al resolver los papers.\n· ¿El recorrido sobrevive al cerrar la hoja, o se vuelve siempre al paper actual?"
+    },
+    {
+      "id": "movimiento",
+      "x": 1220,
+      "y": 2744,
+      "w": 460,
+      "text": "El movimiento está también en el prototipo, no sólo aquí: abre el mapa y toca «Centrar aquí» en la ficha de cualquier nodo.\n\nEl nodo sube a la regla, el vecindario nuevo se traza, y si el vecino no tiene vecindario preparado verás además el esqueleto: puntos que laten sobre el marco ya dibujado."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

@@ -16,11 +16,14 @@ import {
 } from '../../utils/entityExplorer';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
+import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
+import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.js';
 import { Button } from '../ui/button.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import PaperCard from '../Feed/PaperCard';
+import PaperOverlay from '../Feed/PaperOverlay';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
 import RecentImpactStat from './RecentImpactStat';
@@ -34,7 +37,6 @@ import { getEntityWikiInfo } from '../../services/wikiService';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { safeExternalUrl } from '../../utils/externalUrl.js';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { getPublicEntityPath, getPublicEntityUrl } from '../../utils/publicNavigation.js';
@@ -44,24 +46,50 @@ import './EntityExplorer.css';
 const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
 const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
 
+
 /**
- * Resolve a research field's flat ink colour from a category id, mirroring the
- * prefix match PaperCard uses so an entity or paper is tinted by its own field
- * rather than a decorative default. Returns a `var(--gradient-*)` reference.
+ * The ORCID card before it has a name in it.
+ *
+ * Written once and used twice — by the page's own skeleton while the entity is
+ * resolving, and by the ORCID fetch that follows it — because the two run back
+ * to back on an author page and any difference between them is a step the
+ * reader watches happen. It reserves the card's header and nothing else: that
+ * is the part every verified profile has, and the three body lines this used
+ * to show were promising a biography most authors do not have, reserving 148px
+ * against the 96px that arrives.
  */
-const getAreaGradient = (categoryId) => {
-  if (!categoryId || typeof categoryId !== 'string') return 'var(--gradient-brand)';
-  const cat = categoryId.trim();
-  if (CATEGORIES[cat]?.gradient) return CATEGORIES[cat].gradient;
-  const prefix = cat.split('.')[0].split('-')[0];
-  for (const area of Object.values(CATEGORIES)) {
-    const subcatKeys = Object.keys(area.subcategories || {});
-    if (area.subcategories?.[cat] || subcatKeys.some(k => k.startsWith(prefix))) {
-      return area.gradient || 'var(--gradient-brand)';
-    }
-  }
-  return 'var(--gradient-brand)';
-};
+const OrcidCardSkeleton = () => (
+  <div className="orcid-skeleton" aria-hidden="true">
+    <div className="orcid-skeleton-header">
+      <div className="ex-skel ex-skel-avatar" />
+      <div className="ex-skel-stack">
+        <div className="ex-skel ex-skel-sub ex-skel-sub--short" />
+        <div className="ex-skel ex-skel-sub ex-skel-orcid-id" />
+      </div>
+      <div className="ex-skel ex-skel-orcid-action" />
+    </div>
+  </div>
+);
+
+/**
+ * The Wikipedia paragraph before it has been fetched.
+ *
+ * The same five rows the live block uses while its own request is in flight —
+ * three lines of clamped prose, the show-more toggle, the source links — so an
+ * institution's skeleton hands over to the live hero without the description
+ * moving.
+ */
+const WikiBlockSkeleton = () => (
+  <div className="ehc-wiki is-loading ehc-wiki--reserved" aria-hidden="true">
+    <div className="ehc-wiki-skeleton">
+      <span />
+      <span />
+      <span />
+      <span className="ehc-wiki-skeleton-toggle" />
+      <span className="ehc-wiki-skeleton-links" />
+    </div>
+  </div>
+);
 
 const handleActivationKey = (event, action) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -118,7 +146,6 @@ export default function EntityExplorer({
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
-  const selectedPaperDialogRef = useDialogFocus(Boolean(selectedPaper && !pdfPaperToView), closeSelectedPaper);
   const [wikiInfo, setWikiInfo] = useState(null);
   const [settledWikiRequestKey, setSettledWikiRequestKey] = useState('');
   const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState('');
@@ -966,48 +993,149 @@ export default function EntityExplorer({
     }
   };
 
-  if (isLoadingEntity) return (
-      <div className="explorer-container">
-        <div className="explorer-hero">
+  // The wait was silent to a screen reader: shapes carry nothing, so someone
+  // not looking at them heard an empty page until the data landed.
+  if (isLoadingEntity) {
+    /* Which page is coming is decided by the route, not by the fetch — `type`
+       is in the URL — and the three pages this stands in for are not the same
+       page. One skeleton served all of them: two tabs always, and nothing at
+       all reserved between the stats and the tab strip. On an author that was
+       a second tab the page would never render and a 177px drop when the real
+       header arrived; on an institution, 242px. */
+    const shape = explorerSkeletonShape(type);
+    return (
+      <div
+        className={`explorer-container explorer-skeleton explorer-skeleton--${type || 'entity'}`}
+        role="status"
+        aria-busy="true"
+        aria-label={isEnglish ? 'Loading' : 'Cargando'}
+      >
+        <div className="explorer-hero" aria-hidden="true">
           <div className="explorer-hero-top">
             <div className="eht-left">
               <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
                 <ArrowLeft size={20} />
               </Button>
-              <div className="skeleton-item" style={{ width: '80px', height: '16px' }}></div>
+              <div className="ex-skel ex-skel-type"></div>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <div className="skeleton-item" style={{ width: '40px', height: '40px' }} aria-hidden="true"></div>
-            </div>
+            <div className="ex-skel ex-skel-action"></div>
           </div>
-          
+
+          {/* The live hero's own nesting, copied rather than approximated:
+              header wraps main and aside, and the stats sit inside the aside.
+              Flattening it let `.ehc-main` stretch down the whole hero and
+              pushed the stats to the floor, with a screen of nothing between. */}
           <div className="explorer-hero-content">
-            <div className="ehc-main">
-              <div className="ehc-icon skeleton-item"></div>
-              <div className="ehc-info" style={{ width: '100%' }}>
-                <div className="skeleton-item skeleton-title" style={{ width: '200px', maxWidth: '80%', height: '28px', margin: '0 0 12px 0' }}></div>
-                <div className="skeleton-item skeleton-text medium"></div>
-                <div className="skeleton-item skeleton-text short"></div>
+            <div className="ehc-header">
+              <div className="ehc-main">
+                <div className="ehc-visual-slot">
+                  <div className="ehc-icon ex-skel"></div>
+                </div>
+                <div className="ehc-info">
+                  <div className="ex-skel ex-skel-name"></div>
+                  {/* The metadata line every type puts under the name: an
+                      author's institution, an institution's city, a project's
+                      funder. It lives inside `.ehc-info` on the live page, and
+                      the standalone `.ehc-meta` block that used to stand in for
+                      it down here was counting the same line twice. */}
+                  <div className="ex-skel ex-skel-sub ex-skel-sub--medium"></div>
+
+                  {/* The strip under the name, which is where the two page
+                      shapes first part company: an author is identified by the
+                      subjects they work on, an institution by its credentials
+                      and the organisations inside it. */}
+                  {shape.identity === 'topics' && (
+                    <div className="ehc-tags ex-skel-strip">
+                      {[72, 88, 64, 56].map(width => (
+                        <span key={width} className="ex-skel ex-skel-chip" style={{ width }} />
+                      ))}
+                    </div>
+                  )}
+                  {shape.identity === 'credentials' && (
+                    <>
+                      <div className="ehc-institution-identity ex-skel-strip">
+                        <span className="ex-skel ex-skel-chip" style={{ width: 104 }} />
+                        <span className="ex-skel ex-skel-chip" style={{ width: 72 }} />
+                      </div>
+                      <div className="ehc-ror-relations ex-skel-strip">
+                        {[186, 172, 158].map(width => (
+                          <span key={width} className="ex-skel ex-skel-relation" style={{ width }} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {shape.identity === 'none' && (
+                    <div className="ex-skel ex-skel-sub ex-skel-sub--short"></div>
+                  )}
+                </div>
+              </div>
+
+              <div className="ehc-hero-aside">
+                <div className="ehc-stats-grid">
+                  {[1, 2, 3, 4].map(i => (
+                    <div key={i} className="ehc-stat-box">
+                      <span className="ex-skel ex-skel-stat-value"></span>
+                      <span className="ex-skel ex-skel-stat-label"></span>
+                    </div>
+                  ))}
+                </div>
+                {/* Every entity the Explorer serves can be followed, so the
+                    button belongs to the spine. Leaving it out took 32px out
+                    of the hero on all three. */}
+                {shape.follow && <div className="ex-skel ex-skel-follow"></div>}
               </div>
             </div>
-            
-            <div className="ehc-stats-grid">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="ehc-stat-box skeleton-item" style={{ height: '60px' }}></div>
-              ))}
-            </div>
+
+            {/* The block beside the header, and the clearest tell of which page
+                is loading: an author's ORCID card, an institution's Wikipedia
+                paragraph. A project carries neither — its summary is optional —
+                so it reserves nothing rather than inventing a block that would
+                then have to collapse. Placed here, inside
+                `.explorer-hero-content`, because that is where the live ones
+                are: hung off `.explorer-hero` instead it missed the container's
+                16px gap and measured against the wrong parent. */}
+            {shape.aside === 'orcid' && <OrcidCardSkeleton />}
+            {shape.aside === 'wiki' && <WikiBlockSkeleton />}
+          </div>
+
+          {/* One tab or two, from the same helper the live strip answers with.
+              A page that will only ever show Papers no longer advertises an
+              Authors tab it is about to take away. */}
+          <div className="ee-tabs">
+            {Array.from({ length: shape.tabs }, (_, i) => (
+              <div key={i} className="ex-skel ex-skel-tab"></div>
+            ))}
           </div>
         </div>
 
-        <div className="explorer-content">
-          <div className="explorer-list">
-            {[1, 2, 3].map(i => (
-             <div key={i} className="explorer-list-item skeleton-item" style={{ height: '160px', marginBottom: '16px' }}></div>
+        {/* The search toolbar is not part of the hero, and was missing too. */}
+        <div className="explorer-toolbar-wrapper">
+          <div className="explorer-toolbar">
+            <div className="ex-skel ex-skel-search"></div>
+          </div>
+        </div>
+
+        {/* The real container, not a stand-in for it: the rows that replace
+            these land in the same grid with the same rules, so nothing moves
+            when the words arrive. */}
+        <div className="explorer-content" aria-hidden="true">
+          <div className="explorer-grid">
+            {[1, 2, 3, 4].map(i => (
+              <div key={i} className="explorer-list-item ex-skel-row">
+                <div className="ex-skel-row-head">
+                  <div className="ex-skel ex-skel-kicker"></div>
+                  <div className="ex-skel ex-skel-metrics"></div>
+                </div>
+                <div className="ex-skel ex-skel-title"></div>
+                <div className="ex-skel ex-skel-title"></div>
+                <div className="ex-skel ex-skel-authors"></div>
+              </div>
             ))}
           </div>
         </div>
       </div>
     );
+  }
 
   if (!entity) {
     return (
@@ -1053,12 +1181,22 @@ export default function EntityExplorer({
       <div className="explorer-hero">
         <AnimatePresence>
           {hasLoadedWikiImage && (
-            <motion.div 
+            <motion.div
               key="bg-blur"
+              // One owner for this opacity, and it is this one.
+              //
+              // The stylesheet ran a `bgPulseFade` keyframe on the same element
+              // fading to 0.1, while this animated the same property to 1 — ten
+              // times stronger than the wash is meant to be. Two animations
+              // racing for one property is why the header looked wrong for a
+              // beat and then corrected itself: whichever won the first frames
+              // decided how much of the photograph you saw. The keyframe is
+              // gone; 0.1 is the intended weight and is now stated once.
               initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 1.0 }}
-              className="ehc-bg-blur" 
+              animate={{ opacity: 0.1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 1 }}
+              className="ehc-bg-blur"
               style={{ backgroundImage: `url(${visibleWikiInfo.thumbnail})` }}
             ></motion.div>
           )}
@@ -1344,17 +1482,25 @@ export default function EntityExplorer({
                 <motion.div
                   id="ehc-experience-panel"
                   className="ehc-experience-panel"
-                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6 }}
-                  animate={{ opacity: 1, height: 'auto', y: 0 }}
-                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -4 }}
+                  // No `y` any more. It was there to give the panel somewhere
+                  // to come from back when the height could not reach zero;
+                  // now that it can, a slide on top of the collapse is a
+                  // second motion arguing with the first. Height opens the
+                  // box, opacity fills it, and nothing else moves.
+                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
                   transition={prefersReducedMotion
                     ? { duration: 0 }
                     : {
-                      opacity: { duration: 0.24 },
-                      height: { duration: 0.36, ease: [0.16, 1, 0.3, 1] },
-                      y: { duration: 0.32, ease: [0.16, 1, 0.3, 1] },
+                      // The contents clear a little before the box finishes
+                      // closing, so the last thing seen is an empty fold
+                      // rather than text being guillotined by the clip.
+                      opacity: { duration: 0.2 },
+                      height: { duration: 0.34, ease: [0.16, 1, 0.3, 1] },
                     }}
                 >
+                  <div className="ehc-experience-inner">
                   <div className="ehc-experience-title">
                     <Briefcase size={13} aria-hidden="true" />
                     {isEnglish ? 'Professional experience' : 'Experiencia profesional'}
@@ -1388,6 +1534,7 @@ export default function EntityExplorer({
                         )}
                       </div>
                     ))}
+                  </div>
                   </div>
                 </motion.div>
               )}
@@ -1540,9 +1687,22 @@ export default function EntityExplorer({
               >
                 {isWikiRequestPending && !wikiDescription ? (
                   <div className="ehc-wiki-skeleton" role="status" aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}>
+                    {/* Three lines because the collapsed paragraph is clamped
+                        to exactly three, then the show-more toggle, then the
+                        source links. Measured against a settled block: these
+                        five rows reserve 146px where 155px arrives — 9px out,
+                        which the `layout` transition absorbs without anything
+                        below appearing to move. Reserving the prose alone came
+                        up 33px short, and the prose plus a `min-height: 92px`
+                        that guessed at the rest came up 63px short. That gap
+                        was the shove: the description lands on a fetch of its
+                        own, after the entity's, so whatever it is short by gets
+                        taken out of the list's position while it is being read. */}
                     <span />
                     <span />
                     <span />
+                    <span className="ehc-wiki-skeleton-toggle" />
+                    <span className="ehc-wiki-skeleton-links" />
                   </div>
                 ) : wikiDescription ? (
                   <p
@@ -1583,20 +1743,7 @@ export default function EntityExplorer({
           </AnimatePresence>
 
           {/* ORCID Career Section */}
-          {isLoadingOrcid && (
-            <div className="orcid-skeleton">
-              <div className="orcid-skeleton-header">
-                <div className="skel skel-circle" />
-                <div style={{ flex: 1 }}>
-                  <div className="skel skel-line" style={{ width: '40%', marginBottom: '6px' }} />
-                  <div className="skel skel-line" style={{ width: '25%' }} />
-                </div>
-              </div>
-              <div className="skel skel-line" style={{ width: '60%', marginTop: '16px' }} />
-              <div className="skel skel-line" style={{ width: '80%', marginTop: '8px' }} />
-              <div className="skel skel-line" style={{ width: '70%', marginTop: '8px' }} />
-            </div>
-          )}
+          {isLoadingOrcid && <OrcidCardSkeleton />}
           {orcidInfo && !isLoadingOrcid && (
             <div className="orcid-career-section orcid-career-section--animate">
 
@@ -1685,7 +1832,7 @@ export default function EntityExplorer({
           <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => setActiveTab('papers')}>
              {isEnglish ? 'Papers' : 'Artículos'}
           </button>
-          {(type !== 'author' && type !== 'project' && !entity._localTopic && !entity._queryTopic) && (
+          {hasAuthorsTab(type, entity) && (
              <button className={`ee-tab ${activeTab === 'authors' ? 'active' : ''}`} onClick={() => setActiveTab('authors')}>
                {isEnglish ? 'Authors' : 'Autores'}
              </button>
@@ -1744,10 +1891,10 @@ export default function EntityExplorer({
                   role="button"
                   tabIndex={0}
                   aria-label={`${isEnglish ? 'Open publication' : 'Abrir publicación'}: ${normalizeScientificMarkup(paper.title) || (isEnglish ? 'Untitled' : 'Sin título')}`}
-                  style={{ '--i': Math.min(idx, 8), '--area-accent': getAreaGradient(paper.categories?.[0]) }}
+                  style={{ '--i': Math.min(idx, 8), '--area-accent': areaAccentForPaper(paper) }}
                 >
                   <div className="eli-header">
-                    <span className="eli-cat">{paper.categories && paper.categories.length > 0 ? paper.categories[0] : 'Paper'}</span>
+                    <span className="eli-cat">{areaLabelForPaper(paper, { english: isEnglish }) || (isEnglish ? 'Paper' : 'Artículo')}</span>
                     <div className="eli-metrics">
                       {hasKnownPaperCitationCount(paper) && (
                         paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
@@ -1791,18 +1938,17 @@ export default function EntityExplorer({
               
               {isLoadingPapers && !isFetchingMore && [1, 2, 3, 4, 5].map((n) => (
                   <div
-                    key={`skeleton-${n}`} 
-                    className="explorer-list-item skeleton-item"
+                    key={`skeleton-${n}`}
+                    className="explorer-list-item ex-skel-row"
+                    aria-hidden="true"
                   >
-                    <div className="eli-header">
-                      <div className="skeleton-pill"></div>
-                      <div className="skeleton-text short"></div>
+                    <div className="ex-skel-row-head">
+                      <div className="ex-skel ex-skel-kicker"></div>
+                      <div className="ex-skel ex-skel-metrics"></div>
                     </div>
-                    <div className="skeleton-title"></div>
-                    <div className="skeleton-title short"></div>
-                    <div className="skeleton-text"></div>
-                    <div className="skeleton-text long"></div>
-                    <div className="skeleton-text medium"></div>
+                    <div className="ex-skel ex-skel-title"></div>
+                    <div className="ex-skel ex-skel-title"></div>
+                    <div className="ex-skel ex-skel-authors"></div>
                   </div>
                 ))}
 
@@ -1864,13 +2010,14 @@ export default function EntityExplorer({
             
             {isLoadingAuthors && !isFetchingMoreAuthors && [1, 2, 3, 4, 5, 6].map(n => (
                 <div
-                  key={`skel-author-${n}`} 
-                  className="ee-author-card skeleton-item"
+                  key={`skel-author-${n}`}
+                  className="ee-author-card ex-skel-row"
+                  aria-hidden="true"
                 >
-                  <div className="ee-author-icon skel skel-circle" style={{ width: '40px', height: '40px' }}></div>
+                  <div className="ee-author-icon ex-skel ex-skel-avatar"></div>
                   <div className="ee-author-info">
-                    <div className="skel skel-line" style={{ width: '70%', height: '18px', marginBottom: '8px' }}></div>
-                    <div className="skel skel-line" style={{ width: '50%', height: '12px' }}></div>
+                    <div className="ex-skel ex-skel-name-line"></div>
+                    <div className="ex-skel ex-skel-sub ex-skel-sub--short"></div>
                   </div>
                 </div>
               ))}
@@ -2009,64 +2156,34 @@ export default function EntityExplorer({
         )}
       </AnimatePresence>
 
-      {/* Paper Card Overlay */}
-      <AnimatePresence initial={false}>
-        {selectedPaper && !pdfPaperToView && (
-          <motion.div 
-            ref={selectedPaperDialogRef}
-            className="explorer-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-label={isEnglish ? 'Publication details' : 'Detalles de la publicación'}
-            tabIndex={-1}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: prefersReducedMotion ? 0.1 : 0.2, ease: 'easeOut' }}
-          >
-            <motion.div
-              className="explorer-overlay-surface"
-              initial={prefersReducedMotion ? false : { opacity: 0, y: 26, scale: 0.985 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.99 }}
-              transition={prefersReducedMotion
-                ? { duration: 0.1 }
-                : { type: 'spring', damping: 30, stiffness: 330, mass: 0.72 }}
-            >
-              <Button
-                variant="outline"
-                size="icon"
-                data-dialog-initial-focus
-                className="explorer-overlay-close"
-                onClick={closeSelectedPaper}
-                aria-label={isEnglish ? 'Close publication' : 'Cerrar publicación'}
-                title={isEnglish ? 'Back' : 'Volver'}
-              >
-                <ArrowLeft size={22} />
-              </Button>
-              <div className="explorer-overlay-content hide-scroll-hint">
-                <PaperCard
-                  paper={selectedPaper}
-                  isLiked={likedPaperIds.has(selectedPaper.id)}
-                  isSaved={savedPaperIds.has(selectedPaper.id)}
-                  isRead={readPaperIds.has(selectedPaper.id)}
-                  onLike={toggleLike}
-                  onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
-                  onMarkAsRead={markAsRead}
-                  onOpenPdf={(paper) => setPdfPaperToView(paper)}
-                  onSaveToList={onSaveToList}
-                  getInteractionState={getInteractionState}
-                  trackViewTime={trackViewTime}
-                  trackSkip={trackSkip}
-                  publicMode={publicMode}
-                  onAuthRequired={onAuthRequired}
-                  analyticsSurface="explorer"
-                />
-              </div>
-            </motion.div>
-          </motion.div>
+      {/* Paper Card Overlay — the shared takeover, so the explorer, search and
+          Research all open a paper the same way. */}
+      <PaperOverlay
+        open={Boolean(selectedPaper && !pdfPaperToView)}
+        onClose={closeSelectedPaper}
+        isEnglish={isEnglish}
+        label={isEnglish ? 'Publication details' : 'Detalles de la publicación'}
+      >
+        {selectedPaper && (
+          <PaperCard
+            paper={selectedPaper}
+            isLiked={likedPaperIds.has(selectedPaper.id)}
+            isSaved={savedPaperIds.has(selectedPaper.id)}
+            isRead={readPaperIds.has(selectedPaper.id)}
+            onLike={toggleLike}
+            onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
+            onMarkAsRead={markAsRead}
+            onOpenPdf={(paper) => setPdfPaperToView(paper)}
+            onSaveToList={onSaveToList}
+            getInteractionState={getInteractionState}
+            trackViewTime={trackViewTime}
+            trackSkip={trackSkip}
+            publicMode={publicMode}
+            onAuthRequired={onAuthRequired}
+            analyticsSurface="explorer"
+          />
         )}
-      </AnimatePresence>
+      </PaperOverlay>
 
       {pdfPaperToView && (
         <PDFViewer paper={pdfPaperToView} onClose={() => setPdfPaperToView(null)} />

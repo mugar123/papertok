@@ -6,11 +6,14 @@ import { mapWithConcurrency } from './mapWithConcurrency.js';
 /**
  * The guard on the fan-out that grows with an account.
  *
- * The reading library issues one `in` query per ten paper ids, and the id set
- * is capped at PERSONAL_LIBRARY_MAX_RECORDS = 600 — so a full library is 60
- * Firestore reads. `Promise.all` started all sixty at once on the single
- * WebChannel the app has, and the reads belonging to the screen that asked for
- * the library queued behind them.
+ * The reading library issues one `in` query per batch of paper ids, and the id
+ * set is capped at PERSONAL_LIBRARY_MAX_RECORDS = 600 — so a full library is 20
+ * Firestore reads at the operator's current cap of 30 (see firestoreLimits.js),
+ * and was 60 while the cap was 10. `Promise.all` started all of them at once on
+ * the single WebChannel the app has, and the reads belonging to the screen that
+ * asked for the library queued behind them. Raising the batch shrinks the burst
+ * but does not bound it: the pool is still what stops it growing with the
+ * account.
  *
  * A ceiling on a burst is only a ceiling if something fails when it is removed,
  * so these tests fail if the pool stops bounding, and the structural one fails

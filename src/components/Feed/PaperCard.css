@@ -91,11 +91,14 @@
      long as the card was off screen. Nothing here holds anything.
      The drift waits out `--fig-in-duration` plus a beat, and that delay only
      ticks while the card is on screen, so it is the reader lingering over the
-     abstract that starts it. */
+     abstract that starts it. The beat was 2.6s, which put the first movement
+     3.2s after the clipping landed — long enough that the figure read as
+     finished and then twitched. 1.1s hands over while the entrance is still
+     the thing you are watching. */
   animation:
     figureClipIn var(--fig-in-duration, 620ms) cubic-bezier(0.16, 1, 0.3, 1),
-    figureClipDrift var(--fig-drift-duration, 7s) ease-in-out
-      calc(var(--fig-in-duration, 620ms) + 2.6s) infinite;
+    figureClipDrift var(--fig-drift-duration, 5s) ease-in-out
+      calc(var(--fig-in-duration, 620ms) + 1.1s) infinite;
 }
 
 /* Until the bytes are actually here, the clipping is not.
@@ -126,9 +129,14 @@
   }
 }
 
+/* One keyframe, at the top of the arc: the browser synthesises both ends from
+   the resting pose, so the float cannot drift away from the slot it belongs to
+   however many cycles it runs. `--fig-drift` is 8–14px, hashed per figure, and
+   the duration is jittered with it so two clippings on the same card never bob
+   in lockstep. */
 @keyframes figureClipDrift {
   50% {
-    translate: var(--fig-shift-x, 0px) calc(var(--fig-shift-y, 0px) - var(--fig-drift, 6px));
+    translate: var(--fig-shift-x, 0px) calc(var(--fig-shift-y, 0px) - var(--fig-drift, 10px));
   }
 }
 
@@ -176,6 +184,24 @@
   --fig-slot-tilt: -2deg;
 }
 
+/* Two clippings, laid on the diagonal.
+   Slots one and two both hug the left edge, which is right when there are
+   four — the pair on the left answers the pair on the right — but a paper that
+   only brings two ended up with both stacked in the same margin and the other
+   side of the sheet empty. When two is all there is, the second crosses to the
+   bottom-right corner, so the pair frames the sheet instead of leaning on it.
+   It borrows slot four's box rather than mirroring slot two's: this is the
+   shape that clears the action rail sitting at the vertical centre. The tilt
+   is slot one's, mirrored, so the two read as a pair. */
+.pc-figure:nth-child(2):last-child {
+  left: auto;
+  right: 26px;
+  bottom: 8%;
+  width: clamp(126px, 12.5vw, 242px);
+  height: clamp(100px, 9.8vw, 188px);
+  --fig-slot-tilt: 2.5deg;
+}
+
 /* Below this the column would have to shrink past readability to keep a
    margin, so the clippings step aside instead. */
 @media (max-width: 1080px) {
@@ -219,6 +245,21 @@
   /* Without this the body refuses to go below its content height, and a long
      abstract pushes the action row out of a sheet that no longer scrolls. */
   min-height: 0;
+}
+
+/* Only the abstract gives way. Every other row keeps the height its content
+   asks for.
+
+   This is not belt-and-braces, it is the load-bearing half of letting the body
+   shrink. Flex items default to `flex-shrink: 1`, and `.pc-title` carries
+   `overflow: hidden` for its four-line clamp — which per the flexbox spec drops
+   its automatic minimum size to zero. So once the sheet stopped scrolling, the
+   algorithm was free to take the space out of the title, and did: it sliced the
+   last line in half, mid-glyph, with the authors riding up over the remains.
+   A title cannot be shortened by a layout pass; an abstract can, because it has
+   somewhere to put the rest. */
+.pc-body > * {
+  flex-shrink: 0;
 }
 
 .pc-body::before {
@@ -308,12 +349,30 @@ a.pc-citations {
   color: var(--tint-amber-fg);
 }
 
-/* ── Status chips ── */
+/* ── Status chips ──
+   Two facts and a link, and the row is built so they do not read as three
+   equal badges. The two states — peer review, availability — carry a status
+   tint: a wash, a hairline in the same hue, the word in that hue's ink, which
+   is the same construction as the topic tags below and the report's `.sr-tag`.
+   The DOI chip is not a state; it is somewhere to go. It keeps the shape and
+   drops the wash, so the eye sorts the row into "what this paper is" and
+   "where its record lives" without having to read it.
+
+   Colour is driven by `data-tone`, not by a class per state, so a new status
+   in `paperStatus.js` needs no new rule here — it picks a tone that already
+   exists. The four tones are the whole vocabulary: amber warns, blue
+   reassures, green opens, neutral limits. */
 .pc-chips {
   display: flex;
   align-items: center;
+  /* Wrap is the safety net, not the plan. Three chips of Spanish — the longest
+     the vocabulary can produce is "Verificado · Versión abierta · DOI" — landed
+     within a pixel of the 375px content width, which is not a fit, it is a
+     coincidence: one card would show one line and the next two, and in a swipe
+     feed that moves the headline as you scroll. The metrics below buy the room
+     back; wrapping stays available for a width nobody has thought of. */
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
   margin-bottom: var(--space-4);
 }
 
@@ -321,32 +380,53 @@ a.pc-citations {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 7px;
+  /* The glyphs are different heights — a padlock is taller than a badge — so
+     the box height comes from the line, not from whatever icon landed in it,
+     and the chips sit on one cap line however the row is composed. */
+  min-height: 22px;
+  padding: 2px 6px;
   border: 1px solid var(--tint-neutral-line);
   border-radius: var(--radius-sm);
   background: var(--tint-neutral-bg);
   color: var(--tint-neutral-fg);
   font: 500 0.6875rem/1.35 var(--font-mono);
-  letter-spacing: 0.02em;
+  white-space: nowrap;
   text-decoration: none;
 }
 
-.pc-chip--verified {
+.pc-chip svg {
+  flex: none;
+}
+
+.pc-chip[data-tone='blue'] {
   border-color: var(--tint-blue-line);
   background: var(--tint-blue-bg);
   color: var(--tint-blue-fg);
 }
 
-.pc-chip--preprint {
+.pc-chip[data-tone='amber'] {
   border-color: var(--tint-amber-line);
   background: var(--tint-amber-bg);
   color: var(--tint-amber-fg);
 }
 
-.pc-chip--open {
+.pc-chip[data-tone='green'] {
   border-color: var(--tint-green-line);
   background: var(--tint-green-bg);
   color: var(--tint-green-fg);
+}
+
+/* `data-tone="neutral"` is the base rule already — a subscription is a limit,
+   not an alarm, and reaching for red would make every paywalled paper look
+   retracted. */
+
+/* A link, not a state: no wash, a quieter ink, and the only chip in the row
+   that answers to the pointer. */
+.pc-chip--link {
+  background: transparent;
+  border-color: var(--border-default);
+  color: var(--text-tertiary);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -924,7 +1004,7 @@ a.pc-citations {
   padding: 2px 6px;
   border-radius: var(--radius-sm);
   background: var(--brand-yellow);
-  color: var(--text-primary);
+  color: var(--text-on-brand);
 }
 
 .pc-scroll-hint-arrow {
@@ -1009,6 +1089,10 @@ a.pc-citations {
 }
 
 .related-sheet {
+  position: relative;
+  /* The peek floats above the provenance row, so both read one measurement:
+     a wrapped source line used to grow the row and end up underneath. */
+  --graph-source-height: 30px;
   width: min(720px, 100%);
   height: min(68vh, 610px);
   max-height: 720px;
@@ -1100,87 +1184,611 @@ a.pc-citations {
 
 .related-mode-tabs button:disabled { cursor: default; opacity: 0.4; }
 
-.knowledge-path {
-  min-height: 104px;
-  display: grid;
-  grid-template-columns: minmax(92px, 1fr) minmax(16px, 0.28fr) minmax(126px, 1.3fr) minmax(16px, 0.28fr) minmax(92px, 1fr);
-  align-items: center;
-  padding: 12px 16px 10px;
+/* ── The citation map ──
+   Vertical is time in two bands with their own scale, horizontal is citations
+   on a logarithmic axis, and every neighbour converges on the mark that stands
+   for the paper you are looking at. `citationMap.js` owns the arithmetic; this
+   file only paints what it returns. */
+.graph-map {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 12px 18px 10px;
 }
 
-.knowledge-path button,
-.knowledge-path-current {
-  min-width: 0;
-  min-height: 60px;
+.graph-band-head {
+  flex: 0 0 auto;
+  min-height: 18px;
   display: flex;
   align-items: center;
-  gap: 9px;
-  padding: 9px 10px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
+  justify-content: space-between;
+  gap: 10px;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+}
+
+.graph-band-name { color: var(--text-secondary); }
+
+.graph-band-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+}
+
+/* Neighbours the map cannot place -- no year, or a citation count nobody
+   counted -- are not drawn at a made-up position. This says how many are
+   waiting in the list. */
+.graph-omitted {
+  border: 0;
+  border-bottom: 1px dotted var(--border-strong);
+  background: none;
+  padding: 0;
   color: var(--text-secondary);
-  text-align: left;
-}
-
-.knowledge-path button {
   font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
   cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
-}
-
-.knowledge-path button.is-active {
-  border-color: var(--border-ink);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .knowledge-path button:hover:not(:disabled) {
-    border-color: var(--border-ink);
+  .graph-omitted:hover {
+    border-bottom-color: var(--border-ink);
     color: var(--text-primary);
   }
 }
 
-.knowledge-path button:disabled { cursor: default; }
-.knowledge-path button > svg,
-.knowledge-path-current > svg { flex: 0 0 auto; color: var(--text-tertiary); }
-.knowledge-path button > span,
-.knowledge-path-current > span { min-width: 0; display: grid; gap: 2px; }
-.knowledge-path strong { font-size: 0.8125rem; line-height: 1.2; color: var(--text-primary); }
-.knowledge-path small {
+.graph-plot {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.graph-lines {
+  position: absolute;
+  inset: 0;
+  overflow: visible;
+}
+
+.graph-grid {
+  stroke: rgba(17, 19, 24, 0.05);
+  stroke-width: 1;
+}
+
+.graph-edge {
+  stroke: var(--border-default);
+  stroke-width: 1;
+  animation: graphEdgeIn 0.22s ease-out backwards;
+  animation-delay: var(--edge-delay, 0ms);
+  transition: stroke var(--transition-fast), stroke-width var(--transition-fast);
+}
+
+.graph-edge.is-focused {
+  stroke: var(--accent-primary);
+  stroke-width: 1.5;
+}
+
+.graph-edge.is-dimmed { stroke: rgba(17, 19, 24, 0.06); }
+
+.graph-edge.is-gone {
+  opacity: 0;
+  animation: none;
+  transition: opacity 160ms ease-out;
+}
+
+.graph-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--accent-primary);
+  animation: graphRuleIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) 0.12s backwards;
+}
+
+.graph-mark {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  background: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--bg-card);
+  animation: relatedItemIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.14s backwards;
+}
+
+/* After a hop the axis is recomputed, so the mark slides to the column its new
+   citation count earns rather than reappearing there. */
+.graph-mark.is-sliding {
+  animation: none;
+  transition: left 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.graph-mark.is-gone {
+  opacity: 0;
+  animation: none;
+  transition: opacity 160ms ease-out;
+}
+
+.graph-chip {
+  position: absolute;
+  transform: translateY(-50%);
+  padding: 0 7px;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  white-space: nowrap;
+  animation: relatedItemIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) 0.14s backwards;
+}
+
+.graph-chip.is-gone {
+  opacity: 0;
+  animation: none;
+  transition: opacity 160ms ease-out;
+}
+
+/* The dot is 11px because it is typography. The target is the whole row --
+   dot and label -- and it is as tall as the gap its band could afford, so two
+   neighbours never share a pixel. The 44px path is the list view. */
+.graph-node {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.graph-node[data-side="left"] { flex-direction: row-reverse; }
+.graph-node:disabled { cursor: default; }
+
+.graph-node-dot {
+  flex: 0 0 44px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+}
+
+.graph-node-dot i {
+  display: block;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-full);
+  background: var(--node-accent, var(--accent-primary));
+  transition: transform var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.graph-node[data-relation="reference"] .graph-node-dot i {
+  background: var(--bg-card);
+  box-shadow: inset 0 0 0 2px var(--node-accent, var(--accent-primary));
+}
+
+.graph-node-label {
+  max-width: 104px;
   overflow: hidden;
   color: var(--text-tertiary);
-  font: 500 0.625rem/1.3 var(--font-mono);
+  font: 500 0.625rem/1 var(--font-mono);
+  text-overflow: ellipsis;
+  transition: color var(--transition-fast);
+}
+
+.graph-node[data-side="left"] .graph-node-label { text-align: right; }
+.graph-node-label b { font-weight: var(--fw-semibold); color: var(--text-secondary); }
+
+@media (hover: hover) and (pointer: fine) {
+  .graph-node:hover:not(:disabled) .graph-node-label,
+  .graph-node:hover:not(:disabled) .graph-node-label b { color: var(--text-primary); }
+  .graph-node:hover:not(:disabled) .graph-node-dot i { transform: scale(1.18); }
+}
+
+.graph-node:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+.graph-node.is-focused { z-index: 6; }
+.graph-node.is-focused .graph-node-label b { color: var(--text-primary); }
+
+.graph-node.is-focused .graph-node-dot i {
+  transform: scale(1.28);
+  box-shadow: 0 0 0 4px var(--accent-primary-glow);
+}
+
+.graph-node[data-relation="reference"].is-focused .graph-node-dot i {
+  box-shadow: inset 0 0 0 2px var(--node-accent, var(--accent-primary)), 0 0 0 4px var(--accent-primary-glow);
+}
+
+.graph-node.is-entering {
+  animation: relatedItemIn 0.28s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: var(--node-delay, 0ms);
+}
+
+/* The centre you came from is almost always in the new neighbourhood, so it
+   descends from the rule into its band instead of vanishing. */
+.graph-node.is-arriving-up { animation: graphArrivingUp 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+.graph-node.is-arriving-down { animation: graphArrivingDown 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+
+.graph-node.is-fading {
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+}
+
+.graph-node.is-travelling { opacity: 0; }
+
+/* The node climbs its own column: its new horizontal position depends on an
+   axis that does not exist until the worker answers. */
+.graph-travel {
+  position: absolute;
+  z-index: 8;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: var(--radius-full);
+  transition:
+    top 0.32s cubic-bezier(0.16, 1, 0.3, 1) 60ms,
+    transform 0.32s cubic-bezier(0.16, 1, 0.3, 1) 60ms,
+    background 0.32s ease 60ms;
+}
+
+.graph-skeleton {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -5.5px 0 0 -5.5px;
+  border-radius: var(--radius-full);
+  background: var(--border-subtle);
+  animation: graphPulse 1.3s ease-in-out infinite;
+  animation-delay: var(--skeleton-delay, 0ms);
+}
+
+.graph-axis {
+  position: relative;
+  flex: 0 0 auto;
+  height: 20px;
+  margin-top: 4px;
+  padding-top: 5px;
+  border-top: 1px solid rgba(17, 19, 24, 0.05);
+  color: var(--text-tertiary);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+}
+
+.graph-axis-name {
+  position: absolute;
+  left: 0;
+  top: 5px;
+}
+
+.graph-axis-tick {
+  position: absolute;
+  top: 5px;
+  transform: translateX(-50%);
+}
+
+/* ── Where you are in the graph ── */
+.graph-trail {
+  min-height: 40px;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.graph-trail-back {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  margin-left: -6px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .graph-trail-back:hover {
+    border-color: var(--border-default);
+    color: var(--text-primary);
+  }
+}
+
+.graph-trail-label {
+  flex: 0 0 auto;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.graph-trail-steps {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.graph-trail-step {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.graph-trail-step svg { flex: 0 0 auto; color: var(--border-default); }
+
+.graph-crumb {
+  max-width: 190px;
+  overflow: hidden;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--text-tertiary);
+  font: 500 0.6875rem/1.4 var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.graph-crumb.is-current {
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+  cursor: default;
+  pointer-events: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .graph-crumb:hover {
+    color: var(--text-primary);
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+}
+
+/* `partial` means one source completed the other; this is `degraded`, where a
+   source failed and a short neighbourhood would otherwise read as a small one. */
+.graph-degraded {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 10px 18px 0;
+  padding: 7px 11px;
+  border: 1px solid var(--tint-amber-line);
+  border-radius: var(--radius-md);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-fg);
+  font: var(--mono-label);
+  line-height: 1.4;
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+}
+
+.graph-degraded svg { flex: 0 0 auto; }
+
+/* ── The card that rises when you touch a node ── */
+.graph-peek {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: var(--graph-source-height);
+  z-index: 4;
+  padding: 13px 18px 15px;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-card);
+  box-shadow: 0 -10px 28px rgba(17, 19, 24, 0.09);
+  animation: graphPeekIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.graph-peek.is-leaving {
+  animation: graphPeekOut 0.18s ease-out forwards;
+  pointer-events: none;
+}
+
+.graph-peek-meta {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 7px;
+  color: var(--text-tertiary);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+}
+
+.graph-peek-field { font-weight: var(--fw-semibold); }
+.graph-peek-dot { color: var(--border-default); }
+
+.graph-peek-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent-success);
+}
+
+.graph-peek-close {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: -4px -6px 0 auto;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .graph-peek-close:hover { color: var(--text-primary); }
+}
+
+.graph-peek-title {
+  display: block;
+  font-size: 0.9375rem;
+  line-height: 1.32;
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.graph-peek-authors {
+  display: block;
+  margin-top: 5px;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font: 500 0.6875rem/1.4 var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.knowledge-path-current {
-  border-color: var(--border-ink);
+.graph-peek-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.graph-peek-open-action,
+.graph-peek-centre,
+.graph-back-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 14px;
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.graph-peek-open-action {
+  border: 1px solid var(--accent-primary);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+.graph-peek-centre,
+.graph-back-button {
+  border: 1px solid var(--border-default);
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .graph-peek-open-action:hover:not(:disabled) {
+    background: var(--accent-primary-hover);
+    border-color: var(--accent-primary-hover);
+  }
+
+  .graph-peek-centre:hover:not(:disabled),
+  .graph-back-button:hover {
+    border-color: var(--border-ink);
+    background: var(--bg-secondary);
+  }
+}
+
+.graph-peek-open-action:disabled,
+.graph-peek-centre:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.graph-peek-doi {
+  max-width: 230px;
+  margin-left: auto;
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font: 500 0.625rem/1.4 var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.related-state.graph-state { flex-direction: column; }
+.related-state.graph-state p { margin: 0; max-width: 420px; }
+
+/* ── The same graph without a canvas: what a screen reader walks ── */
+.graph-list-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+}
+
+.graph-list-dot {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  border-radius: var(--radius-full);
+}
+
+.graph-list-dot.is-filled { background: var(--node-accent, var(--accent-primary)); }
+
+.graph-list-dot.is-hollow {
+  background: var(--bg-card);
+  box-shadow: inset 0 0 0 2px var(--node-accent, var(--accent-primary));
+}
+
+.related-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.related-header-divider {
+  width: 1px;
+  height: 20px;
+  margin: 0 6px;
+  background: var(--border-subtle);
+}
+
+.related-header .graph-view-button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .related-header .graph-view-button:hover { color: var(--text-primary); }
+}
+
+.related-header .graph-view-button.is-active {
+  border-color: var(--border-default);
   background: var(--bg-secondary);
-}
-
-.knowledge-path-line {
-  position: relative;
-  height: 1px;
-  background: var(--border-strong);
-}
-
-.knowledge-path-line::after {
-  position: absolute;
-  top: 50%;
-  right: -1px;
-  width: 6px;
-  height: 6px;
-  border-top: 1px solid var(--border-strong);
-  border-right: 1px solid var(--border-strong);
-  content: '';
-  transform: translateY(-50%) rotate(45deg);
+  color: var(--text-primary);
 }
 
 .knowledge-source {
-  min-height: 30px;
+  height: var(--graph-source-height);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1189,6 +1797,12 @@ a.pc-citations {
   border-top: 1px solid var(--border-subtle);
   color: var(--text-tertiary);
   font: 500 0.625rem/1.4 var(--font-mono);
+}
+
+.knowledge-source span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .related-list {
@@ -1446,6 +2060,46 @@ a.pc-citations {
 @keyframes relatedContentIn {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── The map's own frames ──
+   Three of them; everything else the map does reuses a frame the sheet already
+   had. The rule draws before anything is placed on it, the edges only fade,
+   and a node that arrives from the rule lands rather than appears. */
+@keyframes graphRuleIn {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes graphEdgeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes graphArrivingUp {
+  from { transform: translateY(30px) scale(1.4); }
+  to { transform: none; }
+}
+
+@keyframes graphArrivingDown {
+  from { transform: translateY(-30px) scale(1.4); }
+  to { transform: none; }
+}
+
+@keyframes graphPeekIn {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes graphPeekOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(14px); }
+}
+
+/* A dot has no length for a sweep to travel down, so it breathes instead. */
+@keyframes graphPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.38; }
 }
 
 @keyframes relatedShimmer {
@@ -1722,22 +2376,19 @@ a.pc-citations {
   .related-card-loading-title { height: 28px; }
   .related-card-loading-author { width: 68%; }
   .related-sheet--graph { max-height: min(84vh, 720px); }
-  .knowledge-path {
-    grid-template-columns: minmax(76px, 1fr) 12px minmax(92px, 1.15fr) 12px minmax(76px, 1fr);
-    min-height: 94px;
-    padding: 10px 9px 8px;
-  }
-  .knowledge-path button,
-  .knowledge-path-current {
-    min-height: 58px;
-    gap: 6px;
-    padding: 7px;
-  }
-  .knowledge-path button > svg,
-  .knowledge-path-current > svg { width: 15px; height: 15px; }
-  .knowledge-path strong { font-size: 0.75rem; }
-  .knowledge-path small { font-size: 0.5625rem; }
-  .knowledge-path-current small { display: none; }
+  .graph-map { padding: 12px 14px 10px; }
+  .graph-node-label { max-width: 84px; }
+  .graph-trail { padding: 0 14px; }
+  .graph-crumb { max-width: 118px; }
+  .graph-degraded { margin: 10px 14px 0; }
+  .graph-list-head { padding: 9px 14px; }
+  .graph-peek { padding: 13px 14px 15px; }
+  /* The two actions are new controls rather than a copy of the sheet chrome,
+     so on a phone they take the full 44px. */
+  .graph-peek-open-action,
+  .graph-peek-centre { min-height: 44px; }
+  .graph-peek-doi { display: none; }
+  .related-header .graph-view-button { width: 40px; height: 40px; }
   .knowledge-source { padding-inline: 11px; }
 }
 
@@ -1758,10 +2409,23 @@ a.pc-citations {
   .related-card-overlay,
   .related-card-content,
   .related-card-loading-line,
-  .related-skeleton {
+  .related-skeleton,
+  .graph-rule,
+  .graph-mark,
+  .graph-chip,
+  .graph-edge,
+  .graph-node,
+  .graph-travel,
+  .graph-skeleton,
+  .graph-peek {
     animation: none;
     transition: none;
   }
+
+  /* Movement goes; feedback stays. Colour, the halo and the weight of an edge
+     are how the map answers a touch, and a map that cannot answer is mute. */
+  .graph-node.is-entering,
+  .graph-node.is-fading { opacity: 1; }
 
   .pc--fade-out {
     opacity: 1;
@@ -1780,5 +2444,8 @@ a.pc-citations {
   .related-item::before,
   .related-card-back,
   .related-mode-tabs button,
-  .knowledge-path button { transition: none; }
+  .graph-omitted,
+  .graph-crumb,
+  .graph-trail-back,
+  .related-header .graph-view-button { transition: none; }
 }

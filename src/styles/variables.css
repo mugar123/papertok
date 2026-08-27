@@ -7,6 +7,10 @@
    ============================================ */
 
 :root {
+  /* Tells the browser which side we are on, so native scrollbars, form
+     controls and the `<select>` popup come out of the right box. */
+  color-scheme: light;
+
   /* ── Surfaces ── */
   --bg-primary: #ffffff;
   --bg-secondary: #f7f7f8;
@@ -37,6 +41,11 @@
   --brand-yellow: #ffd21e;
   --brand-yellow-soft: #fff4c9;
   --brand-orange: #ff9d00;
+  /* Ink, in both themes. The yellow is the one surface whose value does not
+     flip — a mark that changes value stops being a mark — so whatever sits on
+     it cannot take `--text-primary`, which does flip. Same for the orange
+     focus ring and for the user's highlight in the reader. */
+  --text-on-brand: #111318;
 
   /* Action accents. Each pairs a legible foreground with a surface tint, so a
      control can be coloured without inventing a one-off value at the callsite. */
@@ -109,6 +118,34 @@
 
   --gradient-brand: #111318;
   --gradient-brand-hover: #2b2f38;
+
+  /* ── List colours ──
+     The palette a list is painted with. Deliberately NOT the `--gradient-*`
+     field inks: a field colour is read off the data and means "this is
+     biology", while a list colour is chosen by the owner and means nothing but
+     itself. Reusing the field inks would have made a green list claim a
+     subject it does not have.
+
+     Built in oklch at a fixed L = 0.52 — the mean lightness of the twelve field
+     inks is 0.510, so the family sits in the app's own register — with the hue
+     stepped every 45° and the chroma taken as far as sRGB allows at that
+     lightness, capped at 0.16. The cap is what keeps indigo/violet/crimson from
+     out-shouting the field inks; the gamut is what stops teal and blue short,
+     and no amount of tuning fixes that (at a useful lightness sRGB simply holds
+     less chroma there than it does in the purples).
+
+     The result is a tighter contrast band than the field inks manage on their
+     own — 5.2:1 to 6.0:1 against white, against their 4.9:1 to 7.6:1 — so every
+     colour carries a 3px rule and a 20px icon equally well. Regenerate with
+     scripts/list-palette.mjs rather than by hand. */
+  --list-ochre: #a14f16;
+  --list-olive: #7b6816;
+  --list-green: #2d7d17;
+  --list-teal: #1a786f;
+  --list-blue: #197295;
+  --list-indigo: #515bc3;
+  --list-violet: #9043a1;
+  --list-crimson: #af355c;
 
   /* ── Typography ── */
   --font-heading: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
@@ -190,6 +227,154 @@
   /* ── Navbar height ── */
   --nav-height: 56px;
   --nav-height-mobile: 52px;
+}
+
+/* ============================================
+   Dark — the ink theme
+
+   Not a second palette: the same one turned over. The page becomes the ink the
+   light theme is written in (#111318), the text becomes paper, and the ink
+   accent — primary buttons, active chips, focus fills — becomes paper with it,
+   so `--text-inverse` flips too and an ink button on white reads as a paper
+   button on ink.
+
+   Everything that carries meaning by colour is lifted rather than re-chosen:
+   same hue, as much of the original chroma as sRGB holds, at one shared
+   lightness per family — field inks at oklch L 0.70, list colours at 0.68,
+   action accents at 0.72, tint foregrounds at 0.76 over backgrounds at 0.235.
+   Lifting the whole family at once is what keeps twelve fields telling
+   themselves apart on ink (min 6.4:1 against the page), and it is why a light
+   foreground on a coloured surface becomes a dark one here: on this side every
+   accent is the light half of the pair. Regenerate the same way the list
+   palette is regenerated — hue and chroma from the light value, lightness from
+   the family — rather than by picking values that look right in isolation.
+
+   Shadows change substance, not just depth: a drop tinted with the text colour
+   is invisible on ink, so they are black and deeper. Structure still comes
+   from hairline rules.
+
+   There is deliberately no `@media (prefers-color-scheme: dark)` copy of this
+   block: `index.html` resolves the preference into `data-theme` before the
+   first paint, so the attribute is always present, and one definition cannot
+   drift from the other.
+   ============================================ */
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  /* ── Surfaces ── */
+  --bg-primary: #111318;
+  --bg-secondary: #1a1d24;
+  --bg-card: #16191f;
+  --bg-elevated: #1c2029;
+  --bg-sunken: #0d0f13;
+  /* The ink wash turns into a paper wash: on this side lifting a surface means
+     adding light, not adding text colour. */
+  --bg-glass: rgba(255, 255, 255, 0.045);
+  --bg-glass-strong: rgba(17, 19, 24, 0.9);
+  --bg-glass-hover: rgba(255, 255, 255, 0.08);
+
+  /* ── Ink ── */
+  --text-primary: #f2f3f5;
+  --text-secondary: #a1a8b5;
+  --text-tertiary: #757c8a;
+  --text-inverse: #111318;
+
+  /* ── Accents ── */
+  --accent-primary: #f2f3f5;
+  --accent-primary-hover: #d7dae1;
+  --accent-primary-glow: rgba(242, 243, 245, 0.16);
+  --accent-secondary: #6ea4ff;
+  --accent-secondary-glow: rgba(110, 164, 255, 0.22);
+
+  /* Brand yellow, brand orange and `--text-on-brand` are not redefined: they
+     are the same mark on both sides. The soft yellow is a surface, though, so
+     it becomes the darkest amber that still reads as the same wash. */
+  --brand-yellow-soft: #35290b;
+
+  /* ── Action accents ── */
+  --accent-violet: #a98fff;
+  --accent-violet-soft: #1f1a31;
+  --accent-violet-line: #3e375a;
+  --accent-teal: #5fb6ad;
+  --accent-teal-soft: #0d2521;
+  --accent-teal-line: #1f4740;
+  --accent-rose: #ff6f7c;
+  --accent-rose-soft: #301518;
+  --accent-rose-line: #59302f;
+  --accent-sky: #5bade9;
+  --accent-sky-soft: #0f2130;
+  --accent-sky-line: #274253;
+
+  --accent-like: #fe7461;
+  --accent-like-glow: rgba(254, 116, 97, 0.24);
+  --accent-save: #ec864a;
+  --accent-save-glow: rgba(236, 134, 74, 0.24);
+  --accent-success: #5fbb87;
+  --accent-danger: #fe7461;
+
+  /* ── Semantic status tints ── */
+  --tint-blue-bg: #121e33;
+  --tint-blue-fg: #86b1ff;
+  --tint-blue-line: #2b3d5d;
+  --tint-green-bg: #082415;
+  --tint-green-fg: #6cc793;
+  --tint-green-line: #1f4730;
+  --tint-amber-bg: #2a1a03;
+  --tint-amber-fg: #dba65b;
+  --tint-amber-line: #503815;
+  --tint-red-bg: #301511;
+  --tint-red-fg: #fd8c7c;
+  --tint-red-line: #59302a;
+  --tint-violet-bg: #1f1a31;
+  --tint-violet-fg: #b4a0fe;
+  --tint-violet-line: #3e375a;
+  --tint-neutral-bg: #181e2b;
+  --tint-neutral-fg: #a9b1c2;
+  --tint-neutral-line: #363d4b;
+
+  /* ── Borders ── */
+  --border-subtle: #23262e;
+  --border-default: #2e323b;
+  --border-strong: #474d59;
+  --border-ink: #f2f3f5;
+
+  /* ── Category accents ──
+     The twelve field inks at oklch L 0.70. Hue and chroma are the light
+     value's; only the lightness is the family's. */
+  --gradient-physics: #8792ff;  /* indigo */
+  --gradient-cs: #f67145;       /* burnt orange */
+  --gradient-math: #b57cfe;     /* purple */
+  --gradient-stat: #6d9afe;     /* blue */
+  --gradient-econ: #58b0a7;     /* teal */
+  --gradient-qfin: #55abc9;     /* cyan */
+  --gradient-eess: #d18e44;     /* amber */
+  --gradient-mech: #90a0b6;     /* steel */
+  --gradient-civil: #dd8458;    /* umber */
+  --gradient-chemeng: #7eb04d;  /* olive */
+  --gradient-med: #ff6173;      /* rose */
+  --gradient-bio: #57b66f;      /* green */
+
+  --gradient-brand: #f2f3f5;
+  --gradient-brand-hover: #d7dae1;
+
+  /* ── List colours ──
+     The same eight hues at oklch L 0.68, so the family still reads as one
+     circle and still sits a step below the field inks. */
+  --list-ochre: #d67f4c;
+  --list-olive: #ab984c;
+  --list-green: #5faf4e;
+  --list-teal: #54a99f;
+  --list-blue: #53a3c8;
+  --list-indigo: #7d8dfa;
+  --list-violet: #c374d5;
+  --list-crimson: #e7688b;
+
+  /* ── Shadows ── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 6px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6);
 }
 
 /* ============================================

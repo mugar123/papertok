@@ -27,6 +27,7 @@ import ScientificText from '../ScientificText.js';
 import { BookOpen, Check, Download, Plus, StickyNote, Tags, X } from 'lucide-react';
 import { Button } from '../ui/button.jsx';
 import { downloadCitationFile } from '../../utils/readingLibrary';
+import { buildSavedPaperPayload } from '../../utils/savedPaperPayload.js';
 import {
   ownListsAreFresh,
   ownListsCache,
@@ -383,12 +384,12 @@ export default function SaveToListModal({ paper, onClose }) {
   // The write, and only the write: CreateListDialog owns the form, the busy
   // state and the error. Letting this throw is what gives the owner a message —
   // it used to end at console.error, leaving an unchanged screen behind.
-  const handleCreateList = async (name, icon) => {
+  const handleCreateList = async (name, icon, color) => {
     const listId = `list_${Date.now()}`;
     // Created EMPTY: creating the list is this button's explicit act; the
     // paper joins it when Save commits the (auto-checked) selection.
     const newList = {
-      id: listId, name, emoji: icon,
+      id: listId, name, emoji: icon, color,
       paperIds: [], createdAt: new Date().toISOString(),
     };
 
@@ -450,11 +451,30 @@ export default function SaveToListModal({ paper, onClose }) {
           demoSet('savedPapersData', allSaved);
         }
       } else {
-        // Sequential and retry-safe: arrayUnion of a present id and
-        // arrayRemove of an absent one are no-ops, so a partial failure needs
-        // no bookkeeping — pressing Save again redoes only what is missing.
-        //
-        // `updatedAt` rides along on every one of them. It is what tells a
+        /**
+         * The paper's document FIRST, before any list is told about it.
+         *
+         * The order used to be the other way round, and that is how a list ends
+         * up holding an id with nothing behind it: the `arrayUnion` landed, the
+         * `setDoc` was refused, and the row rendered as a bare arXiv id for
+         * good — no later read can produce a document that was never written.
+         * Writing the paper first means a refusal costs the owner an error
+         * message and nothing else.
+         *
+         * Still sequential and still retry-safe: `setDoc` merges, `arrayUnion`
+         * of a present id and `arrayRemove` of an absent one are no-ops, so
+         * pressing Save again redoes only what is missing.
+         */
+        if (toAdd.length > 0) {
+          markSaved(paper);
+          await setDoc(
+            doc(db, 'users', user.uid, 'savedPapers', paper.id),
+            buildSavedPaperPayload(paper, new Date().toISOString()),
+            { merge: true },
+          );
+        }
+
+        // `updatedAt` rides along on every list write. It is what tells a
         // later visit that an edit happened here, so a sync lost to a closed
         // tab or a dead connection can still be found and replayed (P25).
         for (const listId of toAdd) {
@@ -469,24 +489,6 @@ export default function SaveToListModal({ paper, onClose }) {
             updatedAt: serverTimestamp(),
           });
         }
-        if (toAdd.length > 0) {
-          markSaved(paper);
-          // Every field null-coalesced: a paper arriving from a list row (the
-          // pencil) carries fewer fields than one from the feed, and Firestore
-          // rejects the whole write over a single `undefined`.
-          await setDoc(doc(db, 'users', user.uid, 'savedPapers', paper.id), {
-            title: paper.title ?? null,
-            authors: paper.authors?.slice(0, 5) ?? null,
-            primaryCategory: paper.primaryCategory ?? null,
-            published: paper.published ?? null,
-            arxivId: paper.arxivId ?? null,
-            summary: (paper.summary || paper.abstract)?.substring(0, 500) ?? null,
-            doi: paper.doi || null,
-            landingPageUrl: paper.landingPageUrl || null,
-            savedAt: new Date().toISOString(),
-          }, { merge: true });
-        }
-
         /**
          * Published lists rebuild their public copy from here, with no button
          * and no visit to Mis listas (P25).

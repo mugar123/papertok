@@ -29,7 +29,30 @@
   border-radius: var(--radius-xl);
   background: var(--bg-card);
   box-shadow: var(--shadow-xl);
-  animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: createListIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* A matched pair, and the exit is the shorter of the two: an entrance is worth
+   watching because the window is arriving, while a dismissal that lingers is
+   just the interface holding on after the decision was made. */
+@keyframes createListIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes createListOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(4px) scale(0.985); }
+}
+
+/* `forwards` matters: the window stays mounted for the length of this, and
+   without it the card would snap back to full opacity for the last frame. */
+.create-list-card.is-closing {
+  animation: createListOut 0.16s ease forwards;
+}
+
+.create-list-dialog.is-closing::backdrop {
+  animation: fadeOut 0.16s ease forwards;
 }
 
 .create-list-header {
@@ -108,6 +131,77 @@
   color: var(--text-primary);
 }
 
+/* The palette. Eight swatches on one row at the dialog's full width; the fill
+   arrives as `--swatch` from the component so the colour stays in
+   `variables.css` and no hex is spelled out here. The border is the swatch
+   walked towards the ink, which keeps a light colour from dissolving into the
+   card without inventing a second value per colour. */
+.create-list-color-picker {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.create-list-color-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  border: 1px solid color-mix(in srgb, var(--swatch) 72%, var(--text-primary));
+  border-radius: var(--radius-md);
+  background: var(--swatch);
+  color: var(--text-inverse);
+  cursor: pointer;
+  transition: outline-color var(--transition-fast), outline-offset var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.create-list-color-btn:active {
+  transform: scale(0.94);
+}
+
+/* The tick lands rather than appearing. Eight swatches is a row the eye scans,
+   and a mark that pops in with no travel is easy to miss at the far end of it. */
+.create-list-color-btn > svg {
+  animation: swatchTick 0.2s cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+}
+
+@keyframes swatchTick {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* The tick carries the choice; the ink ring is what survives a screenshot in
+   grayscale, where eight swatches are eight greys. */
+.create-list-color-btn.is-active {
+  outline: 2px solid var(--border-ink);
+  outline-offset: 2px;
+}
+
+.create-list-color-btn:focus-visible {
+  outline: 2px solid var(--brand-orange);
+  outline-offset: 2px;
+}
+
+.create-list-color-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+/* Eight across is 35px a swatch, which is fine for a pointer and not for a
+   thumb. Four across on a phone clears the 44px floor. */
+@media (max-width: 420px) {
+  .create-list-color-picker {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .create-list-color-btn {
+    height: 44px;
+  }
+}
+
 .create-list-note {
   margin: 0;
   color: var(--text-tertiary);
@@ -132,9 +226,21 @@
   margin-top: var(--space-4);
 }
 
+.create-list-icon-btn:active {
+  transform: scale(0.94);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .create-list-card,
-  .create-list-dialog::backdrop {
+  .create-list-card.is-closing,
+  .create-list-dialog::backdrop,
+  .create-list-dialog.is-closing::backdrop,
+  .create-list-color-btn > svg {
     animation: none;
+  }
+
+  .create-list-color-btn:active,
+  .create-list-icon-btn:active {
+    transform: none;
   }
 }

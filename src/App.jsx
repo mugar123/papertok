@@ -5,6 +5,7 @@ import PageTransition from './components/Layout/PageTransition'
 import RouteFallback from './components/Layout/RouteFallback'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LanguageProvider, useLanguage } from './context/LanguageContext'
+import { ThemeProvider } from './context/ThemeContext'
 import { AnalyticsProvider } from './context/AnalyticsContext'
 import { FeedProvider } from './context/FeedContext'
 import { FollowingProvider } from './context/FollowingContext'
@@ -100,7 +101,7 @@ function AppContent() {
 
   return (
     <FeedProvider feedRouteActive={normalizedPathname === '/'}>
-      {showNavbar && <Navbar onOpenSearch={() => setSearchOpen(true)} />}
+      {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={() => setSearchOpen(true)} />}
       <Suspense fallback={<RouteFallback />}>
       <AnimatePresence mode="wait" initial={false}>
         <Routes location={location} key={location.pathname}>
@@ -385,13 +386,15 @@ function UserScopedAppContent() {
 
 function App() {
   return (
-    <AuthProvider>
-      <LanguageProvider>
-        <AnalyticsProvider>
-          <UserScopedAppContent />
-        </AnalyticsProvider>
-      </LanguageProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <LanguageProvider>
+          <AnalyticsProvider>
+            <UserScopedAppContent />
+          </AnalyticsProvider>
+        </LanguageProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }
 

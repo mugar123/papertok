@@ -162,7 +162,7 @@
 .profile-pin-toggle.is-pinned {
   border-color: transparent;
   background: var(--accent-primary);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 /* --- Sections -------------------------------------------------------------- */
@@ -291,7 +291,7 @@
 
 .profile-switch input:checked + .profile-switch-track .profile-switch-thumb {
   transform: translateX(18px);
-  background: #fff;
+  background: var(--text-inverse);
 }
 
 .profile-switch input:focus-visible + .profile-switch-track {
@@ -311,7 +311,7 @@
   padding: 0 var(--space-6);
   border: none;
   background: var(--accent-primary);
-  color: #fff;
+  color: var(--text-inverse);
   font-weight: var(--fw-semibold);
 }
 
@@ -376,7 +376,7 @@
 .profile-danger-button:hover:not(:disabled),
 .profile-danger-button:focus-visible:not(:disabled) {
   background: var(--accent-danger);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .profile-danger-button:disabled {
@@ -596,7 +596,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
+  color: var(--text-inverse);
   font-family: var(--font-heading);
   font-size: var(--fs-lg);
   font-weight: var(--fw-bold);

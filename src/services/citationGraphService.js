@@ -6,6 +6,16 @@ import { authenticatedWorkerFetch } from './workerApiClient.js';
 
 const CACHE = new Map();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+/**
+ * Requests that have not answered yet, keyed like the cache.
+ *
+ * StrictMode mounts the sheet, tears it down and mounts it again, so two views
+ * ask for the same neighbourhood in the same millisecond — and `/citation-graph`
+ * reserves nine OpenAlex calls per request. The cache only holds answers, so
+ * without this the pair costs eighteen. Only successes are remembered: a
+ * rejection leaves the key clear so the next view can ask again.
+ */
+const IN_FLIGHT = new Map();
 
 const MISSING_ABSTRACTS = new Set([
   '',
@@ -115,19 +125,17 @@ export function mapCitationGraphPayload(payload) {
     },
     source: payload?.source || 'opencitations',
     partial: Boolean(payload?.partial),
+    // `partial` means one source completed the other; `degraded` means a source
+    // failed and what came back is short. Dropping it here left the sheet
+    // unable to tell a small neighbourhood from a broken one.
+    degraded: Boolean(payload?.degraded),
   };
 }
 
-export async function getCitationGraph(paper, limit = 8) {
-  const doi = getCitationGraphDoi(paper);
-  if (!doi) return null;
-
-  const safeLimit = Math.max(1, Math.min(10, Number(limit) || 8));
-  const cacheKey = `${doi}:${safeLimit}`;
-  const cached = CACHE.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.data;
-
-  const apiBase = import.meta.env.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '');
+async function requestCitationGraph(doi, safeLimit, cacheKey, dependencies) {
+  const workerFetch = dependencies.authenticatedWorkerFetch || authenticatedWorkerFetch;
+  const configured = dependencies.apiBase ?? import.meta.env?.VITE_PAPER_API_BASE_URL;
+  const apiBase = configured?.replace(/\/$/, '');
   if (!apiBase) throw new Error('Citation graph API is not configured');
 
   const url = new URL(`${apiBase}/citation-graph`);
@@ -137,12 +145,32 @@ export async function getCitationGraph(paper, limit = 8) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 12_000);
   try {
-    const response = await authenticatedWorkerFetch(url, { signal: controller.signal });
+    const response = await workerFetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Citation graph API error: ${response.status}`);
+    // The body is read inside the try, so the deadline still covers it: a
+    // Worker that answers its headers and then stops is still bounded.
     const data = mapCitationGraphPayload(await response.json());
     CACHE.set(cacheKey, { data, timestamp: Date.now() });
     return data;
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+export async function getCitationGraph(paper, limit = 8, dependencies = {}) {
+  const doi = getCitationGraphDoi(paper);
+  if (!doi) return null;
+
+  const safeLimit = Math.max(1, Math.min(10, Number(limit) || 8));
+  const cacheKey = `${doi}:${safeLimit}`;
+  const cached = CACHE.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) return cached.data;
+
+  const alreadyAsked = IN_FLIGHT.get(cacheKey);
+  if (alreadyAsked) return alreadyAsked;
+
+  const request = requestCitationGraph(doi, safeLimit, cacheKey, dependencies)
+    .finally(() => { IN_FLIGHT.delete(cacheKey); });
+  IN_FLIGHT.set(cacheKey, request);
+  return request;
 }

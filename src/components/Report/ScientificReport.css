@@ -181,30 +181,6 @@
   to { opacity: 1; }
 }
 
-.sr-update-line {
-  position: absolute;
-  top: -1px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  overflow: hidden;
-  background: var(--border-subtle);
-}
-
-.sr-update-line::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  width: 34%;
-  background: var(--text-primary);
-  animation: srSweep 1.1s ease-in-out infinite;
-}
-
-@keyframes srSweep {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(400%); }
-}
-
 /* ── Layout ──
    The measurements used to sit between the nameplate and the lead story, so
    four data blocks had to be scrolled past before reaching a paper. They now
@@ -584,7 +560,7 @@
   margin-bottom: var(--space-2);
   padding: 3px 8px;
   background: var(--brand-yellow);
-  color: var(--text-primary);
+  color: var(--text-on-brand);
   font: var(--mono-label);
   letter-spacing: var(--mono-track);
   text-transform: uppercase;
@@ -652,35 +628,61 @@
   margin-bottom: var(--space-5);
 }
 
+/* Tones, not one class per state — the same four-tone vocabulary the feed
+   card's `.pc-chip` uses, fed by the same `paperStatus.js` tags, so a status
+   cannot be amber on one screen and blue on the other. */
 .sr-tag {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 7px;
+  min-height: 22px;
+  padding: 2px 6px;
   border: 1px solid var(--tint-neutral-line);
   border-radius: var(--radius-sm);
   background: var(--tint-neutral-bg);
   color: var(--tint-neutral-fg);
   font: 500 0.6875rem/1.35 var(--font-mono);
+  white-space: nowrap;
   text-decoration: none;
 }
 
-.sr-tag.verified {
+.sr-tag svg {
+  flex: none;
+}
+
+.sr-tag[data-tone='blue'] {
   border-color: var(--tint-blue-line);
   background: var(--tint-blue-bg);
   color: var(--tint-blue-fg);
 }
 
-.sr-tag.preprint {
+.sr-tag[data-tone='amber'] {
   border-color: var(--tint-amber-line);
   background: var(--tint-amber-bg);
   color: var(--tint-amber-fg);
 }
 
-.sr-tag.oa {
+.sr-tag[data-tone='green'] {
   border-color: var(--tint-green-line);
   background: var(--tint-green-bg);
   color: var(--tint-green-fg);
+}
+
+/* `data-tone="neutral"` is the base rule. */
+
+/* A link, not a state. */
+.sr-tag--link {
+  background: transparent;
+  border-color: var(--border-default);
+  color: var(--text-tertiary);
+  transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  a.sr-tag:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
 }
 
 /* The dek: the abstract set as an editorial standfirst beside the head. */
@@ -753,143 +755,290 @@
   border-bottom: 1px solid var(--border-ink);
 }
 
-/* Ruled columns rather than a bento of boxes. */
-.sr-bento {
+/* ============================================
+   The forme
+
+   A newspaper section front is irregular, but it is not arbitrary: the page is
+   divided into a fixed measure and every row closes on it. The measure here is
+   six columns, and `researchForme.js` only emits rows whose cells add up to all
+   six — so the composition varies from edition to edition without ever leaving
+   the ragged hole a masonry layout would.
+
+   Which side of a rule a cell sits on is declared by the planner, not read from
+   `nth-child`: a cell can span two, three, four or six columns, so the parity of
+   the DOM says nothing about the parity of the grid.
+   ============================================ */
+
+.sr-forme {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 0;
 }
 
-.sr-bento-card {
+.sr-cell {
   position: relative;
   display: flex;
+  flex-direction: column;
   min-width: 0;
   padding: var(--space-5) var(--space-5) var(--space-6);
   border-bottom: 1px solid var(--border-default);
-  cursor: pointer;
   background: var(--bg-primary);
+  cursor: pointer;
   transition: background var(--transition-fast);
 }
 
-/* A wide item opens each row of three. */
-.sr-bento-card.wide {
-  grid-column: span 2;
-}
+.sr-cell--s2 { grid-column: span 2; }
+.sr-cell--s3 { grid-column: span 3; }
+.sr-cell--s4 { grid-column: span 4; }
+.sr-cell--s6 { grid-column: span 6; }
 
-/* Which side of the rule a card sits on is declared by the JSX, not read from
-   `nth-child`: a wide card is one child but two grid columns, so DOM parity
-   stops matching column parity after the first row. Read from parity, the
-   second row got `padding-right: 0` on its *left* column — the year ran flush
-   into the rule — and pulled the *right* column's accent 20px left, straight
-   on top of that same year. */
-.sr-bento-card.col-full {
-  padding-left: 0;
-  padding-right: 0;
-}
-
-.sr-bento-card.col-left {
-  padding-left: 0;
+/* The rule between columns, and the flush outer edges of the measure. */
+.sr-cell:not(.is-row-end) {
   border-right: 1px solid var(--border-default);
 }
 
-.sr-bento-card.col-right {
-  padding-right: 0;
-}
+.sr-cell.is-row-start { padding-left: 0; }
+.sr-cell.is-row-end { padding-right: 0; }
 
 @media (hover: hover) and (pointer: fine) {
-  .sr-bento-card:hover {
+  .sr-cell:not(.sr-cell--skeleton):hover {
     background: var(--bg-secondary);
   }
 }
 
-/* The category accent reads as a hairline down the inner edge. */
-.sr-bento-accent {
-  position: absolute;
-  left: 0;
-  top: var(--space-5);
-  width: 3px;
-  height: 28px;
-  border-radius: var(--radius-full);
+/* The field colour reads as a short rule at the head of the cell — over the
+   plate where there is one, over the kicker where there is not. The lead story
+   already makes the same move. */
+.sr-cell-rule {
+  display: block;
+  width: 28px;
+  height: 3px;
+  margin-bottom: var(--space-3);
 }
 
-/* The hairline lives in the gutter to the left of the text. A card that is
-   already flush left has no gutter of its own, so it borrows the page margin. */
-.sr-bento-card.col-full .sr-bento-accent,
-.sr-bento-card.col-left .sr-bento-accent {
-  left: calc(var(--space-5) * -1);
+/* A full-width paper with no plate takes a heavy rule in its place, so the row
+   still carries the weight the picture would have given it. */
+.sr-cell-heavy-rule {
+  display: block;
+  height: 1px;
+  background: var(--border-ink);
+  margin-bottom: var(--space-3);
 }
 
-.sr-bento-body {
+.sr-cell-kicker {
   display: flex;
-  flex-direction: column;
-  min-width: 0;
-  width: 100%;
-}
-
-.sr-bento-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: baseline;
   gap: var(--space-2);
-  margin-bottom: var(--space-2);
-}
-
-.sr-bento-cat {
+  margin-bottom: 9px;
+  min-width: 0;
   font: var(--mono-label);
   letter-spacing: var(--mono-track);
   text-transform: uppercase;
-  color: var(--card-accent, var(--text-secondary));
+}
+
+.sr-cell-cat {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.sr-bento-year {
+/* Pushed to the far edge and never allowed to shrink, so the category can run
+   long and ellipsize instead of colliding with the year. */
+.sr-cell-year {
+  margin-left: auto;
   flex: 0 0 auto;
-  font: 400 0.6875rem/1.4 var(--font-mono);
+  font-weight: var(--fw-regular);
   color: var(--text-tertiary);
 }
 
-.sr-bento-title {
+.sr-cell-title {
   font-family: var(--font-serif);
-  font-size: 1.15rem;
-  font-weight: 600;
-  line-height: 1.24;
-  letter-spacing: -0.01em;
+  font-weight: var(--fw-semibold);
+  line-height: 1.15;
+  letter-spacing: -0.015em;
   color: var(--text-primary);
   margin-bottom: var(--space-3);
-  display: -webkit-box;
-  -webkit-line-clamp: 4;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  text-wrap: pretty;
 }
 
-.sr-bento-card.wide .sr-bento-title {
-  font-size: 1.4rem;
-  -webkit-line-clamp: 3;
-}
+.sr-cell-title--xl { font-size: 1.5rem; line-height: 1.08; letter-spacing: -0.022em; }
+.sr-cell-title--lg { font-size: 1.25rem; line-height: 1.12; }
+.sr-cell-title--md { font-size: 1.1rem; line-height: 1.18; }
+.sr-cell-title--sm { font-size: 0.975rem; line-height: 1.24; }
 
-.sr-bento-abstract {
+/* How many lines of standfirst a cell runs is the planner's call: a text cell
+   standing beside a plate is given more of them, because the row is as tall as
+   the picture either way and a short one would leave a hole under it. */
+.sr-cell-dek {
   font-family: var(--font-serif);
   font-size: 0.9375rem;
   line-height: 1.6;
   color: var(--text-secondary);
   margin-bottom: var(--space-4);
   display: -webkit-box;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: var(--dek-lines, 3);
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-.sr-bento-bottom {
-  margin-top: auto;
+/* `column-count` and `-webkit-box` cannot both apply, so the split standfirst
+   is bounded by height instead of by lines. */
+.sr-cell-dek--split {
+  display: block;
+  column-count: 2;
+  column-gap: var(--space-8);
+  column-rule: 1px solid var(--border-subtle);
+  max-height: 8.1em;
+  overflow: hidden;
 }
 
-.sr-bento-tags {
+.sr-cell-foot {
+  margin-top: auto;
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 5px;
 }
+
+/* A square plate on the left with the text running beside it: the alternative
+   full-width shape, so two six-column rows never read the same. */
+.sr-cell-strip {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.sr-cell-strip-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* ── The plate ──
+
+   The well is sized by the slot, never by the picture. The extractor answers
+   with a URL and a caption and no dimensions, so the only way a placeholder can
+   be exactly the size of the image it stands in for is for the frame to decide
+   both and the figure to be cropped into it.
+
+   Which is what lets the page be built with its holes already in place: the
+   composition is planned before any figure has arrived, the wells hold their
+   space while the worker is still answering, and a picture drops into one
+   without moving a single rule on the page. */
+.sr-plate {
+  display: block;
+  min-width: 0;
+  margin: 0 0 var(--space-3);
+}
+
+.sr-plate-well {
+  position: relative;
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.sr-plate--wide .sr-plate-well,
+.sr-plate--bone.sr-plate--wide { aspect-ratio: 3.4 / 1; }
+.sr-plate--wide16 .sr-plate-well,
+.sr-plate--bone.sr-plate--wide16 { aspect-ratio: 16 / 9; }
+.sr-plate--tall .sr-plate-well,
+.sr-plate--bone.sr-plate--tall { aspect-ratio: 4 / 5; }
+.sr-plate--sq .sr-plate-well,
+.sr-plate--bone.sr-plate--sq { aspect-ratio: 1 / 1; }
+
+.sr-plate-well img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  /* Held back until the bytes have actually decoded — see `.is-loaded`. A
+     figure that paints in halfway is worse than a grey rectangle. */
+  opacity: 0;
+  transform: scale(1.015);
+  transition: opacity 420ms ease, transform 620ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sr-plate.is-loaded .sr-plate-well img {
+  opacity: 1;
+  transform: none;
+}
+
+/* One vocabulary for "not here yet": a well whose answer is still outstanding
+   breathes, so a reserved hole reads as pending rather than as an empty box
+   someone forgot to fill.
+
+   Pitched at the page's own hairline colours rather than the sunken-surface
+   ones. Measured against white, `--bg-secondary` is 1.07:1 — enough for the
+   34px trend skeletons, and invisible for a 9px bar, which is most of what the
+   forme is made of. These sit at 1.24:1 sweeping to 1.47:1: the weight of a
+   rule, which is the right register for a page built out of rules. */
+.sr-plate:not(.is-loaded) .sr-plate-well,
+.sr-plate--bone,
+.sr-bone {
+  background: linear-gradient(90deg, var(--border-subtle) 20%, var(--border-default) 48%, var(--border-subtle) 76%);
+  background-size: 240% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+.sr-plate--bone {
+  display: block;
+  width: 100%;
+  margin-bottom: var(--space-3);
+  border: 1px solid var(--border-subtle);
+}
+
+/* The paper's own figcaption, which is what the extractor returns. It can run
+   to 300 characters, so it is held to one line. */
+.sr-plate-caption {
+  display: block;
+  margin-top: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 0.625rem/1.4 var(--font-mono);
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+/* ── The forme before it has anything in it ──
+   Changing period recomposes the page, so the skeleton is laid out from the
+   edition still on screen: the shape holds while the new one compiles, and
+   nothing jumps under the reader. */
+.sr-cell--skeleton {
+  cursor: default;
+}
+
+.sr-bone {
+  display: block;
+  border-radius: var(--radius-sm);
+}
+
+/* Offset by position so the row does not pulse as one block. */
+.sr-cell--skeleton .sr-bone,
+.sr-cell--skeleton .sr-plate--bone {
+  animation-delay: calc(var(--enter-order, 0) * -140ms);
+}
+
+.sr-bone--kicker { width: 38%; height: 9px; margin-bottom: 13px; }
+.sr-bone--title { width: 100%; height: 15px; margin-bottom: 7px; }
+.sr-bone--line { width: 100%; height: 9px; margin-bottom: 6px; }
+.sr-bone--short { width: 62%; }
+.sr-bone--foot { width: 46%; height: 8px; margin-top: var(--space-3); }
+
+/* The lead story's own bones. They sit in the hero's real grid areas, so the
+   skeleton occupies the shape the story is about to come back into. */
+.sr-hero--skeleton { cursor: default; }
+.sr-bone--lead { grid-area: lead; justify-self: start; width: 92px; height: 17px; margin-bottom: var(--space-2); }
+.sr-bone--hero-title { width: 100%; height: 27px; margin-bottom: 10px; }
+.sr-bone--authors { width: 52%; height: 10px; margin: var(--space-4) 0; }
+.sr-bone--tag { width: 76px; height: 21px; }
+.sr-bone--btn { width: 112px; height: 38px; border-radius: var(--radius-md); }
+.sr-bone--dek { width: 100%; height: 10px; margin-bottom: 10px; }
 
 .sr-micro {
   display: inline-flex;
@@ -915,6 +1064,89 @@
   content: '·';
   margin-right: 4px;
   color: var(--border-strong);
+}
+
+/* ============================================
+   The turn
+
+   A selection is eleven papers of one period; the next is the eleven below it
+   in the same ordering. The count rides the eyebrow that already says what the
+   page is, so the feature adds no row of chrome at the top, and the move lives
+   where the reader actually finishes: at the foot of the forme.
+   ============================================ */
+
+.sr-eyebrow-sep {
+  color: var(--border-strong);
+}
+
+.sr-eyebrow-count {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.sr-turn {
+  margin-top: var(--space-10);
+  padding-top: var(--space-5);
+  border-top: 3px double var(--border-ink);
+}
+
+.sr-turn-kicker {
+  display: block;
+  margin-bottom: var(--space-3);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.sr-turn-line {
+  margin: 0 0 var(--space-5);
+  max-width: 62ch;
+  font-family: var(--font-serif);
+  font-size: 1.15rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+
+.sr-turn.is-exhausted .sr-turn-line {
+  color: var(--text-secondary);
+}
+
+.sr-turn-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.sr-turn-note {
+  font: 400 0.6875rem/1.5 var(--font-mono);
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+/* Quiet enough not to compete with the primary move, but still a real target. */
+.sr-turn-back {
+  margin-left: auto;
+  min-height: 38px;
+  padding: 0 var(--space-2);
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sr-turn-back:hover { color: var(--text-primary); }
+}
+
+@media (max-width: 640px) {
+  .sr-turn-row { gap: var(--space-3); }
+  .sr-turn-back { margin-left: 0; }
 }
 
 /* ============================================
@@ -1019,57 +1251,6 @@
    Paper detail overlay
    ============================================ */
 
-.sr-paper-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-4);
-  background: rgba(17, 19, 24, 0.4);
-}
-
-.sr-paper-overlay-inner {
-  position: relative;
-  width: min(1080px, 100%);
-  height: min(88vh, 900px);
-  overflow: hidden;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-2xl);
-  box-shadow: var(--shadow-xl);
-}
-
-.sr-overlay-close {
-  position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
-  z-index: 5;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .sr-overlay-close:hover {
-    border-color: var(--border-ink);
-    color: var(--text-primary);
-  }
-}
-
-.sr-paper-card-wrapper {
-  width: 100%;
-  height: 100%;
-}
-
 /* ============================================
    Responsive
    ============================================ */
@@ -1126,6 +1307,44 @@
   }
 }
 
+/* The forme collapses to a single column before the rest of the page reaches
+   its phone layout: six columns of serif get uncomfortably narrow first. */
+@media (max-width: 720px) {
+  .sr-forme {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sr-cell,
+  .sr-cell--s2,
+  .sr-cell--s3,
+  .sr-cell--s4,
+  .sr-cell--s6 {
+    grid-column: span 1;
+    padding: var(--space-5) 0;
+    border-right: none;
+  }
+
+  /* A tall crop has nowhere to go on one column, and a 3.4:1 banner is a strip
+     of nothing at 375px. Both come back towards the middle. */
+  .sr-plate--tall .sr-plate-well,
+  .sr-plate--bone.sr-plate--tall { aspect-ratio: 16 / 9; }
+  .sr-plate--wide .sr-plate-well,
+  .sr-plate--bone.sr-plate--wide { aspect-ratio: 2.1 / 1; }
+
+  .sr-cell-strip {
+    grid-template-columns: 104px minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+
+  .sr-cell-title--xl { font-size: 1.35rem; }
+
+  .sr-cell-dek--split {
+    column-count: 1;
+    column-rule: none;
+    max-height: none;
+  }
+}
+
 @media (max-width: 640px) {
   .sr {
     padding: calc(var(--nav-height-mobile) + var(--space-6)) var(--space-4) var(--space-12);
@@ -1165,50 +1384,13 @@
     padding-left: 0;
   }
 
-  .sr-bento {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .sr-bento-card,
-  .sr-bento-card.wide,
-  .sr-bento-card.col-full,
-  .sr-bento-card.col-left,
-  .sr-bento-card.col-right {
-    grid-column: span 1;
-    padding: var(--space-5) 0;
-    border-right: none;
-  }
-
-  .sr-bento-accent,
-  .sr-bento-card.col-full .sr-bento-accent,
-  .sr-bento-card.col-left .sr-bento-accent {
-    left: 0;
-    top: 0;
-    width: 24px;
-    height: 2px;
-  }
-
-  .sr-bento-card.wide .sr-bento-title {
-    font-size: 1.15rem;
-  }
-
-  .sr-paper-overlay {
-    padding: 0;
-  }
-
-  .sr-paper-overlay-inner {
-    width: 100%;
-    height: 100%;
-    border: none;
-    border-radius: 0;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .sr-body,
   .sr-enter,
   .sr-state,
-  .sr-bento-card,
+  .sr-cell,
   .sr-trend-item--enter,
   .sr-real-trends,
   .sr-btn,
@@ -1217,9 +1399,15 @@
     transition: none;
   }
 
-  .sr-update-line::after,
   .sr-spinner,
-  .sr-trend-skeleton {
+  .sr-trend-skeleton,
+  .sr-bone,
+  .sr-plate--bone,
+  .sr-plate:not(.is-loaded) .sr-plate-well {
     animation: none;
+  }
+
+  .sr-plate-well img {
+    transition: none;
   }
 }

@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   buildScientificReportEditions,
   calculateScientificImpactSignals,
+  countSelections,
 } from './scientificReportRanking.js';
 
 function paper(id, category, citations, extra = {}) {
@@ -76,4 +77,116 @@ test('excludes papers explicitly rejected by the user from the personal corpus',
   });
 
   assert.equal(editions.personal.mainDiscovery.id, 'allowed');
+});
+
+/* ── Selections: reading further down the same period ──
+   A selection is a slice of one greedy ordering, not a re-run of it. The
+   reader has to be able to walk out to selection 4 and back and find
+   selection 1 exactly as they left it. */
+
+function candidate(index) {
+  return {
+    id: `sel-${index}`,
+    title: `Selection candidate ${index}`,
+    abstract: 'A'.repeat(320),
+    authors: [{ name: `Author ${index}` }],
+    primaryCategory: ['physics', 'bio', 'cs', 'math', 'med'][index % 5],
+    categories: [['physics', 'bio', 'cs', 'math', 'med'][index % 5]],
+    allCategories: [['physics', 'bio', 'cs', 'math', 'med'][index % 5]],
+    journal: `Journal ${index % 7}`,
+    citationCount: 500 - index,
+    published: '2026-08-20',
+    doi: `10.1/sel-${index}`,
+  };
+}
+
+const CANDIDATES = Array.from({ length: 47 }, (_, index) => candidate(index));
+const AT = selection => buildScientificReportEditions(CANDIDATES, {
+  timeframe: '7d',
+  days: 7,
+  selection,
+  currentDate: new Date('2026-08-26T12:00:00Z'),
+});
+
+function idsOf(edition) {
+  return [edition.panorama.mainDiscovery, ...edition.panorama.highlights]
+    .filter(Boolean)
+    .map(paper => paper.id);
+}
+
+test('a selection holds a lead story and ten more', () => {
+  const first = AT(1);
+  assert.equal(first.panorama.mainDiscovery.id.startsWith('sel-'), true);
+  assert.equal(first.panorama.highlights.length, 10);
+  assert.equal(idsOf(first).length, 11);
+});
+
+test('selections do not overlap and cover the ordering in order', () => {
+  const seen = new Set();
+  let covered = 0;
+  for (let selection = 1; selection <= AT(1).selectionCount; selection += 1) {
+    for (const id of idsOf(AT(selection))) {
+      assert.equal(seen.has(id), false, `${id} appears in two selections`);
+      seen.add(id);
+      covered += 1;
+    }
+  }
+  assert.equal(covered, CANDIDATES.length);
+});
+
+test('walking out to a later selection and back leaves the first untouched', () => {
+  const before = idsOf(AT(1));
+  AT(4);
+  AT(2);
+  assert.deepEqual(idsOf(AT(1)), before);
+});
+
+test('the count is reported, and the last selection is the short one', () => {
+  const first = AT(1);
+  // 47 candidates, eleven to a selection: four full-ish and a remainder.
+  assert.equal(first.selectionCount, 5);
+  assert.equal(first.perSelection, 11);
+  assert.equal(idsOf(AT(5)).length, 47 - 4 * 11);
+});
+
+test('a selection past the end falls back to the last one that exists', () => {
+  const last = AT(5);
+  for (const beyond of [6, 40, 999]) {
+    assert.equal(AT(beyond).selection, 5);
+    assert.deepEqual(idsOf(AT(beyond)), idsOf(last));
+  }
+});
+
+test('a selection below one is treated as the first', () => {
+  const first = idsOf(AT(1));
+  for (const under of [0, -3, null, undefined, NaN, 'two']) {
+    assert.deepEqual(idsOf(AT(under)), first);
+  }
+});
+
+test('a period with a single page of candidates offers exactly one selection', () => {
+  const thin = buildScientificReportEditions(CANDIDATES.slice(0, 9), {
+    timeframe: '7d', days: 7, selection: 1, currentDate: new Date('2026-08-26T12:00:00Z'),
+  });
+  assert.equal(thin.selectionCount, 1);
+  assert.equal(thin.panorama.highlights.length, 8);
+});
+
+test('an empty period still reports one selection rather than none', () => {
+  const empty = buildScientificReportEditions([], { timeframe: '7d', days: 7, selection: 3 });
+  assert.equal(empty.selectionCount, 1);
+  assert.equal(empty.selection, 1);
+  assert.equal(empty.panorama.mainDiscovery, null);
+});
+
+test('the selection count never drops below one, whatever it is handed', () => {
+  assert.equal(countSelections(0), 1);
+  assert.equal(countSelections(1), 1);
+  assert.equal(countSelections(11), 1);
+  assert.equal(countSelections(12), 2);
+  assert.equal(countSelections(47), 5);
+  // A period that reports nonsense still yields a page the reader can open.
+  for (const nonsense of [-4, NaN, null, undefined, 'many']) {
+    assert.equal(countSelections(nonsense), 1);
+  }
 });

@@ -31,7 +31,7 @@ import {
   reserveAIQuota,
   sha256,
   shouldRefundAIQuota,
-  verifyFirebaseUser,
+  verifyFirebaseAccount,
 } from './ai-explanation.js';
 
 export const REWRITE_PROMPT_VERSION = 'paper-rewrite-v1';
@@ -885,7 +885,8 @@ export async function handlePaperRewrite(request, env, extraHeaders = {}) {
   if (contentLength > MAX_REQUEST_BYTES) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
   if (!env.GEMINI_API_KEY) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
 
-  const uid = await verifyFirebaseUser(request, env);
+  const account = await verifyFirebaseAccount(request, env);
+  const uid = account.uid;
   const payload = await request.json().catch(() => null);
   if (!payload || JSON.stringify(payload).length > MAX_REQUEST_BYTES) {
     throw new AIExplanationError('AI_INVALID_REQUEST', 400);
@@ -908,7 +909,7 @@ export async function handlePaperRewrite(request, env, extraHeaders = {}) {
   // Last thing before the response commits, and deliberately so: everything
   // above is cheap and can still answer with a real status line, and everything
   // below is slow enough that the browser needs to hear something first.
-  const quota = await reserveAIQuota(env, uid);
+  const quota = await reserveAIQuota(env, uid, { unlimited: account.unlimitedAI });
   try {
     const meta = {
       level,

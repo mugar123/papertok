@@ -82,8 +82,11 @@ const OPENALEX_FEED_WAIT_BUDGET_MS = 900;
 const ICITE_FEED_WAIT_BUDGET_MS = 900;
 const INTERACTIONS_NETWORK_TIMEOUT_MS = 5000;
 // Upper bound on the reading-library records fetched on demand by the library
-// screens. Ten ids per `in` query, so this is 60 queries in the worst case and
-// it is reached only by an account with hundreds of deliberately kept papers.
+// screens. How many queries that costs depends on the `in` operator's cap,
+// which is stated once in `utils/firestoreLimits.js` and nowhere else — this
+// comment used to do the arithmetic itself and was still quoting a cap
+// Firestore had already raised. It is reached only by an account with hundreds
+// of deliberately kept papers.
 const PERSONAL_LIBRARY_MAX_RECORDS = 600;
 // How often a device re-checks the aggregate against its subcollection. The
 // check costs a count aggregation, so it must stay off the normal feed load: at
@@ -234,6 +237,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   const [savedPaperIds, setSavedPaperIds] = useState(new Set());
   const [readPaperIds, setReadPaperIds] = useState(new Set());
   const [personalLibrary, setPersonalLibrary] = useState({});
+  // Paper metadata for everything the library read fetched, by id — including
+  // the records `personalLibrary` filters out. See ensurePersonalLibrary.
+  const [libraryPapers, setLibraryPapers] = useState({});
   const [recommendationProfileUserId, setRecommendationProfileUserId] = useState(null);
   const recommendationProfileReady = Boolean(user?.uid && recommendationProfileUserId === user.uid);
 
@@ -340,10 +346,21 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
     try {
       const profile = interactionProfile.current;
+      // `liked` joins the three curated sets, and joins them LAST so the cap
+      // below still favours the reading library proper.
+      //
+      // It is here because of what the lists screen had to do without it.
+      // Favorites is assembled from the liked ids, and no read on this path
+      // ever fetched them — so opening it went out for every paper one card
+      // click at a time, on a connection the mount was already using. Liked ids
+      // are already in the aggregate, and the fan-out that fetches them is this
+      // one; asking for them here costs one larger bounded read instead of a
+      // second round trip per list.
       const paperIds = [...new Set([
         ...curatedIds(profile, 'read'),
         ...curatedIds(profile, 'readLater'),
         ...curatedIds(profile, 'saved'),
+        ...curatedIds(profile, 'liked'),
       ])].slice(0, PERSONAL_LIBRARY_MAX_RECORDS);
 
       const { records, fromCache } = await fetchLibraryRecords(userId, paperIds);
@@ -357,17 +374,35 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       }
 
       const library = {};
+      /**
+       * Every paper this read paid for, whatever the record turned out to be.
+       *
+       * `personalLibrary` means something specific — the papers the owner has
+       * READ, kept for later, annotated or tagged — and the filter below is
+       * what enforces it. But the filter used to be the end of the story: a
+       * paper that was merely liked or merely saved was fetched, decoded and
+       * thrown away, and then fetched a second time the moment a list holding
+       * it was opened. Same documents, same collection, same connection.
+       *
+       * So the meaning stays, and the metadata is kept beside it.
+       */
+      const papers = {};
       records.forEach(({ id, data }) => {
+        const paper = data.paper || serializeLibraryPaper({
+          id,
+          title: data.paperTitle || id,
+          authors: data.paperAuthors || [],
+          primaryCategory: data.paperCategory || '',
+          published: data.timestamp || '',
+        });
+        // Only a real title: the fallback above stands the id in for one, and
+        // storing that would let a stub outrank a proper fetch later.
+        if (paper.title && paper.title !== id) papers[id] = paper;
+
         if (!(data.read || data.readLater || data.note || data.tags?.length)) return;
         library[id] = {
           paperId: id,
-          paper: data.paper || serializeLibraryPaper({
-            id,
-            title: data.paperTitle || id,
-            authors: data.paperAuthors || [],
-            primaryCategory: data.paperCategory || '',
-            published: data.timestamp || '',
-          }),
+          paper,
           readLater: Boolean(data.readLater),
           readAt: data.readAt || (data.read ? data.timestamp : null),
           note: data.note || '',
@@ -377,6 +412,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       });
 
       setPersonalLibrary(current => ({ ...library, ...current }));
+      // Existing entries win, exactly as above: a paper already in hand came
+      // from a screen that fetched it deliberately and may be richer.
+      setLibraryPapers(current => ({ ...papers, ...current }));
+      // Existing entries win, exactly as above: a paper already in hand came
+      // from a screen that fetched it deliberately.
+      setLibraryPapers(current => ({ ...papers, ...current }));
       // A cache-served answer is worth showing but not worth latching: with
       // the backend unreachable, getDocs resolves against the in-memory cache
       // (empty on a fresh page) instead of rejecting. Marking that 'ready'
@@ -1939,6 +1980,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   const value = {
     papers, loading, error, hasMore, isRefreshing,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
+    libraryPapers,
     ensurePersonalLibrary, getCuratedInteractionIds,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,

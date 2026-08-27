@@ -112,7 +112,7 @@
   /* ── Selection ── */
   ::selection {
     background: var(--brand-yellow);
-    color: var(--text-primary);
+    color: var(--text-on-brand);
   }
 
   /* ── Links ── */
@@ -219,4 +219,122 @@
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Maths
+
+   KaTeX's stylesheet is imported at runtime (`utils/katexLoader.js`), so it
+   lands in the document after this file and wins any tie. Every rule here is
+   written with a doubled class to take the specificity instead of relying on
+   an order we do not control.
+   ============================================ */
+
+/* KaTeX ships `.katex { font-size: 1.21em }`. The factor is not arbitrary: it
+   matches Computer Modern's x-height to a UI sans. Our prose is Newsreader,
+   whose x-height is unusually generous — 0.512em against KaTeX_Main's 0.431em,
+   measured — so 1.21 lines the lowercase up correctly and then lands every
+   digit, capital and operator in a formula 14% taller than the capitals around
+   it. That is what reads as "the maths is a size bigger than the text". Maths
+   sits at cap height far more than at x-height, so the factor leans that way:
+   1.08 puts formula capitals within 3% of the prose's own. */
+.katex.katex {
+  font-size: 1.08em;
+}
+
+/* Display maths is its own paragraph and can afford the full step up. */
+.katex-display .katex.katex {
+  font-size: 1.12em;
+}
+
+/* KaTeX renders every formula twice: the visual copy, and a MathML copy for
+   screen readers that it hides by clipping rather than by removing. Clipped is
+   still selectable, so a selection or a copy that crosses a formula picks up
+   both and comes out as `x2x^2x2`. The reader anchors highlights on offsets
+   rather than on the selected string for that reason, but a copy-paste has no
+   such escape — so the accessible copy stays in the tree and out of the
+   selection. */
+.katex-mathml.katex-mathml {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ============================================
+   Theme switch — the ink sweep
+
+   Pressing the toggle does not fade the window: a circle of the incoming theme
+   opens out of the button itself. `utils/themeTransition.js` measures the
+   button and writes the centre and the radius here; everything below is one
+   composited `clip-path`, with no second copy of the DOM anywhere.
+
+   Going to ink the *new* page grows over the old one; coming back the *old*
+   one — the ink — shrinks through the same hole, and faster, so the return
+   reads as the ink lifting rather than as the same animation rewound. The
+   attribute already holds the incoming theme while the transition runs, which
+   is what these selectors are reading.
+
+   These rules sit outside `@layer base` deliberately: they are not element
+   resets, and the pseudo-elements they target have to beat the UA's own
+   cross-fade.
+   ============================================ */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  /* The browser's default cross-fade would show through the circle and turn
+     the sweep into a smear. */
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+:root[data-theme='dark']::view-transition-new(root) {
+  z-index: 1;
+  animation: themeSweepIn 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root[data-theme='dark']::view-transition-old(root) {
+  z-index: 0;
+}
+
+:root[data-theme='light']::view-transition-old(root) {
+  z-index: 1;
+  animation: themeSweepOut 320ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+:root[data-theme='light']::view-transition-new(root) {
+  z-index: 0;
+}
+
+@keyframes themeSweepIn {
+  from { clip-path: circle(0px at var(--theme-sweep-x, 100%) var(--theme-sweep-y, 0)); }
+  to { clip-path: circle(var(--theme-sweep-r, 150vmax) at var(--theme-sweep-x, 100%) var(--theme-sweep-y, 0)); }
+}
+
+@keyframes themeSweepOut {
+  from { clip-path: circle(var(--theme-sweep-r, 150vmax) at var(--theme-sweep-x, 100%) var(--theme-sweep-y, 0)); }
+  to { clip-path: circle(0px at var(--theme-sweep-x, 100%) var(--theme-sweep-y, 0)); }
+}
+
+/* Where the API is missing, the colours cross in 200 ms and nothing sweeps.
+   The class is on for the length of that fade and off again — left on, it
+   would put a transition on every background in the app, including the ones
+   whose job is to answer a hover instantly. */
+html.theme-crossfade,
+html.theme-crossfade *,
+html.theme-crossfade *::before,
+html.theme-crossfade *::after {
+  transition:
+    background-color var(--transition-base),
+    border-color var(--transition-base),
+    color var(--transition-base),
+    fill var(--transition-base) !important;
+}
+
+/* A circle crossing the whole viewport is precisely the movement this
+   preference exists to refuse, and a full-page fade is the same movement
+   slower — so the switch is instant, and only the switch. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
 }

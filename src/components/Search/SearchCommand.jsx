@@ -23,6 +23,7 @@ import {
 import { useEntitySearch } from '../../hooks/useEntitySearch.js';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { searchPaperDestination } from '../../utils/searchDestinations.js';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import {
   buildSearchSectionValues,
@@ -154,9 +155,12 @@ export default function SearchCommand({ open, onOpenChange }) {
     if (!open) reset();
   }, [open, reset]);
 
-  const go = useCallback((path) => {
+  const go = useCallback((path, state = null) => {
     onOpenChange(false);
-    navigate(path);
+    // Router state, when there is any: the public paper page paints a paper
+    // handed to it and treats its own fetch as an upgrade, so a row the palette
+    // has already fetched opens without a second wait.
+    navigate(path, state ? { state } : undefined);
   }, [navigate, onOpenChange]);
 
   const follow = useCallback(async (event, entity) => {
@@ -237,7 +241,13 @@ export default function SearchCommand({ open, onOpenChange }) {
       <CommandItem
         key={paper.id}
         value={`paper-${paper.id}`}
-        onSelect={() => go(`/explorer/paper/${encodeURIComponent(paper.id)}`)}
+        onSelect={() => {
+          // Not `/explorer/paper/…`: that route has never existed, and the id
+          // ended up at the authors endpoint, which is where "Entity not found"
+          // came from.
+          const { path, state } = searchPaperDestination(paper, query);
+          go(path, state);
+        }}
       >
         <FileText size={14} className="sc-icon" />
         <span className="sc-label">{paper.title}</span>
@@ -380,20 +390,44 @@ export default function SearchCommand({ open, onOpenChange }) {
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange} title={copy.placeholder} className="sc-sheet">
+      {/* The field leads the entrance rather than sitting it out.
+          Everything in the list below already rose into place while the one
+          element the palette exists for — the field you are about to type in —
+          was welded to the sheet, fully painted from the first frame. Index 0
+          means it starts with the sheet and lags it by the same 6px every row
+          does, so the eye lands on the caret first and the list resolves under
+          it. */}
       <CommandInput
         value={query}
         onValueChange={setQuery}
         placeholder={copy.placeholder}
         autoFocus
+        wrapperClassName="sc-enter"
+        wrapperStyle={{ '--sc-enter-index': 0 }}
       />
 
       <CommandList>
+        {/* The suggestions ride the same cascade the results do.
+            They did not, and this is the one moment the entrance is most felt:
+            opening the palette is the only time the sheet arrives with content
+            already in it, and that content was simply *there*, fully painted,
+            the instant the box appeared. The sheet moved and its contents did
+            not, which is what makes an opening read as a box rather than as an
+            arrival. */}
         {!query.trim() && (
-          <CommandGroup heading={copy.suggested}>
-            {SUGGESTIONS.map(item => (
+          <CommandGroup
+            heading={
+              <span className="sc-heading sc-enter" style={{ '--sc-enter-index': 1 }}>
+                {copy.suggested}
+              </span>
+            }
+          >
+            {SUGGESTIONS.map((item, index) => (
               <CommandItem
                 key={item.labelEn}
                 value={`suggestion-${item.labelEn}`}
+                className="sc-enter"
+                style={{ '--sc-enter-index': Math.min(index + 2, ENTER_STAGGER_CAP) }}
                 onSelect={() => setQuery(isEnglish ? item.queryEn : item.queryEs)}
               >
                 <item.Icon size={14} className="sc-icon" />
@@ -442,8 +476,19 @@ export default function SearchCommand({ open, onOpenChange }) {
             the rest, and pushing them down. The gate covers both channels. */}
         {!searchPending && renderedSections}
 
+        {/* The tail of the same cascade. It was the last thing on the sheet
+            still arriving fully painted while the rows above it rose — the
+            exact fault the suggestions block above documents, left behind when
+            that one was fixed. It fades rather than rises: a footnote that
+            travels is the last thing on the sheet to stop moving, and so the
+            one the eye is left on. */}
         {!query.trim() && (
-          <div className="sc-status sc-status--hint">{copy.hint}</div>
+          <div
+            className="sc-status sc-status--hint sc-enter sc-enter--quiet"
+            style={{ '--sc-enter-index': SUGGESTIONS.length + 2 }}
+          >
+            {copy.hint}
+          </div>
         )}
       </CommandList>
     </CommandDialog>

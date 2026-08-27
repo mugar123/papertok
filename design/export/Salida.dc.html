@@ -1,0 +1,109 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; }
+    a { color: #111318; text-decoration: none; }
+    a:hover { color: #1a5fd0; }
+    * { box-sizing: border-box; }
+
+    /* A4 at 96 px/inch. The face is Newsreader — the app's own serif, embedded
+       through fontspec — rather than Latin Modern: an export that looks like
+       where it came from beats one that looks like every other preprint. */
+    .page {
+      width: 794px; height: 1123px; background: #ffffff; position: relative;
+      font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif;
+      color: #111318;
+    }
+
+    .body { font-size: 14.7px; line-height: 18.1px; text-align: justify; hyphens: auto; }
+    /* The LaTeX tell: the first paragraph of a section is flush, every one
+       after it is indented. Nothing else says "compiled" as loudly. */
+    .body p { margin: 0; }
+    .body p + p { text-indent: 1.5em; }
+
+    .sec { font-size: 17px; font-weight: 600; line-height: 1.2; margin: 20px 0 7px; }
+    .math { font-style: italic; }
+    .hl { background: #ffd21e; padding: 0 1px; }
+    .ai { background: #f0f0f1; box-shadow: inset 0 -1.5px 0 #111318; }
+
+    /* The marker is the same shape whichever kind of note it is — a superscript
+       number is a superscript number. What tells them apart is the colour still
+       on the passage, and the label down in the note. */
+    .ref { font-size: 10px; vertical-align: super; line-height: 0; padding-left: 0.5px; }
+
+    .fn { font-size: 11.5px; line-height: 14.6px; text-align: justify; hyphens: auto; color: #1f2430; }
+    .fn-no { font-size: 8.5px; vertical-align: super; line-height: 0; }
+    .fn-kind { font: 500 8.5px/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #6b7280; }
+  </style>
+</helmet>
+
+<div class="page">
+  <!-- No margin column any more: symmetric margins and a normal measure, the
+       way `article` sets a page when nothing has to live beside the text. -->
+  <div style="position: absolute; left: 106px; top: 96px; width: 582px">
+
+    <div style="padding: 0 44px">
+      <h1 style="font-size: 25px; font-weight: 400; line-height: 1.16; text-align: center; margin: 0 0 14px; text-wrap: pretty">Correladores de la longitud propia de la línea de universo</h1>
+      <p style="font-size: 15px; line-height: 1.3; text-align: center; margin: 0 0 4px">Allic Sivaramakrishnan</p>
+      <p style="font: 400 11px/1.4 'IBM Plex Mono', monospace; text-align: center; color: #4a5160; margin: 0 0 26px">Versión en lenguaje sencillo · nivel universitario · 27 de agosto de 2026</p>
+    </div>
+
+    <!-- article's abstract: a narrower measure, small centred heading. -->
+    <div style="padding: 0 62px; margin-bottom: 22px">
+      <p style="font-size: 12.5px; font-weight: 600; text-align: center; margin: 0 0 5px">Resumen</p>
+      <p style="font-size: 12.8px; line-height: 15.8px; text-align: justify; hyphens: auto; margin: 0">Reescritura en lenguaje sencillo del artículo original, generada automáticamente y anotada por el lector. El texto de abajo no es del autor del artículo: parafrasea sus resultados y no los sustituye.</p>
+    </div>
+
+    <h2 class="sec" style="margin-top: 0">1&nbsp;&nbsp;De qué va el paper</h2>
+    <div class="body">
+      <p>Los autores calculan cuánto tiempo propio transcurre a lo largo de la línea de universo de una partícula, y encuentran que <span class="hl">esa cantidad deja de ser un número y pasa a ser una distribución</span><span class="ref">1</span> en cuanto la gravedad cuántica entra en juego. Lo que antes era un reloj que marcaba un valor pasa a ser un reloj que marca un abanico de valores con una probabilidad cada uno.</p>
+      <p>El resultado se apoya en un cálculo de dos puntos que ya era conocido, pero al que nadie había dado esta lectura: la varianza <span class="math">⟨τ²⟩ − ⟨τ⟩²</span> deja de anularse, y <span class="ai">la anchura de la distribución crece con la energía</span><span class="ref">2</span> del sistema estudiado.</p>
+    </div>
+
+    <h2 class="sec">2&nbsp;&nbsp;Cómo lo hicieron</h2>
+    <div class="body">
+      <p>La parte técnica ocupa la segunda sección del artículo. Una inducción sobre el índice <span class="math">[M : N]</span> del submódulo cierra el hueco entre los dos recuentos, y lo que queda del artículo es contabilidad alrededor de ese único paso.</p>
+      <p>El método no depende de la dimensión, así que vale igual para varias familias vecinas, aunque aquí solo se desarrolle una en detalle. Los autores señalan que el mismo argumento falla en cuanto se abandona la hipótesis de estacionariedad, y dejan ese caso abierto.</p>
+    </div>
+
+    <h2 class="sec">3&nbsp;&nbsp;Qué se saca de aquí</h2>
+    <div class="body">
+      <p>La consecuencia medible es que un reloj ideal colocado sobre esa línea de universo no daría siempre la misma lectura: <span class="hl">el ruido que registraría no vendría del aparato, sino de la propia geometría</span><span class="ref">3</span>. La magnitud del efecto crece con la energía, lo que en principio lo hace buscable.</p>
+    </div>
+  </div>
+
+  <!-- The notes, numbered, under the rule where LaTeX puts them. -->
+  <div style="position: absolute; left: 106px; bottom: 104px; width: 582px">
+    <div style="width: 174px; height: 0.6px; background: #111318; margin-bottom: 8px"></div>
+    <div style="display: flex; flex-direction: column; gap: 5px">
+      <p class="fn" style="margin: 0"><span class="fn-no">1</span>&nbsp;<span class="fn-kind">Tuya</span>&nbsp; El ruido no lo pone el aparato: sale de la propia métrica. Contárselo a Marta.</p>
+      <p class="fn" style="margin: 0"><span class="fn-no">2</span>&nbsp;<span class="fn-kind">IA</span>&nbsp; Cuanta más energía tiene la partícula, más se abre el abanico de tiempos posibles: la anchura crece como la raíz de la energía.</p>
+      <p class="fn" style="margin: 0"><span class="fn-no">3</span>&nbsp;<span class="fn-kind">Tuya</span>&nbsp; Esto es lo que habría que medir. Preguntar si alguien lo ha intentado con relojes ópticos.</p>
+    </div>
+  </div>
+
+  <!-- Provenance is not one of the notes: it is a page footer, on every page,
+       below the footnote block and outside its numbering. -->
+  <div style="position: absolute; left: 106px; bottom: 52px; width: 582px">
+    <div style="height: 0.6px; background: #d3d5db; margin-bottom: 5px"></div>
+    <div style="display: flex; align-items: baseline; gap: 10px">
+      <p style="font: 400 9.5px/1.4 'IBM Plex Mono', monospace; color: #4a5160; margin: 0; flex: 1">Reescrito por PaperTok. No es obra de sus autores · <a href="https://arxiv.org/abs/2405.04331" style="text-decoration: underline; text-underline-offset: 1.5px">arxiv.org/abs/2405.04331</a></p>
+      <p style="font-size: 12.5px; color: #111318; margin: 0">1</p>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":794,"height":1123}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

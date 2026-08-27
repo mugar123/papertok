@@ -13,6 +13,39 @@
   height: 100%;
 }
 
+/* The way back, signed in.
+   The app navbar owns the top of the screen on this route, so this is a
+   floating control over the page rather than a bar of its own — and it is the
+   shared icon button, the same one the Explorer's back arrow is, so it reads
+   as the same affordance rather than as a second idea of "back". It had no
+   rules at all before: a bare 20px chevron at (0, 0), `position: static`, over
+   the top-left corner of a card that starts with a watermark there. In
+   practice, no back arrow. */
+.public-paper-back-floating {
+  position: absolute;
+  z-index: 6;
+  /* Below the navbar, not behind it. The page is laid out from viewport 0 and
+     the navbar is fixed over the top of it, so an inset measured from the
+     page's own edge puts the button underneath the bar. */
+  top: calc(var(--nav-height) + var(--space-3));
+  left: var(--space-5);
+}
+
+/* The cover, which has to actually cover.
+   This class had no rules either, so the skeleton painted as a plain block in
+   normal flow: 294px of placeholder stacked *above* the paper, pushing the card
+   that far down the page instead of standing in front of it while it arrived.
+   Absolute and opaque is the whole of what it was always described as doing —
+   "it sits on top and lifts only once the card has animated in". */
+.public-paper-skeleton {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: grid;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
 /* The same bar the guest feed puts over its own cards, not a floating capsule.
    A shared link is most people's first sight of PaperTok, so it should look
    like PaperTok: a flat ground with one hairline under it, the way every other

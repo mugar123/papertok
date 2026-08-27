@@ -1680,7 +1680,14 @@ function formatOpenAlexWorkAsPaper(work) {
     citationCountKnown: Number.isFinite(work.cited_by_count),
     concepts: work.concepts || [],
     categories: categories,
-    keywords: categories
+    keywords: categories,
+    // The work's branch of science, kept because `categories` above is a list
+    // of concept names — "Toric code", "The Imaginary" — and a concept is not a
+    // field. Without this the Explorer's rows had nothing to take a field
+    // colour from and every one of them rendered in the brand ink, while the
+    // same paper in the feed, which arrives with an arXiv category, rendered in
+    // its own. `areaAccentForPaper` reads it when there is no arXiv id to go on.
+    primaryTopic: work.primary_topic || null,
   });
 }
 

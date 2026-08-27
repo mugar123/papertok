@@ -1,0 +1,306 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #1a5fd0; } a:hover { color: #12459b; }
+    * { box-sizing: border-box; }
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.5 'IBM Plex Mono', monospace; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+    .lead { font-size: 0.8125rem; line-height: 1.55; color: #5b6270; margin: 0; }
+
+    /* ── Los especímenes ── */
+    .demo { --k: 1; }
+    .tile { display: grid; place-items: center; border-radius: 3px; border: 1px solid #e6e7ea; background: #ffffff; color: #5b6270;
+      transition: background calc(320ms * var(--k)) cubic-bezier(0.4, 0, 1, 1), color calc(320ms * var(--k)) cubic-bezier(0.4, 0, 1, 1), border-color calc(320ms * var(--k)) cubic-bezier(0.4, 0, 1, 1); }
+    .demo.is-dark .tile { background: #111318; border-color: #2e323b; color: #a1a8b5;
+      transition: background calc(420ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1), color calc(420ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1), border-color calc(420ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1); }
+    .tile.small { width: 44px; height: 44px; border-radius: 4px; }
+    .tile.big { width: 108px; height: 108px; }
+    .tile.still, .demo.is-dark .tile.still { transition: none; }
+
+    .disc .rays, .disc .core, .disc .bite { transform-box: fill-box; transform-origin: center; }
+    .disc .rays { opacity: 1; transform: scale(1);
+      transition: opacity calc(180ms * var(--k)) ease calc(140ms * var(--k)), transform calc(220ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1) calc(120ms * var(--k)); }
+    .disc .core { transform: scale(0.5); fill-opacity: 0;
+      transition: transform calc(240ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1), fill-opacity calc(140ms * var(--k)) ease; }
+    .disc .bite { transform: translate(14px, -14px); transition: transform calc(200ms * var(--k)) ease; }
+    .is-dark .disc .rays { opacity: 0; transform: scale(0.35);
+      transition: opacity calc(140ms * var(--k)) ease, transform calc(140ms * var(--k)) cubic-bezier(0.4, 0, 1, 1); }
+    .is-dark .disc .core { transform: scale(1); fill-opacity: 1;
+      transition: transform calc(180ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1) calc(60ms * var(--k)), fill-opacity calc(140ms * var(--k)) ease calc(60ms * var(--k)); }
+    .is-dark .disc .bite { transform: translate(4px, -4px);
+      transition: transform calc(220ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1) calc(100ms * var(--k)); }
+    /* El espécimen de movimiento reducido no interpola: salta. */
+    .still .disc .rays, .still .disc .core, .still .disc .bite { transition: none !important; }
+
+    @keyframes press { 0%, 100% { transform: scale(1); } 6.7% { transform: scale(0.92); } 13.3% { transform: scale(0.92); } 20% { transform: scale(1); } }
+    .pressloop { animation: press calc(1800ms * var(--k)) ease-in-out infinite; }
+
+    /* ── La línea de tiempo ── */
+    .tl { position: relative; }
+    .tlrow { display: grid; grid-template-columns: 96px minmax(0, 1fr) 168px; align-items: center; gap: 14px; height: 30px; }
+    .track { position: relative; height: 100%; }
+    .bar { position: absolute; top: 9px; height: 12px; border-radius: 2px; }
+    .grid { position: absolute; inset: 0; }
+    .grid i { position: absolute; top: 0; bottom: 0; width: 1px; background: #e6e7ea; }
+    .ticks { display: grid; grid-template-columns: 96px minmax(0, 1fr) 168px; gap: 14px; }
+    .tickline { position: relative; height: 16px; }
+    .tickline span { position: absolute; top: 0; font: 400 0.625rem/1 'IBM Plex Mono', monospace; color: #8a919e; transform: translateX(-50%); }
+
+    /* ── Filas de la ficha ── */
+    .specrow { display: grid; grid-template-columns: 132px 128px minmax(0, 1fr); gap: 16px; align-items: baseline; padding: 11px 0; border-top: 1px solid #e6e7ea; }
+    .chip { display: inline-block; padding: 3px 6px; border: 1px solid #e6e7ea; border-radius: 2px; font: 400 0.625rem/1.2 'IBM Plex Mono', monospace; color: #5b6270; background: #fafafa; }
+    @media (prefers-reduced-motion: reduce) { .demo * { transition-duration: 1ms !important; animation: none !important; } }
+  </style>
+</helmet>
+
+<div class="{{rootClass}}" style="width: 900px; min-height: 1240px; background: #ffffff; padding: 40px 44px; --k: {{speedVar}}">
+
+  <span class="k" style="color: #8a919e">Animaciones · Opción A</span>
+  <h1 class="serif" style="font-size: 1.8rem; font-weight: 600; line-height: 1.15; margin: 8px 0 6px">Lo que pasa en 420 ms</h1>
+  <p class="lead" style="max-width: 68ch; margin-bottom: 26px">Una sola pulsación dispara seis cosas escalonadas, no seis efectos sueltos. El orden es el argumento: primero se hunde el botón, luego el sol recoge los rayos, el disco engorda y se entinta, el mordisco entra tarde, y la tinta cruza la página por debajo de todo. Ninguna dura más que el barrido, así que nada llega después de que la página ya haya cambiado.</p>
+
+  <!-- Especímenes vivos -->
+  <div style="display: flex; align-items: flex-end; gap: 26px; padding: 22px 24px; border: 1px solid #e6e7ea; border-radius: 3px; background: #fafafa; margin-bottom: 32px">
+    <div>
+      <div class="tile big">
+        <svg class="disc" width="58" height="58" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <g class="rays"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></g>
+          <mask id="an-a"><rect x="-6" y="-6" width="36" height="36" fill="#ffffff"></rect><circle class="bite" cx="12" cy="12" r="8" fill="#000000"></circle></mask>
+          <circle class="core" cx="12" cy="12" r="8" fill="currentColor" fill-opacity="0" vector-effect="non-scaling-stroke" mask="url(#an-a)"></circle>
+        </svg>
+      </div>
+      <p class="k" style="color: #8a919e; margin: 10px 0 0">3× · como se diseña</p>
+    </div>
+
+    <div>
+      <div class="tile big still">
+        <svg class="disc" width="58" height="58" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <g class="rays"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></g>
+          <mask id="an-b"><rect x="-6" y="-6" width="36" height="36" fill="#ffffff"></rect><circle class="bite" cx="12" cy="12" r="8" fill="#000000"></circle></mask>
+          <circle class="core" cx="12" cy="12" r="8" fill="currentColor" fill-opacity="0" vector-effect="non-scaling-stroke" mask="url(#an-b)"></circle>
+        </svg>
+      </div>
+      <p class="k" style="color: #8a919e; margin: 10px 0 0">Movimiento reducido</p>
+    </div>
+
+    <div>
+      <div class="tile small">
+        <span class="pressloop" style="display: grid; place-items: center; width: 32px; height: 32px; border-radius: 3px">
+          <svg class="disc" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+            <g class="rays"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></g>
+            <mask id="an-d"><rect x="-6" y="-6" width="36" height="36" fill="#ffffff"></rect><circle class="bite" cx="12" cy="12" r="8" fill="#000000"></circle></mask>
+            <circle class="core" cx="12" cy="12" r="8" fill="currentColor" fill-opacity="0" vector-effect="non-scaling-stroke" mask="url(#an-d)"></circle>
+          </svg>
+        </span>
+      </div>
+      <p class="k" style="color: #8a919e; margin: 10px 0 0">Pulsar · 120 ms</p>
+    </div>
+
+    <div>
+      <div class="tile small">
+        <svg class="disc" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <g class="rays"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></g>
+          <mask id="an-c"><rect x="-6" y="-6" width="36" height="36" fill="#ffffff"></rect><circle class="bite" cx="12" cy="12" r="8" fill="#000000"></circle></mask>
+          <circle class="core" cx="12" cy="12" r="8" fill="currentColor" fill-opacity="0" vector-effect="non-scaling-stroke" mask="url(#an-c)"></circle>
+        </svg>
+      </div>
+      <p class="k" style="color: #8a919e; margin: 10px 0 0">17 px · tamaño real</p>
+    </div>
+
+    <div style="margin-left: auto; text-align: right">
+      <p class="m" style="color: #111318; margin: 0">{{clock}}</p>
+      <p class="m" style="color: #8a919e; margin: 4px 0 0">se repite cada 1,8 s</p>
+    </div>
+  </div>
+
+  <!-- Línea de tiempo -->
+  <span class="k" style="color: #8a919e">Una pulsación, seis pistas</span>
+  <div class="tl" style="margin: 16px 0 30px">
+    <div class="tlrow">
+      <span class="m" style="color: #111318">pulsar</span>
+      <div class="track">
+        <div class="grid"><i style="left: 0"></i><i style="left: 21.7%"></i><i style="left: 43.5%"></i><i style="left: 65.2%"></i><i style="left: 87%"></i></div>
+        <div class="bar" style="left: 0; width: 26.1%; background: #a9aeba"></div>
+      </div>
+      <span class="m" style="color: #5b6270">120 ms · ease</span>
+    </div>
+    <div class="tlrow">
+      <span class="m" style="color: #111318">rayos</span>
+      <div class="track">
+        <div class="grid"><i style="left: 0"></i><i style="left: 21.7%"></i><i style="left: 43.5%"></i><i style="left: 65.2%"></i><i style="left: 87%"></i></div>
+        <div class="bar" style="left: 0; width: 30.4%; background: #111318"></div>
+      </div>
+      <span class="m" style="color: #5b6270">140 ms · salida seca</span>
+    </div>
+    <div class="tlrow">
+      <span class="m" style="color: #111318">disco</span>
+      <div class="track">
+        <div class="grid"><i style="left: 0"></i><i style="left: 21.7%"></i><i style="left: 43.5%"></i><i style="left: 65.2%"></i><i style="left: 87%"></i></div>
+        <div class="bar" style="left: 13%; width: 39.1%; background: #111318"></div>
+      </div>
+      <span class="m" style="color: #5b6270">180 ms · +60 · casa</span>
+    </div>
+    <div class="tlrow">
+      <span class="m" style="color: #111318">relleno</span>
+      <div class="track">
+        <div class="grid"><i style="left: 0"></i><i style="left: 21.7%"></i><i style="left: 43.5%"></i><i style="left: 65.2%"></i><i style="left: 87%"></i></div>
+        <div class="bar" style="left: 13%; width: 30.4%; background: #5b6270"></div>
+      </div>
+      <span class="m" style="color: #5b6270">140 ms · +60 · ease</span>
+    </div>
+    <div class="tlrow">
+      <span class="m" style="color: #111318">mordisco</span>
+      <div class="track">
+        <div class="grid"><i style="left: 0"></i><i style="left: 21.7%"></i><i style="left: 43.5%"></i><i style="left: 65.2%"></i><i style="left: 87%"></i></div>
+        <div class="bar" style="left: 21.7%; width: 47.8%; background: #111318"></div>
+      </div>
+      <span class="m" style="color: #5b6270">220 ms · +100 · casa</span>
+    </div>
+    <div class="tlrow">
+      <span class="m" style="color: #111318">barrido</span>
+      <div class="track">
+        <div class="grid"><i style="left: 0"></i><i style="left: 21.7%"></i><i style="left: 43.5%"></i><i style="left: 65.2%"></i><i style="left: 87%"></i></div>
+        <div class="bar" style="left: 0; width: 91.3%; background: #a9aeba"></div>
+      </div>
+      <span class="m" style="color: #5b6270">420 ms · casa</span>
+    </div>
+    <div class="ticks" style="margin-top: 4px">
+      <span></span>
+      <div class="tickline">
+        <span style="left: 0">0</span>
+        <span style="left: 21.7%">100</span>
+        <span style="left: 43.5%">200</span>
+        <span style="left: 65.2%">300</span>
+        <span style="left: 87%">400 ms</span>
+      </div>
+      <span></span>
+    </div>
+  </div>
+
+  <!-- Curvas -->
+  <span class="k" style="color: #8a919e">Las tres curvas, y ninguna más</span>
+  <div style="display: flex; gap: 22px; margin: 14px 0 30px">
+    <div style="display: flex; gap: 12px; align-items: flex-start">
+      <svg width="76" height="76" viewBox="0 0 76 76" style="border: 1px solid #e6e7ea; border-radius: 3px; background: #fafafa">
+        <path d="M0 76 C12.16 0 22.8 0 76 0" fill="none" stroke="#111318" stroke-width="1.5"></path>
+      </svg>
+      <div>
+        <p class="k" style="color: #111318; margin: 0 0 5px">La curva de la casa</p>
+        <p class="m" style="color: #8a919e; margin: 0">cubic-bezier(.16,&nbsp;1,&nbsp;.3,&nbsp;1)</p>
+        <p class="lead" style="margin-top: 6px; max-width: 24ch">Sale rápido y frena largo. Ya es <span class="m" style="color: #111318">--transition-spring</span>.</p>
+      </div>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: flex-start">
+      <svg width="76" height="76" viewBox="0 0 76 76" style="border: 1px solid #e6e7ea; border-radius: 3px; background: #fafafa">
+        <path d="M0 76 C19 68.4 19 0 76 0" fill="none" stroke="#111318" stroke-width="1.5"></path>
+      </svg>
+      <div>
+        <p class="k" style="color: #111318; margin: 0 0 5px">Los 120 de siempre</p>
+        <p class="m" style="color: #8a919e; margin: 0">ease</p>
+        <p class="lead" style="margin-top: 6px; max-width: 24ch">Fondo, color y pulsación: lo que ya usa <span class="m" style="color: #111318">--transition-fast</span>.</p>
+      </div>
+    </div>
+    <div style="display: flex; gap: 12px; align-items: flex-start">
+      <svg width="76" height="76" viewBox="0 0 76 76" style="border: 1px solid #e6e7ea; border-radius: 3px; background: #fafafa">
+        <path d="M0 76 C30.4 76 76 0 76 0" fill="none" stroke="#111318" stroke-width="1.5"></path>
+      </svg>
+      <div>
+        <p class="k" style="color: #111318; margin: 0 0 5px">Salida seca</p>
+        <p class="m" style="color: #8a919e; margin: 0">cubic-bezier(.4,&nbsp;0,&nbsp;1,&nbsp;1)</p>
+        <p class="lead" style="margin-top: 6px; max-width: 24ch">Sólo para lo que se va: rayos y retirada de la tinta.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ficha -->
+  <span class="k" style="color: #8a919e">La ficha</span>
+  <div style="margin-top: 12px">
+    <div class="specrow">
+      <span class="m" style="color: #111318">pulsar</span>
+      <span><span class="chip">120 ms · ease</span></span>
+      <p class="lead"><span style="color: #111318; font-weight: 600">scale(.92) al apretar.</span> El acuse de recibo: pasa entero antes de que el icono empiece a mutar, así que el dedo sabe que ha entrado aunque la página tarde.</p>
+    </div>
+    <div class="specrow">
+      <span class="m" style="color: #111318">rayos</span>
+      <span><span class="chip">140 ms · seca</span></span>
+      <p class="lead"><span style="color: #111318; font-weight: 600">opacity 1→0, scale 1→.35.</span> Los ocho rayos se recogen hacia el centro a la vez, sin escalonar entre ellos: ocho retardos distintos en 17&nbsp;px se leen como parpadeo, no como gesto.</p>
+    </div>
+    <div class="specrow">
+      <span class="m" style="color: #111318">disco</span>
+      <span><span class="chip">180 ms · +60 · casa</span></span>
+      <p class="lead"><span style="color: #111318; font-weight: 600">scale .5→1, r 4→8.</span> Entra cuando los rayos ya se están yendo. El trazo no engorda con él (<span class="m" style="color: #111318">vector-effect: non-scaling-stroke</span>): la luna pesa lo mismo que el sol.</p>
+    </div>
+    <div class="specrow">
+      <span class="m" style="color: #111318">relleno</span>
+      <span><span class="chip">140 ms · +60 · ease</span></span>
+      <p class="lead"><span style="color: #111318; font-weight: 600">fill-opacity 0→1.</span> El contorno se entinta. Es la mitad del argumento: en papel las cosas son de línea, en tinta son macizas.</p>
+    </div>
+    <div class="specrow">
+      <span class="m" style="color: #111318">mordisco</span>
+      <span><span class="chip">220 ms · +100 · casa</span></span>
+      <p class="lead"><span style="color: #111318; font-weight: 600">translate(14,−14) → (4,−4) sobre una máscara.</span> El círculo que recorta la luna entra por la esquina superior derecha y llega el último: es lo que convierte el disco en creciente, y conviene verlo llegar.</p>
+    </div>
+    <div class="specrow">
+      <span class="m" style="color: #111318">resalte</span>
+      <span><span class="chip">120 ms · ease</span></span>
+      <p class="lead"><span style="color: #111318; font-weight: 600">fondo <span class="m">--bg-glass</span>.</span> El mismo lavado que sus vecinos de la barra — no <span class="m" style="color: #111318">--bg-glass-hover</span>, que es el doble de fuerte — y detrás de <span class="m" style="color: #111318">@media (hover: hover)</span> para que en táctil no se quede pegado.</p>
+    </div>
+    <div class="specrow">
+      <span class="m" style="color: #111318">foco</span>
+      <span><span class="chip">0 ms</span></span>
+      <p class="lead"><span style="color: #111318; font-weight: 600">outline naranja, sin transición.</span> Un anillo que aparece con retraso es un anillo que se pierde al tabular rápido.</p>
+    </div>
+    <div class="specrow" style="border-bottom: 1px solid #e6e7ea">
+      <span class="m" style="color: #111318">barrido</span>
+      <span><span class="chip">420 / 320 ms · casa</span></span>
+      <p class="lead"><span style="color: #111318; font-weight: 600">La página entera.</span> Sale del propio botón y no vuelve por el mismo camino: entrar dura 420&nbsp;ms con la curva de la casa, volver 320&nbsp;ms con salida seca — la tinta se levanta antes de lo que tardó en llegar. Tiene su propio tablero.</p>
+    </div>
+  </div>
+
+  <!-- Movimiento reducido -->
+  <div style="display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 16px; margin-top: 26px; padding: 16px 18px; border: 1px solid #111318; border-radius: 3px">
+    <span class="k" style="color: #111318">Reducido</span>
+    <p class="lead">Con <span class="m" style="color: #111318">prefers-reduced-motion: reduce</span> no se atenúa el movimiento: se quita. El icono salta de sol a luna, los colores cambian en el mismo fotograma y el barrido no ocurre — el círculo pasa de 0 a 145&nbsp;% sin pasos intermedios. Lo que no se toca es el estado: el botón sigue diciendo dónde estás y el foco sigue siendo el mismo anillo naranja. Es la regla que ya aplica <span class="m" style="color: #111318">Navbar.css</span> a sus botones.</p>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"speed":{"editor":"range","default":1,"min":0.25,"max":2,"step":0.25,"unit":"×","section":"Movimiento"},"$preview":{"width":900,"height":1240}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { dark: false };
+  }
+
+  componentDidMount() {
+    this.timer = setInterval(() => {
+      this.setState((prev) => ({ dark: !prev.dark }));
+    }, 1800);
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+  }
+
+  renderVals() {
+    const dark = this.state.dark;
+    return {
+      rootClass: dark ? 'demo is-dark' : 'demo',
+      speedVar: String(this.props.speed ?? 1),
+      clock: dark ? 'de papel a tinta · 420 ms' : 'de tinta a papel · 320 ms',
+    };
+  }
+}
+</script>
+</body>
+</html>

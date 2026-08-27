@@ -46,7 +46,7 @@
   height: 26px;
   border-radius: var(--radius-sm);
   background: var(--brand-yellow);
-  color: var(--text-primary);
+  color: var(--text-on-brand);
   font: 600 0.6875rem/1 var(--font-mono);
   letter-spacing: 0.02em;
   box-shadow: 2px 2px 0 var(--text-primary);
@@ -80,7 +80,22 @@
   font-size: var(--fs-sm);
   cursor: pointer;
   text-align: left;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+/* Open: one step past hover, so the bar reads as the thing currently holding
+   the palette rather than as something merely pointed at. Clicking a bar and
+   having a sheet appear somewhere else with nothing connecting the two is what
+   made opening and closing the search feel like it had no movement at all —
+   the sheet animated, but the control that summoned it did not. The transition
+   above is the whole animation: it fades in on open and back out on close. */
+.navbar-search.is-open {
+  border-color: var(--border-ink);
+  background: var(--bg-primary);
+  color: var(--text-secondary);
 }
 
 .navbar-search span {
@@ -196,6 +211,13 @@
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
+/* The compact magnifier is the same control below the width where the bar
+   collapses, so it holds the same state. */
+.navbar-icon-btn--search-compact.is-open {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
 @media (hover: hover) and (pointer: fine) {
   .navbar-icon-btn:hover {
     background: var(--bg-glass);
@@ -264,88 +286,9 @@
   align-items: center;
   justify-content: center;
   background: var(--brand-yellow);
-  color: var(--text-primary);
+  color: var(--text-on-brand);
   font: 600 0.6875rem/1 var(--font-mono);
   border-color: var(--border-default);
-}
-
-/* ── Dropdown ── */
-.navbar-dropdown {
-  position: absolute;
-  top: calc(100% + var(--space-2));
-  right: 0;
-  width: 228px;
-  background: var(--bg-card);
-  border: 1px solid var(--border-default);
-  box-shadow: var(--shadow-lg);
-  border-radius: var(--radius-lg);
-  padding: var(--space-2);
-  animation: scaleIn 0.14s ease-out;
-  transform-origin: top right;
-  z-index: var(--z-modal);
-}
-
-.navbar-dropdown-header {
-  padding: var(--space-2) var(--space-3) var(--space-3);
-}
-
-.navbar-dropdown-name {
-  font-weight: var(--fw-semibold);
-  font-size: var(--fs-sm);
-  color: var(--text-primary);
-}
-
-.navbar-dropdown-email {
-  font-family: var(--font-mono);
-  font-size: 0.6875rem;
-  color: var(--text-tertiary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.navbar-dropdown-divider {
-  height: 1px;
-  background: var(--border-subtle);
-  margin: var(--space-2) 0;
-}
-
-.navbar-dropdown-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  color: var(--text-secondary);
-  text-align: left;
-  transition: background var(--transition-fast), color var(--transition-fast);
-}
-
-.navbar-dropdown-item svg {
-  flex: 0 0 auto;
-  color: var(--text-tertiary);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .navbar-dropdown-item:hover {
-    background: var(--bg-secondary);
-    color: var(--text-primary);
-  }
-
-  .navbar-dropdown-item:hover svg {
-    color: var(--text-primary);
-  }
-
-  .navbar-dropdown-item--danger:hover {
-    background: var(--tint-red-bg);
-    color: var(--tint-red-fg);
-  }
-
-  .navbar-dropdown-item--danger:hover svg {
-    color: var(--tint-red-fg);
-  }
 }
 
 /* ── Responsive ── */
@@ -423,7 +366,6 @@
   .navbar-link,
   .navbar-icon-btn,
   .navbar-avatar,
-  .navbar-dropdown,
   .navbar-search {
     transition: none;
     animation: none;

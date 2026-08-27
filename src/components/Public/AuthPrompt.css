@@ -53,7 +53,7 @@
   height: 30px;
   border-radius: var(--radius-sm);
   background: var(--brand-yellow);
-  color: var(--text-primary);
+  color: var(--text-on-brand);
   font: 600 0.8125rem/1 var(--font-mono);
   letter-spacing: 0.02em;
   box-shadow: 2px 2px 0 var(--text-primary);

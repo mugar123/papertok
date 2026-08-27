@@ -651,17 +651,6 @@
    with an identical body. It is gone; the global one is the one that runs. */
 
 /* ─── Overlay ─── */
-.search-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  z-index: 1100;
-  background: var(--bg-primary);
-  transform-origin: 50% 40%;
-}
-
 /* Hide scrollbar completely to make it look cleaner */
 .search-results::-webkit-scrollbar {
   display: none;

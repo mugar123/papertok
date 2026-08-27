@@ -23,7 +23,7 @@ import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
 import { isReadTimeout, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
-import { CATEGORIES } from '../../data/categories.js';
+import { areaAccentForPaper } from '../../utils/areaAccent.js';
 import { Button } from '../ui/button.jsx';
 import './CommentsSheet.css';
 
@@ -153,28 +153,6 @@ function initialOf(name) {
   return (name || '?').trim().charAt(0).toUpperCase() || '?';
 }
 
-/**
- * The paper's research field as a flat ink colour, mirroring the prefix match
- * PaperCard and EntityExplorer make, so the thread is tinted by the paper it
- * hangs off rather than by a decorative default. Returns a `var(--gradient-*)`
- * reference for `--area-accent`.
- */
-function getAreaGradient(paper) {
-  const candidates = [paper?.primaryCategory, ...(paper?.categories || [])]
-    .filter(value => typeof value === 'string' && value.trim());
-  for (const candidate of candidates) {
-    const category = candidate.trim();
-    if (CATEGORIES[category]?.gradient) return CATEGORIES[category].gradient;
-    const prefix = category.split('.')[0].split('-')[0];
-    for (const area of Object.values(CATEGORIES)) {
-      const subcategories = Object.keys(area.subcategories || {});
-      if (area.subcategories?.[category] || subcategories.some(key => key.startsWith(prefix))) {
-        return area.gradient || 'var(--gradient-brand)';
-      }
-    }
-  }
-  return 'var(--gradient-brand)';
-}
 
 /**
  * Turns a denied write into the honest sentence for it: the killswitch, the
@@ -336,7 +314,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   const composerInput = useRef(null);
   const dupReported = useRef(false);
   const viewerUid = ownProfile.uid || null;
-  const areaAccent = useMemo(() => getAreaGradient(paper), [paper]);
+  const areaAccent = useMemo(() => areaAccentForPaper(paper), [paper]);
 
   const slidesFromBottom = useMemo(
     () => typeof window !== 'undefined' && window.matchMedia('(max-width: 599px)').matches,

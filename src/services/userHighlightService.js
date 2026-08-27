@@ -65,8 +65,16 @@ export function buildHighlightsQuery(uid, paperId, overrides) {
 /**
  * A deterministic id means the same selection cannot be stored twice, and it
  * makes removal possible without a lookup.
+ *
+ * `kind` joins the fingerprint only when it is `ai`, and that asymmetry is
+ * deliberate. One passage can carry both your note and the model's answer, so
+ * the two must not collide — but folding `kind` in unconditionally would move
+ * the id of every highlight already stored, and a moved id is a duplicate: the
+ * save-time de-duplication would stop recognising the passage and the second
+ * highlight of it would land as a second document. Leaving `user` out keeps
+ * every existing id exactly where it is.
  */
-export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote }) {
+export function buildHighlightId({ paperId, level, language, sectionId, paragraphIndex, quote, kind }) {
   const fingerprint = [
     cleanText(paperId, 400),
     level,
@@ -74,7 +82,7 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
     cleanText(sectionId, 40),
     paragraphIndex,
     normalizeHighlightQuote(quote),
-  ].join('|');
+  ].concat(kind === 'ai' ? ['ai'] : []).join('|');
 
   // FNV-1a: short, stable, and enough to separate selections within one paper.
   let hash = 0x811c9dc5;
@@ -84,6 +92,13 @@ export function buildHighlightId({ paperId, level, language, sectionId, paragrap
   }
   return `h${hash.toString(16).padStart(8, '0')}${fingerprint.length.toString(36)}`;
 }
+
+/**
+ * How long a note may be before it stops being a note. The rules allow 2000; the
+ * rail shows this in a 320px column beside the paper, and anything past a few
+ * sentences belongs in the paper, not in its margin.
+ */
+export const MAX_NOTE_LENGTH = 1_200;
 
 export function normalizeUserHighlight(input) {
   const quote = normalizeHighlightQuote(input?.quote);
@@ -98,6 +113,16 @@ export function normalizeUserHighlight(input) {
   const paperId = cleanText(input?.paperId, 400);
   if (!sectionId || !paperId) return null;
 
+  // Three things live in this collection now, and `kind` is what tells them
+  // apart: a bare highlight, a highlight with your note on it, and an answer the
+  // model wrote about the passage. The first two are `user` — a note is a
+  // highlight that acquired words — and only the third is `ai`.
+  const kind = input?.kind === 'ai' ? 'ai' : 'user';
+  const note = cleanText(input?.note, MAX_NOTE_LENGTH);
+  // An AI annotation with no text is not an annotation: it is a mark claiming an
+  // answer that does not exist, and it would render as an empty card.
+  if (kind === 'ai' && !note) return null;
+
   return {
     paperId,
     level,
@@ -105,7 +130,8 @@ export function normalizeUserHighlight(input) {
     sectionId,
     paragraphIndex,
     quote: quote.slice(0, 400),
-    kind: 'user',
+    kind,
+    ...(note ? { note } : {}),
     paperTitle: cleanText(input?.paperTitle, 1_000),
   };
 }
@@ -167,11 +193,16 @@ export function indexHighlightsByParagraph(highlights = [], { level, language } 
     if (language && highlight.language !== language) continue;
     const key = `${highlight.sectionId}:${highlight.paragraphIndex}`;
     const bucket = index.get(key) || [];
+    // The mark's colour and the annotation's origin are the same fact, read off
+    // the same field: your pen is the saturated yellow, the model's is the ink
+    // rule. `source` stays separate because the render plan uses it to tell a
+    // stored mark from one the rewrite itself proposed.
+    const kind = highlight.kind === 'ai' ? 'ai' : 'user';
     bucket.push({
       id: highlight.id,
       quote: highlight.quote,
-      kind: 'user',
-      source: 'user',
+      kind,
+      source: kind,
     });
     index.set(key, bucket);
   }

@@ -1,0 +1,384 @@
+/* ============================================
+   Export — the card that hands the reading over
+
+   Grows out of the control panel, so it borrows the panel's surface: ink
+   border, near-square corners, a short drop. The preview inside it is a page
+   drawn small rather than an icon of one, which is why it carries real rules
+   and real marks at 3px.
+   ============================================ */
+
+.rd-export {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 108px;
+  margin-inline: auto;
+  width: 720px;
+  max-width: calc(100vw - var(--space-6));
+  z-index: 12055;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-xl);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  /* It rises out of the panel, not out of the middle of the screen. */
+  transform-origin: bottom center;
+}
+
+.rd-export-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 14px var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rd-export-title {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.rd-export-stamp {
+  font: 400 0.6875rem/1.5 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.rd-export-close {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rd-export-close:hover { background: var(--bg-secondary); color: var(--text-primary); }
+}
+
+.rd-export-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 236px;
+  gap: var(--space-6);
+  padding: var(--space-5);
+}
+
+.rd-export-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rd-export-label {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  padding: 0 var(--space-2) 4px;
+}
+
+.rd-export-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  width: 100%;
+  padding: 7px var(--space-2);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.rd-export-option:disabled { cursor: not-allowed; }
+.rd-export-option:disabled .rd-export-option-label { color: var(--text-tertiary); }
+
+@media (hover: hover) and (pointer: fine) {
+  .rd-export-option:not(:disabled):hover { background: var(--bg-secondary); }
+}
+
+.rd-export-box {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: transparent;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.rd-export-box[data-on] {
+  border-color: var(--border-ink);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+.rd-export-option-label {
+  display: block;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
+.rd-export-option-note {
+  display: block;
+  font: 400 0.6875rem/1.45 var(--font-mono);
+  color: var(--text-tertiary);
+  margin-top: 2px;
+}
+
+.rd-export-always {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  margin-top: var(--space-3);
+  padding: 10px 11px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.rd-export-always svg { flex: 0 0 auto; margin-top: 1px; }
+
+/* ── The page, drawn small ── */
+.rd-export-preview {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.rd-export-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 198px;
+  height: 281px;
+  padding: 22px 18px 14px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-md);
+  overflow: hidden;
+}
+
+.rd-export-sheet-title {
+  font-family: var(--font-serif);
+  font-size: 8px;
+  font-weight: var(--fw-semibold);
+  line-height: 1.15;
+  text-align: center;
+  margin-bottom: 4px;
+}
+
+.rd-export-sheet-byline {
+  font: 400 4px/1.3 var(--font-mono);
+  text-align: center;
+  color: var(--text-tertiary);
+  margin-bottom: 9px;
+}
+
+.rd-export-sheet-abstract {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 14px 9px;
+}
+
+.rd-export-sheet-rule {
+  height: 1px;
+  background: var(--border-default);
+  margin-bottom: 9px;
+}
+
+.rd-export-sheet-section {
+  font-family: var(--font-serif);
+  font-size: 4.5px;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  margin-bottom: 5px;
+}
+
+.rd-export-sheet-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 3.5px;
+}
+
+.rd-export-sheet i {
+  display: block;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--border-default);
+}
+
+.rd-export-sheet-abstract i,
+.rd-export-sheet-notes i {
+  background: var(--border-subtle);
+}
+
+.rd-export-sheet-marked {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.rd-export-sheet-marked i {
+  flex: 1;
+  /* Animated, because these are the switches the reader is flipping and the
+     preview is the only thing answering. */
+  transition: background var(--transition-base), box-shadow var(--transition-base);
+}
+
+.rd-export-sheet-marked i[data-on] { background: var(--brand-yellow); }
+.rd-export-sheet-marked i[data-ai] {
+  background: var(--bg-secondary);
+  box-shadow: inset 0 -1px 0 var(--accent-primary);
+}
+
+/* The footnote marker: a number is illegible at this size, an ink tick is not. */
+.rd-export-sheet-marked b {
+  flex: 0 0 auto;
+  width: 3px;
+  height: 3px;
+  background: var(--accent-primary);
+}
+
+.rd-export-sheet-gap { flex: 1; min-height: 8px; }
+
+.rd-export-sheet-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 2.5px;
+  padding-top: 10px;
+}
+
+.rd-export-sheet-notes i { height: 2.5px; }
+
+.rd-export-sheet-fnrule {
+  width: 42px;
+  height: 1px;
+  background: var(--accent-primary);
+  margin-bottom: 2px;
+}
+
+.rd-export-preview-note {
+  font: 400 0.6875rem/1.5 var(--font-mono);
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* ── Foot ── */
+.rd-export-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 14px var(--space-5);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+}
+
+.rd-export-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font: 400 0.6875rem/1.5 var(--font-mono);
+  color: var(--text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rd-export-file svg { flex: 0 0 auto; }
+
+.rd-export-cancel {
+  margin-left: auto;
+  flex: 0 0 auto;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+
+.rd-export-go {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 16px;
+  border: 1px solid var(--border-ink);
+  border-radius: var(--radius-md);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.rd-export-go:disabled { opacity: 0.5; cursor: not-allowed; }
+
+@media (hover: hover) and (pointer: fine) {
+  .rd-export-go:not(:disabled):hover { background: var(--accent-primary-hover); }
+}
+
+/* ── Narrow: the card becomes the sheet the annotations already use ── */
+@media (max-width: 780px) {
+  .rd-export {
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    max-width: none;
+    border: none;
+    border-top: 1px solid var(--border-default);
+    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+    box-shadow: 0 -8px 24px rgba(17, 19, 24, 0.08);
+  }
+
+  /* No room for a page beside the choices, and the choices are the decision. */
+  .rd-export-body {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+
+  .rd-export-preview { display: none; }
+
+  .rd-export-option { min-height: 46px; align-items: center; }
+
+  .rd-export-foot { flex-wrap: wrap; }
+
+  .rd-export-file { flex: 1 0 100%; }
+
+  .rd-export-cancel,
+  .rd-export-go { flex: 1; justify-content: center; min-height: 46px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rd-export-sheet-marked i,
+  .rd-export-box,
+  .rd-export-go {
+    transition: none;
+  }
+}

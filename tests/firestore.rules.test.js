@@ -21,6 +21,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import { toIndexedName } from '../src/services/userSearchService.js';
 import { PUBLIC_LIST_LIMITS } from '../src/services/publicListPayload.js';
+import { buildSavedPaperPayload } from '../src/utils/savedPaperPayload.js';
 import {
   deleteDoc,
   deleteField,
@@ -2736,6 +2737,38 @@ test('P19: kind, note and paperTitle are optional, and bounded when present', as
   await assertFails(setDoc(highlightRef(db, 'h7'), highlightBody({ paperTitle: 'a'.repeat(1001) })));
 });
 
+test('P20: an annotation the model wrote is storable, and only from the known kinds', async () => {
+  // `kind` is what tells the three things in this collection apart: a bare
+  // highlight, a highlight you wrote on, and an answer the model wrote about the
+  // passage. Only the last is 'ai', and the reader renders its mark and its rail
+  // card from that one field — so a rule that refuses it does not degrade the
+  // feature, it deletes it silently at the write.
+  await reset();
+  const db = asAlice();
+  await assertSucceeds(setDoc(highlightRef(db, 'a1'), highlightBody({
+    kind: 'ai',
+    note: 'Antes medías un tiempo y salía un valor; ahora sale un abanico.',
+  })));
+  // The allowlist did not widen into "anything goes".
+  await assertFails(setDoc(highlightRef(db, 'a2'), highlightBody({ kind: 'assistant' })));
+  await assertFails(setDoc(highlightRef(db, 'a3'), highlightBody({ kind: 'AI' })));
+});
+
+test('P20: an AI annotation at full length is still a clean allow', async () => {
+  // The same expression-budget guard as the highlight below, for the shape the
+  // annotation route actually writes: a 'ai' kind with a note on it.
+  await reset();
+  await assertSucceeds(setDoc(highlightRef(asAlice()), highlightBody({
+    paperId: 'a'.repeat(400),
+    sectionId: 'a'.repeat(40),
+    quote: 'a'.repeat(400),
+    note: 'a'.repeat(2000),
+    paperTitle: 'a'.repeat(1000),
+    paragraphIndex: 100,
+    kind: 'ai',
+  })));
+});
+
 test('P19: the heaviest highlight a reader can write is a clean allow', async () => {
   // The rules engine stops at 1000 evaluated expressions per request, and it
   // fails with an error rather than a denial — see tests/README.md, and the
@@ -2752,4 +2785,65 @@ test('P19: the heaviest highlight a reader can write is a clean allow', async ()
     paragraphIndex: 100,
     kind: 'caveat',
   })));
+});
+
+/* --- The payload the save modal actually sends ---------------------------- */
+
+/**
+ * A rule and the client that feeds it drifted apart in silence, and the cost
+ * was permanent.
+ *
+ * The rules accept an optional field that is absent and refuse one that is
+ * `null`, except `doi` and `landingPageUrl` which carry an explicit escape. The
+ * modal wrote `null` for every absent field — deliberately, because Firestore
+ * rejects `undefined` — so a paper with no abstract or no authors had its write
+ * REFUSED. And the modal added the id to the list first, so the refusal left a
+ * list entry with no document behind it: a row rendering as a bare arXiv id,
+ * for good.
+ *
+ * Nothing could have caught that from either side alone. So this checks the
+ * two together, on the shapes that actually broke.
+ */
+test('savedPapers accepts what buildSavedPaperPayload sends, for a paper missing everything optional', async () => {
+  const db = asAlice();
+  const savedAt = new Date().toISOString();
+
+  const papers = [
+    ['the full article', {
+      id: '2608.20113', title: 'A metallicity sweet spot for disc fragmentation',
+      authors: ['Ethan J. Carter'], primaryCategory: 'astro-ph.EP',
+      published: '2026-08-01', arxivId: '2608.20113',
+      summary: 'Disc fragmentation depends on metallicity.',
+      doi: '10.48550/arXiv.2608.20113', landingPageUrl: 'https://arxiv.org/abs/2608.20113',
+    }],
+    ['no abstract', { id: '2608.20071', title: 'Inflation on the lattice', authors: ['Fei-Yu Chen'] }],
+    ['no authors', { id: '2608.20072', title: 'Pomeranchuk instability', summary: 'Some text.' }],
+    ['nothing but an id', { id: '2608.20073' }],
+  ];
+
+  for (const [label, paper] of papers) {
+    await assertSucceeds(
+      setDoc(
+        doc(db, 'users', ALICE, 'savedPapers', paper.id),
+        buildSavedPaperPayload(paper, savedAt),
+      ),
+      `${label}: the rules must accept the payload the modal sends`,
+    );
+  }
+});
+
+test('the shape the modal used to send is still refused, so the fix is load-bearing', async () => {
+  const db = asAlice();
+  // Exactly what the old code built for a paper with no abstract.
+  await assertFails(setDoc(doc(db, 'users', ALICE, 'savedPapers', '2608.99999'), {
+    title: 'Inflation on the lattice',
+    authors: ['Fei-Yu Chen'],
+    primaryCategory: 'gr-qc',
+    published: '2026-08-01',
+    arxivId: '2608.99999',
+    summary: null,
+    doi: null,
+    landingPageUrl: null,
+    savedAt: new Date().toISOString(),
+  }));
 });

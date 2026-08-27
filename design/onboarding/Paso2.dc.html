@@ -1,0 +1,256 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #111318; text-decoration: none; }
+    a:hover { color: #2b2f38; }
+    button { font-family: inherit; border: none; background: none; cursor: pointer; }
+
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .k-sm { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+
+    .rail { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .seg { display: flex; align-items: baseline; gap: 8px; padding: 0 0 9px; border-bottom: 3px solid #e6e7ea; color: #8a919e; }
+    .seg .n { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; }
+    .seg .t { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .seg.on { border-bottom-color: var(--hl, #ffd21e); color: #111318; }
+    .seg.done { border-bottom-color: #111318; color: #5b6270; }
+
+    /* ── Sección de área: la cabecera se apoya en una regla del color del campo ── */
+    .sect-h { display: flex; align-items: center; gap: 10px; padding: 0 0 10px; border-bottom: 1px solid color-mix(in srgb, var(--fa, #d3d5db) 30%, #ffffff); }
+    .sect-ic { display: grid; place-items: center; color: var(--fa, #8a919e); }
+    .sect-n { font-size: 1rem; font-weight: 600; letter-spacing: -0.01em; color: #111318; }
+    .sect-c { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #5b6270; font-variant-numeric: tabular-nums; }
+
+    /* "Seleccionar todo" era una píldora cian del tema oscuro; aquí es un enlace en voz de máquina. */
+    .all { margin-left: auto; padding: 5px 8px; border-radius: 2px; font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #5b6270; transition: background 120ms ease, color 120ms ease; }
+    .all:hover { background: #f7f7f8; color: #111318; }
+    .all.on { color: #111318; }
+
+    /* ── Chip: casi cuadrado, como el resto del sistema ── */
+    .chips { display: flex; flex-wrap: wrap; gap: 7px; padding-top: 14px; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 7px;
+      height: 32px; padding: 0 11px;
+      border: 1px solid #e6e7ea; border-radius: 3px;
+      background: #ffffff; color: #5b6270;
+      font-size: 0.8125rem; font-weight: 500; line-height: 1; white-space: nowrap;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+    .chip:hover { border-color: #d3d5db; background: #fafafa; color: #111318; }
+    .chip .dot { flex: 0 0 auto; width: 5px; height: 5px; border-radius: 9999px; background: var(--fa, #d3d5db); opacity: 0.55; transition: background 120ms ease, opacity 120ms ease; }
+    .chip.on { border-color: #111318; background: #111318; color: #ffffff; }
+    .chip.on .dot { background: var(--hl, #ffd21e); opacity: 1; }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 18px; border-radius: 3px; font-size: 0.875rem; font-weight: 600; white-space: nowrap; transition: background 120ms ease, border-color 120ms ease, color 120ms ease; }
+    .btn-ink { border: 1px solid #111318; background: #111318; color: #ffffff; }
+    .btn-ink:hover { background: #2b2f38; border-color: #2b2f38; }
+    .btn-off { border: 1px solid #e6e7ea; background: #f7f7f8; color: #a9aeba; cursor: not-allowed; }
+    .btn-ghost { border: 1px solid transparent; background: none; color: #5b6270; }
+    .btn-ghost:hover { background: #f7f7f8; color: #111318; }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 1280px; height: 1140px; background: #ffffff; overflow: hidden; --hl: {{ hl }}">
+
+  <!-- ═══ Cabecera ═══ -->
+  <div style="display: flex; align-items: center; height: 57px; padding: 0 24px; border-bottom: 1px solid #e6e7ea; background: #ffffff">
+    <div style="display: flex; align-items: center; gap: 8px">
+      <div style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 2px; background: #ffd21e; color: #111318; font: 600 0.8125rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.02em; box-shadow: 2px 2px 0 #111318">P</div>
+      <div style="font-size: 1rem; font-weight: 700; letter-spacing: -0.02em; color: #111318">Paper<span style="box-shadow: inset 0 -0.32em 0 var(--hl, #ffd21e)">Tok</span></div>
+    </div>
+    <div class="k" style="margin-left: auto; color: #8a919e">Paso <span class="mono" style="color: #111318">02</span> / 03</div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; padding: 34px 64px 0">
+
+    <div class="rail" style="margin-bottom: 34px">
+      <div class="seg done"><span class="n">01</span><span class="t">Áreas</span></div>
+      <div class="seg on"><span class="n">02</span><span class="t">Categorías</span></div>
+      <div class="seg"><span class="n">03</span><span class="t">Tu feed</span></div>
+    </div>
+
+    <div style="display: flex; align-items: flex-end; gap: 40px; margin-bottom: 30px">
+      <div style="flex: 1 1 auto; min-width: 0">
+        <div class="k" style="color: #8a919e; margin-bottom: 11px">3 áreas · 62 categorías disponibles</div>
+        <h1 class="serif" style="margin: 0; font-size: 2rem; font-weight: 600; line-height: 1.12; letter-spacing: -0.02em; color: #111318">Afina tus intereses</h1>
+        <p style="margin: 11px 0 0; max-width: 62ch; font-size: 0.875rem; line-height: 1.6; color: #5b6270; text-wrap: pretty">Solo entrarán en tu feed las categorías que marques aquí. Cuantas menos elijas, más ajustado será — y siempre puedes ampliar después.</p>
+      </div>
+      <div style="flex: 0 0 auto; text-align: right; padding-bottom: 4px">
+        <div class="mono" style="font-size: 1.5rem; font-weight: 600; line-height: 1; letter-spacing: -0.02em; color: #111318">{{ tot.n }}<span style="color: #d3d5db">/62</span></div>
+        <div class="k-sm" style="margin-top: 7px; color: #8a919e">Categorías marcadas</div>
+      </div>
+    </div>
+
+    <!-- ═══ Secciones ═══ -->
+    <div style="display: flex; flex-direction: column; gap: 30px">
+
+      <!-- Física -->
+      <div style="--fa: #4f46e5">
+        <div class="sect-h">
+          <span class="sect-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z"/><path d="M15.7 15.7c4.52-4.54 6.54-9.87 4.5-11.9-2.03-2.04-7.36-.02-11.9 4.5-4.52 4.54-6.54 9.87-4.5 11.9 2.03 2.04 7.36.02 11.9-4.5Z"/></svg></span>
+          <span class="sect-n">Física</span>
+          <span class="sect-c">{{ s1.count }} / {{ s1.total }}</span>
+          <button class="all {{ s1.allCls }}" onClick="{{ s1.toggleAll }}">{{ s1.allLabel }}</button>
+        </div>
+        <div class="chips">
+          <sc-for list="{{ s1.chips }}" as="c" hint-placeholder-count="26">
+            <button class="chip {{ c.cls }}" onClick="{{ c.pick }}"><span class="dot"></span>{{ c.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- Ciencias de la Computación -->
+      <div style="--fa: #c2410c">
+        <div class="sect-h">
+          <span class="sect-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></span>
+          <span class="sect-n">Ciencias de la Computación</span>
+          <span class="sect-c">{{ s2.count }} / {{ s2.total }}</span>
+          <button class="all {{ s2.allCls }}" onClick="{{ s2.toggleAll }}">{{ s2.allLabel }}</button>
+        </div>
+        <div class="chips">
+          <sc-for list="{{ s2.chips }}" as="c" hint-placeholder-count="21">
+            <button class="chip {{ c.cls }}" onClick="{{ c.pick }}"><span class="dot"></span>{{ c.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+
+      <!-- Biología -->
+      <div style="--fa: #15803d">
+        <div class="sect-h">
+          <span class="sect-ic"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10 16 1.5 1.5"/><path d="m14 8-1.5-1.5"/><path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993"/><path d="m16.5 10.5 1 1"/><path d="m17 6-2.891-2.891"/><path d="M2 15c6.667-6 13.333 0 20-6"/><path d="m20 9 .891.891"/><path d="M3.109 14.109 4 15"/><path d="m6.5 12.5 1 1"/><path d="m7 18 2.891 2.891"/><path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993"/></svg></span>
+          <span class="sect-n">Biología</span>
+          <span class="sect-c">{{ s3.count }} / {{ s3.total }}</span>
+          <button class="all {{ s3.allCls }}" onClick="{{ s3.toggleAll }}">{{ s3.allLabel }}</button>
+        </div>
+        <div class="chips">
+          <sc-for list="{{ s3.chips }}" as="c" hint-placeholder-count="15">
+            <button class="chip {{ c.cls }}" onClick="{{ c.pick }}"><span class="dot"></span>{{ c.label }}</button>
+          </sc-for>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ Barra inferior ═══ -->
+  <div style="position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 24px; height: 72px; padding: 0 64px; border-top: 1px solid #d3d5db; background: #ffffff">
+    <div style="flex: 1 1 auto; min-width: 0">
+      <div class="mono" style="font-size: 0.8125rem; font-weight: 500; color: {{ tot.color }}">{{ tot.tally }}</div>
+      <div style="margin-top: 4px; font-size: 0.75rem; line-height: 1.4; color: #5b6270">{{ tot.hint }}</div>
+    </div>
+    <button class="btn btn-ghost" style="flex: 0 0 auto">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+      Atrás
+    </button>
+    <button class="btn {{ tot.btnCls }}" style="flex: 0 0 auto">
+      Siguiente
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+    </button>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{
+  "resalte": { "editor": "color", "default": "#ffd21e", "options": ["#ffd21e", "#ff9d00", "#c9e8ff", "#ffe0e6"], "section": "Marca" },
+  "$preview": { "width": 1280, "height": 1140 }
+}'>
+const PHYSICS = [
+  'Física Cuántica', 'Superconductividad', 'Electrones Correlacionados', 'Ciencia de Materiales',
+  'Sistemas Mesoscópicos', 'Mecánica Estadística', 'Materia Blanda', 'Gases Cuánticos',
+  'Altas Energías (Teoría)', 'Altas Energías (Fenomenología)', 'Altas Energías (Experimental)',
+  'Cosmología', 'Astrofísica Galáctica', 'Física Solar y Estelar', 'Fenómenos de Alta Energía',
+  'Ciencias Planetarias', 'Relatividad General', 'Física Matemática', 'Física Nuclear (Teoría)',
+  'Física Nuclear (Experimental)', 'Óptica', 'Física Atómica', 'Dinámica de Fluidos',
+  'Física de Plasmas', 'Biofísica', 'Física Computacional',
+];
+
+const CS = [
+  'Inteligencia Artificial', 'Machine Learning', 'Visión por Computador',
+  'Procesamiento del Lenguaje Natural', 'Robótica', 'Criptografía y Seguridad',
+  'Ingeniería de Software', 'Estructuras de Datos y Algoritmos', 'Bases de Datos',
+  'Computación Distribuida', 'Computación Neuronal y Evolutiva', 'Recuperación de Información',
+  'Interacción Humano-Computador', 'Lenguajes de Programación', 'Teoría de Juegos',
+  'Redes Sociales e Información', 'Redes y Arquitectura de Internet', 'Gráficos', 'Sonido',
+  'Multimedia', 'Sistemas y Control',
+];
+
+const BIO = [
+  'Genética y Herencia', 'Biología Molecular', 'Biología Celular',
+  'Neurociencia y Neurobiología', 'Ecología', 'Evolución y Dinámica de Poblaciones',
+  'Zoología', 'Botánica y Ciencias de las Plantas', 'Microbiología', 'Inmunología Biológica',
+  'Bioinformática y Biología Computacional', 'Fisiología', 'Bioquímica', 'Biología Marina',
+  'Biotecnología',
+];
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      physics: [0, 3, 5, 11, 12, 15, 16, 20, 22],
+      cs: [0, 1, 2, 3, 4, 5, 6, 7, 10, 11, 12, 15],
+      bio: [0, 1, 3, 4, 8, 10],
+    };
+  }
+
+  section(key, labels) {
+    const on = this.state[key] || [];
+    const set = new Set(on);
+    const allOn = on.length === labels.length;
+    return {
+      count: on.length,
+      total: labels.length,
+      allCls: allOn ? 'on' : '',
+      allLabel: allOn ? 'Quitar todo' : 'Seleccionar todo',
+      toggleAll: () => this.setState({ [key]: allOn ? [] : labels.map((_, i) => i) }),
+      chips: labels.map((label, i) => ({
+        label,
+        cls: set.has(i) ? 'on' : '',
+        pick: () => this.setState((s) => {
+          const cur = new Set(s[key] || []);
+          if (cur.has(i)) cur.delete(i); else cur.add(i);
+          return { [key]: Array.from(cur).sort((a, b) => a - b) };
+        }),
+      })),
+    };
+  }
+
+  renderVals() {
+    const s1 = this.section('physics', PHYSICS);
+    const s2 = this.section('cs', CS);
+    const s3 = this.section('bio', BIO);
+    const n = s1.count + s2.count + s3.count;
+    const areas = [s1, s2, s3].filter((s) => s.count > 0).length;
+
+    return {
+      s1, s2, s3,
+      tot: {
+        n,
+        tally: n > 0
+          ? `${n} ${n === 1 ? 'categoría' : 'categorías'} · ${areas} de 3 áreas`
+          : 'Ninguna categoría marcada',
+        color: n > 0 ? '#111318' : '#8a919e',
+        hint: n > 0
+          ? 'Con esto ya podemos armar tu feed.'
+          : 'Marca al menos una categoría para continuar.',
+        btnCls: n > 0 ? 'btn-ink' : 'btn-off',
+      },
+      hl: this.props.resalte ?? '#ffd21e',
+    };
+  }
+}
+</script>
+</body>
+</html>

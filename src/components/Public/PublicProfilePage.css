@@ -1,3 +1,21 @@
+/* ============================================
+   Perfil — «la ficha»
+
+   The last screen still speaking the dark system. What was here before was a
+   page of pills: twelve `--radius-full` corners on things that are not round,
+   grey `--bg-secondary` cards that lifted 2px and dropped a shadow on hover,
+   and not one line set in the serif or the mono voice — the person's name, the
+   bio, every count and every kicker were all the same UI sans at the same
+   weight.
+
+   Direction A puts it in the language the rest of the app already speaks: the
+   name is a serif nameplate over a 3px double rule, counts are mono in the
+   ruled grid the Explorer's entity header uses, the active section carries the
+   brand yellow (rule 3), a list wears its owner's `--list-accent` exactly as it
+   does in Mis listas, and every paper row carries its own field down its inner
+   edge as `--area-accent`. Structure is hairline rules; nothing floats.
+   ============================================ */
+
 .public-profile-page {
   min-height: 100vh;
   min-height: 100dvh;
@@ -7,42 +25,75 @@
 
 .public-profile-shell {
   position: relative;
-  max-width: 760px;
+  /* Wider than the 760 it was: the list grid is three tiles at the width the
+     lists page already uses, and a 760 column could only ever show two. */
+  max-width: 1040px;
   margin: 0 auto;
-  padding: clamp(24px, 5vw, 56px) clamp(20px, 5vw, 40px) 64px;
+  padding: clamp(24px, 5vw, 44px) clamp(20px, 5vw, 40px) var(--space-16);
 }
 
 /* With the app chrome (Navbar) present — one's own /profile, or any profile
    opened while signed in — the shell clears the fixed bar; the signed-out
-   shareable page keeps its own breathing room instead. The gap is deliberately
-   larger than a bare clearance: the header crowded against the bar read as
-   cramped, so the whole column starts well below it. */
+   shareable page keeps its own breathing room instead. */
 .public-profile-page--app .public-profile-shell {
-  padding-top: calc(var(--nav-height) + var(--space-16));
+  padding-top: calc(var(--nav-height) + var(--space-10));
 }
 
 @media (max-width: 768px) {
   .public-profile-page--app .public-profile-shell {
-    padding-top: calc(var(--nav-height-mobile) + var(--space-10));
+    padding-top: calc(var(--nav-height-mobile) + var(--space-6));
   }
 }
 
-.public-profile-brand {
-  margin: 0 0 var(--space-6);
-  color: var(--text-tertiary);
-  font-size: var(--fs-xs);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-/* --- Header ---------------------------------------------------------------- */
+/* ─── Masthead ─── */
 
 .public-profile-header {
-  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The kicker names the page and the gear closes the row — a utility icon
+   behind a hairline, the way rule 6 groups them everywhere else. */
+.profile-masthead-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-6);
+  margin-bottom: var(--space-4);
+}
+
+.profile-kicker {
+  margin: 0;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.profile-gear {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-left: 1px solid var(--border-subtle);
+  border-radius: 0;
+  padding-left: var(--space-3);
+  box-sizing: content-box;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+.profile-masthead {
   display: flex;
   align-items: flex-start;
-  gap: clamp(var(--space-5), 4vw, var(--space-8));
+  gap: clamp(var(--space-5), 3vw, var(--space-8));
   padding-bottom: var(--space-6);
+  /* The nameplate rule. Same gesture as Mis listas and the Report. */
+  border-bottom: 3px double var(--border-ink);
 }
 
 .public-profile-avatar {
@@ -53,7 +104,6 @@
   overflow: hidden;
   background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
-  box-shadow: var(--shadow-md);
 }
 
 .public-profile-avatar img {
@@ -63,7 +113,8 @@
   display: block;
 }
 
-/* Matches the avatar the rest of the app falls back to. */
+/* The initial comes from the display name, which is public: the email must
+   never reach this page. Mono, because it stands in for data, not for a face. */
 .public-profile-avatar-fallback {
   width: 100%;
   height: 100%;
@@ -71,10 +122,10 @@
   align-items: center;
   justify-content: center;
   background: var(--gradient-brand);
-  color: #fff;
-  font-family: var(--font-heading);
+  color: var(--text-inverse);
+  font-family: var(--font-mono);
   font-size: var(--fs-3xl);
-  font-weight: var(--fw-bold);
+  font-weight: var(--fw-semibold);
   line-height: 1;
 }
 
@@ -83,227 +134,156 @@
   flex: 1;
 }
 
+/* Prose voice: a person's name is read, not parsed. */
 .public-profile-identity h1 {
-  margin: 0;
   display: flex;
   align-items: center;
   gap: var(--space-2);
-  font-family: var(--font-heading);
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-bold);
-  line-height: var(--lh-tight);
+  margin: 0;
+  padding-top: 0.025em;
+  font-family: var(--font-serif);
+  font-size: var(--fs-4xl);
+  font-weight: var(--fw-semibold);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
   overflow-wrap: anywhere;
 }
 
 .public-profile-verified {
   display: inline-flex;
+  flex: 0 0 auto;
   color: var(--accent-primary);
 }
 
 .public-profile-handle {
-  margin: var(--space-1) 0 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: var(--space-2) 0 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
   color: var(--text-tertiary);
-  font-size: var(--fs-sm);
+}
+
+/* A separator that belongs to the stretch of metadata, not to the words. */
+.profile-joined::before {
+  content: '·';
+  margin-right: var(--space-2);
+  color: var(--border-default);
+}
+
+.profile-joined {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
 }
 
 .public-profile-bio {
+  max-width: 62ch;
   margin: var(--space-3) 0 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  line-height: 1.6;
   color: var(--text-secondary);
-  font-size: var(--fs-base);
-  line-height: 1.55;
   white-space: pre-line;
   overflow-wrap: anywhere;
 }
 
-/* --- Counters ---------------------------------------------------------------
-   Users only: Following and Followers come from the public follow graph, so
-   a visitor sees the same real numbers the owner does. Likes is owner-only
-   and simply absent from a visitor's row — no dash placeholders. */
-
-.profile-stats {
-  list-style: none;
-  display: flex;
-  gap: var(--space-2);
-  margin: var(--space-4) 0 0;
-  padding: 0;
-}
-
-.profile-stat {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-2);
-  min-height: 36px;
-  margin: 0;
-  padding: var(--space-1) var(--space-3);
-  border: none;
-  border-radius: var(--radius-full);
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  transition: background var(--transition-fast);
-}
-
-.profile-stats li:first-child .profile-stat {
-  padding-left: 0;
-}
-
-button.profile-stat {
-  cursor: pointer;
-}
-
-button.profile-stat:disabled {
-  cursor: default;
-}
-
-button.profile-stat:hover:not(:disabled),
-button.profile-stat:focus-visible:not(:disabled) {
-  background: var(--bg-glass);
-}
-
-.profile-stats li:first-child .profile-stat:hover:not(:disabled),
-.profile-stats li:first-child .profile-stat:focus-visible:not(:disabled) {
-  padding-left: var(--space-3);
-  margin-left: calc(-1 * var(--space-3));
-}
-
-.profile-stat strong {
-  font-family: var(--font-heading);
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
-  line-height: var(--lh-tight);
-}
-
-.profile-stat span {
-  color: var(--text-tertiary);
-  font-size: var(--fs-xs);
-}
-
-/* The counter that has not answered yet. Held back like every other placeholder
-   in the app (see .profile-loading): the two aggregations behind these numbers
-   usually land well inside 320ms, and announcing a wait that is already over is
-   what made the header feel like it was catching up with itself. The slot keeps
-   its space throughout, so the number lands without moving anything. */
-.profile-stat-pending {
-  display: inline-block;
-  opacity: 0;
-  animation: profile-stat-pending-reveal 140ms ease-out 320ms forwards;
-}
-
-@keyframes profile-stat-pending-reveal {
-  to { opacity: 1; }
-}
-
-/* --- Header actions ---------------------------------------------------------
+/* ─── Header actions ───
    One slot, whoever is looking: the owner gets Edit + the followed-content
-   chip, a visitor gets Follow. The header keeps one shape. */
+   door, a visitor gets Follow. Corners come from the button component. */
 
 .profile-owner-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-3);
-  margin-top: var(--space-4);
+  margin-top: var(--space-5);
 }
 
 .profile-edit-button {
   display: inline-flex;
   align-items: center;
-  min-height: 38px;
-  padding: 0 var(--space-5);
+  gap: var(--space-2);
+  height: 40px;
+  padding: 0 var(--space-4);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   color: var(--text-primary);
+  font-family: var(--font-body);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   cursor: pointer;
-  transition: border-color var(--transition-fast);
-}
-
-.profile-edit-button:hover,
-.profile-edit-button:focus-visible {
-  border-color: var(--border-strong);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 /* The other graph: entities followed for the feed (authors, topics,
-   institutions — private). Its own labeled door, so it never shares the word
-   "Following" with the user counter again. */
+   institutions — private). Its own labelled door, so it never shares the word
+   "Following" with the user counter. */
 .profile-content-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 38px;
-  padding: 0 var(--space-4);
+  height: 32px;
+  padding: 0 var(--space-3);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-secondary);
   font-family: var(--font-body);
-  font-size: var(--fs-xs);
+  font-size: 0.8125rem;
   font-weight: var(--fw-semibold);
   cursor: pointer;
   transition: border-color var(--transition-fast), color var(--transition-fast);
 }
 
 .profile-content-chip strong {
-  color: var(--text-primary);
-  font-weight: var(--fw-bold);
-}
-
-.profile-content-chip:hover,
-.profile-content-chip:focus-visible {
-  border-color: var(--border-strong);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
   color: var(--text-primary);
 }
 
-/* Solid accent, not the brand gradient: gradients are reserved for brand marks
-   (logo, avatar fallbacks); action buttons speak one color. The min-width keeps
-   the pill from resizing as the label cycles Follow → Following → Unfollow. */
+/* The one primary action on a visitor's page, so the one filled surface.
+   The min-width keeps it from resizing as the label cycles. */
 .profile-follow-button {
   display: inline-flex;
   align-items: center;
-  gap: var(--space-2);
-  min-height: 38px;
-  min-width: 132px;
   justify-content: center;
+  gap: var(--space-2);
+  min-width: 148px;
+  height: 40px;
   padding: 0 var(--space-5);
-  border: 1px solid transparent;
-  border-radius: var(--radius-full);
+  border: 1px solid var(--accent-primary);
+  border-radius: var(--radius-md);
   background: var(--accent-primary);
-  color: #fff;
+  color: var(--text-inverse);
   font-family: var(--font-body);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   cursor: pointer;
   transition: background var(--transition-fast), border-color var(--transition-fast),
-    color var(--transition-fast), opacity var(--transition-fast),
-    transform var(--transition-fast);
-}
-
-.profile-follow-button:hover:not(:disabled),
-.profile-follow-button:focus-visible:not(:disabled) {
-  background: var(--accent-primary-hover);
-}
-
-.profile-follow-button:active:not(:disabled) {
-  transform: scale(0.97);
+    color var(--transition-fast), opacity var(--transition-fast);
 }
 
 /* Already following: the button rests quiet, like "Edit profile". Hovering it
-   is the unfollow affordance — label and color change together (the class
-   comes from the same state as the label, NOT from :hover, so that right
-   after clicking Follow the button rests quiet even under the pointer). */
+   is the unfollow affordance — label and colour change together (the class
+   comes from the same state as the label, NOT from :hover, so that right after
+   clicking Follow the button rests quiet even under the pointer). */
 .profile-follow-button--following {
   border-color: var(--border-default);
-  background: var(--bg-secondary);
+  background: var(--bg-card);
   color: var(--text-primary);
 }
 
 .profile-follow-button--following.is-unfollow-intent:not(:disabled) {
-  border-color: var(--accent-danger);
-  background: var(--bg-secondary);
-  color: var(--accent-danger);
+  border-color: var(--tint-red-line);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
 }
 
 .profile-follow-button:disabled {
@@ -315,34 +295,6 @@ button.profile-stat:focus-visible:not(:disabled) {
   margin: var(--space-2) 0 0;
   color: var(--accent-danger);
   font-size: var(--fs-xs);
-}
-
-/* Part of the header's composition, not a float over the page: anchored to the
-   header's own top-right corner, so it lines up with the identity block at
-   every width and chrome. */
-.profile-gear {
-  position: absolute;
-  top: 0;
-  right: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: color var(--transition-fast), border-color var(--transition-fast),
-    transform var(--transition-fast);
-}
-
-.profile-gear:hover,
-.profile-gear:focus-visible {
-  color: var(--text-primary);
-  border-color: var(--border-strong);
-  transform: rotate(15deg);
 }
 
 .profile-handle-cta {
@@ -357,47 +309,145 @@ button.profile-stat:focus-visible:not(:disabled) {
   cursor: pointer;
 }
 
-/* --- Tabs ------------------------------------------------------------------ */
+/* ─── Counters ───
+   A count is machine data, so it sits in the ruled grid the Explorer's entity
+   header uses rather than in a row of pills. Users only: Following and
+   Followers come from the public follow graph, so a visitor sees the same real
+   numbers the owner does; Likes is owner-only and simply absent from a
+   visitor's grid — no dash placeholders. */
+
+.profile-stats {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  list-style: none;
+  display: grid;
+  /* Column count comes from the children: three boxes for the owner, two for a
+     visitor, with nothing to keep in sync at the callsite. */
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(94px, 1fr);
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--border-default);
+  border-left: 1px solid var(--border-default);
+}
+
+.profile-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: none;
+  border-right: 1px solid var(--border-default);
+  border-bottom: 1px solid var(--border-default);
+  border-radius: 0;
+  background: var(--bg-card);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  transition: background var(--transition-fast);
+}
+
+button.profile-stat {
+  cursor: pointer;
+}
+
+button.profile-stat:disabled {
+  cursor: default;
+}
+
+.profile-stat-value {
+  font-family: var(--font-mono);
+  font-size: 1.05rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.profile-stat-label {
+  font: 600 0.625rem/1 var(--font-mono);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* The counter that has not answered yet. Held back like every other placeholder
+   in the app: the two aggregations behind these numbers usually land well
+   inside 320ms, and announcing a wait that is already over is what made the
+   header feel like it was catching up with itself. The slot keeps its space
+   throughout, so the number lands without moving anything. */
+.profile-stat-pending {
+  display: inline-block;
+  opacity: 0;
+  animation: profile-stat-pending-reveal 140ms ease-out 320ms forwards;
+}
+
+@keyframes profile-stat-pending-reveal {
+  to { opacity: 1; }
+}
+
+/* ─── Sections ─── */
 
 .profile-tabs {
   display: flex;
-  gap: var(--space-2);
-  border-top: 1px solid var(--border-subtle);
+  align-items: center;
+  gap: var(--space-1);
   border-bottom: 1px solid var(--border-subtle);
+  overflow-x: auto;
+  scrollbar-width: none;
+  overscroll-behavior-inline: contain;
+}
+
+.profile-tabs::-webkit-scrollbar {
+  display: none;
 }
 
 .profile-tab {
   position: relative;
-  padding: var(--space-3) var(--space-4);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: var(--space-3) var(--space-3) 14px;
   border: none;
   background: none;
   color: var(--text-tertiary);
-  font-family: inherit;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  white-space: nowrap;
   cursor: pointer;
   transition: color var(--transition-fast);
-}
-
-.profile-tab:hover,
-.profile-tab:focus-visible {
-  color: var(--text-secondary);
 }
 
 .profile-tab.is-active {
   color: var(--text-primary);
 }
 
-/* Rendered by framer-motion with a shared layoutId, so it slides between
-   tabs instead of blinking. */
+.profile-tab-count {
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+.profile-tab.is-active .profile-tab-count {
+  color: var(--text-secondary);
+}
+
+/* Rule 3: the yellow marks the active tab, and nothing else on this page.
+   Rendered by framer-motion with a shared layoutId, so it slides between tabs
+   instead of blinking. */
 .profile-tab-indicator {
   position: absolute;
   left: var(--space-3);
   right: var(--space-3);
   bottom: -1px;
-  height: 2px;
-  border-radius: var(--radius-full);
-  background: var(--accent-primary);
+  height: 3px;
+  background: var(--brand-yellow);
 }
 
 .profile-panel {
@@ -415,7 +465,7 @@ button.profile-stat:focus-visible:not(:disabled) {
 .profile-panel-note {
   margin: var(--space-4) 0 0;
   color: var(--text-tertiary);
-  font-size: var(--fs-xs);
+  font-size: 0.8125rem;
 }
 
 .profile-panel-header .profile-panel-note {
@@ -423,151 +473,200 @@ button.profile-stat:focus-visible:not(:disabled) {
 }
 
 .profile-manage-link {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   flex: 0 0 auto;
-  color: var(--accent-primary);
-  font-size: var(--fs-sm);
+  color: var(--text-primary);
+  font-size: 0.8125rem;
   font-weight: var(--fw-semibold);
   text-decoration: none;
-}
-
-.profile-manage-link:hover,
-.profile-manage-link:focus-visible {
-  text-decoration: underline;
 }
 
 /* The visitor has exactly one section, so it gets a heading, not a tab bar
    with a single tab. */
 .profile-visitor-lists {
-  border-top: 1px solid var(--border-subtle);
-  padding-top: var(--space-5);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-4);
+  margin-top: var(--space-6);
+  margin-bottom: var(--space-4);
 }
 
 .profile-visitor-heading {
-  margin: 0 0 var(--space-4);
-  font-family: var(--font-heading);
-  font-size: var(--fs-lg);
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
   font-weight: var(--fw-semibold);
+  letter-spacing: -0.015em;
 }
 
-/* --- List cards -------------------------------------------------------------- */
+.profile-visitor-count {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* ─── List tiles ───
+   Deliberately the same object as the card in Mis listas: same 204px tile,
+   same 3px owner colour down the inner edge, same tinted icon box. A list has
+   to look like itself wherever it is shown. */
 
 .public-profile-list-grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  gap: var(--space-3);
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
 }
 
 .public-profile-list-card {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   width: 100%;
-  gap: var(--space-3);
-  padding: var(--space-4);
+  /* No reserved height, unlike the tile in Mis listas: that card fills its
+     bottom third with the first two paper titles, and those come from the
+     lists page's own metadata plan — reads this page deliberately never makes.
+     Holding 204px here would only reserve room for a preview that never
+     arrives, which is how the tile came to read as a half-empty box. */
+  /* 18px, not 20: the 3px rule replaces the 1px border on that edge. */
+  padding: var(--space-5) var(--space-5) var(--space-5) 18px;
   border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--list-accent, var(--border-default));
   border-radius: var(--radius-lg);
-  background: var(--bg-secondary);
+  background: var(--bg-card);
   color: inherit;
+  text-align: left;
   text-decoration: none;
-  transition: border-color 0.18s ease, transform 0.18s ease, box-shadow 0.18s ease;
-}
-
-.public-profile-list-card:hover,
-.public-profile-list-card:focus-visible {
-  /* Hover feedback is the lift and the border; the global a:hover accent
-     would repaint the whole card's text instead. */
-  color: inherit;
-  border-color: var(--border-strong);
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-sm);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .profile-list-card--own {
   font: inherit;
-  text-align: left;
   cursor: pointer;
 }
 
-.public-profile-list-emoji {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.public-profile-list-icon {
+  display: grid;
+  place-items: center;
   width: 36px;
   height: 36px;
   border-radius: var(--radius-md);
-  background: var(--bg-primary);
-  color: var(--text-secondary);
-}
-
-.public-profile-list-copy {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--list-accent, var(--border-default)) 24%, var(--bg-card));
+  background: color-mix(in srgb, var(--list-accent, var(--border-default)) 8%, var(--bg-card));
+  color: var(--list-accent, var(--text-tertiary));
+  transition: background var(--transition-base), border-color var(--transition-base);
 }
 
 .public-profile-list-title {
+  margin-top: var(--space-3);
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 
+.public-profile-list-meta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
 .public-profile-list-count {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
   color: var(--text-tertiary);
-  font-size: var(--fs-xs);
 }
 
 .profile-badge-public {
-  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  margin-left: auto;
-  padding: 2px var(--space-2);
-  border: 1px solid var(--accent-success);
-  border-radius: var(--radius-full);
-  color: var(--accent-success);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
+  padding: 3px var(--space-2);
+  border: 1px solid var(--tint-green-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-green-bg);
+  color: var(--tint-green-fg);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
   white-space: nowrap;
 }
 
-/* --- Paper rows (Saved / Liked) -------------------------------------------- */
+/* ─── Paper rows (Saved / Liked) ───
+   A ruled index, not a stack of cards: hairline separators, the paper's field
+   down the inner edge, a mono kicker in that same ink and a serif title. */
 
 .profile-row-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
+  border-top: 1px solid var(--border-subtle);
 }
 
 .profile-row {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-secondary);
+  gap: 0;
+  padding: var(--space-3) var(--space-4) var(--space-3) 13px;
+  border-bottom: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--area-accent, var(--border-default));
+  background: var(--bg-card);
   color: inherit;
   text-decoration: none;
-  transition: border-color 0.18s ease, transform 0.18s ease;
-}
-
-a.profile-row:hover,
-a.profile-row:focus-visible {
-  color: inherit;
-  border-color: var(--border-strong);
-  transform: translateY(-1px);
+  transition: background var(--transition-fast);
 }
 
 .profile-row--static {
   cursor: default;
 }
 
+/* A row we have not heard about. It carries the neutral rule rather than a
+   field colour, because nothing is known about its field either — the same
+   rule the kicker follows: nothing is guessed. */
+.profile-row--unresolved {
+  border-left-color: var(--border-default);
+  cursor: default;
+}
+
+/* While the library read is still out, the row is its own silhouette. */
+.profile-row--waiting {
+  padding-top: var(--space-4);
+  padding-bottom: var(--space-4);
+}
+
+/* Once it has answered and this id still has nothing, the id itself is the
+   honest thing to show — mono, because that is what it is. */
+.profile-row-title--placeholder {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-regular);
+  color: var(--text-tertiary);
+}
+
+.profile-row-kicker {
+  font: 600 0.625rem/1 var(--font-mono);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--area-accent, var(--text-tertiary));
+}
+
 .profile-row-title {
+  margin-top: 7px;
+  font-family: var(--font-serif);
+  font-size: var(--fs-base);
   font-weight: var(--fw-medium);
+  line-height: 1.35;
+  color: var(--text-primary);
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -576,14 +675,16 @@ a.profile-row:focus-visible {
 }
 
 .profile-row-meta {
+  margin-top: 5px;
+  font: 400 0.6875rem/1.5 var(--font-mono);
   color: var(--text-tertiary);
-  font-size: var(--fs-xs);
   overflow-wrap: anywhere;
 }
 
-/* --- Empty states ------------------------------------------------------------
-   The same shape the following-settings screen already uses: an icon, a short
-   fact, a hint. A single grey line floating in a big panel read as a bug. */
+/* ─── Empty states ───
+   An icon in a square frame, a short fact, a hint — the same shape the
+   following-settings screen uses. A single grey line floating in a big panel
+   read as a bug. */
 
 .profile-empty-state {
   display: flex;
@@ -591,38 +692,39 @@ a.profile-row:focus-visible {
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-10) var(--space-4) var(--space-8);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   text-align: center;
 }
 
 .profile-empty-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
   margin-bottom: var(--space-1);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
-  color: var(--accent-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  color: var(--text-tertiary);
 }
 
 .profile-empty-title {
   margin: 0;
-  font-family: var(--font-heading);
-  font-size: var(--fs-base);
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
 }
 
 .profile-empty-hint {
   margin: 0;
-  max-width: 340px;
-  color: var(--text-tertiary);
-  font-size: var(--fs-sm);
+  max-width: 34ch;
+  font-size: 0.8125rem;
   line-height: var(--lh-normal);
+  color: var(--text-tertiary);
 }
 
-/* --- Footer (signed-out CTA) ------------------------------------------------ */
+/* ─── Footer (signed-out CTA) ─── */
 
 .public-profile-footer {
   margin-top: var(--space-8);
@@ -633,19 +735,21 @@ a.profile-row:focus-visible {
 .public-profile-auth-cta {
   display: inline-flex;
   align-items: center;
-  min-height: 40px;
-  padding: 0 var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
+  gap: var(--space-2);
+  height: 40px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   color: var(--text-primary);
+  font-family: var(--font-body);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   text-decoration: none;
   cursor: pointer;
 }
 
-/* --- Error / not-found / unsupported ---------------------------------------- */
+/* ─── Error / not-found / unsupported ─── */
 
 .public-profile-page--state .public-profile-shell {
   display: flex;
@@ -657,43 +761,102 @@ a.profile-row:focus-visible {
 
 .public-profile-page--state h1 {
   margin: 0;
-  font-family: var(--font-heading);
-  font-size: var(--fs-xl);
+  font-family: var(--font-serif);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.015em;
 }
 
 .public-profile-state-body {
   margin: 0;
+  max-width: 56ch;
   color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
 }
 
 .public-profile-retry {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  min-height: 38px;
+  height: 38px;
   margin-top: var(--space-2);
   padding: 0 var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
 }
 
-/* --- Skeleton ----------------------------------------------------------------
-   Held while the profile read is in flight, and shaped like the finished
-   page — header, counters, tab bar, first rows — so nothing jumps when the
-   content lands. */
+/* ─── Private profile ───
+   Only ever rendered for the owner: for anybody else the document is denied,
+   so there is no page on which to show a badge. Neutral tint, not amber: this
+   is a decision of theirs, not a problem to fix. */
+
+.profile-private-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 2px var(--space-2);
+  border: 1px solid var(--tint-neutral-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.profile-private-notice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) var(--space-4) var(--space-3) 13px;
+  border: 1px solid var(--tint-neutral-line);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
+  font-size: var(--fs-sm);
+}
+
+.profile-private-notice span {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-private-notice button {
+  flex: 0 0 auto;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: var(--fw-semibold);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* ─── Skeleton ───
+   Shaped like the finished page — masthead, counter grid, section bar, first
+   tiles — so nothing jumps when the content lands. */
 
 .public-profile-skeleton {
   background: var(--bg-secondary);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   animation: public-profile-pulse 1.4s ease-in-out infinite;
 }
 
 .public-profile-skeleton--title {
   width: min(220px, 60%);
-  height: 26px;
+  height: 32px;
   margin-bottom: var(--space-3);
 }
 
@@ -709,26 +872,24 @@ a.profile-row:focus-visible {
 }
 
 .public-profile-skeleton--stat {
-  width: 88px;
-  height: 24px;
-  border-radius: var(--radius-full);
+  width: 94px;
+  height: 44px;
 }
 
 .public-profile-skeleton--tabs {
-  height: 42px;
-  margin-top: var(--space-2);
-  border-radius: var(--radius-md);
+  height: 44px;
+  margin-top: var(--space-6);
 }
 
 .profile-skeleton-rows {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--space-4);
   margin-top: var(--space-5);
 }
 
 .public-profile-skeleton--row {
-  height: 62px;
+  height: 132px;
   border-radius: var(--radius-lg);
 }
 
@@ -737,139 +898,164 @@ a.profile-row:focus-visible {
   50% { opacity: 0.55; }
 }
 
-/* --- Mobile and narrow windows -----------------------------------------------
-   A composed portrait header, not a stretched desktop row: identity centered
-   under the avatar, counters and actions centered with it. Up to 768, not 560:
-   the 561-768 band (small tablets, half-screen windows) was the stretched
-   desktop row with nothing composed for it. */
+/* ─── Hover ─── */
+
+@media (hover: hover) and (pointer: fine) {
+  .profile-gear:hover,
+  .profile-gear:focus-visible {
+    color: var(--text-primary);
+  }
+
+  .profile-edit-button:hover,
+  .profile-edit-button:focus-visible {
+    background: var(--bg-secondary);
+    border-color: var(--border-strong);
+  }
+
+  .profile-content-chip:hover,
+  .profile-content-chip:focus-visible {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  .profile-follow-button:hover:not(:disabled),
+  .profile-follow-button:focus-visible:not(:disabled) {
+    background: var(--accent-primary-hover);
+    border-color: var(--accent-primary-hover);
+  }
+
+  .profile-follow-button--following:hover:not(:disabled),
+  .profile-follow-button--following:focus-visible:not(:disabled) {
+    background: var(--bg-secondary);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  .profile-follow-button--following.is-unfollow-intent:hover:not(:disabled) {
+    border-color: var(--tint-red-line);
+    background: var(--tint-red-bg);
+    color: var(--tint-red-fg);
+  }
+
+  button.profile-stat:hover:not(:disabled),
+  button.profile-stat:focus-visible:not(:disabled) {
+    background: var(--bg-sunken);
+  }
+
+  .profile-tab:hover,
+  .profile-tab:focus-visible {
+    color: var(--text-secondary);
+  }
+
+  .profile-manage-link:hover,
+  .profile-manage-link:focus-visible {
+    text-decoration: underline;
+  }
+
+  .profile-handle-cta:hover,
+  .profile-handle-cta:focus-visible {
+    text-decoration: underline;
+  }
+
+  /* The tile's own colour deepens a step under the pointer — the one answer a
+     hover can make now that the light system took the lift away. */
+  .public-profile-list-card:hover,
+  .public-profile-list-card:focus-visible {
+    color: inherit;
+    border-color: var(--border-default);
+    border-left-color: var(--list-accent, var(--border-strong));
+  }
+
+  .public-profile-list-card:hover .public-profile-list-icon {
+    border-color: color-mix(in srgb, var(--list-accent, var(--border-default)) 42%, var(--bg-card));
+    background: color-mix(in srgb, var(--list-accent, var(--border-default)) 15%, var(--bg-card));
+  }
+
+  a.profile-row:hover,
+  a.profile-row:focus-visible {
+    color: inherit;
+    background: var(--bg-sunken);
+  }
+
+  .public-profile-auth-cta:hover,
+  .public-profile-retry:hover {
+    background: var(--bg-secondary);
+    border-color: var(--border-strong);
+  }
+}
+
+/* ─── Mobile and narrow windows ───
+   Left-aligned, not centred: the whole app reads against its left margin, and
+   a centred portrait was the one place that stopped being true. The counters
+   become a full-width band so the three of them stay in one row. */
 
 @media (max-width: 768px) {
-  .public-profile-header {
+  .public-profile-shell {
+    max-width: none;
+  }
+
+  /* A column, not a squeezed desktop row. The bio and the actions live inside
+     the identity block, so beside a 96px avatar they were being laid out
+     against a 255px measure — a full-width "Edit profile" on one line and
+     "Followed content" on the next. Stacking gives the prose and the two
+     buttons the whole width, and everything stays against the left margin the
+     rest of the app reads against. */
+  .profile-masthead {
     flex-direction: column;
-    align-items: center;
-    text-align: center;
+    align-items: flex-start;
+    gap: var(--space-4);
   }
 
   .public-profile-avatar {
-    width: 88px;
-    height: 88px;
+    width: 56px;
+    height: 56px;
+  }
+
+  .public-profile-avatar-fallback {
+    font-size: var(--fs-xl);
   }
 
   .public-profile-identity {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
     width: 100%;
   }
 
   .public-profile-identity h1 {
-    justify-content: center;
+    font-size: var(--fs-3xl);
   }
 
   .public-profile-bio {
-    max-width: 34ch;
-  }
-
-  .profile-stats {
-    justify-content: center;
-    gap: var(--space-1);
-  }
-
-  .profile-stat {
-    flex-direction: column;
-    align-items: center;
-    gap: 0;
-    padding: var(--space-1) var(--space-3);
-  }
-
-  .profile-stats li:first-child .profile-stat {
-    padding-left: var(--space-3);
-  }
-
-  .profile-stats li:first-child .profile-stat:hover:not(:disabled),
-  .profile-stats li:first-child .profile-stat:focus-visible:not(:disabled) {
-    margin-left: 0;
+    font-size: var(--fs-base);
   }
 
   .profile-owner-actions {
-    justify-content: center;
+    margin-top: var(--space-4);
+  }
+
+  /* 44px: the floor for anything a thumb has to hit. */
+  .profile-edit-button,
+  .profile-follow-button,
+  .profile-content-chip {
+    height: 44px;
+  }
+
+  .profile-stats {
+    width: 100%;
   }
 
   .profile-panel-header {
     flex-direction: column;
-    align-items: center;
+    align-items: flex-start;
     gap: var(--space-2);
-    text-align: center;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .public-profile-skeleton {
+  .public-profile-skeleton,
+  .profile-stat-pending {
     animation: none;
   }
 
-  .profile-gear:hover,
-  .profile-gear:focus-visible {
-    transform: none;
+  .profile-stat-pending {
+    opacity: 1;
   }
-
-  .public-profile-list-card:hover,
-  .public-profile-list-card:focus-visible,
-  a.profile-row:hover,
-  a.profile-row:focus-visible {
-    transform: none;
-  }
-}
-
-/* --- Private profile (F8) ---------------------------------------------------
-   Only ever rendered for the owner: for anybody else the document is denied,
-   so there is no page on which to show a badge. */
-
-.profile-private-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  margin-left: var(--space-2);
-  padding: 1px var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  vertical-align: middle;
-}
-
-.profile-private-notice {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--space-2);
-  margin-bottom: var(--space-5);
-  padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-secondary);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-}
-
-.profile-private-notice span {
-  flex: 1;
-  min-width: 0;
-}
-
-.profile-private-notice button {
-  flex: 0 0 auto;
-  padding: 0;
-  border: none;
-  background: none;
-  color: var(--accent-primary);
-  font: inherit;
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-}
-
-.profile-private-notice button:hover,
-.profile-private-notice button:focus-visible {
-  text-decoration: underline;
 }

@@ -1,0 +1,203 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    a { color: #1a5fd0; text-decoration: none; }
+    a:hover { color: #12459b; }
+    .k { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.55 'IBM Plex Mono', monospace; }
+    h2 { margin: 0 0 4px; font-size: 1rem; font-weight: 600; letter-spacing: -0.005em; }
+    p { margin: 0; font-size: 0.8125rem; line-height: 1.6; color: #5b6270; }
+    .sec { padding: 26px 0; border-top: 1px solid #e6e7ea; display: grid; grid-template-columns: 178px minmax(0, 1fr); gap: 28px; }
+  </style>
+</helmet>
+
+<div style="width: 900px; padding: 34px 38px 40px; background: #ffffff">
+
+  <header style="margin-bottom: 26px">
+    <span class="k" style="color: #a9aeba">PaperTok · Conexiones del paper</span>
+    <h1 style="margin: 10px 0 8px; font-size: 1.625rem; line-height: 1.15; font-weight: 700; letter-spacing: -0.015em">Anatomía del mapa</h1>
+    <p style="max-width: 620px">Cada cosa que se dibuja significa algo, y nada se dibuja dos veces. Un canal por variable: la vertical es el tiempo, la horizontal es el impacto, el relleno —hueco o lleno— es la dirección de la cita y la tinta es el campo.</p>
+  </header>
+
+  <!-- ── El nodo ── -->
+  <section class="sec">
+    <div>
+      <h2>El nodo</h2>
+      <p style="margin-top: 6px">El punto mide 11 px porque es tipografía. El objetivo es la fila entera, y mide lo que el hueco de su banda.</p>
+    </div>
+    <div style="display: flex; align-items: flex-start; gap: 48px">
+
+      <div style="position: relative; width: 190px; height: 128px">
+        <div style="position: absolute; left: 0; top: 46px; width: 152px; height: 20px; border: 1px dashed #d3d5db; border-radius: 3px"></div>
+        <div style="position: absolute; left: 16px; top: 50px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; box-shadow: inset 0 0 0 2px #c2410c"></div>
+        <span class="k" style="position: absolute; left: 44px; top: 51px; color: #5b6270; letter-spacing: 0.04em"><b style="color: #111318">Bahdanau</b> <span style="color: #8a919e">’14</span></span>
+        <span class="m" style="position: absolute; left: 0; top: 2px; color: #a9aeba">objetivo 152 × 20</span>
+        <svg width="152" height="26" viewBox="0 0 152 26" style="position: absolute; left: 0; top: 12px"><path d="M4 22 V16 H148 V22" fill="none" stroke="#e6e7ea" stroke-width="1"></path></svg>
+        <span class="m" style="position: absolute; left: 0; top: 88px; color: #a9aeba">apellido + año, siempre</span>
+      </div>
+
+      <div style="display: grid; gap: 16px">
+        <div style="display: flex; align-items: center; gap: 12px">
+          <span style="width: 11px; height: 11px; border-radius: 50%; background: #ffffff; box-shadow: inset 0 0 0 2px #c2410c"></span>
+          <span style="font-size: 0.8125rem; color: #111318"><b style="font-weight: 600">Hueco</b> — está antes: este paper lo cita.</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px">
+          <span style="width: 11px; height: 11px; border-radius: 50%; background: #c2410c"></span>
+          <span style="font-size: 0.8125rem; color: #111318"><b style="font-weight: 600">Lleno</b> — está después: cita a este paper.</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px">
+          <span style="width: 11px; height: 11px; border-radius: 50%; background: #c2410c; box-shadow: 0 0 0 4px rgba(17, 19, 24, 0.1); transform: scale(1.28)"></span>
+          <span style="font-size: 0.8125rem; color: #111318"><b style="font-weight: 600">Tocado</b> — halo de tinta al 10 %, y su ficha sube por abajo.</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 12px">
+          <span style="width: 16px; height: 16px; border-radius: 50%; background: #111318; box-shadow: 0 0 0 3px #ffffff"></span>
+          <span style="font-size: 0.8125rem; color: #111318"><b style="font-weight: 600">El centro</b> — tinta plena, 16 px, sobre la regla.</span>
+        </div>
+      </div>
+
+      <div style="display: grid; gap: 11px; padding-left: 28px; border-left: 1px solid #e6e7ea">
+        <span class="k" style="color: #a9aeba">La tinta es el campo</span>
+        <div style="display: flex; align-items: center; gap: 9px"><span style="width: 9px; height: 9px; border-radius: 50%; background: #c2410c"></span><span class="k" style="color: #5b6270">CS · #c2410c</span></div>
+        <div style="display: flex; align-items: center; gap: 9px"><span style="width: 9px; height: 9px; border-radius: 50%; background: #1d4ed8"></span><span class="k" style="color: #5b6270">Stat · #1d4ed8</span></div>
+        <div style="display: flex; align-items: center; gap: 9px"><span style="width: 9px; height: 9px; border-radius: 50%; background: #15803d"></span><span class="k" style="color: #5b6270">Bio · #15803d</span></div>
+        <div style="display: flex; align-items: center; gap: 9px"><span style="width: 9px; height: 9px; border-radius: 50%; background: #475569"></span><span class="k" style="color: #5b6270">Otro · #475569</span></div>
+        <p class="m" style="margin-top: 2px; color: #a9aeba; max-width: 190px">Los mismos <span style="color: #5b6270">--gradient-*</span> que ya pinta la tarjeta. Ninguno nuevo.</p>
+      </div>
+    </div>
+    <p style="grid-column: 2; margin-top: 20px; padding-top: 16px; border-top: 1px solid #f2f3f5; max-width: 640px">Veinte píxeles de alto no llegan al mínimo de 44 que exige un control principal, y con ocho nodos en 162 px no hay manera de que lleguen: o el objetivo mide lo que el hueco, o dos nodos se disputan el mismo píxel. Por eso el conmutador de lista no es un extra — es el mismo grafo con filas de 70 px, y es el camino que sí cumple.</p>
+  </section>
+
+  <!-- ── Los ejes ── -->
+  <section class="sec">
+    <div>
+      <h2>Los ejes</h2>
+      <p style="margin-top: 6px">Las dos preguntas que un lector se hace ante una cita: cuándo, y cuánto pesa.</p>
+    </div>
+    <div>
+      <div style="position: relative; height: 190px; margin-bottom: 18px; border: 1px solid #f2f3f5; border-radius: 3px; padding: 10px 14px">
+        <span class="k" style="position: absolute; left: 14px; top: 10px; color: #a9aeba">Antes · más antiguo arriba</span>
+        <div style="position: absolute; left: 0; right: 0; top: 96px; height: 1px; background: #111318"></div>
+        <div style="position: absolute; left: 402px; top: 88px; width: 16px; height: 16px; border-radius: 50%; background: #111318; box-shadow: 0 0 0 3px #ffffff"></div>
+        <span class="k" style="position: absolute; left: 428px; top: 90px; background: #ffffff; padding: 0 6px; color: #111318">Este paper</span>
+        <span class="k" style="position: absolute; left: 14px; bottom: 10px; color: #a9aeba">Después · más reciente abajo</span>
+
+        <span style="position: absolute; left: 92px; top: 34px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; box-shadow: inset 0 0 0 2px #c2410c"></span>
+        <span style="position: absolute; left: 236px; top: 58px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; box-shadow: inset 0 0 0 2px #c2410c"></span>
+        <span style="position: absolute; left: 470px; top: 44px; width: 11px; height: 11px; border-radius: 50%; background: #ffffff; box-shadow: inset 0 0 0 2px #1d4ed8"></span>
+        <span style="position: absolute; left: 148px; top: 132px; width: 11px; height: 11px; border-radius: 50%; background: #c2410c"></span>
+        <span style="position: absolute; left: 330px; top: 148px; width: 11px; height: 11px; border-radius: 50%; background: #15803d"></span>
+        <span style="position: absolute; left: 522px; top: 126px; width: 11px; height: 11px; border-radius: 50%; background: #c2410c"></span>
+        <svg width="624" height="170" viewBox="0 0 624 170" style="position: absolute; left: 14px; top: 10px">
+          <line x1="396" y1="86" x2="83" y2="29" stroke="#d9dbe0" stroke-width="1"></line>
+          <line x1="396" y1="86" x2="227" y2="53" stroke="#d9dbe0" stroke-width="1"></line>
+          <line x1="396" y1="86" x2="461" y2="39" stroke="#d9dbe0" stroke-width="1"></line>
+          <line x1="396" y1="86" x2="139" y2="127" stroke="#d9dbe0" stroke-width="1"></line>
+          <line x1="396" y1="86" x2="321" y2="143" stroke="#d9dbe0" stroke-width="1"></line>
+          <line x1="396" y1="86" x2="513" y2="121" stroke="#d9dbe0" stroke-width="1"></line>
+        </svg>
+        <div style="position: absolute; left: 120px; top: 10px; bottom: 10px; width: 1px; background: #f2f3f5"></div>
+        <div style="position: absolute; left: 300px; top: 10px; bottom: 10px; width: 1px; background: #f2f3f5"></div>
+        <div style="position: absolute; left: 480px; top: 10px; bottom: 10px; width: 1px; background: #f2f3f5"></div>
+        <span class="k" style="position: absolute; left: 112px; bottom: -8px; color: #c9ccd3">1K</span>
+        <span class="k" style="position: absolute; left: 292px; bottom: -8px; color: #c9ccd3">10K</span>
+        <span class="k" style="position: absolute; left: 470px; bottom: -8px; color: #c9ccd3">100K</span>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-top: 22px">
+        <div>
+          <span class="k" style="color: #111318">Vertical · tiempo</span>
+          <p style="margin-top: 7px">Dos bandas con su propia escala, no una sola línea. Un paper de 2017 con referencias de 1997 y citas de 2023 aplastaría la mitad de abajo contra la regla; separadas, cada banda usa su rango entero y lo declara en su cabecera.</p>
+        </div>
+        <div>
+          <span class="k" style="color: #111318">Horizontal · citas</span>
+          <p style="margin-top: 7px">Logarítmica, con guías en potencias de diez. Las citas siguen una ley de potencias: en lineal, un paper de 190.000 empuja a todos los demás contra el margen izquierdo y el eje deja de decir nada.</p>
+        </div>
+        <div>
+          <span class="k" style="color: #111318">Cuando chocan</span>
+          <p style="margin-top: 7px">Si dos nodos caen a menos de 20 px, el de abajo baja. Se conserva el orden y el año viaja en la etiqueta, así que la separación nunca miente sobre quién es más antiguo.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── El recorrido ── -->
+  <section class="sec">
+    <div>
+      <h2>El recorrido</h2>
+      <p style="margin-top: 6px">Lo que convierte una lista en un grafo: cualquier vecino puede pasar a ser el centro.</p>
+    </div>
+    <div>
+      <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 20px">
+        <div style="display: flex; align-items: center; gap: 9px; padding: 9px 12px; border: 1px solid #e6e7ea; border-radius: 3px">
+          <span style="width: 13px; height: 13px; border-radius: 50%; background: #111318"></span>
+          <span class="k" style="color: #5b6270">Attention Is All…</span>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c9ccd3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 9px 12px; border: 1px solid #e6e7ea; border-radius: 3px">
+          <span style="width: 13px; height: 13px; border-radius: 50%; background: #111318"></span>
+          <span class="k" style="color: #5b6270">BERT</span>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#c9ccd3" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"></path></svg>
+        <div style="display: flex; align-items: center; gap: 9px; padding: 9px 12px; border: 1px solid #111318; border-radius: 3px; background: #f7f7f8">
+          <span style="width: 13px; height: 13px; border-radius: 50%; background: #111318"></span>
+          <span class="k" style="color: #111318">BioBERT</span>
+        </div>
+        <span class="m" style="margin-left: 8px; color: #a9aeba">← el rastro vuelve a cualquier paso</span>
+      </div>
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px">
+        <div>
+          <span class="k" style="color: #111318">Cuesta un salto</span>
+          <p style="margin-top: 7px">Centrar en un vecino es una llamada a <span class="m" style="color: #5b6270">/citation-graph</span>, la misma que ya se hace al abrir la hoja, con su caché de 24 h. Nada se precarga: se paga solo lo que se pisa.</p>
+        </div>
+        <div>
+          <span class="k" style="color: #111318">Nunca dos saltos</span>
+          <p style="margin-top: 7px">El mapa es siempre de un salto alrededor del centro. Dibujar vecinos de vecinos multiplicaría las llamadas por veinte y llenaría el lienzo de nodos que nadie pidió.</p>
+        </div>
+        <div>
+          <span class="k" style="color: #111318">El callejón es un estado</span>
+          <p style="margin-top: 7px">Un nodo sin enlaces en OpenCitations no rompe el recorrido: dice por qué está vacío y ofrece volver. Es lo normal en trabajos muy recientes.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Qué sostiene esto hoy ── -->
+  <section class="sec">
+    <div>
+      <h2>Qué sostiene el dibujo</h2>
+      <p style="margin-top: 6px">Lo que ya devuelve el worker, y lo que habría que dejar pasar.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px">
+      <div>
+        <span class="k" style="color: #067647">Ya está en la respuesta</span>
+        <ul style="margin: 12px 0 0; padding-left: 17px; font-size: 0.8125rem; line-height: 1.75; color: #5b6270">
+          <li><span class="m" style="color: #111318">references</span> y <span class="m" style="color: #111318">citations</span> — hasta 10 por lado, ya ordenadas: las referencias por citas, las de después por año.</li>
+          <li><span class="m" style="color: #111318">counts</span> — los totales reales, que es lo que permite decir «8 de 42» en vez de callar el recorte.</li>
+          <li>Por nodo: año, citas, <span class="m" style="color: #111318">categories</span> (la tinta del campo), acceso abierto y DOI.</li>
+        </ul>
+      </div>
+      <div>
+        <span class="k" style="color: #b45309">Hay que enchufarlo</span>
+        <ul style="margin: 12px 0 0; padding-left: 17px; font-size: 0.8125rem; line-height: 1.75; color: #5b6270">
+          <li><span class="m" style="color: #111318">degraded</span> viaja desde el worker pero <span class="m" style="color: #111318">mapCitationGraphPayload</span> lo tira: sin él, el aviso de datos incompletos no se puede pintar.</li>
+          <li>Las auto-citas (<span class="m" style="color: #111318">author_sc</span>, <span class="m" style="color: #111318">journal_sc</span>) llegan de OpenCitations y se pierden al resolver los papers. Marcarlas cuesta arrastrar dos campos.</li>
+          <li>Centrar en un vecino necesita su DOI resuelto; los nodos que llegan solo con ID de OpenAlex no pueden ser centro todavía (el prototipo no lo simula).</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+</body>
+</html>

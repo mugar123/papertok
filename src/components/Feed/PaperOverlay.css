@@ -1,0 +1,44 @@
+/* ============================================
+   The paper takeover
+
+   Values lifted unchanged from the explorer's overlay, which was the one the
+   other two were measured against. Edge to edge and opaque: no dimmed backdrop,
+   no radius, no shadow — the reader has gone somewhere, rather than had a
+   window opened over where they were.
+   ============================================ */
+
+.paper-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-overlay);
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.paper-overlay-surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: var(--bg-secondary);
+  transform-origin: 50% 55%;
+}
+
+/* Above the card, and clear of the notch. */
+.paper-overlay-back {
+  position: absolute;
+  top: max(16px, env(safe-area-inset-top));
+  left: 16px;
+  z-index: 1000;
+}
+
+.paper-overlay-content {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* The card's own "scroll for more" cue belongs to the feed, where a swipe means
+   the next paper. In here there is no next paper. */
+.paper-overlay-content.hide-scroll-hint .pc-scroll-hint {
+  display: none !important;
+}

@@ -1,0 +1,483 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; -webkit-font-smoothing: antialiased; }
+    * { box-sizing: border-box; }
+    a { color: #1a5fd0; text-decoration: none; }
+    a:hover { color: #12459b; }
+    .k { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.55 'IBM Plex Mono', monospace; }
+    h2 { margin: 0 0 4px; font-size: 1rem; font-weight: 600; letter-spacing: -0.005em; }
+    p { margin: 0; font-size: 0.8125rem; line-height: 1.6; color: #5b6270; }
+    .sec { padding: 26px 0; border-top: 1px solid #e6e7ea; display: grid; grid-template-columns: 178px minmax(0, 1fr); gap: 28px; }
+
+    .play { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 11px; border: 1px solid #d3d5db; border-radius: 3px; background: #ffffff; color: #111318; font: 600 0.75rem/1 'Inter', sans-serif; cursor: pointer; transition: border-color 120ms ease, background 120ms ease; }
+    .play:hover { border-color: #111318; background: #f7f7f8; }
+
+    .esc { position: relative; width: 420px; height: 200px; border: 1px solid #f2f3f5; border-radius: 3px; background: #ffffff; overflow: hidden; }
+    .pt { position: absolute; width: 11px; height: 11px; border-radius: 50%; margin: -5.5px 0 0 -5.5px; }
+    .hueco { background: #ffffff; box-shadow: inset 0 0 0 2px #c2410c; }
+    .lleno { background: #c2410c; }
+
+    /* ── Los tres fotogramas nuevos ── */
+    @keyframes reglaIn { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+    @keyframes aristaIn { from { opacity: 0; } to { opacity: 1; } }
+    /* ── Y los que ya existen en la hoja, tal cual ── */
+    @keyframes itemIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes contentIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+    .a-regla { animation: reglaIn 320ms cubic-bezier(0.16, 1, 0.3, 1) 120ms backwards; }
+    .a-marca { animation: itemIn 280ms cubic-bezier(0.16, 1, 0.3, 1) 140ms backwards; }
+    .a-arista { animation: aristaIn 220ms ease-out backwards; }
+    .a-nodo { animation: itemIn 280ms cubic-bezier(0.16, 1, 0.3, 1) backwards; }
+
+    /* ── El salto ── */
+    @keyframes sube { from { transform: none; } to { transform: translateY(-42px) scale(1.45); background: #111318; box-shadow: none; } }
+    @keyframes baja { from { transform: translateY(30px) scale(1.4); } to { transform: none; } }
+    @keyframes desliza { from { transform: translateX(64px); } to { transform: none; } }
+    .a-sube { animation: sube 320ms cubic-bezier(0.16, 1, 0.3, 1) 60ms forwards; }
+    .a-baja { animation: baja 280ms cubic-bezier(0.16, 1, 0.3, 1) 60ms backwards; }
+    .a-desliza { animation: desliza 280ms cubic-bezier(0.16, 1, 0.3, 1) 60ms backwards; }
+    .apaga { opacity: 0; transition: opacity 160ms ease-out; }
+
+    /* ── Micro ── */
+    .cell { border: 1px solid #e6e7ea; border-radius: 3px; overflow: hidden; }
+    .cell-cap { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 11px; border-bottom: 1px solid #e6e7ea; background: #fafafa; }
+    .cell-body { position: relative; height: 108px; display: grid; place-items: center; cursor: pointer; }
+    .mnode { position: relative; display: flex; align-items: center; gap: 9px; }
+    .mnode i { display: block; width: 11px; height: 11px; border-radius: 50%; background: #c2410c; transition: transform 120ms ease, box-shadow 120ms ease; }
+    .mnode span { font: 500 0.625rem/1 'IBM Plex Mono', monospace; color: #8a919e; transition: color 120ms ease; }
+    .cell-body:hover .mnode i { transform: scale(1.18); }
+    .cell-body:hover .mnode span { color: #111318; }
+    .mnode.on i { transform: scale(1.28); box-shadow: 0 0 0 4px rgba(17, 19, 24, 0.1); }
+    .mnode.on span { color: #111318; }
+
+    .ficha { position: absolute; left: 0; right: 0; bottom: 0; padding: 10px 12px; border-top: 1px solid #d3d5db; background: #ffffff; box-shadow: 0 -8px 20px rgba(17, 19, 24, 0.07); animation: fichaIn 240ms cubic-bezier(0.16, 1, 0.3, 1); }
+    @keyframes fichaIn { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+    .swap { animation: contentIn 220ms ease-out; }
+
+    .lat { width: 11px; height: 11px; border-radius: 50%; background: #e6e7ea; animation: lat 1.3s ease-in-out infinite; }
+    @keyframes lat { 0%, 100% { opacity: 1; } 50% { opacity: 0.34; } }
+
+    .bar { position: relative; height: 26px; border-radius: 2px; background: #fafafa; border: 1px solid #f2f3f5; }
+    .beat { position: absolute; top: 0; bottom: 0; border-left: 1px solid #d3d5db; }
+    .beat b { position: absolute; left: 5px; top: 7px; font: 600 0.5625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.04em; color: #5b6270; white-space: nowrap; }
+    .span { position: absolute; top: 8px; height: 10px; border-radius: 5px; }
+  </style>
+</helmet>
+
+<div style="width: 1120px; padding: 34px 38px 40px; background: #ffffff">
+
+  <header style="margin-bottom: 26px">
+    <span class="k" style="color: #a9aeba">PaperTok · Conexiones del paper</span>
+    <h1 style="margin: 10px 0 8px; font-size: 1.625rem; line-height: 1.15; font-weight: 700; letter-spacing: -0.015em">Cómo se mueve el grafo</h1>
+    <p style="max-width: 680px">La hoja ya tiene su gramática: dos curvas, unos pocos tiempos y una asimetría —la hoja entra en 360 ms y sale en 180—. El mapa la hereda entera. Sólo hay tres fotogramas nuevos en todo lo que sigue, y están marcados.</p>
+  </header>
+
+  <!-- ── 1 · La gramática ── -->
+  <section class="sec">
+    <div>
+      <h2>La gramática</h2>
+      <p style="margin-top: 6px">Dos curvas. Nada se mueve con una tercera.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: 200px 200px minmax(0, 1fr); gap: 26px">
+
+      <div>
+        <svg width="200" height="96" viewBox="0 0 200 96">
+          <rect x="0.5" y="0.5" width="199" height="95" fill="none" stroke="#f2f3f5"></rect>
+          <path d="M0 96 C 40 12, 78 0, 200 0" fill="none" stroke="#111318" stroke-width="1.5"></path>
+        </svg>
+        <span class="k" style="display: block; margin-top: 9px; color: #111318">ease-out</span>
+        <p class="m" style="margin-top: 5px; color: #8a919e">Para lo que aparece sin cambiar de sitio: aristas, opacidades, contenido que se sustituye.</p>
+      </div>
+
+      <div>
+        <svg width="200" height="96" viewBox="0 0 200 96">
+          <rect x="0.5" y="0.5" width="199" height="95" fill="none" stroke="#f2f3f5"></rect>
+          <path d="M0 96 C 32 0, 60 0, 200 0" fill="none" stroke="#111318" stroke-width="1.5"></path>
+        </svg>
+        <span class="k" style="display: block; margin-top: 9px; color: #111318">cubic-bezier(.16, 1, .3, 1)</span>
+        <p class="m" style="margin-top: 5px; color: #8a919e">Para lo que se desplaza: la hoja, la regla, los nodos, la marca. Frena sin rebotar.</p>
+      </div>
+
+      <div style="display: grid; gap: 9px; align-content: start; padding-left: 26px; border-left: 1px solid #e6e7ea">
+        <span class="k" style="color: #a9aeba">Los cinco tiempos</span>
+        <div style="display: flex; gap: 11px; align-items: baseline"><span class="k" style="width: 58px; color: #111318">120 ms</span><span style="font-size: 0.8125rem; color: #5b6270">respuesta al dedo: color, halo, grosor</span></div>
+        <div style="display: flex; gap: 11px; align-items: baseline"><span class="k" style="width: 58px; color: #111318">160–180</span><span style="font-size: 0.8125rem; color: #5b6270">lo que se apaga y lo que sale</span></div>
+        <div style="display: flex; gap: 11px; align-items: baseline"><span class="k" style="width: 58px; color: #111318">220–240</span><span style="font-size: 0.8125rem; color: #5b6270">contenido que aparece en su sitio</span></div>
+        <div style="display: flex; gap: 11px; align-items: baseline"><span class="k" style="width: 58px; color: #111318">280 ms</span><span style="font-size: 0.8125rem; color: #5b6270">algo que viaja dentro de la hoja</span></div>
+        <div style="display: flex; gap: 11px; align-items: baseline"><span class="k" style="width: 58px; color: #111318">320–360</span><span style="font-size: 0.8125rem; color: #5b6270">las piezas grandes: la hoja, la regla</span></div>
+        <p class="m" style="margin-top: 4px; color: #a9aeba">Son los de <span style="color: #5b6270">--transition-*</span> y los de las animaciones que la hoja ya usa. Ninguno nuevo.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 2 · Trazado ── -->
+  <section class="sec">
+    <div>
+      <h2>Trazado</h2>
+      <p style="margin-top: 6px">Primero la estructura, después el contenido. Es la promesa que ya hace el esqueleto: se ve dónde va a haber algo antes de que lo haya.</p>
+      <button class="play" style="margin-top: 14px" onClick="{{ verTrazado }}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v18l15-9Z"></path></svg>Reproducir
+      </button>
+    </div>
+    <div style="display: grid; gap: 16px">
+      <div class="esc">
+        <sc-if value="{{ trazado }}" hint-placeholder-val="{{ true }}">
+          <div>
+            <svg width="420" height="200" viewBox="0 0 420 200" style="position: absolute; inset: 0">
+              <sc-for list="{{ aristas }}" as="e" hint-placeholder-count="8">
+                <line class="a-arista" x1="246" y1="100" x2="{{ e.x }}" y2="{{ e.y }}" stroke="#d9dbe0" stroke-width="1" style="{{ e.style }}"></line>
+              </sc-for>
+            </svg>
+            <div class="a-regla" style="position: absolute; left: 0; right: 0; top: 100px; height: 1px; background: #111318; transform-origin: 246px 50%"></div>
+            <div class="a-marca" style="position: absolute; left: 238px; top: 92px; width: 16px; height: 16px; border-radius: 50%; background: #111318; box-shadow: 0 0 0 3px #ffffff"></div>
+            <span class="k a-marca" style="position: absolute; left: 264px; top: 94px; background: #ffffff; padding: 0 6px; color: #111318">Este paper</span>
+            <sc-for list="{{ nodos }}" as="n" hint-placeholder-count="8">
+              <span class="{{ n.clase }}" style="{{ n.style }}"></span>
+            </sc-for>
+          </div>
+        </sc-if>
+      </div>
+
+      <div class="bar">
+        <span class="k" style="position: absolute; right: 7px; top: 8px; color: #c9ccd3">0–800 ms</span>
+        <div class="span" style="left: 0; width: 45%; background: #e6e7ea"></div>
+        <div class="span" style="left: 15%; width: 40%; background: #d3d5db"></div>
+        <div class="span" style="left: 20%; width: 64%; background: #111318"></div>
+        <div class="beat" style="left: 0"><b>0 · la hoja</b></div>
+        <div class="beat" style="left: 15%"><b>120 · la regla</b></div>
+        <div class="beat" style="left: 20%"><b>160 · aristas</b></div>
+        <div class="beat" style="left: 27.5%"><b>220 · nodos</b></div>
+        <div class="beat" style="left: 84%"><b>670</b></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-top: 2px">
+        <div>
+          <span class="k" style="color: #b45309">Nuevo · la regla se traza</span>
+          <p style="margin-top: 7px">Sale de la marca hacia los dos lados con un <span class="m" style="color: #111318">scaleX</span>, 320 ms. El eje aparece antes que nada porque es lo que da sentido a las posiciones: un nodo que cae sin eje no significa todavía nada.</p>
+        </div>
+        <div>
+          <span class="k" style="color: #b45309">Nuevo · las aristas</span>
+          <p style="margin-top: 7px">Sólo opacidad, 220 ms, 16 ms entre una y otra. No se dibujan de dentro afuera: son dieciséis, y un trazo progresivo por cada una convierte el mapa en fuegos artificiales.</p>
+        </div>
+        <div>
+          <span class="k" style="color: #067647">Reutilizado · los nodos</span>
+          <p style="margin-top: 7px">Es exactamente <span class="m" style="color: #111318">relatedItemIn</span>, el mismo fotograma con el que hoy entra una fila de la lista: +6 px y opacidad, 280 ms. El escalonado baja de 28 a 24 ms porque son el doble de piezas.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 3 · El salto ── -->
+  <section class="sec">
+    <div>
+      <h2>El salto</h2>
+      <p style="margin-top: 6px">Centrar en un vecino no es cambiar de pantalla: es moverse dentro del mismo espacio, y el movimiento tiene que decirlo.</p>
+      <button class="play" style="margin-top: 14px" onClick="{{ verSalto }}">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3v18l15-9Z"></path></svg>Reproducir
+      </button>
+      <p class="m" style="margin-top: 12px; color: #a9aeba">El nodo tocado sube; el centro anterior baja a su banda.</p>
+    </div>
+    <div style="display: grid; gap: 16px">
+      <div class="esc">
+        <svg width="420" height="200" viewBox="0 0 420 200" style="position: absolute; inset: 0">
+          <sc-for list="{{ saltoAristas }}" as="e" hint-placeholder-count="6">
+            <line x1="{{ e.cx }}" y1="100" x2="{{ e.x }}" y2="{{ e.y }}" stroke="#d9dbe0" stroke-width="1" style="{{ e.style }}"></line>
+          </sc-for>
+        </svg>
+        <div style="{{ saltoReglaStyle }}"></div>
+        <div class="{{ saltoMarcaClase }}" style="{{ saltoMarcaStyle }}"></div>
+        <sc-for list="{{ saltoNodos }}" as="n" hint-placeholder-count="6">
+          <span class="{{ n.clase }}" style="{{ n.style }}"></span>
+        </sc-for>
+        <span class="k" style="{{ saltoEtiquetaStyle }}">{{ saltoEtiqueta }}</span>
+      </div>
+
+      <div class="bar">
+        <span class="k" style="position: absolute; right: 7px; top: 8px; color: #c9ccd3">0–1.100 ms</span>
+        <div class="span" style="left: 0; width: 16.4%; background: #e6e7ea"></div>
+        <div class="span" style="left: 9%; width: 29.2%; background: #111318"></div>
+        <div class="span" style="left: 40%; width: 60%; background: #d3d5db"></div>
+        <div class="beat" style="left: 0"><b>0 · la ficha baja, lo demás se apaga</b></div>
+        <div class="beat" style="left: 9%"><b>100 · el nodo sube</b></div>
+        <div class="beat" style="left: 40%"><b>440 · trazado del vecindario nuevo</b></div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; margin-top: 2px">
+        <div>
+          <span class="k" style="color: #111318">Sube por su vertical</span>
+          <p style="margin-top: 7px">Y no en diagonal hacia el centro: su x nueva depende del eje del vecindario nuevo, que no se conoce hasta que responde el worker. Sube por donde está, y la marca se desliza a su sitio cuando llega la respuesta.</p>
+        </div>
+        <div>
+          <span class="k" style="color: #111318">El centro anterior no se borra</span>
+          <p style="margin-top: 7px">Casi siempre está en el vecindario nuevo —si A citaba a B, B tiene a A entre sus posteriores—, así que baja de la regla a su banda encogiendo de 16 a 11 px. Sólo se desvanece cuando de verdad no aparece.</p>
+        </div>
+        <div>
+          <span class="k" style="color: #b45309">El esqueleto llega tarde a propósito</span>
+          <p style="margin-top: 7px">Con la respuesta en caché el trazado arranca en 440 ms y no se ve ningún esqueleto. Sólo si a los 320 ms de pedirla no hay datos aparecen los puntos que laten: es la misma regla de placeholders del resto de la app.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 4 · Micro-interacciones ── -->
+  <section class="sec">
+    <div>
+      <h2>Micro</h2>
+      <p style="margin-top: 6px">Lo que pasa cien veces por sesión. Pasa el cursor por encima o toca cada celda.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+
+      <div class="cell">
+        <div class="cell-cap"><span class="k">Al pasar por encima</span><span class="k" style="color: #a9aeba">120 ms ease</span></div>
+        <div class="cell-body">
+          <span class="mnode"><i></i><span>Bahdanau ’14</span></span>
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-cap"><span class="k">Al tocar el nodo</span><span class="k" style="color: #a9aeba">120 · 160 ms</span></div>
+        <div class="cell-body" onClick="{{ alternarSel }}">
+          <span class="{{ selClase }}"><i></i><span>Bahdanau ’14</span></span>
+          <span class="m" style="position: absolute; left: 11px; bottom: 8px; color: #c9ccd3">{{ selNota }}</span>
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-cap"><span class="k">La ficha</span><span class="k" style="color: #a9aeba">240 entra · 180 sale</span></div>
+        <div class="cell-body" onClick="{{ alternarFicha }}">
+          <span class="m" style="color: #c9ccd3">tocar para abrir y cerrar</span>
+          <sc-if value="{{ ficha }}" hint-placeholder-val="{{ true }}">
+            <div class="ficha">
+              <span class="k" style="color: #c2410c">CS.CL <span style="color: #d3d5db">·</span> <span style="color: #8a919e">2014</span></span>
+              <strong style="display: block; margin-top: 5px; font-size: 0.8125rem; font-weight: 600">Neural Machine Translation…</strong>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-cap"><span class="k">Mapa ↔ lista</span><span class="k" style="color: #a9aeba">220 ms ease-out</span></div>
+        <div class="cell-body" onClick="{{ alternarVista }}">
+          <sc-if value="{{ esMapa }}" hint-placeholder-val="{{ true }}">
+            <div class="swap" style="display: flex; align-items: center; gap: 14px">
+              <span class="pt hueco" style="position: relative; margin: 0"></span>
+              <span class="pt lleno" style="position: relative; margin: 0"></span>
+              <span class="pt hueco" style="position: relative; margin: 0"></span>
+            </div>
+          </sc-if>
+          <sc-if value="{{ esLista }}" hint-placeholder-val="{{ false }}">
+            <div class="swap" style="display: grid; gap: 6px; width: 148px">
+              <span style="height: 9px; border-radius: 2px; background: #e6e7ea"></span>
+              <span style="height: 9px; border-radius: 2px; background: #e6e7ea"></span>
+              <span style="height: 9px; width: 68%; border-radius: 2px; background: #e6e7ea"></span>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-cap"><span class="k">Más o menos nodos</span><span class="k" style="color: #a9aeba">280 · 24 ms</span></div>
+        <div class="cell-body" onClick="{{ alternarCuantos }}">
+          <div style="display: flex; align-items: center; gap: 13px">
+            <sc-for list="{{ cuantos }}" as="c" hint-placeholder-count="3">
+              <span class="{{ c.clase }}" style="{{ c.style }}"></span>
+            </sc-for>
+          </div>
+        </div>
+      </div>
+
+      <div class="cell">
+        <div class="cell-cap"><span class="k">El esqueleto</span><span class="k" style="color: #b45309">nuevo · 1,3 s</span></div>
+        <div class="cell-body">
+          <div style="display: flex; align-items: center; gap: 13px">
+            <span class="lat"></span>
+            <span class="lat" style="animation-delay: 70ms"></span>
+            <span class="lat" style="animation-delay: 140ms"></span>
+            <span class="lat" style="animation-delay: 210ms"></span>
+          </div>
+          <span class="m" style="position: absolute; left: 11px; bottom: 8px; color: #c9ccd3">el barrido de la app necesita largo; un punto no lo tiene</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── 5 · Sin movimiento ── -->
+  <section class="sec">
+    <div>
+      <h2>Sin movimiento</h2>
+      <p style="margin-top: 6px">Con <span class="m" style="color: #111318">prefers-reduced-motion</span>, la hoja ya apaga todo. El mapa hereda esa regla y la afina.</p>
+    </div>
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 30px">
+      <div>
+        <span class="k" style="color: #b42318">Se va</span>
+        <ul style="margin: 12px 0 0; padding-left: 17px; font-size: 0.8125rem; line-height: 1.75; color: #5b6270">
+          <li>El trazado escalonado: el mapa aparece entero.</li>
+          <li>El viaje del nodo y el descenso del centro anterior: el vecindario se sustituye de golpe.</li>
+          <li>El deslizamiento de la marca y el latido del esqueleto.</li>
+          <li>El muelle de la ficha: aparece y desaparece sin desplazarse.</li>
+        </ul>
+      </div>
+      <div>
+        <span class="k" style="color: #067647">Se queda</span>
+        <ul style="margin: 12px 0 0; padding-left: 17px; font-size: 0.8125rem; line-height: 1.75; color: #5b6270">
+          <li>El color, el halo, el grosor de la arista: la retroalimentación no es movimiento, y quitarla dejaría el mapa mudo.</li>
+          <li>El rastro, que pasa a ser la única señal de que te has movido — razón de más para que esté siempre visible.</li>
+          <li>El esqueleto, quieto y a media opacidad, porque la espera sigue existiendo.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1120,"height":2000}}'>
+/* Los especímenes son mapas de siete y ocho nodos: lo justo para que se lea el
+   fotograma sin que el escalonado se convierta en el asunto. */
+const TRAZADO = [
+  { x: 86, y: 34, arriba: true },
+  { x: 168, y: 52, arriba: true },
+  { x: 300, y: 30, arriba: true },
+  { x: 356, y: 62, arriba: true },
+  { x: 110, y: 150, arriba: false },
+  { x: 196, y: 170, arriba: false },
+  { x: 288, y: 142, arriba: false },
+  { x: 352, y: 166, arriba: false },
+];
+
+/* El vecindario al que se salta. El primero es el centro anterior, que baja
+   de la regla a su banda en vez de desvanecerse. */
+const DESPUES = [
+  { x: 182, y: 54, arriba: true, vuelve: true },
+  { x: 96, y: 38, arriba: true },
+  { x: 262, y: 66, arriba: true },
+  { x: 138, y: 152, arriba: false },
+  { x: 244, y: 170, arriba: false },
+  { x: 330, y: 146, arriba: false },
+];
+
+const SALE = { x: 288, y: 142 };
+const EN_ESCENA = 7;
+const CX_ANTES = 246;
+const CX_DESPUES = 182;
+
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { trazado: true, salto: 'antes', sel: false, ficha: false, vista: 'mapa', cuantos: 3 };
+    this.relojes = [];
+  }
+
+  componentWillUnmount() { this.relojes.forEach(clearTimeout); }
+
+  luego(ms, fn) { this.relojes.push(setTimeout(fn, ms)); }
+
+  punto(n, clase, extra) {
+    return {
+      clase: 'pt ' + (n.arriba ? 'hueco' : 'lleno') + (clase ? ' ' + clase : ''),
+      style: 'left: ' + n.x + 'px; top: ' + n.y + 'px;' + (extra || ''),
+    };
+  }
+
+  renderVals() {
+    const self = this;
+    const st = this.state;
+
+    /* ── Trazado ── */
+    const nodos = TRAZADO.map(function (n, i) {
+      return self.punto(n, 'a-nodo', ' animation-delay: ' + (220 + i * 24) + 'ms');
+    });
+    const aristas = TRAZADO.map(function (n, i) {
+      return { x: n.x, y: n.y, style: 'animation-delay: ' + (160 + i * 16) + 'ms' };
+    });
+
+    /* ── Salto ── */
+    const antes = st.salto === 'antes';
+    const saliendo = st.salto === 'saliendo';
+    const cx = antes || saliendo ? CX_ANTES : CX_DESPUES;
+    let saltoNodos;
+    let saltoAristas;
+
+    if (antes || saliendo) {
+      saltoNodos = TRAZADO.slice(0, EN_ESCENA).map(function (n) {
+        const elegido = n.x === SALE.x && n.y === SALE.y;
+        if (elegido) {
+          return self.punto(n, saliendo ? 'a-sube' : '', ' box-shadow: 0 0 0 4px rgba(17, 19, 24, 0.1); transform: scale(1.28)');
+        }
+        return self.punto(n, saliendo ? 'apaga' : '');
+      });
+      saltoAristas = TRAZADO.slice(0, EN_ESCENA).map(function (n) {
+        return { cx: CX_ANTES, x: n.x, y: n.y, style: saliendo ? 'opacity: 0; transition: opacity 160ms ease-out' : '' };
+      });
+    } else {
+      saltoNodos = DESPUES.map(function (n, i) {
+        if (n.vuelve) return self.punto(n, 'a-baja', '');
+        return self.punto(n, 'a-nodo', ' animation-delay: ' + (220 + i * 24) + 'ms');
+      });
+      saltoAristas = DESPUES.map(function (n, i) {
+        return { cx: CX_DESPUES, x: n.x, y: n.y, style: 'animation: aristaIn 220ms ease-out ' + (160 + i * 16) + 'ms backwards' };
+      });
+    }
+
+    /* ── Micro ── */
+    const cuantos = [];
+    for (let i = 0; i < st.cuantos; i++) {
+      cuantos.push({
+        clase: 'pt lleno' + (i > 2 ? ' a-nodo' : ''),
+        style: 'position: relative; margin: 0;' + (i > 2 ? ' animation-delay: ' + ((i - 3) * 24) + 'ms' : ''),
+      });
+    }
+
+    return {
+      trazado: st.trazado,
+      nodos: nodos,
+      aristas: aristas,
+      verTrazado: function () {
+        self.setState({ trazado: false });
+        self.luego(50, function () { self.setState({ trazado: true }); });
+      },
+
+      saltoNodos: saltoNodos,
+      saltoAristas: saltoAristas,
+      saltoReglaStyle: 'position: absolute; left: 0; right: 0; top: 100px; height: 1px; background: #111318',
+      saltoMarcaClase: antes || saliendo ? '' : 'a-desliza',
+      saltoMarcaStyle: 'position: absolute; left: ' + (cx - 8) + 'px; top: 92px; width: 16px; height: 16px; border-radius: 50%; background: #111318; box-shadow: 0 0 0 3px #ffffff;'
+        + (saliendo ? ' opacity: 0; transition: opacity 160ms ease-out' : ''),
+      saltoEtiqueta: antes ? 'Toca «reproducir»' : (saliendo ? 'El nodo sube a la regla' : 'Centro nuevo · el anterior baja a su banda'),
+      saltoEtiquetaStyle: 'position: absolute; left: 11px; bottom: 8px; color: ' + (antes ? '#c9ccd3' : '#8a919e'),
+      verSalto: function () {
+        self.setState({ salto: 'antes' });
+        self.luego(420, function () { self.setState({ salto: 'saliendo' }); });
+        self.luego(820, function () { self.setState({ salto: 'despues' }); });
+      },
+
+      selClase: 'mnode' + (st.sel ? ' on' : ''),
+      selNota: st.sel ? 'su arista pasa a tinta; las demás bajan a #eff0f2' : 'tocar para seleccionar',
+      alternarSel: function () { self.setState({ sel: !st.sel }); },
+
+      ficha: st.ficha,
+      alternarFicha: function () { self.setState({ ficha: !st.ficha }); },
+
+      esMapa: st.vista === 'mapa',
+      esLista: st.vista === 'lista',
+      alternarVista: function () { self.setState({ vista: st.vista === 'mapa' ? 'lista' : 'mapa' }); },
+
+      cuantos: cuantos,
+      alternarCuantos: function () { self.setState({ cuantos: st.cuantos === 3 ? 6 : 3 }); },
+    };
+  }
+}
+</script>
+</body>
+</html>

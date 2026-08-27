@@ -69,6 +69,16 @@
   color: var(--text-tertiary);
   font: 500 0.625rem/1.5 var(--font-mono);
   white-space: nowrap;
+  /* The allowance is fetched, so it lands a moment after the reader has already
+     opened — into chrome that has finished arriving. Without this it punched a
+     hole in the header of a screen that had settled. */
+  animation: rdUsesIn 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  transition: color var(--transition-base), border-color var(--transition-base);
+}
+
+@keyframes rdUsesIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
 }
 
 .rd-uses-meter {
@@ -81,6 +91,9 @@
   height: 9px;
   border-radius: 1px;
   background: var(--accent-primary);
+  /* Spending a use drains one segment rather than swapping it. It is the only
+     thing on screen that says the rewrite cost something. */
+  transition: background-color var(--transition-slow);
 }
 
 .rd-uses-meter i[data-spent] {
@@ -101,24 +114,45 @@
   border-color: var(--accent-danger);
 }
 
-/* The panel: grouped and labelled, like a properties palette. */
-.rd-panel {
+/* The dock holds the position; the panel inside it holds the look. They are
+   separate because they animate to different clocks — the dock arrives with the
+   reader, the panel comes and goes with the pointer — and a single element
+   cannot carry two transforms without one overwriting the other.
+
+   Centred by auto margins rather than by `translateX(-50%)`: framer-motion
+   writes an inline transform here, and an inline transform replaces the
+   stylesheet's wholesale — the panel used to snap to the left edge for the
+   length of the animation. */
+.rd-panel-dock {
   position: absolute;
   bottom: max(var(--space-5), calc(env(safe-area-inset-bottom, 0px) + var(--space-4)));
-  left: 50%;
-  transform: translateX(-50%);
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+  width: fit-content;
+  max-width: calc(100vw - var(--space-6));
   z-index: 4;
+}
+
+/* The panel: grouped and labelled, like a properties palette. */
+.rd-panel {
   display: flex;
   align-items: flex-end;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
-  background: var(--bg-glass-strong);
-  backdrop-filter: saturate(180%) blur(12px);
-  -webkit-backdrop-filter: saturate(180%) blur(12px);
+  /* Opaque enough to read against, without a `backdrop-filter`. The blur was
+     sampling and re-blurring the whole document behind it on every frame of
+     every scroll, and at 88% white over a white page it was buying almost
+     nothing: what showed through was a ghost of the text either way. This is
+     the one change here made on reasoning rather than on a measurement — the
+     cost of a backdrop filter lives in paint, which this harness cannot see. */
+  background: color-mix(in srgb, var(--bg-card) 95%, transparent);
   box-shadow: var(--shadow-lg);
-  max-width: calc(100vw - var(--space-6));
+  /* It rises out of the dock rather than out of thin air. */
+  transform-origin: bottom center;
+  max-width: 100%;
   overflow-x: auto;
   scrollbar-width: none;
 }
@@ -147,7 +181,7 @@
 
 .rd-panel [data-state='on'] {
   background: var(--brand-yellow);
-  color: var(--text-primary);
+  color: var(--text-on-brand);
 }
 
 /* ── Scroll region ── */
@@ -155,6 +189,10 @@
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* The margin slides out past this edge when it is put away. Left to itself
+     `overflow-x` would compute to `auto` alongside the `auto` above and answer
+     with a scrollbar instead of clipping it. */
+  overflow-x: hidden;
   overscroll-behavior: contain;
   display: flex;
   gap: var(--space-8);
@@ -241,12 +279,26 @@
   border-radius: var(--radius-sm);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+  transition: background-color var(--transition-base), box-shadow var(--transition-base);
+}
+
+/* The highlighter switch, which is a colour and not a document: the model's
+   suggestions stay in the paragraph and lose their ink. They used to be built
+   out of the plan entirely, so the switch removed elements — the words shifted
+   by the mark's own padding, and there was nothing left on screen for the
+   colour to fade out of. The reader's own marks are not the model's to
+   withdraw, so they are untouched. */
+.rd-doc[data-marks='off'] .rd-mark[data-proposed] {
+  background-color: transparent;
+  box-shadow: none;
 }
 
 /* A user's own highlight is the saturated pen; the model's suggestions are
    softer, so the reader can tell them apart at a glance. */
 .rd-mark--user {
   background: var(--brand-yellow);
+  /* The pen does not flip with the theme, so neither can the words inside it. */
+  color: var(--text-on-brand);
 }
 
 .rd-mark--caveat {
@@ -269,19 +321,134 @@
 }
 
 /* ── Streaming and states ── */
-.rd-writing {
+
+/* ── The ghost section ──
+   The rewrite arrives one whole section at a time, so there is no half-written
+   paragraph to show: what there is, is a section on its way. It gets drawn
+   before it exists — a heading bar and five uneven lines at the pitch of the
+   real type — and every section that lands is inserted in front of it. The
+   ghost never moves; the document grows above it. */
+.rd-ghost {
+  margin-bottom: var(--space-8);
+}
+
+.rd-ghost-head {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   flex-wrap: wrap;
-  padding: var(--space-4) 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
+  margin-bottom: var(--space-4);
+  color: var(--text-tertiary);
 }
 
-.rd-writing small {
+.rd-ghost-stage {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  /* Replayed on every change of stage: the element is keyed by `stage` in the
+     JSX, so React remounts it and the animation starts again. Downloading does
+     not jump into reading. */
+  animation: rdStageIn 280ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rd-ghost-head small {
   font: 400 0.6875rem/1.5 var(--font-mono);
   color: var(--text-tertiary);
+}
+
+.rd-ghost-body {
+  /* Collapses towards its own top when a section replaces it. */
+  transform-origin: top center;
+}
+
+.rd-ghost-title {
+  height: 20px;
+  width: 44%;
+  margin-bottom: var(--space-4);
+  border-radius: var(--radius-sm);
+}
+
+.rd-ghost-lines {
+  display: flex;
+  flex-direction: column;
+  /* 12px bar + 17px gap = the 29px line pitch of `.rd-p`, so the ghost takes up
+     about as much room as the text that replaces it and the swap barely jumps. */
+  gap: 17px;
+}
+
+.rd-ghost-lines i {
+  display: block;
+  height: 12px;
+  width: var(--w, 100%);
+  border-radius: var(--radius-sm);
+}
+
+.rd-ghost-title,
+.rd-ghost-lines i {
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary) 25%,
+    var(--border-subtle) 50%,
+    var(--bg-secondary) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+/* A negative delay offsets each line's phase, so the shimmer crosses the block
+   on a diagonal instead of all five bars flashing in unison. */
+.rd-ghost-lines i {
+  animation-delay: calc(var(--i, 0) * -140ms);
+}
+
+@keyframes rdStageIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── Skeleton to text: the line writes itself ──
+   A soft-edged mask slides across the paragraph from the left and the text
+   appears behind it. Paragraphs start 70ms apart, which is slow enough to read
+   as writing and fast enough not to be a wait.
+
+   An earlier draft ran a band of the brand yellow along the mask's edge, the
+   same pen the marks are drawn with. It was one idea too many: the reveal is
+   already the whole effect, and the colour turned a piece of pacing into a
+   thing to look at. The wipe stays; the pen is gone. */
+.rd {
+  --rd-write-mask: linear-gradient(90deg, #000 0 40%, rgba(0, 0, 0, 0.5) 50%, transparent 64%);
+}
+
+.rd-section[data-reveal] .rd-section-head,
+.rd-section[data-reveal] .rd-section-title {
+  animation: rdRevealHead 320ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rd-section[data-reveal] .rd-p {
+  -webkit-mask-image: var(--rd-write-mask);
+  mask-image: var(--rd-write-mask);
+  -webkit-mask-size: 260% 100%;
+  mask-size: 260% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: 0 0;
+  mask-position: 0 0;
+  /* `backwards`, not `both`: the fill has to cover the stagger delay, and the
+     resting state after the sweep is the base rule above — an unmasked
+     paragraph — which is exactly where the animation ends anyway. */
+  animation: rdWriteIn 620ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc((var(--i, 0) + 1) * 70ms);
+}
+
+@keyframes rdWriteIn {
+  from { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+  to { -webkit-mask-position: 0 0; mask-position: 0 0; }
+}
+
+@keyframes rdRevealHead {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 
 .rd-notice {
@@ -296,19 +463,100 @@
   background: var(--tint-amber-bg);
   color: var(--tint-amber-fg);
   font-size: var(--fs-sm);
+  /* It arrives at the end of a stream that stopped early, under text the reader
+     is already reading. Appearing outright reads as a layout error. */
+  animation: rdErrorIn 320ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.rd-state {
+/* ── When it fails ──
+   A block on the page rather than a note dropped in the middle of an empty one:
+   a rule down the side in the colour of what went wrong, the code in mono
+   because it is machine data, then the same headline-over-body hierarchy the
+   rest of the document is set in. */
+.rd-error {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: var(--space-3);
-  padding: var(--space-6) 0;
+  gap: var(--space-2);
+  /* Full measure, so its edges line up with the double rule under the byline.
+     Stopping short of it read as a block that had failed to load rather than as
+     a deliberate callout. The prose inside keeps its own shorter measure. */
+  padding: var(--space-5) var(--space-6);
+  border: 1px solid var(--rd-tone-line);
+  border-left: 3px solid var(--rd-tone-fg);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--rd-tone-bg);
+  animation: rdErrorIn 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Amber: come back and it will work. Red: this attempt broke. Neutral: nothing
+   here changes by trying, so the screen does not shout. */
+.rd-error[data-tone='wait'] {
+  --rd-tone-bg: var(--tint-amber-bg);
+  --rd-tone-fg: var(--tint-amber-fg);
+  --rd-tone-line: var(--tint-amber-line);
+}
+
+.rd-error[data-tone='broken'] {
+  --rd-tone-bg: var(--tint-red-bg);
+  --rd-tone-fg: var(--tint-red-fg);
+  --rd-tone-line: var(--tint-red-line);
+}
+
+.rd-error[data-tone='closed'] {
+  --rd-tone-bg: var(--tint-neutral-bg);
+  --rd-tone-fg: var(--tint-neutral-fg);
+  --rd-tone-line: var(--tint-neutral-line);
+}
+
+.rd-error-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--rd-tone-fg);
+}
+
+.rd-error-kicker code {
+  padding: 1px 5px;
+  border: 1px solid var(--rd-tone-line);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  font: 400 0.625rem/1.6 var(--font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--text-tertiary);
+}
+
+.rd-error-title {
+  font-family: var(--font-serif);
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+.rd-error-body {
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
   color: var(--text-secondary);
 }
 
-.rd-state > svg { color: var(--text-tertiary); }
-.rd-state p { font-size: var(--fs-sm); max-width: 52ch; }
+.rd-error-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+@keyframes rdErrorIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
 
 .rd-retry {
   min-height: 34px;
@@ -335,6 +583,9 @@
   padding-top: var(--space-5);
   margin-top: var(--space-8);
   border-top: 1px solid var(--border-default);
+  /* Arrives under the first section that lands, while the rest are still being
+     written above it. A fade keeps it from reading as part of the stream. */
+  animation: rdRevealStill 420ms ease-out;
 }
 
 .rd-attribution {
@@ -359,85 +610,7 @@
   color: var(--text-tertiary);
 }
 
-/* ── Saved highlights rail ── */
-.rd-notes {
-  flex: 0 0 240px;
-  align-self: flex-start;
-  position: sticky;
-  top: 0;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding-left: var(--space-5);
-  border-left: 1px solid var(--border-subtle);
-}
-
-.rd-notes-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  font: var(--mono-label);
-  letter-spacing: var(--mono-track);
-  text-transform: uppercase;
-  color: var(--text-tertiary);
-}
-
-.rd-notes ul {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-}
-
-.rd-notes li {
-  display: flex;
-  align-items: flex-start;
-  gap: var(--space-2);
-  padding: var(--space-2);
-  border-left: 2px solid var(--brand-yellow);
-  background: var(--bg-secondary);
-  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
-}
-
-.rd-notes li span {
-  flex: 1;
-  min-width: 0;
-  font-family: var(--font-serif);
-  font-size: 0.8125rem;
-  line-height: 1.45;
-  color: var(--text-secondary);
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.rd-notes li button {
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  width: 22px;
-  height: 22px;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-tertiary);
-  cursor: pointer;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .rd-notes li button:hover {
-    background: var(--tint-red-bg);
-    color: var(--tint-red-fg);
-  }
-}
-
 /* ── Responsive ── */
-@media (max-width: 1100px) {
-  .rd-notes {
-    display: none;
-  }
-}
-
 @media (max-width: 640px) {
   .rd-status-chip {
     display: none;
@@ -466,10 +639,97 @@
   .rd-section-title {
     font-size: 1.2rem;
   }
+
+  .rd-error {
+    padding: var(--space-4) var(--space-4);
+  }
+
+  .rd-error-title {
+    font-size: 1.25rem;
+  }
+
+  .rd-error-actions {
+    gap: var(--space-3);
+  }
+
+  /* The head wraps at this width and the hint is the first thing worth losing:
+     the stage label already says what is happening. */
+  .rd-ghost-head small {
+    display: none;
+  }
+}
+
+/* Where there is a pointer that can hover, the panel is not always on screen,
+   so the document stops reserving a panel's worth of air at its foot. On a
+   touch screen there is no hover to summon it with, the panel stays put, and so
+   does the padding that keeps it off the last lines. */
+@media (hover: hover) and (pointer: fine) {
+  .rd-scroll {
+    padding-bottom: calc(var(--space-12) + var(--space-2));
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .rd-retry {
     transition: none;
   }
+
+  /* No sweep, no pen, no shimmer — a section still has to announce that it just
+     arrived, so it does it with a short fade and nothing else. */
+  .rd-section[data-reveal] .rd-p {
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: rdRevealStill 120ms;
+    animation-delay: 0s;
+  }
+
+  .rd-section[data-reveal] .rd-section-head,
+  .rd-section[data-reveal] .rd-section-title {
+    animation: rdRevealStill 120ms;
+  }
+
+  .rd-ghost-stage {
+    animation: none;
+  }
+
+  .rd-ghost-title,
+  .rd-ghost-lines i {
+    animation: none;
+    background: var(--bg-secondary);
+  }
+
+  .rd-error,
+  .rd-notice,
+  .rd-uses,
+  .rd-doc-footer {
+    animation: none;
+  }
+
+  .rd-mark,
+  .rd-uses-meter i {
+    transition: none;
+  }
+}
+
+@keyframes rdRevealStill {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── While the reader is open, the page behind it is not a page ──
+   `.rd` is opaque and covers the viewport, but the feed underneath stays in the
+   layout tree and every style recalculation walks it anyway: measured at 8.5ms
+   with it against 3.9ms without, on a ~2900-element page. framer-motion
+   animates by writing inline styles every frame, so each frame of every
+   animation in this reader was paying to lay out a document nobody could see —
+   and 8.5ms does not fit in a 16.7ms frame next to paint.
+
+   `content-visibility: hidden` rather than `display: none`: it skips the
+   subtree's layout while preserving its rendering state, so the feed comes back
+   at the scroll position it was left at (verified — 981px in, 981px out). The
+   attribute is set once the reader has finished covering the page and dropped
+   the moment it starts to leave, because the reader grows out of the card
+   behind it and folds back into it. */
+body[data-reader-open] #root {
+  content-visibility: hidden;
 }

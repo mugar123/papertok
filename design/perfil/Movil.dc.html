@@ -1,0 +1,234 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #111318; text-decoration: none; }
+    a:hover { color: #2b2f38; }
+    button { font-family: inherit; }
+
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .k-sm { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+
+    /* Objetivos táctiles: 44px de alto mínimo en todo lo que se pulsa. */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 16px; border-radius: 3px; font-size: 0.875rem; font-weight: 600; white-space: nowrap; cursor: pointer; }
+    .btn-outline { border: 1px solid #d3d5db; background: #ffffff; color: #111318; }
+    .btn-ghost { border: 1px solid #e6e7ea; background: none; color: #5b6270; }
+
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); border-top: 1px solid #d3d5db; border-left: 1px solid #d3d5db; }
+    .stat { display: flex; flex-direction: column; gap: 3px; padding: 10px 12px; border-right: 1px solid #d3d5db; border-bottom: 1px solid #d3d5db; background: #ffffff; text-align: left; cursor: pointer; }
+    .stat-v { font: 600 1.05rem/1.1 'IBM Plex Mono', monospace; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+    .stat-l { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #8a919e; }
+
+    /* Una sola línea que rueda: la barra no envuelve ni comprime. */
+    .tabs { display: flex; align-items: stretch; gap: 2px; overflow-x: auto; border-bottom: 1px solid #e6e7ea; scrollbar-width: none; }
+    .tabs::-webkit-scrollbar { display: none; }
+    .tab { position: relative; display: inline-flex; align-items: center; gap: 7px; height: 46px; padding: 0 12px; border: none; background: none; color: #8a919e; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; cursor: pointer; }
+    .tab.on { color: #111318; }
+    .tab-n { font-size: 0.625rem; font-variant-numeric: tabular-nums; color: #8a919e; }
+    .tab.on::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 3px; border-radius: 9999px; background: #ffd21e; }
+
+    .tile { display: flex; flex-direction: column; padding: 18px 18px 18px 16px; border: 1px solid #e6e7ea; border-left: 3px solid var(--la, #d3d5db); border-radius: 4px; background: #ffffff; text-align: left; }
+    .tile-ic { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 3px; border: 1px solid color-mix(in srgb, var(--la, #d3d5db) 24%, #ffffff); background: color-mix(in srgb, var(--la, #d3d5db) 8%, #ffffff); color: var(--la, #8a919e); }
+    .tile-n { margin: 12px 0 0; font-family: 'Newsreader', Georgia, serif; font-size: 1.125rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid #c3ecd5; border-radius: 2px; background: #ecfdf3; color: #067647; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+
+    .row { display: flex; align-items: flex-start; gap: 12px; padding: 14px 14px 14px 11px; border-bottom: 1px solid #e6e7ea; border-left: 3px solid var(--fa, #d3d5db); background: #ffffff; }
+    .row-k { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fa, #8a919e); }
+    .row-t { margin: 7px 0 0; font-family: 'Newsreader', Georgia, serif; font-size: 0.9375rem; font-weight: 500; line-height: 1.35; }
+    .row-a { margin: 5px 0 0; font: 400 0.6875rem/1.5 'IBM Plex Mono', monospace; color: #8a919e; }
+  </style>
+</helmet>
+
+<div style="width: 390px; min-height: 900px; background: #ffffff">
+
+  <!-- Barra real de móvil: sin iconos en los enlaces, sin marca escrita. -->
+  <div style="display: flex; align-items: center; gap: 8px; height: 52px; padding: 0 12px; border-bottom: 1px solid #d3d5db">
+    <span style="display: grid; place-items: center; width: 26px; height: 26px; border-radius: 2px; background: #ffd21e; color: #111318; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; box-shadow: 2px 2px 0 #111318">PT</span>
+    <div style="display: flex; align-items: center; gap: 0; margin-left: auto">
+      <span style="padding: 6px 8px; font-size: 0.8125rem; font-weight: 500; color: #5b6270">Para ti</span>
+      <span style="padding: 6px 8px; font-size: 0.8125rem; font-weight: 500; color: #5b6270">Research</span>
+      <span style="padding: 6px 8px; font-size: 0.8125rem; font-weight: 500; color: #5b6270">Siguiendo</span>
+    </div>
+    <div style="display: flex; align-items: center; gap: 4px; padding-left: 8px; margin-left: 4px; border-left: 1px solid #d3d5db">
+      <span style="display: grid; place-items: center; width: 28px; height: 28px; color: #5b6270">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      </span>
+      <span style="display: grid; place-items: center; width: 26px; height: 26px; border-radius: 9999px; border: 1px solid #111318; box-shadow: 0 0 0 2px #ffd21e; background: #c2410c; color: #ffffff; font: 600 0.6875rem/1 'IBM Plex Mono', monospace">m</span>
+    </div>
+  </div>
+
+  <div style="padding: 22px 20px 32px">
+
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px">
+      <p class="k" style="margin: 0; color: #8a919e">Perfil</p>
+      <span style="display: grid; place-items: center; width: 32px; height: 32px; margin-right: -6px; color: #5b6270">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"></path><path d="M14 17H5"></path><circle cx="17" cy="17" r="3"></circle><circle cx="7" cy="7" r="3"></circle></svg>
+      </span>
+    </div>
+
+    <!-- Una columna, no una fila de escritorio apretada: la bio y los botones
+         viven dentro del bloque de identidad, así que junto a un avatar de 96
+         se maquetaban contra 255px. Apilado, la prosa y los dos botones tienen
+         todo el ancho, y todo sigue contra el margen izquierdo. -->
+    <div style="display: flex; flex-direction: column; align-items: flex-start; gap: 16px">
+      <div style="flex: 0 0 auto; display: grid; place-items: center; width: 56px; height: 56px; border-radius: 9999px; background: #c2410c; color: #ffffff; font: 600 1.375rem/1 'IBM Plex Mono', monospace">m</div>
+      <div style="width: 100%; min-width: 0">
+        <h1 class="serif" style="display: flex; align-items: center; gap: 8px; margin: 0; font-size: 1.75rem; font-weight: 600; line-height: 1.05; letter-spacing: -0.025em">
+          mugar
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#111318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 auto"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"></path><path d="m9 12 2 2 4-4"></path></svg>
+        </h1>
+        <p class="mono" style="margin: 7px 0 0; font-size: 0.75rem; color: #8a919e">@mugar</p>
+      </div>
+    </div>
+
+    <p class="serif" style="margin: 14px 0 0; font-size: 1rem; line-height: 1.6; color: #5b6270">Verificando la fase 1 de perfiles públicos.</p>
+
+    <div style="display: flex; gap: 10px; margin-top: 16px">
+      <button class="btn btn-outline" style="flex: 1">Editar perfil</button>
+      <button class="btn btn-ghost" style="flex: 0 0 auto; padding: 0 14px">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>
+        <span class="mono" style="font-size: 0.75rem; font-weight: 600; color: #111318">12</span>
+      </button>
+    </div>
+
+    <div class="stats" style="margin-top: 18px">
+      <span class="stat"><span class="stat-v">1</span><span class="stat-l">Siguiendo</span></span>
+      <span class="stat"><span class="stat-v">0</span><span class="stat-l">Seguidores</span></span>
+      <span class="stat" onClick="{{ goLiked }}"><span class="stat-v">44</span><span class="stat-l">Me gusta</span></span>
+    </div>
+
+    <div style="height: 20px; border-bottom: 3px double #111318"></div>
+
+    <div class="tabs" style="margin-top: 2px">
+      <button class="tab {{ t1.cls }}" onClick="{{ t1.pick }}">Listas <span class="tab-n">3</span></button>
+      <button class="tab {{ t2.cls }}" onClick="{{ t2.pick }}">Guardados <span class="tab-n">12</span></button>
+      <button class="tab {{ t3.cls }}" onClick="{{ t3.pick }}">Me gusta <span class="tab-n">44</span></button>
+    </div>
+
+    <sc-if value="{{ isListas }}" hint-placeholder-val="{{ true }}">
+      <div>
+        <p style="margin: 16px 0 12px; font-size: 0.8125rem; color: #8a919e">Las listas no publicadas solo las ves tú.</p>
+        <div style="display: flex; flex-direction: column; gap: 14px">
+          <div class="tile" style="--la: #515bc3">
+            <span class="tile-ic">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>
+            </span>
+            <p class="tile-n">Relatividad numérica</p>
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px">
+              <span class="k" style="color: #8a919e; font-variant-numeric: tabular-nums">20 papers</span>
+              <span class="badge">Pública</span>
+            </div>
+          </div>
+          <div class="tile" style="--la: #1a786f">
+            <span class="tile-ic">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>
+            </span>
+            <p class="tile-n">Métodos bayesianos</p>
+            <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px">
+              <span class="k" style="color: #8a919e; font-variant-numeric: tabular-nums">12 papers</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isGuardados }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top: 16px; border-top: 1px solid #e6e7ea">
+        <div class="row" style="--fa: #c2410c">
+          <div style="flex: 1; min-width: 0">
+            <span class="row-k">Networking · 2020</span>
+            <p class="row-t">DAPES: Named Data for Off-the-Grid File Sharing</p>
+            <p class="row-a">Mastorakis, Li, Zhang</p>
+          </div>
+        </div>
+        <div class="row" style="--fa: #4f46e5">
+          <div style="flex: 1; min-width: 0">
+            <span class="row-k">Física · 2024</span>
+            <p class="row-t">Gravitational-wave background from binary neutron star mergers</p>
+            <p class="row-a">Renzini, Romero-Shaw, Lasky</p>
+          </div>
+        </div>
+        <div class="row" style="--fa: #7e22ce">
+          <div style="flex: 1; min-width: 0">
+            <span class="row-k">Matemáticas · 2023</span>
+            <p class="row-t">On the convergence of nested sampling estimators</p>
+            <p class="row-a">Chopin, Robert</p>
+          </div>
+        </div>
+        <div class="row" style="--fa: #15803d">
+          <div style="flex: 1; min-width: 0">
+            <span class="row-k">Biología · 2025</span>
+            <p class="row-t">Structural basis of ribosome stalling during antibiotic response</p>
+            <p class="row-a">Ito, Suzuki, Nakatogawa</p>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <sc-if value="{{ isMeGusta }}" hint-placeholder-val="{{ true }}">
+      <div style="margin-top: 16px; border-top: 1px solid #e6e7ea">
+        <div class="row" style="--fa: #1d4ed8">
+          <div style="flex: 1; min-width: 0">
+            <span class="row-k">Estadística · 2024</span>
+            <p class="row-t">Calibrated uncertainty for scientific machine learning</p>
+            <p class="row-a">Angelopoulos, Bates</p>
+          </div>
+        </div>
+        <div class="row" style="--fa: #be123c">
+          <div style="flex: 1; min-width: 0">
+            <span class="row-k">Medicina · 2025</span>
+            <p class="row-t">Sleep fragmentation and hippocampal consolidation in adults</p>
+            <p class="row-a">Ngo, Born</p>
+          </div>
+        </div>
+        <div class="row" style="--fa: #4f46e5">
+          <div style="flex: 1; min-width: 0">
+            <span class="row-k">Física · 2026</span>
+            <p class="row-t">A numerical relativity catalogue of eccentric binary inspirals</p>
+            <p class="row-a">Ramos-Buades, Husa, Pratten</p>
+          </div>
+        </div>
+        <div class="row" style="--fa: #c2410c">
+          <div style="flex: 1; min-width: 0">
+            <span class="row-k">Computación · 2025</span>
+            <p class="row-t">Retrieval-augmented generation over long documents</p>
+            <p class="row-a">Lewis, Perez, Piktus</p>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":390,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const tab = (this.state && this.state.tab) || 'listas';
+    const mk = (id) => ({ cls: tab === id ? 'on' : '', pick: () => this.setState({ tab: id }) });
+    return {
+      t1: mk('listas'),
+      t2: mk('guardados'),
+      t3: mk('megusta'),
+      isListas: tab === 'listas',
+      isGuardados: tab === 'guardados',
+      isMeGusta: tab === 'megusta',
+      goLiked: () => this.setState({ tab: 'megusta' }),
+    };
+  }
+}
+</script>
+</body>
+</html>

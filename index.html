@@ -3,9 +3,37 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="%BASE_URL%favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" sizes="192x192" href="%BASE_URL%icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="%BASE_URL%icons/apple-touch-icon.png" />
+    <link rel="manifest" href="%BASE_URL%manifest.webmanifest" />
+    <!-- iOS < 16.4 ignora display:standalone del manifest; estos meta son el equivalente legacy. -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="PaperTok" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="description" content="PaperTok es una aplicación para explorar y descubrir artículos científicos de distintas fuentes." />
     <meta name="theme-color" content="#ffffff" />
+    <!-- El tema, resuelto antes del primer pintado. Decidirlo en React es
+         decidirlo después de haber pintado la página en blanco: un fogonazo
+         blanco en cada carga para quien lee a oscuras. Es el espejo de
+         src/utils/theme.js — si cambia uno, cambia el otro. -->
+    <script>
+      (function () {
+        try {
+          var stored = window.localStorage.getItem('papertok_theme');
+          var prefersDark = window.matchMedia
+            && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var theme = stored === 'light' || stored === 'dark'
+            ? stored
+            : (prefersDark ? 'dark' : 'light');
+          document.documentElement.setAttribute('data-theme', theme);
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute('content', theme === 'dark' ? '#111318' : '#ffffff');
+        } catch (error) {
+          document.documentElement.setAttribute('data-theme', 'light');
+        }
+      })();
+    </script>
     <link rel="canonical" href="https://mugar123.github.io/papertok/" />
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="PaperTok" />

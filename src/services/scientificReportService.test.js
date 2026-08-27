@@ -7,6 +7,7 @@ import {
   getArxivCategoriesForReport,
   getDateThresholds,
   getPubmedCategoriesForReport,
+  lendCitationsToArxivCandidates,
   paperMatchesCategory,
   scorePaper,
 } from './scientificReportService.js';
@@ -111,4 +112,94 @@ test('does not treat a shared OpenAlex field as proof of a narrower discipline',
 
   assert.equal(paperMatchesCategory(electricalPaper, 'civil'), false);
   assert.equal(paperMatchesCategory(civilPaper, 'civil'), true);
+});
+
+
+/* ── Borrowing citations for the arXiv candidates ──
+   arXiv publishes no citation counts, so its papers reached a citation-weighted
+   selection with a zero and never survived it — and arXiv is the only source a
+   figure can be extracted from, so the pictures went with them. */
+
+function arxivPaper(arxivId, extra = {}) {
+  return { id: arxivId, arxivId, title: `Paper ${arxivId}`, ...extra };
+}
+
+test('an arXiv paper with no citations is given the count OpenAlex knows', async () => {
+  const candidates = [arxivPaper('2501.00001')];
+  const result = await lendCitationsToArxivCandidates(
+    candidates,
+    async () => ({ '2501.00001': { citationCount: 42 } }),
+  );
+
+  assert.equal(result[0].citationCount, 42);
+  assert.equal(result[0].citationCountKnown, true);
+  // The candidates handed in are left alone: they are about to be cached.
+  assert.equal(candidates[0].citationCount, undefined);
+});
+
+test('a paper that already has citations is not overwritten', async () => {
+  const [paper] = await lendCitationsToArxivCandidates(
+    [arxivPaper('2501.00002', { citationCount: 7 })],
+    async () => ({ '2501.00002': { citationCount: 999 } }),
+  );
+  assert.equal(paper.citationCount, 7);
+});
+
+test('a paper with no arXiv id is never looked up', async () => {
+  let asked = null;
+  const candidates = [{ id: 'openalex-1', title: 'From OpenAlex', citationCount: 3 }];
+  const result = await lendCitationsToArxivCandidates(candidates, async (ids) => { asked = ids; return {}; });
+  assert.equal(asked, null);
+  assert.equal(result, candidates);
+});
+
+test('the identifier is normalized before it is asked for', async () => {
+  let asked = null;
+  await lendCitationsToArxivCandidates(
+    [arxivPaper('arxiv:2501.00003v4')],
+    async (ids) => { asked = ids; return {}; },
+  );
+  assert.deepEqual(asked, ['2501.00003']);
+});
+
+test('two copies of one paper both receive the count', async () => {
+  const result = await lendCitationsToArxivCandidates(
+    [arxivPaper('2501.00004'), arxivPaper('2501.00004v2', { id: 'other' })],
+    async () => ({ '2501.00004': { citationCount: 11 } }),
+  );
+  assert.deepEqual(result.map(paper => paper.citationCount), [11, 11]);
+});
+
+test('a lookup that fails leaves the edition exactly as it was', async () => {
+  const candidates = [arxivPaper('2501.00005')];
+  const result = await lendCitationsToArxivCandidates(candidates, async () => {
+    throw new Error('OpenAlex is down');
+  });
+  assert.equal(result, candidates);
+  assert.equal(result[0].citationCount, undefined);
+});
+
+test('a lookup that answers with nothing useful changes nothing', async () => {
+  const candidates = [arxivPaper('2501.00006')];
+  for (const answer of [{}, { '2501.00006': {} }, { '2501.00006': { citationCount: 0 } }]) {
+    const result = await lendCitationsToArxivCandidates(candidates, async () => answer);
+    assert.equal(result, candidates, `answer ${JSON.stringify(answer)} should be a no-op`);
+  }
+});
+
+test('only the papers that were missing a count are rebuilt', async () => {
+  const known = arxivPaper('2501.00007', { citationCount: 5 });
+  const plain = { id: 'plain', title: 'No arXiv id' };
+  const needy = arxivPaper('2501.00008');
+  const result = await lendCitationsToArxivCandidates(
+    [known, plain, needy],
+    async () => ({ '2501.00008': { citationCount: 20 } }),
+  );
+
+  // Untouched papers keep their identity, so nothing downstream re-renders for
+  // a paper whose data did not change.
+  assert.equal(result[0], known);
+  assert.equal(result[1], plain);
+  assert.notEqual(result[2], needy);
+  assert.equal(result[2].citationCount, 20);
 });

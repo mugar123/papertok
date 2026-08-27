@@ -58,10 +58,19 @@ function CommandDialog({ children, className, title = 'Search', ...props }) {
  * `py-2` on the row is the air around the field. It was `pt-2`, which pushed
  * the field down without giving it the matching room underneath, so it sat off
  * centre in its own band.
+ *
+ * `wrapperClassName` / `wrapperStyle` reach the row rather than the field, for
+ * the same reason `CommandDialog` takes a `className` for the sheet: the row is
+ * what a caller has to be able to move if the field is to take part in the
+ * palette's entrance. Styling `className` instead would animate the `input`
+ * inside a row that stayed put, which is the opposite of the point.
  */
-function CommandInput({ className, ...props }) {
+function CommandInput({ className, wrapperClassName, wrapperStyle, ...props }) {
   return (
-    <div className="flex items-center gap-2 border-b border-border px-4 py-2">
+    <div
+      className={cn('flex items-center gap-2 border-b border-border px-4 py-2', wrapperClassName)}
+      style={wrapperStyle}
+    >
       <Search size={16} className="shrink-0 text-muted-foreground" />
       <CommandPrimitive.Input
         className={cn(

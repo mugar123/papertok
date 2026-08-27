@@ -31,6 +31,11 @@ export const PRODUCT_ANALYTICS_EVENTS = Object.freeze([
   // say so. Both of these shipped instrumented and silent.
   'paper_rewrite',
   'paper_highlight',
+  // Annotating a passage and taking the reading away are the two ends of what
+  // the reader is for: one says the rewrite was worth marking up, the other
+  // that it was worth keeping. Neither is measurable from `paper_rewrite`.
+  'paper_annotation',
+  'paper_export',
   // The far end of the guest run. `guest_demo_start` already marks where a
   // visitor begins; without its pair, the only thing measurable was how many
   // people started, never how many reached the wall. It was being sent as
@@ -90,6 +95,8 @@ const CATEGORIES = Object.freeze({
   method: new Set(['google', 'email', 'link', 'native', 'clipboard', 'other']),
   newsletter_action: new Set(['subscribe', 'unsubscribe']),
   rewrite_level: new Set(['beginner', 'university', 'researcher']),
+  annotation_origin: new Set(['user', 'ai']),
+  export_format: new Set(['tex']),
   search_type: new Set(['all', 'papers', 'authors', 'institutions', 'projects', 'topics']),
   // `reader` and `auth_prompt` are the two surfaces the light redesign added.
   // A surface that is emitted but not listed here is not an error anywhere: the
@@ -119,6 +126,11 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   select_content: { content_type: 'content_type', surface: 'surface', position: 'boundedNumber' },
   paper_rewrite: { level: 'rewrite_level', surface: 'surface' },
   paper_highlight: { level: 'rewrite_level', surface: 'surface' },
+  // `origin` is what separates a note the reader wrote from an answer they
+  // asked for — the second costs one of the day's AI uses and the first is free,
+  // so counting them together would hide which one people actually want.
+  paper_annotation: { level: 'rewrite_level', surface: 'surface', origin: 'annotation_origin' },
+  paper_export: { level: 'rewrite_level', surface: 'surface', format: 'export_format', notes: 'boundedNumber' },
   // Mirrors `guest_demo_start`'s shape so the two ends of the run can be read
   // as one funnel; `position` is how many papers were behind the reader.
   guest_demo_end: { position: 'boundedNumber', language: 'language' },

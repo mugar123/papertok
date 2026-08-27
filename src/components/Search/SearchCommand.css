@@ -202,7 +202,21 @@
    `SearchCommand.jsx`, which is where the index comes from.
 
    6px and 260ms: far enough that the eye reads it as arriving, short enough
-   that the first row is legible before the last one has landed. */
+   that the first row is legible before the last one has landed.
+
+   The same cascade also carries the sheet's own opening, top to bottom: the
+   field at index 0, the `Sugerencias` heading at 1, the four suggestions at
+   2–5, the hint at 6. Two of those were added late. Before, the opening ran in
+   three tiers at once — the sheet travelling, the suggestion rows rising, and
+   the field and the hint frozen at full opacity between them — which is why it
+   read as a box being switched on with some of its contents animated, rather
+   than as one thing arriving.
+
+   The 6px is a lag, not a counter-motion, and it is worth being explicit about
+   which: the sheet comes down from -24px, so a row that starts 6px BELOW its
+   resting place is at -18px absolute and therefore travels less far than the
+   sheet it sits in. Flip the sign to "start above" and the rows would overtake
+   the sheet on the way down, which is what parallax is not. */
 
 @keyframes scEnterRise {
   from {
@@ -220,6 +234,27 @@
   opacity: 0;
   animation: scEnterRise 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
   animation-delay: calc(var(--sc-enter-index, 0) * 24ms);
+}
+
+/* The hint keeps the cascade's clock but drops its travel. It is the tail of
+   the opening and the least important line on the sheet, and a footnote that
+   moves is both the last thing to stop moving and the thing the eye is left
+   on. Fading it resolves it without asking for that attention.
+
+   `animation-name` alone: the duration, easing, fill and delay all still come
+   from `.sc-enter` above, which is the point of overriding only the name. */
+@keyframes scEnterFade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.sc-enter--quiet {
+  animation-name: scEnterFade;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -253,14 +288,24 @@
       rule the overlay in `dialog.jsx` follows, and the trap `design.md`
       documents.
 
-   The exit is shorter than the entrance (140ms against 200ms): getting out of
+   The exit is shorter than the entrance (140ms against 260ms): getting out of
    the way should never make anybody wait. It also finishes just inside the
-   scrim's own 150ms, so the sheet is gone before the ground clears. */
+   scrim's own 150ms, so the sheet is gone before the ground clears.
+
+   The distances were 10px and 6px, with a 1.5% scale, and read as nothing at
+   all — the palette looked like it was simply switched on. `getAnimations()`
+   confirmed both were running, so the fault was the amount, not the wiring: on
+   a 672px sheet arriving over a scrim that is darkening at the same moment,
+   10px of travel is below the threshold at which anybody registers movement.
+   24px and 3% is what makes it read as dropping into place. The duration went
+   up with it because the same speed over more distance is a jump, but the ease
+   is `0.16, 1, 0.3, 1` — most of the travel is spent in the first third, so the
+   palette still answers instantly however long the tail takes to settle. */
 
 @keyframes scSheetIn {
   from {
     opacity: 0;
-    transform: translateY(-10px) scale(0.985);
+    transform: translateY(-24px) scale(0.97);
   }
 
   to {
@@ -277,7 +322,7 @@
 
   to {
     opacity: 0;
-    transform: translateY(-6px) scale(0.99);
+    transform: translateY(-14px) scale(0.98);
   }
 }
 
@@ -288,11 +333,11 @@
 }
 
 .sc-sheet[data-state='open'] {
-  animation: scSheetIn 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  animation: scSheetIn 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .sc-sheet[data-state='closed'] {
-  animation: scSheetOut 140ms ease both;
+  animation: scSheetOut 140ms cubic-bezier(0.4, 0, 1, 1) both;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -5,6 +5,7 @@ import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useGuestFeed } from '../../hooks/useGuestFeed.js';
 import { ANALYTICS_CONSENT } from '../../services/analyticsService.js';
 import FeedContainer from '../Feed/FeedContainer.jsx';
+import ThemeToggle from '../Layout/ThemeToggle.jsx';
 import GuestEndCard from './GuestEndCard.jsx';
 import './GuestFeedPage.css';
 
@@ -59,6 +60,10 @@ export default function GuestFeedPage({ onReady, onAuthRequired, onOpenPdf, onOp
           <button type="button" className="guest-language-button" onClick={() => setLanguage(isEnglish ? 'es' : 'en')}>
             {isEnglish ? 'ES' : 'EN'}
           </button>
+          {/* A visitor gets the system's answer by default and can still
+              overrule it here: the bar that carries this control for a session
+              is not rendered for them. */}
+          <ThemeToggle className="guest-header-button" />
           <button type="button" className="guest-header-button" onClick={() => requestAccount('other')} aria-label={isEnglish ? 'Search' : 'Buscar'}>
             <Search size={17} />
           </button>

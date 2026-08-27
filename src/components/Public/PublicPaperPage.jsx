@@ -23,6 +23,7 @@ import {
 import { paperLegacyAdapter } from '../../models/Paper.js';
 import PaperCard from '../Feed/PaperCard.jsx';
 import SkeletonCard from '../Feed/SkeletonCard.jsx';
+import { Button } from '../ui/button.jsx';
 import CommentsSheet from '../Comments/CommentsSheet.jsx';
 import './PublicPaperPage.css';
 
@@ -184,6 +185,12 @@ export default function PublicPaperPage({
   // No reset needed per paper: <Routes> is keyed by pathname, so a different
   // paper remounts this page outright.
   const [cardRevealed, setCardRevealed] = useState(false);
+  // A paper handed over in router state — from the search palette, a list, a
+  // profile tab — is painted on the very first frame, so there is no wait for
+  // the cover to bridge. Without this it went up anyway and sat over a finished
+  // page until the card's own animation reported in: a skeleton on top of the
+  // paper it was standing in for.
+  const [seededOnArrival] = useState(() => Boolean(seededPaper));
   useEffect(() => {
     if (status !== 'ready' || cardRevealed) return undefined;
     // Belt and braces: if the animation's completion callback never lands,
@@ -255,15 +262,16 @@ export default function PublicPaperPage({
         // Signed in, the app navbar owns the top of the screen (App.jsx keeps
         // it mounted on this route), so the page adds only a way back. The
         // standalone chrome below is for shared links opened without session.
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="icon"
           className="public-paper-back-floating"
           onClick={goBack}
           aria-label={text(COPY.back)}
           title={text(COPY.back)}
         >
           <ArrowLeft size={20} />
-        </button>
+        </Button>
       ) : (
         <nav className="public-paper-nav" aria-label={isEnglish ? 'Paper navigation' : 'Navegación del paper'}>
           <button type="button" className="public-paper-nav-button" onClick={goBack} aria-label={text(COPY.back)} title={text(COPY.back)}>
@@ -282,7 +290,7 @@ export default function PublicPaperPage({
           black screen — whether the wait is the network or the card warming
           up. */}
       <AnimatePresence>
-        {(status === 'loading' || (status === 'ready' && !cardRevealed)) && (
+        {!seededOnArrival && (status === 'loading' || (status === 'ready' && !cardRevealed)) && (
           <motion.div
             key="paper-skeleton"
             className="public-paper-skeleton"

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   buildHighlightPlan,
+  buildRangeAnchor,
   buildSelectionAnchor,
   resolveHighlightRanges,
   segmentTextChunk,
@@ -75,4 +76,51 @@ test('builds an anchor from a usable selection only', () => {
   const anchor = buildSelectionAnchor('  a long enough selection  ');
   assert.equal(anchor.quote, 'a long enough selection');
   assert.equal(anchor.kind, 'user');
+});
+
+test('every item carries its span in normalized space', () => {
+  const text = 'we measured $x$ across 3 sites and found no drift';
+  const plan = buildHighlightPlan(text, [{ quote: 'found no drift' }]);
+  // Contiguous and in order: this is what a DOM selection is mapped back onto.
+  let cursor = 0;
+  for (const item of plan) {
+    assert.equal(item.start, cursor);
+    assert.equal(item.end, cursor + (item.type === 'math' ? item.raw.length : item.value.length));
+    cursor = item.end;
+  }
+  assert.equal(cursor, 'we measured $x$ across 3 sites and found no drift'.length);
+});
+
+test('a highlight that swallows a formula marks the formula too', () => {
+  const text = 'the value $\\omega_b = 0.02$ was fixed throughout';
+  const plan = buildHighlightPlan(text, [{ quote: 'the value $\\omega_b = 0.02$ was fixed', kind: 'number' }]);
+  const math = plan.find(item => item.type === 'math');
+  assert.equal(math.kind, 'number');
+  // Marked whole, and still handed to KaTeX as valid LaTeX.
+  assert.equal(math.value, '\\omega_b = 0.02');
+});
+
+test('a highlight that stops inside a formula leaves it unmarked', () => {
+  const text = 'the value $\\omega_b = 0.02$ was fixed throughout';
+  const plan = buildHighlightPlan(text, [{ quote: 'the value $\\omega' }]);
+  const math = plan.find(item => item.type === 'math');
+  assert.equal(math.kind, null);
+});
+
+test('builds an anchor from offsets when the selected string cannot be trusted', () => {
+  const text = 'we measured $x^2$ across three sites';
+  // The span of "measured $x^2$ across", counted in the normalized source.
+  const start = text.indexOf('measured');
+  const anchor = buildRangeAnchor(text, start, text.indexOf(' three'));
+  assert.equal(anchor.quote, 'measured $x^2$ across');
+  assert.equal(anchor.kind, 'user');
+  // And it resolves back onto the same text, which is the whole point.
+  const ranges = resolveHighlightRanges(text, [anchor]);
+  assert.equal(ranges.length, 1);
+  assert.equal(ranges[0].start, start);
+});
+
+test('a range too short to anchor is refused like any other', () => {
+  assert.equal(buildRangeAnchor('some paragraph text', 0, 3), null);
+  assert.equal(buildRangeAnchor('', 0, 20), null);
 });

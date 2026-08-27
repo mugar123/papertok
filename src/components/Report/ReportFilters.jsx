@@ -163,6 +163,11 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
           </span>
           <Chevron isOpen={isOpen} reduced={reduced} />
         </span>
+        {/* The rule under this row is the one that sweeps while the edition
+            compiles. It used to be a second rule drawn along the top of the
+            body, which spanned both columns and landed on the sidebar's
+            numbers — a line that only existed while loading. */}
+        {loading && <span className="rf-sweep" aria-hidden="true" />}
       </button>
 
       <AnimatePresence initial={false}>

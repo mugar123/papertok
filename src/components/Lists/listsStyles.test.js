@@ -29,7 +29,13 @@ import { readFile } from 'node:fs/promises';
  * written next to it, or the entry becomes cover for the very drift this test
  * exists to catch.
  */
-const NOT_CLASS_NAMES = new Set(['save-modal-tags-label', 'create-list-icon-label']);
+const NOT_CLASS_NAMES = new Set([
+  'save-modal-tags-label',
+  // Both are `id`s, not classes: each wires a picker's radiogroup to its
+  // visible label with `aria-labelledby`.
+  'create-list-icon-label',
+  'create-list-color-label',
+]);
 
 const PAIRS = [
   { prefix: 'save-modal', jsx: './SaveToListModal.jsx', css: './SaveToListModal.css' },

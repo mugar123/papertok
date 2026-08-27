@@ -4,6 +4,9 @@ import { verifyFirebaseIdentity } from './firebase-auth.js';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
 
 const UID = 'alice-uid';
+const EMAIL = 'alice@example.com';
+/** What a verified lookup now resolves to: who, and whether the address is theirs. */
+const IDENTITY = { uid: UID, email: EMAIL, emailVerified: true };
 const PROJECT_ID = 'papertok-168df';
 const ENV = { FIREBASE_WEB_API_KEY: 'web-key', FIREBASE_PROJECT_ID: PROJECT_ID };
 
@@ -15,7 +18,7 @@ function stubUpstream({ ok = true } = {}) {
   globalThis.fetch = async (url) => {
     if (!String(url).includes('identitytoolkit')) throw new Error(`unexpected fetch: ${url}`);
     lookups += 1;
-    return new Response(JSON.stringify(ok ? { users: [{ localId: UID }] } : {}), {
+    return new Response(JSON.stringify(ok ? { users: [{ localId: UID, email: EMAIL, emailVerified: true }] } : {}), {
       status: ok ? 200 : 400,
     });
   };
@@ -70,13 +73,13 @@ test('an expiry inside the skew window is still Google question to answer', asyn
   // Google decides whether a token that has just lapsed is dead; a clock that
   // disagrees by a few seconds must not sign anybody out on its own authority.
   const nowSeconds = Math.floor(Date.now() / 1000);
-  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID, exp: nowSeconds - 30 })), { uid: UID });
+  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID, exp: nowSeconds - 30 })), IDENTITY);
   assert.equal(lookups, 1);
 });
 
 test('a well-formed token is verified upstream, as it always was', async () => {
   stubUpstream();
-  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), { uid: UID });
+  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), IDENTITY);
   assert.equal(lookups, 1, 'the filter decides who to ask about, never who is signed in');
 });
 
@@ -94,7 +97,7 @@ test('without a configured project id the audience is not checked at all', async
   // Failing open on THIS check is the only safe direction: a deployment that
   // has not been told its own project must not answer 401 to every user.
   const env = { FIREBASE_WEB_API_KEY: 'web-key' };
-  assert.deepEqual(await verify(fakeIdToken({ aud: 'anything-at-all' }), env), { uid: UID });
+  assert.deepEqual(await verify(fakeIdToken({ aud: 'anything-at-all' }), env), IDENTITY);
   assert.equal(lookups, 1);
 });
 
@@ -108,4 +111,35 @@ test('the length and Bearer checks still come first', async () => {
     );
   }
   assert.equal(lookups, 0);
+});
+
+/** Identity Toolkit answering with a specific account record. */
+function stubUser(user) {
+  lookups = 0;
+  globalThis.fetch = async (url) => {
+    if (!String(url).includes('identitytoolkit')) throw new Error(`unexpected fetch: ${url}`);
+    lookups += 1;
+    return new Response(JSON.stringify({ users: [user] }), { status: 200 });
+  };
+}
+
+test('an unverified address is carried, but carried as unverified', async () => {
+  // The distinction is the whole point of keeping the flag: anything that grants
+  // on the strength of an email has to be able to tell a proven address from a
+  // claimed one.
+  stubUser({ localId: UID, email: EMAIL, emailVerified: false });
+  assert.deepEqual(
+    await verify(fakeIdToken({ aud: PROJECT_ID })),
+    { uid: UID, email: EMAIL, emailVerified: false },
+  );
+});
+
+test('an address is normalised, so a match cannot turn on capitals or spacing', async () => {
+  stubUser({ localId: UID, email: '  Alice@Example.COM ', emailVerified: true });
+  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), IDENTITY);
+});
+
+test('an account with no address at all resolves to an empty one, never to undefined', async () => {
+  stubUser({ localId: UID });
+  assert.deepEqual(await verify(fakeIdToken({ aud: PROJECT_ID })), { uid: UID, email: '', emailVerified: false });
 });
