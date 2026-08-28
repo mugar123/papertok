@@ -2263,8 +2263,13 @@ a.pc-citations {
   .pc-authors--mobile-clickable {
     cursor: pointer;
   }
+  /* Per-author targets are far below the 24x24 CSS px minimum on a phone and
+     sit flush against each other, so touch is routed to the row's own handler
+     (which opens the all-authors modal) instead of letting a tap land on one
+     name. `.pc-authors-more` ("et al.") is left out on purpose: it is an
+     explicit, single, adequately sized target that opens the same modal. */
   .pc-authors--mobile-clickable .pc-author-avatars,
-  .pc-authors--mobile-clickable .pc-author-names span {
+  .pc-authors--mobile-clickable .pc-author-btn {
     pointer-events: none;
   }
 }
@@ -2508,4 +2513,13 @@ a.pc-citations {
   align-self: flex-start;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* `.pc-author-names` clips with `overflow: hidden` + ellipsis, so the default
+   2px outside ring on these two buttons can be shaved by the container edge
+   even though focus still scrolls the clipped button into view. Pulling the
+   ring inside the button's own box keeps it from ever touching that edge. */
+.pc-author-btn:focus-visible,
+.pc-authors-more:focus-visible {
+  outline-offset: -1px;
 }
