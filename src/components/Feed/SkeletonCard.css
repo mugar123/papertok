@@ -157,5 +157,12 @@
   .sk-btn::after,
   .sk-avatar::after {
     animation: none;
+    /* `animation: none` alone still leaves the base rule's own transform in
+       place: translateX(-100%), the sweep's start position, parked
+       off-canvas to the left. `overflow: hidden` on the block clips it
+       there completely, so every block renders flat --bg-secondary with no
+       visible highlight at all. Reset the transform so the gradient layer
+       sits over the block instead of beside it. */
+    transform: none;
   }
 }

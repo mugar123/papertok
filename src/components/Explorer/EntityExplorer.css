@@ -852,11 +852,15 @@
 
 /* ─── Skeleton loading ───
 
-   The same shimmer the feed's `SkeletonCard` uses, off the same keyframes in
-   `variables.css`. Two surfaces standing in for content that is on its way
-   should not wait in two different ways, and this one waited with a bare
-   opacity pulse — a grey slab breathing, which reads as "something is broken"
-   rather than "something is coming".
+   The `shimmer` keyframes from `variables.css` — shared with ScientificReport,
+   ListsPage, SearchCommand, PaperReader and Annotations. NOT shared with the
+   feed's `SkeletonCard` any more: that one now animates its own `shimmerSlide`
+   (a `transform` on a `::after`, local to SkeletonCard.css), so editing
+   `shimmer` here touches every one of those surfaces except the feed. Two
+   surfaces standing in for content that is on its way should not wait in two
+   different ways, and this one waited with a bare opacity pulse — a grey slab
+   breathing, which reads as "something is broken" rather than "something is
+   coming".
 
    The shapes matter as much as the motion. The list used to be three
    featureless 160px blocks sitting in `.explorer-list`, a container the real

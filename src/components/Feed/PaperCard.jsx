@@ -107,8 +107,22 @@ const RELATED_PAPER_HYDRATION_TIMEOUT_MS = 8_000;
 // `shouldLogRanking` (recommendationEngine.js) makes for the ranking table,
 // except that one is read live per batch because a batch is already a
 // deliberate, infrequent event, not a per-card render.
-const SHOW_RANKING_DEBUG = typeof window !== 'undefined'
-  && window.localStorage?.getItem('DEBUG_RANKING') === 'true';
+//
+// try/catch, not `?.`: this runs at module scope, before main.jsx ever calls
+// createRoot(...).render(), so nothing has a React tree yet and
+// GlobalErrorBoundary cannot catch anything thrown here. `?.` only guards a
+// nullish `window.localStorage`; it does nothing when the *getter* itself
+// throws, which is exactly what browsers with site storage blocked (Safari
+// restricted mode, corporate policy, some extensions) do. An uncaught throw
+// here used to mean a white screen on every route, not just the feed.
+const SHOW_RANKING_DEBUG = (() => {
+  try {
+    return typeof window !== 'undefined'
+      && window.localStorage?.getItem('DEBUG_RANKING') === 'true';
+  } catch {
+    return false;
+  }
+})();
 
 // How far a clipping may stray from the corner it belongs to. Small on
 // purpose: the point is that no two papers pin their figures at exactly the

@@ -83,12 +83,12 @@ function AppContent() {
     setAuthPromptOpen(true)
   }, [])
 
-  // Warm the chunks a session is most likely to need next — the three
-  // overlays any card can open, and the other navbar feeds — once the first
-  // screen has had the network and the main thread to itself for a while.
-  // Skipped on a connection that says it is paying for every byte: Save-Data
-  // or an effective 2G link. `navigator.connection` is absent in Safari, and
-  // an unknown connection prefetches as before — guessing "slow" for every
+  // Warm the chunks a session is most likely to need next — the overlays any
+  // card can open, and the other navbar feeds — once the first screen has
+  // had the network and the main thread to itself for a while. Skipped on a
+  // connection that says it is paying for every byte: Save-Data or an
+  // effective 2G link. `navigator.connection` is absent in Safari, and an
+  // unknown connection prefetches as before — guessing "slow" for every
   // iPhone would cost more than it saves.
   useEffect(() => {
     const prefetch = () => {
@@ -100,6 +100,7 @@ function AppContent() {
       import('./components/Lists/SaveToListModal').catch(() => {})
       import('./components/Report/ScientificReport').catch(() => {})
       import('./components/Following/FollowingFeedPage').catch(() => {})
+      import('./components/Reader/PaperReader.jsx').catch(() => {})
     }
     const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
     const timer = setTimeout(() => schedule(prefetch), 2500)

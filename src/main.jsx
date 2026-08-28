@@ -59,9 +59,26 @@ import './styles/global.css'
 // repeat visit re-fetching the whole chunk graph behind a 10-minute
 // max-age. `registerType: 'autoUpdate'` (vite.config.js) means: when a new
 // deploy's service worker is detected, skip waiting and take control
-// automatically -- so a returning reader gets the new build on their next
-// reload, not whichever one happened to be cached when they first
-// installed.
+// automatically.
+//
+// What "take control automatically" actually does to an open tab:
+// `registerSW()` below is called with no options, so `onNeedReload` is
+// undefined and the plugin falls through to its own default handler on the
+// `activated` event, which calls `window.location.reload()` itself --
+// unprompted, the instant the new worker takes control. Not "the reader
+// gets the new build next time they reload": the reload is not requested,
+// it is forced. `isUpdate` is false on a first install, so this never fires
+// for a first-time visitor; it fires on every revisit after a deploy. Since
+// taking control follows precaching the whole boot set over the network, on
+// a slow connection that forced reload can land mid-reading-session. It is
+// not rescuing anyone from a stale build either -- the `navigate`
+// runtimeCaching rule below is NetworkFirst, so an un-reloaded tab would
+// already be showing the new HTML; the reload is close to pure cost.
+// Left as-is anyway: without it, a tab that stays open across a deploy
+// keeps the OLD `index.html` in memory, and that page's own lazy
+// `import()` calls still ask for chunks by their old content hash, which
+// the new deploy no longer serves -- a plain 404, and a route that simply
+// will not open until the tab reloads some other way.
 //
 // No `immediate: true` here, deliberately: that option calls
 // `navigator.serviceWorker.register()` right away, which starts the new

@@ -1016,11 +1016,15 @@ a.pc-citations {
   align-items: center;
   gap: 6px;
   color: var(--text-tertiary);
-  /* Four cycles (9.6s) and then it rests. Nobody is still watching a scroll
-     hint after 10 seconds on the first card — an infinite loop kept it
-     animating for the entire session, one of the two animations still
-     running on a feed nobody is touching. */
-  animation: scrollNudge 2.4s cubic-bezier(0.25, 1, 0.5, 1) 4;
+  /* Four cycles (9.6s) and then it rests dimmed, at the 0.55 opacity the
+     keyframes settle on. `forwards` is required for that: the default
+     fill-mode ("none") drops the element back to full opacity the instant
+     the animation ends, since the base rule below declares no opacity of
+     its own — a real 0.55 → 1 jump, permanent, the opposite of resting.
+     Nobody is still watching a scroll hint after 10 seconds on the first
+     card — an infinite loop kept it animating for the entire session, one
+     of the two animations still running on a feed nobody is touching. */
+  animation: scrollNudge 2.4s cubic-bezier(0.25, 1, 0.5, 1) 4 forwards;
 }
 
 .pc-scroll-hint-label {
