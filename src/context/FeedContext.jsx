@@ -480,6 +480,55 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     reRankFeedRef.current = reRankFeed;
   }, [reRankFeed]);
 
+  // Re-ranking used to run synchronously on the card-snap path (58-151ms
+  // longtasks measured in production, right when the just-settled card should
+  // be responsive). Deferring it to idle takes it off that path entirely: the
+  // snap observer returns immediately, and the reorder — which only affects
+  // cards further down the queue — lands whenever the main thread next has
+  // spare time.
+  //
+  // `requestIdleCallback` alone is not enough: Safari only shipped it in 16.4,
+  // and a permanently busy tab could starve it forever. So every scheduling
+  // call carries a `timeout`, which forces the browser to run it anyway, and
+  // the `setTimeout` fallback (unconditionally scheduled, no idle gating to
+  // starve) covers browsers with no `requestIdleCallback` at all.
+  //
+  // Only one re-rank is ever pending: a later call while one is already
+  // queued just updates which paper it should split around, rather than
+  // resetting the timer — a stream of calls inside the timeout window must
+  // not be able to push the deadline out indefinitely.
+  const pendingReRankRef = useRef(null);
+  const scheduleReRank = useCallback((sourcePaperId) => {
+    if (pendingReRankRef.current) {
+      pendingReRankRef.current.sourcePaperId = sourcePaperId;
+      return;
+    }
+    const pending = { sourcePaperId, handle: null, isTimeout: false };
+    const run = () => {
+      pendingReRankRef.current = null;
+      reRankFeedRef.current(pending.sourcePaperId);
+    };
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      pending.handle = window.requestIdleCallback(run, { timeout: 800 });
+    } else {
+      pending.isTimeout = true;
+      pending.handle = setTimeout(run, 120);
+    }
+    pendingReRankRef.current = pending;
+  }, []);
+
+  // A deferred re-rank that fires after this provider unmounts would be a
+  // `setState` on a dead component — React 19 swallows it silently, so it
+  // would never surface as a warning or a test failure, only as a re-rank
+  // that quietly never happened.
+  useEffect(() => () => {
+    const pending = pendingReRankRef.current;
+    if (!pending) return;
+    pendingReRankRef.current = null;
+    if (pending.isTimeout) clearTimeout(pending.handle);
+    else window.cancelIdleCallback?.(pending.handle);
+  }, []);
+
   const traverseAndExpandNetwork = useCallback(async (paper) => {
     const sessionId = feedSessionId.current;
     if (!activeUserId.current) return;
@@ -1655,7 +1704,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       traverseAndExpandNetwork(paper);
     }
     if (timeInSeconds >= 3.0) {
-      reRankFeed(paper.id);
+      // Off the snap path: the reader is settled on this card, not watching
+      // the rest of the queue reorder underneath it.
+      scheduleReRank(paper.id);
     }
 
     if (userId && !IS_DEMO) {
@@ -1676,7 +1727,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error tracking view time:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
+  }, [scheduleReRank, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
 
   const trackPdfOpened = useCallback(async (paper) => {
     const userId = user?.uid;
@@ -1721,7 +1772,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     skippedPapers.forEach((paper) => {
       applyCategoryAffinityDelta(categoryAffinities.current, paper, -1);
     });
-    reRankFeed(skippedPapers[skippedPapers.length - 1].id);
+    // Off the snap path, same as trackViewTime: a fling across several cards
+    // must not pay a synchronous re-rank per card it crosses.
+    scheduleReRank(skippedPapers[skippedPapers.length - 1].id);
 
     if (userId && !IS_DEMO) {
       try {
@@ -1751,7 +1804,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error tracking skips:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, user?.uid]);
+  }, [scheduleReRank, recordProfileEvent, user?.uid]);
 
   const trackSkip = useCallback((paper) => trackSkips([paper]), [trackSkips]);
 
