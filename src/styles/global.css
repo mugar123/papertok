@@ -157,7 +157,7 @@
   /* Keyboard users get a visible ink ring everywhere, since the light
      theme no longer relies on glow to signal focus. */
   :focus-visible {
-    outline: 2px solid var(--brand-orange);
+    outline: 2px solid var(--focus-ring);
     outline-offset: 2px;
   }
 

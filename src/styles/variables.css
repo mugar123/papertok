@@ -26,7 +26,9 @@
   /* ── Ink ── */
   --text-primary: #111318;
   --text-secondary: #5b6270;
-  --text-tertiary: #8a919e;
+  /* 4.83:1 on white, 4.52:1 on --bg-secondary. The previous #8a919e sat at
+     3.17:1, below the 4.5:1 floor for normal text (WCAG 1.4.3). */
+  --text-tertiary: #6b7280;
   --text-inverse: #ffffff;
 
   /* ── Accents ── */
@@ -41,6 +43,10 @@
   --brand-yellow: #ffd21e;
   --brand-yellow-soft: #fff4c9;
   --brand-orange: #ff9d00;
+  /* Focus ring. The brand orange itself is 2.08:1 on white — invisible as an
+     indicator — so on the light side the ring darkens to a burnt orange that
+     holds 5.0:1 while keeping the hue of the mark (WCAG 2.4.7 / 1.4.11). */
+  --focus-ring: #b45309;
   /* Ink, in both themes. The yellow is the one surface whose value does not
      flip — a mark that changes value stops being a mark — so whatever sits on
      it cannot take `--text-primary`, which does flip. Same for the orange
@@ -277,7 +283,8 @@
   /* ── Ink ── */
   --text-primary: #f2f3f5;
   --text-secondary: #a1a8b5;
-  --text-tertiary: #757c8a;
+  /* 5.35:1 on the page, 4.69:1 on --bg-elevated; #757c8a was 4.43:1. */
+  --text-tertiary: #828a99;
   --text-inverse: #111318;
 
   /* ── Accents ── */
@@ -291,6 +298,8 @@
      are the same mark on both sides. The soft yellow is a surface, though, so
      it becomes the darkest amber that still reads as the same wash. */
   --brand-yellow-soft: #35290b;
+  /* On ink the true brand orange clears 8.9:1, so the mark keeps its color. */
+  --focus-ring: #ff9d00;
 
   /* ── Action accents ── */
   --accent-violet: #a98fff;
