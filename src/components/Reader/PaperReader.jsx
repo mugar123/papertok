@@ -43,6 +43,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
+import { useTouchSelection } from '../../hooks/useTouchSelection.js';
+import { pickSelectionRoute } from '../../utils/readerSelection.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
 import { Button } from '../ui/button.jsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
@@ -628,6 +630,10 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   const [quota, setQuota] = useState(null);
   const [stage, setStage] = useState('source');
   const abortRef = useRef(null);
+  // The reader's own scroll container, so a touch selection outside it (e.g.
+  // in a dialog rendered elsewhere in the tree) is never mistaken for one of
+  // its paragraphs.
+  const scrollRef = useRef(null);
   /**
    * The rewrite this reader has already asked for, keyed the way the rewrite
    * cache keys itself. The object arriving as `paper` is rebuilt upstream when
@@ -821,16 +827,37 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
 
   const { begin: beginAnnotation } = annotations;
 
+  // Gated by pointer type, never by window width: the reader already switches
+  // layout below 1100px, and shrinking a laptop window must not flip a mouse
+  // user onto the touch selection path.
+  const coarsePointer = useMemo(() => {
+    try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+  }, []);
+  const selectionRoute = pickSelectionRoute({ coarsePointer });
+
   /**
    * A selection stops being a selection and becomes a decision.
    *
    * Everything the three outcomes could need is captured here, in one go, at
-   * the moment the mouse comes up: the quote, where it is anchored, the
-   * paragraph around it (the model cannot explain "that quantity" without the
-   * sentence that named it), and the rectangle to hang the menu off. Capturing
-   * it all up front is what lets the browser's own selection be cleared
-   * immediately — the reader paints its own provisional mark instead, so the
-   * highlight you are deciding about is one you can already see.
+   * the moment the selection is decided (mouse-up on the desktop route,
+   * `selectionchange` settling on the touch route): the quote, where it is
+   * anchored, the paragraph around it (the model cannot explain "that
+   * quantity" without the sentence that named it), and the rectangle to hang
+   * the menu off. Capturing it all up front is what lets the browser's own
+   * selection be cleared immediately on the desktop route — the reader paints
+   * its own provisional mark instead, so the highlight you are deciding about
+   * is one you can already see.
+   *
+   * On touch the native selection stays alive AND the reader's own
+   * provisional mark is suppressed (see the `selectionRoute === 'menu'` guard
+   * in `userHighlightIndex` below) — not just the former. Painting the
+   * provisional mark re-renders the paragraph's highlight runs, and React
+   * rewrites the DOM text node the live Range's offsets point into; the
+   * browser responds by collapsing the selection, taking the OS handles and
+   * callout with it. Leaving the native selection uncleared while still
+   * repainting our own mark would still lose the handles one tick later — the
+   * OS's own highlight has to serve as the provisional mark on touch,
+   * precisely because our own provisional mark is what would kill it.
    */
   const handleSelection = useCallback((sectionId, paragraphIndex, paragraphText, paragraphNode) => {
     if (!uid) return;
@@ -843,8 +870,17 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     const anchor = anchorFromSelection(range, paragraphNode, paragraphText)
       || buildSelectionAnchor(selection.toString());
     if (!anchor) return;
+    // Belt-and-braces against a touch re-entry loop: suppressing the
+    // provisional mark (below) already removes the DOM repaint that would
+    // otherwise retrigger `selectionchange`, but this guard means a loop
+    // cannot start even if some other repaint disturbs the same selection.
+    const waiting = annotations.pending;
+    if (waiting
+      && waiting.sectionId === sectionId
+      && waiting.paragraphIndex === paragraphIndex
+      && waiting.quote === anchor.quote) return;
     const rect = range.getBoundingClientRect();
-    selection.removeAllRanges();
+    if (selectionRoute === 'menu') selection.removeAllRanges();
     beginAnnotation({
       sectionId,
       paragraphIndex,
@@ -857,7 +893,14 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
         right: rect.right,
       },
     });
-  }, [beginAnnotation, uid]);
+  }, [annotations.pending, beginAnnotation, selectionRoute, uid]);
+
+  useTouchSelection({
+    scrollRef,
+    sections,
+    onSelect: handleSelection,
+    enabled: selectionRoute === 'bar',
+  });
 
   const sectionOrder = useMemo(() => buildSectionOrder(sections), [sections]);
   const orderedAnnotations = useMemo(
@@ -886,8 +929,15 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
         return { ...item, fresh: Boolean(stored?.fresh) };
       }));
     }
-    // The passage the menu is open on wears the pen already, provisionally.
-    const waiting = annotations.pending;
+    // The passage the menu is open on wears the pen already, provisionally —
+    // on the desktop route only. Painting this mark rewrites the paragraph's
+    // highlight runs, which rewrites the DOM text node a live selection Range
+    // points into, which collapses the selection. Desktop wants exactly that
+    // (the browser's own selection is already gone by the time this paints).
+    // Touch cannot afford it: the OS handles live on that same selection, and
+    // this repaint would silently drag them away mid-adjustment. On touch the
+    // OS's own highlight is the provisional mark — nothing to add here.
+    const waiting = selectionRoute === 'menu' ? annotations.pending : null;
     if (waiting) {
       const key = `${waiting.sectionId}:${waiting.paragraphIndex}`;
       index.set(key, [
@@ -896,7 +946,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
       ]);
     }
     return index;
-  }, [annotations.annotations, annotations.pending, isEnglish, level]);
+  }, [annotations.annotations, annotations.pending, isEnglish, level, selectionRoute]);
 
   const originalUrl = safeExternalUrl(paper?.openAccessPdfUrl)
     || safeExternalUrl(paper?.pdfUrl)
@@ -1153,6 +1203,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
         </motion.div>
 
         <div
+          ref={scrollRef}
           className="rd-scroll"
           onScroll={() => { panel.onScrolled(); annotations.dismiss(); }}
         >
