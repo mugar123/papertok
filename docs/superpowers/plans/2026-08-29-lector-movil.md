@@ -322,10 +322,15 @@ necesario para otra cosa, **dilo antes de cambiarlo** en vez de asumir.
   `src/components/Reader/Annotations.css`
 
 **Interfaces:**
-- Consume: los mismos props que `SelectionMenu` recibe hoy en `PaperReader.jsx`
-  (`anchor`, `copy`, `usesLeft`, `unlimited`, `canAsk`, `busy`, `onHighlight`,
-  `onSaveNote`, `onAsk`, `onClose`), más `annotationCount`, `onOpenList`,
-  `onOpenSettings`, `streaming`, `visible`.
+- Consume: casi los mismos props que `SelectionMenu` recibe hoy en
+  `PaperReader.jsx` — `copy`, `usesLeft`, `unlimited`, `canAsk`, `busy`,
+  `onHighlight`, `onSaveNote`, `onAsk`, `onClose` — más `annotationCount`,
+  `onOpenList`, `onOpenSettings`, `streaming`, `visible`.
+  **Diferencia deliberada:** donde `SelectionMenu` recibe `anchor`, la barra
+  recibe el objeto `pending` entero. `anchor` existe para colgar un popover del
+  rectángulo de la selección, y una barra fija al borde inferior no se posiciona
+  contra nada — lo que necesita es simplemente saber si hay selección viva, que
+  es de dónde sale su estado. Pásale `annotations.pending`, no `annotations.pending.anchor`.
 - Produce: la clase `.rd-bar` y sus estados `data-state="rest|selection|composing"`.
 
 - [ ] **Paso 1:** `ReaderBar.jsx`, una sola superficie con tres estados. Esta es
