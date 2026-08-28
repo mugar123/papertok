@@ -24,6 +24,7 @@ import { readFile } from 'node:fs/promises';
 const READER_CSS = new URL('./PaperReader.css', import.meta.url);
 const ANNOTATIONS_CSS = new URL('./Annotations.css', import.meta.url);
 const READER_JSX = new URL('./PaperReader.jsx', import.meta.url);
+const READER_BAR_CSS = new URL('./ReaderBar.css', import.meta.url);
 
 /** Comments name selectors and properties in prose; matching them would invent both sides. */
 const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -173,4 +174,59 @@ test('the loading ghost fills a phone and leaves the desktop alone', async () =>
   assert.ok(ghost, 'expected a GHOST_LINES array');
   const widths = [...ghost[1].matchAll(/'(\d+%)'/g)];
   assert.ok(widths.length >= 6, `GHOST_LINES should carry a tail past the fifth line, got ${widths.length}`);
+});
+
+/**
+ * Task 4's own two facts, not the pre-existing `@media (max-width: 1100px)`
+ * arithmetic the tests above hold — a coarse pointer never reaches that block
+ * once this task's pairing (`(pointer: coarse) and (max-width: 1100px)`)
+ * wins the cascade for it instead. Nothing above asserts either of these:
+ * both were reasoned about in the report and neither was held to a test.
+ */
+test('the coarse-pointer bar clears the dock away, not the fine-pointer dock', async () => {
+  const readerCss = await reader;
+  const coarseNarrow = atRuleBody(readerCss, '@media (pointer: coarse) and (max-width: 1100px)');
+
+  assert.match(ruleBody(coarseNarrow, '.rd-panel-dock'), /display:\s*none/);
+  // Reads --rd-bar-h by name, the same token ReaderBar.css declares for
+  // itself — a rule that quietly went back to a bare pixel figure here would
+  // drift the moment someone retuned the bar's own height in the other file.
+  assert.match(ruleBody(coarseNarrow, '.rd-scroll'), /padding-bottom:\s*calc\(var\(--rd-bar-h/);
+
+  // The block this task's rule sits after and before is untouched — the same
+  // dock-bottom and scroll-padding arithmetic the first test in this file
+  // already holds the fine-pointer case to.
+  const plainNarrow = atRuleBody(readerCss, '@media (max-width: 1100px)');
+  assert.match(ruleBody(plainNarrow, '.rd-panel-dock'), /bottom:\s*calc\(var\(--rd-sheet-peek-total\)/);
+});
+
+test('ReaderBar.css never lets a rule stand outside (pointer: coarse)', async () => {
+  const barCss = stripComments(await readFile(READER_BAR_CSS, 'utf8'));
+
+  const mediaOpens = [...barCss.matchAll(/@media[^{]*\{/g)];
+  assert.equal(mediaOpens.length, 1, 'ReaderBar.css should declare exactly one @media block');
+  assert.match(mediaOpens[0][0], /\(pointer:\s*coarse\)/);
+
+  // Brace-matched from that one opening, the same way `atRuleBody` reads a
+  // block above — but here what matters is what is left *after* the closing
+  // brace. A rule pasted below the block (or a second, narrower @media added
+  // beside it later) would still leave `mediaOpens.length === 1` true; this
+  // is the assertion that actually catches it.
+  const openIndex = barCss.indexOf(mediaOpens[0][0]);
+  const braceStart = barCss.indexOf('{', openIndex);
+  let depth = 0;
+  let closeIndex = -1;
+  for (let i = braceStart; i < barCss.length; i += 1) {
+    if (barCss[i] === '{') depth += 1;
+    if (barCss[i] === '}') {
+      depth -= 1;
+      if (depth === 0) { closeIndex = i; break; }
+    }
+  }
+  assert.notEqual(closeIndex, -1, 'unbalanced braces in ReaderBar.css');
+  assert.equal(
+    barCss.slice(0, openIndex).trim() + barCss.slice(closeIndex + 1).trim(),
+    '',
+    'a rule sits outside the (pointer: coarse) block in ReaderBar.css',
+  );
 });
