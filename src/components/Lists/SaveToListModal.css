@@ -396,6 +396,13 @@
   font-size: var(--fs-sm);
 }
 
+/* Deliberate: `.save-modal-tag-editor:focus-within` already draws the ring
+   for the whole control, so the inner input must not add its own second,
+   outset one on top. */
+.save-modal-tag-input:focus {
+  outline: none;
+}
+
 /* ── Utility group: rule 6, primary left, utilities right behind a rule ── */
 
 .save-modal-footer {
