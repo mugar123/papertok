@@ -1573,7 +1573,7 @@ const PaperCard = memo(function PaperCard({
                       if (path) navigate(path);
                     }}
                   >
-                    <div className="pc-author-avatar-large" style={{ '--i': idx }}>
+                    <div className="pc-author-avatar-large" style={{ '--i': idx }} aria-hidden="true">
                       {(author.name || author).charAt(0).toUpperCase()}
                     </div>
                     <span>{author.name || author}</span>
