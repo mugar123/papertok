@@ -2,7 +2,7 @@
   position: fixed;
   z-index: 1200;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(20px + var(--inset-bottom));
   display: grid;
   width: min(520px, calc(100vw - 40px));
   grid-template-columns: 40px minmax(0, 1fr);
@@ -115,7 +115,7 @@
 @media (max-width: 560px) {
   .analytics-consent {
     right: 12px;
-    bottom: 12px;
+    bottom: calc(12px + var(--inset-bottom));
     width: calc(100vw - 24px);
     padding: 14px;
   }

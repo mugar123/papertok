@@ -26,8 +26,15 @@
   z-index: 6;
   /* Below the navbar, not behind it. The page is laid out from viewport 0 and
      the navbar is fixed over the top of it, so an inset measured from the
-     page's own edge puts the button underneath the bar. */
-  top: calc(var(--nav-height) + var(--space-3));
+     page's own edge puts the button underneath the bar. This element only
+     renders when PublicPaperPage.jsx is in its signed-in branch, where the
+     REAL shared app navbar (Navbar.css's .navbar) is what's mounted above it
+     — not this file's own .public-paper-nav, which is the signed-out-only
+     bar below. --nav-total is that shared navbar's own height token (it
+     shrinks to --nav-height-mobile under 768px, unlike .public-paper-nav),
+     so this has to track --nav-total to stay under the real bar at every
+     width, not the plain --nav-height used below. */
+  top: calc(var(--nav-total) + var(--space-3));
   left: var(--space-5);
 }
 
@@ -59,7 +66,14 @@
   top: 0;
   left: 0;
   right: 0;
-  height: var(--nav-height);
+  /* --nav-total is not used here: this bar has no 768px breakpoint of its
+     own (unlike the signed-in navbar and the guest header, it stays
+     --nav-height at every width), so the token that switches to
+     --nav-height-mobile there would shrink it on phones for no reason. The
+     inset is added directly instead — --inset-top is still the one shared
+     source for the raw value. */
+  height: calc(var(--nav-height) + var(--inset-top));
+  padding-top: var(--inset-top);
   display: grid;
   grid-template-columns: 32px 1fr 32px;
   align-items: center;

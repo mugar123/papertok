@@ -35,6 +35,11 @@
   flex-direction: column;
   width: 100%;
   max-width: 460px;
+  /* Despeja el home indicator: la hoja va a ras del borde inferior del
+     viewport en el móvil, así que sin esto la última fila (`.follow-sheet-more`,
+     o el último seguidor visible) queda debajo de él. Cero en un dispositivo
+     sin home indicator, así que el borde de la hoja no se mueve ahí. */
+  padding-bottom: var(--inset-bottom);
   border: 1px solid var(--border-default);
   border-bottom: none;
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;

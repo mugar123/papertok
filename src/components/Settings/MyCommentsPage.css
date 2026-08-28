@@ -1,6 +1,9 @@
+/* /settings/comments is a ProtectedRoute in App.jsx's navbarRoutes, so this
+   page only ever renders under the app navbar — no standalone mode to gate
+   against, unlike the public/* pages below. */
 .my-comments-page {
   min-height: 100dvh;
-  padding: calc(var(--nav-height) + var(--space-6)) var(--space-4) var(--space-16);
+  padding: calc(var(--nav-total) + var(--space-6)) var(--space-4) var(--space-16);
   background: var(--bg-primary);
   color: var(--text-primary);
 }
@@ -309,11 +312,10 @@
   opacity: 0.6;
 }
 
-@media (max-width: 560px) {
-  .my-comments-page {
-    padding-top: calc(var(--nav-height-mobile) + var(--space-6));
-  }
-}
+/* No .my-comments-page override at 560px: --nav-total already resolves to
+   --nav-height-mobile + --inset-top below 768px (see variables.css), well
+   above this page's own 560px breakpoint, and this rule changed no other
+   spacing token — it only ever restated the height. */
 
 @media (prefers-reduced-motion: reduce) {
   .my-comments-skeleton,

@@ -224,9 +224,35 @@
   --z-overlay: 300;
   --z-toast: 400;
 
+  /* ── Safe-area insets ──
+     With viewport-fit=cover the notch and the home indicator become our
+     problem: outside an installed PWA no browser exposes these, and the
+     0px fallback is what keeps every consumer below a no-op in a normal
+     tab — env() only ever returns something non-zero in standalone mode
+     on a device that actually has a notch or a home indicator. */
+  --inset-top: env(safe-area-inset-top, 0px);
+  --inset-bottom: env(safe-area-inset-bottom, 0px);
+
   /* ── Navbar height ── */
   --nav-height: 56px;
   --nav-height-mobile: 52px;
+  /* The bar's real rendered height, notch included. Every consumer that
+     used to read --nav-height/--nav-height-mobile directly and also needed
+     to clear the inset (the navbar itself, the feed's offset, the guest
+     header) reads this single value instead of adding --inset-top at its
+     own call sites — that duplication is exactly what let a mobile copy of
+     the arithmetic drift from its desktop twin. Redefined below at the same
+     768px breakpoint every one of those files already switches on. */
+  --nav-total: calc(var(--nav-height) + var(--inset-top));
+}
+
+/* --nav-total tracks --nav-height-mobile below the breakpoint every
+   consumer already switches on, so this is the only place that needs to
+   know it. */
+@media (max-width: 768px) {
+  :root {
+    --nav-total: calc(var(--nav-height-mobile) + var(--inset-top));
+  }
 }
 
 /* ============================================

@@ -29,7 +29,10 @@
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--bg-primary);
-  padding: calc(var(--nav-height) + var(--space-8)) var(--space-6) var(--space-16);
+  /* /lists is a ProtectedRoute in App.jsx's navbarRoutes: always under the
+     app navbar, no standalone mode. Only the top offset uses the nav token —
+     the trailing --space-16 is plain end-of-page breathing room. */
+  padding: calc(var(--nav-total) + var(--space-8)) var(--space-6) var(--space-16);
 }
 
 /* ─── Nameplate ─── */
@@ -1090,7 +1093,13 @@
 
 @media (max-width: 768px) {
   .lists-page {
-    padding: calc(var(--nav-height-mobile) + var(--space-6)) var(--space-4)
+    /* Kept (not redundant): the top offset also shrinks --space-8 to
+       --space-6 here, not just the nav token. The bottom value deliberately
+       stays --nav-height-mobile, not --nav-total: there is no bottom-docked
+       bar on this page, so --nav-height-mobile is only ever being reused
+       here as a spacing constant, and --nav-total would wrongly add the TOP
+       safe-area inset to a bottom padding that has nothing to do with it. */
+    padding: calc(var(--nav-total) + var(--space-6)) var(--space-4)
       calc(var(--nav-height-mobile) + var(--space-8));
   }
 

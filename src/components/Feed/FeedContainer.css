@@ -9,9 +9,12 @@
 
 .feed-wrapper {
   position: relative;
-  height: calc(100vh - var(--nav-height));
-  height: calc(100dvh - var(--nav-height));
-  margin-top: var(--nav-height);
+  /* --nav-total is --nav-height (or its mobile value, below 768px) plus the
+     top safe-area inset in one place, so this offset and the navbar's own
+     rendered height can never disagree about where the bar ends. */
+  height: calc(100vh - var(--nav-total));
+  height: calc(100dvh - var(--nav-total));
+  margin-top: var(--nav-total);
   background: var(--bg-secondary);
 }
 
@@ -51,13 +54,10 @@
   height: 1px;
 }
 
-@media (max-width: 768px) {
-  .feed-wrapper {
-    height: calc(100vh - var(--nav-height-mobile));
-    height: calc(100dvh - var(--nav-height-mobile));
-    margin-top: var(--nav-height-mobile);
-  }
-}
+/* No .feed-wrapper override at 768px: --nav-total already switches to
+   --nav-height-mobile there (see variables.css), so a second copy of this
+   calc here would just be one more place for mobile and desktop to drift
+   apart. */
 
 /* ── Empty / loading states ── */
 .feed-empty {
@@ -65,22 +65,17 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: calc(100vh - var(--nav-height));
-  min-height: calc(100dvh - var(--nav-height));
-  margin-top: var(--nav-height);
+  min-height: calc(100vh - var(--nav-total));
+  min-height: calc(100dvh - var(--nav-total));
+  margin-top: var(--nav-total);
   padding: var(--space-8);
   text-align: center;
   background: var(--bg-primary);
   animation: fadeIn 0.4s ease-out;
 }
 
-@media (max-width: 768px) {
-  .feed-empty {
-    min-height: calc(100vh - var(--nav-height-mobile));
-    min-height: calc(100dvh - var(--nav-height-mobile));
-    margin-top: var(--nav-height-mobile);
-  }
-}
+/* No .feed-empty override at 768px, for the same reason as .feed-wrapper
+   above: --nav-total is already breakpoint-aware. */
 
 .feed-empty--initial-loading {
   animation: none;
