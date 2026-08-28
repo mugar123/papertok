@@ -485,6 +485,15 @@
   transform: translateY(0);
 }
 
+/* While a finger is on the header the sheet is not animating, it is being
+   moved. A transition here would put 260ms of lag between the thumb and the
+   sheet, which is the difference between dragging something and asking it to
+   follow. The inline transform that does the moving is written and cleared by
+   the component; this only gets out of its way. */
+.rd-rail[data-surface='sheet'][data-dragging] {
+  transition: none;
+}
+
 .rd-rail-grab {
   display: block;
   width: 100%;
@@ -494,6 +503,14 @@
   background: transparent;
   cursor: pointer;
   text-align: left;
+  /* The browser's own vertical gesture — scrolling the page behind — would
+     claim the drag before `pointermove` ever fired. Only the header gives it
+     up; the notes below scroll normally. */
+  touch-action: none;
+  /* A drag across a header made of text otherwise selects the text it crosses,
+     and the selection stays behind once the sheet has moved. */
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .rd-rail-grabber {

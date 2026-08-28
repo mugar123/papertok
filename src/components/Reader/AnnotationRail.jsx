@@ -1,6 +1,8 @@
+import { useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { AlertCircle, ChevronUp, PenLine, Sparkles, Trash2 } from 'lucide-react';
 import { ANNOTATION_FILTERS } from '../../utils/annotationOrder.js';
+import { SHEET_DRAG_SLOP, sheetDragOffset, shouldSettleOpen } from '../../utils/sheetDrag.js';
 import ThinkingDots from './ThinkingDots.jsx';
 
 /**
@@ -42,6 +44,118 @@ export default function AnnotationRail({
   const prefersReducedMotion = useReducedMotion();
 
   const isSheet = surface === 'sheet';
+
+  /* ── Dragging the sheet by its header ──
+     The header was already the whole handle, and a handle you can only operate
+     by tapping is a handle for a mouse. Pointer events rather than framer: the
+     resting states are a CSS `translateY` and a 260ms transition that already
+     work, and framer writes an inline transform that would replace the
+     stylesheet's wholesale. Here the inline transform exists only while a
+     finger is down, and clearing it hands the sheet back to the CSS.
+
+     The gesture is only ever read on the header, so it can never be confused
+     with a scroll of the notes underneath. */
+  const railRef = useRef(null);
+  const dragRef = useRef(null);
+  const suppressClickRef = useRef(false);
+
+  /* Read from the DOM rather than tracked in state: the sheet's height depends
+     on how many notes are in it, and a stale number would settle the gesture
+     against a travel the sheet no longer has. */
+  const measureTravel = element => {
+    const peek = Number.parseFloat(
+      getComputedStyle(element).getPropertyValue('--rd-sheet-peek'),
+    ) || 0;
+    return Math.max(0, element.offsetHeight - peek);
+  };
+
+  const handlePointerDown = event => {
+    if (!isSheet || (event.pointerType === 'mouse' && event.button !== 0)) return;
+    const element = railRef.current;
+    if (!element) return;
+    // Armed by the end of a drag and disarmed by the click that follows it —
+    // except that a drag does not always produce one. A `pointercancel` never
+    // does, and left standing the flag would eat the next tap instead, which
+    // reads as a header that has stopped responding. Every gesture starts clean.
+    suppressClickRef.current = false;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      lastY: event.clientY,
+      lastTime: event.timeStamp,
+      velocity: 0,
+      moved: 0,
+      travel: measureTravel(element),
+    };
+    // Capture keeps a drag with the header once the finger has left it, which
+    // is most of a drag. It throws `NotFoundError` if the pointer is already
+    // gone — a tap fast enough that `pointerup` arrived first — and losing
+    // capture is not worth losing the gesture over: touch pointers are captured
+    // implicitly anyway, so only a mouse drag off the header degrades.
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // No capture, still a drag.
+    }
+  };
+
+  const handlePointerMove = event => {
+    const drag = dragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+
+    const deltaY = event.clientY - drag.startY;
+    drag.moved = Math.max(drag.moved, Math.abs(deltaY));
+
+    // Instantaneous rather than averaged over the gesture: what decides a flick
+    // is how fast the finger was going when it left, not how fast it went.
+    const elapsed = event.timeStamp - drag.lastTime;
+    if (elapsed > 0) drag.velocity = (event.clientY - drag.lastY) / elapsed;
+    drag.lastY = event.clientY;
+    drag.lastTime = event.timeStamp;
+
+    // Under the slop it is still a tap, and a tap must not leave a transform
+    // behind or the header twitches every time it is pressed.
+    if (drag.moved < SHEET_DRAG_SLOP) return;
+    const element = railRef.current;
+    element.dataset.dragging = '';
+    element.style.transform = `translateY(${sheetDragOffset({ expanded, deltaY, travel: drag.travel })}px)`;
+  };
+
+  const endDrag = (event, { cancelled = false } = {}) => {
+    const drag = dragRef.current;
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    dragRef.current = null;
+
+    const element = railRef.current;
+    if (element) {
+      delete element.dataset.dragging;
+      element.style.transform = '';
+    }
+
+    // A tap: leave it to the click handler, which is also what a keyboard press
+    // arrives as.
+    if (drag.moved < SHEET_DRAG_SLOP) return;
+    // Anything longer is a drag, and the click that follows `pointerup` would
+    // toggle a second time.
+    suppressClickRef.current = true;
+    if (cancelled) return;
+
+    const settled = shouldSettleOpen({
+      expanded,
+      deltaY: event.clientY - drag.startY,
+      travel: drag.travel,
+      velocity: drag.velocity,
+    });
+    if (settled !== expanded) onToggle();
+  };
+
+  const handleClick = () => {
+    if (suppressClickRef.current) {
+      suppressClickRef.current = false;
+      return;
+    }
+    onToggle();
+  };
   const head = (
     <>
       <span className="rd-rail-title">
@@ -54,6 +168,7 @@ export default function AnnotationRail({
 
   return (
     <aside
+      ref={railRef}
       className="rd-rail"
       data-surface={surface}
       data-hidden={hidden ? '' : undefined}
@@ -66,12 +181,18 @@ export default function AnnotationRail({
       aria-label={copy.annotations}
     >
       {isSheet ? (
-        // The whole header is the handle. A grabber you can only grab by a 4px
-        // bar is a grabber for a mouse, not for a thumb.
+        // The whole header is the handle, and it is a handle in both senses: a
+        // grabber you can only grab by a 4px bar is a grabber for a mouse, and
+        // a handle you can only tap is a handle for a mouse too. Drag it and
+        // the sheet follows; tap it and it toggles, as it always did.
         <button
           type="button"
           className="rd-rail-head rd-rail-grab"
-          onClick={onToggle}
+          onClick={handleClick}
+          onPointerDown={handlePointerDown}
+          onPointerMove={handlePointerMove}
+          onPointerUp={endDrag}
+          onPointerCancel={event => endDrag(event, { cancelled: true })}
           aria-expanded={expanded}
         >
           <span className="rd-rail-grabber" aria-hidden="true" />
