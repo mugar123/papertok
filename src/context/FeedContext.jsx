@@ -314,8 +314,40 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     scheduleInteractionProfileFlush(userId, interactionProfile.current);
   }, [user?.uid]);
 
+  // The late-enrichment merges each call this once more (OpenAlex, then
+  // iCite) after the feed has already rendered, just to persist the enriched
+  // papers into the same snapshot key. Debounced: a 500ms setTimeout that a
+  // second call for the SAME (userId, signature) within the window replaces,
+  // so back-to-back merges from the same load pay for one serialisation of up
+  // to 30 papers instead of two. Keyed by a map rather than one slot: a mode
+  // switch or a preference edit can leave a previous load's late-enrichment
+  // still in flight when a new one starts, and those two target different
+  // storage keys — collapsing them into a single pending write would silently
+  // drop whichever one lost.
+  const pendingSnapshotWritesRef = useRef(new Map());
+  const scheduleFeedSnapshotWrite = useCallback((userId, signature, snapshot) => {
+    const writeKey = `${userId}:${signature}`;
+    const pending = pendingSnapshotWritesRef.current.get(writeKey);
+    if (pending) clearTimeout(pending.timer);
+    const flush = () => {
+      pendingSnapshotWritesRef.current.delete(writeKey);
+      writeFeedSnapshot(userId, signature, snapshot);
+    };
+    pendingSnapshotWritesRef.current.set(writeKey, { timer: setTimeout(flush, 500), flush });
+  }, []);
+
   useEffect(() => {
-    const flush = () => { void flushAllInteractionProfiles(); };
+    const flush = () => {
+      void flushAllInteractionProfiles();
+      // Every snapshot debounced behind a 500ms timer must land before a tab
+      // closing inside that window loses it — the feed relies on it to
+      // restore on the next visit. Same guarantee as the interaction-profile
+      // flush above, and on the same two events.
+      pendingSnapshotWritesRef.current.forEach((pending) => {
+        clearTimeout(pending.timer);
+        pending.flush();
+      });
+    };
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') flush();
     };
@@ -1320,6 +1352,23 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       // Save to cache
       feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
       const preferenceSignature = feedPreferenceSignature(userPreferences);
+      // This write is synchronous and bypasses the debounce map on purpose —
+      // it's the primary persist, not a merge, so it should land immediately.
+      // But it shares its localStorage key (userId, preferenceSignature) with
+      // whatever an in-flight enrichment's `scheduleFeedSnapshotWrite` may
+      // already have pending from an earlier `loadPapers` call (feedSessionId
+      // does not guard this key — only `traverseAndExpandNetwork` bumps it):
+      // an enrichment can schedule against a smaller, older cache object,
+      // and if this fresher write lands before that timer fires, the stale
+      // one would overwrite it 500ms later and regress the snapshot. Cancel
+      // any pending write for this exact key first so this fresher write is
+      // always the one left standing.
+      const snapshotWriteKey = `${activeUserId.current}:${preferenceSignature}`;
+      const pendingSnapshotWrite = pendingSnapshotWritesRef.current.get(snapshotWriteKey);
+      if (pendingSnapshotWrite) {
+        clearTimeout(pendingSnapshotWrite.timer);
+        pendingSnapshotWritesRef.current.delete(snapshotWriteKey);
+      }
       writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
 
       if (!initialOpenAlexData && enrichmentIds.length > 0) {
@@ -1330,7 +1379,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             const cachedMode = feedCache.current[activeMode];
             if (cachedMode) {
               feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
-              writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
             }
             return enriched;
           });
@@ -1345,7 +1394,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             const cachedMode = feedCache.current[activeMode];
             if (cachedMode) {
               feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
-              writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
             }
             return enriched;
           });
@@ -1375,7 +1424,8 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   }, [
     userPreferences, page, papers, loading, feedMode,
     categoryAffinities, relatedCandidates, isKnownPaper,
-    calculateAndAttachScore, followedEntities, recommendationProfileReady
+    calculateAndAttachScore, followedEntities, recommendationProfileReady,
+    scheduleFeedSnapshotWrite,
   ]);
 
   const preferencesSignatureRef = useRef(null);

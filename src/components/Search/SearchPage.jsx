@@ -604,16 +604,51 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   // that change nothing — and once a second in the last stretch.
   const [outageNow, setOutageNow] = useState(() => Date.now());
   const outageRetryAt = searchIssue?.retryAtMs || null;
+  // `outageNow` used to sit in this effect's own dependency array, so every
+  // tick's `setOutageNow` tore the interval down and rebuilt it — a fresh
+  // `setInterval` every second, and one that kept firing in a background tab.
+  // A self-rescheduling `setTimeout` reads the current time itself on every
+  // tick instead of closing over a value that only changes when this effect
+  // re-runs, so the cadence can still adapt (30s while far out, 1s in the
+  // final stretch) without `outageNow` needing to be a dependency at all.
+  // Hidden tabs pause it entirely — `visibilitychange` clears the pending
+  // timer — and `resume()` recomputes from `Date.now()` on return, so the
+  // countdown catches up instead of resuming from a stale value.
   useEffect(() => {
     if (!outageRetryAt) return undefined;
-    const remaining = outageRetryAt - Date.now();
-    if (remaining <= 0) return undefined;
-    const interval = setInterval(
-      () => setOutageNow(Date.now()),
-      remaining > 90_000 ? 30_000 : 1_000,
-    );
-    return () => clearInterval(interval);
-  }, [outageRetryAt, outageNow]);
+    let timer = null;
+
+    const clearPending = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+
+    const tick = () => {
+      const now = Date.now();
+      setOutageNow(now);
+      const remaining = outageRetryAt - now;
+      if (remaining <= 0) return;
+      timer = setTimeout(tick, remaining > 90_000 ? 30_000 : 1_000);
+    };
+
+    const resume = () => {
+      if (document.visibilityState === 'hidden') return;
+      clearPending();
+      tick();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') clearPending();
+      else resume();
+    };
+
+    resume();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearPending();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [outageRetryAt]);
   const openAlexRetryLabel = outageRetryAt
     ? formatRetryDelay(outageRetryAt - outageNow)
     : null;
