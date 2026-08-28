@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect, memo, lazy, Suspense } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
 import {
@@ -22,7 +22,6 @@ import { findOpenAccessCopy } from '../../services/unpaywallService';
 import { getRelatedResearchResources } from '../../services/dataCiteService';
 import { getHuggingFaceResearchResources } from '../../services/huggingFaceService';
 import { isOpaqueQueryTopicText, resolvePaperTopic, topicExplorerPath } from '../../utils/topicNavigation';
-import PaperReader from '../Reader/PaperReader.jsx';
 import { canRewritePaper } from '../../services/paperRewriteService.js';
 import { getPaperFigures } from '../../services/paperFigureService.js';
 import { CARD_DURATION_MS, tweenScrollTop } from '../../utils/scrollTween.js';
@@ -64,6 +63,15 @@ import {
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/publicNavigation.js';
+
+// The reader drags in the annotations layer, LaTeX export and their CSS
+// (PaperReader.css, Annotations.css, Export.css — ~53 KB raw source, ~28 KB
+// once minified) — none of it belongs in the boot graph when most sessions
+// never tap "read". It opens over a card that has already painted, so there
+// is nothing to placehold while the chunk loads; `fallback={null}` is
+// correct here, unlike the route-level `RouteFallback` used for `App.jsx`'s
+// lazy routes.
+const PaperReader = lazy(() => import('../Reader/PaperReader.jsx'));
 
 // One quiet watermark per research area, drawn as a hairline in the corner of
 // the sheet. It replaces the old animated icon constellation: the same visual
@@ -1598,11 +1606,16 @@ const PaperCard = memo(function PaperCard({
         `papertok-related-sheet:${getRelatedPaperIdentity(paper) || 'current'}`,
       )}
       {showReader && createPortal(
-        <PaperReader
-          paper={readablePaper}
-          originRect={readerOrigin}
-          onClose={() => setShowReader(false)}
-        />,
+        // The reader opens over a card that already painted, so there is no
+        // layout to hold a place for — fallback={null} is a deliberate no-op
+        // while the chunk downloads (a first open only; the browser caches it).
+        <Suspense fallback={null}>
+          <PaperReader
+            paper={readablePaper}
+            originRect={readerOrigin}
+            onClose={() => setShowReader(false)}
+          />
+        </Suspense>,
         document.body,
         'papertok-paper-reader',
       )}
