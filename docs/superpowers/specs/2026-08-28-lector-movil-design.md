@@ -128,7 +128,33 @@ no cambia; se entra desde la barra en vez de estar siempre asomando.
 **Reparto honesto del valor:** los ~127 px los devuelve fundir las dos
 superficies. El auto-ocultado añade 56 px más, y solo mientras te mueves.
 
-### 4. Aislamiento de escritorio
+### 4. El rótulo «Leer en simple» baja al documento
+
+Reportado por el usuario: el rótulo *parece quedarse* al desplazar en vez de
+estar arriba junto al título del paper.
+
+Es exacto. `.rd-status` es `position: absolute` (`PaperReader.css:46-55`) dentro
+de `.rd`, que es `position: fixed; inset: 0`. Queda por tanto **clavado en la
+pantalla** mientras `.rd-scroll` se desplaza por debajo, y en táctil el cromo no
+se oculta nunca. El resultado es un elemento que *lee* como encabezado —icono y
+texto en versalitas— y se *comporta* como etiqueta flotante, permanentemente
+encima de la columna de texto. El título del paper, en cambio, sí está en el
+documento (`rd-doc-title`, `PaperReader.jsx:1163`) y sí se va al desplazar. Dos
+cosas que parecen del mismo bloque viven en capas distintas.
+
+En escritorio hay margen lateral de sobra y el rótulo no pisa nada: **allí se
+queda como está**.
+
+En puntero grueso el kicker sale de `.rd-status` y pasa al flujo del documento,
+encima de `rd-doc-title`, de modo que se desplaza con el paper. Lo que sí debe
+seguir fijo es lo que informa de estado y no de identidad: el contador de usos
+restantes y el indicador de caché, que son justamente lo que quieres poder
+consultar a mitad de lectura.
+
+Es decir: el criterio de reparto no es «cromo sí, cromo no», es **identidad al
+documento, estado al cromo**.
+
+### 5. Aislamiento de escritorio
 
 El corte **no es por ancho de ventana, es por tipo de puntero**.
 
@@ -170,7 +196,8 @@ como hoy, con su hoja y su panel. Es el precio de no tocar el flujo de escritori
 
 ## Fuera de alcance
 
-- El flujo de escritorio, en cualquiera de sus partes.
+- El flujo de escritorio, en cualquiera de sus partes, incluida la posición
+  actual del rótulo «Leer en simple».
 - La ventana estrecha con ratón.
 - Las dos funciones de IA en sí (reescritura por nivel y preguntar sobre un
   fragmento): cambia dónde se invocan, no qué hacen.
