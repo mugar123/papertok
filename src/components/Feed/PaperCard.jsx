@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect, useId, memo } from 'react';
+import { Fragment, useState, useRef, useCallback, useMemo, useEffect, useId, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
 import {
@@ -1206,39 +1206,49 @@ const PaperCard = memo(function PaperCard({
             ))}
           </div>
           <div className="pc-author-names">
+            {/* The comma and the space live outside the button, not inside it.
+                These buttons are inline-block, and a trailing space inside an
+                inline-block box is trimmed away, so "Kramer, Alexander" used to
+                render as "Kramer,Alexander". Keeping the separator out also
+                keeps it out of each button's accessible name. */}
             {(paper.authors || []).slice(0, 3).map((author, index) => (
-               <button
-                 key={index}
-                 type="button"
-                 className="pc-author-link pc-author-btn"
-                 onClick={(e) => {
-                   e.stopPropagation();
-                   const pId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
-                   const authorName = author.name || author;
-                   const path = publicMode
-                     ? getPublicEntityPath('author', author.id || authorName)
-                     : `/explorer/author/${encodeURIComponent(authorName)}?arxivId=${pId}`;
-                   trackEvent('select_content', {
-                     content_type: 'author',
-                     surface: analyticsSurface,
-                     position,
-                   });
-                   if (path) navigate(path);
-                 }}
-               >
-                 {author.name || author}{index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
-               </button>
+               <Fragment key={index}>
+                 <button
+                   type="button"
+                   className="pc-author-link pc-author-btn"
+                   onClick={(e) => {
+                     e.stopPropagation();
+                     const pId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
+                     const authorName = author.name || author;
+                     const path = publicMode
+                       ? getPublicEntityPath('author', author.id || authorName)
+                       : `/explorer/author/${encodeURIComponent(authorName)}?arxivId=${pId}`;
+                     trackEvent('select_content', {
+                       content_type: 'author',
+                       surface: analyticsSurface,
+                       position,
+                     });
+                     if (path) navigate(path);
+                   }}
+                 >
+                   {author.name || author}
+                 </button>
+                 {index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
+               </Fragment>
             ))}
             {(paper.authors || []).length > 3 && (
-              <button
-                type="button"
-                className="pc-authors-more"
-                aria-haspopup="dialog"
-                onClick={(e) => { e.stopPropagation(); setShowAuthorsModal(true); }}
-                aria-label={isEnglish ? 'Show all authors' : 'Ver todos los autores'}
-              >
-                et al.
-              </button>
+              <>
+                {' '}
+                <button
+                  type="button"
+                  className="pc-authors-more"
+                  aria-haspopup="dialog"
+                  onClick={(e) => { e.stopPropagation(); setShowAuthorsModal(true); }}
+                  aria-label={isEnglish ? 'Show all authors' : 'Ver todos los autores'}
+                >
+                  et al.
+                </button>
+              </>
             )}
           </div>
         </div>
