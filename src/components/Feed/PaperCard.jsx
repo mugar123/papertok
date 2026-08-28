@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
+import { useState, useRef, useCallback, useMemo, useEffect, useId, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
 import {
@@ -215,6 +215,9 @@ const PaperCard = memo(function PaperCard({
   analyticsSurface = 'feed',
   position,
 }) {
+  // `position` is optional and PaperCard renders on five different surfaces,
+  // so it cannot anchor a stable, collision-free id for aria-controls.
+  const abstractId = useId();
   const [expanded, setExpanded] = useState(false);
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -1204,11 +1207,12 @@ const PaperCard = memo(function PaperCard({
           </div>
           <div className="pc-author-names">
             {(paper.authors || []).slice(0, 3).map((author, index) => (
-               <span
+               <button
                  key={index}
-                 className="pc-author-link"
+                 type="button"
+                 className="pc-author-link pc-author-btn"
                  onClick={(e) => {
-                   e.stopPropagation(); 
+                   e.stopPropagation();
                    const pId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
                    const authorName = author.name || author;
                    const path = publicMode
@@ -1223,14 +1227,25 @@ const PaperCard = memo(function PaperCard({
                  }}
                >
                  {author.name || author}{index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
-               </span>
+               </button>
             ))}
-            {(paper.authors || []).length > 3 && <span> et al.</span>}
+            {(paper.authors || []).length > 3 && (
+              <button
+                type="button"
+                className="pc-authors-more"
+                aria-haspopup="dialog"
+                onClick={(e) => { e.stopPropagation(); setShowAuthorsModal(true); }}
+                aria-label={isEnglish ? 'Show all authors' : 'Ver todos los autores'}
+              >
+                et al.
+              </button>
+            )}
           </div>
         </div>
 
         <div
           ref={abstractRef}
+          id={abstractId}
           className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''}`}
           onClick={(e) => toggleExpanded(e, !expanded)}
           onTransitionEnd={handleAbstractTransitionEnd}
@@ -1268,6 +1283,18 @@ const PaperCard = memo(function PaperCard({
             </motion.p>
           </AnimatePresence>
         </div>
+
+        <button
+          type="button"
+          className="pc-abstract-toggle"
+          aria-expanded={expanded}
+          aria-controls={abstractId}
+          onClick={(e) => toggleExpanded(e, !expanded)}
+        >
+          {expanded
+            ? (isEnglish ? 'Show less' : 'Mostrar menos')
+            : (isEnglish ? 'Read full abstract' : 'Leer el abstract completo')}
+        </button>
 
         <AnimatePresence initial={false}>
           {researchResources.length > 0 && (
@@ -1528,8 +1555,9 @@ const PaperCard = memo(function PaperCard({
               </div>
               <div className="pc-authors-modal-list">
                 {(paper.authors || []).map((author, idx) => (
-                  <div 
-                    key={idx} 
+                  <button
+                    key={idx}
+                    type="button"
                     className="pc-authors-modal-item"
                     onClick={() => {
                       setShowAuthorsModal(false);
@@ -1549,7 +1577,7 @@ const PaperCard = memo(function PaperCard({
                       {(author.name || author).charAt(0).toUpperCase()}
                     </div>
                     <span>{author.name || author}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </motion.div>

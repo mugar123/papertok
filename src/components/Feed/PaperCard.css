@@ -2481,3 +2481,31 @@ a.pc-citations {
   .graph-trail-back,
   .related-header .graph-view-button { transition: none; }
 }
+
+/* ── Keyboard-operable author/abstract controls (Task 6) ── */
+/* Inline author buttons: the global button reset leaves them borderless, so
+   they only need to stop imposing the base font size. */
+.pc-author-btn {
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+}
+
+.pc-authors-more {
+  font: inherit;
+  color: var(--text-secondary);
+  padding: 0 2px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pc-abstract-toggle {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  padding: var(--space-1) 0;
+  align-self: flex-start;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
