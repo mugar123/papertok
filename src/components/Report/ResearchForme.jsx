@@ -76,7 +76,13 @@ function FormeCell({ cell, figure, isLoaded, onLoaded, onSelect, enterOrder, isE
         <span className="sr-cell-year">{paper.year}</span>
       </div>
       <h3 className={`sr-cell-title sr-cell-title--${titleSize}`} lang="en">
-        <ScientificText>{paper.title}</ScientificText>
+        <button
+          type="button"
+          className="sr-cell-title-btn"
+          onClick={(e) => { e.stopPropagation(); onSelect(paper); }}
+        >
+          <ScientificText>{paper.title}</ScientificText>
+        </button>
       </h3>
     </>
   );
