@@ -792,10 +792,6 @@
   line-height: 1.28;
   letter-spacing: -0.01em;
   color: var(--text-primary);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
 }
 
 /* The id standing in for a title we could not resolve: mono, because that is
@@ -1153,10 +1149,11 @@
   width: 100%;
 }
 
-/* .lists-paper-title clamps to two lines via -webkit-line-clamp, which only
-   clips a box's own line boxes. Now that the button is the block sitting
-   between that box and the text, the clamp has to live here too or the
-   title stops truncating and the card grows to fit the full text. */
+/* The two-line clamp lives on the button, not on .lists-paper-title: that
+   paragraph's only child is now this block-level button, so a clamp on the
+   parent has no text run left to clip — -webkit-line-clamp only clips a
+   box's own line boxes, and the title text is inside the button's box now.
+   Do not "helpfully" move this back onto .lists-paper-title. */
 .lists-paper-title-btn {
   display: -webkit-box;
   -webkit-line-clamp: 2;
