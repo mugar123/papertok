@@ -1182,7 +1182,7 @@ const PaperCard = memo(function PaperCard({
           )}
         </AnimatePresence>
 
-        <h2 className="pc-title">
+        <h2 className="pc-title" lang="en">
           <ScientificText>{paper.title}</ScientificText>
         </h2>
 

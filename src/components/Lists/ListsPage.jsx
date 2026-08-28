@@ -1575,7 +1575,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                             )}
                             {paper.year && <span className="lists-paper-date">{paper.year}</span>}
                           </div>
-                          <p className="lists-paper-title"><ScientificText>{paper.title}</ScientificText></p>
+                          <p className="lists-paper-title" lang="en"><ScientificText>{paper.title}</ScientificText></p>
                           {paper.authors && (
                             <p className="lists-paper-authors">
                               {paper.authors.slice(0, 3).map(a => typeof a === 'string' ? a : a.name).filter(Boolean).join(', ')}{paper.authors.length > 3 && ' et al.'}

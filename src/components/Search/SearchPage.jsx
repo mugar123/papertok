@@ -1241,7 +1241,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     >
                       <div className="search-item-icon"><FileText size={22} /></div>
                       <div className="search-item-info">
-                        <h4><ScientificText>{paper.title}</ScientificText></h4>
+                        <h4 lang="en"><ScientificText>{paper.title}</ScientificText></h4>
                         <p className="search-item-authors">{authors.slice(0, 3).join(', ')}{authors.length > 3 ? ` +${authors.length - 3}` : ''}</p>
                         <span className="search-item-meta">
                           {formatPaperDate(paper, locale) || (isEnglish ? 'Unknown date' : 'Fecha desconocida')} • {paper.primaryCategory || paper.journal || 'Paper'}

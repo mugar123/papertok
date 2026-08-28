@@ -1160,7 +1160,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
                 "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
-            <h1 className="rd-doc-title"><ScientificText>{paper?.title}</ScientificText></h1>
+            <h1 className="rd-doc-title" lang="en"><ScientificText>{paper?.title}</ScientificText></h1>
             <p className="rd-doc-byline">
               {(paper?.authors || []).slice(0, 6).map(author => author?.name || author).join(', ')}
               {(paper?.authors || []).length > 6 && ' et al.'}
