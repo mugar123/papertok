@@ -32,6 +32,13 @@ import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
 import { buildPaperTopicTags } from '../../utils/paperTopicTags.js';
 
 /**
+ * How still the abstract panel has to be before its clipping is believed: the
+ * quiet demanded after the LAST size change, not a wait for the whole travel.
+ * A 420ms collapse keeps resetting this, so the reading lands once — after it.
+ */
+const ABSTRACT_SETTLE_MS = 180;
+
+/**
  * A glyph per status, keyed the same way the tags are.
  *
  * The icons stay here rather than in `paperStatus.js` so that module holds no
@@ -219,6 +226,16 @@ const PaperCard = memo(function PaperCard({
   // so it cannot anchor a stable, collision-free id for aria-controls.
   const abstractId = useId();
   const [expanded, setExpanded] = useState(false);
+  // Whether the collapsed panel is actually hiding words. The toggle below the
+  // abstract only earns its place when there is something to reveal: a short
+  // abstract needs no control, and a paper that carries none at all must not
+  // offer to expand what it does not have.
+  const [abstractClipped, setAbstractClipped] = useState(false);
+  // Read by the measurement below, which must not re-run when the panel opens:
+  // a reading taken while it travels between its two heights is of the height
+  // the animation is passing through, not the one it rests at.
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
   // Only papers with a canonical identity can anchor a thread; for the rest
@@ -488,6 +505,58 @@ const PaperCard = memo(function PaperCard({
       settleAbstractResize.current?.();
     };
   }, []);
+
+  /**
+   * Whether the collapsed panel is hiding words, which is the only thing that
+   * earns the toggle below it a place on the card.
+   *
+   * Two things make the reading harder than `scrollHeight > clientHeight`.
+   *
+   * The panel is sized by the flex room its siblings leave, and that is not
+   * resolved in the commit that mounts it — measuring there reads a box with no
+   * height yet and calls every abstract clipped. Hence the frame's wait.
+   *
+   * And a collapse looks from here like a storm of resizes whose early frames
+   * still report the open height, so they answer "nothing is hidden" about a
+   * panel that is mid-travel. Reading only once the size has been quiet for a
+   * moment takes the settled answer instead of one the transition passed
+   * through, which is also what stops the button blinking out and back.
+   *
+   * `expandedRef` rather than `expanded` keeps all of this out of the effect's
+   * dependencies: an open panel clips nothing, and re-running on open would
+   * throw away the verdict that earned the button its place.
+   */
+  useEffect(() => {
+    if (!abstractText) {
+      setAbstractClipped(false);
+      return undefined;
+    }
+    let alive = true;
+    let settleTimer = null;
+    const read = () => {
+      const node = abstractRef.current;
+      if (!alive || !node || expandedRef.current) return;
+      setAbstractClipped(node.scrollHeight - node.clientHeight > 1);
+    };
+    const settle = () => {
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(read, ABSTRACT_SETTLE_MS);
+    };
+    const frame = requestAnimationFrame(() => requestAnimationFrame(read));
+    const node = abstractRef.current;
+    const observer = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(settle);
+    if (node && observer) observer.observe(node);
+    window.addEventListener('resize', settle);
+    return () => {
+      alive = false;
+      cancelAnimationFrame(frame);
+      if (settleTimer) clearTimeout(settleTimer);
+      observer?.disconnect();
+      window.removeEventListener('resize', settle);
+    };
+  }, [abstractKey, abstractText]);
 
   /**
    * The other half of the swap: the panel eases between the height it had and
@@ -1309,6 +1378,10 @@ const PaperCard = memo(function PaperCard({
           </AnimatePresence>
         </div>
 
+        {/* Only where there is something to reveal. `expanded` keeps it on
+            screen once opened, since an open panel clips nothing and would
+            otherwise take away the control that closes it. */}
+        {abstractText && (abstractClipped || expanded) && (
         <button
           type="button"
           className="pc-abstract-toggle"
@@ -1320,6 +1393,7 @@ const PaperCard = memo(function PaperCard({
             ? (isEnglish ? 'Show less' : 'Mostrar menos')
             : (isEnglish ? 'Read full abstract' : 'Leer el abstract completo')}
         </button>
+        )}
 
         <AnimatePresence initial={false}>
           {researchResources.length > 0 && (
