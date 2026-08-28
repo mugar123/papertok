@@ -10,10 +10,8 @@
   padding: 16px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
-  box-shadow: 0 20px 54px rgba(17, 19, 24, 0.12);
-  backdrop-filter: blur(18px);
-  transition: border-color 0.28s ease, box-shadow 0.28s ease;
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
 }
 
 .analytics-consent.is-success {
