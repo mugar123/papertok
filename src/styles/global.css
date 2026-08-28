@@ -343,12 +343,22 @@ html.theme-crossfade *::after {
   outline-offset: 2px;
 }
 
-/* Visible only while focused: the first Tab of every page lands here. */
+/* Visible only while focused: the first Tab of every page lands here.
+   The z-index is a literal, not `--z-toast + 1`: the token scale tops out at
+   400, but the page chrome this link has to sit in front of ignores that scale
+   — the guest header and the public paper header are at 900 and the search
+   header at 1000. At 401 the link was focused and completely painted over by
+   the guest header (verified in the browser: `elementFromPoint` on the focused
+   link returned `.guest-wordmark`), which is exactly the "focus is hidden by
+   author content" failure of WCAG 2.4.11, and it made 2.4.1 useless to anyone
+   who needs to see where the focus went. 1100 clears every fixed header while
+   staying under the dialog layers (AuthPrompt 1800, overlays 9999+), which no
+   focused skip link ever has to cross. */
 .skip-link {
   position: fixed;
   top: -100px;
   left: var(--space-4);
-  z-index: calc(var(--z-toast) + 1);
+  z-index: 1100;
   background: var(--accent-primary);
   color: var(--text-inverse);
   font-weight: var(--fw-semibold);
