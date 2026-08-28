@@ -952,7 +952,20 @@ const PaperCard = memo(function PaperCard({
               <img
                 src={item.url}
                 alt=""
+                loading="lazy"
                 decoding="async"
+                // `.pc-figure` (this img's parent) is already sized per slot
+                // via clamp() -- roughly 1.28:1, not 4:3 -- and `.pc-figure
+                // img` fills it at width/height: 100% with object-fit:
+                // contain framing the source image's own ratio inside that
+                // box. With both CSS dimensions explicit, these attributes
+                // cannot reserve space or shift layout either way; a literal
+                // 4:3/height:auto pair would instead fight object-fit against
+                // a box it does not describe. They stay only as an honest
+                // intrinsic-size hint (the four slots' average ratio) for
+                // tooling that flags images with no width/height at all.
+                width="256"
+                height="200"
                 // A cached image can finish before React attaches `onLoad`, and
                 // then the event never comes and the clipping never appears. The
                 // ref catches the ones that were already done on mount; `onLoad`

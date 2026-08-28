@@ -998,7 +998,19 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
           <div className="profile-masthead">
           <div className="public-profile-avatar">
             {avatar
-              ? <img src={avatar} alt="" referrerPolicy="no-referrer" />
+              ? (
+                <img
+                  src={avatar}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  // The page's own masthead avatar, visible on load -- not
+                  // lazy. `.public-profile-avatar img` renders at 96x96
+                  // (56x56 on the narrow layout).
+                  decoding="async"
+                  width="96"
+                  height="96"
+                />
+              )
               : (
                 // The initial comes from the display name, which is public.
                 // The app's other avatars fall back to the email initial, and

@@ -511,7 +511,17 @@ export default function SettingsPage() {
           <section className="settings-profile" aria-labelledby="settings-account-title">
             <div className="settings-profile-avatar">
               {visibleProfilePhoto ? (
-                <img src={visibleProfilePhoto} alt="" referrerPolicy="no-referrer" />
+                <img
+                  src={visibleProfilePhoto}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  // First section of the page, visible on load -- not lazy.
+                  // `.settings-profile-avatar > img` renders at 82x82 (66x66
+                  // on the narrow layout).
+                  decoding="async"
+                  width="82"
+                  height="82"
+                />
               ) : (
                 <div className="settings-profile-fallback" aria-hidden="true">
                   {user?.email?.charAt(0).toUpperCase() || 'U'}

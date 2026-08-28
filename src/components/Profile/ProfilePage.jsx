@@ -725,7 +725,19 @@ export default function ProfilePage() {
             <div className="profile-identity">
               <div className="profile-identity-avatar">
                 {showPhoto && appAvatar
-                  ? <img src={appAvatar} alt="" referrerPolicy="no-referrer" />
+                  ? (
+                    <img
+                      src={appAvatar}
+                      alt=""
+                      referrerPolicy="no-referrer"
+                      // The page's own masthead avatar, visible on load --
+                      // not lazy. `.profile-identity-avatar img` renders at
+                      // 52x52.
+                      decoding="async"
+                      width="52"
+                      height="52"
+                    />
+                  )
                   : <span>{(displayName || user.email || '?').trim().charAt(0).toUpperCase()}</span>}
               </div>
               <p className="profile-identity-hint">
