@@ -1575,7 +1575,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                             )}
                             {paper.year && <span className="lists-paper-date">{paper.year}</span>}
                           </div>
-                          <p className="lists-paper-title" lang="en"><ScientificText>{paper.title}</ScientificText></p>
+                          <p className="lists-paper-title" lang="en">
+                            <button
+                              type="button"
+                              className="lists-paper-title-btn"
+                              onClick={(e) => { e.stopPropagation(); openPaperCard(paper); }}
+                            >
+                              <ScientificText>{paper.title}</ScientificText>
+                            </button>
+                          </p>
                           {paper.authors && (
                             <p className="lists-paper-authors">
                               {paper.authors.slice(0, 3).map(a => typeof a === 'string' ? a : a.name).filter(Boolean).join(', ')}{paper.authors.length > 3 && ' et al.'}
@@ -1716,7 +1724,15 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                     </div>
                   )}
                 </div>
-                <h3 className="list-card-name">{list.name}</h3>
+                <h3 className="list-card-name">
+                  <button
+                    type="button"
+                    className="list-card-name-btn"
+                    onClick={(e) => { e.stopPropagation(); setOpenedFromRoute(false); openList(list); }}
+                  >
+                    {list.name}
+                  </button>
+                </h3>
                 <div className="list-card-footer">
                   {/* A count is machine data, so it is set in mono with tabular
                       figures. It used to say nothing but its own size in Inter. */}
