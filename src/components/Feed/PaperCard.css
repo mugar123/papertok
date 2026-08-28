@@ -1100,8 +1100,12 @@ a.pc-citations {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  /* No `backdrop-filter` here on purpose: this overlay animates its own
+     opacity in (`relatedBackdropIn`), which would force the blur to be
+     re-resolved on every frame — the worst case for a mobile GPU. The rgba
+     scrim is what actually reads as a backdrop; the 3px blur it carried was
+     imperceptible under it. */
   background: rgba(17, 19, 24, 0.35);
-  backdrop-filter: blur(3px);
   animation: relatedBackdropIn 0.22s ease-out both;
 }
 
@@ -1124,6 +1128,17 @@ a.pc-citations {
   animation: relatedSheetIn 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
   transition: height 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform, opacity;
+}
+
+/* `--shadow-xl` is a 48px blur, re-rasterized on every frame of the spring
+   this sheet enters with. On a coarse pointer it lands over the dark
+   overlay scrim (or its own dark surface), so the extra spread reads the
+   same as the cheaper shadow — the cost isn't worth it there. Desktop, with
+   a fine pointer and no per-frame budget pressure, keeps the deeper one. */
+@media (pointer: coarse) {
+  .related-sheet {
+    box-shadow: var(--shadow-lg);
+  }
 }
 
 .related-sheet--loading { height: min(430px, 58vh); }
@@ -2151,9 +2166,12 @@ a.pc-citations {
 .pc-authors-modal-overlay {
   position: fixed;
   inset: 0;
+  /* No `backdrop-filter` here: PaperCard.jsx animates this overlay's own
+     opacity in and out with framer-motion (`initial`/`animate`/`exit`), so a
+     blur underneath it would be re-resolved on every frame of that fade —
+     the pattern this pass exists to remove. The rgba scrim carries the
+     backdrop on its own; its 3px blur was not doing visible work. */
   background: rgba(17, 19, 24, 0.35);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
   z-index: 10000;
   display: flex;
   flex-direction: column;
@@ -2171,6 +2189,17 @@ a.pc-citations {
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-xl);
+}
+
+/* Same trade as `.related-sheet`: this sheet enters on a spring translateY
+   (PaperCard.jsx), so `--shadow-xl`'s 48px blur is re-rasterized every frame
+   of that motion. Scoped to coarse pointers — over the scrim or the sheet's
+   own dark surface the shallower shadow reads the same, and desktop keeps
+   the deeper one since it isn't paying the per-frame cost. */
+@media (pointer: coarse) {
+  .pc-authors-modal-sheet {
+    box-shadow: var(--shadow-lg);
+  }
 }
 
 .pc-authors-modal-header {

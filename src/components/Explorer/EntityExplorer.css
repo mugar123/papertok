@@ -1226,9 +1226,13 @@
 .ee-filter-backdrop {
   position: fixed;
   inset: 0;
+  /* No `backdrop-filter`: EntityExplorer.jsx fades this element's own
+     opacity in and out with framer-motion, and a blur under an animated
+     opacity is re-resolved every frame — the worst case for a mobile GPU.
+     The rgba veil alone reads as the backdrop; its 3px blur was invisible
+     under it. */
   background: rgba(17, 19, 24, 0.4);
   z-index: 2000;
-  backdrop-filter: blur(3px);
 }
 
 .ee-filter-drawer {

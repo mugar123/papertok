@@ -210,10 +210,17 @@
     max-height: 100vh;
   }
 
+  /* No `backdrop-filter` in this base rule. Both `<dialog>`s in the app
+     (CreateListDialog.css, SaveToListModal.css) override `::backdrop`
+     entirely — background, animation, everything — so this rule is what a
+     future dialog would actually render with, and every dialog that exists
+     today animates its backdrop's opacity in with `fadeIn`. A blur left
+     here would apply to those two unopposed the moment their own rules
+     stopped declaring `backdrop-filter` at all, re-resolving on every
+     frame of that animation without a single line in either file naming
+     it — which is exactly what happened before this comment was written. */
   dialog::backdrop {
     background: rgba(17, 19, 24, 0.4);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
   }
 }
 
