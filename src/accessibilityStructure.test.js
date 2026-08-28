@@ -25,6 +25,7 @@ const APP_JSX = new URL('./App.jsx', import.meta.url);
 const NAVBAR_JSX = new URL('./components/Layout/Navbar.jsx', import.meta.url);
 const FEED_CONTAINER_JSX = new URL('./components/Feed/FeedContainer.jsx', import.meta.url);
 const BUTTON_VARIANTS = new URL('./components/ui/button-variants.js', import.meta.url);
+const COMMAND_JSX = new URL('./components/ui/command.jsx', import.meta.url);
 const SRC_DIR = new URL('./', import.meta.url);
 
 /**
@@ -237,7 +238,7 @@ test('the feed landmark stays opt-in, or the guest route nests two <main> elemen
   );
 });
 
-// ── The focus ring, across every stylesheet ─────────────────────────────────
+// ── The focus ring, across every CSS stylesheet ─────────────────────────────
 
 /**
  * The rules that switch the ring off on purpose, and what draws it instead.
@@ -260,7 +261,19 @@ const OUTLINE_OFF_ON_PURPOSE = new Map([
   ],
 ]);
 
-test('no stylesheet switches the focus ring off without a replacement', async () => {
+test('no .css stylesheet switches the focus ring off without a replacement', async () => {
+  // Scope, stated plainly: this only reads files under src/ whose name ends
+  // in `.css` (see `stylesheets()` above). It cannot see an `outline-none`
+  // written as a Tailwind utility class inside a JSX `className`/`cn(...)`
+  // call — that string never touches a stylesheet. One exists today, on the
+  // search palette's field in `src/components/ui/command.jsx`, and it was
+  // measured in the browser rather than reasoned about: it costs the user no
+  // ring. (The palette's rows carried a second one until the selected-row ring
+  // went in; see that test above for why it could not stay.) Whether the field
+  // keeping its ring is luck or design is the subject of the two tests at the
+  // bottom of this file, and the answer is short enough to repeat here — the
+  // global `:focus-visible` is unlayered, so it outranks anything Tailwind
+  // puts in `@layer utilities`.
   const offenders = [];
 
   for (const file of await stylesheets()) {
@@ -317,5 +330,215 @@ test('the focus ring is never painted in the brand orange again', async () => {
     + 'ink) so it clears 3:1 on both. --brand-orange stays the brand mark and is still '
     + 'legitimately a `color:` in ScientificReport.css and a `hover:border` on the '
     + 'shared Button — this only forbids it as an outline.',
+  );
+});
+
+// ── The palette's selected row: a state shown in colour alone ───────────────
+
+/**
+ * The row the arrow keys are sitting on is the only thing telling a keyboard
+ * user where they are in the palette, and it used to be drawn with a tint and
+ * nothing else: `data-[selected=true]:bg-secondary`, measured in the browser at
+ * `rgb(26, 29, 36)` over the sheet's `rgb(22, 25, 31)`. That is 1.04:1 on ink
+ * and 1.07:1 on paper, against the 3:1 WCAG 1.4.11 asks of the visual
+ * information that identifies a component's state — invisible at a glance, and
+ * completely gone to anyone who cannot separate two near-identical greys.
+ *
+ * The replacement is the ring the rest of the app already uses for "you are
+ * here": 2px of `var(--focus-ring)`, the one token that flips with the theme
+ * (#b45309 on paper, #ff9d00 on ink) precisely so it clears 3:1 on both. It is
+ * inset with a negative offset because the rows are packed against each other
+ * inside a padded list, where an outset ring would overlap its neighbours.
+ *
+ * The tint stays. It is not the indicator any more, but it is what makes the
+ * row read as a single object rather than as an outlined gap.
+ */
+
+test('the palette marks its selected row with a ring, not only a tint', async () => {
+  const command = await readSource(COMMAND_JSX);
+
+  const item = command.match(/function CommandItem\(\{[\s\S]*?\n\}/);
+  assert.ok(
+    item,
+    'components/ui/command.jsx no longer defines CommandItem. It is the only place '
+    + 'the search palette styles a result row, so whatever replaced it now owns the '
+    + 'selected-row indicator this test is about.',
+  );
+
+  // Cut at the string-literal boundaries too: these utilities live inside
+  // quoted arguments to `cn(...)`, so a bare `\S+` swallows the closing
+  // quote and comma of whichever one ends its line.
+  const utilities = (item[0].match(/data-\[selected=true\]:[^\s'"\x60,]+/g) ?? []).join(' ');
+
+  assert.match(
+    utilities,
+    /data-\[selected=true\]:outline-\[var\(--focus-ring\)\]/,
+    'the selected row no longer draws `var(--focus-ring)`. Whatever is left is a '
+    + 'background change on its own, and the two backgrounds involved '
+    + '(--bg-secondary over --bg-card) are 1.04:1 apart on ink and 1.07:1 on paper: '
+    + 'the row the arrows are on becomes indistinguishable from the rows they are '
+    + 'not on (WCAG 1.4.11). --focus-ring is the token to use because it is the one '
+    + 'that flips per theme to stay above 3:1 on both.',
+  );
+  assert.match(
+    utilities,
+    /data-\[selected=true\]:outline-2(?:\s|$)/,
+    'the selected row lost its 2px outline width. Tailwind draws no outline at all '
+    + 'without a width utility, so the colour above would be set on a ring that is '
+    + 'never painted — and the class list would still read as if it were.',
+  );
+  assert.match(
+    utilities,
+    /data-\[selected=true\]:-outline-offset-2(?:\s|$)/,
+    'the selected row\'s outline is no longer inset. The rows sit flush against each '
+    + 'other inside `CommandList`\'s 1px of padding, so an outset (or zero-offset) '
+    + 'ring is drawn over the neighbouring rows and clipped by the list\'s own '
+    + 'overflow at the top and bottom of the scroll.',
+  );
+
+  assert.doesNotMatch(
+    item[0],
+    /outline-none/,
+    'CommandItem carries `outline-none` again. On its own that class was harmless '
+    + 'here — cmdk never gives a row DOM focus, so there was no ring for it to hide '
+    + '— but Tailwind v4 implements it as `--tw-outline-style: none`, and '
+    + '`outline-2` paints `outline-style: var(--tw-outline-style)`. The two on one '
+    + 'element resolve to `outline-style: none`: the selected row silently goes back '
+    + 'to being a 1.04:1 tint while every class this test looks for is still present '
+    + 'and still reads correctly.',
+  );
+});
+
+// ── The one rule that makes every `outline-none` in the tree harmless ───────
+
+/**
+ * The scan above reads stylesheets, and a review pointed out what it therefore
+ * cannot see: `components/ui/command.jsx` carries a Tailwind `outline-none` on
+ * the search palette's field, and no `.css` file mentions it. The palette is
+ * real and reachable — `App.jsx` mounts `SearchCommand` for every signed-in
+ * user and `/` opens it.
+ *
+ * Measured in the browser, signed in, with the palette open:
+ *
+ *   - the field, `outline-none` and all, computes
+ *     `outline: rgb(255, 157, 0) solid 2px` at `outline-offset: 2px` and
+ *     matches `:focus-visible`. The ring is there.
+ *   - the rows never take DOM focus at all. cmdk gives them `role="option"`
+ *     and `tabIndex -1` and keeps `document.activeElement` on the field,
+ *     moving `aria-activedescendant` as the arrows walk the list. That is why
+ *     the `outline-none` they used to carry hid nothing — and why the ring
+ *     that now marks the selected row is hung off `[data-selected=true]`
+ *     rather than off focus.
+ *
+ * The field keeps its ring for one reason only: `.outline-none` is generated
+ * into `@layer utilities`, the global `:focus-visible` is not in any layer at
+ * all, and unlayered CSS outranks every layer regardless of specificity. That
+ * is a property of ONE rule's position in ONE file, and moving it back inside
+ * `@layer base` — where it used to live — would silently switch the ring off
+ * again on every Tailwind primitive at once, with every assertion above still
+ * green.
+ *
+ * So this holds the position, not the occurrences. An inventory of bare
+ * `outline-none` classes would be the wrong net: while the rule below stays
+ * unlayered none of them can do harm, and the next shadcn primitive to arrive
+ * with one in its class list would fail the build for nothing.
+ */
+
+const GLOBAL_CSS = new URL('./styles/global.css', import.meta.url);
+
+/** The block selectors and at-rule preludes open at `index`, outermost first. */
+function enclosingBlocks(css, index) {
+  const stack = [];
+  for (let i = 0; i < index; i += 1) {
+    if (css[i] === '{') {
+      const before = css.slice(0, i);
+      const start = Math.max(before.lastIndexOf('{'), before.lastIndexOf('}')) + 1;
+      stack.push(before.slice(start).trim().replace(/\s+/g, ' '));
+    } else if (css[i] === '}') {
+      stack.pop();
+    }
+  }
+  return stack;
+}
+
+test('the global focus ring stays outside every cascade layer', async () => {
+  const css = stripComments(await readFile(GLOBAL_CSS, 'utf8'));
+
+  const rule = css.match(/^:focus-visible\s*\{[^}]*\}/m);
+  assert.ok(
+    rule,
+    'global.css no longer has a top-level `:focus-visible` rule. It is the only '
+    + 'thing drawing a focus ring on the shadcn/ui primitives, none of which have a '
+    + 'stylesheet of their own.',
+  );
+  assert.match(
+    rule[0],
+    /outline:\s*2px\s+solid\s+var\(--focus-ring\)/,
+    'the global `:focus-visible` no longer paints `2px solid var(--focus-ring)`.',
+  );
+
+  const layers = enclosingBlocks(css, css.indexOf(rule[0])).filter(b => b.startsWith('@layer'));
+  assert.deepEqual(
+    layers,
+    [],
+    'the global `:focus-visible` rule has been moved back inside a cascade layer. '
+    + 'Tailwind generates `.outline-none` into `@layer utilities`, and a layered rule '
+    + 'loses to a later layer however specific it is — so from inside `@layer base` '
+    + 'this rule stops drawing a ring on every element carrying `outline-none`, which '
+    + 'today includes the search palette\'s field (`components/ui/command.jsx`). '
+    + 'Nothing about that failure is visible in a stylesheet: the class list, the '
+    + 'rule and its colour all still read correctly (WCAG 2.4.7).',
+  );
+});
+
+/** Every `.js`/`.jsx` under src/ except the tests, path-relative. */
+async function sources() {
+  const entries = await readdir(SRC_DIR, { recursive: true });
+  return entries.filter(name => /\.jsx?$/.test(name) && !/\.test\.jsx?$/.test(name)).sort();
+}
+
+/**
+ * What a component can still do that the rule above cannot outrank. Both beat
+ * unlayered author CSS: `!important` inverts the layer order, which puts the
+ * unlayered rule LAST rather than first, and an inline style outranks the whole
+ * author stylesheet. These are the two shapes worth failing a build over — and
+ * the reason they are searched for in `.js`/`.jsx` is that neither leaves a
+ * trace in any `.css` file for the scan above to find.
+ */
+const RING_KILLERS = [
+  {
+    what: 'a Tailwind !important outline utility',
+    pattern: /(?:[\w-]+:)*(?:!outline-(?:none|hidden|0)|outline-(?:none|hidden|0)!)/g,
+  },
+  {
+    what: 'an inline style that removes the outline',
+    pattern: /\boutline(?:Style|Width)?\s*:\s*(['"`]?)(?:none|0(?:px)?)\1\s*[,}]/g,
+  },
+];
+
+test('no component outranks the global focus ring from JSX', async () => {
+  const offenders = [];
+
+  for (const file of await sources()) {
+    const source = stripComments(await readFile(new URL(file, SRC_DIR), 'utf8'));
+    for (const { what, pattern } of RING_KILLERS) {
+      pattern.lastIndex = 0;
+      let match;
+      while ((match = pattern.exec(source)) !== null) {
+        offenders.push(`${file}: ${what} (${match[0]})`);
+      }
+    }
+  }
+
+  assert.deepEqual(
+    offenders.sort(),
+    [],
+    'a component switches the focus ring off in a way the global `:focus-visible` in '
+    + '`styles/global.css` cannot win against. A plain `outline-none` is harmless — it '
+    + 'is a normal declaration in `@layer utilities` and the unlayered global rule '
+    + 'beats it — but `!important` flips the layer order in its favour and an inline '
+    + '`style` sits above the author stylesheet entirely. Either one leaves the control '
+    + 'with no visible focus (WCAG 2.4.7) and nothing in any stylesheet to show for it. '
+    + 'Draw the replacement ring first, then say here why the suppression is needed.',
   );
 });
