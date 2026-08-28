@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useContext, useState, useEffect } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts';
 import { IS_DEMO, auth, db } from '../services/firebase';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
@@ -131,12 +131,15 @@ export function AuthProvider({ children }) {
     };
   }, [profileReloadKey]);
 
-  const retryProfileLoad = () => {
+  const retryProfileLoad = useCallback(() => {
     setProfileLoadError(null);
     setProfileReloadKey(key => key + 1);
-  };
+  }, []);
 
-  const signInWith = async (providerId) => {
+  // No reactive read besides state setters and module-level constants, so this
+  // never needs to be recreated — every context consumer that depends on it
+  // (both sign-in buttons below) inherits that stability.
+  const signInWith = useCallback(async (providerId) => {
     setError(null);
     if (IS_DEMO) {
       setTimeout(() => {
@@ -159,10 +162,16 @@ export function AuthProvider({ children }) {
       setError(err?.code || 'AUTH_FAILED');
       throw err;
     }
-  };
+  }, []);
 
-  const signInWithGoogle = () => signInWith(SIGN_IN_PROVIDERS.google);
-  const signInWithGitHub = () => signInWith(SIGN_IN_PROVIDERS.github);
+  const signInWithGoogle = useCallback(
+    () => signInWith(SIGN_IN_PROVIDERS.google),
+    [signInWith],
+  );
+  const signInWithGitHub = useCallback(
+    () => signInWith(SIGN_IN_PROVIDERS.github),
+    [signInWith],
+  );
 
   /**
    * Attaches a second sign-in method to the account already in session (F5).
@@ -171,13 +180,16 @@ export function AuthProvider({ children }) {
    * thrown on: the caller shows them next to the button that was pressed,
    * rather than in the page-wide banner meant for a failed sign-in.
    */
-  const linkGitHubAccount = async () => {
+  const linkGitHubAccount = useCallback(async () => {
     const result = await linkSignInProvider(SIGN_IN_PROVIDERS.github);
     setSignInProviders(providerIdsOf(result.user || auth.currentUser));
     return result;
-  };
+  }, []);
 
-  const signOut = async () => {
+  // `user?.uid` rather than `user`: Firebase re-emits `currentUser` on token
+  // refresh with the same uid but a new object reference, and that must not
+  // recreate a function whose only reactive read is the id.
+  const signOut = useCallback(async () => {
     const signingOutUserId = user?.uid;
     if (IS_DEMO) {
       setUser(null);
@@ -196,46 +208,51 @@ export function AuthProvider({ children }) {
     } catch (err) {
       setError(err?.code || 'AUTH_FAILED');
     }
-  };
+  }, [user?.uid]);
 
-  const completeOnboarding = async (preferences) => {
+  const completeOnboarding = useCallback(async (preferences) => {
     setUserPreferences(preferences);
     setOnboardingComplete(true);
-    
+
     if (IS_DEMO) {
       demoSet('selectedCategories', preferences);
       demoSet('onboardingComplete', true);
       return;
     }
 
-    if (user) {
-      await setDoc(doc(db, 'users', user.uid), {
+    const userId = user?.uid;
+    if (userId) {
+      await setDoc(doc(db, 'users', userId), {
         onboardingComplete: true,
         preferences
       }, { merge: true });
     }
-  };
+  }, [user?.uid]);
 
-  const updatePreferences = async (newPreferences) => {
+  const updatePreferences = useCallback(async (newPreferences) => {
     setUserPreferences(newPreferences);
-    
+
     if (IS_DEMO) {
       demoSet('selectedCategories', newPreferences);
       return;
     }
 
-    if (user) {
-      await setDoc(doc(db, 'users', user.uid), {
+    const userId = user?.uid;
+    if (userId) {
+      await setDoc(doc(db, 'users', userId), {
         preferences: newPreferences
       }, { merge: true });
     }
-  };
+  }, [user?.uid]);
 
-  const toggleFollowAuthor = async (authorName) => {
+  // Needs the previous list itself, not just its owner's id: the new array is
+  // both written to Firestore and (in demo mode) to storage in this same call,
+  // so a functional state update alone would not hand it back for that.
+  const toggleFollowAuthor = useCallback(async (authorName) => {
     const newFollowed = followedAuthors.includes(authorName)
       ? followedAuthors.filter(a => a !== authorName)
       : [...followedAuthors, authorName];
-    
+
     setFollowedAuthors(newFollowed);
 
     if (IS_DEMO) {
@@ -243,14 +260,19 @@ export function AuthProvider({ children }) {
       return;
     }
 
-    if (user) {
-      await setDoc(doc(db, 'users', user.uid), {
+    const userId = user?.uid;
+    if (userId) {
+      await setDoc(doc(db, 'users', userId), {
         followedAuthors: newFollowed
       }, { merge: true });
     }
-  };
+  }, [followedAuthors, user?.uid]);
 
-  const updateReadingPreferences = async (updates) => {
+  // Same reasoning: `previous` is what a failed write rolls back to, read from
+  // the closure rather than from a functional update the error path could not
+  // reach.
+  const updateReadingPreferences = useCallback(async (updates) => {
+    const userId = user?.uid;
     const previous = readingPreferences;
     const next = normalizeReadingPreferences({ ...readingPreferences, ...updates });
     setReadingPreferences(next);
@@ -261,8 +283,8 @@ export function AuthProvider({ children }) {
         return next;
       }
 
-      if (user) {
-        await setDoc(doc(db, 'users', user.uid), {
+      if (userId) {
+        await setDoc(doc(db, 'users', userId), {
           readingPreferences: next,
         }, { merge: true });
       }
@@ -271,9 +293,10 @@ export function AuthProvider({ children }) {
       setReadingPreferences(previous);
       throw updateError;
     }
-  };
+  }, [readingPreferences, user?.uid]);
 
-  const updateProfilePhoto = async (value) => {
+  const updateProfilePhoto = useCallback(async (value) => {
+    const userId = user?.uid;
     const previous = profilePhoto;
     const next = normalizeProfilePhoto(value);
     if (value && !next) throw new Error('La imagen procesada no es válida.');
@@ -285,8 +308,8 @@ export function AuthProvider({ children }) {
         return next;
       }
 
-      if (user) {
-        await setDoc(doc(db, 'users', user.uid), {
+      if (userId) {
+        await setDoc(doc(db, 'users', userId), {
           profilePhoto: next || deleteField(),
         }, { merge: true });
       }
@@ -295,9 +318,16 @@ export function AuthProvider({ children }) {
       setProfilePhoto(previous);
       throw updateError;
     }
-  };
+  }, [profilePhoto, user?.uid]);
 
-  const value = {
+  // Every key here is either a primitive/state value (already stable — React
+  // only replaces it when its own setter is called) or one of the callbacks
+  // above, each wrapped in `useCallback` with the narrowest deps its body
+  // actually reads. Wrapping this object without that would have changed
+  // nothing: a `useMemo` recomputes whenever anything in its dependency list
+  // has a new identity, and an unwrapped function has a new identity every
+  // render regardless of what it reads.
+  const value = useMemo(() => ({
     user,
     loading,
     error,
@@ -320,7 +350,13 @@ export function AuthProvider({ children }) {
     updateProfilePhoto,
     retryProfileLoad,
     isDemo: IS_DEMO,
-  };
+  }), [
+    completeOnboarding, error, followedAuthors, linkGitHubAccount, loading,
+    onboardingComplete, profileLoadError, profilePhoto, readingPreferences,
+    retryProfileLoad, setUserPreferences, signInProviders, signInWithGitHub,
+    signInWithGoogle, signOut, toggleFollowAuthor, updatePreferences,
+    updateProfilePhoto, updateReadingPreferences, user, userPreferences,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
