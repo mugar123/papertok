@@ -125,8 +125,8 @@ export class PaperBuilder {
     }
 
     // Every other provider identifier below is carried across; this one was
-    // missed, and it decides whether the paper can ever show a figure. It only
-    // fills a gap: a base that knows its own arXiv id keeps it.
+    // missed, and it decides whether a card can ever show the paper's figure.
+    // It only fills a gap: a base that knows its own arXiv id keeps it.
     if (!merged.arxivId && enrichmentData.arxivId) {
       merged.arxivId = enrichmentData.arxivId;
     }

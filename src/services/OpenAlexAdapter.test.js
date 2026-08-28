@@ -46,6 +46,20 @@ test('a search result hosted on arXiv carries its arXiv id', () => {
   assert.equal(paper.arxivId, '1706.03762');
 });
 
+test('a search result with no arXiv copy has no arXiv id to give', () => {
+  const paper = new OpenAlexAdapter().mapToStandard({
+    id: 'https://openalex.org/W999',
+    title: 'Journal-only paper',
+    doi: 'https://doi.org/10.1000/journal-only',
+    type: 'article',
+    cited_by_count: 4,
+    authorships: [],
+    locations: [{ landing_page_url: 'https://example.com/journal/article', is_published: true }],
+  });
+
+  assert.equal(paper.arxivId, undefined);
+});
+
 test('does not mark repository preprints as published', () => {
   const paper = new OpenAlexAdapter().mapToStandard({
     id: 'https://openalex.org/W456',

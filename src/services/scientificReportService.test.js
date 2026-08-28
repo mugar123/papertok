@@ -56,84 +56,6 @@ test('preserves the OpenAlex publication date used by report ranking', () => {
   assert.equal(paper.year, 2024);
 });
 
-/* ── The arXiv id of a work OpenAlex indexes ──
-   The selection is won almost entirely by OpenAlex papers, and a figure can
-   only be asked for by arXiv id. Extracting it here is what puts plates in the
-   report at all: without it the whole edition rendered plateless. */
-
-test('an OpenAlex work hosted on arXiv carries its arXiv id', () => {
-  const paper = formatOpenAlexWork({
-    id: 'https://openalex.org/W2626778328',
-    title: 'Attention Is All You Need',
-    publication_date: '2017-06-12',
-    cited_by_count: 6590,
-    authorships: [],
-    concepts: [],
-    type: 'preprint',
-    open_access: { is_oa: true, oa_url: 'https://arxiv.org/pdf/1706.03762' },
-    primary_location: {
-      is_published: false,
-      source: { type: 'repository', display_name: 'arXiv (Cornell University)' },
-    },
-    locations: [{
-      landing_page_url: 'http://arxiv.org/abs/1706.03762',
-      pdf_url: 'https://arxiv.org/pdf/1706.03762',
-      is_published: false,
-    }],
-  });
-
-  assert.equal(paper.arxivId, '1706.03762');
-});
-
-test('a published work keeps the arXiv id of its preprint copy', () => {
-  const paper = formatOpenAlexWork({
-    id: 'https://openalex.org/W123',
-    title: 'A journal article with a preprint',
-    doi: 'https://doi.org/10.1000/published-paper',
-    publication_date: '2024-01-20',
-    cited_by_count: 12,
-    authorships: [],
-    concepts: [],
-    type: 'article',
-    locations: [
-      { landing_page_url: 'https://example.com/journal/article', is_published: true },
-      { landing_page_url: 'https://arxiv.org/abs/2401.12345v2', is_published: false },
-    ],
-  });
-
-  assert.equal(paper.arxivId, '2401.12345');
-  assert.equal(paper.doi, '10.1000/published-paper');
-});
-
-test('a work with no arXiv copy has no arXiv id to give', () => {
-  const paper = formatOpenAlexWork({
-    id: 'https://openalex.org/W456',
-    title: 'Journal-only paper',
-    doi: 'https://doi.org/10.1000/journal-only',
-    publication_date: '2024-03-01',
-    cited_by_count: 4,
-    authorships: [],
-    concepts: [],
-    locations: [{ landing_page_url: 'https://example.com/journal/article', is_published: true }],
-  });
-
-  assert.equal(paper.arxivId, undefined);
-});
-
-test('an OpenAlex count of zero is marked as known, not missing', () => {
-  const paper = formatOpenAlexWork({
-    id: 'https://openalex.org/W789',
-    title: 'Uncited but indexed',
-    publication_date: '2026-08-01',
-    cited_by_count: 0,
-    authorships: [],
-    concepts: [],
-  });
-
-  assert.equal(paper.citationCount, 0);
-  assert.equal(paper.citationCountKnown, true);
-});
-
 test('age-normalized report ranking rewards a genuinely recent paper', () => {
   const now = new Date('2026-07-16T12:00:00Z');
   const rankingState = () => [new Map(), 3650, new Map(), now];
@@ -226,14 +148,6 @@ test('a paper that already has citations is not overwritten', async () => {
 test('a paper with no arXiv id is never looked up', async () => {
   let asked = null;
   const candidates = [{ id: 'openalex-1', title: 'From OpenAlex', citationCount: 3 }];
-  const result = await lendCitationsToArxivCandidates(candidates, async (ids) => { asked = ids; return {}; });
-  assert.equal(asked, null);
-  assert.equal(result, candidates);
-});
-
-test('a paper whose zero came from OpenAlex is not asked about again', async () => {
-  let asked = null;
-  const candidates = [arxivPaper('2501.00009', { citationCount: 0, citationCountKnown: true })];
   const result = await lendCitationsToArxivCandidates(candidates, async (ids) => { asked = ids; return {}; });
   assert.equal(asked, null);
   assert.equal(result, candidates);

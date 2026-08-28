@@ -83,8 +83,11 @@ function extractArxivId(value) {
  *
  * OpenAlex indexes the preprint and the published version as one work, and the
  * arXiv id is never a field of its own: it has to be read out of whichever of
- * the identifiers happens to carry it. Worth extracting for any work, not just
- * during enrichment — a paper without this id can never be asked for figures.
+ * the identifiers happens to carry it. Exported because the feed and the search
+ * want it too — a card without this id can never show the paper's figure.
+ *
+ * Deliberately not used by the scientific report: Research reads better as
+ * type alone, so its mapper leaves the id off and its forme stays plateless.
  */
 export function getArxivIdFromWork(work) {
   const direct = extractArxivId(work?.ids?.arxiv);
