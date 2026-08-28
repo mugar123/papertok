@@ -702,6 +702,19 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* The one `backdrop-filter` in the app that sits on a `position: sticky`
+   element, so it gets re-sampled on every frame the list scrolls underneath
+   it — the coarse-pointer case is where that scroll happens constantly.
+   A flat, opaque toolbar reads the same to a thumb; a mouse-driven reader
+   keeps the blur. */
+@media (pointer: coarse) {
+  .explorer-toolbar-wrapper {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--bg-primary);
+  }
+}
+
 .explorer-toolbar {
   display: flex;
   align-items: center;
@@ -1242,7 +1255,9 @@
   top: 0;
   right: 0;
   bottom: 0;
-  width: 320px;
+  /* A flat 320px left only a 40px strip of backdrop to dismiss it on a
+     360px phone; the drawer now yields to the viewport instead. */
+  width: min(320px, 85vw);
   background: var(--bg-card);
   border-left: 1px solid var(--border-default);
   z-index: 2001;
@@ -2143,6 +2158,15 @@
   .explorer-content,
   .explorer-list {
     padding: var(--space-4);
+  }
+
+  /* `filter: blur(48px)` over a `background-size: cover` image is the most
+     expensive paint in the codebase, and it is only ever a faint wash under
+     the mask-image gradient below it — the hero keeps its own flat
+     `background`, the accent kicker, the field rule and the tinted icon
+     tile, so nothing here was relying on the wash for its identity. */
+  .ehc-bg-blur {
+    display: none;
   }
 }
 
