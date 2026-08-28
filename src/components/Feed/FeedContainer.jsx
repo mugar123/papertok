@@ -165,7 +165,14 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
       },
       {
         root,
-        rootMargin: '0px 0px 500% 0px',
+        // Two viewports of runway, not five: loadPapers' per-source fetch is
+        // capped at FEED_SOURCE_RENDER_BUDGET_MS (4 s worst case, see
+        // FeedContext.jsx) and a typical reader spends far longer than that on
+        // two cards, so this still starts the next page well before the
+        // sentinel's own card is reached. If it ever isn't enough, the
+        // `loading && <SkeletonCard />` snap item below is the fallback, not a
+        // dead end. Five viewports only bought DOM bloat on mobile.
+        rootMargin: '0px 0px 200% 0px',
         threshold: 0,
       }
     );

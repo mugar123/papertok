@@ -86,8 +86,15 @@ function AppContent() {
   // Warm the chunks a session is most likely to need next — the three
   // overlays any card can open, and the other navbar feeds — once the first
   // screen has had the network and the main thread to itself for a while.
+  // Skipped on a connection that says it is paying for every byte: Save-Data
+  // or an effective 2G link. `navigator.connection` is absent in Safari, and
+  // an unknown connection prefetches as before — guessing "slow" for every
+  // iPhone would cost more than it saves.
   useEffect(() => {
     const prefetch = () => {
+      const conn = navigator.connection
+      const frugal = conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))
+      if (frugal) return
       import('./components/Comments/CommentsSheet').catch(() => {})
       import('./components/PDF/PDFViewer').catch(() => {})
       import('./components/Lists/SaveToListModal').catch(() => {})
