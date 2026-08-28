@@ -365,6 +365,15 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
               onAuthRequired={onAuthRequired}
               analyticsSurface={analyticsSurface}
               position={index + 1}
+              // The scroll hint belongs to the first card only, and this prop is
+              // the only thing that decides it now: a
+              // `.feed-snap-item:not(:first-child) .pc-scroll-hint { display:
+              // none }` CSS rule used to do the same job by DOM position, which
+              // meant every other mounted card still rendered the hint and
+              // relied on that rule (and, off screen, on `content-visibility`)
+              // to keep it invisible. That rule is gone — first-card-only is
+              // decided here, once, instead of being re-derived in CSS.
+              hideScrollHint={index !== 0}
             />
           </div>
         ))}

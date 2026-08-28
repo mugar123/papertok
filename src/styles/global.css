@@ -359,3 +359,12 @@
     animation: none !important;
   }
 }
+
+/* `html { scroll-behavior: smooth }` above is its own movement — every
+   anchor jump and every `scrollTo({ behavior: 'smooth' })` call in the app
+   inherits it — and the view-transition block above does not reach it. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
