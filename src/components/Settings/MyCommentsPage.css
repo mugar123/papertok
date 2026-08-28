@@ -57,7 +57,13 @@
   transition: border-color var(--transition-fast), color var(--transition-fast);
 }
 
-.my-comments-back:hover,
+@media (hover: hover) and (pointer: fine) {
+  .my-comments-back:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+}
+
 .my-comments-back:focus-visible {
   border-color: var(--border-strong);
   color: var(--text-primary);
@@ -139,7 +145,13 @@
   transition: border-color var(--transition-fast);
 }
 
-.my-comments-cta:hover,
+@media (hover: hover) and (pointer: fine) {
+  .my-comments-cta:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+}
+
 .my-comments-cta:focus-visible {
   color: var(--text-primary);
   border-color: var(--border-strong);
@@ -244,13 +256,24 @@
   transition: color var(--transition-fast), background var(--transition-fast);
 }
 
-.my-comments-action:hover,
+@media (hover: hover) and (pointer: fine) {
+  .my-comments-action:hover {
+    background: var(--bg-glass-hover);
+    color: var(--text-primary);
+  }
+}
+
 .my-comments-action:focus-visible {
   background: var(--bg-glass-hover);
   color: var(--text-primary);
 }
 
-.my-comments-action--danger:hover,
+@media (hover: hover) and (pointer: fine) {
+  .my-comments-action--danger:hover {
+    color: var(--accent-danger);
+  }
+}
+
 .my-comments-action--danger:focus-visible {
   color: var(--accent-danger);
 }
@@ -271,7 +294,12 @@
   transition: border-color var(--transition-fast);
 }
 
-.my-comments-more:hover:not(:disabled),
+@media (hover: hover) and (pointer: fine) {
+  .my-comments-more:hover:not(:disabled) {
+    border-color: var(--border-strong);
+  }
+}
+
 .my-comments-more:focus-visible:not(:disabled) {
   border-color: var(--border-strong);
 }

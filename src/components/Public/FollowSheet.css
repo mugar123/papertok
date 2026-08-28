@@ -78,14 +78,24 @@
   transition: color var(--transition-fast);
 }
 
-.follow-sheet-tab:hover,
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-tab:hover {
+    color: var(--text-secondary);
+  }
+}
+
 .follow-sheet-tab:focus-visible {
   color: var(--text-secondary);
 }
 
-.follow-sheet-tab--active,
-.follow-sheet-tab--active:hover {
+.follow-sheet-tab--active {
   color: var(--text-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-tab--active:hover {
+    color: var(--text-primary);
+  }
 }
 
 /* El contador deja de ser una viñeta dentro de una píldora y vuelve a ser lo
@@ -133,7 +143,13 @@
   transition: border-color var(--transition-fast), color var(--transition-fast);
 }
 
-.follow-sheet-close:hover,
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-close:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+}
+
 .follow-sheet-close:focus-visible {
   border-color: var(--border-strong);
   color: var(--text-primary);
@@ -208,7 +224,12 @@
   transition: background var(--transition-fast);
 }
 
-.follow-row-link:hover,
+@media (hover: hover) and (pointer: fine) {
+  .follow-row-link:hover {
+    background: var(--bg-glass-hover);
+  }
+}
+
 .follow-row-link:focus-visible {
   background: var(--bg-glass-hover);
 }
@@ -387,7 +408,12 @@
   transition: border-color var(--transition-fast);
 }
 
-.follow-sheet-retry:hover,
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-retry:hover {
+    border-color: var(--border-strong);
+  }
+}
+
 .follow-sheet-retry:focus-visible {
   border-color: var(--border-strong);
 }
@@ -411,7 +437,12 @@
   transition: background var(--transition-fast);
 }
 
-.follow-sheet-more:hover:not(:disabled),
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-more:hover:not(:disabled) {
+    background: var(--bg-secondary);
+  }
+}
+
 .follow-sheet-more:focus-visible:not(:disabled) {
   background: var(--bg-secondary);
 }
