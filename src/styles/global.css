@@ -342,3 +342,26 @@ html.theme-crossfade *::after {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
+
+/* Visible only while focused: the first Tab of every page lands here. */
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: var(--space-4);
+  z-index: calc(var(--z-toast) + 1);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-weight: var(--fw-semibold);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: top var(--transition-fast);
+}
+.skip-link:focus-visible {
+  top: var(--space-2);
+}
+
+/* Programmatic focus target; the ring belongs on real controls. */
+#main-content:focus {
+  outline: none;
+}

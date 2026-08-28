@@ -101,7 +101,13 @@ function AppContent() {
 
   return (
     <FeedProvider feedRouteActive={normalizedPathname === '/'}>
+      <a className="skip-link" href="#main-content">
+        {isEnglish ? 'Skip to content' : 'Saltar al contenido'}
+      </a>
       {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={() => setSearchOpen(true)} />}
+      {/* Focus target for the skip link and for route changes (RouteAnnouncer).
+          A div, not <main>: several routes render their own <main> inside. */}
+      <div id="main-content" tabIndex={-1}>
       <Suspense fallback={<RouteFallback />}>
       <AnimatePresence mode="wait" initial={false}>
         <Routes location={location} key={location.pathname}>
@@ -121,6 +127,10 @@ function AppContent() {
                 <ProtectedRoute>
                   <PageTransition>
                     <FeedContainer
+                      landmark={{
+                        label: isEnglish ? 'Paper feed' : 'Feed de papers',
+                        heading: isEnglish ? 'For you' : 'Para ti',
+                      }}
                       onOpenPdf={setPdfPaper}
                       onSaveToList={setSaveModalPaper}
                       onOpenComments={setCommentsPaper}
@@ -323,6 +333,7 @@ function AppContent() {
         </Routes>
       </AnimatePresence>
       </Suspense>
+      </div>
 
       {user && <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} />}
 
