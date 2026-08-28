@@ -100,9 +100,21 @@ function AppContent() {
     return () => clearTimeout(timer)
   }, [])
 
+  // HashRouter (src/main.jsx) treats the URL fragment as the route. Letting
+  // href="#main-content" reach the browser would rewrite the whole hash, so
+  // react-router would read "/main-content" as the pathname, match no route,
+  // and the catch-all `<Route path="*">` below would redirect to "/" —
+  // ejecting a keyboard user from whatever route they were actually on (e.g.
+  // /login). The href stays for assistive technology; the click is handled
+  // here instead of letting the fragment reach the router.
+  const handleSkipLinkClick = (event) => {
+    event.preventDefault()
+    document.getElementById('main-content')?.focus()
+  }
+
   return (
     <FeedProvider feedRouteActive={normalizedPathname === '/'}>
-      <a className="skip-link" href="#main-content">
+      <a className="skip-link" href="#main-content" onClick={handleSkipLinkClick}>
         {isEnglish ? 'Skip to content' : 'Saltar al contenido'}
       </a>
       <RouteAnnouncer />

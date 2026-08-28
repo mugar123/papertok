@@ -88,6 +88,59 @@ test('App.jsx renders a skip link that targets #main-content', async () => {
   );
 });
 
+test('the skip link handles its own click instead of letting HashRouter see the fragment', async () => {
+  const rawApp = await readFile(APP_JSX, 'utf8');
+  const app = stripComments(rawApp);
+
+  const link = app.match(/<a\b[^>]*className="skip-link"[^>]*>/);
+  assert.ok(link, 'App.jsx no longer renders `<a className="skip-link">`.');
+
+  const handlerName = link[0].match(/onClick=\{(\w+)\}/);
+  assert.ok(
+    handlerName,
+    'the skip link lost its onClick handler. src/main.jsx mounts <HashRouter>, so the '
+    + 'route IS the URL fragment: without an onClick that intercepts the click, '
+    + 'following href="#main-content" rewrites the whole hash, react-router reads it '
+    + 'as the pathname "/main-content", matches nothing, and the catch-all '
+    + '`<Route path="*">` (App.jsx) redirects to "/" — ejecting a keyboard user from '
+    + 'whatever route they were on. Verified live from #/login: the hash became '
+    + '#main-content, then #/, and the login page was gone.',
+  );
+
+  const handlerDeclAt = app.indexOf(`const ${handlerName[1]}`);
+  assert.notEqual(
+    handlerDeclAt,
+    -1,
+    `could not find where ${handlerName[1]} is defined in App.jsx to check its body.`,
+  );
+  const handlerBody = app.slice(handlerDeclAt, handlerDeclAt + 400);
+
+  assert.match(
+    handlerBody,
+    /preventDefault\(\)/,
+    `${handlerName[1]} no longer calls preventDefault(). Without it the browser still `
+    + 'follows the href and HashRouter still rewrites the hash and redirects away '
+    + '(see above).',
+  );
+  assert.match(
+    handlerBody,
+    /getElementById\(['"]main-content['"]\)/,
+    `${handlerName[1]} no longer focuses #main-content directly. preventDefault() `
+    + 'alone stops the redirect but leaves the skip link with nothing to skip to — '
+    + 'focus has to be moved by hand once the browser is prevented from following the '
+    + 'href itself.',
+  );
+
+  assert.match(
+    rawApp,
+    /HashRouter/,
+    'the comment explaining why the skip link needs its own click handler (naming '
+    + 'HashRouter as the router that turns the fragment into a route) is gone from '
+    + 'App.jsx. The plain-fragment version of this link looks completely correct to '
+    + 'anyone who does not know the router treats the URL fragment as the route.',
+  );
+});
+
 test('App.jsx mounts RouteAnnouncer', async () => {
   const app = await readSource(APP_JSX);
 
