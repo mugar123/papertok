@@ -664,6 +664,7 @@
   justify-content: center;
   flex: 1;
   min-height: 50vh;
+  min-height: 50dvh;
   padding: var(--space-5);
 }
 

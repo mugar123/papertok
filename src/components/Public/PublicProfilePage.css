@@ -759,6 +759,7 @@ button.profile-stat:disabled {
   align-items: flex-start;
   gap: var(--space-3);
   padding-top: clamp(48px, 12vh, 120px);
+  padding-top: clamp(48px, 12dvh, 120px);
 }
 
 .public-profile-page--state h1 {

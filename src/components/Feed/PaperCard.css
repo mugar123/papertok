@@ -16,6 +16,7 @@
   justify-content: center;
   gap: clamp(8px, 1.5vw, 24px);
   padding: clamp(16px, 3vh, 40px);
+  padding: clamp(16px, 3dvh, 40px);
   background: var(--bg-secondary);
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
@@ -651,6 +652,7 @@ a.pc-citations {
 /* ── Abstract ── */
 .pc-abstract {
   max-height: min(30em, 46vh);
+  max-height: min(30em, 46dvh);
   overflow: hidden;
   position: relative;
   transition:
@@ -1116,6 +1118,7 @@ a.pc-citations {
   --graph-source-height: 30px;
   width: min(720px, 100%);
   height: min(68vh, 610px);
+  height: min(68dvh, 610px);
   max-height: 720px;
   overflow: hidden;
   display: flex;
@@ -1141,10 +1144,10 @@ a.pc-citations {
   }
 }
 
-.related-sheet--loading { height: min(430px, 58vh); }
+.related-sheet--loading { height: min(430px, 58vh); height: min(430px, 58dvh); }
 .related-sheet--empty,
 .related-sheet--error,
-.related-sheet--unavailable { height: min(350px, 52vh); }
+.related-sheet--unavailable { height: min(350px, 52vh); height: min(350px, 52dvh); }
 
 .related-grabber {
   width: 34px;
@@ -1991,7 +1994,12 @@ a.pc-citations {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* `svh`, not `dvh`: this sibling's `min-height` is pinned to the small
+     (never-grows) viewport so the skeleton never resizes as the URL bar
+     animates. Padding that tracked `dvh` instead would grow independently of
+     that fixed frame and drift out of proportion with it mid-transition. */
   padding: clamp(28px, 6vh, 72px) clamp(20px, 4vw, 72px);
+  padding: clamp(28px, 6svh, 72px) clamp(20px, 4vw, 72px);
   background: var(--bg-secondary);
 }
 
@@ -2186,6 +2194,7 @@ a.pc-citations {
   padding: var(--space-5);
   padding-bottom: calc(env(safe-area-inset-bottom, 20px) + var(--space-5));
   max-height: 80vh;
+  max-height: 80dvh;
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-xl);
@@ -2340,6 +2349,7 @@ a.pc-citations {
 
   .pc-abstract {
     max-height: min(14em, 34vh);
+    max-height: min(14em, 34dvh);
     margin-bottom: var(--space-4);
   }
 
@@ -2421,7 +2431,7 @@ a.pc-citations {
   .related-card-loading-meta { width: 48%; }
   .related-card-loading-title { height: 28px; }
   .related-card-loading-author { width: 68%; }
-  .related-sheet--graph { max-height: min(84vh, 720px); }
+  .related-sheet--graph { max-height: min(84vh, 720px); max-height: min(84dvh, 720px); }
   .graph-map { padding: 12px 14px 10px; }
   .graph-node-label { max-width: 84px; }
   .graph-trail { padding: 0 14px; }

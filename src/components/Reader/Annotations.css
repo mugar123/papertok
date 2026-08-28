@@ -471,6 +471,7 @@
   flex: none;
   z-index: 12050;
   max-height: 72vh;
+  max-height: 72dvh;
   padding-left: 0;
   /* Clears the home indicator once the sheet is expanded and its list runs
      to the true bottom edge. Zero with no home indicator, so nothing moves

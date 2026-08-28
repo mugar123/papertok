@@ -6,6 +6,7 @@
   align-items: center;
   justify-content: center;
   padding: clamp(16px, 3vh, 40px);
+  padding: clamp(16px, 3dvh, 40px);
   padding-right: clamp(96px, 10vw, 148px);
   overflow: hidden;
   background: var(--bg-secondary);

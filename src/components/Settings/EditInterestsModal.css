@@ -4,6 +4,7 @@
   left: 0;
   width: 100vw;
   height: 100vh;
+  height: 100dvh;
   /* No `backdrop-filter`: this overlay animates its own opacity in and out
      (`eim-fade-in`/`eim-fade-out` below), which would force the blur to be
      re-resolved on every frame — the worst case for a mobile GPU. The rgba
@@ -36,6 +37,7 @@
   width: 100%;
   max-width: 800px;
   max-height: 90vh;
+  max-height: 90dvh;
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
@@ -325,6 +327,7 @@
   .eim-modal {
     height: 100%;
     max-height: 100vh;
+    max-height: 100dvh;
     border-radius: var(--radius-lg);
   }
   .eim-body {
