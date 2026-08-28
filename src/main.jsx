@@ -1,8 +1,10 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
+import { registerSW } from 'virtual:pwa-register'
 import App from './App.jsx'
 import GlobalErrorBoundary from './GlobalErrorBoundary.jsx'
+
 // Self-hosted fonts, imported before the global CSS so their @font-face
 // rules land first in the bundle and the browser can start the font
 // fetch as soon as this chunk parses — no more render-blocking request to
@@ -51,6 +53,32 @@ import '@fontsource-variable/newsreader/opsz-italic.css'
 // components/ScientificText.js); loading it here put 23 KB of CSS in front of
 // every first paint, math or no math.
 import './styles/global.css'
+
+// The app ships a complete PWA manifest but, until now, registered no
+// service worker at all -- installable, zero offline capability, and every
+// repeat visit re-fetching the whole chunk graph behind a 10-minute
+// max-age. `registerType: 'autoUpdate'` (vite.config.js) means: when a new
+// deploy's service worker is detected, skip waiting and take control
+// automatically -- so a returning reader gets the new build on their next
+// reload, not whichever one happened to be cached when they first
+// installed.
+//
+// No `immediate: true` here, deliberately: that option calls
+// `navigator.serviceWorker.register()` right away, which starts the new
+// worker's OWN install fetches (4 icons + manifest + favicon, forced to
+// network since they carry a cache-busting `__WB_REVISION__`, plus up to 3
+// unused font weights) in parallel with everything this module's own
+// imports just triggered -- on a branch whose entire subject is mobile
+// first paint, the registration this call kicks off would compete with
+// exactly what it exists to protect. Omitting it takes the plugin's
+// default instead: `wb.register()` defers the actual `register()` call to
+// the window's `load` event, so it starts once the initial resource graph
+// is already underway rather than racing it. The service worker does
+// nothing useful on a first visit regardless (nothing is cached yet), so
+// there is no cost to the wait. `registerSW` is a no-op string import when
+// the build has no service worker (e.g. `vite dev`), so this is safe
+// outside a production build too.
+registerSW()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
