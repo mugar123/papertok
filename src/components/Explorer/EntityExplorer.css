@@ -253,7 +253,7 @@
 }
 
 .ehc-name-toggle:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -360,7 +360,7 @@
 }
 
 .ehc-author-institution:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
   border-radius: var(--radius-sm);
 }
@@ -447,7 +447,7 @@
 }
 
 .ehc-ror-relations button:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -659,7 +659,7 @@
 }
 
 .ehc-wiki-toggle:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 3px;
 }
 
@@ -745,7 +745,6 @@
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: var(--fs-sm);
-  outline: none;
   appearance: none;
 }
 
@@ -831,7 +830,7 @@
 .project-summary-box:focus-visible,
 .orcid-item-org--link:focus-visible,
 .ehc-meta [role="link"]:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -1218,7 +1217,7 @@
 }
 
 .ee-tab:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -1323,7 +1322,7 @@
 }
 
 .ee-filter-chip:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -1529,7 +1528,7 @@
 
 .project-links-trigger:focus-visible,
 .project-links-option:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -1717,7 +1716,7 @@
 }
 
 .project-participant-card:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 

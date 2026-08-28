@@ -154,13 +154,6 @@
     cursor: not-allowed;
   }
 
-  /* Keyboard users get a visible ink ring everywhere, since the light
-     theme no longer relies on glow to signal focus. */
-  :focus-visible {
-    outline: 2px solid var(--focus-ring);
-    outline-offset: 2px;
-  }
-
   /* ── Inputs ── */
   input, textarea, select {
     font-family: var(--font-body);
@@ -170,7 +163,6 @@
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
     padding: var(--space-3) var(--space-4);
-    outline: none;
     transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   }
 
@@ -337,4 +329,16 @@ html.theme-crossfade *::after {
   ::view-transition-new(root) {
     animation: none !important;
   }
+}
+
+/* ============================================
+   Focus ring
+   Deliberately OUTSIDE @layer base: component stylesheets are unlayered, and
+   unlayered CSS beats any layer, so while this rule lived inside the layer
+   every component `outline: none` silently killed the ring (WCAG 2.4.7).
+   Out here it competes on normal specificity and wins.
+   ============================================ */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }

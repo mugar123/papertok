@@ -77,7 +77,7 @@
 .search-users-action:focus-visible,
 .search-users-more:focus-visible,
 .search-item:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -117,16 +117,9 @@
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 0.95rem;
-  outline: none !important;
   box-shadow: none !important;
   -webkit-appearance: none;
   appearance: none;
-}
-
-.search-input:focus {
-  border: none !important;
-  box-shadow: none !important;
-  outline: none !important;
 }
 
 .search-input::placeholder {

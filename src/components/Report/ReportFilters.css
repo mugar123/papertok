@@ -23,12 +23,13 @@
    global.css already gives `button` and `input` the body family, so nothing
    here needs to repeat it. */
 
-/* The base layer also rings every `:focus-visible` in brand orange, but the
-   rules in this file are unlayered and would beat it — `.rf-search` in
-   particular clears its own outline. Spell the ring out so it survives. */
+/* The global `:focus-visible` rule already applies this ring, but it lives
+   unlayered too and these `.rf-*` selectors are more specific, so they would
+   win with no ring at all if this were left implicit. Spell it out so it
+   survives. */
 .rf button:focus-visible,
 .rf input:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -273,7 +274,6 @@
   padding: 10px 38px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-sm);
-  outline: none;
   background: var(--bg-card);
   color: var(--text-primary);
   font-size: var(--fs-sm);

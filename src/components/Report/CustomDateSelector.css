@@ -159,7 +159,7 @@
 }
 
 .cds-rail .rc-slider-handle:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -455,7 +455,7 @@
 .cds-cal-day:focus-visible,
 .cds-cal-clear:focus-visible,
 .cds-btn:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 

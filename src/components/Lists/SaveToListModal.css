@@ -179,7 +179,7 @@
 
 .save-modal-row:has(.save-modal-row-input:focus-visible),
 .save-modal-row:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -341,7 +341,7 @@
 }
 
 .save-modal-field textarea:focus {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -1px;
   border-color: var(--border-strong);
 }
@@ -355,7 +355,7 @@
 }
 
 .save-modal-tag-editor:focus-within {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -1px;
   border-color: var(--border-strong);
 }
@@ -395,8 +395,6 @@
   font-family: var(--font-body);
   font-size: var(--fs-sm);
 }
-
-.save-modal-tag-input:focus { outline: none; }
 
 /* ── Utility group: rule 6, primary left, utilities right behind a rule ── */
 
