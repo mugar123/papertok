@@ -1063,17 +1063,19 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                       key={inst.id}
                       className="search-item search-item-enter"
                       style={{ '--search-item-index': Math.min(index, 6) }}
-                      role="link"
-                      tabIndex={0}
                       onClick={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)}
-                      onKeyDown={event => handleSearchItemKeyDown(
-                        event,
-                        () => navigate(`/explorer/institution/${inst.id.split('/').pop()}`),
-                      )}
                     >
                       <div className="search-item-icon"><Building2 size={22} /></div>
                       <div className="search-item-info">
-                        <h4>{localizedName}</h4>
+                        <h4>
+                          <button
+                            type="button"
+                            className="search-item-title-btn"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/explorer/institution/${inst.id.split('/').pop()}`); }}
+                          >
+                            {localizedName}
+                          </button>
+                        </h4>
                         <p>{inst.country_code || (isEnglish ? 'Unknown country' : 'País desconocido')} • {isEnglish ? 'Academic institution' : 'Institución académica'}</p>
                       </div>
                       <FollowButton
@@ -1103,17 +1105,19 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     key={project.id}
                     className="search-item search-item-enter"
                     style={{ '--search-item-index': Math.min(index, 6) }}
-                    role="link"
-                    tabIndex={0}
                     onClick={() => navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`)}
-                    onKeyDown={event => handleSearchItemKeyDown(
-                      event,
-                      () => navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`),
-                    )}
                   >
                     <div className="search-item-icon"><Briefcase size={22} /></div>
                     <div className="search-item-info">
-                      <h4>{project.acronym ? `${project.acronym}: ${project.title}` : project.title}</h4>
+                      <h4>
+                        <button
+                          type="button"
+                          className="search-item-title-btn"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`); }}
+                        >
+                          {project.acronym ? `${project.acronym}: ${project.title}` : project.title}
+                        </button>
+                      </h4>
                       <p>{project.funder}{project.budget > 0 ? (() => { try { return ` • ${new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget)}`; } catch { return ` • ${project.budget.toLocaleString(locale)} €`; } })() : ''}</p>
                     </div>
                     <FollowButton
@@ -1135,17 +1139,19 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     key={concept.id}
                     className="search-item search-topic-item search-item-enter"
                     style={{ '--search-item-index': Math.min(index, 6) }}
-                    role="link"
-                    tabIndex={0}
                     onClick={() => navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop())}`)}
-                    onKeyDown={event => handleSearchItemKeyDown(
-                      event,
-                      () => navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop())}`),
-                    )}
                   >
                     <div className="search-item-icon search-topic-icon"><Lightbulb size={22} /></div>
                     <div className="search-item-info">
-                      <h4>{concept.display_name}</h4>
+                      <h4>
+                        <button
+                          type="button"
+                          className="search-item-title-btn"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop())}`); }}
+                        >
+                          {concept.display_name}
+                        </button>
+                      </h4>
                       <p>
                         {concept._localTopic && concept.level === 0
                           ? `${concept.subcategoryCount || 0} ${isEnglish ? 'related topics' : 'temas relacionados'}`
@@ -1194,19 +1200,21 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                       key={author.id}
                       className="search-item search-item-enter"
                       style={{ '--search-item-index': Math.min(index, 6) }}
-                      role="link"
-                      tabIndex={0}
                       onClick={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}
-                      onKeyDown={event => handleSearchItemKeyDown(
-                        event,
-                        () => navigate(`/explorer/author/${author.id.split('/').pop()}`),
-                      )}
                     >
                       <div className="search-item-avatar">
                         {author.display_name.charAt(0).toUpperCase()}
                       </div>
                       <div className="search-item-info">
-                        <h4>{author.display_name}</h4>
+                        <h4>
+                          <button
+                            type="button"
+                            className="search-item-title-btn"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/explorer/author/${author.id.split('/').pop()}`); }}
+                          >
+                            {author.display_name}
+                          </button>
+                        </h4>
                         <p>{authorInstitution || (isEnglish ? 'Unknown institution' : 'Institución desconocida')}</p>
                       </div>
                       <FollowButton
