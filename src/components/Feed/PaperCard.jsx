@@ -93,6 +93,15 @@ const RESOURCE_KIND_CONFIG = {
 const ENRICHMENT_SETTLE_DELAY_MS = 240;
 const RELATED_PAPER_HYDRATION_TIMEOUT_MS = 8_000;
 
+// Read once at module load, not per render: every card in the feed was
+// hitting localStorage on its own render just to show a panel almost nobody
+// has on. Whoever flips DEBUG_RANKING reloads to see it -- the same trade
+// `shouldLogRanking` (recommendationEngine.js) makes for the ranking table,
+// except that one is read live per batch because a batch is already a
+// deliberate, infrequent event, not a per-card render.
+const SHOW_RANKING_DEBUG = typeof window !== 'undefined'
+  && window.localStorage?.getItem('DEBUG_RANKING') === 'true';
+
 // How far a clipping may stray from the corner it belongs to. Small on
 // purpose: the point is that no two papers pin their figures at exactly the
 // same angle, not that a figure could turn up anywhere.
@@ -906,12 +915,10 @@ const PaperCard = memo(function PaperCard({
         : (!paper.pdfUrl && !paper.arxivId)
           ? (isEnglish ? 'Open source' : 'Abrir fuente')
           : (isEnglish ? 'Read article' : 'Leer artículo');
-  const showRankingDebug = typeof window !== 'undefined' && window.localStorage?.getItem('DEBUG_RANKING') === 'true';
-
   return (
     <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''} ${isMarkingRead ? 'pc--fade-out' : ''}`} onClick={handleDoubleTap}>
       {/* DEBUG PANEL */}
-      {showRankingDebug && paper._debugScore && (
+      {SHOW_RANKING_DEBUG && paper._debugScore && (
         <div className="pc-debug-panel">
           <div><strong>TOTAL SCORE: {paper._debugScore.total.toFixed(2)}</strong></div>
           <div>Why: {paper._debugScore.explanation}</div>
@@ -1121,19 +1128,26 @@ const PaperCard = memo(function PaperCard({
             <motion.div
               key="project-badge"
               className="pc-project-badge-slot"
+              // Was a `gridTemplateRows: '0fr' -> '1fr'` tween: a layout
+              // property, so every frame forced a full layout pass of the
+              // card subtree for 620ms. This slot only ever exists in the DOM
+              // while `project` is truthy (it is conditionally rendered, not
+              // toggled in place), so there is no resting "collapsed" state
+              // to preserve -- normal grid auto-sizing reserves its height in
+              // one layout pass on mount, and the entrance now rides on
+              // opacity + a small translateY, both compositor-only. The inner
+              // `.pc-project-badge-motion` keeps its own separate
+              // opacity/y/scale flourish for the badge content.
               initial={prefersReducedMotion
                 ? { opacity: 0 }
-                : { gridTemplateRows: '0fr', opacity: 0 }}
-              animate={{ gridTemplateRows: '1fr', opacity: 1 }}
+                : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
               exit={prefersReducedMotion
                 ? { opacity: 0 }
-                : { gridTemplateRows: '0fr', opacity: 0 }}
+                : { opacity: 0, y: 8 }}
               transition={prefersReducedMotion
                 ? { duration: 0.12 }
-                : {
-                    gridTemplateRows: { duration: 0.62, ease: [0.22, 1, 0.36, 1] },
-                    opacity: { duration: 0.32, delay: 0.06, ease: 'easeOut' },
-                  }}
+                : { duration: 0.24, ease: 'easeOut' }}
             >
               <div className="pc-project-badge-slot-inner">
                 <motion.div
@@ -1274,19 +1288,23 @@ const PaperCard = memo(function PaperCard({
             <motion.div
               key={`linked-resources-${paperViewKey}`}
               className="pc-linked-resources-slot"
+              // Same trade as `.pc-project-badge-slot` above: this slot only
+              // ever exists in the DOM while there are resources to show, so
+              // the `gridTemplateRows` tween was never hiding a resting
+              // state, only animating its own mount/unmount -- and doing it
+              // by forcing a layout every frame for 620ms. Grid auto-sizing
+              // reserves the height in one pass now; opacity + translateY
+              // carries the entrance instead.
               initial={prefersReducedMotion
                 ? { opacity: 0 }
-                : { gridTemplateRows: '0fr', opacity: 0 }}
-              animate={{ gridTemplateRows: '1fr', opacity: 1 }}
+                : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
               exit={prefersReducedMotion
                 ? { opacity: 0 }
-                : { gridTemplateRows: '0fr', opacity: 0 }}
+                : { opacity: 0, y: 8 }}
               transition={prefersReducedMotion
                 ? { duration: 0.12 }
-                : {
-                    gridTemplateRows: { duration: 0.62, ease: [0.22, 1, 0.36, 1] },
-                    opacity: { duration: 0.32, delay: 0.06, ease: 'easeOut' },
-                  }}
+                : { duration: 0.24, ease: 'easeOut' }}
             >
               <div className="pc-linked-resources-slot-inner">
                 <motion.div
