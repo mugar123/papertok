@@ -16,17 +16,26 @@ test('normalizes trailing slashes', () => {
 })
 
 test('returns null for self-titled and unknown routes', () => {
-  // Settings, /settings/profile and the public pages already manage
-  // document.title themselves (SettingsPage.jsx:382, ProfilePage.jsx:339,
+  // Settings, /settings/profile, /profile and the public pages already
+  // manage document.title themselves (SettingsPage.jsx:384,
+  // ProfilePage.jsx:341, PublicProfilePage's selfMode via
   // usePublicPageMetadata); the announcer must not fight them.
   assert.equal(routeTitle('/settings', false), null)
   assert.equal(routeTitle('/settings/profile', false), null)
+  assert.equal(routeTitle('/profile', false), null)
+  assert.equal(routeTitle('/profile', true), null)
   assert.equal(routeTitle('/public/paper/x', false), null)
   assert.equal(routeTitle('/nonsense', false), null)
 })
 
 test('labels announce even self-titled routes', () => {
-  assert.equal(routeLabel('/settings', false), 'Ajustes')
+  // SettingsPage titles and headings itself "Configuración", so the
+  // announcement must match that rather than a different Spanish word.
+  assert.equal(routeLabel('/settings', false), 'Configuración')
   assert.equal(routeLabel('/settings', true), 'Settings')
+  assert.equal(routeLabel('/profile', false), 'Mi perfil')
+  assert.equal(routeLabel('/profile', true), 'My profile')
+  assert.equal(routeLabel('/settings/profile', false), 'Editar perfil')
+  assert.equal(routeLabel('/settings/profile', true), 'Edit profile')
   assert.equal(routeLabel('/nonsense', false), null)
 })

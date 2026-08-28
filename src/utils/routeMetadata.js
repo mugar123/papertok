@@ -9,7 +9,9 @@ const LABELS = {
   '/following': ['Following', 'Siguiendo'],
   '/search': ['Search', 'Buscar'],
   '/profile': ['My profile', 'Mi perfil'],
-  '/settings': ['Settings', 'Ajustes'],
+  // SettingsPage titles and headings itself "Configuración" (SettingsPage.jsx),
+  // so the announcement must call the page what the page calls itself.
+  '/settings': ['Settings', 'Configuración'],
   '/settings/profile': ['Edit profile', 'Editar perfil'],
   '/settings/following': ['Following settings', 'Ajustes de seguimiento'],
   '/settings/comments': ['My comments', 'Mis comentarios'],

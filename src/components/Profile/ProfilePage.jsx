@@ -337,8 +337,11 @@ export default function ProfilePage() {
   // pages that manage their own metadata are not affected.
   useEffect(() => {
     const previous = document.title;
-    document.title = isEnglish ? 'Public profile | PaperTok' : 'Perfil público | PaperTok';
-    return () => { document.title = previous; };
+    const ours = isEnglish ? 'Public profile | PaperTok' : 'Perfil público | PaperTok';
+    document.title = ours;
+    // Only restore if nothing claimed the title since (the outgoing route
+    // stays mounted ~200ms into the next one under AnimatePresence).
+    return () => { if (document.title === ours) document.title = previous; };
   }, [isEnglish]);
 
   const handleCheck = useMemo(() => inspectHandle(handleDraft), [handleDraft]);

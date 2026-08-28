@@ -12,16 +12,31 @@ export default function RouteAnnouncer() {
   const location = useLocation()
   const { isEnglish } = useLanguage()
   const liveRef = useRef(null)
-  const isFirstRender = useRef(true)
+  // Last pathname we actually announced, not "is this the first render":
+  // React.StrictMode (src/main.jsx) double-invokes this effect on mount
+  // against the same component instance, so a first-render flag flips to
+  // false on the first invocation and no longer guards the second one. A
+  // remembered pathname is stable across that double-invoke because both
+  // runs see the same location.pathname.
+  const lastAnnouncedPath = useRef(null)
 
   useEffect(() => {
+    // The title updates on every run, including a same-route re-run caused
+    // by a language toggle or StrictMode's double-invoke.
     const title = routeTitle(location.pathname, isEnglish)
     if (title) document.title = title
-    if (isFirstRender.current) {
-      // The initial load already has the browser's own focus and title.
-      isFirstRender.current = false
+
+    if (lastAnnouncedPath.current === null) {
+      // Initial load: the browser already owns focus, nothing to announce.
+      lastAnnouncedPath.current = location.pathname
       return
     }
+    if (lastAnnouncedPath.current === location.pathname) {
+      // Same route as last time we announced (StrictMode's second
+      // invocation, or a language toggle): title above is enough.
+      return
+    }
+    lastAnnouncedPath.current = location.pathname
     const label = routeLabel(location.pathname, isEnglish)
     if (liveRef.current) liveRef.current.textContent = label || ''
     document.getElementById('main-content')?.focus({ preventScroll: true })
