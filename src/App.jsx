@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
 import RouteFallback from './components/Layout/RouteFallback'
+import RouteAnnouncer from './components/Layout/RouteAnnouncer'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LanguageProvider, useLanguage } from './context/LanguageContext'
 import { ThemeProvider } from './context/ThemeContext'
@@ -104,6 +105,7 @@ function AppContent() {
       <a className="skip-link" href="#main-content">
         {isEnglish ? 'Skip to content' : 'Saltar al contenido'}
       </a>
+      <RouteAnnouncer />
       {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={() => setSearchOpen(true)} />}
       {/* Focus target for the skip link and for route changes (RouteAnnouncer).
           A div, not <main>: several routes render their own <main> inside. */}
