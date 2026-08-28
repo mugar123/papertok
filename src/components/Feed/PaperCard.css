@@ -2488,13 +2488,22 @@ a.pc-citations {
 }
 
 /* ── Keyboard-operable author/abstract controls (Task 6) ── */
-/* Inline author buttons: the global button reset leaves them borderless, so
-   they only need to stop imposing the base font size. */
+/* Inline author names: rendered as <Link> (an <a>, not a <button>) so that
+   `.pc-author-names`' ellipsis can clip inside the box — a <button> is
+   blockified and gets hidden whole instead of truncated. `text-decoration:
+   none` overrides the underline an <a> would otherwise carry. */
 .pc-author-btn {
   font: inherit;
   color: inherit;
   padding: 0;
   text-align: left;
+  text-decoration: none;
+}
+
+/* Fallback for the rare case getPublicEntityPath resolves no destination
+   (publicMode only): plain text, not a link to nowhere. */
+.pc-author-btn--static {
+  cursor: default;
 }
 
 .pc-authors-more {

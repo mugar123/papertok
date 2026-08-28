@@ -14,7 +14,7 @@ import { Button } from '../ui/button.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getProjectForPaper } from '../../services/openAireService';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import './PaperCard.css';
 import RelatedPapersSheet from './RelatedPapersSheet';
@@ -1211,31 +1211,46 @@ const PaperCard = memo(function PaperCard({
                 inline-block box is trimmed away, so "Kramer, Alexander" used to
                 render as "Kramer,Alexander". Keeping the separator out also
                 keeps it out of each button's accessible name. */}
-            {(paper.authors || []).slice(0, 3).map((author, index) => (
-               <Fragment key={index}>
-                 <button
-                   type="button"
-                   className="pc-author-link pc-author-btn"
-                   onClick={(e) => {
-                     e.stopPropagation();
-                     const pId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
-                     const authorName = author.name || author;
-                     const path = publicMode
-                       ? getPublicEntityPath('author', author.id || authorName)
-                       : `/explorer/author/${encodeURIComponent(authorName)}?arxivId=${pId}`;
-                     trackEvent('select_content', {
-                       content_type: 'author',
-                       surface: analyticsSurface,
-                       position,
-                     });
-                     if (path) navigate(path);
-                   }}
-                 >
-                   {author.name || author}
-                 </button>
-                 {index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
-               </Fragment>
-            ))}
+            {(paper.authors || []).slice(0, 3).map((author, index) => {
+               const authorName = author.name || author;
+               // `path` now doubles as the <Link to> destination, so it has to
+               // be known at render time — a <Link> can't compute where it
+               // goes lazily inside its own onClick the way the old <button>
+               // did.
+               const pId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
+               const path = publicMode
+                 ? getPublicEntityPath('author', author.id || authorName)
+                 : `/explorer/author/${encodeURIComponent(authorName)}?arxivId=${pId}`;
+               return (
+                 <Fragment key={index}>
+                   {path ? (
+                     <Link
+                       to={path}
+                       className="pc-author-link pc-author-btn"
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         trackEvent('select_content', {
+                           content_type: 'author',
+                           surface: analyticsSurface,
+                           position,
+                         });
+                       }}
+                     >
+                       {authorName}
+                     </Link>
+                   ) : (
+                     // getPublicEntityPath found neither a usable id nor a
+                     // name (publicMode only): there is nowhere to send a
+                     // click, so render inert text instead of a link to
+                     // nowhere.
+                     <span className="pc-author-btn pc-author-btn--static">
+                       {authorName}
+                     </span>
+                   )}
+                   {index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
+                 </Fragment>
+               );
+            })}
             {(paper.authors || []).length > 3 && (
               <>
                 {' '}
