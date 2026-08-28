@@ -1,32 +1,65 @@
 /**
- * The ink sweep: a circle of the incoming theme opening out of the control the
- * reader just pressed, rather than a fade of the whole window.
+ * The theme switch, and which of three routes it takes to get there.
  *
- * The animation itself is CSS (`global.css`, "Theme switch"); this only tells
- * it where the circle starts and how far it has to reach, and picks which of
- * the three routes the switch takes:
+ * The flip itself is cheap — under a millisecond to commit, a few more to
+ * recompute the CSS tokens. What costs is the animation wrapped around it:
+ * `startViewTransition` snapshots the whole page before the callback runs,
+ * and on a phone at device pixel ratio that snapshot is tens of megabytes of
+ * texture. Add a 420 ms `clip-path` circle on top of a capture that already
+ * ate a long frame, and the sweep is what reads as heavy — not the theme
+ * change underneath it.
  *
- *   1. View Transitions, where the browser has them. The theme flips inside
- *      `startViewTransition`, so the old page is a snapshot and the new one
- *      grows over it — one composited clip-path, no duplicated DOM.
- *   2. A 200 ms colour cross-fade otherwise. Bounded to the switch itself:
- *      the class goes on for the length of the fade and comes straight off,
- *      because a permanent `* { transition: background-color }` would put a
- *      fade on every hover in the app.
- *   3. Nothing at all under `prefers-reduced-motion`. A circle sweeping the
- *      whole viewport is exactly the movement that preference exists to
- *      refuse, and the fade is still movement of the same kind, just slower.
+ *   1. `instant` — no animation at all. Either the reader asked for reduced
+ *      motion, in which case a circle crossing the viewport is exactly the
+ *      movement that preference exists to refuse, or the browser has no
+ *      View Transitions API, in which case the fallback used to be a 240 ms
+ *      `!important` transition on every element in the app. That was a
+ *      bigger cost than the sweep it was standing in for; doing nothing is
+ *      cheaper and reads as instant, which is the correct affordance for a
+ *      browser this old.
+ *   2. `fade` — a short, composited opacity cross-fade, for coarse pointers
+ *      (touch). Still goes through `startViewTransition` for the snapshot
+ *      swap, but skips the `clip-path` sweep: on mobile, the capture cost is
+ *      already paid, so the animation on top of it needs to be the cheapest
+ *      thing a GPU can do. Opacity alone composites everywhere; 160 ms is
+ *      short enough that the extra frame from the snapshot doesn't register
+ *      as lag.
+ *   3. `sweep` — the ink sweep, for everything else (mouse/trackpad with
+ *      View Transitions, i.e. desktop). A circle of the incoming theme opens
+ *      out of the control the reader just pressed, rather than a fade of the
+ *      whole window. Desktop GPUs and DPRs make the same capture cheap
+ *      enough that the extra 420 ms of `clip-path` doesn't cost what it
+ *      would on a phone.
+ *
+ * The animation itself is CSS (`global.css`, "Theme switch"); this module
+ * only picks the route and, for `sweep`, tells the CSS where the circle
+ * starts and how far it has to reach.
  *
  * `commit` must change the theme synchronously — it runs inside the transition
  * callback, and React's own re-render lands after it.
  */
 
-const CROSSFADE_CLASS = 'theme-crossfade';
-const CROSSFADE_MS = 240;
+/**
+ * Pure so it is testable without a DOM: three booleans in, one route out.
+ * Everything that actually reads `window`/`matchMedia` lives in the caller.
+ */
+export function pickThemeRoute({ reducedMotion, hasViewTransitions, coarsePointer }) {
+  if (reducedMotion) return 'instant';
+  if (!hasViewTransitions) return 'instant';
+  return coarsePointer ? 'fade' : 'sweep';
+}
 
 function prefersReducedMotion() {
   try {
     return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  } catch {
+    return false;
+  }
+}
+
+function coarsePointer() {
+  try {
+    return window.matchMedia('(pointer: coarse)').matches;
   } catch {
     return false;
   }
@@ -50,17 +83,30 @@ function markSweepOrigin(origin) {
   root.style.setProperty('--theme-sweep-r', `${Math.ceil(radius)}px`);
 }
 
+const PLAIN_CLASS = 'theme-switch-plain';
+
 export function runThemeSwitch(commit, origin) {
-  if (prefersReducedMotion()) {
+  const route = pickThemeRoute({
+    reducedMotion: prefersReducedMotion(),
+    hasViewTransitions: typeof document.startViewTransition === 'function',
+    coarsePointer: coarsePointer(),
+  });
+
+  if (route === 'instant') {
     commit();
     return;
   }
 
-  if (typeof document.startViewTransition !== 'function') {
+  if (route === 'fade') {
     const root = document.documentElement;
-    root.classList.add(CROSSFADE_CLASS);
-    window.setTimeout(() => root.classList.remove(CROSSFADE_CLASS), CROSSFADE_MS);
-    commit();
+    root.classList.add(PLAIN_CLASS);
+    const vt = document.startViewTransition(commit);
+    // `finished` rejects when a transition is skipped or aborted; `.then`
+    // with both handlers cleans up either way and — unlike `.finally` —
+    // doesn't re-throw and log an unhandled rejection for the common case
+    // of a reader toggling the theme again before the fade finishes.
+    const cleanup = () => root.classList.remove(PLAIN_CLASS);
+    vt.finished.then(cleanup, cleanup);
     return;
   }
 
