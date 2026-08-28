@@ -479,8 +479,23 @@ a.pc-citations {
 }
 
 /* ── Funding project ── */
+/* The one cell is what lets the entrance animate `grid-template-rows` from
+   `0fr`, but a grid with no column declared gets an implicit `auto` track, and
+   an `auto` track sizes to its content. A long funder name grew the track past
+   the sheet, and the `max-width: 100%` on the wrapper and the button below both
+   measured themselves against that grown track — so the button never ran out of
+   room, its label's ellipsis never fired, and the name was cut mid-word by the
+   sheet's own `overflow-x: hidden` while the sheet, the body and this slot all
+   carried ~100px of overflow nobody could scroll to.
+
+   `minmax(0, 1fr)` and not `1fr`: an `fr` track floors at its item's automatic
+   minimum size, which here is the un-wrapped badge, so `1fr` on its own lands
+   back on the width the implicit track already had. The zero floor is the whole
+   fix — the horizontal twin of the `min-height: 0` the sheet uses to let its
+   body shrink. */
 .pc-project-badge-slot {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   width: 100%;
   max-width: 100%;
   will-change: grid-template-rows, opacity;
