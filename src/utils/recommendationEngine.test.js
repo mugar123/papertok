@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   applyCategoryAffinityDelta,
+  applyRecommendationScore,
   diversifiedWeightedShuffle,
   mergeRecommendationWeights,
   scorePaperForRecommendation,
@@ -269,4 +270,71 @@ test('diversified shuffle recalculates scores from the evolving recent queue', (
 
   assert.equal(observedCounts[0].published, 4);
   assert.ok(observedCounts.some(counts => counts.preprint > 0));
+});
+
+// A deterministic generator, so the budget below measures the algorithm and not
+// the luck of a particular draw.
+function seededRandom(seed = 1) {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
+test('the diversified shuffle does not re-score the whole pool on every iteration', () => {
+  // The meter. `paperTopicSignals` reads `concepts` exactly once per full score
+  // computation, so this getter counts how many times the expensive half of the
+  // score actually ran -- which is the thing the budget is about. Counting the
+  // injected callback instead would measure the shape of the shuffle's loop,
+  // not its cost: the callback must keep being invoked per iteration so the
+  // diversity boost still tracks the evolving recent queue.
+  let signalPasses = 0;
+
+  // A mix that makes the recent-window counts move: preprints and published,
+  // open access and paywalled, journals and conferences. A uniform pool would
+  // freeze the diversity boost and flatter the budget.
+  const papers = Array.from({ length: 60 }, (_, index) => ({
+    id: `budget-${index}`,
+    primaryCategory: `cat.${index % 5}`,
+    publicationStatus: index % 3 === 0 ? 'preprint' : 'published',
+    openAccess: index % 2 === 0,
+    sourceType: index % 4 === 0 ? 'conference' : 'journal',
+    published: '2026-06-01T00:00:00Z',
+    get concepts() {
+      signalPasses += 1;
+      return [];
+    },
+  }));
+
+  // The production seam: FeedContext injects `applyRecommendationScore` bound to
+  // a context it rebuilds on every call, with only `recentPropsCount` changing.
+  const context = {
+    followedEntities: [{ type: 'topic', canonicalId: 'T-quantum', displayName: 'Quantum optics' }],
+    now: NOW,
+  };
+  const shuffled = diversifiedWeightedShuffle(papers, {
+    random: seededRandom(7),
+    scorePaper: (paper, recentPropsCount) => applyRecommendationScore(paper, { ...context, recentPropsCount }),
+  });
+
+  // Contract first: the shuffle still returns every paper exactly once.
+  assert.equal(shuffled.length, papers.length);
+  assert.deepEqual(new Set(shuffled.map(paper => paper.id)), new Set(papers.map(paper => paper.id)));
+
+  // Budget: the expensive half is NFD normalisation and three regexes per
+  // followed entity per candidate signal, plus eight arrays flattened and two
+  // date parses. Re-running it for the whole pool on every iteration costs
+  // N(N+1)/2 = 1830 passes here, and grows quadratically as the reader scrolls
+  // and the pool fills. Nothing in that half depends on the recent window: the
+  // only part of the score that moves with the iteration is the diversity
+  // boost, six integer comparisons against five booleans. So the expensive half
+  // is owed once per paper, hence a bound of 2N -- tight enough that restoring
+  // the per-iteration pass fails it by an order of magnitude, loose enough not
+  // to be brittle about how the cache is scoped.
+  // Both ends, because a one-sided budget can go green for the wrong reason: if
+  // a later refactor stops routing through `paper.concepts`, the meter reads 0
+  // and a vacuous pass would hide the very quadratic this test exists to catch.
+  assert.ok(signalPasses >= papers.length, `expensive half ran ${signalPasses} times, expected at least one pass per paper`);
+  assert.ok(signalPasses <= papers.length * 2, `the expensive half of the score ran ${signalPasses} times`);
 });

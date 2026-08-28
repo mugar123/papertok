@@ -68,6 +68,36 @@ function topReasons(parts) {
     .map(([key, value]) => `${key}:${value.toFixed(1)}`);
 }
 
+// The explanation is only ever read by the ranking debug panel (behind
+// localStorage.DEBUG_RANKING) and by logRankingBatch, yet it used to be built
+// -- entries, filter, sort, slice, toFixed -- on every single score. As a lazy
+// property it costs nothing until somebody looks, and still reads as a plain
+// string for the two callers that do, with no flag to keep in sync.
+//
+// One looker is silent, so it is named here rather than left to be found by
+// profiling: writeFeedSnapshot (FeedContext) JSON.stringifies the persisted
+// papers, and since the property is enumerable that serialisation invokes the
+// getter on every _debugScore it walks -- up to FEED_SNAPSHOT_MAX_PAPERS of
+// them per write. That is deliberate: the round trip has to yield the same
+// string it always did, or a restored snapshot would stop matching a fresh
+// score. Thirty topReasons calls per snapshot against N-squared per re-rank is
+// still the trade we want; enumerable is not an oversight.
+function defineExplanation(target, parts) {
+  let explanation;
+  Object.defineProperty(target, 'explanation', {
+    enumerable: true,
+    configurable: true,
+    get() {
+      if (explanation === undefined) explanation = topReasons(parts).join(', ') || 'neutral';
+      return explanation;
+    },
+    set(value) {
+      explanation = value;
+    },
+  });
+  return target;
+}
+
 export function getPaperCategorySignals(paper) {
   const providerCategories = paper?.allCategories || paper?.categories || [];
   return [...new Set([
@@ -76,7 +106,7 @@ export function getPaperCategorySignals(paper) {
   ].filter(category => typeof category === 'string' && category.trim()))].slice(0, 6);
 }
 
-function normalizeSignal(value) {
+function normalizeSignalUncached(value) {
   return String(value || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -84,6 +114,27 @@ function normalizeSignal(value) {
     .toLowerCase()
     .replace(/^https?:\/\/(?:api\.)?openalex\.org\//, '')
     .replace(/^https?:\/\/(?:www\.)?ror\.org\//, '');
+}
+
+// Category ids, author names, institution URLs and topic labels repeat across
+// papers and across re-ranks, so the NFD pass and the three regexes are worth
+// paying once per distinct string. Only strings are cached: candidates arrive
+// as objects too, and those would key on a toString the cache cannot trust.
+const normalizedSignals = new Map();
+const NORMALIZED_SIGNAL_LIMIT = 5000;
+
+function normalizeSignal(value) {
+  if (typeof value !== 'string') return normalizeSignalUncached(value);
+
+  const cached = normalizedSignals.get(value);
+  if (cached !== undefined) return cached;
+
+  const normalized = normalizeSignalUncached(value);
+  // A long session can meet a lot of distinct signals; drop the whole map
+  // rather than track ages, since a rebuild costs one pass over the live set.
+  if (normalizedSignals.size >= NORMALIZED_SIGNAL_LIMIT) normalizedSignals.clear();
+  normalizedSignals.set(value, normalized);
+  return normalized;
 }
 
 function signalMatches(follow, candidates) {
@@ -169,7 +220,16 @@ export function applyCategoryAffinityDelta(affinities, paper, delta, secondaryMu
   return affinities;
 }
 
-export function scorePaperForRecommendation(paper, context = {}) {
+const NEUTRAL_RECENT_PROPS = Object.freeze({
+  preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0,
+});
+
+// Everything a score needs that does NOT move with the recent window: the
+// followed-entity matching, the topic flattening, affinities, cooldowns,
+// recency. A diversified shuffle asks for the same paper once per remaining
+// pool slot, and only the diversity boost differs between those calls, so this
+// half is computed once per paper and reused (see beginScoringRun).
+function computeStableScore(paper, context) {
   const weights = mergeRecommendationWeights(context.weights);
   const now = context.now || Date.now();
   const userPreferences = context.userPreferences || [];
@@ -184,7 +244,6 @@ export function scorePaperForRecommendation(paper, context = {}) {
   const primaryCategory = categorySignals[0] || '';
   const allCategories = categorySignals;
   const isExploration = paper._debugScore?.isExploration || paper._type === 'exploration';
-  const recentPropsCount = context.recentPropsCount || { preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0 };
 
   const rawAffinity = categorySignals.reduce((sum, category, index) => {
     const multiplier = index === 0 ? 1 : 0.35;
@@ -235,24 +294,6 @@ export function scorePaperForRecommendation(paper, context = {}) {
 
   const graphBoost = paper._isGraphCandidate ? weights.graphCandidate : 0;
 
-  // --- Content Diversity Soft Constraints ---
-  let diversityBoost = 0;
-  const isPreprint = paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint';
-  const isPublished = paper.publicationStatus === 'published';
-  const isOA = paper.openAccess;
-  const isJournal = paper.sourceType === 'journal' || paper.journal;
-  const isConference = paper.sourceType === 'conference' || paper.conference;
-
-  // If the last 5 cards are saturated with one type, boost the opposite type
-  if (recentPropsCount.published >= 4 && isPreprint) diversityBoost += 10;
-  if (recentPropsCount.preprint >= 4 && isPublished) diversityBoost += 10;
-  
-  if (recentPropsCount.subscription >= 3 && isOA) diversityBoost += 8;
-  if (recentPropsCount.openAccess >= 4 && !isOA) diversityBoost += 5;
-
-  if (recentPropsCount.conference >= 3 && isJournal) diversityBoost += 8;
-  if (recentPropsCount.journal >= 4 && isConference) diversityBoost += 5;
-
   let cooldownMultiplier = 1;
   if (primaryCategory && categoryCooldowns[primaryCategory]) {
     const cooldownAge = daysSince(categoryCooldowns[primaryCategory], now);
@@ -263,7 +304,10 @@ export function scorePaperForRecommendation(paper, context = {}) {
     }
   }
 
-  const parts = {
+  // The eight window-independent components, in the order the total used to sum
+  // them; the diversity boost is added afterwards, exactly where it always was,
+  // so the arithmetic is unchanged down to the last float.
+  const stableParts = {
     affinity,
     preference,
     recency,
@@ -272,21 +316,128 @@ export function scorePaperForRecommendation(paper, context = {}) {
     citations,
     graphBoost,
     followBoost,
-    diversityBoost,
   };
-  const baseTotal = Object.values(parts).reduce((sum, value) => sum + value, 0);
-  const total = baseTotal * cooldownMultiplier;
 
   return {
+    // What the cached half depends on. The context object is rebuilt on every
+    // call (FeedContext spreads a literal), so the entry is validated against
+    // these references rather than against the object holding them.
+    weightsSource: context.weights,
+    userPreferences: context.userPreferences,
+    followedAuthors: context.followedAuthors,
+    followedEntities: context.followedEntities,
+    categoryAffinities: context.categoryAffinities,
+    categoryCooldowns: context.categoryCooldowns,
+    conceptAffinities: context.conceptAffinities,
+    temporalPreference: context.temporalPreference,
+    explicitNow: context.now,
+
+    stableParts,
+    stableTotal: Object.values(stableParts).reduce((sum, value) => sum + value, 0),
+    cooldownMultiplier,
+    authorBoost: Math.max(authorBoost, followedSignals.raw.author),
+    followedEntityMatches: followedSignals.matches,
+    isExploration,
+
+    // The five booleans the diversity rule tests. Reading them off the paper is
+    // trivial, but keeping them here means the per-iteration work is six
+    // integer comparisons and nothing else.
+    isPreprint: paper.publicationStatus === 'preprint' || paper.publicationType === 'preprint',
+    isPublished: paper.publicationStatus === 'published',
+    isOA: paper.openAccess,
+    isJournal: paper.sourceType === 'journal' || paper.journal,
+    isConference: paper.sourceType === 'conference' || paper.conference,
+
+    // Last assembled result, reused while the boost holds its value.
+    lastDiversityBoost: null,
+    lastResult: null,
+  };
+}
+
+// --- Content Diversity Soft Constraints ---
+// If the last 5 cards are saturated with one type, boost the opposite type.
+// This is the whole of the score that moves as the shuffle advances.
+function diversityBoostFor(stable, recentPropsCount) {
+  let diversityBoost = 0;
+
+  if (recentPropsCount.published >= 4 && stable.isPreprint) diversityBoost += 10;
+  if (recentPropsCount.preprint >= 4 && stable.isPublished) diversityBoost += 10;
+
+  if (recentPropsCount.subscription >= 3 && stable.isOA) diversityBoost += 8;
+  if (recentPropsCount.openAccess >= 4 && !stable.isOA) diversityBoost += 5;
+
+  if (recentPropsCount.conference >= 3 && stable.isJournal) diversityBoost += 8;
+  if (recentPropsCount.journal >= 4 && stable.isConference) diversityBoost += 5;
+
+  return diversityBoost;
+}
+
+// A re-rank scores each paper once per remaining pool slot: N(N+1)/2 calls for
+// a pool of N, all but the diversity boost identical. A run holds the stable
+// half of each paper's score for exactly one shuffle and is dropped afterwards.
+//
+// It has to be scoped that tightly. A module-level cache keyed by paper would
+// go stale between re-ranks, because FeedContext mutates its affinity and
+// cooldown maps IN PLACE (applyCategoryAffinityDelta, categoryCooldowns.current
+// [category] = Date.now()): entries kept across runs would keep answering with
+// scores that ignore the reader's last swipe.
+let activeScoringRun = null;
+
+function beginScoringRun() {
+  const previous = activeScoringRun;
+  activeScoringRun = new Map();
+  return () => { activeScoringRun = previous; };
+}
+
+function stableScoreFor(paper, context) {
+  const run = activeScoringRun;
+  if (!run) return computeStableScore(paper, context);
+
+  const cached = run.get(paper);
+  if (cached
+    && cached.weightsSource === context.weights
+    && cached.userPreferences === context.userPreferences
+    && cached.followedAuthors === context.followedAuthors
+    && cached.followedEntities === context.followedEntities
+    && cached.categoryAffinities === context.categoryAffinities
+    && cached.categoryCooldowns === context.categoryCooldowns
+    && cached.conceptAffinities === context.conceptAffinities
+    && cached.temporalPreference === context.temporalPreference
+    && cached.explicitNow === context.now) {
+    return cached;
+  }
+
+  const stable = computeStableScore(paper, context);
+  run.set(paper, stable);
+  return stable;
+}
+
+export function scorePaperForRecommendation(paper, context = {}) {
+  const stable = stableScoreFor(paper, context);
+  const recentPropsCount = context.recentPropsCount || NEUTRAL_RECENT_PROPS;
+  const diversityBoost = diversityBoostFor(stable, recentPropsCount);
+
+  // Same paper, same boost: the score is identical, so hand back the very same
+  // breakdown instead of rebuilding it. Keeps _debugScore stable for React too.
+  if (stable.lastResult && stable.lastDiversityBoost === diversityBoost) return stable.lastResult;
+
+  const parts = { ...stable.stableParts, diversityBoost };
+  const baseTotal = stable.stableTotal + diversityBoost;
+  const total = baseTotal * stable.cooldownMultiplier;
+
+  const result = defineExplanation({
     total,
     baseTotal,
     ...parts,
-    authorBoost: Math.max(authorBoost, followedSignals.raw.author),
-    followedEntityMatches: followedSignals.matches,
-    cooldownMultiplier,
-    isExploration,
-    explanation: topReasons(parts).join(', ') || 'neutral',
-  };
+    authorBoost: stable.authorBoost,
+    followedEntityMatches: stable.followedEntityMatches,
+    cooldownMultiplier: stable.cooldownMultiplier,
+    isExploration: stable.isExploration,
+  }, parts);
+
+  stable.lastDiversityBoost = diversityBoost;
+  stable.lastResult = result;
+  return result;
 }
 
 export function applyRecommendationScore(paper, context = {}) {
@@ -380,53 +531,61 @@ export function diversifiedWeightedShuffle(papers, options = {}) {
   const history = [...initialPapers];
   let { lastCategory, count: consecutiveCategoryCount } = getTrailingCategoryRun(history);
 
-  while (pool.length > 0) {
-    const recentPropsCount = countRecentProperties(history.slice(-5));
-    if (typeof scorePaper === 'function') {
-      pool.forEach(paper => scorePaper(paper, recentPropsCount));
-    }
-
-    let candidateIndexes = pool.map((_, index) => index);
-    if (lastCategory && consecutiveCategoryCount >= maxConsecutiveCategory) {
-      const alternatives = candidateIndexes.filter(index => pool[index].primaryCategory !== lastCategory);
-      if (alternatives.length > 0) candidateIndexes = alternatives;
-    }
-
-    const candidateWeights = candidateIndexes.map((poolIndex) => {
-      const paper = pool[poolIndex];
-      const isExplore = paper._debugScore?.isExploration || paper._type === 'exploration';
-      const score = paper._dynamicScore || 0;
-      const baseWeight = isExplore ? config.explorationBaseWeight : config.exploitBaseWeight;
-      return Math.max(config.minShuffleWeight, score + baseWeight);
-    });
-    const totalWeight = candidateWeights.reduce((sum, weight) => sum + weight, 0);
-
-    let candidateIndex = 0;
-    if (totalWeight > 0) {
-      let cursor = random() * totalWeight;
-      for (let index = 0; index < candidateIndexes.length; index += 1) {
-        cursor -= candidateWeights[index];
-        if (cursor <= 0) {
-          candidateIndex = index;
-          break;
-        }
+  // One re-rank, one scoring run: every paper still gets re-scored against the
+  // evolving recent window on every iteration, but the expensive half of that
+  // score is now computed once per paper and reused inside this shuffle only.
+  const endScoringRun = beginScoringRun();
+  try {
+    while (pool.length > 0) {
+      const recentPropsCount = countRecentProperties(history.slice(-5));
+      if (typeof scorePaper === 'function') {
+        pool.forEach(paper => scorePaper(paper, recentPropsCount));
       }
-    } else {
-      candidateIndex = Math.floor(random() * candidateIndexes.length);
-    }
 
-    const selectedPoolIndex = candidateIndexes[candidateIndex];
-    const [selectedPaper] = pool.splice(selectedPoolIndex, 1);
-    result.push(selectedPaper);
-    history.push(selectedPaper);
+      let candidateIndexes = pool.map((_, index) => index);
+      if (lastCategory && consecutiveCategoryCount >= maxConsecutiveCategory) {
+        const alternatives = candidateIndexes.filter(index => pool[index].primaryCategory !== lastCategory);
+        if (alternatives.length > 0) candidateIndexes = alternatives;
+      }
 
-    const category = selectedPaper.primaryCategory || '';
-    if (category && category === lastCategory) {
-      consecutiveCategoryCount += 1;
-    } else {
-      lastCategory = category;
-      consecutiveCategoryCount = category ? 1 : 0;
+      const candidateWeights = candidateIndexes.map((poolIndex) => {
+        const paper = pool[poolIndex];
+        const isExplore = paper._debugScore?.isExploration || paper._type === 'exploration';
+        const score = paper._dynamicScore || 0;
+        const baseWeight = isExplore ? config.explorationBaseWeight : config.exploitBaseWeight;
+        return Math.max(config.minShuffleWeight, score + baseWeight);
+      });
+      const totalWeight = candidateWeights.reduce((sum, weight) => sum + weight, 0);
+
+      let candidateIndex = 0;
+      if (totalWeight > 0) {
+        let cursor = random() * totalWeight;
+        for (let index = 0; index < candidateIndexes.length; index += 1) {
+          cursor -= candidateWeights[index];
+          if (cursor <= 0) {
+            candidateIndex = index;
+            break;
+          }
+        }
+      } else {
+        candidateIndex = Math.floor(random() * candidateIndexes.length);
+      }
+
+      const selectedPoolIndex = candidateIndexes[candidateIndex];
+      const [selectedPaper] = pool.splice(selectedPoolIndex, 1);
+      result.push(selectedPaper);
+      history.push(selectedPaper);
+
+      const category = selectedPaper.primaryCategory || '';
+      if (category && category === lastCategory) {
+        consecutiveCategoryCount += 1;
+      } else {
+        lastCategory = category;
+        consecutiveCategoryCount = category ? 1 : 0;
+      }
     }
+  } finally {
+    endScoringRun();
   }
 
   return result;
