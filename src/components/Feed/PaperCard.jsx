@@ -1228,34 +1228,36 @@ const PaperCard = memo(function PaperCard({
               // while `project` is truthy (it is conditionally rendered, not
               // toggled in place), so there is no resting "collapsed" state
               // to preserve -- normal grid auto-sizing reserves its height in
-              // one layout pass on mount, and the entrance now rides on
-              // opacity + a small translateY, both compositor-only. The inner
-              // `.pc-project-badge-motion` keeps its own separate
-              // opacity/y/scale flourish for the badge content.
-              initial={prefersReducedMotion
-                ? { opacity: 0 }
-                : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
+              // one layout pass on mount, and the entrance rides on
+              // compositor-only properties. Each layer owns one job so the
+              // motion reads as a single gesture: this slot only fades
+              // (stacking opacity on both layers multiplies the curves), and
+              // the inner `.pc-project-badge-motion` carries the whole y/scale
+              // travel on one undelayed curve -- the old split (fast slot
+              // easeOut, then a delayed inner flourish) landed as two
+              // out-of-phase tugs.
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
               exit={prefersReducedMotion
                 ? { opacity: 0 }
-                : { opacity: 0, y: 8 }}
+                : { opacity: 0, y: 6 }}
               transition={prefersReducedMotion
                 ? { duration: 0.12 }
-                : { duration: 0.24, ease: 'easeOut' }}
+                : { duration: 0.5, ease: 'easeOut' }}
             >
               <div className="pc-project-badge-slot-inner">
                 <motion.div
                   className="pc-project-badge-motion"
                   initial={prefersReducedMotion
                     ? false
-                    : { opacity: 0, y: 5, scale: 0.985 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                    : { y: 12, scale: 0.97 }}
+                  animate={{ y: 0, scale: 1 }}
                   exit={prefersReducedMotion
                     ? { opacity: 0 }
-                    : { opacity: 0, y: 3, scale: 0.99 }}
+                    : { y: 2, scale: 0.99 }}
                   transition={prefersReducedMotion
                     ? { duration: 0.12 }
-                    : { duration: 0.46, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                    : { duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
                 >
                   <button
                     type="button"
