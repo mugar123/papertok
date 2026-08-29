@@ -53,6 +53,17 @@ export function formatAIModelLabel(model, provider = '', language = 'es') {
   if (provider === 'modal-kimi' || /(?:^|\/)kimi[-\s]?k?3$/i.test(value)) {
     return 'Kimi K3 · Modal';
   }
+  if (provider === 'nvidia-deepseek' || /(?:^|\/)deepseek[-\s]/i.test(value)) {
+    const version = value
+      .replace(/^.*\//, '')
+      .replace(/^deepseek[-\s]*/i, '')
+      .split(/[-\s]+/)
+      // The trailing -0731 is a snapshot date, not something a reader needs.
+      .filter(part => part && !/^\d{4}$/.test(part))
+      .map(part => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+      .join(' ');
+    return version ? `DeepSeek ${version} · NVIDIA` : 'DeepSeek · NVIDIA';
+  }
   if (!/^gemini[-\s]/i.test(value)) return value;
 
   const version = value

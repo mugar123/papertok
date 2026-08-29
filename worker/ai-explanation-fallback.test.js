@@ -636,6 +636,187 @@ test('Kimi as the primary provider does not reserve budget it cannot spend', asy
   assert.deepEqual(ledgerActions(env), ['reserve', 'release']);
 });
 
+// ---------------------------------------------------------------------------
+// The chain with DeepSeek in the middle: Gemini → DeepSeek (NVIDIA) → Kimi.
+// ---------------------------------------------------------------------------
+
+const DEEPSEEK_MODEL = 'deepseek-ai/deepseek-v4-flash-0731';
+
+const deepseekCompletion = () => json({
+  id: 'chatcmpl-deepseek',
+  model: DEEPSEEK_MODEL,
+  choices: [{
+    index: 0,
+    finish_reason: 'stop',
+    message: { role: 'assistant', content: JSON.stringify(EXPLANATION) },
+  }],
+  usage: { prompt_tokens: 900, completion_tokens: 500 },
+});
+
+function envWithChain(overrides = {}) {
+  return envWith({
+    AI_FALLBACK_PROVIDER: 'nvidia-deepseek,modal-kimi',
+    NVIDIA_API_KEY: 'nvapi-test-key',
+    ...overrides,
+  });
+}
+
+test('an exhausted Gemini daily quota hands the explanation to DeepSeek before Kimi', async () => {
+  installCache();
+  const env = envWithChain();
+  const calls = stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+    'integrate.api.nvidia.com': deepseekCompletion,
+    'modal.run': kimiCompletion,
+  });
+
+  const result = await handleAIExplanation(explainRequest(), env);
+
+  assert.equal(result.provider, 'nvidia-deepseek');
+  assert.equal(result.model, DEEPSEEK_MODEL);
+  assert.equal(result.sourceBasis, 'abstract');
+  assert.equal(result.explanation.overview, EXPLANATION.overview);
+
+  // Kimi is the paid last resort: a free DeepSeek answer must not touch Modal
+  // or its monthly ledger.
+  assert.equal(calls.some(call => call.url.includes('modal.run')), false);
+  assert.equal(env.KIMI_BUDGET_LEDGER.store.size, 0);
+
+  const deepseekCall = calls.find(call => call.url.includes('integrate.api.nvidia.com'));
+  assert.equal(deepseekCall.url, 'https://integrate.api.nvidia.com/v1/chat/completions');
+  assert.equal(deepseekCall.headers.authorization, 'Bearer nvapi-test-key');
+  assert.equal(deepseekCall.body.model, DEEPSEEK_MODEL);
+  assert.equal(deepseekCall.body.response_format.type, 'json_object');
+
+  // DeepSeek gets no structural schema either, so the field contract has to
+  // travel inside the prompt exactly as it does for Kimi.
+  const deepseekPrompt = deepseekCall.body.messages.at(-1).content;
+  for (const field of REQUIRED_FIELDS) assert.match(deepseekPrompt, new RegExp(`"${field}"`));
+  assert.match(deepseekPrompt, /No renombres, traduzcas, anides ni omitas claves/);
+});
+
+test('a DeepSeek outage advances the chain to Kimi', async () => {
+  installCache();
+  const env = envWithChain();
+  const calls = stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+    'integrate.api.nvidia.com': () => json({ error: { message: 'internal error' } }, 500),
+    'modal.run': kimiCompletion,
+  });
+
+  const result = await handleAIExplanation(explainRequest(), env);
+
+  assert.equal(result.provider, 'modal-kimi');
+  assert.equal(calls.filter(call => call.url.includes('integrate.api.nvidia.com')).length, 1);
+  assert.equal(calls.filter(call => call.url.includes('modal.run')).length, 1);
+});
+
+test('a DeepSeek rate limit also advances to Kimi instead of surfacing AI_BUSY', async () => {
+  installCache();
+  const env = envWithChain();
+  stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+    'integrate.api.nvidia.com': () => json({ error: { message: 'Too many requests' } }, 429),
+    'modal.run': kimiCompletion,
+  });
+
+  const result = await handleAIExplanation(explainRequest(), env);
+  assert.equal(result.provider, 'modal-kimi');
+});
+
+test('an unconfigured DeepSeek is skipped without a call', async () => {
+  installCache();
+  const env = envWithChain({ NVIDIA_API_KEY: '' });
+  const calls = stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+    'modal.run': kimiCompletion,
+  });
+
+  const result = await handleAIExplanation(explainRequest(), env);
+
+  assert.equal(result.provider, 'modal-kimi');
+  assert.equal(calls.some(call => call.url.includes('integrate.api.nvidia.com')), false);
+});
+
+test('the DeepSeek answer is cached under the whole chain', async () => {
+  installCache();
+  const env = envWithChain();
+  const calls = stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+    'integrate.api.nvidia.com': deepseekCompletion,
+  });
+
+  await handleAIExplanation(explainRequest(), env);
+  const cached = await handleAIExplanation(explainRequest(), env);
+
+  assert.equal(cached.cached, true);
+  assert.equal(cached.provider, 'nvidia-deepseek');
+  assert.equal(calls.filter(call => call.url.includes('integrate.api.nvidia.com')).length, 1);
+});
+
+test('when every fallback is unconfigured the original Gemini error surfaces', async () => {
+  installCache();
+  const env = envWithChain({
+    NVIDIA_API_KEY: '',
+    MODAL_KIMI_BASE_URL: '',
+  });
+  stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env),
+    error => error.code === 'AI_QUOTA_EXHAUSTED' && error.quota.scope === 'provider',
+  );
+});
+
+test('a Gemini attempt that eats the request budget skips DeepSeek and Kimi alike', async () => {
+  installCache();
+  const env = envWithChain();
+  let clock = Date.parse('2026-08-23T10:00:00.000Z');
+  const calls = stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => {
+      clock += 62_000;
+      return json(GEMINI_DAILY_QUOTA, 429);
+    },
+    'integrate.api.nvidia.com': deepseekCompletion,
+    'modal.run': kimiCompletion,
+  });
+
+  await assert.rejects(
+    handleAIExplanation(explainRequest(), env, { now: () => clock }),
+    error => error.code === 'AI_QUOTA_EXHAUSTED' && error.quota.scope === 'provider',
+  );
+
+  // 62 s spent leaves 6 s of the browser's 70: under DeepSeek's minimum and far
+  // under Kimi's, so neither doomed call starts.
+  assert.equal(calls.some(call => call.url.includes('integrate.api.nvidia.com')), false);
+  assert.equal(calls.some(call => call.url.includes('modal.run')), false);
+});
+
+test('an unparseable DeepSeek answer still reaches Kimi', async () => {
+  installCache();
+  const env = envWithChain();
+  stubFetch({
+    identitytoolkit: identityOk,
+    generativelanguage: () => json(GEMINI_DAILY_QUOTA, 429),
+    'integrate.api.nvidia.com': () => json({
+      choices: [{ message: { content: 'not json at all' } }],
+    }),
+    'modal.run': kimiCompletion,
+  });
+
+  const result = await handleAIExplanation(explainRequest(), env);
+  assert.equal(result.provider, 'modal-kimi');
+});
+
 test('a success that reports no usage keeps the conservative charge', async () => {
   installCache();
   const env = envWith();

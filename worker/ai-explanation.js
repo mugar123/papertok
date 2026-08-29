@@ -13,6 +13,8 @@ const PROMPT_VERSION = 'paper-explainer-v4';
 const DEFAULT_MODEL = 'gemini-3.5-flash';
 const DEFAULT_FALLBACK_MODEL = 'gemini-3.5-flash-lite';
 const DEFAULT_KIMI_MODEL = 'moonshotai/Kimi-K3';
+const DEFAULT_DEEPSEEK_MODEL = 'deepseek-ai/deepseek-v4-flash-0731';
+const NVIDIA_API_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 const DEFAULT_KIMI_MONTHLY_HARD_CAP_USD = 27;
 const DEFAULT_KIMI_PROMPT_USD_PER_MILLION = 3;
 const DEFAULT_KIMI_CACHED_PROMPT_USD_PER_MILLION = 0.3;
@@ -27,6 +29,7 @@ export const AI_REQUEST_BUDGETS = Object.freeze({
   pdfOnlySourceMs: 9_000,
   geminiPrimaryMs: 12_000,
   geminiFallbackMs: 32_000,
+  deepseekMs: 30_000,
   kimiMs: 52_000,
   browserMs: 70_000,
   // Room to settle the Kimi ledger and serialise the answer before the browser
@@ -36,12 +39,13 @@ export const AI_REQUEST_BUDGETS = Object.freeze({
   // remaining time, and Kimi would additionally charge its reservation for a
   // call that was never going to return.
   minGeminiFallbackMs: 8_000,
+  minDeepseekMs: 8_000,
   minKimiMs: 20_000,
 });
 
 /**
- * The stage budgets add up to more than the browser waits: 9 + 12 + 32 + 52 =
- * 105 s against `browserMs`. So each stage is capped by what is left of the
+ * The stage budgets add up to more than the browser waits: 9 + 12 + 32 + 30 +
+ * 52 = 135 s against `browserMs`. So each stage is capped by what is left of the
  * request, not only by its own budget, and a stage without room is skipped.
  * The caller then gets the real provider error at ~53 s instead of an
  * `AI_TIMEOUT` at 70 s with the daily use spent and a reservation in flight.
@@ -954,35 +958,169 @@ async function explainWithKimi({ paper, level, language, env, deadline, now = Da
   return result;
 }
 
+export function isDeepseekConfigured(env) {
+  return /^nvapi-/.test(cleanText(env.NVIDIA_API_KEY, 200));
+}
+
+function deepseekModel(env) {
+  return cleanText(env.NVIDIA_DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL, 160) || DEFAULT_DEEPSEEK_MODEL;
+}
+
+async function explainWithDeepseek({ paper, level, language, env, deadline }) {
+  if (!isDeepseekConfigured(env) || !paper.abstract) {
+    throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+  }
+  const model = deepseekModel(env);
+  const budgetMs = stageBudgetMs(deadline, AI_REQUEST_BUDGETS.deepseekMs);
+  if (budgetMs <= 0) throw new AIExplanationError('AI_UNAVAILABLE', 503);
+
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), budgetMs);
+  try {
+    const response = await fetch(`${NVIDIA_API_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${cleanText(env.NVIDIA_API_KEY, 200)}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: buildSystemInstruction(language) },
+          {
+            role: 'user',
+            content: `${buildPaperExplanationPrompt(paper, level, 'abstract', language)}\n\n${buildJsonContractInstruction(language)}`,
+          },
+        ],
+        response_format: { type: 'json_object' },
+        max_tokens: kimiMaxOutputTokens(level),
+        temperature: 0.2,
+        stream: false,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      // The classifier reads the OpenAI-compatible error shape both providers
+      // share; nothing in it is Kimi-specific.
+      const code = classifyKimiError(response.status, payload);
+      throw new AIExplanationError(
+        code,
+        response.status === 429 ? 429 : code === 'AI_NOT_CONFIGURED' ? 503 : 502,
+        code,
+        code === 'AI_BUSY' ? getProviderRetry(payload, response.headers.get('retry-after')) : null,
+      );
+    }
+    const result = {
+      explanation: parseOpenAIChatPayload(payload),
+      model,
+      provider: 'nvidia-deepseek',
+      sourceBasis: 'abstract',
+    };
+    console.info('AI provider attempt', JSON.stringify({
+      provider: 'nvidia-deepseek',
+      model,
+      language,
+      sourceBasis: 'abstract',
+      outcome: 'success',
+      durationMs: Date.now() - startedAt,
+    }));
+    return result;
+  } catch (error) {
+    const normalizedError = error instanceof AIExplanationError
+      ? error
+      : new AIExplanationError('AI_UNAVAILABLE', 502);
+    console.warn('AI provider attempt', JSON.stringify({
+      provider: 'nvidia-deepseek',
+      model,
+      language,
+      sourceBasis: 'abstract',
+      outcome: normalizedError.code,
+      durationMs: Date.now() - startedAt,
+    }));
+    throw normalizedError;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 const PROVIDERS = {
   gemini: explainWithGemini,
+  'nvidia-deepseek': explainWithDeepseek,
   'modal-kimi': explainWithKimi,
 };
 
-async function explainWithProviderChain({ providerName, fallbackProviderName, ...args }) {
+/**
+ * The order is the cost order: DeepSeek on NVIDIA is free, Kimi on Modal pays
+ * per token, so the chain only reaches Modal when NVIDIA could not answer.
+ */
+const FALLBACK_PROVIDER_NAMES = Object.freeze(['nvidia-deepseek', 'modal-kimi']);
+
+export function parseFallbackProviderNames(env) {
+  return cleanText(env.AI_FALLBACK_PROVIDER, 200)
+    .toLowerCase()
+    .split(',')
+    .map(name => name.trim())
+    .filter(name => FALLBACK_PROVIDER_NAMES.includes(name));
+}
+
+/**
+ * Whether a fallback can even start: configured, fed by an abstract, and with
+ * room to finish. Starting Kimi without that room charges its reservation for
+ * a call the browser will not wait for; skipping is what keeps the honest
+ * answer — the previous provider's error — reachable.
+ */
+function isFallbackReady(name, { env, paper, deadline }) {
+  if (!paper.abstract) return false;
+  if (name === 'nvidia-deepseek') {
+    return isDeepseekConfigured(env)
+      && stageBudgetMs(deadline, AI_REQUEST_BUDGETS.deepseekMs) >= AI_REQUEST_BUDGETS.minDeepseekMs;
+  }
+  return isKimiConfigured(env)
+    && stageBudgetMs(deadline, AI_REQUEST_BUDGETS.kimiMs) >= AI_REQUEST_BUDGETS.minKimiMs;
+}
+
+/**
+ * Failures that hand the paper to the next provider in the chain rather than
+ * the caller: the provider was busy, broken, misconfigured, or out of its own
+ * budget. What stays out: `AI_INVALID_REQUEST_UPSTREAM` never reaches here
+ * (only Gemini raises it), and a provider that *answered wrongly* enough times
+ * to matter is already covered by `AI_INVALID_RESPONSE`.
+ */
+const FALLBACK_ADVANCE_CODES = new Set([
+  'AI_BUSY',
+  'AI_UNAVAILABLE',
+  'AI_NOT_CONFIGURED',
+  'AI_INVALID_RESPONSE',
+  'AI_FALLBACK_BUDGET_EXHAUSTED',
+]);
+
+async function explainWithProviderChain({ providerName, fallbackProviderNames = [], ...args }) {
   const provider = PROVIDERS[providerName];
   if (!provider) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   try {
     const result = await provider(args);
     return { ...result, provider: result.provider || providerName };
   } catch (primaryError) {
-    const canUseKimi = fallbackProviderName === 'modal-kimi'
-      && providerName === 'gemini'
-      && shouldFallbackToKimi(primaryError)
-      && isKimiConfigured(args.env)
-      && Boolean(args.paper.abstract)
-      // Starting Kimi without room to finish charges its reservation for a call
-      // the browser will not wait for. The honest answer is Gemini's error.
-      && stageBudgetMs(args.deadline, AI_REQUEST_BUDGETS.kimiMs) >= AI_REQUEST_BUDGETS.minKimiMs;
-    if (!canUseKimi) throw primaryError;
-    try {
-      return await PROVIDERS['modal-kimi'](args);
-    } catch (fallbackError) {
-      if (fallbackError instanceof AIExplanationError && fallbackError.code === 'AI_NOT_CONFIGURED') {
-        throw primaryError;
+    if (providerName !== 'gemini' || !shouldFallbackToKimi(primaryError)) throw primaryError;
+    let lastError = null;
+    for (const name of fallbackProviderNames) {
+      if (!isFallbackReady(name, args)) continue;
+      try {
+        const result = await PROVIDERS[name](args);
+        return { ...result, provider: result.provider || name };
+      } catch (fallbackError) {
+        lastError = fallbackError;
+        const advances = fallbackError instanceof AIExplanationError
+          && FALLBACK_ADVANCE_CODES.has(fallbackError.code);
+        if (!advances) throw fallbackError;
       }
-      throw fallbackError;
     }
+    // Nothing was attempted, or the last attempt turned out not to be
+    // configured after all — either way Gemini's quota error is the truth.
+    if (!lastError || lastError.code === 'AI_NOT_CONFIGURED') throw primaryError;
+    throw lastError;
   }
 }
 
@@ -1042,21 +1180,55 @@ async function checkKimiHealth(env) {
   }
 }
 
+async function checkDeepseekHealth(env) {
+  const provider = 'nvidia-deepseek';
+  const model = deepseekModel(env);
+  if (!isDeepseekConfigured(env)) {
+    return { provider, model, configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(`${NVIDIA_API_BASE_URL}/models`, {
+      signal: controller.signal,
+      headers: { authorization: `Bearer ${cleanText(env.NVIDIA_API_KEY, 200)}` },
+    });
+    const payload = response.ok ? null : await response.json().catch(() => ({}));
+    return {
+      provider,
+      model,
+      configured: true,
+      available: response.ok,
+      code: response.ok ? null : classifyKimiError(response.status, payload),
+    };
+  } catch {
+    return { provider, model, configured: true, available: false, code: 'AI_UNAVAILABLE' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+const HEALTH_CHECKS = {
+  gemini: checkGeminiHealth,
+  'nvidia-deepseek': checkDeepseekHealth,
+  'modal-kimi': checkKimiHealth,
+};
+
 export async function checkAIProviderHealth(env) {
   const provider = cleanText(env.AI_PROVIDER || 'gemini', 40).toLowerCase();
-  const fallbackProvider = cleanText(env.AI_FALLBACK_PROVIDER, 40).toLowerCase();
-  const primaryHealth = provider === 'gemini'
-    ? await checkGeminiHealth(env)
-    : provider === 'modal-kimi'
-      ? await checkKimiHealth(env)
-      : { provider, model: '', configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
-  const fallbackHealth = fallbackProvider === 'modal-kimi'
-    ? await checkKimiHealth(env)
-    : null;
+  const primaryHealth = HEALTH_CHECKS[provider]
+    ? await HEALTH_CHECKS[provider](env)
+    : { provider, model: '', configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
+  const fallbackHealth = [];
+  for (const name of parseFallbackProviderNames(env)) {
+    fallbackHealth.push(await HEALTH_CHECKS[name](env));
+  }
   return {
     ...primaryHealth,
-    fallback: fallbackHealth,
-    available: primaryHealth.available || Boolean(fallbackHealth?.available),
+    // One entry per configured fallback, in chain order. It was a single
+    // object when the chain had a single link; nothing consumed that shape.
+    fallback: fallbackHealth.length ? fallbackHealth : null,
+    available: primaryHealth.available || fallbackHealth.some(health => health.available),
   };
 }
 
@@ -1266,14 +1438,14 @@ export async function handleAIExplanation(request, env, { now = Date.now } = {})
   const language = normalizeExplanationLanguage(payload.language);
   const paper = normalizePaperForExplanation(payload.paper);
   const providerName = cleanText(env.AI_PROVIDER || 'gemini', 40).toLowerCase();
-  const fallbackProviderName = cleanText(env.AI_FALLBACK_PROVIDER, 40).toLowerCase();
+  const fallbackProviderNames = parseFallbackProviderNames(env);
   if (!PROVIDERS[providerName]) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   const model = cleanText(env.AI_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
-  const fallbackModel = fallbackProviderName === 'modal-kimi'
+  const fallbackModels = fallbackProviderNames.map(name => name === 'modal-kimi'
     ? cleanText(env.MODAL_KIMI_MODEL || DEFAULT_KIMI_MODEL, 160) || DEFAULT_KIMI_MODEL
-    : '';
-  const cacheProvider = fallbackProviderName ? `${providerName}+${fallbackProviderName}` : providerName;
-  const cacheModel = fallbackModel ? `${model}+${fallbackModel}` : model;
+    : deepseekModel(env));
+  const cacheProvider = [providerName, ...fallbackProviderNames].join('+');
+  const cacheModel = [model, ...fallbackModels].join('+');
   const cacheKey = await explanationCacheKey(paper, level, language, cacheProvider, cacheModel);
   const cached = await caches.default.match(cacheKey);
   if (cached) return { ...(await cached.json()), remainingUses: null, cached: true };
@@ -1292,7 +1464,7 @@ export async function handleAIExplanation(request, env, { now = Date.now } = {})
     if (!pdfBase64 && !paper.abstract) throw new AIExplanationError('AI_SOURCE_UNAVAILABLE', 502);
     result = await explainWithProviderChain({
       providerName,
-      fallbackProviderName,
+      fallbackProviderNames,
       paper,
       level,
       language,

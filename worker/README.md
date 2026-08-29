@@ -11,6 +11,7 @@ npx wrangler secret put GEMINI_API_KEY
 npx wrangler secret put MODAL_PROXY_TOKEN_ID
 npx wrangler secret put MODAL_PROXY_TOKEN_SECRET
 npx wrangler secret put MODAL_KIMI_BASE_URL
+npx wrangler secret put NVIDIA_API_KEY # nvapi-... key from build.nvidia.com; serves the DeepSeek fallback
 npx wrangler secret put CORE_API_KEY # optional, raises CORE rate limits
 npx wrangler secret put NCBI_API_KEY # optional, raises PubMed E-utilities from 3 to 10 req/s
 npx wrangler secret put NASA_ADS_API_TOKEN # optional; INSPIRE is used until configured
@@ -99,7 +100,7 @@ probe costs one upstream call, so it is served from the edge cache for ten minut
 route cannot drain the weekly Scopus allowance. Only `COMPLETE` returns `dc:description`, so an
 account limited to `STANDARD` produces papers without abstracts.
 
-The AI route requires a valid PaperTok Firebase ID token and keeps provider credentials exclusively in the Worker. Gemini 3.5 Flash remains the primary provider. PDF acquisition and Gemini model attempts use bounded latency budgets; a slow open PDF degrades to the available abstract, and malformed structured output can retry once with Gemini Flash Lite without exceeding the browser deadline. The response parser preserves LaTeX commands even when a provider returns raw JSON backslashes. When Gemini explicitly reports that its daily provider quota is exhausted, `AI_FALLBACK_PROVIDER = "modal-kimi"` routes abstract-based explanations to Modal's OpenAI-compatible Kimi K3 Shared API. Modal authentication requires the complete proxy-token pair (`wk-...` ID plus `ws-...` secret) and the Shared API base URL shown in the Modal dashboard.
+The AI route requires a valid PaperTok Firebase ID token and keeps provider credentials exclusively in the Worker. Gemini 3.5 Flash remains the primary provider. PDF acquisition and Gemini model attempts use bounded latency budgets; a slow open PDF degrades to the available abstract, and malformed structured output can retry once with Gemini Flash Lite without exceeding the browser deadline. The response parser preserves LaTeX commands even when a provider returns raw JSON backslashes. When Gemini explicitly reports that its daily provider quota is exhausted, `AI_FALLBACK_PROVIDER = "nvidia-deepseek,modal-kimi"` walks the fallback chain in cost order for abstract-based explanations: first DeepSeek V4 Flash on NVIDIA's free OpenAI-compatible API (`NVIDIA_API_KEY`, an `nvapi-...` key), then — only when NVIDIA could not answer — Modal's OpenAI-compatible Kimi K3 Shared API. Modal authentication requires the complete proxy-token pair (`wk-...` ID plus `ws-...` secret) and the Shared API base URL shown in the Modal dashboard.
 
 The Worker limits AI usage per user and globally per UTC day with atomic reservations in the
 `RequestQuotaLedger` Durable Object. A reservation is consumed before contacting the provider,

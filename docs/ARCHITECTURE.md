@@ -12,7 +12,7 @@ flowchart LR
     UI --> S["Browser-safe scientific APIs"]
     UI --> W["Cloudflare Worker"]
     W --> P["Protected scientific providers"]
-    W --> AI["Gemini / Kimi"]
+    W --> AI["Gemini / DeepSeek / Kimi"]
     W --> E["Brevo / Resend"]
     W --> KV["KV + Durable Objects"]
 ```
@@ -69,6 +69,8 @@ diversity.
   avoiding the indexing delay for newly submitted physics and mathematics papers.
 - AI explanations bound PDF acquisition and provider retries within the browser request
   deadline, while provider JSON is normalized before LaTeX-aware rendering.
+- When Gemini exhausts its daily quota, the fallback chain runs in cost order: DeepSeek V4
+  Flash on NVIDIA's free API first, Modal's paid Kimi K3 only when NVIDIA could not answer.
 - The Kimi budget ledger uses a Durable Object for atomic monthly reservations.
 - Provider-backed Worker routes verify Firebase identity and use canonical cache keys before
   spending protected API quota. A canonical key is built from the values the handler is about to

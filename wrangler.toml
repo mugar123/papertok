@@ -7,7 +7,9 @@ compatibility_date = "2026-07-16"
 # missing origin only shows up as a blocked POST after a successful preflight.
 ALLOWED_ORIGINS = "https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175,http://localhost:4175,http://127.0.0.1:4175"
 AI_PROVIDER = "gemini"
-AI_FALLBACK_PROVIDER = "modal-kimi"
+# Cost order: DeepSeek on NVIDIA is free, Kimi on Modal pays per token, so the
+# chain only reaches Modal when NVIDIA could not answer.
+AI_FALLBACK_PROVIDER = "nvidia-deepseek,modal-kimi"
 AI_MODEL = "gemini-3.5-flash"
 AI_FALLBACK_MODEL = "gemini-3.5-flash-lite"
 AI_DAILY_USER_LIMIT = "10"
@@ -15,6 +17,7 @@ AI_DAILY_GLOBAL_LIMIT = "1000"
 # Paper rewrites stream from this model. Falls back to AI_MODEL when unset.
 AI_REWRITE_MODEL = "gemini-3.5-flash"
 MODAL_KIMI_MODEL = "moonshotai/Kimi-K3"
+NVIDIA_DEEPSEEK_MODEL = "deepseek-ai/deepseek-v4-flash-0731"
 KIMI_MONTHLY_HARD_CAP_USD = "27"
 KIMI_PROMPT_USD_PER_MILLION = "3"
 KIMI_CACHED_PROMPT_USD_PER_MILLION = "0.3"

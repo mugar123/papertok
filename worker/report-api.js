@@ -4,6 +4,7 @@ import {
   AIExplanationError,
   checkAIProviderHealth,
   handleAIExplanation,
+  isDeepseekConfigured,
   isKimiConfigured,
   peekAIQuota,
   verifyFirebaseAccount,
@@ -2077,7 +2078,7 @@ export default {
     if (url.pathname === '/health') {
       return json({
         ok: true,
-        aiConfigured: Boolean(env.GEMINI_API_KEY || isKimiConfigured(env)),
+        aiConfigured: Boolean(env.GEMINI_API_KEY || isDeepseekConfigured(env) || isKimiConfigured(env)),
         openAlexConfigured: Boolean(env.OPENALEX_API_KEY),
         adsConfigured: Boolean(env.NASA_ADS_API_TOKEN),
         scopusConfigured: isScopusEgressConfigured(env),
