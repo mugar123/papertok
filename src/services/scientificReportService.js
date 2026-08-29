@@ -55,13 +55,14 @@ const REPORT_ARXIV_CATEGORIES = Object.freeze({
 function withDeadline(promise, timeoutMs, fallback) {
   return new Promise((resolve) => {
     let settled = false;
+    let timeoutId = null;
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
       resolve(result === undefined || result === null ? fallback : result);
     };
-    const timeoutId = setTimeout(() => finish(fallback), timeoutMs);
+    timeoutId = setTimeout(() => finish(fallback), timeoutMs);
     Promise.resolve(promise).then(finish).catch(() => finish(fallback));
   });
 }

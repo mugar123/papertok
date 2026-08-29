@@ -60,17 +60,20 @@
    with the bar instead of standing on the text for the whole read. Styled on
    the CHILDREN: framer owns the wrappers' inline transform (the entrance
    variants), and a class transform on the wrapper itself would lose that
-   fight. `:focus-within` brings a receded control back — a keyboard reaching
-   an invisible button is exactly the hidden-focus failure the a11y work
-   exists to prevent. */
+   fight. `:has(:focus-visible)` brings a receded control back for a keyboard
+   — a keyboard reaching an invisible button is exactly the hidden-focus
+   failure the a11y work exists to prevent. Not `:focus-within`: the reader
+   programmatically focuses the back button on open (data-dialog-initial-focus)
+   and that focus is not `:focus-visible`, so with `:focus-within` the back
+   button simply never receded at all (measured in the pane, 2026-08-29). */
 @media (pointer: coarse) {
   .rd-float-close > *,
   .rd-status > * {
     transition: opacity 200ms ease, transform 200ms ease;
   }
 
-  .rd-float-close[data-receded]:not(:focus-within) > *,
-  .rd-status[data-receded]:not(:focus-within) > * {
+  .rd-float-close[data-receded]:not(:has(:focus-visible)) > *,
+  .rd-status[data-receded]:not(:has(:focus-visible)) > * {
     opacity: 0;
     transform: translateY(-10px);
     pointer-events: none;
@@ -83,8 +86,8 @@
     transition: none;
   }
 
-  .rd-float-close[data-receded]:not(:focus-within) > *,
-  .rd-status[data-receded]:not(:focus-within) > * {
+  .rd-float-close[data-receded]:not(:has(:focus-visible)) > *,
+  .rd-status[data-receded]:not(:has(:focus-visible)) > * {
     transform: none;
   }
 }

@@ -883,6 +883,9 @@ const PaperCard = memo(function PaperCard({
     onSaveToList(paper);
   };
 
+  // Derived before the handlers that close over it (no-use-before-define).
+  const resolvedOpenCopy = resolvedAccess.paperId === paper.id ? resolvedAccess.copy : null;
+
   const handleOpenPaper = async (event) => {
     event.stopPropagation();
     const destination = resolvedOpenCopy?.pdfUrl
@@ -949,7 +952,6 @@ const PaperCard = memo(function PaperCard({
     openExternalUrl(fallbackUrl);
   };
 
-  const resolvedOpenCopy = resolvedAccess.paperId === paper.id ? resolvedAccess.copy : null;
   // What the status row is allowed to claim. `resolvedOpenCopy` is only ever
   // set by the Unpaywall lookup, and that lookup only runs for a paper with no
   // readable copy of its own, so its presence means exactly "the published

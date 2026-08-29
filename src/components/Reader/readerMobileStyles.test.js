@@ -419,8 +419,8 @@ test('el cromo superior se aparta con la barra, y un foco lo trae de vuelta', as
   const readerCss = stripComments(await readFile(READER_CSS, 'utf8'));
   // La regla vive tras el gate de puntero grueso y sobre los HIJOS de los
   // wrappers (framer es dueño del transform inline del wrapper).
-  assert.match(readerCss, /\.rd-float-close\[data-receded\]:not\(:focus-within\) > \*/);
-  assert.match(readerCss, /\.rd-status\[data-receded\]:not\(:focus-within\) > \*/);
+  assert.match(readerCss, /\.rd-float-close\[data-receded\]:not\(:has\(:focus-visible\)\) > \*/);
+  assert.match(readerCss, /\.rd-status\[data-receded\]:not\(:has\(:focus-visible\)\) > \*/);
   const jsx = await readFile(READER_JSX, 'utf8');
   // Ambos wrappers cuelgan del mismo estado que la barra: si uno se queda
   // fuera, la mitad del cromo se queda plantada sobre el texto.

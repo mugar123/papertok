@@ -636,13 +636,14 @@ function settleAuthorInstitutionLookup(promise, timeoutMs) {
 
   return new Promise(resolve => {
     let settled = false;
+    let timeoutId = null;
     const finish = value => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
       resolve(value);
     };
-    const timeoutId = setTimeout(() => finish(null), timeoutMs);
+    timeoutId = setTimeout(() => finish(null), timeoutMs);
 
     promise.then(finish).catch(() => finish(null));
   });

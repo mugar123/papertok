@@ -268,7 +268,7 @@ export function patientRead(makeAttempt, options = {}) {
       armOnlineWake(attemptNumber);
     };
 
-    const armOnlineWake = (attemptNumber) => {
+    function armOnlineWake(attemptNumber) {
       if (releaseOnline || stopped) return;
       releaseOnline = subscribeOnline(() => {
         if (stopped) return;
@@ -280,7 +280,7 @@ export function patientRead(makeAttempt, options = {}) {
         }
         launch(attemptNumber);
       });
-    };
+    }
 
     function launch(attemptNumber) {
       if (stopped) return;

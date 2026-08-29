@@ -81,13 +81,14 @@ const wait = (delayMs) => new Promise(resolve => setTimeout(resolve, delayMs));
 function settleSearch(promise, fallback = [], timeoutMs = SEARCH_TIMEOUT_MS) {
   return new Promise((resolve) => {
     let settled = false;
+    let timeoutId = null;
     const finish = (value, status) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
       resolve({ value, status });
     };
-    const timeoutId = setTimeout(() => finish(fallback, 'timeout'), timeoutMs);
+    timeoutId = setTimeout(() => finish(fallback, 'timeout'), timeoutMs);
     Promise.resolve(promise)
       .then(value => finish(value, 'fulfilled'))
       .catch(() => finish(fallback, 'rejected'));

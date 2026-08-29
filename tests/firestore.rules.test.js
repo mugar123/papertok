@@ -1046,7 +1046,7 @@ const DAVE = 'dave-uid'; // signed in, never created a profile
 // string either way.
 const ADMIN = (await readFile(new URL('../firestore.rules', import.meta.url), 'utf8'))
   .match(/request\.auth\.uid == '([^']+)'/)?.[1] ?? 'REPLACE_WITH_ADMIN_UID';
-const asCarol = () => testEnv.authenticatedContext(CAROL).firestore();
+function asCarol() { return testEnv.authenticatedContext(CAROL).firestore(); }
 const asDave = () => testEnv.authenticatedContext(DAVE).firestore();
 const asAdmin = () => testEnv.authenticatedContext(ADMIN).firestore();
 
@@ -1726,15 +1726,17 @@ async function resetSearch({ visibility = {}, indexed = [], names = {} } = {}) {
   });
 }
 
-const searchEntry = (handle, nameLower) => ({ handle, nameLower });
+function searchEntry(handle, nameLower) { return { handle, nameLower }; }
 
 /** The two prefix queries the client issues, as the rules see them. */
-const prefixQuery = (database, field, term, rows = 10) => query(
-  collection(database, 'userSearch'),
-  where(field, '>=', term),
-  where(field, '<=', `${term}\uf8ff`),
-  limit(rows),
-);
+function prefixQuery(database, field, term, rows = 10) {
+  return query(
+    collection(database, 'userSearch'),
+    where(field, '>=', term),
+    where(field, '<=', `${term}\uf8ff`),
+    limit(rows),
+  );
+}
 
 // --- reading --------------------------------------------------------------
 
