@@ -1,0 +1,276 @@
+/* ============================================
+   The reader bar — one island, three states
+
+   Everything in this file is gated by `(pointer: coarse)`, never by a width
+   query: the reader already switches its margin for a sheet below 1100px, and
+   shrinking a laptop window must not turn a mouse into a thumb. A device with a
+   coarse pointer gets this bar regardless of how wide its viewport is; a device
+   with a fine one never sees it, at any width — that is what keeps the desktop
+   experience byte-for-byte untouched.
+
+   It floats rather than sitting in flow: `position: fixed`, so showing or
+   hiding it — or growing it from the one-line rest state into the taller
+   selection or composing state — never reflows `.rd-scroll` or the paragraph
+   being read. `.rd-scroll`'s own bottom padding (in `PaperReader.css`) is set
+   once, from `--rd-bar-h` below, and stays constant across all three states.
+   ============================================ */
+
+@media (pointer: coarse) {
+  :root {
+    /* The bar's own resting height. Declared here, once, rather than guessed
+       again in `PaperReader.css` — the same reasoning that put
+       `--rd-sheet-peek-total` on `.rd` instead of leaving each consumer to
+       repeat the arithmetic and drift apart.
+
+       Chosen, not measured — unlike the 183px figure this replaces, which an
+       existing comment in `PaperReader.css` says was measured against a real
+       render ("the panel stands 74px up and is 109px tall"). This number has
+       not been checked against an actual phone: it is a starting point for
+       whoever tunes it there, the same way `SELECTION_SETTLE_MS` in
+       `readerSelection.js` is flagged as one, not a result to trust as-is. */
+    --rd-bar-h: 56px;
+  }
+
+  .rd-bar {
+    position: fixed;
+    left: var(--space-3);
+    right: var(--space-3);
+    /* `--rd-bar-keyboard-gap` is set from `ReaderBar.jsx`, scoped to the
+       `composing` state and read from `window.visualViewport`: 0px normally,
+       and otherwise however much of the layout viewport's bottom the visual
+       viewport no longer covers — the on-screen keyboard is the reason this
+       exists, but the number itself cannot tell a keyboard apart from any
+       other momentary mismatch between the two viewports (see
+       `keyboardGap.js`). The fallback keeps a browser without
+       `visualViewport` (the property is simply never set) identical to
+       before this rule existed.
+
+       `max()`, not addition, against `--inset-bottom`: the home indicator
+       that inset clears sits *behind* the keyboard, so while the keyboard is
+       up only the taller of the two furniture pieces needs clearing — summing
+       both would float the bar an extra 21–34px above the keyboard for
+       nothing, exactly when landscape leaves the least room to spare. */
+    bottom: calc(var(--space-3) + max(var(--inset-bottom), var(--rd-bar-keyboard-gap, 0px)));
+    z-index: 12048; /* Under the sheet (12050) and the export card, so an
+                        expanded sheet naturally covers it instead of floating
+                        a second control on top of it. */
+    min-height: var(--rd-bar-h);
+    display: flex;
+    align-items: center;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-2xl);
+    background: var(--bg-card);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+  }
+
+  .rd-bar-row {
+    display: flex;
+    align-items: center;
+    width: 100%;
+    min-height: var(--rd-bar-h);
+    padding: 0 var(--space-3);
+  }
+
+  .rd-bar-row[data-row='rest'] {
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .rd-bar-row[data-row='selection'] {
+    justify-content: space-between;
+    gap: var(--space-1);
+    position: relative;
+  }
+
+  /* The day's allowance, folded under the row rather than pushing it taller —
+     the bar's height stays the one number `.rd-scroll` clears. */
+  .rd-bar-foot {
+    position: absolute;
+    left: var(--space-3);
+    bottom: 2px;
+    font: 400 0.625rem/1 var(--font-mono);
+    color: var(--text-tertiary);
+  }
+
+  .rd-bar-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 40px;
+    min-height: 40px;
+    padding: 0 var(--space-2);
+    border: none;
+    border-radius: var(--radius-xl);
+    background: transparent;
+    color: var(--text-primary);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+  }
+
+  .rd-bar-icon-btn:active {
+    background: var(--bg-secondary);
+  }
+
+  .rd-bar-count {
+    font: 500 0.75rem/1 var(--font-mono);
+    color: var(--text-secondary);
+  }
+
+  .rd-bar-streaming {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font: var(--mono-label);
+    letter-spacing: var(--mono-track);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    /* Cut rather than wrapped: the two buttons either side of it hold their
+       ground, and this is the element with room to give. */
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  /* Same slot, same cut-not-wrapped treatment as `.rd-bar-streaming` — only
+     the color changes, matching `.rd-note--failed` in Annotations.css. */
+  .rd-bar-error {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    color: var(--tint-red-fg);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  .rd-bar-action {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-height: 44px;
+    padding: var(--space-1) 2px;
+    border: none;
+    border-radius: var(--radius-xl);
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 0.6875rem;
+    font-weight: var(--fw-medium);
+    cursor: pointer;
+    transition: background var(--transition-fast);
+  }
+
+  .rd-bar-action:active {
+    background: var(--bg-secondary);
+  }
+
+  .rd-bar-action:disabled {
+    color: var(--text-tertiary);
+    cursor: not-allowed;
+  }
+
+  .rd-bar-action small {
+    font: 400 0.5625rem/1 var(--font-mono);
+    color: var(--text-tertiary);
+  }
+
+  .rd-bar-dismiss {
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    margin-left: var(--space-1);
+    border: none;
+    border-radius: var(--radius-xl);
+    background: transparent;
+    color: var(--text-tertiary);
+    cursor: pointer;
+  }
+
+  .rd-bar-dismiss:active {
+    background: var(--tint-red-bg);
+    color: var(--tint-red-fg);
+  }
+
+  /* ── Composing: the bar grows tall enough for a note, still one surface. ── */
+  .rd-bar-compose {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    padding: var(--space-3);
+  }
+
+  .rd-bar-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font: var(--mono-label);
+    letter-spacing: var(--mono-track);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+  }
+
+  .rd-bar-input {
+    width: 100%;
+    height: 72px;
+    padding: var(--space-2);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-family: var(--font-body);
+    font-size: var(--fs-sm);
+    line-height: 1.5;
+    resize: none;
+  }
+
+  .rd-bar-input:focus {
+    outline: none;
+    border-color: var(--border-ink);
+  }
+
+  .rd-bar-actions {
+    display: flex;
+    gap: var(--space-2);
+  }
+
+  .rd-bar-save {
+    flex: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    min-height: 40px;
+    border: 1px solid var(--border-ink);
+    border-radius: var(--radius-md);
+    background: var(--accent-primary);
+    color: var(--text-inverse);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-semibold);
+    cursor: pointer;
+  }
+
+  .rd-bar-save:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  .rd-bar-cancel {
+    min-height: 40px;
+    padding: 0 var(--space-4);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    font-size: var(--fs-sm);
+    font-weight: var(--fw-medium);
+    cursor: pointer;
+  }
+}

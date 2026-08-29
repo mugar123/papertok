@@ -24,6 +24,8 @@ import { readFile } from 'node:fs/promises';
 const READER_CSS = new URL('./PaperReader.css', import.meta.url);
 const ANNOTATIONS_CSS = new URL('./Annotations.css', import.meta.url);
 const READER_JSX = new URL('./PaperReader.jsx', import.meta.url);
+const READER_BAR_CSS = new URL('./ReaderBar.css', import.meta.url);
+const READER_BAR_JSX = new URL('./ReaderBar.jsx', import.meta.url);
 
 /** Comments name selectors and properties in prose; matching them would invent both sides. */
 const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -33,18 +35,49 @@ const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
  *
  * A media query here contains nested rules, so `/@media[^}]+}/` stops at the
  * first inner brace and every assertion built on it passes against nothing.
+ *
+ * `header` is matched as a *complete* at-rule prelude, not a prefix: plain
+ * `indexOf(header)` would also match `@media (pointer: coarse)` inside
+ * `@media (pointer: coarse) and (max-width: 1100px) { … }`, since the shorter
+ * string is a literal prefix of the longer one — whichever came first in the
+ * file, not necessarily the one the caller meant. Requiring the next
+ * non-whitespace character after `header` to be `{` rules that out.
+ *
+ * A stylesheet can also legitimately declare the same *exact* header more
+ * than once (this file has two bare `@media (pointer: coarse) { … }`
+ * blocks). Plain first-occurrence would then depend on file order — a block
+ * added above an existing one would silently retarget every caller of the
+ * one below it. Pass `contains` (a substring expected somewhere in the
+ * block's body) to pick the right one regardless of order; omitted, this
+ * keeps the old first-occurrence behaviour for headers that are still unique.
  */
-function atRuleBody(css, header) {
-  const start = css.indexOf(header);
-  assert.notEqual(start, -1, `expected to find \`${header}\` in the stylesheet`);
-  const open = css.indexOf('{', start);
-  let depth = 0;
-  for (let i = open; i < css.length; i += 1) {
-    if (css[i] === '{') depth += 1;
-    if (css[i] === '}') {
-      depth -= 1;
-      if (depth === 0) return css.slice(open + 1, i);
+function atRuleBody(css, header, { contains } = {}) {
+  let searchFrom = 0;
+  while (searchFrom <= css.length) {
+    const start = css.indexOf(header, searchFrom);
+    assert.notEqual(
+      start, -1,
+      contains
+        ? `expected to find \`${header}\` containing \`${contains}\` in the stylesheet`
+        : `expected to find \`${header}\` in the stylesheet`,
+    );
+    let cursor = start + header.length;
+    while (/\s/.test(css[cursor])) cursor += 1;
+    if (css[cursor] !== '{') { searchFrom = cursor; continue; }
+    const open = cursor;
+    let depth = 0;
+    let close = -1;
+    for (let i = open; i < css.length; i += 1) {
+      if (css[i] === '{') depth += 1;
+      if (css[i] === '}') {
+        depth -= 1;
+        if (depth === 0) { close = i; break; }
+      }
     }
+    if (close === -1) throw new Error(`unbalanced braces after \`${header}\``);
+    const body = css.slice(open + 1, close);
+    if (!contains || body.includes(contains)) return body;
+    searchFrom = close + 1;
   }
   throw new Error(`unbalanced braces after \`${header}\``);
 }
@@ -123,8 +156,19 @@ test('the panel stacks on a phone instead of scrolling out of sight', async () =
   assert.doesNotMatch(panel, /overflow-x:\s*auto/);
 
   // The level names take the first row whole; the actions fall into the second.
-  assert.match(ruleBody(phone, '.rd-panel-group:first-child'), /grid-column:\s*1 \/ -1/);
-  assert.match(ruleBody(phone, '.rd-panel-divider'), /display:\s*none/);
+  // Scoped to `.rd-panel` (not bare `.rd-panel-group:first-child` /
+  // `.rd-panel-divider`): the settings tab reuses this same JSX outside
+  // `.rd-panel`, and a bare rule here made "Nivel", "Resaltados" and
+  // "Descargar" invisible there too (`.rd-panel-label { display: none }`)
+  // — see the fix-wave review, finding 3.
+  assert.match(ruleBody(phone, '.rd-panel .rd-panel-group:first-child'), /grid-column:\s*1 \/ -1/);
+  assert.match(ruleBody(phone, '.rd-panel .rd-panel-divider'), /display:\s*none/);
+
+  // And the bare, unscoped selectors are gone — the point of the fix is that
+  // they no longer exist inside this block to leak into the settings tab.
+  assert.doesNotMatch(phone, /(?:^|[};])\s*\.rd-panel-group:first-child\s*\{/);
+  assert.doesNotMatch(phone, /(?:^|[};])\s*\.rd-panel-label\s*\{/);
+  assert.doesNotMatch(phone, /(?:^|[};])\s*\.rd-panel-divider\s*\{/);
 });
 
 test('the status line is anchored, not allowanced', async () => {
@@ -173,4 +217,165 @@ test('the loading ghost fills a phone and leaves the desktop alone', async () =>
   assert.ok(ghost, 'expected a GHOST_LINES array');
   const widths = [...ghost[1].matchAll(/'(\d+%)'/g)];
   assert.ok(widths.length >= 6, `GHOST_LINES should carry a tail past the fifth line, got ${widths.length}`);
+});
+
+/**
+ * Task 4's own two facts, not the pre-existing `@media (max-width: 1100px)`
+ * arithmetic the tests above hold — a coarse pointer never reaches that block
+ * once this task's pairing (`(pointer: coarse) and (max-width: 1100px)`)
+ * wins the cascade for it instead. Nothing above asserts either of these:
+ * both were reasoned about in the report and neither was held to a test.
+ *
+ * The fix-wave review split what was one `(pointer: coarse) and
+ * (max-width: 1100px)` block into two: the dock now hides on *any* coarse
+ * pointer (an iPad in landscape is coarse but wider than 1100px, and used to
+ * keep the dock underneath the bar — see PaperReader.css for the full
+ * account), while the bar-height scroll padding stays narrow-scoped, because
+ * the base 112px padding already clears the bar at that width. `contains`
+ * disambiguates the dock lookup from the *other* bare `@media
+ * (pointer: coarse)` block in this file (the kicker's, asserted below).
+ */
+test('the coarse-pointer bar clears the dock away, not the fine-pointer dock', async () => {
+  const readerCss = await reader;
+  const coarse = atRuleBody(readerCss, '@media (pointer: coarse)', { contains: '.rd-panel-dock' });
+  assert.match(ruleBody(coarse, '.rd-panel-dock'), /display:\s*none/);
+
+  const coarseNarrow = atRuleBody(readerCss, '@media (pointer: coarse) and (max-width: 1100px)');
+  // Reads --rd-bar-h by name, the same token ReaderBar.css declares for
+  // itself — a rule that quietly went back to a bare pixel figure here would
+  // drift the moment someone retuned the bar's own height in the other file.
+  assert.match(ruleBody(coarseNarrow, '.rd-scroll'), /padding-bottom:\s*calc\(var\(--rd-bar-h/);
+  // And the dock rule itself no longer lives in this narrower block — it
+  // widened to every coarse pointer above, not just this one.
+  assert.doesNotMatch(coarseNarrow, /\.rd-panel-dock/);
+
+  // The block this task's rule sits after and before is untouched — the same
+  // dock-bottom and scroll-padding arithmetic the first test in this file
+  // already holds the fine-pointer case to.
+  const plainNarrow = atRuleBody(readerCss, '@media (max-width: 1100px)');
+  assert.match(ruleBody(plainNarrow, '.rd-panel-dock'), /bottom:\s*calc\(var\(--rd-sheet-peek-total\)/);
+});
+
+test('ReaderBar.css never lets a rule stand outside (pointer: coarse)', async () => {
+  const barCss = stripComments(await readFile(READER_BAR_CSS, 'utf8'));
+
+  const mediaOpens = [...barCss.matchAll(/@media[^{]*\{/g)];
+  assert.equal(mediaOpens.length, 1, 'ReaderBar.css should declare exactly one @media block');
+  assert.match(mediaOpens[0][0], /\(pointer:\s*coarse\)/);
+
+  // Brace-matched from that one opening, the same way `atRuleBody` reads a
+  // block above — but here what matters is what is left *after* the closing
+  // brace. A rule pasted below the block (or a second, narrower @media added
+  // beside it later) would still leave `mediaOpens.length === 1` true; this
+  // is the assertion that actually catches it.
+  const openIndex = barCss.indexOf(mediaOpens[0][0]);
+  const braceStart = barCss.indexOf('{', openIndex);
+  let depth = 0;
+  let closeIndex = -1;
+  for (let i = braceStart; i < barCss.length; i += 1) {
+    if (barCss[i] === '{') depth += 1;
+    if (barCss[i] === '}') {
+      depth -= 1;
+      if (depth === 0) { closeIndex = i; break; }
+    }
+  }
+  assert.notEqual(closeIndex, -1, 'unbalanced braces in ReaderBar.css');
+  assert.equal(
+    barCss.slice(0, openIndex).trim() + barCss.slice(closeIndex + 1).trim(),
+    '',
+    'a rule sits outside the (pointer: coarse) block in ReaderBar.css',
+  );
+});
+
+/**
+ * Task 7's own two facts, held the same way Task 4's dock-clearing test above
+ * holds a CSS fact and the ReaderBar.css test above holds a pointer-gate: the
+ * desktop selection path is what the whole redesign was forbidden from
+ * touching, and the kicker's move into the document is new enough, and narrow
+ * enough (one class, one JS condition), to be a single line nobody would
+ * notice regress without a test naming it.
+ */
+test('el camino de escritorio sigue intacto: onMouseUp en el párrafo', async () => {
+  const jsx = await readFile(READER_JSX, 'utf8');
+  // Whitespace-tolerant on purpose: a reformat that wraps this prop onto its
+  // own lines (Prettier does this once a line gets long enough) must not turn
+  // this test red for a reason that has nothing to do with desktop selection
+  // breaking. What has to hold is the fact, not the byte layout — `onMouseUp`
+  // still wires straight to `handleSelection`, not through some other path.
+  assert.match(jsx, /onMouseUp=\{\s*\(event\)\s*=>\s*handleSelection\(/);
+});
+
+/**
+ * Fix-wave review, Critical 1: `.rd-scroll`'s `onScroll` used to call
+ * `clearNativeSelectionOnTouch()` unconditionally, which collapses the native
+ * selection the instant iOS auto-scrolls this container while a handle is
+ * being dragged to its edge — killing the drag before it settles. There is no
+ * way to reproduce a real handle-drag auto-scroll from this test harness
+ * (native selection handles do not respond to synthetic events — see
+ * Ruling 5 in the plan's ledger), so this holds the one fact a test *can*
+ * hold: the clear is gated on there being a settled decision (`pending`) to
+ * clear, not on the scroll event alone. A regression here would silently
+ * reopen the exact bug this branch exists to fix, in a narrower form.
+ */
+test('limpiar la selección nativa en el scroll espera a que haya una decisión asentada', async () => {
+  const jsx = await readFile(READER_JSX, 'utf8');
+  const onScroll = jsx.match(/onScroll=\{\(\) => \{([\s\S]*?)\}\}/);
+  assert.ok(onScroll, 'expected an `onScroll` handler on `.rd-scroll`');
+  assert.match(onScroll[1], /if\s*\(annotations\.pending\)\s*clearNativeSelectionOnTouch\(\)/);
+  // Exactly one call, and it is the guarded one above — a second, bare call
+  // anywhere else in this handler would re-add the unconditional clear this
+  // test exists to keep out.
+  const calls = onScroll[1].match(/clearNativeSelectionOnTouch\(/g) || [];
+  assert.equal(calls.length, 1, 'expected exactly one call to `clearNativeSelectionOnTouch` in `onScroll`');
+});
+
+test('el kicker que se muda al documento vive solo bajo pointer: coarse', async () => {
+  const readerCss = await reader;
+  // `contains` picks this block out from the *other* bare
+  // `@media (pointer: coarse)` block in this file (the dock-hiding one the
+  // test above holds) — without it, first-occurrence would happen to still
+  // work today only because this one is declared first, which is exactly the
+  // fragility `atRuleBody`'s doc comment warns about.
+  const coarse = atRuleBody(readerCss, '@media (pointer: coarse)', { contains: '.rd-doc-kicker' });
+  assert.match(ruleBody(coarse, '.rd-doc-kicker'), /display:\s*inline-flex/);
+
+  // Belt-and-braces has to hold on both ends: the rule cannot also appear
+  // reachable outside that one block (a copy-paste that landed both inside
+  // and outside the query would still pass a test that only checked the
+  // inside).
+  const withoutCoarseBlock = readerCss.replace(coarse, '');
+  assert.doesNotMatch(withoutCoarseBlock, /\.rd-doc-kicker\s*\{/);
+
+  // And the element itself is never mounted for a fine pointer — the CSS
+  // gate above is a second guarantee, not the only one.
+  const jsx = await readFile(READER_JSX, 'utf8');
+  assert.match(jsx, /\{coarsePointer && <span className="rd-doc-kicker">/);
+
+  // The kicker's other half never renders for a coarse pointer either — if
+  // it did, "Leer en simple" would print twice, once fixed and once in flow.
+  assert.match(jsx, /\{!coarsePointer && <span className="rd-status-kicker">/);
+});
+
+/**
+ * Task 6's report named this exact line as the one path whose correctness
+ * does not follow from the scroll-freeze logic at all — `visible` (driven by
+ * scroll direction) is overridden by `state !== 'rest'` the moment a
+ * selection or the composer opens, and by nothing else. No phone check
+ * exercises the instant that override switches back off (dismissing a
+ * selection without scrolling first), so the line itself is what stands
+ * between "the bar hides mid-selection" and "the bar behaves" — the risk the
+ * mutation proof for this test has to earn is a real one.
+ */
+test('la barra en selección o composición no depende solo del scroll para estar visible', async () => {
+  const barJsx = await readFile(READER_BAR_JSX, 'utf8');
+  // Anchored on the `animate={{ y: … }}` line, then on `state !== 'rest'`
+  // *inside* it — not on the whole expression byte-for-byte. A reformat, or a
+  // legitimate new term added to the condition (an error state forcing the
+  // bar up, say), would turn a whole-expression match red for a reason that
+  // has nothing to do with this guarantee breaking. What has to hold is that
+  // `state !== 'rest'` still overrides `visible` in that prop, not the exact
+  // punctuation around it.
+  const animateY = barJsx.match(/animate=\{\{\s*y:\s*([^}]*)\}\}/);
+  assert.ok(animateY, 'expected an `animate={{ y: … }}` prop on the bar');
+  assert.match(animateY[1], /state !== 'rest'/);
 });

@@ -234,6 +234,28 @@
   margin-bottom: var(--space-3);
 }
 
+/* On a coarse pointer the kicker moves out of `.rd-status` (see the comment
+   there, in PaperReader.jsx) and into the document, ahead of the title it
+   names — identity to the document, state to the chrome. Gated on pointer
+   alone, the same as `ReaderBar.css`, and at no width: `.rd-doc-kicker` is
+   only ever in the DOM when the JSX's own `coarsePointer` check renders it
+   (a fine pointer never mounts the element), so this block is a second,
+   independent guarantee that a fine pointer can never be styled by it — the
+   same belt-and-braces this reader already applies everywhere pointer type
+   decides layout, not width. */
+@media (pointer: coarse) {
+  .rd-doc-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font: var(--mono-label);
+    letter-spacing: var(--mono-track);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-2);
+  }
+}
+
 .rd-doc-byline {
   font: 500 0.75rem/1.5 var(--font-mono);
   letter-spacing: 0.02em;
@@ -690,7 +712,19 @@
     overflow-x: visible;
   }
 
-  .rd-panel-group {
+  /* Scoped to `.rd-panel` (the dock's own panel), not bare, from here through
+     `.rd-panel-divider` below: the settings tab reuses this same JSX
+     (`annotationSettingsSlot` in `PaperReader.jsx`) inside `.rd-rail-settings`
+     — a flex row, not this grid — so a bare `.rd-panel-group`/`-label`/
+     `-divider` rule at this width also matched there. `.rd-panel-label {
+     display: none }` in particular made "Nivel", "Resaltados" and "Descargar"
+     invisible on every phone in portrait, leaving bare icons in the one
+     surface a phone has left for them (the dock is hidden here — see the
+     `(pointer: coarse)` block above). Prefixing keeps this block
+     byte-identical for the dock, which is `.rd-panel`'s direct child, and
+     lets the settings tab fall back to the base rules (`.rd-panel-group`
+     etc. outside any media query, above) it was actually designed against. */
+  .rd-panel .rd-panel-group {
     align-items: center;
   }
 
@@ -698,7 +732,7 @@
      it. The rule is drawn here, on the full-width child, because three separate
      borders on the action groups would come out as three dashes with the grid's
      column gaps showing through. */
-  .rd-panel-group:first-child {
+  .rd-panel .rd-panel-group:first-child {
     grid-column: 1 / -1;
     padding-bottom: var(--space-2);
     border-bottom: 1px solid var(--border-subtle);
@@ -707,21 +741,21 @@
   /* The toggle group's own root — the only child of the group that is not the
      label — spans the row, and its three items divide it evenly, so the labels
      read in full in both languages. */
-  .rd-panel-group:first-child > :not(.rd-panel-label) {
+  .rd-panel .rd-panel-group:first-child > :not(.rd-panel-label) {
     width: 100%;
   }
 
-  .rd-panel-group:first-child button {
+  .rd-panel .rd-panel-group:first-child button {
     flex: 1;
     min-width: 0;
   }
 
-  .rd-panel-label {
+  .rd-panel .rd-panel-label {
     display: none;
   }
 
   /* Vertical rules between things that are now stacked. */
-  .rd-panel-divider {
+  .rd-panel .rd-panel-divider {
     display: none;
   }
 
@@ -781,8 +815,14 @@
 /* ── Below 1100px there is furniture at the foot of the screen ──
    This is the width at which the margin stops being a margin and becomes a
    sheet, so it is the width at which two things start standing at the bottom:
-   the sheet, peeking, and the panel, which on a touch screen never goes away.
-   They were both measuring from `bottom: 0` and landing on top of each other.
+   the sheet, peeking, and the panel. They were both measuring from
+   `bottom: 0` and landing on top of each other. That was true regardless of
+   pointer when this block was written; it no longer is on a coarse pointer,
+   where a later block (`@media (pointer: coarse) and (max-width: 1100px)`,
+   below the hover block that follows this one) hides the panel outright and
+   overrides `.rd-scroll`'s padding here — `ReaderBar.jsx` stands in for it
+   instead. What is below still governs a fine pointer at this width exactly
+   as it always did.
 
    Every clearance at this width is declared here, after the hover block, so
    there is one place to read them from. The `.rd-scroll` half of it used to sit
@@ -816,6 +856,48 @@
 @media (max-width: 1100px) and (hover: hover) and (pointer: fine) {
   .rd-scroll {
     padding-bottom: calc(var(--rd-sheet-peek-total) + var(--space-6));
+  }
+}
+
+/* ── Touch, any width: one island instead of a dock and a bar stacked on it ──
+   Everything above this block still describes the fine-pointer, hover-driven
+   panel and the sheet's permanent peek — untouched, because a coarse pointer
+   is never the case those rules are for.
+
+   Pointer alone, not pointer-and-width: this used to be
+   `(pointer: coarse) and (max-width: 1100px)`, on the theory that above that
+   width the rail is still the desktop margin (`isNarrow` is false, no sheet,
+   no settings tab to stand in for the dock) and never had the sheet's own
+   undismissable-surfaces problem, so the dock could just stay — "exactly like
+   a mouse user narrower than 1100px already sees it." That comparison is what
+   stopped being true: `ReaderBar.jsx` mounts on `selectionRoute === 'bar'`
+   alone, pointer-gated only, at every width — so a coarse pointer above
+   1100px got a second fixed-bottom surface a same-width mouse user never
+   grew. The dock (z-index 4) and the bar (z-index 12048) both pin to the
+   bottom of `.rd`; the bar wins the stack and covers the dock's lower edge.
+   `PaperReader.jsx` now makes the rail a sheet (and the bar's settings entry
+   live) for any coarse pointer, not just a narrow one, so hiding the dock on
+   pointer alone no longer strands those controls — see `railIsSheet` there.
+   Width still decides the rail/sheet split for a mouse, per decision 5: a
+   fine pointer never matches `(pointer: coarse)` at any width, so that rule
+   stays byte-for-byte itself.
+
+   `.rd-scroll`'s bar-height padding below is intentionally *not* widened to
+   match: it stays scoped to coarse-and-narrow, because at coarse-and-wide the
+   base 112px padding (`.rd-scroll` above) already clears the bar's 56px rest
+   row plus its 12px offset — nothing to correct for at that width. */
+@media (pointer: coarse) {
+  .rd-panel-dock {
+    display: none;
+  }
+}
+
+/* `--rd-bar-h` is declared once, in `ReaderBar.css`, for the same reason
+   `--rd-sheet-peek-total` is declared once on `.rd` above: one number, read
+   here and by the bar itself, rather than two guesses free to drift apart. */
+@media (pointer: coarse) and (max-width: 1100px) {
+  .rd-scroll {
+    padding-bottom: calc(var(--rd-bar-h, 56px) + var(--space-3) * 2 + var(--inset-bottom));
   }
 }
 

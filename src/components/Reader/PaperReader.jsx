@@ -43,17 +43,22 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
+import { useTouchSelection } from '../../hooks/useTouchSelection.js';
+import { pickSelectionRoute } from '../../utils/readerSelection.js';
+import { nextBarVisibility } from '../../utils/scrollDirection.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
 import { Button } from '../ui/button.jsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
 import AnnotationRail from './AnnotationRail.jsx';
 import ExportCard from './ExportCard.jsx';
 import HighlightedScientificText from './HighlightedScientificText.jsx';
+import ReaderBar from './ReaderBar.jsx';
 import SelectionMenu from './SelectionMenu.jsx';
 import ThinkingDots from './ThinkingDots.jsx';
 import './PaperReader.css';
 import './Annotations.css';
 import './Export.css';
+import './ReaderBar.css';
 
 const COPY = {
   es: {
@@ -105,6 +110,8 @@ const COPY = {
     unlimitedUsesTitle: 'Esta cuenta no tiene límite diario de usos de IA.',
     annotations: 'Anotaciones',
     toggleAnnotations: 'Ver anotaciones',
+    settings: 'Ajustes',
+    dismissSelection: 'Descartar selección',
     selectionTitle: 'Qué hacer con la selección',
     justHighlight: 'Subrayar',
     writeNote: 'Escribir nota',
@@ -181,6 +188,8 @@ const COPY = {
     unlimitedUsesTitle: 'This account has no daily limit on AI uses.',
     annotations: 'Annotations',
     toggleAnnotations: 'Show annotations',
+    settings: 'Settings',
+    dismissSelection: 'Discard selection',
     selectionTitle: 'What to do with the selection',
     justHighlight: 'Highlight',
     writeNote: 'Write a note',
@@ -542,6 +551,65 @@ function usePanelReveal() {
 }
 
 /**
+ * Whether the coarse-pointer bar should be up, driven by scroll direction
+ * (`nextBarVisibility`, Task 2) rather than by `usePanelReveal` above.
+ * `panelShouldShow` answers `!canHover`, which is permanently `true` on every
+ * device that renders `ReaderBar` — a touch screen has no hover to ask with —
+ * so it cannot be the thing that varies here. This hook is the first place
+ * that makes the bar's visibility actually move.
+ *
+ * Position lives in a ref, not state: a bare `scrollTop` read on every frame
+ * of a momentum scroll is not worth a re-render, only a *change* in
+ * visibility is. `setVisible` is therefore called at most once per direction
+ * reversal, never once per scroll event.
+ */
+function useBarScrollVisibility({ scrollRef, enabled, frozen }) {
+  const [visible, setVisible] = useState(true);
+  const visibleRef = useRef(true);
+  const previousTopRef = useRef(0);
+  // Read fresh inside the listener without re-subscribing it on every
+  // keystroke of a selection changing: the effect below installs the
+  // listener once per mount (per the project's usual cleanup pattern — see
+  // `usePanelReveal`'s own single `useEffect(() => () => clearTimeout(...))`
+  // above), and a ref is how a long-lived closure sees a value that changes
+  // between renders without becoming an effect dependency. Written from its
+  // own effect, not during render — mutating a ref while rendering is the
+  // thing `react-hooks/refs` exists to catch, even for a "just keep it
+  // fresh" ref like this one.
+  const frozenRef = useRef(frozen);
+  useEffect(() => { frozenRef.current = frozen; }, [frozen]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const node = scrollRef.current;
+    if (!node) return undefined;
+    previousTopRef.current = node.scrollTop;
+
+    const handleScroll = () => {
+      const currentTop = node.scrollTop;
+      const previousTop = previousTopRef.current;
+      previousTopRef.current = currentTop;
+      // A live selection or an open composer must never lose its bar to a
+      // scroll underneath it — hiding the actions for the selection the
+      // reader just made would be the worst possible moment (decision 4).
+      // Position tracking above still runs while frozen, so the next real
+      // decision, once the selection ends, starts from an accurate delta
+      // instead of one stale from before the freeze.
+      if (frozenRef.current) return;
+      const next = nextBarVisibility({ previousTop, currentTop, visible: visibleRef.current });
+      if (next === visibleRef.current) return;
+      visibleRef.current = next;
+      setVisible(next);
+    };
+
+    node.addEventListener('scroll', handleScroll, { passive: true });
+    return () => node.removeEventListener('scroll', handleScroll);
+  }, [enabled, scrollRef]);
+
+  return visible;
+}
+
+/**
  * Turns a DOM selection into an anchor in the paragraph's *source*.
  *
  * `selection.toString()` cannot do this once maths is involved. KaTeX renders
@@ -580,7 +648,10 @@ function anchorFromSelection(range, paragraphNode, paragraphText) {
   }
 
   if (!Number.isFinite(start) || end <= start) return null;
-  return buildRangeAnchor(paragraphText, start, end);
+  const built = buildRangeAnchor(paragraphText, start, end);
+  // Offsets travel alongside the quote so a re-entry guard can tell two
+  // identical substrings in the same paragraph apart — the quote alone cannot.
+  return built ? { ...built, start, end } : null;
 }
 
 const KIND_LABELS = {
@@ -605,6 +676,9 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   const [showHighlights, setShowHighlights] = useState(true);
   const [railOpen, setRailOpen] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
+  // Which face the annotation sheet shows once open. Touch never gets a third
+  // surface for the level/highlights controls — it gets a tab on this one.
+  const [sheetTab, setSheetTab] = useState('notes');
   const [exportOpen, setExportOpen] = useState(false);
   /* Three switches rather than one "annotations": a bare mark and a mark you
      wrote on are different things to want in a file. */
@@ -628,6 +702,10 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   const [quota, setQuota] = useState(null);
   const [stage, setStage] = useState('source');
   const abortRef = useRef(null);
+  // The reader's own scroll container, so a touch selection outside it (e.g.
+  // in a dialog rendered elsewhere in the tree) is never mistaken for one of
+  // its paragraphs.
+  const scrollRef = useRef(null);
   /**
    * The rewrite this reader has already asked for, keyed the way the rewrite
    * cache keys itself. The object arriving as `paper` is rebuilt upstream when
@@ -821,16 +899,68 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
 
   const { begin: beginAnnotation } = annotations;
 
+  // Gated by pointer type, never by window width: the reader already switches
+  // layout below 1100px, and shrinking a laptop window must not flip a mouse
+  // user onto the touch selection path.
+  const coarsePointer = useMemo(() => {
+    try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
+  }, []);
+  const selectionRoute = pickSelectionRoute({ coarsePointer });
+
+  /**
+   * Whether the margin is a sheet rather than the desktop rail — width alone
+   * (`isNarrow`) for a mouse, unchanged, but *any* coarse pointer now, not
+   * just a narrow one.
+   *
+   * Before the fix-wave review this was `isNarrow` alone, so a coarse pointer
+   * wide enough to miss the 1100px breakpoint (an iPad in landscape) kept the
+   * desktop `'rail'` surface — no settings tab, because only a sheet ever
+   * grows one (`hasSettingsTab` in `AnnotationRail.jsx`). That was fine only
+   * as long as the dock stayed up there to hold the level/highlights/export
+   * controls instead. It no longer does — the dock now hides on any coarse
+   * pointer (see `PaperReader.css`), because `ReaderBar.jsx` had already
+   * started rendering there regardless of width, and the two stacked. Hiding
+   * the dock without this would have traded one dead surface for another: a
+   * settings button in the bar (below) that opened a sheet tab which could
+   * never show, because the rail behind it was still `'rail'`, not `'sheet'`.
+   */
+  const railIsSheet = isNarrow || selectionRoute === 'bar';
+
+  // Only wired on the route that actually renders `ReaderBar` — on the
+  // desktop route this would be a scroll listener computing a value nothing
+  // reads. Frozen by a live selection or an open composer (both collapse to
+  // `annotations.pending` being truthy: `composing` cannot be `true` while
+  // `pending` is falsy — see the `if (!pending && composing)` guard in
+  // `ReaderBar.jsx` — so checking `pending` alone covers both).
+  const barScrollVisible = useBarScrollVisibility({
+    scrollRef,
+    enabled: selectionRoute === 'bar',
+    frozen: Boolean(annotations.pending),
+  });
+
   /**
    * A selection stops being a selection and becomes a decision.
    *
    * Everything the three outcomes could need is captured here, in one go, at
-   * the moment the mouse comes up: the quote, where it is anchored, the
-   * paragraph around it (the model cannot explain "that quantity" without the
-   * sentence that named it), and the rectangle to hang the menu off. Capturing
-   * it all up front is what lets the browser's own selection be cleared
-   * immediately — the reader paints its own provisional mark instead, so the
-   * highlight you are deciding about is one you can already see.
+   * the moment the selection is decided (mouse-up on the desktop route,
+   * `selectionchange` settling on the touch route): the quote, where it is
+   * anchored, the paragraph around it (the model cannot explain "that
+   * quantity" without the sentence that named it), and the rectangle to hang
+   * the menu off. Capturing it all up front is what lets the browser's own
+   * selection be cleared immediately on the desktop route — the reader paints
+   * its own provisional mark instead, so the highlight you are deciding about
+   * is one you can already see.
+   *
+   * On touch the native selection stays alive AND the reader's own
+   * provisional mark is suppressed (see the `selectionRoute === 'menu'` guard
+   * in `userHighlightIndex` below) — not just the former. Painting the
+   * provisional mark re-renders the paragraph's highlight runs, and React
+   * rewrites the DOM text node the live Range's offsets point into; the
+   * browser responds by collapsing the selection, taking the OS handles and
+   * callout with it. Leaving the native selection uncleared while still
+   * repainting our own mark would still lose the handles one tick later — the
+   * OS's own highlight has to serve as the provisional mark on touch,
+   * precisely because our own provisional mark is what would kill it.
    */
   const handleSelection = useCallback((sectionId, paragraphIndex, paragraphText, paragraphNode) => {
     if (!uid) return;
@@ -843,12 +973,43 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     const anchor = anchorFromSelection(range, paragraphNode, paragraphText)
       || buildSelectionAnchor(selection.toString());
     if (!anchor) return;
+    // Belt-and-braces against a touch re-entry loop: suppressing the
+    // provisional mark (below) already removes the DOM repaint that would
+    // otherwise retrigger `selectionchange`, but this guard means a loop
+    // cannot start even if some other repaint disturbs the same selection.
+    // Scoped to the bar route only: on the menu route there is no
+    // `selectionchange` polling to re-enter, so the guard's only visible
+    // effect there would be skipping `removeAllRanges()` below when the exact
+    // same passage is selected twice in a row (double-click, double-click
+    // again) — a fine pointer seeing new behaviour the branch promised never
+    // happens. Offsets are compared alongside the quote, not the quote alone:
+    // two identical substrings selected back-to-back in the same paragraph
+    // share one quote but not one position, and comparing the string only
+    // would make the second selection a silent no-op. `buildSelectionAnchor`'s
+    // string-only fallback carries no offsets, so both sides fall back to
+    // `undefined === undefined` there — no worse than the old quote-only check.
+    const waiting = annotations.pending;
+    if (waiting
+      && selectionRoute === 'bar'
+      && waiting.sectionId === sectionId
+      && waiting.paragraphIndex === paragraphIndex
+      && waiting.quote === anchor.quote
+      && waiting.quoteStart === anchor.start
+      && waiting.quoteEnd === anchor.end) return;
     const rect = range.getBoundingClientRect();
-    selection.removeAllRanges();
+    if (selectionRoute === 'menu') selection.removeAllRanges();
+    // A selection can settle while the annotations sheet is expanded — the
+    // document above it stays selectable. Without this the bar morphs to its
+    // `selection` state behind an opaque sheet: the OS callout shows with no
+    // actions visible anywhere. Closing the sheet surfaces the bar the moment
+    // there is something for it to show.
+    if (selectionRoute === 'bar') setSheetOpen(false);
     beginAnnotation({
       sectionId,
       paragraphIndex,
       quote: anchor.quote,
+      quoteStart: anchor.start,
+      quoteEnd: anchor.end,
       context: paragraphText,
       anchor: {
         left: rect.left,
@@ -857,7 +1018,45 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
         right: rect.right,
       },
     });
-  }, [beginAnnotation, uid]);
+  }, [annotations.pending, beginAnnotation, selectionRoute, uid]);
+
+  useTouchSelection({
+    scrollRef,
+    sections,
+    onSelect: handleSelection,
+    enabled: selectionRoute === 'bar',
+  });
+
+  // The bar's two rest-state targets. Both open the same sheet the rail
+  // already is — a settings tab on it, not a third surface next to it.
+  const openAnnotationList = useCallback(() => {
+    setSheetTab('notes');
+    setSheetOpen(true);
+    setRailOpen(true);
+  }, []);
+  const openAnnotationSettings = useCallback(() => {
+    setSheetTab('settings');
+    setSheetOpen(true);
+    setRailOpen(true);
+  }, []);
+
+  /**
+   * Touch leaves the native selection alone while a decision is pending —
+   * the OS's own handles and callout are the provisional mark there, and
+   * clearing early is the bug Task 3 fixed (it silently drags the handles
+   * away mid-adjustment). But that reasoning only covers *deciding*. Once
+   * the reader has decided — by dismissing, or by highlighting, noting or
+   * asking — the selection has nothing left to hold open, and leaving it
+   * on screen only means the OS callout keeps sitting over a passage the
+   * reader has already moved on from. A no-op on the desktop route: the menu
+   * route already clears the native selection the moment it opens
+   * (`handleSelection` above), so there is nothing left here to clear by the
+   * time any of these four fire.
+   */
+  const clearNativeSelectionOnTouch = useCallback(() => {
+    if (selectionRoute !== 'bar') return;
+    try { window.getSelection()?.removeAllRanges(); } catch { /* Selection API absence is not this callback's problem. */ }
+  }, [selectionRoute]);
 
   const sectionOrder = useMemo(() => buildSectionOrder(sections), [sections]);
   const orderedAnnotations = useMemo(
@@ -886,8 +1085,15 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
         return { ...item, fresh: Boolean(stored?.fresh) };
       }));
     }
-    // The passage the menu is open on wears the pen already, provisionally.
-    const waiting = annotations.pending;
+    // The passage the menu is open on wears the pen already, provisionally —
+    // on the desktop route only. Painting this mark rewrites the paragraph's
+    // highlight runs, which rewrites the DOM text node a live selection Range
+    // points into, which collapses the selection. Desktop wants exactly that
+    // (the browser's own selection is already gone by the time this paints).
+    // Touch cannot afford it: the OS handles live on that same selection, and
+    // this repaint would silently drag them away mid-adjustment. On touch the
+    // OS's own highlight is the provisional mark — nothing to add here.
+    const waiting = selectionRoute === 'menu' ? annotations.pending : null;
     if (waiting) {
       const key = `${waiting.sectionId}:${waiting.paragraphIndex}`;
       index.set(key, [
@@ -896,7 +1102,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
       ]);
     }
     return index;
-  }, [annotations.annotations, annotations.pending, isEnglish, level]);
+  }, [annotations.annotations, annotations.pending, isEnglish, level, selectionRoute]);
 
   const originalUrl = safeExternalUrl(paper?.openAccessPdfUrl)
     || safeExternalUrl(paper?.pdfUrl)
@@ -994,6 +1200,108 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     ? `${originRect.left + originRect.width / 2}px ${originRect.top + originRect.height / 2}px`
     : '50% 62%';
 
+  /* The dock's four groups, each held once and rendered from both places that
+     need it — the floating dock itself, below, and the sheet's settings tab
+     (`annotationSettingsSlot`, further down). Before this fix round the dock
+     and the settings tab each carried their own copy of the level and
+     highlights JSX: two independent renderings of the same controls, live in
+     the tree at once, with no removal hunk tying them together — exactly the
+     "second implementation to keep in sync" this redesign's decision 3 was
+     written to avoid, one level further in than the surface it named. Held as
+     consts instead, so the dock and the settings tab both read one tree. The
+     annotations-toggle group (open/close the rail or sheet) stays inline in
+     the dock only: it has nothing to reuse it, since inside the sheet itself
+     a button that closes the very sheet you are reading makes no sense, and
+     the sheet already has its own grab-handle for that. */
+  const levelControl = (
+    <div className="rd-panel-group">
+      <span className="rd-panel-label">{copy.level}</span>
+      <ToggleGroup
+        type="single"
+        value={level}
+        onValueChange={(next) => { if (next) setLevel(next); }}
+        aria-label={copy.level}
+      >
+        {PAPER_REWRITE_LEVELS.map(option => (
+          <ToggleGroupItem
+            key={option.id}
+            value={option.id}
+            disabled={isStreaming && level !== option.id}
+            aria-label={isEnglish ? option.labelEn : option.label}
+          >
+            {isEnglish ? option.labelEn : option.label}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
+    </div>
+  );
+
+  const highlightsControl = (
+    <div className="rd-panel-group">
+      <span className="rd-panel-label">{copy.toggleHighlights}</span>
+      <Button
+        variant={showHighlights ? 'brand' : 'outline'}
+        size="icon-sm"
+        onClick={() => setShowHighlights(value => !value)}
+        aria-pressed={showHighlights}
+        title={showHighlights ? copy.highlightsOn : copy.highlightsOff}
+        aria-label={copy.toggleHighlights}
+      >
+        <Highlighter size={15} />
+      </Button>
+    </div>
+  );
+
+  /* The dock's fourth group. Hiding the dock on a narrow, coarse-pointer
+     screen (below) took this button with it and left nothing else in the
+     tree that calls `setExportOpen` — the export feature was reachable
+     nowhere on such a device. Shared here for the same reason as the two
+     controls above it, and reused by the settings tab so the fix is one
+     button, not a second one built to match it. */
+  const exportControl = (
+    <div className="rd-panel-group">
+      <span className="rd-panel-label">{copy.download}</span>
+      <Button
+        variant={exportOpen ? 'brand' : 'outline'}
+        size="icon-sm"
+        onClick={() => setExportOpen(value => !value)}
+        aria-pressed={exportOpen}
+        disabled={sections.length === 0}
+        title={copy.download}
+        aria-label={copy.download}
+      >
+        <Download size={15} />
+      </Button>
+    </div>
+  );
+
+  // Shared with `ReaderBar` below: on the touch route the sheet holding
+  // `AnnotationRail` sits fully off-screen with no peek, so a failed
+  // "Que me lo explique" rendered only into the rail (as it always has been)
+  // would land in a surface nobody is looking at — and the next scroll's
+  // `dismiss()` clears it before it is ever seen. Null, not the fallback
+  // string, while there is no error: both consumers gate their own rendering
+  // on this being truthy, so a stray string here would show a phantom.
+  const askErrorText = annotations.error
+    ? (ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'][annotations.error]
+      || ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE)
+    : null;
+
+  /* The dock's four groups minus the one that cannot mean anything inside its
+     own sheet (see above), standing on the sheet's settings tab instead of a
+     third surface. Only for the sheet's settings tab; the rail (desktop,
+     `hidden`/`railOpen`-driven) never renders it because it never has a
+     settings tab to render it into. */
+  const annotationSettingsSlot = (
+    <>
+      {levelControl}
+      <div className="rd-panel-divider" />
+      {highlightsControl}
+      <div className="rd-panel-divider" />
+      {exportControl}
+    </>
+  );
+
   return (
     <AnimatePresence onExitComplete={onClose}>
       {open && (
@@ -1029,7 +1337,18 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
         </motion.div>
 
         <motion.div className="rd-status" variants={prefersReducedMotion ? STILL_CHROME_VARIANTS : CHROME_VARIANTS}>
-          <span className="rd-status-kicker"><Sparkles size={11} /> {copy.title}</span>
+          {/* Identity to the document, state to the chrome. The kicker names
+              *what this is* ("Leer en simple"), which is the same kind of fact
+              as the paper's own title next to it in `rd-doc-title` — so on a
+              coarse pointer it moves down there (see `.rd-doc-kicker` below)
+              and scrolls away with the text it names, instead of floating in
+              this fixed overlay for the whole read. The cache chip and the
+              uses counter report *state* — what is true right now, exactly
+              what a reader wants to check mid-scroll — so they stay pinned
+              here on every pointer. On a fine pointer there is no scrolling
+              chrome to hide behind in the first place, so the kicker simply
+              stays: decision 3 in the reader's mobile plan, desktop untouched. */}
+          {!coarsePointer && <span className="rd-status-kicker"><Sparkles size={11} /> {copy.title}</span>}
           {meta?.cached && <span className="rd-status-chip">{copy.cached}</span>}
           {quota && (
             <span
@@ -1078,47 +1397,18 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             initial={false}
             animate={(prefersReducedMotion ? STILL_PANEL_STATES : PANEL_STATES)[panel.shown ? 'shown' : 'hidden']}
           >
-            <div className="rd-panel-group">
-              <span className="rd-panel-label">{copy.level}</span>
-              <ToggleGroup
-                type="single"
-                value={level}
-                onValueChange={(next) => { if (next) setLevel(next); }}
-                aria-label={copy.level}
-              >
-                {PAPER_REWRITE_LEVELS.map(option => (
-                  <ToggleGroupItem
-                    key={option.id}
-                    value={option.id}
-                    disabled={isStreaming && level !== option.id}
-                    aria-label={isEnglish ? option.labelEn : option.label}
-                  >
-                    {isEnglish ? option.labelEn : option.label}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-            </div>
+            {levelControl}
 
             <div className="rd-panel-divider" />
 
-            <div className="rd-panel-group">
-              <span className="rd-panel-label">{copy.toggleHighlights}</span>
-              <Button
-                variant={showHighlights ? 'brand' : 'outline'}
-                size="icon-sm"
-                onClick={() => setShowHighlights(value => !value)}
-                aria-pressed={showHighlights}
-                title={showHighlights ? copy.highlightsOn : copy.highlightsOff}
-                aria-label={copy.toggleHighlights}
-              >
-                <Highlighter size={15} />
-              </Button>
-            </div>
+            {highlightsControl}
 
             <div className="rd-panel-divider" />
 
             {/* Two switches, not one: what the model proposed and what you wrote
-                are different things to want on screen. */}
+                are different things to want on screen. Dock-only — see the
+                comment on `levelControl` above for why this one group isn't
+                shared with the sheet's settings tab. */}
             <div className="rd-panel-group">
               <span className="rd-panel-label">{copy.annotations}</span>
               <Button
@@ -1134,32 +1424,36 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             </div>
             <div className="rd-panel-divider" />
 
-            <div className="rd-panel-group">
-              <span className="rd-panel-label">{copy.download}</span>
-              <Button
-                variant={exportOpen ? 'brand' : 'outline'}
-                size="icon-sm"
-                onClick={() => setExportOpen(value => !value)}
-                aria-pressed={exportOpen}
-                disabled={sections.length === 0}
-                title={copy.download}
-                aria-label={copy.download}
-              >
-                <Download size={15} />
-              </Button>
-            </div>
+            {exportControl}
 
           </motion.div>
         </motion.div>
 
         <div
+          ref={scrollRef}
           className="rd-scroll"
-          onScroll={() => { panel.onScrolled(); annotations.dismiss(); }}
+          onScroll={() => {
+            panel.onScrolled();
+            // Only clear the native selection once there is a settled decision
+            // to clear. iOS auto-scrolls this container when a selection handle
+            // is dragged to its edge, which fires this handler mid-gesture —
+            // before `annotations.pending` exists. Clearing unconditionally
+            // there collapses the live selection the OS handles are attached
+            // to, killing the drag. Gating on `pending` leaves a pre-settle
+            // scroll a no-op (nothing to clear yet) and still clears normally
+            // once a decision has settled and the reader scrolls away from it.
+            if (annotations.pending) clearNativeSelectionOnTouch();
+            annotations.dismiss();
+          }}
         >
           <article className="rd-doc" data-marks={showHighlights ? undefined : 'off'}>
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
                 "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
+            {/* The kicker's other half of the split above: on a coarse pointer
+                it lives here, in flow, ahead of the title it names, so it
+                scrolls away with the paper instead of hovering over it. */}
+            {coarsePointer && <span className="rd-doc-kicker"><Sparkles size={11} /> {copy.title}</span>}
             <h1 className="rd-doc-title" lang="en"><ScientificText>{paper?.title}</ScientificText></h1>
             <p className="rd-doc-byline">
               {(paper?.authors || []).slice(0, 6).map(author => author?.name || author).join(', ')}
@@ -1309,23 +1603,49 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             )}
           </article>
 
-          {/* Always mounted. The sheet stays on screen peeking, because on a
-              phone the count is the only thing telling you the margin is there
-              at all; the rail hides by sliding out rather than by unmounting,
-              so it comes back as the same margin and not a new one. */}
+          {/* Always mounted; the rail hides by sliding out rather than by
+              unmounting, so it comes back as the same margin and not a new
+              one. On a mouse-narrow window the sheet still peeks by its
+              header, and the count on that header is what tells you the
+              margin is there at all — but on a coarse pointer the peek is
+              gone (see `collapsesOffscreen` below and the `(pointer: coarse)`
+              rule in `Annotations.css`), so on a phone there is no permanent
+              on-screen trace of it left: `ReaderBar.jsx` is what stands in
+              for that now. */}
           <AnnotationRail
-            surface={isNarrow ? 'sheet' : 'rail'}
-            hidden={!isNarrow && !railOpen}
+            surface={railIsSheet ? 'sheet' : 'rail'}
+            hidden={!railIsSheet && !railOpen}
             expanded={sheetOpen}
+            // A coarse pointer collapses the sheet fully off-screen instead
+            // of leaving it peeking (`(pointer: coarse)` in `Annotations.css`)
+            // — `AnnotationRail` uses this to also take the collapsed sheet
+            // out of the tab order there, so its list, filters and grab
+            // button cannot be focused while invisible. A mouse-narrow window
+            // still peeks and must stay reachable that way, so this only ever
+            // applies on the touch route, never derived from width alone.
+            collapsesOffscreen={selectionRoute === 'bar'}
             onToggle={() => setSheetOpen(value => !value)}
+            tab={sheetTab}
+            onTabChange={setSheetTab}
+            // Pointer-gated: a narrow *desktop* window is also a sheet
+            // (pre-existing, width-driven, via `railIsSheet` above), but the
+            // dock is still there for it — a mouse user never got
+            // `ReaderBar.jsx`, so nothing hid the dock out from under them.
+            // Only the touch route lost the dock, so only the touch route
+            // gets a settings tab standing in for it. `railIsSheet` already
+            // covers every case where this actually renders as a tab —
+            // gating this prop on pointer alone rather than repeating
+            // `railIsSheet` here is just not passing content to a rail that
+            // could never grow a tab for it (`hasSettingsTab` in
+            // `AnnotationRail.jsx` requires `surface === 'sheet'` too).
+            settingsContent={selectionRoute === 'bar' ? annotationSettingsSlot : undefined}
             annotations={visibleAnnotations}
             counts={annotationCounts}
             filter={annotationFilter}
             onFilter={setAnnotationFilter}
             thinking={annotations.busy === 'asking'}
             error={Boolean(annotations.error)}
-            errorText={ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'][annotations.error]
-              || ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE}
+            errorText={askErrorText || ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE}
             onFocus={goToPassage}
             onRemove={annotations.remove}
             onSettle={annotations.settle}
@@ -1367,7 +1687,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
         </AnimatePresence>
 
         <AnimatePresence>
-          {annotations.pending && (
+          {selectionRoute === 'menu' && annotations.pending && (
             <SelectionMenu
               anchor={annotations.pending.anchor}
               copy={copy}
@@ -1382,6 +1702,56 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             />
           )}
         </AnimatePresence>
+
+        {/* One island rather than a popover: always mounted on the touch
+            route, so it can morph from rest into selection in place instead of
+            a second surface rising over the OS callout. `pending`, not its
+            `anchor` — the bar positions against the bottom edge, not the
+            selection's rectangle. */}
+        {selectionRoute === 'bar' && (
+          <ReaderBar
+            pending={annotations.pending}
+            copy={copy}
+            usesLeft={quota?.unlimited ? null : quota?.remainingUses ?? null}
+            unlimited={Boolean(quota?.unlimited)}
+            canAsk={quota ? quota.unlimited || quota.remainingUses > 0 : true}
+            busy={annotations.busy === 'saving'}
+            // The decision is made the moment any of these four fires, so the
+            // native selection (left alone on purpose while it was still live —
+            // see `clearNativeSelectionOnTouch` above) is cleared right here,
+            // not left for the OS to keep showing over an already-settled passage.
+            onHighlight={() => { clearNativeSelectionOnTouch(); annotations.highlight(); }}
+            onSaveNote={(note) => { clearNativeSelectionOnTouch(); annotations.saveNote(note); }}
+            onAsk={() => { clearNativeSelectionOnTouch(); annotations.ask(); }}
+            onClose={() => { clearNativeSelectionOnTouch(); annotations.dismiss(); }}
+            annotationCount={annotationCounts.total}
+            onOpenList={openAnnotationList}
+            // Unconditional here, not `isNarrow`-gated: this block only ever
+            // renders on `selectionRoute === 'bar'`, and `railIsSheet` above
+            // is true for every device that reaches it — the rail always has
+            // a settings tab to open on the touch route now, an iPad in
+            // landscape included (see `railIsSheet`'s comment for why that
+            // changed: the dock it used to rely on instead is gone).
+            onOpenSettings={openAnnotationSettings}
+            streaming={isStreaming}
+            // "Que me lo explique" working, and having failed, get the same
+            // permanent-visibility treatment as the level rewrite above —
+            // see the comment on `askErrorText` for why this is the only
+            // place left, on touch, that can show either at all.
+            asking={annotations.busy === 'asking'}
+            askError={askErrorText}
+            // Whatever normally governs the chrome's visibility, a rewrite in
+            // flight (or an ask in flight, or a failed one still on screen)
+            // overrides it: these are the controls that keep their permanent
+            // visibility, and they live in the bar's rest row, so the bar
+            // itself has to stay up for them to be seen. Not `panel.shown` —
+            // that rule answers `!canHover`, which is permanently true on
+            // every device that reaches this branch (see
+            // `useBarScrollVisibility` above); the scroll-driven value is the
+            // one that actually varies here.
+            visible={barScrollVisible || isStreaming || annotations.busy === 'asking' || Boolean(annotations.error)}
+          />
+        )}
       </motion.div>
       )}
     </AnimatePresence>

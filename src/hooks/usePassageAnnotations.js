@@ -16,10 +16,13 @@ import { annotatePassage, PaperAnnotationError } from '../services/paperAnnotati
  * in the tree and none of this is about laying out a document.
  *
  * `pending` is the fork itself: the selection, captured whole (quote, anchor,
- * the paragraph around it, and where it sits on screen) at the moment the mouse
- * came up. Capturing it up front is what lets the browser selection be cleared
- * immediately — the reader paints its own mark on the passage instead, so the
- * highlight you are about to make is the highlight you can already see.
+ * the paragraph around it, and where it sits on screen) at the moment the
+ * selection is decided — mouse-up on a fine pointer, `selectionchange` settling
+ * on a coarse one. Capturing it up front is what lets the desktop route clear
+ * the browser's own selection immediately — the reader paints its own mark on
+ * the passage instead, so the highlight you are about to make is the highlight
+ * you can already see. Touch leaves the native selection alone; its own OS
+ * handles and callout serve as that same provisional mark there.
  */
 
 const IDLE = 'idle';

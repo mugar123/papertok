@@ -458,9 +458,11 @@
 
 /* ── The margin, where there is no margin ──
    Under 1100px the document has the whole width and the rail becomes a sheet:
-   pinned to the bottom, peeking by its header so the count is always readable,
+   pinned to the bottom, peeking by its header so the count is readable,
    pulled up when wanted. Fixed rather than in flow, so it never takes width
-   from the paper. */
+   from the paper. "Readable" only holds here, on a fine pointer — the
+   `(pointer: coarse)` block further down takes the peek away entirely on a
+   phone, where `ReaderBar.jsx` is the permanent presence instead. */
 .rd-rail[data-surface='sheet'] {
   position: fixed;
   left: 0;
@@ -510,6 +512,23 @@
    the component; this only gets out of its way. */
 .rd-rail[data-surface='sheet'][data-dragging] {
   transition: none;
+}
+
+/* ── Touch: no permanent peek ──
+   The two undismissable surfaces this redesign removes were exactly this: a
+   dock that never went away and a sheet that could only ever hide down to its
+   header. `ReaderBar.jsx` is the one permanent presence now — it opens this
+   sheet on demand — so on a coarse pointer the sheet can rest fully off-screen
+   instead of always showing a peek nobody asked to keep on screen. Same
+   specificity as the resting rule above (one class, one attribute selector
+   each), so this wins on source order alone; `[data-expanded]`'s extra
+   attribute selector still outranks both, so opening the sheet is unchanged.
+   Pointer-gated, never a width query — a coarse pointer gets this at any
+   viewport width, matching every other new rule in this redesign. */
+@media (pointer: coarse) {
+  .rd-rail[data-surface='sheet'] {
+    transform: translateY(100%);
+  }
 }
 
 .rd-rail-grab {
@@ -567,6 +586,47 @@
 .rd-rail[data-surface='sheet'] .rd-rail-empty {
   padding: 0 var(--space-4) var(--space-5);
 }
+
+/* ── The sheet's settings tab ──
+   The same sheet that lists notes, standing on its second face instead of a
+   third surface being built to hold the level and highlights controls. Only
+   the sheet ever grows this row — the rail (desktop) never receives
+   `settingsContent`, so `hasSettingsTab` is false there and none of this
+   renders. */
+.rd-rail-tabs {
+  display: flex;
+  gap: var(--space-2);
+  margin: var(--space-3) var(--space-4) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rd-rail-tab {
+  padding: 6px 2px 10px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.rd-rail-tab[data-on] {
+  border-bottom-color: var(--accent-primary);
+  color: var(--text-primary);
+}
+
+.rd-rail-settings {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-4);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.rd-rail-settings::-webkit-scrollbar { display: none; }
 
 /* The air the peeking sheet needs under the last lines of the paper is set in
    `PaperReader.css`, alongside the panel that stands in the same corner. It was
