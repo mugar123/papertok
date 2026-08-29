@@ -32,3 +32,13 @@ test('la tarjeta de traspaso tiene superficie propia y un botón legible', async
   assert.match(link[0], /background:\s*var\(--accent-primary\)/);
   assert.match(link[0], /color:\s*var\(--text-inverse\)/);
 });
+
+test('en táctil, abrir un paper va directo a la pestaña nueva, sin interstitial', async () => {
+  const app = await readFile(new URL('../../App.jsx', import.meta.url), 'utf8');
+  // Todos los onOpenPdf pasan por la puerta, ninguno por el setter desnudo.
+  assert.doesNotMatch(app, /onOpenPdf=\{setPdfPaper\}/);
+  assert.match(app, /onOpenPdf=\{openPdf\}/);
+  // Y la puerta pregunta por el puntero y cae al visor si el popup se bloquea.
+  assert.match(app, /matchMedia\('\(pointer: coarse\)'\)/);
+  assert.match(app, /window\.open\(url, '_blank', 'noopener'\)\) return/);
+});

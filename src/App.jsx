@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
+import { safeExternalUrl } from './utils/externalUrl.js'
 import RouteFallback from './components/Layout/RouteFallback'
 import RouteAnnouncer from './components/Layout/RouteAnnouncer'
 import { AuthProvider, useAuth } from './context/AuthContext'
@@ -53,6 +54,26 @@ const ProfilePage = lazy(() => import('./components/Profile/ProfilePage'))
 
 function AppContent() {
   const [pdfPaper, setPdfPaper] = useState(null)
+  // On a coarse pointer, "open the PDF" means the browser's own viewer in a
+  // new tab, straight away: framed PDFs are crippled on every touch platform
+  // (iOS paints only the first page; Android Chrome renders nothing), and the
+  // hand-off card the overlay showed instead was one tap of ceremony nobody
+  // asked for (2026-08-29). The overlay stays the desktop route, and the
+  // fallthrough (no usable URL, or no matchMedia) still mounts it — its own
+  // hand-off card is the belt to this suspender.
+  const openPdf = useCallback((paper) => {
+    try {
+      if (window.matchMedia('(pointer: coarse)').matches) {
+        const candidate = paper.pdfUrl || (paper.arxivId ? `https://arxiv.org/pdf/${paper.arxivId}` : '')
+        const url = safeExternalUrl(candidate)
+        // `window.open` answers null when a popup blocker eats it; falling
+        // through to the overlay then still gives the reader its hand-off
+        // link instead of a tap that visibly did nothing.
+        if (url && window.open(url, '_blank', 'noopener')) return
+      }
+    } catch { /* matchMedia absence falls through to the overlay */ }
+    setPdfPaper(paper)
+  }, [])
   const [saveModalPaper, setSaveModalPaper] = useState(null)
   // The comment sheet is hosted here, next to the PDF viewer and the save
   // modal, for the same reason those are: the feed hands over a paper and
@@ -153,7 +174,7 @@ function AppContent() {
                         label: isEnglish ? 'Paper feed' : 'Feed de papers',
                         heading: isEnglish ? 'For you' : 'Para ti',
                       }}
-                      onOpenPdf={setPdfPaper}
+                      onOpenPdf={openPdf}
                       onSaveToList={setSaveModalPaper}
                       onOpenComments={setCommentsPaper}
                     />
@@ -164,7 +185,7 @@ function AppContent() {
                   <GuestFeedPage
                     onReady={setGuestFeedReady}
                     onAuthRequired={requestAuthentication}
-                    onOpenPdf={setPdfPaper}
+                    onOpenPdf={openPdf}
                     onOpenComments={setCommentsPaper}
                   />
                 </PageTransition>
@@ -176,7 +197,7 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <ListsPage onOpenPdf={setPdfPaper} onEditPaper={setSaveModalPaper} />
+                  <ListsPage onOpenPdf={openPdf} onEditPaper={setSaveModalPaper} />
                 </PageTransition>
               </ProtectedRoute>
             }
@@ -187,7 +208,7 @@ function AppContent() {
               <ProtectedRoute>
                 <PageTransition>
                   <ScientificReport
-                    onOpenPdf={setPdfPaper}
+                    onOpenPdf={openPdf}
                     onSaveToList={setSaveModalPaper}
                   />
                 </PageTransition>
@@ -202,7 +223,7 @@ function AppContent() {
               <ProtectedRoute>
                 <PageTransition>
                   <FollowingFeedPage
-                    onOpenPdf={setPdfPaper}
+                    onOpenPdf={openPdf}
                     onSaveToList={setSaveModalPaper}
                     onOpenComments={setCommentsPaper}
                   />
@@ -326,7 +347,7 @@ function AppContent() {
                 <PublicPaperPage
                   isAuthenticated={Boolean(user)}
                   onAuthRequired={requestAuthentication}
-                  onOpenPdf={setPdfPaper}
+                  onOpenPdf={openPdf}
                   onSaveToList={user ? setSaveModalPaper : requestAuthentication}
                 />
               </PageTransition>
