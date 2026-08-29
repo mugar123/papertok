@@ -73,6 +73,9 @@ const OWNED = [
   '../Settings/FollowingSettingsPage.css',
   // The heading shared by every /settings/* sub-page.
   '../Settings/SettingsSubheader.css',
+  // Joined with the viewer-topbar redesign: its new rules reach for the
+  // border/mono tokens that get typed from memory and silently dropped.
+  '../PDF/PDFViewer.css',
 ];
 
 test('every design token used by the profile screens is actually defined', async () => {

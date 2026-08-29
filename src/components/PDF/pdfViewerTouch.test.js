@@ -1,0 +1,20 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+
+/**
+ * En táctil, el PDF embebido está roto por plataforma: iOS Safari pinta solo
+ * la PRIMERA página dentro de un iframe (visto en un iPhone real, 2026-08-29)
+ * y Android Chrome no lo renderiza. El visor traspasa al visor nativo del
+ * navegador en una pestaña nueva en vez de fingir.
+ */
+test('el visor no monta el iframe en puntero grueso: traspasa al visor nativo', async () => {
+  const source = await readFile(new URL('./PDFViewer.jsx', import.meta.url), 'utf8');
+  // El iframe cuelga de canEmbed, y canEmbed excluye el puntero grueso.
+  assert.match(source, /const canEmbed = Boolean\(pdfUrl\) && !coarsePointer;/);
+  assert.match(source, /\{canEmbed && <iframe/);
+  // La tarjeta de traspaso existe y solo cuando hay PDF que traspasar…
+  assert.match(source, /\{pdfUrl && coarsePointer && \(/);
+  // …y el fallback de «no hay PDF» sigue llegando al táctil sin PDF.
+  assert.match(source, /shouldShowFallback && !\(coarsePointer && pdfUrl\)/);
+});
