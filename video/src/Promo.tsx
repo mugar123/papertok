@@ -1,10 +1,11 @@
 import React from "react";
-import { AbsoluteFill } from "remotion";
-import { Screenshot } from "./components/Screenshot";
-import { THEME } from "./theme";
+import { Series } from "remotion";
+import { ArxivOpen } from "./scenes/ArxivOpen";
+import { LogoZoom } from "./scenes/LogoZoom";
 
 export const Promo: React.FC = () => (
-  <AbsoluteFill style={{ backgroundColor: THEME.paper }}>
-    <Screenshot src="arxiv-list.png" />
-  </AbsoluteFill>
+  <Series>
+    <Series.Sequence durationInFrames={540}><ArxivOpen /></Series.Sequence>
+    <Series.Sequence durationInFrames={240}><LogoZoom /></Series.Sequence>
+  </Series>
 );
