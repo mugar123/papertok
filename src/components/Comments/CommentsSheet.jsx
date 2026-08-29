@@ -624,11 +624,14 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     initial: { y: '100%' },
     animate: {
       y: 0,
-      transition: { type: 'spring', stiffness: 420, damping: 38, mass: 0.9 },
+      // Near-critically damped (damping ~ 2*sqrt(stiffness*mass)): the sheet
+      // glides in and lands without a bounce. The old 420-stiffness spring
+      // covered the distance so fast it read as a snap.
+      transition: { type: 'spring', stiffness: 260, damping: 31, mass: 0.95 },
     },
     exit: {
       y: '100%',
-      transition: { duration: 0.22, ease: [0.4, 0, 1, 1] },
+      transition: { duration: 0.3, ease: [0.4, 0, 1, 1] },
     },
   } : {
     initial: { opacity: 0, scale: 0.94, y: 18 },
@@ -638,18 +641,19 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       y: 0,
       transition: {
         type: 'spring',
-        stiffness: 460,
-        damping: 36,
+        stiffness: 280,
+        damping: 30,
         mass: 0.9,
-        // Opacity on a spring flickers at the settle; give it its own tween.
-        opacity: { duration: 0.18, ease: [0.16, 1, 0.3, 1] },
+        // Opacity on a spring flickers at the settle; give it its own tween,
+        // long enough to keep pace with the slower spring.
+        opacity: { duration: 0.3, ease: [0.16, 1, 0.3, 1] },
       },
     },
     exit: {
       opacity: 0,
-      scale: 0.97,
-      y: 8,
-      transition: { duration: 0.16, ease: [0.4, 0, 1, 1] },
+      scale: 0.98,
+      y: 10,
+      transition: { duration: 0.28, ease: [0.4, 0, 1, 1] },
     },
   };
 
@@ -659,11 +663,11 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     initial: { opacity: 0 },
     animate: {
       opacity: 1,
-      transition: { duration: prefersReducedMotion ? 0.12 : 0.22, ease: 'easeOut' },
+      transition: { duration: prefersReducedMotion ? 0.12 : 0.3, ease: 'easeOut' },
     },
     exit: {
       opacity: 0,
-      transition: { duration: prefersReducedMotion ? 0.12 : 0.24, ease: 'easeIn' },
+      transition: { duration: prefersReducedMotion ? 0.12 : 0.36, ease: 'easeIn' },
     },
   };
 
