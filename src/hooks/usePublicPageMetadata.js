@@ -219,6 +219,13 @@ export function usePublicPageMetadata(options = EMPTY_OPTIONS) {
     const previousLanguage = document.documentElement.getAttribute('lang');
     document.title = metadata.title;
     document.documentElement.setAttribute('lang', language);
+    // Remember what we just set: `AnimatePresence mode="wait"` in App.jsx
+    // keeps the outgoing route mounted for EXIT_MS (~200ms) after the
+    // pathname already changed, so this cleanup runs well after the new
+    // route's RouteAnnouncer has already written the new title. Restoring
+    // unconditionally would stomp that newer title with this stale one; only
+    // restore if nothing else has claimed document.title since.
+    const titleWeSet = metadata.title;
 
     upsertMeta(records, 'name', 'description', metadata.description);
     upsertMeta(records, 'name', 'robots', metadata.robots);
@@ -244,7 +251,7 @@ export function usePublicPageMetadata(options = EMPTY_OPTIONS) {
     upsertJsonLd(records, metadata.jsonLd);
 
     return () => {
-      document.title = previousTitle;
+      if (document.title === titleWeSet) document.title = previousTitle;
       if (previousLanguage === null) document.documentElement.removeAttribute('lang');
       else document.documentElement.setAttribute('lang', previousLanguage);
       restoreNodes(records);

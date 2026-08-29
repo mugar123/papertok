@@ -135,7 +135,7 @@ test('the reader title is rendered like every other title in the app', async () 
   // It was the one printed raw, so a paper called "the $\mu$-Deformed Model"
   // arrived here still wearing its dollars.
   assert.match(jsx, /import ScientificText from '\.\.\/ScientificText\.js';/);
-  assert.match(jsx, /<h1 className="rd-doc-title"><ScientificText>\{paper\?\.title\}<\/ScientificText><\/h1>/);
+  assert.match(jsx, /<h1 className="rd-doc-title" lang="en"><ScientificText>\{paper\?\.title\}<\/ScientificText><\/h1>/);
 });
 
 test('the loading ghost fills a phone and leaves the desktop alone', async () => {

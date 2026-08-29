@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
 import RouteFallback from './components/Layout/RouteFallback'
+import RouteAnnouncer from './components/Layout/RouteAnnouncer'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LanguageProvider, useLanguage } from './context/LanguageContext'
 import { ThemeProvider } from './context/ThemeContext'
@@ -99,9 +100,28 @@ function AppContent() {
     return () => clearTimeout(timer)
   }, [])
 
+  // HashRouter (src/main.jsx) treats the URL fragment as the route. Letting
+  // href="#main-content" reach the browser would rewrite the whole hash, so
+  // react-router would read "/main-content" as the pathname, match no route,
+  // and the catch-all `<Route path="*">` below would redirect to "/" —
+  // ejecting a keyboard user from whatever route they were actually on (e.g.
+  // /login). The href stays for assistive technology; the click is handled
+  // here instead of letting the fragment reach the router.
+  const handleSkipLinkClick = (event) => {
+    event.preventDefault()
+    document.getElementById('main-content')?.focus()
+  }
+
   return (
     <FeedProvider feedRouteActive={normalizedPathname === '/'}>
+      <a className="skip-link" href="#main-content" onClick={handleSkipLinkClick}>
+        {isEnglish ? 'Skip to content' : 'Saltar al contenido'}
+      </a>
+      <RouteAnnouncer />
       {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={() => setSearchOpen(true)} />}
+      {/* Focus target for the skip link and for route changes (RouteAnnouncer).
+          A div, not <main>: several routes render their own <main> inside. */}
+      <div id="main-content" tabIndex={-1}>
       <Suspense fallback={<RouteFallback />}>
       <AnimatePresence mode="wait" initial={false}>
         <Routes location={location} key={location.pathname}>
@@ -121,6 +141,10 @@ function AppContent() {
                 <ProtectedRoute>
                   <PageTransition>
                     <FeedContainer
+                      landmark={{
+                        label: isEnglish ? 'Paper feed' : 'Feed de papers',
+                        heading: isEnglish ? 'For you' : 'Para ti',
+                      }}
                       onOpenPdf={setPdfPaper}
                       onSaveToList={setSaveModalPaper}
                       onOpenComments={setCommentsPaper}
@@ -323,6 +347,7 @@ function AppContent() {
         </Routes>
       </AnimatePresence>
       </Suspense>
+      </div>
 
       {user && <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} />}
 

@@ -16,6 +16,25 @@ const savedScrollByKey = {};
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
+// The `<main>` landmark is opt-in (via the `landmark` prop) rather than baked
+// into every return: GuestFeedPage already renders its own `<main>` around
+// this component, so an unconditional one here would nest two landmarks and
+// produce invalid HTML. Only the consumer that is the actual route root
+// (App.jsx's `/`) passes `landmark`. The skeleton and main-feed branches are
+// the only two states with real content worth landmark-and-heading, and they
+// share this wrapper instead of duplicating the conditional.
+function FeedLandmark({ landmark, children }) {
+  if (!landmark) {
+    return <div className="feed-wrapper">{children}</div>;
+  }
+  return (
+    <main className="feed-wrapper" aria-label={landmark.label}>
+      <h1 className="visually-hidden">{landmark.heading}</h1>
+      {children}
+    </main>
+  );
+}
+
 /**
  * `source` swaps WHERE the papers come from while every interaction (like,
  * save, read, view tracking) keeps flowing into the recommendation profile
@@ -26,7 +45,7 @@ const SCROLL_INTERACTION_SETTLE_MS = 220;
  * has genuinely run out — same height, same snapping, same swipe. The guest
  * feed uses it to end on a sign-up card instead of on nothing.
  */
-export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments = null, source = null, scrollKey = 'forYou' }) {
+export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments = null, source = null, scrollKey = 'forYou', landmark = null }) {
   const feed = useFeed();
   const { language, isEnglish } = useLanguage();
   const publicMode = Boolean(source?.publicMode);
@@ -294,11 +313,11 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
 
   if (displayState === FEED_DISPLAY_STATES.SKELETON) {
     return (
-      <div className="feed-wrapper">
+      <FeedLandmark landmark={landmark}>
         <div className="feed-container">
           <div className="feed-snap-item"><SkeletonCard /></div>
         </div>
-      </div>
+      </FeedLandmark>
     );
   }
 
@@ -342,7 +361,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   }
 
   return (
-    <div className="feed-wrapper">
+    <FeedLandmark landmark={landmark}>
       <div className="feed-container" ref={feedRef} onScroll={handleScroll}>
         {papers.map((paper, index) => (
           <div key={paper.id} className="feed-snap-item">
@@ -382,6 +401,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         {/* Sentinel for infinite scroll */}
         {hasMore && <div ref={sentinelRef} className="feed-sentinel" />}
       </div>
-    </div>
+    </FeedLandmark>
   );
 }

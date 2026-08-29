@@ -35,7 +35,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   const isHomeActive = pathname === '/';
 
   return (
-    <nav className="navbar">
+    <nav className="navbar" aria-label={isEnglish ? 'Main navigation' : 'Navegación principal'}>
       <div className="navbar-inner">
         <button
           type="button"
@@ -69,6 +69,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           <button
             type="button"
             className={`navbar-link ${isHomeActive && feedMode === 'top' ? 'active' : ''}`}
+            aria-current={isHomeActive && feedMode === 'top' ? 'page' : undefined}
             onClick={() => {
               if (location.pathname !== '/') navigate('/');
               setFeedMode('top');

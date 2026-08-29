@@ -1411,3 +1411,13 @@
     transition: none;
   }
 }
+
+/* The forme cell's real opener. Everything visual stays on .sr-cell-title. */
+.sr-cell-title-btn {
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  display: block;
+  width: 100%;
+}

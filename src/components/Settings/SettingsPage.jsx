@@ -380,8 +380,11 @@ export default function SettingsPage() {
   // pages that manage their own metadata are not affected.
   useEffect(() => {
     const previous = document.title;
-    document.title = language === 'en' ? 'Settings | PaperTok' : 'Configuración | PaperTok';
-    return () => { document.title = previous; };
+    const ours = language === 'en' ? 'Settings | PaperTok' : 'Configuración | PaperTok';
+    document.title = ours;
+    // Only restore if nothing claimed the title since (the outgoing route
+    // stays mounted ~200ms into the next one under AnimatePresence).
+    return () => { if (document.title === ours) document.title = previous; };
   }, [language]);
 
   const selectedInterestCount = Array.isArray(userPreferences) ? userPreferences.length : 0;

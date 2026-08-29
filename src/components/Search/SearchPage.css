@@ -77,7 +77,7 @@
 .search-users-action:focus-visible,
 .search-users-more:focus-visible,
 .search-item:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
 }
 
@@ -117,16 +117,9 @@
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: 0.95rem;
-  outline: none !important;
   box-shadow: none !important;
   -webkit-appearance: none;
   appearance: none;
-}
-
-.search-input:focus {
-  border: none !important;
-  box-shadow: none !important;
-  outline: none !important;
 }
 
 .search-input::placeholder {
@@ -946,4 +939,20 @@
   .search-users-spinner {
     animation: none;
   }
+}
+
+/* ─── Result title as a button (F9 / M20) ───
+   The row's title used to be text inside the whole-row role="link", with a
+   FollowButton nested in the same control — a control inside a control, which
+   screen readers in browse mode cannot represent. The title is now its own
+   <button> inside the <h4>, and the global button reset in global.css strips
+   font, color and padding down to nothing, so all three are restored here:
+   inherited from the surrounding .search-item-info h4 rather than the reset's
+   own values, no padding (the reset already zeroes it; stated for clarity),
+   left-aligned rather than the UA default of centred button text. */
+.search-item-title-btn {
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  text-align: left;
 }

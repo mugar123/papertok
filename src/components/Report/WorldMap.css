@@ -56,7 +56,7 @@
 }
 
 .wm-geo:focus-visible {
-  outline: 2px solid var(--brand-orange);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
   stroke: var(--border-ink);
   stroke-width: 1.5px;

@@ -161,13 +161,6 @@
     cursor: not-allowed;
   }
 
-  /* Keyboard users get a visible ink ring everywhere, since the light
-     theme no longer relies on glow to signal focus. */
-  :focus-visible {
-    outline: 2px solid var(--brand-orange);
-    outline-offset: 2px;
-  }
-
   /* ── Inputs ── */
   input, textarea, select {
     font-family: var(--font-body);
@@ -177,7 +170,6 @@
     border: 1px solid var(--border-default);
     border-radius: var(--radius-md);
     padding: var(--space-3) var(--space-4);
-    outline: none;
     transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
   }
 
@@ -344,4 +336,49 @@ html.theme-crossfade *::after {
   ::view-transition-new(root) {
     animation: none !important;
   }
+}
+
+/* ============================================
+   Focus ring
+   Deliberately OUTSIDE @layer base: component stylesheets are unlayered, and
+   unlayered CSS beats any layer, so while this rule lived inside the layer
+   every component `outline: none` silently killed the ring (WCAG 2.4.7).
+   Out here it competes on normal specificity and wins.
+   ============================================ */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Visible only while focused: the first Tab of every page lands here.
+   The z-index is a literal, not `--z-toast + 1`: the token scale tops out at
+   400, but the page chrome this link has to sit in front of ignores that scale
+   — the guest header and the public paper header are at 900 and the search
+   header at 1000. At 401 the link was focused and completely painted over by
+   the guest header (verified in the browser: `elementFromPoint` on the focused
+   link returned `.guest-wordmark`), which is exactly the "focus is hidden by
+   author content" failure of WCAG 2.4.11, and it made 2.4.1 useless to anyone
+   who needs to see where the focus went. 1100 clears every fixed header while
+   staying under the dialog layers (AuthPrompt 1800, overlays 9999+), which no
+   focused skip link ever has to cross. */
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: var(--space-4);
+  z-index: 1100;
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-weight: var(--fw-semibold);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: top var(--transition-fast);
+}
+.skip-link:focus-visible {
+  top: var(--space-2);
+}
+
+/* Programmatic focus target; the ring belongs on real controls. */
+#main-content:focus {
+  outline: none;
 }

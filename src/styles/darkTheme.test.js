@@ -24,7 +24,7 @@ import { readFile } from 'node:fs/promises';
  */
 const SHARED_ON_PURPOSE = new Map([
   ['--brand-yellow', 'the mark itself: it reads the same on paper and on ink'],
-  ['--brand-orange', 'the focus ring, which must not depend on the theme'],
+  ['--brand-orange', 'a brand accent, not the focus ring — that one deliberately does flip with the theme, to hold 3:1 against both a white page and an ink one'],
   ['--text-on-brand', 'ink, by definition — it exists to sit on the yellow'],
 ]);
 

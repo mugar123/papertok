@@ -2263,8 +2263,13 @@ a.pc-citations {
   .pc-authors--mobile-clickable {
     cursor: pointer;
   }
+  /* Per-author targets are far below the 24x24 CSS px minimum on a phone and
+     sit flush against each other, so touch is routed to the row's own handler
+     (which opens the all-authors modal) instead of letting a tap land on one
+     name. `.pc-authors-more` ("et al.") is left out on purpose: it is an
+     explicit, single, adequately sized target that opens the same modal. */
   .pc-authors--mobile-clickable .pc-author-avatars,
-  .pc-authors--mobile-clickable .pc-author-names span {
+  .pc-authors--mobile-clickable .pc-author-btn {
     pointer-events: none;
   }
 }
@@ -2480,4 +2485,50 @@ a.pc-citations {
   .graph-crumb,
   .graph-trail-back,
   .related-header .graph-view-button { transition: none; }
+}
+
+/* ── Keyboard-operable author/abstract controls (Task 6) ── */
+/* Inline author names: rendered as <Link> (an <a>, not a <button>) so that
+   `.pc-author-names`' ellipsis can clip inside the box — a <button> is
+   blockified and gets hidden whole instead of truncated. `text-decoration:
+   none` overrides the underline an <a> would otherwise carry. */
+.pc-author-btn {
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  text-decoration: none;
+}
+
+/* Fallback for the rare case getPublicEntityPath resolves no destination
+   (publicMode only): plain text, not a link to nowhere. */
+.pc-author-btn--static {
+  cursor: default;
+}
+
+.pc-authors-more {
+  font: inherit;
+  color: var(--text-secondary);
+  padding: 0 2px;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.pc-abstract-toggle {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+  padding: var(--space-1) 0;
+  align-self: flex-start;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* `.pc-author-names` clips with `overflow: hidden` + ellipsis, so the default
+   2px outside ring on these two buttons can be shaved by the container edge
+   even though focus still scrolls the clipped button into view. Pulling the
+   ring inside the button's own box keeps it from ever touching that edge. */
+.pc-author-btn:focus-visible,
+.pc-authors-more:focus-visible {
+  outline-offset: -1px;
 }

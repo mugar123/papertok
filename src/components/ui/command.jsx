@@ -113,12 +113,41 @@ function CommandGroup({ className, ...props }) {
   );
 }
 
+/**
+ * A result row, and the ring that says the arrow keys are on it.
+ *
+ * `data-[selected=true]:bg-secondary` used to be the whole indicator, and it is
+ * not one: measured in the browser with the palette open, the tint computes
+ * `rgb(26, 29, 36)` over the sheet's `rgb(22, 25, 31)` — 1.04:1 on ink, 1.07:1
+ * on paper, against the 3:1 WCAG 1.4.11 asks of the visual information that
+ * identifies a component's state. The tint stays because it makes the row read
+ * as one object, but the thing you actually see is the ring.
+ *
+ * It is drawn in `var(--focus-ring)` rather than in a colour of its own: this
+ * is the same "you are here" the rest of the app draws with `:focus-visible`
+ * (`styles/global.css`, `components/ui/button-variants.js`), and it is the one
+ * token that flips per theme (#b45309 on paper, #ff9d00 on ink) so that it
+ * clears 3:1 on both without depending on what is behind it. The offset is
+ * negative because the rows sit flush against each other inside `CommandList`'s
+ * 1px of padding, where an outset ring overlaps its neighbours and is clipped
+ * by the list's own overflow at the top and bottom of the scroll.
+ *
+ * There is no `outline-none` here any more. It was harmless while nothing drew
+ * an outline — cmdk keeps DOM focus on the field and moves the rows through
+ * `aria-activedescendant`, so no row was ever hiding a ring — but Tailwind v4
+ * writes it as `--tw-outline-style: none`, and `outline-2` paints
+ * `outline-style: var(--tw-outline-style)`. Together on this element they
+ * resolve to `outline-style: none` and the row silently falls back to the
+ * 1.04:1 tint, with every class below still present and still reading right.
+ */
 function CommandItem({ className, ...props }) {
   return (
     <CommandPrimitive.Item
       className={cn(
-        'relative flex cursor-pointer select-none items-center gap-3 rounded-md px-2 py-2 text-sm outline-none',
-        'data-[selected=true]:bg-secondary data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
+        'relative flex cursor-pointer select-none items-center gap-3 rounded-md px-2 py-2 text-sm',
+        'data-[selected=true]:bg-secondary data-[selected=true]:outline-2',
+        'data-[selected=true]:-outline-offset-2 data-[selected=true]:outline-[var(--focus-ring)]',
+        'data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50',
         className,
       )}
       {...props}

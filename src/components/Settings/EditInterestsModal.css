@@ -199,7 +199,6 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   cursor: pointer;
-  outline: none;
   overflow: hidden;
   
   /* Transition for hover push-up */

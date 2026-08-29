@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useMemo, useEffect, memo } from 'react';
+import { Fragment, useState, useRef, useCallback, useMemo, useEffect, useId, memo } from 'react';
 import { createPortal } from 'react-dom';
 import { CATEGORIES } from '../../data/categories';
 import {
@@ -14,7 +14,7 @@ import { Button } from '../ui/button.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getProjectForPaper } from '../../services/openAireService';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import './PaperCard.css';
 import RelatedPapersSheet from './RelatedPapersSheet';
@@ -30,6 +30,13 @@ import { areaAccentForPaper, areaKeyForPaper, areaLabelForPaper } from '../../ut
 import { accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.js';
 import { hasUsableAIAbstract } from '../../utils/aiExplanationAccess.js';
 import { buildPaperTopicTags } from '../../utils/paperTopicTags.js';
+
+/**
+ * How still the abstract panel has to be before its clipping is believed: the
+ * quiet demanded after the LAST size change, not a wait for the whole travel.
+ * A 420ms collapse keeps resetting this, so the reading lands once — after it.
+ */
+const ABSTRACT_SETTLE_MS = 180;
 
 /**
  * A glyph per status, keyed the same way the tags are.
@@ -215,7 +222,20 @@ const PaperCard = memo(function PaperCard({
   analyticsSurface = 'feed',
   position,
 }) {
+  // `position` is optional and PaperCard renders on five different surfaces,
+  // so it cannot anchor a stable, collision-free id for aria-controls.
+  const abstractId = useId();
   const [expanded, setExpanded] = useState(false);
+  // Whether the collapsed panel is actually hiding words. The toggle below the
+  // abstract only earns its place when there is something to reveal: a short
+  // abstract needs no control, and a paper that carries none at all must not
+  // offer to expand what it does not have.
+  const [abstractClipped, setAbstractClipped] = useState(false);
+  // Read by the measurement below, which must not re-run when the panel opens:
+  // a reading taken while it travels between its two heights is of the height
+  // the animation is passing through, not the one it rests at.
+  const expandedRef = useRef(expanded);
+  expandedRef.current = expanded;
   const [showHeart, setShowHeart] = useState(false);
   const [copied, setCopied] = useState(false);
   // Only papers with a canonical identity can anchor a thread; for the rest
@@ -485,6 +505,58 @@ const PaperCard = memo(function PaperCard({
       settleAbstractResize.current?.();
     };
   }, []);
+
+  /**
+   * Whether the collapsed panel is hiding words, which is the only thing that
+   * earns the toggle below it a place on the card.
+   *
+   * Two things make the reading harder than `scrollHeight > clientHeight`.
+   *
+   * The panel is sized by the flex room its siblings leave, and that is not
+   * resolved in the commit that mounts it — measuring there reads a box with no
+   * height yet and calls every abstract clipped. Hence the frame's wait.
+   *
+   * And a collapse looks from here like a storm of resizes whose early frames
+   * still report the open height, so they answer "nothing is hidden" about a
+   * panel that is mid-travel. Reading only once the size has been quiet for a
+   * moment takes the settled answer instead of one the transition passed
+   * through, which is also what stops the button blinking out and back.
+   *
+   * `expandedRef` rather than `expanded` keeps all of this out of the effect's
+   * dependencies: an open panel clips nothing, and re-running on open would
+   * throw away the verdict that earned the button its place.
+   */
+  useEffect(() => {
+    if (!abstractText) {
+      setAbstractClipped(false);
+      return undefined;
+    }
+    let alive = true;
+    let settleTimer = null;
+    const read = () => {
+      const node = abstractRef.current;
+      if (!alive || !node || expandedRef.current) return;
+      setAbstractClipped(node.scrollHeight - node.clientHeight > 1);
+    };
+    const settle = () => {
+      if (settleTimer) clearTimeout(settleTimer);
+      settleTimer = setTimeout(read, ABSTRACT_SETTLE_MS);
+    };
+    const frame = requestAnimationFrame(() => requestAnimationFrame(read));
+    const node = abstractRef.current;
+    const observer = typeof ResizeObserver === 'undefined'
+      ? null
+      : new ResizeObserver(settle);
+    if (node && observer) observer.observe(node);
+    window.addEventListener('resize', settle);
+    return () => {
+      alive = false;
+      cancelAnimationFrame(frame);
+      if (settleTimer) clearTimeout(settleTimer);
+      observer?.disconnect();
+      window.removeEventListener('resize', settle);
+    };
+  }, [abstractKey, abstractText]);
 
   /**
    * The other half of the swap: the panel eases between the height it had and
@@ -1182,7 +1254,7 @@ const PaperCard = memo(function PaperCard({
           )}
         </AnimatePresence>
 
-        <h2 className="pc-title">
+        <h2 className="pc-title" lang="en">
           <ScientificText>{paper.title}</ScientificText>
         </h2>
 
@@ -1203,34 +1275,71 @@ const PaperCard = memo(function PaperCard({
             ))}
           </div>
           <div className="pc-author-names">
-            {(paper.authors || []).slice(0, 3).map((author, index) => (
-               <span
-                 key={index}
-                 className="pc-author-link"
-                 onClick={(e) => {
-                   e.stopPropagation(); 
-                   const pId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
-                   const authorName = author.name || author;
-                   const path = publicMode
-                     ? getPublicEntityPath('author', author.id || authorName)
-                     : `/explorer/author/${encodeURIComponent(authorName)}?arxivId=${pId}`;
-                   trackEvent('select_content', {
-                     content_type: 'author',
-                     surface: analyticsSurface,
-                     position,
-                   });
-                   if (path) navigate(path);
-                 }}
-               >
-                 {author.name || author}{index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
-               </span>
-            ))}
-            {(paper.authors || []).length > 3 && <span> et al.</span>}
+            {/* The comma and the space live outside the button, not inside it.
+                These buttons are inline-block, and a trailing space inside an
+                inline-block box is trimmed away, so "Kramer, Alexander" used to
+                render as "Kramer,Alexander". Keeping the separator out also
+                keeps it out of each button's accessible name. */}
+            {(paper.authors || []).slice(0, 3).map((author, index) => {
+               const authorName = author.name || author;
+               // `path` now doubles as the <Link to> destination, so it has to
+               // be known at render time — a <Link> can't compute where it
+               // goes lazily inside its own onClick the way the old <button>
+               // did.
+               const pId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
+               const path = publicMode
+                 ? getPublicEntityPath('author', author.id || authorName)
+                 : `/explorer/author/${encodeURIComponent(authorName)}?arxivId=${pId}`;
+               return (
+                 <Fragment key={index}>
+                   {path ? (
+                     <Link
+                       to={path}
+                       className="pc-author-link pc-author-btn"
+                       onClick={(e) => {
+                         e.stopPropagation();
+                         trackEvent('select_content', {
+                           content_type: 'author',
+                           surface: analyticsSurface,
+                           position,
+                         });
+                       }}
+                     >
+                       {authorName}
+                     </Link>
+                   ) : (
+                     // getPublicEntityPath found neither a usable id nor a
+                     // name (publicMode only): there is nowhere to send a
+                     // click, so render inert text instead of a link to
+                     // nowhere.
+                     <span className="pc-author-btn pc-author-btn--static">
+                       {authorName}
+                     </span>
+                   )}
+                   {index < Math.min((paper.authors || []).length, 3) - 1 ? ', ' : ''}
+                 </Fragment>
+               );
+            })}
+            {(paper.authors || []).length > 3 && (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  className="pc-authors-more"
+                  aria-haspopup="dialog"
+                  onClick={(e) => { e.stopPropagation(); setShowAuthorsModal(true); }}
+                  aria-label={isEnglish ? 'Show all authors' : 'Ver todos los autores'}
+                >
+                  et al.
+                </button>
+              </>
+            )}
           </div>
         </div>
 
         <div
           ref={abstractRef}
+          id={abstractId}
           className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''}`}
           onClick={(e) => toggleExpanded(e, !expanded)}
           onTransitionEnd={handleAbstractTransitionEnd}
@@ -1268,6 +1377,23 @@ const PaperCard = memo(function PaperCard({
             </motion.p>
           </AnimatePresence>
         </div>
+
+        {/* Only where there is something to reveal. `expanded` keeps it on
+            screen once opened, since an open panel clips nothing and would
+            otherwise take away the control that closes it. */}
+        {abstractText && (abstractClipped || expanded) && (
+        <button
+          type="button"
+          className="pc-abstract-toggle"
+          aria-expanded={expanded}
+          aria-controls={abstractId}
+          onClick={(e) => toggleExpanded(e, !expanded)}
+        >
+          {expanded
+            ? (isEnglish ? 'Show less' : 'Mostrar menos')
+            : (isEnglish ? 'Read full abstract' : 'Leer el abstract completo')}
+        </button>
+        )}
 
         <AnimatePresence initial={false}>
           {researchResources.length > 0 && (
@@ -1528,8 +1654,9 @@ const PaperCard = memo(function PaperCard({
               </div>
               <div className="pc-authors-modal-list">
                 {(paper.authors || []).map((author, idx) => (
-                  <div 
-                    key={idx} 
+                  <button
+                    key={idx}
+                    type="button"
                     className="pc-authors-modal-item"
                     onClick={() => {
                       setShowAuthorsModal(false);
@@ -1545,11 +1672,11 @@ const PaperCard = memo(function PaperCard({
                       if (path) navigate(path);
                     }}
                   >
-                    <div className="pc-author-avatar-large" style={{ '--i': idx }}>
+                    <div className="pc-author-avatar-large" style={{ '--i': idx }} aria-hidden="true">
                       {(author.name || author).charAt(0).toUpperCase()}
                     </div>
                     <span>{author.name || author}</span>
-                  </div>
+                  </button>
                 ))}
               </div>
             </motion.div>

@@ -75,8 +75,14 @@ function FormeCell({ cell, figure, isLoaded, onLoaded, onSelect, enterOrder, isE
         <span className="sr-cell-cat" style={{ color: accent }}>{category}</span>
         <span className="sr-cell-year">{paper.year}</span>
       </div>
-      <h3 className={`sr-cell-title sr-cell-title--${titleSize}`}>
-        <ScientificText>{paper.title}</ScientificText>
+      <h3 className={`sr-cell-title sr-cell-title--${titleSize}`} lang="en">
+        <button
+          type="button"
+          className="sr-cell-title-btn"
+          onClick={(e) => { e.stopPropagation(); onSelect(paper); }}
+        >
+          <ScientificText>{paper.title}</ScientificText>
+        </button>
       </h3>
     </>
   );
@@ -85,6 +91,7 @@ function FormeCell({ cell, figure, isLoaded, onLoaded, onSelect, enterOrder, isE
     <p
       className={`sr-cell-dek${twoColumnDek ? ' sr-cell-dek--split' : ''}`}
       style={{ '--dek-lines': dekLines }}
+      lang={hasUsableAIAbstract(paper.abstract) ? 'en' : undefined}
     >
       {hasUsableAIAbstract(paper.abstract)
         ? <ScientificText>{paper.abstract}</ScientificText>
@@ -98,7 +105,7 @@ function FormeCell({ cell, figure, isLoaded, onLoaded, onSelect, enterOrder, isE
       {paper.citationCount > 0 && (
         <span className="sr-micro">{paper.citationCount} {isEnglish ? 'citations' : 'citas'}</span>
       )}
-      {paper.journal && <span className="sr-micro venue">{paper.journal}</span>}
+      {paper.journal && <span className="sr-micro venue" lang="en">{paper.journal}</span>}
     </div>
   );
 
