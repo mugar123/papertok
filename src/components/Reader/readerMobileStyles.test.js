@@ -427,3 +427,24 @@ test('el cromo superior se aparta con la barra, y un foco lo trae de vuelta', as
   assert.match(jsx, /className="rd-float-close" data-receded=\{chromeReceded/);
   assert.match(jsx, /className="rd-status" data-receded=\{chromeReceded/);
 });
+
+test('un mark tocado ofrece quitarse desde la barra, y todo mark publica su id', async () => {
+  const barJsx = await readFile(READER_BAR_JSX, 'utf8');
+  // El estado nuevo entra en la cadena DETRÁS de la selección viva: lo que
+  // el lector acaba de seleccionar manda sobre lo que tocó antes.
+  assert.match(barJsx, /pending \? 'selection' : tappedMark \? 'mark' : 'rest'/);
+  assert.match(barJsx, /state === 'mark' &&/);
+  assert.match(barJsx, /onClick=\{onRemoveMark\}/);
+
+  const jsx = await readFile(READER_JSX, 'utf8');
+  // El tap se resuelve contra data-highlight-id y solo en la ruta táctil;
+  // el scroll lo descarta igual que descarta una selección.
+  assert.match(jsx, /closest\?\.\('mark\[data-highlight-id\]'\)/);
+  assert.match(jsx, /tappedMark=\{annotations\.pending \? null : tappedMark\}/);
+
+  // Y las fórmulas marcadas llevan el mismo id que los runs de texto: sin
+  // esto, tocar la parte matemática de un subrayado no lo encontraría.
+  const highlighted = await readFile(new URL('./HighlightedScientificText.jsx', import.meta.url), 'utf8');
+  const mathIdTags = highlighted.match(/data-highlight-id=\{mathId\}/g) || [];
+  assert.equal(mathIdTags.length, 2, 'both math branches (raw and rendered) carry the id');
+});

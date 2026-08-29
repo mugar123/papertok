@@ -20,6 +20,7 @@ import ThinkingDots from './ThinkingDots.jsx';
 export default function ReaderBar({
   pending, copy, usesLeft, unlimited, canAsk, busy,
   onHighlight, onSaveNote, onAsk, onClose,
+  tappedMark, onRemoveMark, onDismissMark,
   annotationCount, onOpenList, onOpenSettings,
   streaming, asking, askError, visible,
 }) {
@@ -28,7 +29,10 @@ export default function ReaderBar({
   const [draft, setDraft] = useState('');
   const [keyboardGap, setKeyboardGap] = useState(0);
 
-  const state = composing ? 'composing' : pending ? 'selection' : 'rest';
+  // A live selection outranks a previously tapped mark: whatever the reader
+  // just selected is the newer intention, and `PaperReader` clears the tap
+  // on scroll the same way it dismisses a selection.
+  const state = composing ? 'composing' : pending ? 'selection' : tappedMark ? 'mark' : 'rest';
 
   // `.rd-bar` is `position: fixed`, which anchors against the *layout*
   // viewport — and on iOS Safari a bottom-anchored fixed element does not
@@ -108,7 +112,10 @@ export default function ReaderBar({
     const handleKey = (event) => {
       if (event.key === 'Escape') {
         event.stopPropagation();
-        onClose();
+        // Escape leaves whatever the bar is currently about: a tapped mark
+        // has its own way out, everything else discards the selection.
+        if (state === 'mark') onDismissMark();
+        else onClose();
       }
     };
     // Capture, matching `SelectionMenu`: the two never coexist (one pointer
@@ -117,7 +124,7 @@ export default function ReaderBar({
     // not for no reason tied to this bar itself.
     document.addEventListener('keydown', handleKey, true);
     return () => document.removeEventListener('keydown', handleKey, true);
-  }, [state, onClose]);
+  }, [state, onClose, onDismissMark]);
 
   const submit = (event) => {
     event.preventDefault();
@@ -287,6 +294,26 @@ export default function ReaderBar({
           {typeof usesLeft === 'number' && (
             <p className="rd-bar-foot">{copy.usesLeftLine(usesLeft)}</p>
           )}
+        </div>
+      )}
+
+      {state === 'mark' && (
+        <div className="rd-bar-row" data-row="mark">
+          <button type="button" className="rd-bar-action" onClick={onRemoveMark}>
+            <Highlighter size={16} />
+            {/* Honest about scope: a mark that carries a note loses the note
+                with it, and the label says so before the tap, not after. */}
+            <span>{tappedMark?.note ? copy.removeHighlightNote : copy.removeHighlight}</span>
+          </button>
+          <button
+            type="button"
+            className="rd-bar-dismiss"
+            onClick={onDismissMark}
+            aria-label={copy.dismissSelection}
+            title={copy.dismissSelection}
+          >
+            <X size={16} />
+          </button>
         </div>
       )}
 

@@ -112,6 +112,8 @@ const COPY = {
     toggleAnnotations: 'Ver anotaciones',
     settings: 'Ajustes',
     dismissSelection: 'Descartar selección',
+    removeHighlight: 'Quitar subrayado',
+    removeHighlightNote: 'Quitar subrayado y nota',
     selectionTitle: 'Qué hacer con la selección',
     justHighlight: 'Subrayar',
     writeNote: 'Escribir nota',
@@ -190,6 +192,8 @@ const COPY = {
     toggleAnnotations: 'Show annotations',
     settings: 'Settings',
     dismissSelection: 'Discard selection',
+    removeHighlight: 'Remove highlight',
+    removeHighlightNote: 'Remove highlight and note',
     selectionTitle: 'What to do with the selection',
     justHighlight: 'Highlight',
     writeNote: 'Write a note',
@@ -938,6 +942,13 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     frozen: Boolean(annotations.pending),
   });
 
+  // A tapped existing mark, waiting for the bar to offer taking it back.
+  // Touch only: on a fine pointer the rail sits open beside the text with a
+  // delete on every card, so there is already a way back; on a phone the
+  // only route used to be opening the sheet and deleting the annotation
+  // (reported from a real iPhone, 2026-08-29 — "no me deja desubrayar").
+  const [tappedMark, setTappedMark] = useState(null);
+
   // One truth for all the floating chrome. The bar's overrides (a rewrite or
   // an ask in flight, an error still on screen) apply as much to the back
   // button and the uses counter: whatever must keep the bar up should not be
@@ -1457,9 +1468,34 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             // once a decision has settled and the reader scrolls away from it.
             if (annotations.pending) clearNativeSelectionOnTouch();
             annotations.dismiss();
+            // Scrolling away is the same "never mind" it is for a selection.
+            // Functional update so the every-scroll case with nothing tapped
+            // stays a no-op instead of a render per scroll event.
+            setTappedMark(current => (current ? null : current));
           }}
         >
-          <article className="rd-doc" data-marks={showHighlights ? undefined : 'off'}>
+          <article
+            className="rd-doc"
+            data-marks={showHighlights ? undefined : 'off'}
+            onClick={(event) => {
+              // Tap an existing mark to get it back out: touch route only —
+              // the desktop rail already offers deletion per card.
+              if (selectionRoute !== 'bar') return;
+              const mark = event.target.closest?.('mark[data-highlight-id]');
+              if (!mark) {
+                setTappedMark(current => (current ? null : current));
+                return;
+              }
+              // A tap that ends a selection gesture (or lands mid-selection)
+              // is about the selection, not about unhighlighting.
+              if (annotations.pending) return;
+              const selection = window.getSelection();
+              if (selection && !selection.isCollapsed) return;
+              const id = mark.getAttribute('data-highlight-id');
+              const annotation = annotations.annotations.find(item => item.id === id);
+              if (annotation) setTappedMark(annotation);
+            }}
+          >
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
                 "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
@@ -1737,6 +1773,16 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             onSaveNote={(note) => { clearNativeSelectionOnTouch(); annotations.saveNote(note); }}
             onAsk={() => { clearNativeSelectionOnTouch(); annotations.ask(); }}
             onClose={() => { clearNativeSelectionOnTouch(); annotations.dismiss(); }}
+            // A live selection speaks for the bar before a previously tapped
+            // mark does (the `state` chain in `ReaderBar` agrees), so the
+            // tapped mark is only ever offered when nothing newer is pending.
+            tappedMark={annotations.pending ? null : tappedMark}
+            onRemoveMark={() => {
+              const target = tappedMark;
+              setTappedMark(null);
+              if (target) annotations.remove(target.id);
+            }}
+            onDismissMark={() => setTappedMark(null)}
             annotationCount={annotationCounts.total}
             onOpenList={openAnnotationList}
             // Unconditional here, not `isNarrow`-gated: this block only ever

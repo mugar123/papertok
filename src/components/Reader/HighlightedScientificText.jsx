@@ -86,14 +86,18 @@ export default function HighlightedScientificText({ children, highlights = [] })
           // Until the chunk lands — and for anything KaTeX refuses — the LaTeX
           // source shows. It is readable, and it is what the highlight offsets
           // were measured against either way.
+          // Marked maths carries the same id as any other run of its
+          // highlight: a tap on the formula is a tap on the highlight.
+          const mathId = item.kind ? item.id || undefined : undefined;
           return html === null
-            ? <Tag key={`math-raw-${index}`} {...bounds} {...marks} data-math="" className={markClass}>{item.raw}</Tag>
+            ? <Tag key={`math-raw-${index}`} {...bounds} {...marks} data-math="" data-highlight-id={mathId} className={markClass}>{item.raw}</Tag>
             : (
               <Tag
                 key={`math-${index}`}
                 {...bounds}
                 {...marks}
                 data-math=""
+                data-highlight-id={mathId}
                 className={markClass}
                 dangerouslySetInnerHTML={{ __html: html }}
               />
