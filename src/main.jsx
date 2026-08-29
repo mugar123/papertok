@@ -49,6 +49,10 @@ import '@fontsource/ibm-plex-mono/600.css'
 // for this package, so latin/latin-ext arrive together with vietnamese.
 import '@fontsource-variable/newsreader/opsz.css'
 import '@fontsource-variable/newsreader/opsz-italic.css'
+// Nunito carries the one warm line on a profile: the bio. Weight is its only
+// real axis, so `wght.css` is the whole font — no opsz question like
+// Newsreader's above. Only fetched when a profile card actually paints.
+import '@fontsource-variable/nunito/wght.css'
 // KaTeX's stylesheet ships with the on-demand KaTeX chunk (see
 // components/ScientificText.js); loading it here put 23 KB of CSS in front of
 // every first paint, math or no math.

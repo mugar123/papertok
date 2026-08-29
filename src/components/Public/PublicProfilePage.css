@@ -9,7 +9,7 @@
    weight.
 
    Direction A puts it in the language the rest of the app already speaks: the
-   name is a serif nameplate over a 3px double rule, counts are mono in the
+   name is a serif nameplate, counts are mono in the
    ruled grid the Explorer's entity header uses, the active section carries the
    brand yellow (rule 3), a list wears its owner's `--list-accent` exactly as it
    does in Mis listas, and every paper row carries its own field down its inner
@@ -94,8 +94,9 @@
   align-items: flex-start;
   gap: clamp(var(--space-5), 3vw, var(--space-8));
   padding-bottom: var(--space-6);
-  /* The nameplate rule. Same gesture as Mis listas and the Report. */
-  border-bottom: 3px double var(--border-ink);
+  /* No rule of its own: the stats grid opens with its own hairline right
+     below, so a double rule here landed on the same line and read as one
+     thick, dirty divider. The grid's own border is the separation now. */
 }
 
 .public-profile-avatar {
@@ -182,11 +183,15 @@
   color: var(--text-tertiary);
 }
 
+/* The rounded voice, and the only place in the app that uses it: what someone
+   wrote about themselves, set apart from the serif nameplate above it.
+   --fs-base rather than the serif's --fs-lg — Nunito's x-height is far taller
+   than Newsreader's, so it reads at a size the serif could not. */
 .public-profile-bio {
   max-width: 62ch;
   margin: var(--space-3) 0 0;
-  font-family: var(--font-serif);
-  font-size: var(--fs-lg);
+  font-family: var(--font-rounded);
+  font-size: var(--fs-base);
   line-height: 1.6;
   color: var(--text-secondary);
   white-space: pre-line;
@@ -1026,9 +1031,8 @@ button.profile-stat:disabled {
     font-size: var(--fs-3xl);
   }
 
-  .public-profile-bio {
-    font-size: var(--fs-base);
-  }
+  /* No bio override here any more: it existed to pull the serif down from
+     18px, and the rounded face already sits at --fs-base everywhere. */
 
   .profile-owner-actions {
     margin-top: var(--space-4);
