@@ -1,6 +1,10 @@
 import React from "react";
-import { TitleCard } from "./scenes/TitleCard";
+import { AbsoluteFill } from "remotion";
+import { Screenshot } from "./components/Screenshot";
+import { THEME } from "./theme";
 
 export const Promo: React.FC = () => (
-  <TitleCard text="Introducing PaperTok" highlight="PaperTok" />
+  <AbsoluteFill style={{ backgroundColor: THEME.paper }}>
+    <Screenshot src="arxiv-list.png" />
+  </AbsoluteFill>
 );
