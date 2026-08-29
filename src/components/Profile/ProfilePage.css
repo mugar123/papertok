@@ -552,6 +552,25 @@
   margin-left: auto;
 }
 
+/* On a phone the row wraps instead of squeezing: the two Spanish action
+   buttons («En mi perfil» + «Desfijar») are rigid and together wider than
+   the column the card leaves, so the title's `flex: 1` + `min-width: 0` +
+   `overflow-wrap: anywhere` collapsed it to one CHARACTER per line
+   («Pa/pe/rs/de/su/ga/r», seen on a real iPhone, 2026-08-29). Wrapped, the
+   title keeps the first line beside its icon and the actions take a full
+   row underneath. */
+@media (max-width: 640px) {
+  .profile-pin-list li {
+    flex-wrap: wrap;
+  }
+
+  .profile-pin-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+}
+
 /* The avatar is read-only here: it mirrors the account picture, which is
    changed in the general settings screen. Two pickers for one image was the
    confusing part. */

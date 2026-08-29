@@ -115,3 +115,16 @@ test('every allowlisted property is really injected by the component that claims
     );
   }
 });
+
+test('la fila de listas envuelve en móvil en vez de estrujar el título a una letra por línea', async () => {
+  const css = await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8');
+  // Los dos botones de la fila son rígidos y más anchos que la columna que
+  // deja un teléfono; sin este wrap, flex: 1 + min-width: 0 + overflow-wrap:
+  // anywhere parten el título por carácter (visto en un iPhone real,
+  // 2026-08-29). El bloque estrecho debe envolver la fila y dar a las
+  // acciones su propia línea completa.
+  const narrow = css.match(/@media \(max-width: 640px\)\s*\{[\s\S]*?\n\}/);
+  assert.ok(narrow, 'ProfilePage.css perdió su bloque de max-width: 640px');
+  assert.match(narrow[0], /\.profile-pin-list li\s*\{[^}]*flex-wrap:\s*wrap/);
+  assert.match(narrow[0], /\.profile-pin-actions\s*\{[^}]*flex:\s*1 1 100%/);
+});
