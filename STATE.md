@@ -1,5 +1,56 @@
 # Estado / pendientes
 
+## El resumen anotado se descarga también en PDF (2026-08-29)
+
+**La tarjeta de exportación del lector gana un selector de formato: PDF
+(por defecto) además del `.tex`. El PDF se genera íntegro en cliente —
+`buildPdfModel` en `src/utils/pdfExport.js` comparte filtrado, numeración y
+copys con `latexExport.js` (que ahora exporta `documentCopy` y acepta
+extensión en `exportFileName`), y el renderizador pagina divs A4 fuera de
+pantalla, rasteriza con `html2canvas-pro` y ensambla con `jspdf`, ambos como
+chunks bajo demanda.** Notas al pie de su propia página con etiqueta
+Tuya/IA, marcas amarillas del lector y grises con subrayado de tinta las de
+la IA (lo que la vista previa de la tarjeta prometía y el `.tex` no hace),
+pie con procedencia + enlace + número en cada página, y tipografía
+Newsreader — colores fijos en hex, ajenos al tema.
+
+Dos hallazgos del rasterizador, ya recogidos en el código: `hyphens: auto`
+dibuja el corte sin el guion («justific ado»), así que el PDF va justificado
+sin partir; y la prosa llega en espacio normalizado con `%` escapado a `\%`
+(que el `.tex` compila bien), así que `displayProse` lo desescapa al pintar
+— el lector en pantalla arrastra ese mismo `\%` de siempre y quedó apuntado
+como tarea aparte. Plan en
+`docs/superpowers/plans/2026-08-29-pdf-export.md`; modelo testeado en node
+(`pdfExport.test.js`), paginado y PDF verificados en vivo contra el dev
+server. Sin commit: árbol compartido con otra sesión.
+
+## DeepSeek V4 Flash como fallback intermedio de IA (2026-08-29)
+
+**La cadena de `/ai/explain` pasa de Gemini → Kimi a Gemini → DeepSeek → Kimi,
+en orden de coste: DeepSeek corre gratis en la API OpenAI-compatible de NVIDIA
+(`NVIDIA_API_KEY`, secreto ya subido a Cloudflare) y Kimi en Modal cobra por
+token, así que Modal solo se toca cuando NVIDIA no contesta.**
+
+`AI_FALLBACK_PROVIDER` ahora es una lista separada por comas
+(`"nvidia-deepseek,modal-kimi"`) y `explainWithProviderChain` la recorre:
+el disparador sigue siendo el agotamiento de cuota diaria de Gemini, y un
+fallback que falla por BUSY/UNAVAILABLE/NOT_CONFIGURED/INVALID_RESPONSE/
+BUDGET_EXHAUSTED cede el paper al siguiente. Presupuesto propio
+(`deepseekMs = 30 s`, mínimo 8 s), sin ledger — NVIDIA no factura. La clave de
+caché incorpora la cadena completa, así que las explicaciones cacheadas bajo
+`gemini+modal-kimi` se regenerarán una vez.
+
+**Ojo medido, no supuesto:** el 29-08 la cola gratuita de NVIDIA para
+`deepseek-ai/deepseek-v4-flash-0731` tardaba 130–213 s en responder una
+petición trivial (tres sondas, ninguna bajo 70 s). Mientras eso siga así, el
+intento DeepSeek abortará a los 30 s y la cadena seguirá cayendo a Kimi, con
+30 s extra de latencia en cada evento de fallback. El código es correcto para
+cuando la cola mejore; si no mejora, bajar `deepseekMs` o quitar el eslabón es
+un cambio de una línea en `wrangler.toml`.
+
+Sin desplegar: hay otra sesión editando este árbol y wrangler sube el árbol
+entero — rebasar antes de desplegar.
+
 ## PR #19 revisado — el lector no estaba enchufado (2026-08-24)
 
 **Revisión completa de `feat/light-design-system` (@samuelcorsan): 74 ficheros,
