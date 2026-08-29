@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import {
-  ArrowLeft, ArrowRight, Check, ExternalLink, FolderOpen, Globe2, Loader2, Lock, Pin, PinOff,
+  ArrowRight, Check, ExternalLink, FolderOpen, Globe2, Loader2, Lock, Pin, PinOff,
   ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
@@ -40,6 +40,8 @@ import { attributePublicList } from '../../services/publicListService.js';
 import VisibilityChoice from './VisibilityChoice.jsx';
 import { visibilityCopy } from './visibilityCopy.js';
 import VisibilityPrompt from './VisibilityPrompt.jsx';
+import SettingsSubheader from '../Settings/SettingsSubheader.jsx';
+import { SETTINGS_BREADCRUMB } from '../Settings/settingsBreadcrumb.js';
 import { getIcon } from '../../utils/icons.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { HANDLE_ERRORS, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
@@ -115,6 +117,10 @@ export default function ProfilePage() {
   const [pinsBusy, setPinsBusy] = useState(false);
   const [promptDismissed, setPromptDismissed] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
+  // Bumped on every successful save. It is the `key` of the preview's flashing
+  // parts, so a second save remounts them and the highlight replays instead of
+  // sitting there already-finished.
+  const [savedTick, setSavedTick] = useState(0);
   // F12 migration of the legacy pin model. 'idle' until the profile answers;
   // 'prompt' when hidden pins need the owner's decision; 'failed' leaves the
   // legacy artifacts untouched for the next visit's retry.
@@ -157,7 +163,15 @@ export default function ProfilePage() {
     goToLists: 'Go to My lists',
     loadingLists: 'Looking for your published lists...',
     pin: 'Pin',
-    unpin: 'Unpin',
+    unpin: 'Unpin from top',
+    preview: 'Preview · your public page',
+    previewHint: 'This is your page as anyone with the link sees it. It follows what you save here.',
+    previewNoBio: 'No bio yet.',
+    previewLists: 'Lists',
+    previewNoLists: 'No lists on your profile yet.',
+    previewPinned: 'pinned',
+    previewPrivate: 'Private — only you can open this page.',
+    section: (current, total) => `Section ${current} / ${total}`,
     onProfile: 'On my profile',
     offProfile: 'Not on my profile',
     showcaseFull: 'Your profile already shows the maximum number of lists.',
@@ -223,7 +237,15 @@ export default function ProfilePage() {
     goToLists: 'Ir a Mis listas',
     loadingLists: 'Buscando tus listas publicadas...',
     pin: 'Fijar',
-    unpin: 'Quitar',
+    unpin: 'Desfijar',
+    preview: 'Vista previa · tu página pública',
+    previewHint: 'Así ve tu página cualquiera con el enlace. Se actualiza con lo que guardes aquí.',
+    previewNoBio: 'Todavía sin biografía.',
+    previewLists: 'Listas',
+    previewNoLists: 'Todavía no muestras ninguna lista en tu perfil.',
+    previewPinned: 'fijada',
+    previewPrivate: 'Privado — solo tú puedes abrir esta página.',
+    section: (current, total) => `Sección ${current} / ${total}`,
     onProfile: 'En mi perfil',
     offProfile: 'Fuera de mi perfil',
     showcaseFull: 'Tu perfil ya muestra el máximo de listas.',
@@ -344,11 +366,33 @@ export default function ProfilePage() {
     return () => { if (document.title === ours) document.title = previous; };
   }, [isEnglish]);
 
+  /**
+   * A write landed: say so, and bump the tick the preview highlights on.
+   * Both happen here rather than in an effect watching `feedback`, which
+   * would be a render cascade for something the write already knows.
+   */
+  const markSaved = useCallback((message) => {
+    setFeedback({ state: 'saved', message });
+    setSavedTick(tick => tick + 1);
+  }, []);
+
   const handleCheck = useMemo(() => inspectHandle(handleDraft), [handleDraft]);
   const handleError = handleDraft && !handleCheck.valid
     ? HANDLE_ERROR_COPY[isEnglish ? 'en' : 'es'][handleCheck.code]
     : '';
+  // A profile still being created has only the two sections it can fill; the
+  // pinned lists and the unpublish block arrive with the profile itself.
+  const sectionTotal = status === 'ready' ? 4 : 2;
   const pinnedShareIds = profile?.pinnedShareIds || [];
+  /** What the public page will actually show, pinned lists first. */
+  const previewLists = useMemo(() => {
+    if (!pinnableLists) return null;
+    const attributed = pinnableLists.filter(list => list.onProfile === true);
+    const pinned = profile?.pinnedShareIds || [];
+    return [...attributed].sort(
+      (left, right) => Number(pinned.includes(right.shareId)) - Number(pinned.includes(left.shareId)),
+    );
+  }, [pinnableLists, profile?.pinnedShareIds]);
   const publicPath = profile ? getPublicProfilePath(profile.handle) : null;
   const isPublicProfile = profileIsPublic(profile);
   const caveats = visibilityCopy(isEnglish);
@@ -437,7 +481,7 @@ export default function ProfilePage() {
           ...(showPhoto ? {} : { photo: undefined }),
         }));
       }
-      setFeedback({ state: 'saved', message: copy.saved });
+      markSaved(copy.saved);
     } catch (error) {
       reportError(error);
       // The handle may or may not have changed; re-read rather than guess.
@@ -465,7 +509,7 @@ export default function ProfilePage() {
     setProfile(current => ({ ...current, visibility: next }));
     try {
       await saveProfileVisibility(next);
-      setFeedback({ state: 'saved', message: copy.saved });
+      markSaved(copy.saved);
     } catch (error) {
       setProfile(current => ({ ...current, visibility: previous }));
       console.error('Error saving profile visibility:', error);
@@ -547,7 +591,7 @@ export default function ProfilePage() {
       });
       applyMigrationResult(result);
       setMigration('done');
-      setFeedback({ state: 'saved', message: copy.saved });
+      markSaved(copy.saved);
     } catch (error) {
       reportError(error);
       setMigration('idle');
@@ -580,7 +624,7 @@ export default function ProfilePage() {
         await savePinnedShareIds(remaining);
         setProfile(current => ({ ...current, pinnedShareIds: remaining }));
       }
-      setFeedback({ state: 'saved', message: copy.saved });
+      markSaved(copy.saved);
     } catch (error) {
       if (error?.code === 'PROFILE_LISTS_FULL') {
         setFeedback({ state: 'error', message: copy.showcaseFull });
@@ -686,18 +730,19 @@ export default function ProfilePage() {
   return (
     <main className="profile-page">
       <div className="profile-shell">
-        <header className="profile-heading">
-          <button type="button" className="profile-back" onClick={goBack}>
-            <ArrowLeft size={18} /> {copy.back}
-          </button>
-          <h1>{copy.title}</h1>
-          <p className="profile-intro">{status === 'new' ? copy.createIntro : copy.editIntro}</p>
+        <SettingsSubheader
+          eyebrow={SETTINGS_BREADCRUMB[isEnglish ? 'en' : 'es']}
+          title={copy.title}
+          subtitle={status === 'new' ? copy.createIntro : copy.editIntro}
+          backLabel={copy.back}
+          onBack={goBack}
+        >
           {publicPath && (
             <Link className="profile-public-link" to={publicPath}>
               {copy.viewPublic} <ExternalLink size={14} />
             </Link>
           )}
-        </header>
+        </SettingsSubheader>
 
         {/* The one decision the F12 migration cannot take alone: pins the
             owner had explicitly hidden. Everything else migrates silently. */}
@@ -721,282 +766,369 @@ export default function ProfilePage() {
           <p className="profile-hint" role="alert">{copy.migrationFailed}</p>
         )}
 
-        <form className="profile-form" onSubmit={onSubmit}>
-          <section className="profile-section" aria-labelledby="profile-identity-title">
-            <h2 id="profile-identity-title">{copy.sectionIdentity}</h2>
+        <div className="profile-layout">
+          <div className="profile-main">
+            <form className="profile-form" onSubmit={onSubmit}>
+              <section className="profile-section" aria-labelledby="profile-identity-title">
+                <div className="profile-section-head">
+                  <span className="profile-section-index">{copy.section(1, sectionTotal)}</span>
+                  <h2 id="profile-identity-title">{copy.sectionIdentity}</h2>
+                </div>
 
-            <div className="profile-identity">
-              <div className="profile-identity-avatar">
-                {showPhoto && appAvatar
-                  ? (
-                    <img
-                      src={appAvatar}
-                      alt=""
-                      referrerPolicy="no-referrer"
-                      // The page's own masthead avatar, visible on load --
-                      // not lazy. `.profile-identity-avatar img` renders at
-                      // 52x52.
-                      decoding="async"
-                      width="52"
-                      height="52"
+                <div className="profile-identity">
+                  <div className="profile-identity-avatar">
+                    {showPhoto && appAvatar
+                      ? (
+                        <img
+                          src={appAvatar}
+                          alt=""
+                          referrerPolicy="no-referrer"
+                          // The page's own masthead avatar, visible on load --
+                          // not lazy. `.profile-identity-avatar img` renders at
+                          // 52x52.
+                          decoding="async"
+                          width="52"
+                          height="52"
+                        />
+                      )
+                      : <span>{(displayName || user.email || '?').trim().charAt(0).toUpperCase()}</span>}
+                  </div>
+                  <p className="profile-identity-hint">
+                    {copy.photoMirror}{' '}
+                    <button type="button" className="profile-inline-link" onClick={() => navigate('/settings')}>
+                      {copy.photoMirrorAction}
+                    </button>
+                  </p>
+                </div>
+
+                <div className="profile-field">
+                  <label htmlFor="profile-handle">{copy.handle}</label>
+                  <div className="profile-handle-input">
+                    <span aria-hidden="true">@</span>
+                    <input
+                      id="profile-handle"
+                      value={handleDraft}
+                      onChange={event => setHandleDraft(event.target.value.toLowerCase())}
+                      maxLength={HANDLE_MAX_LENGTH}
+                      autoComplete="off"
+                      spellCheck="false"
+                      aria-describedby="profile-handle-hint"
                     />
-                  )
-                  : <span>{(displayName || user.email || '?').trim().charAt(0).toUpperCase()}</span>}
-              </div>
-              <p className="profile-identity-hint">
-                {copy.photoMirror}{' '}
-                <button type="button" className="profile-inline-link" onClick={() => navigate('/settings')}>
-                  {copy.photoMirrorAction}
-                </button>
-              </p>
-            </div>
+                  </div>
+                  <p id="profile-handle-hint" className={`profile-hint${handleError ? ' is-error' : ''}`}>
+                    {handleError || copy.handleHint}
+                  </p>
+                </div>
 
-            <div className="profile-field">
-              <label htmlFor="profile-handle">{copy.handle}</label>
-              <div className="profile-handle-input">
-                <span aria-hidden="true">@</span>
-                <input
-                  id="profile-handle"
-                  value={handleDraft}
-                  onChange={event => setHandleDraft(event.target.value.toLowerCase())}
-                  maxLength={HANDLE_MAX_LENGTH}
-                  autoComplete="off"
-                  spellCheck="false"
-                  aria-describedby="profile-handle-hint"
-                />
-              </div>
-              <p id="profile-handle-hint" className={`profile-hint${handleError ? ' is-error' : ''}`}>
-                {handleError || copy.handleHint}
-              </p>
-            </div>
+                <div className="profile-field">
+                  <label htmlFor="profile-name">{copy.displayName}</label>
+                  <input
+                    id="profile-name"
+                    value={displayName}
+                    onChange={event => setDisplayName(event.target.value)}
+                    maxLength={USER_PROFILE_LIMITS.displayName}
+                  />
+                </div>
 
-            <div className="profile-field">
-              <label htmlFor="profile-name">{copy.displayName}</label>
-              <input
-                id="profile-name"
-                value={displayName}
-                onChange={event => setDisplayName(event.target.value)}
-                maxLength={USER_PROFILE_LIMITS.displayName}
-              />
-            </div>
+                <div className="profile-field">
+                  <label htmlFor="profile-bio">{copy.bio}</label>
+                  <textarea
+                    id="profile-bio"
+                    value={bio}
+                    rows={4}
+                    onChange={event => setBio(event.target.value)}
+                    maxLength={USER_PROFILE_LIMITS.bio}
+                  />
+                  <p className="profile-hint">{bio.length} / {USER_PROFILE_LIMITS.bio}</p>
+                </div>
+              </section>
 
-            <div className="profile-field">
-              <label htmlFor="profile-bio">{copy.bio}</label>
-              <textarea
-                id="profile-bio"
-                value={bio}
-                rows={4}
-                onChange={event => setBio(event.target.value)}
-                maxLength={USER_PROFILE_LIMITS.bio}
-              />
-              <p className="profile-hint">{bio.length} / {USER_PROFILE_LIMITS.bio}</p>
-            </div>
-          </section>
+              <section className="profile-section" aria-labelledby="profile-privacy-title">
+                <div className="profile-section-head">
+                  <span className="profile-section-index">{copy.section(2, sectionTotal)}</span>
+                  <h2 id="profile-privacy-title">{copy.sectionPrivacy}</h2>
+                </div>
+                <p className="profile-hint">{copy.privacyIntro}</p>
 
-          <section className="profile-section" aria-labelledby="profile-privacy-title">
-            <h2 id="profile-privacy-title">{copy.sectionPrivacy}</h2>
-            <p className="profile-hint">{copy.privacyIntro}</p>
+                {/* Creating the profile: the choice itself, with nothing
+                    preselected. The submit button below stays disabled until it
+                    has an answer. */}
+                {status === 'new' && (
+                  <VisibilityChoice
+                    value={visibilityDraft}
+                    onChange={setVisibilityDraft}
+                    isEnglish={isEnglish}
+                    idPrefix="profile-create"
+                  />
+                )}
 
-            {/* Creating the profile: the choice itself, with nothing
-                preselected. The submit button below stays disabled until it
-                has an answer. */}
-            {status === 'new' && (
-              <VisibilityChoice
-                value={visibilityDraft}
-                onChange={setVisibilityDraft}
-                isEnglish={isEnglish}
-                idPrefix="profile-create"
-              />
-            )}
+                {/* Editing an existing profile: the same decision as a switch,
+                    saved on the spot. */}
+                {status === 'ready' && (
+                  <>
+                    <label className="profile-switch">
+                      <span className="profile-switch-copy">
+                        <span className="profile-switch-label">{copy.visibilityLabel}</span>
+                        <span className="profile-switch-hint">
+                          {isPublicProfile ? copy.visibilityHintPublic : copy.visibilityHintPrivate}
+                        </span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        checked={isPublicProfile}
+                        disabled={visibilityBusy}
+                        onChange={event => toggleVisibility(event.target.checked)}
+                      />
+                      <span className="profile-switch-track" aria-hidden="true">
+                        <span className="profile-switch-thumb" />
+                      </span>
+                    </label>
 
-            {/* Editing an existing profile: the same decision as a switch,
-                saved on the spot. */}
-            {status === 'ready' && (
-              <>
+                    {/* The limits of the promise, on the screen that makes it. */}
+                    <div className="visibility-caveats">
+                      <p className="visibility-caveats-title">{caveats.notProtectedTitle}</p>
+                      <ul>
+                        {caveats.notProtected.map(item => <li key={item}>{item}</li>)}
+                      </ul>
+                    </div>
+                  </>
+                )}
+
+                <div className="profile-privacy-summary">
+                  <div className="profile-privacy-column">
+                    <h3>{copy.publicNow}</h3>
+                    <ul>
+                      {copy.publicItems.map(item => <li key={item}>{item}</li>)}
+                    </ul>
+                  </div>
+                  <div className="profile-privacy-column is-private">
+                    <h3><ShieldCheck size={14} aria-hidden="true" /> {copy.neverPublic}</h3>
+                    <ul>
+                      {copy.neverItems.map(item => <li key={item}>{item}</li>)}
+                    </ul>
+                  </div>
+                </div>
+
                 <label className="profile-switch">
                   <span className="profile-switch-copy">
-                    <span className="profile-switch-label">{copy.visibilityLabel}</span>
-                    <span className="profile-switch-hint">
-                      {isPublicProfile ? copy.visibilityHintPublic : copy.visibilityHintPrivate}
-                    </span>
+                    <span className="profile-switch-label">{copy.showPhoto}</span>
+                    <span className="profile-switch-hint">{copy.showPhotoHint}</span>
                   </span>
                   <input
                     type="checkbox"
                     role="switch"
-                    checked={isPublicProfile}
-                    disabled={visibilityBusy}
-                    onChange={event => toggleVisibility(event.target.checked)}
+                    checked={showPhoto}
+                    onChange={event => setShowPhoto(event.target.checked)}
                   />
                   <span className="profile-switch-track" aria-hidden="true">
                     <span className="profile-switch-thumb" />
                   </span>
                 </label>
 
-                {/* The limits of the promise, on the screen that makes it. */}
-                <div className="visibility-caveats">
-                  <p className="visibility-caveats-title">{caveats.notProtectedTitle}</p>
-                  <ul>
-                    {caveats.notProtected.map(item => <li key={item}>{item}</li>)}
-                  </ul>
+                <label className="profile-switch">
+                  <span className="profile-switch-copy">
+                    <span className="profile-switch-label">{copy.allowContact}</span>
+                    <span className="profile-switch-hint">{copy.allowContactHint}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    role="switch"
+                    checked={allowContact}
+                    onChange={event => setAllowContact(event.target.checked)}
+                  />
+                  <span className="profile-switch-track" aria-hidden="true">
+                    <span className="profile-switch-thumb" />
+                  </span>
+                </label>
+              </section>
+
+              <div className="profile-actions">
+                <button
+                  type="submit"
+                  className="profile-primary"
+                  disabled={saving || deleting || !handleCheck.valid
+                    || (status === 'new' && !visibilityDraft)}
+                >
+                  {saving ? copy.saving : (status === 'new' ? copy.create : copy.save)}
+                </button>
+                {feedback && (
+                  <span className={`profile-feedback is-${feedback.state}`} role="status">
+                    {feedback.state === 'saved' && <Check size={16} />} {feedback.message}
+                  </span>
+                )}
+              </div>
+            </form>
+
+            {status === 'ready' && (
+              <section className="profile-section profile-pinned" aria-labelledby="profile-pinned-title">
+                <div className="profile-section-head">
+                  <span className="profile-section-index">{copy.section(3, sectionTotal)}</span>
+                  <h2 id="profile-pinned-title">{copy.pinned}</h2>
                 </div>
-              </>
+                <p className="profile-hint">{copy.pinnedHint}</p>
+                {pinnableLists === null ? (
+                  // Not asked yet. Saying "you have published none" here would be
+                  // a guess, and the answer is usually a few hundred milliseconds
+                  // away, so the section simply holds its place.
+                  <p className="profile-empty" aria-busy="true">{copy.loadingLists}</p>
+                ) : pinnableLists.length === 0 ? (
+                  <div className="profile-empty-lists">
+                    <p className="profile-empty">{copy.noLists}</p>
+                    <Link className="profile-empty-action" to="/lists">
+                      <FolderOpen size={15} aria-hidden="true" />
+                      <span>{copy.goToLists}</span>
+                      <ArrowRight size={14} aria-hidden="true" />
+                    </Link>
+                  </div>
+                ) : (
+                  <>
+                    {migration === 'running' && (
+                      <p className="profile-hint" aria-busy="true">{copy.migrating}</p>
+                    )}
+                    <ul className="profile-pin-list">
+                      {pinnableLists.map(list => {
+                        const attributed = list.onProfile === true;
+                        const isPinned = attributed && pinnedShareIds.includes(list.shareId);
+                        const pinsFull = !isPinned
+                          && pinnedShareIds.length >= USER_PROFILE_LIMITS.pinnedShareIds;
+                        // `emoji` holds a lucide icon name, not a literal emoji.
+                        const Icon = getIcon(list.emoji);
+                        return (
+                          <li key={list.shareId}>
+                            <span className="profile-pin-emoji" aria-hidden="true"><Icon size={20} /></span>
+                            <span className="profile-pin-copy">
+                              <span className="profile-pin-title">{list.title}</span>
+                              <span className="profile-pin-count">{copy.papers(list.paperCount)}</span>
+                            </span>
+                            <span className="profile-pin-actions">
+                              <button
+                                type="button"
+                                className={`profile-pin-toggle${attributed ? ' is-pinned' : ''}`}
+                                onClick={() => toggleAttribution(list)}
+                                disabled={pinsBusy || migration === 'running'}
+                                aria-pressed={attributed}
+                              >
+                                {attributed ? <Globe2 size={16} /> : <Lock size={16} />}
+                                {attributed ? copy.onProfile : copy.offProfile}
+                              </button>
+                              {attributed && (
+                                <button
+                                  type="button"
+                                  className={`profile-pin-toggle${isPinned ? ' is-pinned' : ''}`}
+                                  onClick={() => togglePin(list.shareId)}
+                                  disabled={pinsBusy || migration === 'running' || pinsFull}
+                                  aria-pressed={isPinned}
+                                >
+                                  {isPinned ? <PinOff size={16} /> : <Pin size={16} />}
+                                  {isPinned ? copy.unpin : copy.pin}
+                                </button>
+                              )}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  </>
+                )}
+              </section>
             )}
 
-            <div className="profile-privacy-summary">
-              <div className="profile-privacy-column">
-                <h3>{copy.publicNow}</h3>
-                <ul>
-                  {copy.publicItems.map(item => <li key={item}>{item}</li>)}
-                </ul>
-              </div>
-              <div className="profile-privacy-column is-private">
-                <h3><ShieldCheck size={14} aria-hidden="true" /> {copy.neverPublic}</h3>
-                <ul>
-                  {copy.neverItems.map(item => <li key={item}>{item}</li>)}
-                </ul>
-              </div>
-            </div>
-
-            <label className="profile-switch">
-              <span className="profile-switch-copy">
-                <span className="profile-switch-label">{copy.showPhoto}</span>
-                <span className="profile-switch-hint">{copy.showPhotoHint}</span>
-              </span>
-              <input
-                type="checkbox"
-                role="switch"
-                checked={showPhoto}
-                onChange={event => setShowPhoto(event.target.checked)}
-              />
-              <span className="profile-switch-track" aria-hidden="true">
-                <span className="profile-switch-thumb" />
-              </span>
-            </label>
-
-            <label className="profile-switch">
-              <span className="profile-switch-copy">
-                <span className="profile-switch-label">{copy.allowContact}</span>
-                <span className="profile-switch-hint">{copy.allowContactHint}</span>
-              </span>
-              <input
-                type="checkbox"
-                role="switch"
-                checked={allowContact}
-                onChange={event => setAllowContact(event.target.checked)}
-              />
-              <span className="profile-switch-track" aria-hidden="true">
-                <span className="profile-switch-thumb" />
-              </span>
-            </label>
-          </section>
-
-          <div className="profile-actions">
-            <button
-              type="submit"
-              className="profile-primary"
-              disabled={saving || deleting || !handleCheck.valid
-                || (status === 'new' && !visibilityDraft)}
-            >
-              {saving ? copy.saving : (status === 'new' ? copy.create : copy.save)}
-            </button>
-            {feedback && (
-              <span className={`profile-feedback is-${feedback.state}`} role="status">
-                {feedback.state === 'saved' && <Check size={16} />} {feedback.message}
-              </span>
+            {status === 'ready' && profile && (
+              <section className="profile-section profile-danger" aria-labelledby="profile-danger-title">
+                <div className="profile-section-head">
+                  <span className="profile-section-index">{copy.section(4, sectionTotal)}</span>
+                  <h2 id="profile-danger-title">{copy.sectionDanger}</h2>
+                </div>
+                <div className="profile-danger-row">
+                  <div>
+                    <strong>{copy.unpublishTitle}</strong>
+                    <p>{copy.unpublishBody(profile.handle)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="profile-danger-button"
+                    onClick={unpublishProfile}
+                    disabled={saving || deleting}
+                  >
+                    {deleting ? copy.saving : copy.unpublishAction}
+                  </button>
+                </div>
+              </section>
             )}
           </div>
-        </form>
 
-        {status === 'ready' && (
-          <section className="profile-section profile-pinned" aria-labelledby="profile-pinned-title">
-            <h2 id="profile-pinned-title">{copy.pinned}</h2>
-            <p className="profile-hint">{copy.pinnedHint}</p>
-            {pinnableLists === null ? (
-              // Not asked yet. Saying "you have published none" here would be
-              // a guess, and the answer is usually a few hundred milliseconds
-              // away, so the section simply holds its place.
-              <p className="profile-empty" aria-busy="true">{copy.loadingLists}</p>
-            ) : pinnableLists.length === 0 ? (
-              <div className="profile-empty-lists">
-                <p className="profile-empty">{copy.noLists}</p>
-                <Link className="profile-empty-action" to="/lists">
-                  <FolderOpen size={15} aria-hidden="true" />
-                  <span>{copy.goToLists}</span>
-                  <ArrowRight size={14} aria-hidden="true" />
-                </Link>
+          {/* The page being edited, as its link shows it. Rendered from the
+              same state the form writes, so it moves as they type — and the
+              parts a save just committed light up. */}
+          <aside className="profile-preview" aria-label={copy.preview}>
+            <span className="profile-preview-label">{copy.preview}</span>
+            <div className="profile-preview-card">
+              <div className="profile-preview-identity">
+                <div className="profile-preview-avatar">
+                  {showPhoto && appAvatar
+                    ? <img src={appAvatar} alt="" referrerPolicy="no-referrer" />
+                    : <span>{(displayName || user.email || '?').trim().charAt(0).toUpperCase()}</span>}
+                </div>
+                <div className="profile-preview-name">
+                  <strong
+                    key={`name-${savedTick}`}
+                    className={savedTick > 0 ? 'is-flashing' : undefined}
+                  >
+                    {displayName || '—'}
+                  </strong>
+                  <span
+                    key={`handle-${savedTick}`}
+                    className={savedTick > 0 ? 'is-flashing' : undefined}
+                  >
+                    @{handleCheck.valid ? handleCheck.handle : (handleDraft || '…')}
+                  </span>
+                </div>
               </div>
-            ) : (
-              <>
-                {migration === 'running' && (
-                  <p className="profile-hint" aria-busy="true">{copy.migrating}</p>
-                )}
-                <ul className="profile-pin-list">
-                  {pinnableLists.map(list => {
-                    const attributed = list.onProfile === true;
-                    const isPinned = attributed && pinnedShareIds.includes(list.shareId);
-                    const pinsFull = !isPinned
-                      && pinnedShareIds.length >= USER_PROFILE_LIMITS.pinnedShareIds;
-                    // `emoji` holds a lucide icon name, not a literal emoji.
+
+              <p
+                key={`bio-${savedTick}`}
+                className={`profile-preview-bio${bio ? '' : ' is-empty'}${savedTick > 0 ? ' is-flashing' : ''}`}
+              >
+                {bio || copy.previewNoBio}
+              </p>
+
+              {status === 'ready' && !isPublicProfile && (
+                <p className="profile-preview-private">
+                  <Lock size={12} aria-hidden="true" /> {copy.previewPrivate}
+                </p>
+              )}
+
+              {/* `null` is "not read yet": saying the profile shows no lists
+                  before the answer arrives would be a guess. */}
+              {previewLists !== null && (
+                <div className="profile-preview-lists">
+                  <span className="profile-preview-lists-label">{copy.previewLists}</span>
+                  {previewLists.length === 0 ? (
+                    <p className="profile-preview-empty">{copy.previewNoLists}</p>
+                  ) : previewLists.map(list => {
                     const Icon = getIcon(list.emoji);
+                    const isPinned = pinnedShareIds.includes(list.shareId);
                     return (
-                      <li key={list.shareId}>
-                        <span className="profile-pin-emoji" aria-hidden="true"><Icon size={20} /></span>
-                        <span className="profile-pin-copy">
-                          <span className="profile-pin-title">{list.title}</span>
-                          <span className="profile-pin-count">{copy.papers(list.paperCount)}</span>
+                      <div className="profile-preview-list" key={list.shareId}>
+                        <Icon size={16} aria-hidden="true" />
+                        <span>
+                          <strong>{list.title}</strong>
+                          <small>
+                            {copy.papers(list.paperCount)}
+                            {isPinned ? ` · ${copy.previewPinned}` : ''}
+                          </small>
                         </span>
-                        <span className="profile-pin-actions">
-                          <button
-                            type="button"
-                            className={`profile-pin-toggle${attributed ? ' is-pinned' : ''}`}
-                            onClick={() => toggleAttribution(list)}
-                            disabled={pinsBusy || migration === 'running'}
-                            aria-pressed={attributed}
-                          >
-                            {attributed ? <Globe2 size={16} /> : <Lock size={16} />}
-                            {attributed ? copy.onProfile : copy.offProfile}
-                          </button>
-                          {attributed && (
-                            <button
-                              type="button"
-                              className={`profile-pin-toggle${isPinned ? ' is-pinned' : ''}`}
-                              onClick={() => togglePin(list.shareId)}
-                              disabled={pinsBusy || migration === 'running' || pinsFull}
-                              aria-pressed={isPinned}
-                            >
-                              {isPinned ? <PinOff size={16} /> : <Pin size={16} />}
-                              {isPinned ? copy.unpin : copy.pin}
-                            </button>
-                          )}
-                        </span>
-                      </li>
+                        {isPinned && <Pin size={12} aria-hidden="true" />}
+                      </div>
                     );
                   })}
-                </ul>
-              </>
-            )}
-          </section>
-        )}
-
-        {status === 'ready' && profile && (
-          <section className="profile-section profile-danger" aria-labelledby="profile-danger-title">
-            <h2 id="profile-danger-title">{copy.sectionDanger}</h2>
-            <div className="profile-danger-row">
-              <div>
-                <strong>{copy.unpublishTitle}</strong>
-                <p>{copy.unpublishBody(profile.handle)}</p>
-              </div>
-              <button
-                type="button"
-                className="profile-danger-button"
-                onClick={unpublishProfile}
-                disabled={saving || deleting}
-              >
-                {deleting ? copy.saving : copy.unpublishAction}
-              </button>
+                </div>
+              )}
             </div>
-          </section>
-        )}
+            <p className="profile-preview-hint">{copy.previewHint}</p>
+          </aside>
+        </div>
       </div>
 
       <AnimatePresence>

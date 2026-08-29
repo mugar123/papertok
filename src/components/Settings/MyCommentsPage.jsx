@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { ArrowLeft, ExternalLink, MessageCircle, Trash2 } from 'lucide-react';
+import { EyeOff, ExternalLink, MessageCircle, Trash2 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { deleteComment, fetchMyCommentsPage } from '../../services/commentService.js';
 import { decodeCanonicalPaperKey } from '../../utils/paperCanonicalKey.js';
+import SettingsSubheader from './SettingsSubheader.jsx';
+import { SETTINGS_BREADCRUMB } from './settingsBreadcrumb.js';
 import './MyCommentsPage.css';
 
 /**
@@ -14,7 +16,7 @@ import './MyCommentsPage.css';
  */
 
 const COPY = {
-  eyebrow: { es: 'Tu actividad', en: 'Your activity' },
+  eyebrow: SETTINGS_BREADCRUMB,
   title: { es: 'Mis comentarios', en: 'My comments' },
   subtitle: {
     es: 'Lo que has escrito en papers, con lo moderado incluido.',
@@ -115,16 +117,13 @@ export default function MyCommentsPage() {
   return (
     <main className="my-comments-page">
       <div className="my-comments-shell">
-        <header className="my-comments-header">
-          <button type="button" className="my-comments-back" onClick={goBack} aria-label={text(COPY.back)}>
-            <ArrowLeft size={18} />
-          </button>
-          <div className="my-comments-heading">
-            <p className="my-comments-eyebrow">{text(COPY.eyebrow)}</p>
-            <h1>{text(COPY.title)}</h1>
-            <p className="my-comments-subtitle">{text(COPY.subtitle)}</p>
-          </div>
-        </header>
+        <SettingsSubheader
+          eyebrow={text(COPY.eyebrow)}
+          title={text(COPY.title)}
+          subtitle={text(COPY.subtitle)}
+          backLabel={text(COPY.back)}
+          onBack={goBack}
+        />
 
         {feedback && <p className="my-comments-feedback" role="status">{feedback}</p>}
 
@@ -169,41 +168,53 @@ export default function MyCommentsPage() {
               // context to tell the rows apart without inventing data.
               const paperIdentity = row.paperKey ? decodeCanonicalPaperKey(row.paperKey) : null;
               return (
-              <li key={`${row.paperKey}/${row.id}`} className="my-comments-item">
+              <li
+                key={`${row.paperKey}/${row.id}`}
+                className={`my-comments-item${row.status === 'hidden' ? ' is-hidden' : ''}`}
+              >
                 <div className="my-comments-item-meta">
                   <span className="my-comments-item-date">{formatDate(row.createdAt, locale)}</span>
                   {paperIdentity && <span className="my-comments-paper-id">{paperIdentity}</span>}
                   {row.replyTo && <span className="my-comments-chip">{text(COPY.reply)}</span>}
                   {row.editedAt && <span className="my-comments-item-date">{text(COPY.edited)}</span>}
                   {row.status === 'hidden' && (
-                    <span className="my-comments-chip my-comments-chip--hidden">{text(COPY.hidden)}</span>
+                    <span className="my-comments-chip my-comments-chip--hidden">
+                      <EyeOff size={11} aria-hidden="true" /> {text(COPY.hidden)}
+                    </span>
                   )}
                 </div>
                 <p className="my-comments-item-text">{row.text}</p>
-                <div className="my-comments-item-actions">
-                  {row.paperKey && (
-                    <Link className="my-comments-action" to={`/public/paper/${encodeURIComponent(row.paperKey)}`}>
-                      <ExternalLink size={13} aria-hidden="true" /> {text(COPY.openPaper)}
-                    </Link>
-                  )}
-                  {confirming === row.id ? (
-                    <>
-                      <span className="my-comments-item-date">{text(COPY.deleteConfirm)}</span>
-                      <button type="button" className="my-comments-action my-comments-action--danger"
-                        onClick={() => { setConfirming(null); remove(row); }}>
-                        {text(COPY.confirm)}
-                      </button>
-                      <button type="button" className="my-comments-action" onClick={() => setConfirming(null)}>
-                        {text(COPY.cancel)}
-                      </button>
-                    </>
-                  ) : (
+                {/* Confirming replaces the row's actions instead of crowding in
+                    beside them: the only two answers on offer are the two that
+                    matter. */}
+                {confirming === row.id ? (
+                  <div className="my-comments-confirm" role="group" aria-label={text(COPY.deleteConfirm)}>
+                    <span>{text(COPY.deleteConfirm)}</span>
+                    <button
+                      type="button"
+                      className="my-comments-confirm-yes"
+                      autoFocus
+                      onClick={() => { setConfirming(null); remove(row); }}
+                    >
+                      {text(COPY.confirm)}
+                    </button>
+                    <button type="button" className="my-comments-confirm-no" onClick={() => setConfirming(null)}>
+                      {text(COPY.cancel)}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="my-comments-item-actions">
+                    {row.paperKey && (
+                      <Link className="my-comments-action" to={`/public/paper/${encodeURIComponent(row.paperKey)}`}>
+                        <ExternalLink size={13} aria-hidden="true" /> {text(COPY.openPaper)}
+                      </Link>
+                    )}
                     <button type="button" className="my-comments-action my-comments-action--danger"
                       onClick={() => setConfirming(row.id)}>
                       <Trash2 size={13} aria-hidden="true" /> {text(COPY.delete)}
                     </button>
-                  )}
-                </div>
+                  </div>
+                )}
               </li>
               );
             })}

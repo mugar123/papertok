@@ -5,10 +5,12 @@
   color: var(--text-primary);
 }
 
+/* Wide enough for the form and the preview side by side; the form itself
+   still stops at a readable measure inside .profile-main. */
 .profile-shell {
-  max-width: 680px;
+  max-width: 1100px;
   margin: 0 auto;
-  padding: 104px clamp(20px, 5vw, 40px) 96px;
+  padding: calc(var(--nav-total) + var(--space-6)) clamp(20px, 5vw, 40px) 96px;
   /* Same entrance as the profile page it belongs to. */
   animation: profile-shell-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -24,47 +26,27 @@
   }
 }
 
-.profile-heading h1 {
-  margin: var(--space-3) 0 var(--space-2);
-  font-family: var(--font-heading);
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-bold);
-}
+/* The heading, the back control and the intro now come from
+   SettingsSubheader, shared with the other /settings/* screens. */
 
-.profile-intro {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-}
-
-.profile-back,
 .profile-secondary,
 .profile-pin-toggle,
 .profile-primary {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  border-radius: 999px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   font-size: var(--fs-sm);
-}
-
-.profile-back {
-  min-height: 34px;
-  padding: 0 var(--space-3) 0 var(--space-2);
-  border: none;
-  background: none;
-  color: var(--text-tertiary);
 }
 
 .profile-public-link {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  margin-top: var(--space-3);
-  color: var(--text-secondary);
+  color: var(--accent-secondary);
   font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
 }
 
 .profile-form {
@@ -167,14 +149,15 @@
 
 /* --- Sections -------------------------------------------------------------- */
 
+/* Ruled sections rather than grey cards: this screen is a document about one
+   page, and four stacked panels made four unrelated-looking forms. Structure
+   comes from the hairline above each heading, as it does across the app. */
 .profile-section {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-secondary);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-default);
 }
 
 .profile-section h2 {
@@ -182,11 +165,6 @@
   font-family: var(--font-heading);
   font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
-}
-
-/* Inner cards sit on the page background so the nesting reads as depth. */
-.profile-section .profile-identity {
-  background: var(--bg-primary);
 }
 
 /* --- Privacy --------------------------------------------------------------- */
@@ -201,7 +179,7 @@
   padding: var(--space-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
-  background: var(--bg-primary);
+  background: var(--bg-sunken);
 }
 
 .profile-privacy-column h3 {
@@ -625,4 +603,254 @@
   font: inherit;
   cursor: pointer;
   text-decoration: underline;
+}
+
+/* ── The editor, and the page it edits ──
+   The form writes; the preview beside it shows what the public link will
+   serve. They are the same state, so the preview moves as the owner types —
+   the point being that nothing about the public page is a surprise. */
+.profile-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 56px;
+  align-items: start;
+}
+
+.profile-main {
+  min-width: 0;
+  max-width: 680px;
+}
+
+.profile-preview {
+  position: sticky;
+  top: calc(var(--nav-total) + var(--space-6));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.profile-preview-label {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.profile-preview-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+}
+
+.profile-preview-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.profile-preview-avatar {
+  display: grid;
+  width: 56px;
+  height: 56px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+}
+
+.profile-preview-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.profile-preview-name {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.profile-preview-name strong {
+  overflow: hidden;
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-bold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-preview-name span {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-preview-bio {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-relaxed);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.profile-preview-bio.is-empty {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.profile-preview-private {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.profile-preview-lists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.profile-preview-lists-label {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.profile-preview-list {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+}
+
+.profile-preview-list > svg:first-child {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.profile-preview-list > svg:last-child {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-tertiary);
+}
+
+.profile-preview-list > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.profile-preview-list strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-preview-list small {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 9px;
+}
+
+.profile-preview-empty,
+.profile-preview-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: var(--lh-normal);
+}
+
+/* What a save just committed, said in the brand mark rather than in a toast:
+   the changed field lifts to the soft yellow and settles back. */
+@keyframes profile-preview-flash {
+  0% { background: transparent; }
+  35% { background: var(--brand-yellow-soft); }
+  100% { background: transparent; }
+}
+
+.profile-preview .is-flashing {
+  border-radius: var(--radius-sm);
+  animation: profile-preview-flash 920ms ease;
+}
+
+/* ── Numbered sections ──
+   The hub's index numbers its sections; this screen numbers its own, so a
+   long form reads as a document with a known length. */
+.profile-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.profile-section-index {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 1040px) {
+  /* No room for the preview beside the form: it follows the form instead,
+     and stops sticking — a card that tall pinned to a phone screen would
+     cover the field being typed into. */
+  .profile-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-8);
+  }
+
+  .profile-preview {
+    position: static;
+    max-width: 420px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-preview .is-flashing {
+    animation: none;
+  }
+}
+
+/* The shell is wide for the two-column editor; the states that render
+   instead of it are single messages and keep the old measure. */
+.profile-loading,
+.profile-load-error {
+  max-width: 680px;
 }

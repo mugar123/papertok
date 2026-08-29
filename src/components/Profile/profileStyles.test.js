@@ -26,6 +26,9 @@ const INJECTED_PROPERTIES = new Map([
   ['--loading-row-index', '../Search/SearchPage.jsx'],
   ['--search-item-index', '../Search/SearchPage.jsx'],
   ['--settings-index', '../Settings/SettingsPage.jsx'],
+  // Which entry of the index rail the marker sits on, set on the list itself
+  // so the marker's travel is a multiplication rather than a measurement.
+  ['--settings-active', '../Settings/SettingsPage.jsx'],
   ['--follow-rows', '../Public/FollowSheet.jsx'],
   // The comments sheet takes the research field of the paper it hangs off, the
   // same way a card or an entity header does, so its rules and monogram are
@@ -68,6 +71,8 @@ const OWNED = [
   // costs nothing and covers the settings surface too.
   '../Settings/SettingsPage.css',
   '../Settings/FollowingSettingsPage.css',
+  // The heading shared by every /settings/* sub-page.
+  '../Settings/SettingsSubheader.css',
 ];
 
 test('every design token used by the profile screens is actually defined', async () => {
@@ -81,9 +86,17 @@ test('every design token used by the profile screens is actually defined', async
   const missing = [];
   for (const path of OWNED) {
     const stylesheet = await readFile(new URL(path, import.meta.url), 'utf8');
+    // A property the stylesheet declares itself is not a missing token: it is
+    // a local measure kept in one place so the rules that share it cannot
+    // drift apart (the settings index rail sizes its rows and positions its
+    // marker off one value). Only the ones nobody defines are the bug.
+    const selfDefined = new Set(
+      (stylesheet.match(/^\s*(--[a-z0-9-]+)\s*:/gim) || [])
+        .map(line => line.trim().replace(/\s*:$/, '')),
+    );
     for (const usage of stylesheet.match(/var\(\s*--[a-z0-9-]+/gi) || []) {
       const token = usage.replace(/var\(\s*/, '');
-      if (defined.has(token) || INJECTED_PROPERTIES.has(token)) continue;
+      if (defined.has(token) || selfDefined.has(token) || INJECTED_PROPERTIES.has(token)) continue;
       missing.push(`${path.split('/').pop()}: ${token}`);
     }
   }
