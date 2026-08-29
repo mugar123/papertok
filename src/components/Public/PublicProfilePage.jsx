@@ -669,7 +669,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     kicker: 'Profile',
     joined: label => `Member since ${label}`,
     publicLists: count => `${count} public ${count === 1 ? 'list' : 'lists'}`,
-    settings: 'Settings',
+    settings: 'Profile settings',
     editProfile: 'Edit profile',
     createProfile: 'Create your public profile',
     privateBadge: 'Private',
@@ -719,7 +719,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     kicker: 'Perfil',
     joined: label => `Miembro desde ${label}`,
     publicLists: count => `${count} ${count === 1 ? 'pública' : 'públicas'}`,
-    settings: 'Ajustes',
+    settings: 'Ajustes del perfil',
     editProfile: 'Editar perfil',
     createProfile: 'Crea tu perfil público',
     privateBadge: 'Privado',
@@ -986,7 +986,12 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
               <button
                 type="button"
                 className="profile-gear"
-                onClick={() => navigate('/settings')}
+                // Straight to the screen that edits what this page shows.
+                // General settings are the navbar's job (the preferences
+                // menu's link); a gear ON the profile that landed on the
+                // whole hub made the reader hunt for the profile section
+                // (asked for on 2026-08-29).
+                onClick={() => navigate('/settings/profile')}
                 aria-label={copy.settings}
                 title={copy.settings}
               >
