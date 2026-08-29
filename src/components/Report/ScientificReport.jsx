@@ -218,7 +218,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
     const goLoud = () => {
       if (requestId !== reportRequestId.current) return;
       setLoading(true);
-      window.dispatchEvent(new Event('reportLoadingStart'));
     };
     if (options.quiet) quietTimer = setTimeout(goLoud, 320);
     else goLoud();
@@ -240,7 +239,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
         stopWaiting();
         setReport(data);
         setLoading(false);
-        window.dispatchEvent(new Event('reportLoadingEnd'));
         reportFinished = true;
       }
 
@@ -275,7 +273,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       stopWaiting();
       if (!reportFinished && requestId === reportRequestId.current) {
         setLoading(false);
-        window.dispatchEvent(new Event('reportLoadingEnd'));
       }
     }
   }, []);
@@ -299,15 +296,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       clearTimeout(timerId);
       reportRequestId.current += 1;
     };
-  }, [timeframe, filters, fetchReport]);
-
-  useEffect(() => {
-    const handleGlobalRefresh = () => {
-      fetchReport(timeframe, filters, 1, { forceRefresh: true, refreshTrends: true });
-    };
-
-    window.addEventListener('refreshScientificReport', handleGlobalRefresh);
-    return () => window.removeEventListener('refreshScientificReport', handleGlobalRefresh);
   }, [timeframe, filters, fetchReport]);
 
   /* Which selection is on the page, read from what was actually built rather

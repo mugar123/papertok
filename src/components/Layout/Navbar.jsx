@@ -1,22 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
-import { useFollowingUpdates } from '../../context/FollowingUpdatesContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { RotateCw, Search, Layers, Newspaper, UserCheck } from 'lucide-react';
-import ThemeToggle from './ThemeToggle';
+import { Search, Layers, Newspaper, UserCheck } from 'lucide-react';
+import NavPreferencesMenu from './NavPreferencesMenu';
 import './Navbar.css';
 
 export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) {
   const { user, profilePhoto } = useAuth();
-  const { feedMode, setFeedMode, refreshFeed, isRefreshing } = useFeed();
-  const { refresh: refreshFollowing, refreshing: isFollowingRefreshing } = useFollowingUpdates();
+  const { feedMode, setFeedMode } = useFeed();
   const { isEnglish } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
-  const [isReportRefreshing, setIsReportRefreshing] = useState(false);
 
   useEffect(() => {
     const handleShortcut = (event) => {
@@ -33,31 +30,9 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [onOpenSearch]);
 
-  useEffect(() => {
-    const onStart = () => setIsReportRefreshing(true);
-    const onEnd = () => setIsReportRefreshing(false);
-    window.addEventListener('reportLoadingStart', onStart);
-    window.addEventListener('reportLoadingEnd', onEnd);
-    return () => {
-      window.removeEventListener('reportLoadingStart', onStart);
-      window.removeEventListener('reportLoadingEnd', onEnd);
-    };
-  }, []);
-
   const isFollowingActive = pathname === '/following';
   const isResearchActive = pathname === '/research' || pathname === '/report';
   const isHomeActive = pathname === '/';
-
-  const showReloadButton = isHomeActive || isResearchActive || isFollowingActive;
-  const reloadSpinning = (isHomeActive && isRefreshing)
-    || (isResearchActive && isReportRefreshing)
-    || (isFollowingActive && isFollowingRefreshing);
-
-  const handleReload = () => {
-    if (isHomeActive) refreshFeed();
-    else if (isResearchActive) window.dispatchEvent(new Event('refreshScientificReport'));
-    else if (isFollowingActive) refreshFollowing();
-  };
 
   return (
     <nav className="navbar">
@@ -121,17 +96,6 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
         </div>
 
         <div className="navbar-right">
-          {showReloadButton && (
-            <button
-              className={`navbar-icon-btn ${reloadSpinning ? 'spinning' : ''}`}
-              onClick={handleReload}
-              title={isEnglish ? 'Reload' : 'Recargar'}
-              aria-label={isEnglish ? 'Reload' : 'Recargar'}
-            >
-              <RotateCw size={17} />
-            </button>
-          )}
-
           <button
             className={`navbar-icon-btn navbar-icon-btn--search-compact ${searchOpen ? 'is-open' : ''}`}
             aria-expanded={searchOpen}
@@ -142,10 +106,10 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             <Search size={17} />
           </button>
 
-          {/* Rule 6: utilities cluster on the right, behind the 1px rule. The
-              theme belongs with reload, not with the feeds — it changes how the
-              app looks, not what it is showing. */}
-          <ThemeToggle />
+          {/* Regla 6: las utilidades se agrupan a la derecha tras la regla de
+              1px. Tema e idioma viven plegados tras el botón de preferencias:
+              cambian cómo se ve la aplicación, no lo que está mostrando. */}
+          <NavPreferencesMenu />
 
           {user && (
             <div className="navbar-profile">

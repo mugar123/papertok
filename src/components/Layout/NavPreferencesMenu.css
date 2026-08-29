@@ -1,0 +1,114 @@
+/* El popover de preferencias: un desplegable anclado al grupo de utilidades.
+   Anima con una transición CSS de entrada (opacity/translate) — nada de
+   framer en el cromo — y a la derecha se pega al borde del propio botón. */
+
+.nav-prefs {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.nav-prefs-trigger.is-open {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.nav-prefs-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: var(--z-nav);
+  min-width: 216px;
+  padding: 6px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: 0 16px 40px rgba(17, 19, 24, 0.14);
+  animation: navPrefsIn 0.16s ease-out;
+}
+
+@keyframes navPrefsIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+
+.nav-prefs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.nav-prefs-row span {
+  flex: 1;
+}
+
+.nav-prefs-row svg {
+  color: var(--text-tertiary);
+}
+
+.nav-prefs-row--static {
+  cursor: default;
+}
+
+.nav-prefs-check {
+  flex: 0 0 auto;
+}
+
+.nav-prefs-lang {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+}
+
+.nav-prefs-lang button {
+  padding: 3px 8px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
+  font: 600 0.6875rem/1.4 var(--font-mono);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.nav-prefs-lang button[aria-pressed='true'] {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
+.nav-prefs-divider {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--border-default);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .nav-prefs-row:not(.nav-prefs-row--static):hover {
+    background: var(--bg-glass);
+    color: var(--text-primary);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nav-prefs-menu,
+  .nav-prefs-row,
+  .nav-prefs-lang button {
+    animation: none;
+    transition: none;
+  }
+}

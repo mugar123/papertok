@@ -230,10 +230,6 @@
   display: none;
 }
 
-.navbar-icon-btn.spinning svg {
-  animation: spin 1s linear infinite;
-}
-
 /* ── Profile ── */
 .navbar-profile {
   position: relative;
@@ -383,21 +379,12 @@
   }
 }
 
-@keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .navbar-link,
   .navbar-icon-btn,
   .navbar-avatar,
   .navbar-search {
     transition: none;
-    animation: none;
-  }
-
-  .navbar-icon-btn.spinning svg {
     animation: none;
   }
 }
