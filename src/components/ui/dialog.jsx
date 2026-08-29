@@ -51,6 +51,15 @@ function DialogContent({ className, children, showClose = true, ...props }) {
         className={cn(
           'fixed left-1/2 top-1/2 z-[12051] w-full max-w-lg -translate-x-1/2 -translate-y-1/2',
           'border border-border bg-card shadow-[var(--shadow-xl)] rounded-xl',
+          // The sheet itself arrives and leaves; only the overlay used to,
+          // so the palette popped in and vanished in one frame (reported
+          // from a real iPhone, 2026-08-29). Same radix-Presence contract
+          // as the overlay above: an `animation` with `both`, so the exit
+          // is not cut off by the unmount. The keyframes animate `scale`,
+          // never `transform`/`translate` — see their comment in
+          // variables.css for why that distinction is load-bearing.
+          'motion-safe:data-[state=open]:[animation:dialogIn_180ms_cubic-bezier(0.16,1,0.3,1)]',
+          'motion-safe:data-[state=closed]:[animation:dialogOut_140ms_ease_both]',
           className,
         )}
         {...props}

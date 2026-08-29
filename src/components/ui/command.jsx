@@ -85,7 +85,11 @@ function CommandInput({ className, wrapperClassName, wrapperStyle, ...props }) {
       <Search size={16} className="shrink-0 text-muted-foreground" />
       <CommandPrimitive.Input
         className={cn(
-          'flex h-12 w-full border-0 bg-transparent px-0 py-3 text-[0.9375rem] shadow-none outline-none',
+          // 16px, not 15: iOS Safari auto-zooms the page when a focused
+          // field's font is under 16px, and this field opens autoFocused —
+          // the palette zoomed the whole app on every open (a real iPhone,
+          // 2026-08-29). Same rule as the reader's note textarea.
+          'flex h-12 w-full border-0 bg-transparent px-0 py-3 text-[1rem] shadow-none outline-none',
           'placeholder:text-[var(--text-tertiary)]',
           className,
         )}

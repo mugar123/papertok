@@ -459,6 +459,23 @@
   to { opacity: 0; }
 }
 
+/* The dialog sheet's own arrival and leave (ui/dialog.jsx). Deliberately on
+   `opacity` and the NATIVE `scale` property, never `transform` or `translate`:
+   Tailwind v4 positions the sheet with the native `translate` property
+   (`-translate-x-1/2` et al.), and a keyframe touching either would override
+   that centering for the length of the animation — the sheet would jump to
+   the left edge, exactly the bug `.rd-panel-dock`'s comment records for
+   framer's inline transforms. */
+@keyframes dialogIn {
+  from { opacity: 0; scale: 0.97; }
+  to { opacity: 1; scale: 1; }
+}
+
+@keyframes dialogOut {
+  from { opacity: 1; scale: 1; }
+  to { opacity: 0; scale: 0.98; }
+}
+
 @keyframes slideUp {
   from { opacity: 0; transform: translateY(30px); }
   to { opacity: 1; transform: translateY(0); }
