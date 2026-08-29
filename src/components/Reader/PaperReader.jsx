@@ -938,6 +938,19 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     frozen: Boolean(annotations.pending),
   });
 
+  // One truth for all the floating chrome. The bar's overrides (a rewrite or
+  // an ask in flight, an error still on screen) apply as much to the back
+  // button and the uses counter: whatever must keep the bar up should not be
+  // read against a half-empty frame.
+  const barVisible = barScrollVisible || isStreaming
+    || annotations.busy === 'asking' || Boolean(annotations.error);
+
+  // On the touch route the top chrome follows the bar: reading down, the back
+  // button and the uses counter recede with it instead of standing on the
+  // text for the whole read (asked for from a real iPhone, 2026-08-29); a
+  // scroll up brings both back. Fine pointers never hide chrome to begin with.
+  const chromeReceded = coarsePointer && selectionRoute === 'bar' && !barVisible;
+
   /**
    * A selection stops being a selection and becomes a decision.
    *
@@ -1322,7 +1335,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
       >
         {/* Chrome floats over the document instead of sitting in bars above it:
             the page is the interface, the controls are an overlay on top. */}
-        <motion.div className="rd-float-close" variants={prefersReducedMotion ? STILL_CHROME_VARIANTS : CHROME_VARIANTS}>
+        <motion.div className="rd-float-close" data-receded={chromeReceded ? '' : undefined} variants={prefersReducedMotion ? STILL_CHROME_VARIANTS : CHROME_VARIANTS}>
           <Button
             variant="outline"
             size="icon"
@@ -1336,7 +1349,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
           </Button>
         </motion.div>
 
-        <motion.div className="rd-status" variants={prefersReducedMotion ? STILL_CHROME_VARIANTS : CHROME_VARIANTS}>
+        <motion.div className="rd-status" data-receded={chromeReceded ? '' : undefined} variants={prefersReducedMotion ? STILL_CHROME_VARIANTS : CHROME_VARIANTS}>
           {/* Identity to the document, state to the chrome. The kicker names
               *what this is* ("Leer en simple"), which is the same kind of fact
               as the paper's own title next to it in `rd-doc-title` — so on a
@@ -1749,7 +1762,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             // every device that reaches this branch (see
             // `useBarScrollVisibility` above); the scroll-driven value is the
             // one that actually varies here.
-            visible={barScrollVisible || isStreaming || annotations.busy === 'asking' || Boolean(annotations.error)}
+            visible={barVisible}
           />
         )}
       </motion.div>

@@ -379,3 +379,51 @@ test('la barra en selección o composición no depende solo del scroll para esta
   assert.ok(animateY, 'expected an `animate={{ y: … }}` prop on the bar');
   assert.match(animateY[1], /state !== 'rest'/);
 });
+
+/**
+ * La ronda del iPhone real (2026-08-29). Cuatro fallos vistos en el
+ * dispositivo, cada uno con su regla exacta aquí para que no vuelvan:
+ * el zoom de iOS al enfocar la nota, el solape de la fila de ajustes,
+ * el pie de usos pisando los rótulos, y el cromo superior que ahora se
+ * aparta al leer.
+ */
+test('el textarea de la nota no puede volver a disparar el auto-zoom de iOS', async () => {
+  const barCss = stripComments(await readFile(READER_BAR_CSS, 'utf8'));
+  const input = barCss.match(/\.rd-bar-input\s*\{([^}]*)\}/);
+  assert.ok(input, 'expected a .rd-bar-input rule');
+  // 16px es el umbral duro de iOS Safari: cualquier token que pueda quedar
+  // por debajo (var(--fs-sm)) reintroduce el zoom entero de la página.
+  assert.match(input[1], /font-size:\s*(1rem|16px)/);
+  assert.doesNotMatch(input[1], /font-size:\s*var\(/);
+});
+
+test('la fila de ajustes de la hoja envuelve en vez de comprimir sus grupos', async () => {
+  const annotationsCss = stripComments(await readFile(ANNOTATIONS_CSS, 'utf8'));
+  const row = annotationsCss.match(/\.rd-rail-settings\s*\{([^}]*)\}/);
+  assert.ok(row, 'expected a .rd-rail-settings rule');
+  assert.match(row[1], /flex-wrap:\s*wrap/);
+  // Y los grupos no pueden volver a encoger por el min-width: 0 heredado:
+  // eso es lo que pintaba el nivel debajo del toggle de destacados.
+  assert.match(annotationsCss, /\.rd-rail-settings \.rd-panel-group\s*\{[^}]*flex:\s*0 0 auto/);
+});
+
+test('el pie de usos vive en flujo, no clavado sobre los rótulos de la fila', async () => {
+  const barCss = stripComments(await readFile(READER_BAR_CSS, 'utf8'));
+  const foot = barCss.match(/\.rd-bar-foot\s*\{([^}]*)\}/);
+  assert.ok(foot, 'expected a .rd-bar-foot rule');
+  assert.doesNotMatch(foot[1], /position:\s*absolute/);
+  assert.match(foot[1], /flex:\s*1 0 100%/);
+});
+
+test('el cromo superior se aparta con la barra, y un foco lo trae de vuelta', async () => {
+  const readerCss = stripComments(await readFile(READER_CSS, 'utf8'));
+  // La regla vive tras el gate de puntero grueso y sobre los HIJOS de los
+  // wrappers (framer es dueño del transform inline del wrapper).
+  assert.match(readerCss, /\.rd-float-close\[data-receded\]:not\(:focus-within\) > \*/);
+  assert.match(readerCss, /\.rd-status\[data-receded\]:not\(:focus-within\) > \*/);
+  const jsx = await readFile(READER_JSX, 'utf8');
+  // Ambos wrappers cuelgan del mismo estado que la barra: si uno se queda
+  // fuera, la mitad del cromo se queda plantada sobre el texto.
+  assert.match(jsx, /className="rd-float-close" data-receded=\{chromeReceded/);
+  assert.match(jsx, /className="rd-status" data-receded=\{chromeReceded/);
+});

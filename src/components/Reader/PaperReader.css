@@ -54,6 +54,41 @@
   max-width: calc(100% - 140px);
 }
 
+/* ── Reading down, the top chrome gets out of the way ──
+   `data-receded` follows the bar's own scroll-direction state (PaperReader's
+   `chromeReceded`), so on a phone the back button and the uses counter leave
+   with the bar instead of standing on the text for the whole read. Styled on
+   the CHILDREN: framer owns the wrappers' inline transform (the entrance
+   variants), and a class transform on the wrapper itself would lose that
+   fight. `:focus-within` brings a receded control back — a keyboard reaching
+   an invisible button is exactly the hidden-focus failure the a11y work
+   exists to prevent. */
+@media (pointer: coarse) {
+  .rd-float-close > *,
+  .rd-status > * {
+    transition: opacity 200ms ease, transform 200ms ease;
+  }
+
+  .rd-float-close[data-receded]:not(:focus-within) > *,
+  .rd-status[data-receded]:not(:focus-within) > * {
+    opacity: 0;
+    transform: translateY(-10px);
+    pointer-events: none;
+  }
+}
+
+@media (pointer: coarse) and (prefers-reduced-motion: reduce) {
+  .rd-float-close > *,
+  .rd-status > * {
+    transition: none;
+  }
+
+  .rd-float-close[data-receded]:not(:focus-within) > *,
+  .rd-status[data-receded]:not(:focus-within) > * {
+    transform: none;
+  }
+}
+
 .rd-status-kicker {
   display: inline-flex;
   align-items: center;

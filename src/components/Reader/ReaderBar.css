@@ -81,14 +81,16 @@
     justify-content: space-between;
     gap: var(--space-1);
     position: relative;
+    flex-wrap: wrap;
   }
 
-  /* The day's allowance, folded under the row rather than pushing it taller —
-     the bar's height stays the one number `.rd-scroll` clears. */
+  /* In flow on its own wrapped line, not absolutely pinned to the row's
+     bottom edge: pinned at `bottom: 2px` it printed across the action
+     labels and clipped against the bar's border on a real iPhone
+     (2026-08-29). The selection row growing those ~12px is fine — it is
+     an overlay, and the composer already grows far more. */
   .rd-bar-foot {
-    position: absolute;
-    left: var(--space-3);
-    bottom: 2px;
+    flex: 1 0 100%;
     font: 400 0.625rem/1 var(--font-mono);
     color: var(--text-tertiary);
   }
@@ -226,7 +228,11 @@
     background: var(--bg-card);
     color: var(--text-primary);
     font-family: var(--font-body);
-    font-size: var(--fs-sm);
+    /* 16px, and not a token that may drop below it: iOS Safari auto-zooms
+       the whole page when a focused field's font is under 16px, and this
+       textarea only ever exists on the touch route (seen on a real iPhone,
+       2026-08-29 — "Escribir nota" zoomed the reader). */
+    font-size: 1rem;
     line-height: 1.5;
     resize: none;
   }

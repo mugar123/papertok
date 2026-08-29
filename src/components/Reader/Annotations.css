@@ -620,13 +620,27 @@
 .rd-rail-settings {
   display: flex;
   align-items: flex-end;
+  /* Wrapping, not `overflow-x: auto`: the row's groups inherit `min-width: 0`
+     from `.rd-panel-group`, so instead of overflowing into a scroll they were
+     shrunk below their content and the level buttons painted under the
+     highlights toggle (seen on a real iPhone, 2026-08-29). Wrapped, every
+     control keeps its size and stays on screen — a horizontal scroll here
+     would also re-hide the export button this row exists to keep reachable. */
+  flex-wrap: wrap;
   gap: var(--space-4);
   padding: var(--space-4);
-  overflow-x: auto;
-  scrollbar-width: none;
 }
 
-.rd-rail-settings::-webkit-scrollbar { display: none; }
+.rd-rail-settings .rd-panel-group {
+  flex: 0 0 auto;
+}
+
+/* Between wrapped rows a 1px column reads as a stray tick, not a divider;
+   the group labels already do the separating here. */
+.rd-rail-settings .rd-panel-divider {
+  display: none;
+}
+
 
 /* The air the peeking sheet needs under the last lines of the paper is set in
    `PaperReader.css`, alongside the panel that stands in the same corner. It was
