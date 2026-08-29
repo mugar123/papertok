@@ -24,6 +24,11 @@ for genuinely shared state.
 - Preserve the existing dense, card-based scientific interface and paired component CSS.
 - Use Lucide icons already installed in the project.
 - Respect reduced-motion preferences when adding transitions.
+- Accessibility is an acceptance criterion for every UI change: WCAG 2.2 AA per
+  `docs/ACCESIBILIDAD.md` and the Accessibility section of the root `AGENTS.md`. In
+  particular: native controls (no clickable `div`s), keyboard operability, visible focus,
+  accessible names on icon buttons, announced status changes, and `lang="en"` on English
+  paper content.
 - Loading, empty, degraded, and retry states are part of the feature, not optional polish.
 - Avoid layout shifts when citations, concepts, project badges, or enriched metadata arrive.
 
