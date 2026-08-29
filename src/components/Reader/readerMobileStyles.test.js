@@ -25,6 +25,7 @@ const READER_CSS = new URL('./PaperReader.css', import.meta.url);
 const ANNOTATIONS_CSS = new URL('./Annotations.css', import.meta.url);
 const READER_JSX = new URL('./PaperReader.jsx', import.meta.url);
 const READER_BAR_CSS = new URL('./ReaderBar.css', import.meta.url);
+const READER_BAR_JSX = new URL('./ReaderBar.jsx', import.meta.url);
 
 /** Comments name selectors and properties in prose; matching them would invent both sides. */
 const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -229,4 +230,54 @@ test('ReaderBar.css never lets a rule stand outside (pointer: coarse)', async ()
     '',
     'a rule sits outside the (pointer: coarse) block in ReaderBar.css',
   );
+});
+
+/**
+ * Task 7's own two facts, held the same way Task 4's dock-clearing test above
+ * holds a CSS fact and the ReaderBar.css test above holds a pointer-gate: the
+ * desktop selection path is what the whole redesign was forbidden from
+ * touching, and the kicker's move into the document is new enough, and narrow
+ * enough (one class, one JS condition), to be a single line nobody would
+ * notice regress without a test naming it.
+ */
+test('el camino de escritorio sigue intacto: onMouseUp en el párrafo', async () => {
+  const jsx = await readFile(READER_JSX, 'utf8');
+  assert.match(jsx, /onMouseUp=\{\(event\) => handleSelection\(/);
+});
+
+test('el kicker que se muda al documento vive solo bajo pointer: coarse', async () => {
+  const readerCss = await reader;
+  const coarse = atRuleBody(readerCss, '@media (pointer: coarse)');
+  assert.match(ruleBody(coarse, '.rd-doc-kicker'), /display:\s*inline-flex/);
+
+  // Belt-and-braces has to hold on both ends: the rule cannot also appear
+  // reachable outside that one block (a copy-paste that landed both inside
+  // and outside the query would still pass a test that only checked the
+  // inside).
+  const withoutCoarseBlock = readerCss.replace(coarse, '');
+  assert.doesNotMatch(withoutCoarseBlock, /\.rd-doc-kicker\s*\{/);
+
+  // And the element itself is never mounted for a fine pointer — the CSS
+  // gate above is a second guarantee, not the only one.
+  const jsx = await readFile(READER_JSX, 'utf8');
+  assert.match(jsx, /\{coarsePointer && <span className="rd-doc-kicker">/);
+
+  // The kicker's other half never renders for a coarse pointer either — if
+  // it did, "Leer en simple" would print twice, once fixed and once in flow.
+  assert.match(jsx, /\{!coarsePointer && <span className="rd-status-kicker">/);
+});
+
+/**
+ * Task 6's report named this exact line as the one path whose correctness
+ * does not follow from the scroll-freeze logic at all — `visible` (driven by
+ * scroll direction) is overridden by `state !== 'rest'` the moment a
+ * selection or the composer opens, and by nothing else. No phone check
+ * exercises the instant that override switches back off (dismissing a
+ * selection without scrolling first), so the line itself is what stands
+ * between "the bar hides mid-selection" and "the bar behaves" — the risk the
+ * mutation proof for this test has to earn is a real one.
+ */
+test('la barra en selección o composición no depende solo del scroll para estar visible', async () => {
+  const barJsx = await readFile(READER_BAR_JSX, 'utf8');
+  assert.match(barJsx, /animate=\{\{ y: visible \|\| state !== 'rest' \? 0 : '110%' \}\}/);
 });
