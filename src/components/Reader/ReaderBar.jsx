@@ -147,6 +147,41 @@ export default function ReaderBar({
       // scoped to `composing` below and nothing currently hides the bar while
       // composing — a future auto-hide that can fire during `composing` needs
       // to either force the gap to 0 first or hide by a taller distance.
+      //
+      // Scroll auto-hide (`visible`, driven by `useBarScrollVisibility` in
+      // `PaperReader.jsx`) landed without touching either side of that
+      // trade, but not because anything upstream keeps `visible` correct
+      // during `'selection'`/`'composing'` — it does not. `PaperReader.jsx`
+      // freezes the scroll listener while `annotations.pending` is truthy,
+      // but freezing only stops `visible` from *changing*; it does not force
+      // it back to `true`. Scroll down until `visible` is `false`, then
+      // start a selection: `visible` is still `false` at that instant, and
+      // the bar is on screen for exactly one reason — the `state !== 'rest'`
+      // term right below overrides it. That term is the *sole* structural
+      // guarantee that the bar cannot render hidden outside `'rest'`, and
+      // therefore also the sole reason the keyboard-gap hazard above stays
+      // hypothetical (composing has a nonzero gap, and composing is
+      // `state !== 'rest'`, so hiding is unreachable there regardless of
+      // `visible` or of anything the freeze does or doesn't do). Do not
+      // delete this term on the theory that the freeze already covers it —
+      // it does not, and this is the line that would have to reappear.
+      // The freeze upstream serves a real but different purpose: it is not
+      // about the bar's on-screen state (that is entirely `state !== 'rest'`
+      // above), it is about not letting `visible` itself drift while nobody
+      // is watching. `useBarScrollVisibility` in `PaperReader.jsx` always
+      // tracks scroll *position* (`previousTop`) unconditionally, freeze or
+      // not — what the freeze actually gates is the call into
+      // `nextBarVisibility`, which also reads the *current* `visible` as an
+      // input (the tremor-holding branch: "no strong signal, keep whatever
+      // it already was"). Without the freeze, a scroll that happens to occur
+      // while `state` isn't `'rest'` (e.g. the touch route's own
+      // scroll-dismisses-the-selection behaviour — see `onScroll` in
+      // `PaperReader.jsx`) could flip `visible` to `false` for reasons that
+      // have nothing to do with the reader's own downward-scroll intent, and
+      // that wrong value would then seed every tremor-holding decision after
+      // the freeze lifts. Freezing keeps `visible` an honest record of
+      // genuine reading-scroll direction; it does not, on its own, keep the
+      // bar *visible* right now — `state !== 'rest'` above is what does that.
       style={{ '--rd-bar-keyboard-gap': `${keyboardGap}px` }}
       animate={{ y: visible || state !== 'rest' ? 0 : '110%' }}
       transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.16, 1, 0.3, 1] }}

@@ -45,6 +45,7 @@ import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { useTouchSelection } from '../../hooks/useTouchSelection.js';
 import { pickSelectionRoute } from '../../utils/readerSelection.js';
+import { nextBarVisibility } from '../../utils/scrollDirection.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
 import { Button } from '../ui/button.jsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
@@ -550,6 +551,65 @@ function usePanelReveal() {
 }
 
 /**
+ * Whether the coarse-pointer bar should be up, driven by scroll direction
+ * (`nextBarVisibility`, Task 2) rather than by `usePanelReveal` above.
+ * `panelShouldShow` answers `!canHover`, which is permanently `true` on every
+ * device that renders `ReaderBar` — a touch screen has no hover to ask with —
+ * so it cannot be the thing that varies here. This hook is the first place
+ * that makes the bar's visibility actually move.
+ *
+ * Position lives in a ref, not state: a bare `scrollTop` read on every frame
+ * of a momentum scroll is not worth a re-render, only a *change* in
+ * visibility is. `setVisible` is therefore called at most once per direction
+ * reversal, never once per scroll event.
+ */
+function useBarScrollVisibility({ scrollRef, enabled, frozen }) {
+  const [visible, setVisible] = useState(true);
+  const visibleRef = useRef(true);
+  const previousTopRef = useRef(0);
+  // Read fresh inside the listener without re-subscribing it on every
+  // keystroke of a selection changing: the effect below installs the
+  // listener once per mount (per the project's usual cleanup pattern — see
+  // `usePanelReveal`'s own single `useEffect(() => () => clearTimeout(...))`
+  // above), and a ref is how a long-lived closure sees a value that changes
+  // between renders without becoming an effect dependency. Written from its
+  // own effect, not during render — mutating a ref while rendering is the
+  // thing `react-hooks/refs` exists to catch, even for a "just keep it
+  // fresh" ref like this one.
+  const frozenRef = useRef(frozen);
+  useEffect(() => { frozenRef.current = frozen; }, [frozen]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
+    const node = scrollRef.current;
+    if (!node) return undefined;
+    previousTopRef.current = node.scrollTop;
+
+    const handleScroll = () => {
+      const currentTop = node.scrollTop;
+      const previousTop = previousTopRef.current;
+      previousTopRef.current = currentTop;
+      // A live selection or an open composer must never lose its bar to a
+      // scroll underneath it — hiding the actions for the selection the
+      // reader just made would be the worst possible moment (decision 4).
+      // Position tracking above still runs while frozen, so the next real
+      // decision, once the selection ends, starts from an accurate delta
+      // instead of one stale from before the freeze.
+      if (frozenRef.current) return;
+      const next = nextBarVisibility({ previousTop, currentTop, visible: visibleRef.current });
+      if (next === visibleRef.current) return;
+      visibleRef.current = next;
+      setVisible(next);
+    };
+
+    node.addEventListener('scroll', handleScroll, { passive: true });
+    return () => node.removeEventListener('scroll', handleScroll);
+  }, [enabled, scrollRef]);
+
+  return visible;
+}
+
+/**
  * Turns a DOM selection into an anchor in the paragraph's *source*.
  *
  * `selection.toString()` cannot do this once maths is involved. KaTeX renders
@@ -846,6 +906,18 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     try { return window.matchMedia('(pointer: coarse)').matches; } catch { return false; }
   }, []);
   const selectionRoute = pickSelectionRoute({ coarsePointer });
+
+  // Only wired on the route that actually renders `ReaderBar` — on the
+  // desktop route this would be a scroll listener computing a value nothing
+  // reads. Frozen by a live selection or an open composer (both collapse to
+  // `annotations.pending` being truthy: `composing` cannot be `true` while
+  // `pending` is falsy — see the `if (!pending && composing)` guard in
+  // `ReaderBar.jsx` — so checking `pending` alone covers both).
+  const barScrollVisible = useBarScrollVisibility({
+    scrollRef,
+    enabled: selectionRoute === 'bar',
+    frozen: Boolean(annotations.pending),
+  });
 
   /**
    * A selection stops being a selection and becomes a decision.
@@ -1594,7 +1666,11 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             // flight overrides it: the streaming indicator is the one control
             // that keeps its permanent visibility, and it lives in the bar's
             // rest row, so the bar itself has to stay up for it to be seen.
-            visible={panel.shown || isStreaming}
+            // Not `panel.shown` — that rule answers `!canHover`, which is
+            // permanently true on every device that reaches this branch (see
+            // `useBarScrollVisibility` above); the scroll-driven value is the
+            // one that actually varies here.
+            visible={barScrollVisible || isStreaming}
           />
         )}
       </motion.div>
