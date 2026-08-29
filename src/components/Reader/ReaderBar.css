@@ -35,7 +35,22 @@
     position: fixed;
     left: var(--space-3);
     right: var(--space-3);
-    bottom: calc(var(--space-3) + var(--inset-bottom));
+    /* `--rd-bar-keyboard-gap` is set from `ReaderBar.jsx`, scoped to the
+       `composing` state and read from `window.visualViewport`: 0px normally,
+       and otherwise however much of the layout viewport's bottom the visual
+       viewport no longer covers — the on-screen keyboard is the reason this
+       exists, but the number itself cannot tell a keyboard apart from any
+       other momentary mismatch between the two viewports (see
+       `keyboardGap.js`). The fallback keeps a browser without
+       `visualViewport` (the property is simply never set) identical to
+       before this rule existed.
+
+       `max()`, not addition, against `--inset-bottom`: the home indicator
+       that inset clears sits *behind* the keyboard, so while the keyboard is
+       up only the taller of the two furniture pieces needs clearing — summing
+       both would float the bar an extra 21–34px above the keyboard for
+       nothing, exactly when landscape leaves the least room to spare. */
+    bottom: calc(var(--space-3) + max(var(--inset-bottom), var(--rd-bar-keyboard-gap, 0px)));
     z-index: 12048; /* Under the sheet (12050) and the export card, so an
                         expanded sheet naturally covers it instead of floating
                         a second control on top of it. */

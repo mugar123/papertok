@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Highlighter, Loader2, PenLine, Settings2, Sparkles, X } from 'lucide-react';
 import { MAX_NOTE_LENGTH } from '../../services/userHighlightService.js';
+import { measureKeyboardGap } from '../../utils/keyboardGap.js';
 import ThinkingDots from './ThinkingDots.jsx';
 
 /**
@@ -25,8 +26,71 @@ export default function ReaderBar({
   const prefersReducedMotion = useReducedMotion();
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState('');
+  const [keyboardGap, setKeyboardGap] = useState(0);
 
   const state = composing ? 'composing' : pending ? 'selection' : 'rest';
+
+  // `.rd-bar` is `position: fixed`, which anchors against the *layout*
+  // viewport — and on iOS Safari a bottom-anchored fixed element does not
+  // move when the on-screen keyboard opens, so it sits right where the
+  // keyboard now covers it. The composer's textarea below is `autoFocus`, so
+  // this is not a rare case: the very first frame of `composing` already
+  // raises the keyboard.
+  //
+  // `visualViewport` is the layer that actually knows the keyboard is there;
+  // `measureKeyboardGap` (a pure function, tested on its own in
+  // `keyboardGap.test.js`) turns its numbers into how far to lift the bar.
+  // Read on `resize` (the keyboard opening or closing) and `scroll` (iOS pans
+  // the visual viewport, e.g. to keep the focused field above the keyboard,
+  // independently of a resize).
+  //
+  // Scoped to `composing`, not the component's whole lifetime: nothing else
+  // on this bar focuses an input, so outside `composing` there is no keyboard
+  // to correct for — and a live measurement there would only pick up
+  // unrelated visual-viewport noise (the mobile browser's own address-bar
+  // hide/show on scroll being the concrete case) as a false, confusing shift.
+  // Gating this way also fixes a real bug rather than just narrowing where it
+  // could show: saving a note clears `pending` before iOS gets around to
+  // firing the one, late `resize` event for the keyboard closing, so without
+  // this the bar would collapse to its 56px rest row *before* the keyboard
+  // had visually finished closing — the tall gap still applied, hanging the
+  // short row in the middle of the screen until that late event finally
+  // zeroed it. Leaving `composing` now tears this effect down immediately:
+  // the cleanup below removes the listeners *and* zeroes the gap in the same
+  // pass, so the bar returns to its resting position the instant the state
+  // does, not whenever iOS separately says the keyboard animation is done.
+  //
+  // No `visualViewport`, no correction: a bar covered by the keyboard on an
+  // old browser is a known, boring failure; a bar guessed into place by a
+  // heuristic without the real signal would be a new, worse one.
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport || state !== 'composing') return undefined;
+
+    const measure = () => {
+      setKeyboardGap(measureKeyboardGap({
+        innerHeight: window.innerHeight,
+        viewportHeight: viewport.height,
+        viewportOffsetTop: viewport.offsetTop,
+      }));
+    };
+
+    measure();
+    viewport.addEventListener('resize', measure);
+    viewport.addEventListener('scroll', measure);
+    // The reset lives in the cleanup, not as a separate branch above that
+    // fires `setKeyboardGap(0)` on every non-composing render: that shape is
+    // the "derived state written back in an effect" anti-pattern (and the
+    // lint rule for it agrees). Here it is a real teardown instead — when
+    // `composing` ends, this cleanup runs before the next effect body does,
+    // zeroing the gap in the same pass rather than waiting for whatever the
+    // platform's own keyboard-closing event happens to report last.
+    return () => {
+      viewport.removeEventListener('resize', measure);
+      viewport.removeEventListener('scroll', measure);
+      setKeyboardGap(0);
+    };
+  }, [state]);
 
   // Leaving the selection collapses the composer with it: a draft that outlives
   // the passage it was about has nothing left to attach to.
@@ -65,6 +129,25 @@ export default function ReaderBar({
     <motion.div
       className="rd-bar"
       data-state={state}
+      // A custom property, not a second `animate` field: framer already owns
+      // `y` for the rest/shown slide, as a transform. `bottom` is a plain
+      // style the browser recomputes on every `visualViewport` tick without
+      // fighting that transform — the two compose (slide, then lift) instead
+      // of one clobbering the other's timeline.
+      //
+      // That composition has one hazard for whoever wires scroll auto-hide
+      // next: `y: '110%'` below hides the bar by translating it by its own
+      // height — a distance measured off wherever `bottom` currently puts it,
+      // not off the screen edge. That is exactly why `110%` and not a fixed
+      // pixel figure clears the bar today at any `--rd-bar-h`. But it also
+      // means `110%` only clears the *screen* while `bottom` sits at its
+      // normal small offset (`--space-3` plus insets): a nonzero
+      // `--rd-bar-keyboard-gap` at hide time would park a "hidden" bar that
+      // many pixels up, in view. Harmless right now only because the gap is
+      // scoped to `composing` below and nothing currently hides the bar while
+      // composing — a future auto-hide that can fire during `composing` needs
+      // to either force the gap to 0 first or hide by a taller distance.
+      style={{ '--rd-bar-keyboard-gap': `${keyboardGap}px` }}
       animate={{ y: visible || state !== 'rest' ? 0 : '110%' }}
       transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
     >
