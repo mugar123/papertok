@@ -43,10 +43,14 @@
   --brand-yellow: #ffd21e;
   --brand-yellow-soft: #fff4c9;
   --brand-orange: #ff9d00;
-  /* Focus ring. The brand orange itself is 2.08:1 on white — invisible as an
-     indicator — so on the light side the ring darkens to a burnt orange that
-     holds 5.0:1 while keeping the hue of the mark (WCAG 2.4.7 / 1.4.11). */
-  --focus-ring: #b45309;
+  /* Focus ring. Ink, not the brand orange family: the burnt-orange ring read
+     as a golden box on every field and every palette row (user feedback,
+     2026-08-29), and the indicator's job is "you are here", not "look at me".
+     Ink is the app's own marking vocabulary (--border-ink) and holds ~17:1 on
+     every surface, far past the 3:1 of WCAG 1.4.11 — contrast.test.js keeps
+     measuring it. Same value as --border-ink on purpose, declared separately
+     because the two flip for different reasons. */
+  --focus-ring: #111318;
   /* Ink, in both themes. The yellow is the one surface whose value does not
      flip — a mark that changes value stops being a mark — so whatever sits on
      it cannot take `--text-primary`, which does flip. Same for the orange
@@ -327,8 +331,9 @@
      are the same mark on both sides. The soft yellow is a surface, though, so
      it becomes the darkest amber that still reads as the same wash. */
   --brand-yellow-soft: #35290b;
-  /* On ink the true brand orange clears 8.9:1, so the mark keeps its color. */
-  --focus-ring: #ff9d00;
+  /* Paper-on-ink, mirroring the light side's ink-on-paper: the orange ring is
+     gone everywhere for the same reason (see the light definition). */
+  --focus-ring: #f2f3f5;
 
   /* ── Action accents ── */
   --accent-violet: #a98fff;

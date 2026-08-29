@@ -371,6 +371,21 @@
   outline-offset: 2px;
 }
 
+/* Text fields are the one place `:focus-visible` fires even for a mouse click
+   — the browser assumes typing follows — so the ring boxed every search field
+   the moment it was clicked. A field signals focus in the app's own marking
+   vocabulary instead: its border turns to ink, doubled by an inset hairline so
+   the change reads as a state and not a subtlety. Keyboard and mouse get the
+   same visible indicator (WCAG 2.4.7, at ink-on-surface contrast); buttons and
+   links keep the ring above, which a mouse click never triggers anyway. */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible,
+textarea:focus-visible,
+[contenteditable='true']:focus-visible {
+  outline: none;
+  border-color: var(--border-ink);
+  box-shadow: inset 0 0 0 1px var(--border-ink);
+}
+
 /* Visible only while focused: the first Tab of every page lands here.
    The z-index is a literal, not `--z-toast + 1`: the token scale tops out at
    400, but the page chrome this link has to sit in front of ignores that scale

@@ -259,6 +259,15 @@ const OUTLINE_OFF_ON_PURPOSE = new Map([
     + 'here programmatically, and a ring drawn around the whole page region reads as a '
     + 'rendering bug rather than as focus',
   ],
+  [
+    "input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible, "
+    + "textarea:focus-visible, [contenteditable='true']:focus-visible",
+    'the same rule that removes the outline draws the replacement in the next two '
+    + 'declarations: border to ink plus an inset ink hairline, visible on every '
+    + 'surface. Text fields match :focus-visible even on a mouse click (typing is '
+    + 'assumed to follow), so the ring boxed every clicked search field; the ink '
+    + 'border is the same indicator for keyboard and mouse (2026-08-29)',
+  ],
 ]);
 
 test('no .css stylesheet switches the focus ring off without a replacement', async () => {
@@ -336,25 +345,23 @@ test('the focus ring is never painted in the brand orange again', async () => {
 // ── The palette's selected row: a state shown in colour alone ───────────────
 
 /**
- * The row the arrow keys are sitting on is the only thing telling a keyboard
- * user where they are in the palette, and it used to be drawn with a tint and
- * nothing else: `data-[selected=true]:bg-secondary`, measured in the browser at
- * `rgb(26, 29, 36)` over the sheet's `rgb(22, 25, 31)`. That is 1.04:1 on ink
- * and 1.07:1 on paper, against the 3:1 WCAG 1.4.11 asks of the visual
- * information that identifies a component's state — invisible at a glance, and
- * completely gone to anyone who cannot separate two near-identical greys.
+ * The selected-row mark. It tells a keyboard user where they are in the
+ * palette, and it has had three shapes: a tint alone (measured at 1.04:1 on
+ * ink and 1.07:1 on paper — invisible against the 3:1 WCAG 1.4.11 asks of
+ * state indicators), then a 2px ring of `var(--focus-ring)`, and now a 3px
+ * inset bar down the row's left edge in the same token. The ring went because
+ * the search field draws its own focus box directly above the list, and two
+ * boxes at once read as noise, not as "you are here" (user feedback,
+ * 2026-08-29). The bar is the app's ruled-row vocabulary, drawn as an inset
+ * shadow so the row's box never changes size; the token stays `--focus-ring`
+ * because it is the one whose job is this mark and whose value holds 3:1 on
+ * every surface in both themes (contrast.test.js measures it).
  *
- * The replacement is the ring the rest of the app already uses for "you are
- * here": 2px of `var(--focus-ring)`, the one token that flips with the theme
- * (#b45309 on paper, #ff9d00 on ink) precisely so it clears 3:1 on both. It is
- * inset with a negative offset because the rows are packed against each other
- * inside a padded list, where an outset ring would overlap its neighbours.
- *
- * The tint stays. It is not the indicator any more, but it is what makes the
- * row read as a single object rather than as an outlined gap.
+ * The tint stays. It is not the indicator, but it is what makes the row read
+ * as a single object rather than as a barred gap.
  */
 
-test('the palette marks its selected row with a ring, not only a tint', async () => {
+test('the palette marks its selected row with the inset bar, not only a tint', async () => {
   const command = await readSource(COMMAND_JSX);
 
   const item = command.match(/function CommandItem\(\{[\s\S]*?\n\}/);
@@ -372,40 +379,20 @@ test('the palette marks its selected row with a ring, not only a tint', async ()
 
   assert.match(
     utilities,
-    /data-\[selected=true\]:outline-\[var\(--focus-ring\)\]/,
-    'the selected row no longer draws `var(--focus-ring)`. Whatever is left is a '
-    + 'background change on its own, and the two backgrounds involved '
+    /data-\[selected=true\]:shadow-\[inset_3px_0_0_var\(--focus-ring\)\]/,
+    'the selected row no longer draws its inset `var(--focus-ring)` bar. Whatever is '
+    + 'left is a background change on its own, and the two backgrounds involved '
     + '(--bg-secondary over --bg-card) are 1.04:1 apart on ink and 1.07:1 on paper: '
     + 'the row the arrows are on becomes indistinguishable from the rows they are '
     + 'not on (WCAG 1.4.11). --focus-ring is the token to use because it is the one '
-    + 'that flips per theme to stay above 3:1 on both.',
+    + 'whose job is "you are here" and whose value clears 3:1 on both themes.',
   );
   assert.match(
     utilities,
-    /data-\[selected=true\]:outline-2(?:\s|$)/,
-    'the selected row lost its 2px outline width. Tailwind draws no outline at all '
-    + 'without a width utility, so the colour above would be set on a ring that is '
-    + 'never painted — and the class list would still read as if it were.',
-  );
-  assert.match(
-    utilities,
-    /data-\[selected=true\]:-outline-offset-2(?:\s|$)/,
-    'the selected row\'s outline is no longer inset. The rows sit flush against each '
-    + 'other inside `CommandList`\'s 1px of padding, so an outset (or zero-offset) '
-    + 'ring is drawn over the neighbouring rows and clipped by the list\'s own '
-    + 'overflow at the top and bottom of the scroll.',
-  );
-
-  assert.doesNotMatch(
-    item[0],
-    /outline-none/,
-    'CommandItem carries `outline-none` again. On its own that class was harmless '
-    + 'here — cmdk never gives a row DOM focus, so there was no ring for it to hide '
-    + '— but Tailwind v4 implements it as `--tw-outline-style: none`, and '
-    + '`outline-2` paints `outline-style: var(--tw-outline-style)`. The two on one '
-    + 'element resolve to `outline-style: none`: the selected row silently goes back '
-    + 'to being a 1.04:1 tint while every class this test looks for is still present '
-    + 'and still reads correctly.',
+    /data-\[selected=true\]:bg-secondary/,
+    'the selected row lost its tint. The bar alone marks the edge, but the tint is '
+    + 'what makes the whole row read as one selected object instead of a stray rule '
+    + 'floating in the list.',
   );
 });
 
@@ -418,16 +405,21 @@ test('the palette marks its selected row with a ring, not only a tint', async ()
  * real and reachable — `App.jsx` mounts `SearchCommand` for every signed-in
  * user and `/` opens it.
  *
- * Measured in the browser, signed in, with the palette open:
+ * Measured in the browser, signed in, with the palette open (originally with
+ * the ring; since 2026-08-29 the field's indicator is the text-field rule in
+ * global.css — border to ink plus an inset hairline — same unlayered scope,
+ * higher specificity than the bare `:focus-visible`):
  *
- *   - the field, `outline-none` and all, computes
- *     `outline: rgb(255, 157, 0) solid 2px` at `outline-offset: 2px` and
- *     matches `:focus-visible`. The ring is there.
+ *   - the field, `outline-none` and all, matches `:focus-visible` and shows a
+ *     visible indicator either way: while the bare ring rule was the only one
+ *     it computed `outline: solid 2px` in the ring token, and under the
+ *     text-field rule it shows the ink border instead. The `outline-none`
+ *     utility stays harmless in both worlds for the same layering reason.
  *   - the rows never take DOM focus at all. cmdk gives them `role="option"`
  *     and `tabIndex -1` and keeps `document.activeElement` on the field,
  *     moving `aria-activedescendant` as the arrows walk the list. That is why
- *     the `outline-none` they used to carry hid nothing — and why the ring
- *     that now marks the selected row is hung off `[data-selected=true]`
+ *     the `outline-none` they used to carry hid nothing — and why the mark
+ *     that now identifies the selected row is hung off `[data-selected=true]`
  *     rather than off focus.
  *
  * The field keeps its ring for one reason only: `.outline-none` is generated
