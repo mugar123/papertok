@@ -12,6 +12,7 @@
   "type": "module",
   "dependencies": {
     "@remotion/cli": "^4.0.518",
+    "@remotion/google-fonts": "^4.0.518",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "remotion": "^4.0.518"
