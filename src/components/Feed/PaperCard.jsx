@@ -1445,37 +1445,44 @@ const PaperCard = memo(function PaperCard({
             <motion.div
               key={`linked-resources-${paperViewKey}`}
               className="pc-linked-resources-slot"
-              // Same trade as `.pc-project-badge-slot` above: this slot only
-              // ever exists in the DOM while there are resources to show, so
-              // the `gridTemplateRows` tween was never hiding a resting
-              // state, only animating its own mount/unmount -- and doing it
-              // by forcing a layout every frame for 620ms. Grid auto-sizing
-              // reserves the height in one pass now; opacity + translateY
-              // carries the entrance instead.
+              // Same choreography as `.pc-project-badge-slot` above, for the
+              // same reason: reserving the height in one layout pass made
+              // everything below jolt down in a single frame, and that snap
+              // -- not the easing -- read as abrupt. A short measured
+              // `height: 0 -> auto` tween eases the space open (a layout
+              // property again, knowingly: 0.45s once per card), and the
+              // block only fades in once the space has mostly opened. No
+              // overflow clip here either -- the resource chips are links
+              // whose `:focus-visible` ring overhangs by 4px -- so it is the
+              // fade delay that keeps content from ghosting over what sits
+              // below while the space opens.
               initial={prefersReducedMotion
                 ? { opacity: 0 }
-                : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
+                : { height: 0 }}
+              animate={prefersReducedMotion
+                ? { opacity: 1 }
+                : { height: 'auto' }}
               exit={prefersReducedMotion
                 ? { opacity: 0 }
-                : { opacity: 0, y: 8 }}
+                : { height: 0, opacity: 0 }}
               transition={prefersReducedMotion
                 ? { duration: 0.12 }
-                : { duration: 0.24, ease: 'easeOut' }}
+                : { duration: 0.45, ease: [0.25, 0.1, 0.25, 1] }}
             >
               <div className="pc-linked-resources-slot-inner">
                 <motion.div
                   className="pc-linked-resources-motion"
                   initial={prefersReducedMotion
                     ? false
-                    : { opacity: 0, y: 5, scale: 0.985 }}
+                    : { opacity: 0, y: 10, scale: 0.98 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={prefersReducedMotion
-                    ? { opacity: 0 }
-                    : { opacity: 0, y: 3, scale: 0.99 }}
+                  exit={{ opacity: 0, transition: { duration: 0.15 } }}
                   transition={prefersReducedMotion
                     ? { duration: 0.12 }
-                    : { duration: 0.46, delay: 0.12, ease: [0.16, 1, 0.3, 1] }}
+                    : {
+                      opacity: { delay: 0.3, duration: 0.5, ease: 'easeOut' },
+                      default: { delay: 0.3, duration: 0.6, ease: [0.22, 1, 0.36, 1] },
+                    }}
                 >
                   <div className="pc-linked-resources" aria-label={isEnglish ? 'Associated research resources' : 'Recursos de investigación asociados'}>
                     <span className="pc-linked-resources-label"><Database size={14} /> {isEnglish ? 'Resources' : 'Recursos'}</span>
@@ -1499,7 +1506,11 @@ const PaperCard = memo(function PaperCard({
                             animate={{ opacity: 1, y: 0 }}
                             transition={prefersReducedMotion
                               ? { duration: 0.12 }
-                              : { duration: 0.26, delay: 0.2 + Math.min(index, 4) * 0.045, ease: [0.16, 1, 0.3, 1] }}
+                              // Base delay sits just after the block starts
+                              // fading in (0.3s) -- earlier and the chips
+                              // would animate under a still-transparent
+                              // parent, wasting the cascade.
+                              : { duration: 0.3, delay: 0.42 + Math.min(index, 4) * 0.05, ease: [0.16, 1, 0.3, 1] }}
                           >
                             <ResourceIcon size={13} />
                             <span>{resourceLabel}</span>
