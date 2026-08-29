@@ -126,6 +126,30 @@ export function normalizeLatexText(text) {
     .replace(/(^|[^\\])%/g, '$1\\%');
 }
 
+/**
+ * `normalizeLatexText` escapes every prose `%` to `\%` so a later LaTeX pass
+ * cannot read it as a comment — but a screen (or a page of HTML) prints what
+ * it is given. Prose runs go through here at paint time; the normalized space
+ * itself keeps the escape, because highlight offsets are measured against it.
+ */
+export function displayProse(value) {
+  return String(value).replace(/\\%/g, '%');
+}
+
+/**
+ * Maps an offset in a run's *displayed* text (see `displayProse`) back to the
+ * offset in its normalized source, where each `\%` occupies two characters but
+ * paints as one. Identity when the run carries no escapes.
+ */
+export function proseSourceOffset(normalizedRun, displayOffset) {
+  const run = String(normalizedRun);
+  let source = 0;
+  for (let display = 0; display < displayOffset && source < run.length; display += 1) {
+    source += run[source] === '\\' && run[source + 1] === '%' ? 2 : 1;
+  }
+  return source;
+}
+
 export function splitLatexText(text) {
   const normalized = normalizeLatexText(text);
   const chunks = [];

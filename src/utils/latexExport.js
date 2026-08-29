@@ -231,7 +231,7 @@ export function authorLine(paper, limit = 12) {
  * A filename the operating system will accept, derived from the title so the
  * download is recognisable in a folder six months later.
  */
-export function exportFileName(paper, language = 'es') {
+export function exportFileName(paper, language = 'es', extension = 'tex') {
   const stem = String(paper?.title || '')
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -241,7 +241,15 @@ export function exportFileName(paper, language = 'es') {
     .slice(0, 60)
     .replace(/-+$/g, '');
   const suffix = language === 'en' ? 'plain-words' : 'en-simple';
-  return `${stem || 'paper'}-${suffix}.tex`;
+  return `${stem || 'paper'}-${suffix}.${extension}`;
+}
+
+/**
+ * The document's words, shared with the PDF export so the two formats can
+ * never drift apart: one provenance line, one stamp, one pair of note labels.
+ */
+export function documentCopy(language = 'es') {
+  return COPY[language === 'en' ? 'en' : 'es'];
 }
 
 function preamble(copy, hasHighlights) {

@@ -20,6 +20,13 @@ const OPTIONS = [
   { id: 'ai', countKey: 'ai' },
 ];
 
+// Format names, not copy: "PDF" and "LaTeX" are the same words in both
+// languages, and the filename line below already shows the extension.
+const FORMATS = [
+  { id: 'pdf', label: 'PDF' },
+  { id: 'tex', label: 'LaTeX' },
+];
+
 export default function ExportCard({
   copy,
   counts,
@@ -27,13 +34,16 @@ export default function ExportCard({
   onToggle,
   onDownload,
   onClose,
-  fileName,
+  fileNames,
   stamp,
   busy = false,
 }) {
   const prefersReducedMotion = useReducedMotion();
   const rootRef = useRef(null);
   const [justSaved, setJustSaved] = useState(false);
+  // PDF first: it opens everywhere, and the .tex stays one tap away for
+  // whoever has a TeX toolchain and wants the compilable source.
+  const [format, setFormat] = useState('pdf');
 
   useEffect(() => {
     const onKey = (event) => {
@@ -55,10 +65,16 @@ export default function ExportCard({
 
   // A download the browser handles silently gives the reader nothing to see, so
   // the button says so itself for a moment. The card stays open: the usual next
-  // thing is to change a switch and take it again.
-  const handleDownload = () => {
-    onDownload();
-    setJustSaved(true);
+  // thing is to change a switch and take it again. The PDF takes a moment to
+  // rasterize, so the confirmation waits for it — and a failed generation
+  // (offline, chunk missing) re-enables the button instead of lying "saved".
+  const handleDownload = async () => {
+    try {
+      await onDownload(format);
+      setJustSaved(true);
+    } catch {
+      /* The button coming back enabled is the whole message. */
+    }
   };
   useEffect(() => {
     if (!justSaved) return undefined;
@@ -115,6 +131,25 @@ export default function ExportCard({
             </button>
           ))}
 
+          <div className="rd-export-format" role="radiogroup" aria-label={copy.format}>
+            <span className="rd-export-label">{copy.format}</span>
+            <div className="rd-export-format-chips">
+              {FORMATS.map(option => (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="radio"
+                  aria-checked={format === option.id}
+                  className="rd-export-format-chip"
+                  data-on={format === option.id ? '' : undefined}
+                  onClick={() => setFormat(option.id)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
           {/* Not a switch. A derivative of someone else's paper carries where it
               came from, or it does not leave. */}
           <p className="rd-export-always">
@@ -155,16 +190,20 @@ export default function ExportCard({
               </div>
             )}
           </div>
-          <p className="rd-export-preview-note">{copy.previewNote}</p>
+          <p className="rd-export-preview-note">{copy.previewNote(format)}</p>
         </div>
       </div>
 
       <div className="rd-export-foot">
-        <span className="rd-export-file"><FileText size={13} /> {fileName}</span>
+        <span className="rd-export-file"><FileText size={13} /> {fileNames[format]}</span>
         <button type="button" className="rd-export-cancel" onClick={onClose}>{copy.cancel}</button>
         <button type="button" className="rd-export-go" onClick={handleDownload} disabled={busy}>
           {justSaved ? <Check size={14} /> : <Download size={14} />}
-          {justSaved ? copy.downloaded : copy.downloadTex}
+          {busy
+            ? copy.generating
+            : justSaved
+              ? copy.downloaded
+              : format === 'pdf' ? copy.downloadPdf : copy.downloadTex}
         </button>
       </div>
     </motion.div>

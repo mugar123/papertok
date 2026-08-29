@@ -1,5 +1,5 @@
 import { createElement, Fragment, useEffect, useMemo, useReducer } from 'react';
-import { splitLatexText } from '../utils/latex.js';
+import { displayProse, splitLatexText } from '../utils/latex.js';
 import { getKatex, loadKatex } from '../utils/katexLoader.js';
 
 // Math renders through the on-demand KaTeX chunk (see utils/katexLoader.js).
@@ -30,7 +30,7 @@ export default function ScientificText({ children }) {
   const katex = getKatex();
   const renderedChunks = parts.map((chunk, index) => {
     if (chunk.type === 'text') {
-      return createElement(Fragment, { key: `text-${index}` }, chunk.value);
+      return createElement(Fragment, { key: `text-${index}` }, displayProse(chunk.value));
     }
 
     if (!katex) {

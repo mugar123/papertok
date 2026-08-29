@@ -31,6 +31,7 @@ import {
   panelShouldShow,
   pointerWakesPanel,
 } from '../../utils/panelReveal.js';
+import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.js';
 import { buildRangeAnchor, buildSelectionAnchor } from '../../utils/textHighlights.js';
 import {
   buildLatexDocument,
@@ -38,6 +39,7 @@ import {
   exportFileName,
   summarizeExport,
 } from '../../utils/latexExport.js';
+import { buildPdfModel, downloadPdfDocument } from '../../utils/pdfExport.js';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
@@ -98,8 +100,11 @@ const COPY = {
     previewTitle: 'Título del paper',
     previewByline: 'autores · reescrito por PaperTok',
     previewSection: 'De qué va el paper',
-    previewNote: 'Así se verá al compilarlo',
+    previewNote: (format) => (format === 'pdf' ? 'Así se verá el PDF' : 'Así se verá al compilarlo'),
+    format: 'Formato',
     downloadTex: 'Descargar .tex',
+    downloadPdf: 'Descargar PDF',
+    generating: 'Generando…',
     downloaded: 'Descargado',
     unlimitedUses: 'IA sin límite',
     unlimitedUsesTitle: 'Esta cuenta no tiene límite diario de usos de IA.',
@@ -172,8 +177,11 @@ const COPY = {
     previewTitle: 'Paper title',
     previewByline: 'authors · rewritten by PaperTok',
     previewSection: 'What the paper is about',
-    previewNote: 'How it will look compiled',
+    previewNote: (format) => (format === 'pdf' ? 'How the PDF will look' : 'How it will look compiled'),
+    format: 'Format',
     downloadTex: 'Download .tex',
+    downloadPdf: 'Download PDF',
+    generating: 'Generating…',
     downloaded: 'Downloaded',
     unlimitedUses: 'Unlimited AI',
     unlimitedUsesTitle: 'This account has no daily limit on AI uses.',
@@ -612,6 +620,7 @@ function useBarScrollVisibility({ scrollRef, enabled, frozen }) {
  */
 function anchorFromSelection(range, paragraphNode, paragraphText) {
   if (!range || !paragraphNode) return null;
+  const normalizedParagraph = normalizeLatexText(paragraphText);
   let start = Infinity;
   let end = -Infinity;
 
@@ -627,12 +636,15 @@ function anchorFromSelection(range, paragraphNode, paragraphText) {
       continue;
     }
 
-    // A text run holds exactly one text node, and its characters are the
-    // normalized source one for one, so the range's own offsets refine the ends.
+    // A text run holds exactly one text node, and its characters follow the
+    // normalized source in order — one for one except where `displayProse`
+    // painted a `\%` as a single `%` — so the range's own offsets refine the
+    // ends once walked back through the escapes.
     const textNode = node.firstChild;
     const length = nodeEnd - nodeStart;
-    const from = range.startContainer === textNode ? Math.min(range.startOffset, length) : 0;
-    const to = range.endContainer === textNode ? Math.min(range.endOffset, length) : length;
+    const runSource = normalizedParagraph.slice(nodeStart, nodeEnd);
+    const from = range.startContainer === textNode ? proseSourceOffset(runSource, range.startOffset) : 0;
+    const to = range.endContainer === textNode ? proseSourceOffset(runSource, range.endOffset) : length;
     start = Math.min(start, nodeStart + from);
     end = Math.max(end, nodeStart + to);
   }
@@ -668,6 +680,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   // Which face the annotation sheet shows once open. Touch never gets a third
   // surface for the level/highlights controls — it gets a tab on this one.
   const [exportOpen, setExportOpen] = useState(false);
+  const [exporting, setExporting] = useState(false);
   /* Three switches rather than one "annotations": a bare mark and a mark you
      wrote on are different things to want in a file. */
   const [include, setInclude] = useState({ marks: true, mine: true, ai: true });
@@ -1064,6 +1077,44 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
       notes: built.noteCount,
     });
   }, [annotations.annotations, include, isEnglish, kindLabels, level, originalUrl, paper, sections, trackEvent]);
+
+  /**
+   * The PDF is made, not written: pages laid out and rasterized in
+   * `downloadPdfDocument`, which takes long enough for the card to need a
+   * "generating" state. The libraries arrive as their own chunks on the first
+   * use, so the failure worth planning for is a chunk that never lands —
+   * `finally` gives the button back either way, and the card shows "saved"
+   * only when the await resolves.
+   */
+  const downloadPdf = useCallback(async () => {
+    const model = buildPdfModel({
+      paper,
+      sections,
+      annotations: annotations.annotations,
+      language: isEnglish ? 'en' : 'es',
+      level,
+      kindLabels,
+      originalUrl,
+      include,
+    });
+    setExporting(true);
+    try {
+      await downloadPdfDocument(model);
+    } finally {
+      setExporting(false);
+    }
+    trackEvent('paper_export', {
+      surface: 'reader',
+      level,
+      format: 'pdf',
+      notes: model.noteCount,
+    });
+  }, [annotations.annotations, include, isEnglish, kindLabels, level, originalUrl, paper, sections, trackEvent]);
+
+  const handleDownload = useCallback(
+    (format) => (format === 'pdf' ? downloadPdf() : downloadTex()),
+    [downloadPdf, downloadTex],
+  );
 
   /** Where the passage is, said in the reader's own vocabulary: "Método · §2". */
   const annotationLabel = useCallback((annotation) => {
@@ -1517,16 +1568,23 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
                 previewByline: copy.previewByline,
                 previewSection: copy.previewSection,
                 previewNote: copy.previewNote,
+                format: copy.format,
                 downloadTex: copy.downloadTex,
+                downloadPdf: copy.downloadPdf,
+                generating: copy.generating,
                 downloaded: copy.downloaded,
                 cancel: copy.cancel,
               }}
               counts={exportCounts}
               include={include}
               onToggle={(id) => setInclude(current => ({ ...current, [id]: !current[id] }))}
-              onDownload={downloadTex}
+              onDownload={handleDownload}
+              busy={exporting}
               onClose={() => setExportOpen(false)}
-              fileName={exportFileName(paper, isEnglish ? 'en' : 'es')}
+              fileNames={{
+                pdf: exportFileName(paper, isEnglish ? 'en' : 'es', 'pdf'),
+                tex: exportFileName(paper, isEnglish ? 'en' : 'es'),
+              }}
               stamp={`${isEnglish ? levelLabel.labelEn : levelLabel.label} · ${isEnglish ? 'English' : 'Español'}`}
             />
           )}

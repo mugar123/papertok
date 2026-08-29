@@ -1,5 +1,6 @@
 import { useEffect, useReducer } from 'react';
 import { getKatex, loadKatex } from '../../utils/katexLoader.js';
+import { displayProse } from '../../utils/latex.js';
 import { buildHighlightPlan } from '../../utils/textHighlights.js';
 
 /**
@@ -113,14 +114,14 @@ export default function HighlightedScientificText({ children, highlights = [] })
               className={markClassFor(item.kind)}
               data-highlight-id={item.id || undefined}
             >
-              {item.value}
+              {displayProse(item.value)}
             </mark>
           );
         }
 
         return (
           <span key={`text-${index}`} {...bounds}>
-            {item.value}
+            {displayProse(item.value)}
           </span>
         );
       })}

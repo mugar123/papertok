@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { AlertCircle, ChevronUp, PenLine, Sparkles, Trash2 } from 'lucide-react';
 import { ANNOTATION_FILTERS } from '../../utils/annotationOrder.js';
+import { displayProse } from '../../utils/latex.js';
 import { SHEET_DRAG_SLOP, sheetDragOffset, shouldSettleOpen } from '../../utils/sheetDrag.js';
 import ThinkingDots from './ThinkingDots.jsx';
 
@@ -304,7 +305,7 @@ export default function AnnotationRail({
                       <Trash2 size={13} />
                     </button>
                   </div>
-                  <p className="rd-note-quote">{annotation.quote}</p>
+                  <p className="rd-note-quote">{displayProse(annotation.quote)}</p>
                   {annotation.note && (
                     <p className="rd-note-body" data-fresh={annotation.fresh && annotation.kind === 'ai' ? '' : undefined}>
                       {annotation.note}

@@ -140,6 +140,52 @@
   margin-top: 2px;
 }
 
+/* ── Format: PDF or the compilable source ── */
+.rd-export-format {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-3);
+  padding: 0 var(--space-2);
+}
+
+.rd-export-format .rd-export-label { padding: 0; }
+
+.rd-export-format-chips {
+  display: inline-flex;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.rd-export-format-chip {
+  min-height: 28px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 500 0.75rem/1 var(--font-mono);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.rd-export-format-chip + .rd-export-format-chip {
+  border-left: 1px solid var(--border-default);
+}
+
+.rd-export-format-chip[data-on] {
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rd-export-format-chip:not([data-on]):hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+}
+
 .rd-export-always {
   display: flex;
   align-items: flex-start;
@@ -366,6 +412,10 @@
   .rd-export-preview { display: none; }
 
   .rd-export-option { min-height: 46px; align-items: center; }
+
+  .rd-export-format-chip { min-height: 40px; flex: 1; }
+
+  .rd-export-format-chips { flex: 1; display: flex; }
 
   .rd-export-foot { flex-wrap: wrap; }
 

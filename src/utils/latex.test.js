@@ -5,7 +5,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ScientificText from '../components/ScientificText.js';
 import { loadKatex } from './katexLoader.js';
-import { normalizeLatexText, normalizeScientificMarkup, splitLatexText } from './latex.js';
+import { displayProse, normalizeLatexText, normalizeScientificMarkup, proseSourceOffset, splitLatexText } from './latex.js';
 
 const PHOTINO_ABSTRACT = 'A lower bound for the photino mass ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}}$ as a function of the spin-0 fermion superpartner mass ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}$ is derived as an extension of the calculation of Lee and Weinberg. The Majorana nature of the photino induces a $p$-wave threshold for annihilation $\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}\\ensuremath{\\rightarrow}f\\overline{f}$ into light fermions, and leads to a rather unexpected form for the bound: for $25 \\mathrm{GeV}\\ensuremath{\\lesssim}{m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}\\ensuremath{\\lesssim}45 \\mathrm{GeV}$, ${({m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}})}_{min}\\ensuremath{\\simeq}{m}_{\\ensuremath{\\tau}}=1.8$ GeV; for ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}&gt;45$ GeV, ${({m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}})}_{min}$ increases approximately linearly with ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}$ to a value of 20 GeV when ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}=100$ GeV.';
 
@@ -28,6 +28,29 @@ test('normalizes legacy OpenAlex math macros into KaTeX-compatible LaTeX', () =>
 
 test('preserves ordinary text while escaping LaTeX comment characters', () => {
   assert.equal(normalizeLatexText('Accuracy improved by 5%\nNext line.'), 'Accuracy improved by 5\\% Next line.');
+});
+
+test('displayProse undoes the comment escape so screens show the percent sign', () => {
+  assert.equal(displayProse('el 100\\% de los casos'), 'el 100% de los casos');
+  assert.equal(displayProse('sin porcentajes'), 'sin porcentajes');
+});
+
+test('proseSourceOffset maps a display offset back into the escaped run', () => {
+  const run = 'up to 12.2\\% and 24.2\\%, respectively';
+  // display: 'up to 12.2% and 24.2%, respectively'
+  assert.equal(proseSourceOffset(run, 0), 0);
+  assert.equal(proseSourceOffset(run, 10), 10);
+  assert.equal(proseSourceOffset(run, 12), 13);
+  assert.equal(proseSourceOffset(run, 22), 24);
+  assert.equal(proseSourceOffset(run, 999), run.length);
+});
+
+test('ScientificText paints prose percent signs without the LaTeX escape', () => {
+  const rendered = renderToStaticMarkup(
+    React.createElement(ScientificText, null, 'Accuracy reached 100% of cases.'),
+  );
+  assert.match(rendered, /100% of cases\./);
+  assert.doesNotMatch(rendered, /\\%/);
 });
 
 test('removes embedded HTML and MathML tags while preserving scientific content', () => {

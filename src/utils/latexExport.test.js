@@ -3,6 +3,7 @@ import test from 'node:test';
 import {
   authorLine,
   buildLatexDocument,
+  documentCopy,
   escapeLatexText,
   exportFileName,
   isSafeMath,
@@ -410,4 +411,19 @@ test('an annotation with no level recorded is kept, not guessed at', () => {
     ],
   });
   assert.match(source, /antigua/);
+});
+
+test('the file name can carry another extension for the other formats', () => {
+  assert.equal(
+    exportFileName({ title: 'Ñandú en Ávila' }, 'en', 'pdf'),
+    'nandu-en-avila-plain-words.pdf',
+  );
+  assert.equal(exportFileName({}, 'es', 'pdf'), 'paper-en-simple.pdf');
+});
+
+test('documentCopy hands each language its own strings, and defaults to Spanish', () => {
+  assert.match(documentCopy('en').provenance, /Rewritten by PaperTok/);
+  assert.match(documentCopy('es').provenance, /Reescrito por PaperTok/);
+  assert.match(documentCopy('fr').provenance, /Reescrito por PaperTok/);
+  assert.equal(documentCopy('es').levels.university, 'universitario');
 });
