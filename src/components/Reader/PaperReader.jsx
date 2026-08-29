@@ -949,18 +949,6 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   // (reported from a real iPhone, 2026-08-29 — "no me deja desubrayar").
   const [tappedMark, setTappedMark] = useState(null);
 
-  // One truth for all the floating chrome. The bar's overrides (a rewrite or
-  // an ask in flight, an error still on screen) apply as much to the back
-  // button and the uses counter: whatever must keep the bar up should not be
-  // read against a half-empty frame.
-  const barVisible = barScrollVisible || isStreaming
-    || annotations.busy === 'asking' || Boolean(annotations.error);
-
-  // On the touch route the top chrome follows the bar: reading down, the back
-  // button and the uses counter recede with it instead of standing on the
-  // text for the whole read (asked for from a real iPhone, 2026-08-29); a
-  // scroll up brings both back. Fine pointers never hide chrome to begin with.
-  const chromeReceded = coarsePointer && selectionRoute === 'bar' && !barVisible;
 
   /**
    * A selection stops being a selection and becomes a decision.
@@ -1216,6 +1204,27 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   const errorCopy = ERROR_COPY[isEnglish ? 'en' : 'es'][shownError]
     || ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE;
   const canRetry = supportsRewrite && !UNRETRYABLE_ERRORS.has(shownError);
+
+  // One truth for all the floating chrome. The bar's overrides (a rewrite or
+  // an ask in flight, an error still on screen) apply as much to the back
+  // button and the uses counter: whatever must keep the bar up should not be
+  // read against a half-empty frame.
+  //
+  // Declared HERE, after `isStreaming`, and that placement is load-bearing:
+  // an earlier draft sat next to `useBarScrollVisibility` above and shipped a
+  // crash the whole test suite missed — `||` short-circuits, so while
+  // `barScrollVisible` stayed `true` the `isStreaming` term was never
+  // evaluated, and the first scroll down was the first evaluation of a const
+  // still in its temporal dead zone. The reader worked until you scrolled,
+  // then the error boundary took the whole app down (production, 2026-08-29).
+  const barVisible = barScrollVisible || isStreaming
+    || annotations.busy === 'asking' || Boolean(annotations.error);
+
+  // On the touch route the top chrome follows the bar: reading down, the back
+  // button and the uses counter recede with it instead of standing on the
+  // text for the whole read (asked for from a real iPhone, 2026-08-29); a
+  // scroll up brings both back. Fine pointers never hide chrome to begin with.
+  const chromeReceded = coarsePointer && selectionRoute === 'bar' && !barVisible;
 
   /* The reader grows from wherever it was opened. `.rd` is `inset: 0`, so its
      own box is the viewport and the button's viewport coordinates are already
