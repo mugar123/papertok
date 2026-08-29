@@ -12,3 +12,7 @@ lint_output.txt
 # Firestore emulator artefacts (npm run test:rules)
 firestore-debug.log
 firebase-debug.log
+
+# Vídeo promocional (proyecto Remotion aislado)
+video/node_modules/
+video/out/
