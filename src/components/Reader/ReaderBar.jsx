@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
-import { Highlighter, Loader2, PenLine, Settings2, Sparkles, X } from 'lucide-react';
+import { AlertCircle, Highlighter, Loader2, PenLine, Settings2, Sparkles, X } from 'lucide-react';
 import { MAX_NOTE_LENGTH } from '../../services/userHighlightService.js';
 import { measureKeyboardGap } from '../../utils/keyboardGap.js';
 import ThinkingDots from './ThinkingDots.jsx';
@@ -21,7 +21,7 @@ export default function ReaderBar({
   pending, copy, usesLeft, unlimited, canAsk, busy,
   onHighlight, onSaveNote, onAsk, onClose,
   annotationCount, onOpenList, onOpenSettings,
-  streaming, visible,
+  streaming, asking, askError, visible,
 }) {
   const prefersReducedMotion = useReducedMotion();
   const [composing, setComposing] = useState(false);
@@ -199,22 +199,47 @@ export default function ReaderBar({
             <span className="rd-bar-count">{annotationCount}</span>
           </button>
 
-          {/* The one control that earns permanent visibility: while a level
-              rewrite is streaming, that is the single thing worth knowing about
-              from behind the settings button. */}
-          {streaming && (
+          {/* The one slot that earns permanent visibility: a level rewrite
+              streaming, or "Que me lo explique" working, or having failed, are
+              the things worth knowing about from behind the settings button.
+              On touch the sheet holding `AnnotationRail` sits fully off-screen
+              with no peek (unlike the desktop rail), so this is the only place
+              left that could show them at all — without it, asking gives no
+              sign of working, and a failure lands in a surface nobody is
+              looking at, then gets silently wiped by the next scroll's
+              `dismiss()`.
+
+              Priority order matters because, unlike `asking` and `askError`
+              (never simultaneously true — `ask()` resets `busy` to idle before
+              it ever sets `error`), `streaming` and `askError` genuinely can
+              overlap: asking can fail, then the reader can separately start a
+              level rewrite while that stale error is still on screen. The
+              rewrite — the document you are currently reading changing under
+              you — wins that case; a leftover error about a passed action
+              would otherwise hide it. */}
+          {streaming ? (
             <span className="rd-bar-streaming">
               <ThinkingDots />
               {copy.writing}
             </span>
+          ) : askError ? (
+            <span className="rd-bar-error" role="alert">
+              <AlertCircle size={14} />
+              {askError}
+            </span>
+          ) : asking && (
+            <span className="rd-bar-streaming">
+              <ThinkingDots />
+              {copy.reading}
+            </span>
           )}
 
-          {/* Absent, not disabled, where there is nowhere for it to lead: on a
-              coarse pointer wide enough that the rail is a margin rather than a
-              sheet, the dock already carries these controls and the rail has no
-              settings tab to open (`PaperReader.jsx` only passes a handler where
-              that tab exists). A button with no `onClick` is a dead end; not
-              rendering it at all is the honest version of that. */}
+          {/* `onOpenSettings` is always provided today — every device that
+              reaches this bar also gets a sheet with a settings tab to open
+              (`railIsSheet` in `PaperReader.jsx`). Still guarded rather than
+              called unconditionally: absent, not disabled, is the honest
+              version of "nowhere for it to lead" for whatever future route
+              might not have one — a button with no `onClick` is a dead end. */}
           {onOpenSettings && (
             <button
               type="button"

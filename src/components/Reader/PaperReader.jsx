@@ -907,6 +907,25 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   }, []);
   const selectionRoute = pickSelectionRoute({ coarsePointer });
 
+  /**
+   * Whether the margin is a sheet rather than the desktop rail — width alone
+   * (`isNarrow`) for a mouse, unchanged, but *any* coarse pointer now, not
+   * just a narrow one.
+   *
+   * Before the fix-wave review this was `isNarrow` alone, so a coarse pointer
+   * wide enough to miss the 1100px breakpoint (an iPad in landscape) kept the
+   * desktop `'rail'` surface — no settings tab, because only a sheet ever
+   * grows one (`hasSettingsTab` in `AnnotationRail.jsx`). That was fine only
+   * as long as the dock stayed up there to hold the level/highlights/export
+   * controls instead. It no longer does — the dock now hides on any coarse
+   * pointer (see `PaperReader.css`), because `ReaderBar.jsx` had already
+   * started rendering there regardless of width, and the two stacked. Hiding
+   * the dock without this would have traded one dead surface for another: a
+   * settings button in the bar (below) that opened a sheet tab which could
+   * never show, because the rail behind it was still `'rail'`, not `'sheet'`.
+   */
+  const railIsSheet = isNarrow || selectionRoute === 'bar';
+
   // Only wired on the route that actually renders `ReaderBar` — on the
   // desktop route this would be a scroll listener computing a value nothing
   // reads. Frozen by a live selection or an open composer (both collapse to
@@ -958,14 +977,20 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     // provisional mark (below) already removes the DOM repaint that would
     // otherwise retrigger `selectionchange`, but this guard means a loop
     // cannot start even if some other repaint disturbs the same selection.
-    // Offsets are compared alongside the quote, not the quote alone: two
-    // identical substrings selected back-to-back in the same paragraph share
-    // one quote but not one position, and comparing the string only would
-    // make the second selection a silent no-op. `buildSelectionAnchor`'s
+    // Scoped to the bar route only: on the menu route there is no
+    // `selectionchange` polling to re-enter, so the guard's only visible
+    // effect there would be skipping `removeAllRanges()` below when the exact
+    // same passage is selected twice in a row (double-click, double-click
+    // again) — a fine pointer seeing new behaviour the branch promised never
+    // happens. Offsets are compared alongside the quote, not the quote alone:
+    // two identical substrings selected back-to-back in the same paragraph
+    // share one quote but not one position, and comparing the string only
+    // would make the second selection a silent no-op. `buildSelectionAnchor`'s
     // string-only fallback carries no offsets, so both sides fall back to
     // `undefined === undefined` there — no worse than the old quote-only check.
     const waiting = annotations.pending;
     if (waiting
+      && selectionRoute === 'bar'
       && waiting.sectionId === sectionId
       && waiting.paragraphIndex === paragraphIndex
       && waiting.quote === anchor.quote
@@ -973,6 +998,12 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
       && waiting.quoteEnd === anchor.end) return;
     const rect = range.getBoundingClientRect();
     if (selectionRoute === 'menu') selection.removeAllRanges();
+    // A selection can settle while the annotations sheet is expanded — the
+    // document above it stays selectable. Without this the bar morphs to its
+    // `selection` state behind an opaque sheet: the OS callout shows with no
+    // actions visible anywhere. Closing the sheet surfaces the bar the moment
+    // there is something for it to show.
+    if (selectionRoute === 'bar') setSheetOpen(false);
     beginAnnotation({
       sectionId,
       paragraphIndex,
@@ -1244,6 +1275,18 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     </div>
   );
 
+  // Shared with `ReaderBar` below: on the touch route the sheet holding
+  // `AnnotationRail` sits fully off-screen with no peek, so a failed
+  // "Que me lo explique" rendered only into the rail (as it always has been)
+  // would land in a surface nobody is looking at — and the next scroll's
+  // `dismiss()` clears it before it is ever seen. Null, not the fallback
+  // string, while there is no error: both consumers gate their own rendering
+  // on this being truthy, so a stray string here would show a phantom.
+  const askErrorText = annotations.error
+    ? (ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'][annotations.error]
+      || ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE)
+    : null;
+
   /* The dock's four groups minus the one that cannot mean anything inside its
      own sheet (see above), standing on the sheet's settings tab instead of a
      third surface. Only for the sheet's settings tab; the rail (desktop,
@@ -1389,7 +1432,19 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
         <div
           ref={scrollRef}
           className="rd-scroll"
-          onScroll={() => { panel.onScrolled(); clearNativeSelectionOnTouch(); annotations.dismiss(); }}
+          onScroll={() => {
+            panel.onScrolled();
+            // Only clear the native selection once there is a settled decision
+            // to clear. iOS auto-scrolls this container when a selection handle
+            // is dragged to its edge, which fires this handler mid-gesture —
+            // before `annotations.pending` exists. Clearing unconditionally
+            // there collapses the live selection the OS handles are attached
+            // to, killing the drag. Gating on `pending` leaves a pre-settle
+            // scroll a no-op (nothing to clear yet) and still clears normally
+            // once a decision has settled and the reader scrolls away from it.
+            if (annotations.pending) clearNativeSelectionOnTouch();
+            annotations.dismiss();
+          }}
         >
           <article className="rd-doc" data-marks={showHighlights ? undefined : 'off'}>
             {/* The one title in the app that used to be printed raw: every other
@@ -1558,8 +1613,8 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
               on-screen trace of it left: `ReaderBar.jsx` is what stands in
               for that now. */}
           <AnnotationRail
-            surface={isNarrow ? 'sheet' : 'rail'}
-            hidden={!isNarrow && !railOpen}
+            surface={railIsSheet ? 'sheet' : 'rail'}
+            hidden={!railIsSheet && !railOpen}
             expanded={sheetOpen}
             // A coarse pointer collapses the sheet fully off-screen instead
             // of leaving it peeking (`(pointer: coarse)` in `Annotations.css`)
@@ -1572,14 +1627,17 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             onToggle={() => setSheetOpen(value => !value)}
             tab={sheetTab}
             onTabChange={setSheetTab}
-            // Pointer-gated, not just `isSheet`: a narrow *desktop* window is
-            // also a sheet (pre-existing, width-driven), and the dock is still
-            // there for it. Only the touch route lost the dock, so only the
-            // touch route gets a settings tab standing in for it. The other
-            // half of this pairing — a coarse pointer *wide* enough that the
-            // rail is the desktop margin, not a sheet — needs no extra guard
-            // here: `AnnotationRail`'s own `isSheet` check already keeps
-            // `hasSettingsTab` false on the rail, whatever this prop carries.
+            // Pointer-gated: a narrow *desktop* window is also a sheet
+            // (pre-existing, width-driven, via `railIsSheet` above), but the
+            // dock is still there for it — a mouse user never got
+            // `ReaderBar.jsx`, so nothing hid the dock out from under them.
+            // Only the touch route lost the dock, so only the touch route
+            // gets a settings tab standing in for it. `railIsSheet` already
+            // covers every case where this actually renders as a tab —
+            // gating this prop on pointer alone rather than repeating
+            // `railIsSheet` here is just not passing content to a rail that
+            // could never grow a tab for it (`hasSettingsTab` in
+            // `AnnotationRail.jsx` requires `surface === 'sheet'` too).
             settingsContent={selectionRoute === 'bar' ? annotationSettingsSlot : undefined}
             annotations={visibleAnnotations}
             counts={annotationCounts}
@@ -1587,8 +1645,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             onFilter={setAnnotationFilter}
             thinking={annotations.busy === 'asking'}
             error={Boolean(annotations.error)}
-            errorText={ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'][annotations.error]
-              || ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE}
+            errorText={askErrorText || ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE}
             onFocus={goToPassage}
             onRemove={annotations.remove}
             onSettle={annotations.settle}
@@ -1669,23 +1726,30 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             onClose={() => { clearNativeSelectionOnTouch(); annotations.dismiss(); }}
             annotationCount={annotationCounts.total}
             onOpenList={openAnnotationList}
-            // Only where the rail is actually a sheet: above 1100px the rail has
-            // no settings tab to open (it never grows one — see `hasSettingsTab`
-            // in `AnnotationRail.jsx`), and the dock stays visible there instead
-            // (see the paired `(pointer: coarse) and (max-width: 1100px)` block
-            // in `PaperReader.css`), so a settings entry in the bar would lead
-            // nowhere on a device like an iPad in landscape.
-            onOpenSettings={isNarrow ? openAnnotationSettings : undefined}
+            // Unconditional here, not `isNarrow`-gated: this block only ever
+            // renders on `selectionRoute === 'bar'`, and `railIsSheet` above
+            // is true for every device that reaches it — the rail always has
+            // a settings tab to open on the touch route now, an iPad in
+            // landscape included (see `railIsSheet`'s comment for why that
+            // changed: the dock it used to rely on instead is gone).
+            onOpenSettings={openAnnotationSettings}
             streaming={isStreaming}
+            // "Que me lo explique" working, and having failed, get the same
+            // permanent-visibility treatment as the level rewrite above —
+            // see the comment on `askErrorText` for why this is the only
+            // place left, on touch, that can show either at all.
+            asking={annotations.busy === 'asking'}
+            askError={askErrorText}
             // Whatever normally governs the chrome's visibility, a rewrite in
-            // flight overrides it: the streaming indicator is the one control
-            // that keeps its permanent visibility, and it lives in the bar's
-            // rest row, so the bar itself has to stay up for it to be seen.
-            // Not `panel.shown` — that rule answers `!canHover`, which is
-            // permanently true on every device that reaches this branch (see
+            // flight (or an ask in flight, or a failed one still on screen)
+            // overrides it: these are the controls that keep their permanent
+            // visibility, and they live in the bar's rest row, so the bar
+            // itself has to stay up for them to be seen. Not `panel.shown` —
+            // that rule answers `!canHover`, which is permanently true on
+            // every device that reaches this branch (see
             // `useBarScrollVisibility` above); the scroll-driven value is the
             // one that actually varies here.
-            visible={barScrollVisible || isStreaming}
+            visible={barScrollVisible || isStreaming || annotations.busy === 'asking' || Boolean(annotations.error)}
           />
         )}
       </motion.div>

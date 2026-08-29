@@ -35,18 +35,49 @@ const stripComments = source => source.replace(/\/\*[\s\S]*?\*\//g, '');
  *
  * A media query here contains nested rules, so `/@media[^}]+}/` stops at the
  * first inner brace and every assertion built on it passes against nothing.
+ *
+ * `header` is matched as a *complete* at-rule prelude, not a prefix: plain
+ * `indexOf(header)` would also match `@media (pointer: coarse)` inside
+ * `@media (pointer: coarse) and (max-width: 1100px) { … }`, since the shorter
+ * string is a literal prefix of the longer one — whichever came first in the
+ * file, not necessarily the one the caller meant. Requiring the next
+ * non-whitespace character after `header` to be `{` rules that out.
+ *
+ * A stylesheet can also legitimately declare the same *exact* header more
+ * than once (this file has two bare `@media (pointer: coarse) { … }`
+ * blocks). Plain first-occurrence would then depend on file order — a block
+ * added above an existing one would silently retarget every caller of the
+ * one below it. Pass `contains` (a substring expected somewhere in the
+ * block's body) to pick the right one regardless of order; omitted, this
+ * keeps the old first-occurrence behaviour for headers that are still unique.
  */
-function atRuleBody(css, header) {
-  const start = css.indexOf(header);
-  assert.notEqual(start, -1, `expected to find \`${header}\` in the stylesheet`);
-  const open = css.indexOf('{', start);
-  let depth = 0;
-  for (let i = open; i < css.length; i += 1) {
-    if (css[i] === '{') depth += 1;
-    if (css[i] === '}') {
-      depth -= 1;
-      if (depth === 0) return css.slice(open + 1, i);
+function atRuleBody(css, header, { contains } = {}) {
+  let searchFrom = 0;
+  while (searchFrom <= css.length) {
+    const start = css.indexOf(header, searchFrom);
+    assert.notEqual(
+      start, -1,
+      contains
+        ? `expected to find \`${header}\` containing \`${contains}\` in the stylesheet`
+        : `expected to find \`${header}\` in the stylesheet`,
+    );
+    let cursor = start + header.length;
+    while (/\s/.test(css[cursor])) cursor += 1;
+    if (css[cursor] !== '{') { searchFrom = cursor; continue; }
+    const open = cursor;
+    let depth = 0;
+    let close = -1;
+    for (let i = open; i < css.length; i += 1) {
+      if (css[i] === '{') depth += 1;
+      if (css[i] === '}') {
+        depth -= 1;
+        if (depth === 0) { close = i; break; }
+      }
     }
+    if (close === -1) throw new Error(`unbalanced braces after \`${header}\``);
+    const body = css.slice(open + 1, close);
+    if (!contains || body.includes(contains)) return body;
+    searchFrom = close + 1;
   }
   throw new Error(`unbalanced braces after \`${header}\``);
 }
@@ -125,8 +156,19 @@ test('the panel stacks on a phone instead of scrolling out of sight', async () =
   assert.doesNotMatch(panel, /overflow-x:\s*auto/);
 
   // The level names take the first row whole; the actions fall into the second.
-  assert.match(ruleBody(phone, '.rd-panel-group:first-child'), /grid-column:\s*1 \/ -1/);
-  assert.match(ruleBody(phone, '.rd-panel-divider'), /display:\s*none/);
+  // Scoped to `.rd-panel` (not bare `.rd-panel-group:first-child` /
+  // `.rd-panel-divider`): the settings tab reuses this same JSX outside
+  // `.rd-panel`, and a bare rule here made "Nivel", "Resaltados" and
+  // "Descargar" invisible there too (`.rd-panel-label { display: none }`)
+  // — see the fix-wave review, finding 3.
+  assert.match(ruleBody(phone, '.rd-panel .rd-panel-group:first-child'), /grid-column:\s*1 \/ -1/);
+  assert.match(ruleBody(phone, '.rd-panel .rd-panel-divider'), /display:\s*none/);
+
+  // And the bare, unscoped selectors are gone — the point of the fix is that
+  // they no longer exist inside this block to leak into the settings tab.
+  assert.doesNotMatch(phone, /(?:^|[};])\s*\.rd-panel-group:first-child\s*\{/);
+  assert.doesNotMatch(phone, /(?:^|[};])\s*\.rd-panel-label\s*\{/);
+  assert.doesNotMatch(phone, /(?:^|[};])\s*\.rd-panel-divider\s*\{/);
 });
 
 test('the status line is anchored, not allowanced', async () => {
@@ -183,16 +225,29 @@ test('the loading ghost fills a phone and leaves the desktop alone', async () =>
  * once this task's pairing (`(pointer: coarse) and (max-width: 1100px)`)
  * wins the cascade for it instead. Nothing above asserts either of these:
  * both were reasoned about in the report and neither was held to a test.
+ *
+ * The fix-wave review split what was one `(pointer: coarse) and
+ * (max-width: 1100px)` block into two: the dock now hides on *any* coarse
+ * pointer (an iPad in landscape is coarse but wider than 1100px, and used to
+ * keep the dock underneath the bar — see PaperReader.css for the full
+ * account), while the bar-height scroll padding stays narrow-scoped, because
+ * the base 112px padding already clears the bar at that width. `contains`
+ * disambiguates the dock lookup from the *other* bare `@media
+ * (pointer: coarse)` block in this file (the kicker's, asserted below).
  */
 test('the coarse-pointer bar clears the dock away, not the fine-pointer dock', async () => {
   const readerCss = await reader;
-  const coarseNarrow = atRuleBody(readerCss, '@media (pointer: coarse) and (max-width: 1100px)');
+  const coarse = atRuleBody(readerCss, '@media (pointer: coarse)', { contains: '.rd-panel-dock' });
+  assert.match(ruleBody(coarse, '.rd-panel-dock'), /display:\s*none/);
 
-  assert.match(ruleBody(coarseNarrow, '.rd-panel-dock'), /display:\s*none/);
+  const coarseNarrow = atRuleBody(readerCss, '@media (pointer: coarse) and (max-width: 1100px)');
   // Reads --rd-bar-h by name, the same token ReaderBar.css declares for
   // itself — a rule that quietly went back to a bare pixel figure here would
   // drift the moment someone retuned the bar's own height in the other file.
   assert.match(ruleBody(coarseNarrow, '.rd-scroll'), /padding-bottom:\s*calc\(var\(--rd-bar-h/);
+  // And the dock rule itself no longer lives in this narrower block — it
+  // widened to every coarse pointer above, not just this one.
+  assert.doesNotMatch(coarseNarrow, /\.rd-panel-dock/);
 
   // The block this task's rule sits after and before is untouched — the same
   // dock-bottom and scroll-padding arithmetic the first test in this file
@@ -242,12 +297,46 @@ test('ReaderBar.css never lets a rule stand outside (pointer: coarse)', async ()
  */
 test('el camino de escritorio sigue intacto: onMouseUp en el párrafo', async () => {
   const jsx = await readFile(READER_JSX, 'utf8');
-  assert.match(jsx, /onMouseUp=\{\(event\) => handleSelection\(/);
+  // Whitespace-tolerant on purpose: a reformat that wraps this prop onto its
+  // own lines (Prettier does this once a line gets long enough) must not turn
+  // this test red for a reason that has nothing to do with desktop selection
+  // breaking. What has to hold is the fact, not the byte layout — `onMouseUp`
+  // still wires straight to `handleSelection`, not through some other path.
+  assert.match(jsx, /onMouseUp=\{\s*\(event\)\s*=>\s*handleSelection\(/);
+});
+
+/**
+ * Fix-wave review, Critical 1: `.rd-scroll`'s `onScroll` used to call
+ * `clearNativeSelectionOnTouch()` unconditionally, which collapses the native
+ * selection the instant iOS auto-scrolls this container while a handle is
+ * being dragged to its edge — killing the drag before it settles. There is no
+ * way to reproduce a real handle-drag auto-scroll from this test harness
+ * (native selection handles do not respond to synthetic events — see
+ * Ruling 5 in the plan's ledger), so this holds the one fact a test *can*
+ * hold: the clear is gated on there being a settled decision (`pending`) to
+ * clear, not on the scroll event alone. A regression here would silently
+ * reopen the exact bug this branch exists to fix, in a narrower form.
+ */
+test('limpiar la selección nativa en el scroll espera a que haya una decisión asentada', async () => {
+  const jsx = await readFile(READER_JSX, 'utf8');
+  const onScroll = jsx.match(/onScroll=\{\(\) => \{([\s\S]*?)\}\}/);
+  assert.ok(onScroll, 'expected an `onScroll` handler on `.rd-scroll`');
+  assert.match(onScroll[1], /if\s*\(annotations\.pending\)\s*clearNativeSelectionOnTouch\(\)/);
+  // Exactly one call, and it is the guarded one above — a second, bare call
+  // anywhere else in this handler would re-add the unconditional clear this
+  // test exists to keep out.
+  const calls = onScroll[1].match(/clearNativeSelectionOnTouch\(/g) || [];
+  assert.equal(calls.length, 1, 'expected exactly one call to `clearNativeSelectionOnTouch` in `onScroll`');
 });
 
 test('el kicker que se muda al documento vive solo bajo pointer: coarse', async () => {
   const readerCss = await reader;
-  const coarse = atRuleBody(readerCss, '@media (pointer: coarse)');
+  // `contains` picks this block out from the *other* bare
+  // `@media (pointer: coarse)` block in this file (the dock-hiding one the
+  // test above holds) — without it, first-occurrence would happen to still
+  // work today only because this one is declared first, which is exactly the
+  // fragility `atRuleBody`'s doc comment warns about.
+  const coarse = atRuleBody(readerCss, '@media (pointer: coarse)', { contains: '.rd-doc-kicker' });
   assert.match(ruleBody(coarse, '.rd-doc-kicker'), /display:\s*inline-flex/);
 
   // Belt-and-braces has to hold on both ends: the rule cannot also appear
@@ -279,5 +368,14 @@ test('el kicker que se muda al documento vive solo bajo pointer: coarse', async 
  */
 test('la barra en selección o composición no depende solo del scroll para estar visible', async () => {
   const barJsx = await readFile(READER_BAR_JSX, 'utf8');
-  assert.match(barJsx, /animate=\{\{ y: visible \|\| state !== 'rest' \? 0 : '110%' \}\}/);
+  // Anchored on the `animate={{ y: … }}` line, then on `state !== 'rest'`
+  // *inside* it — not on the whole expression byte-for-byte. A reformat, or a
+  // legitimate new term added to the condition (an error state forcing the
+  // bar up, say), would turn a whole-expression match red for a reason that
+  // has nothing to do with this guarantee breaking. What has to hold is that
+  // `state !== 'rest'` still overrides `visible` in that prop, not the exact
+  // punctuation around it.
+  const animateY = barJsx.match(/animate=\{\{\s*y:\s*([^}]*)\}\}/);
+  assert.ok(animateY, 'expected an `animate={{ y: … }}` prop on the bar');
+  assert.match(animateY[1], /state !== 'rest'/);
 });

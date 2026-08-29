@@ -132,6 +132,20 @@
     text-overflow: ellipsis;
   }
 
+  /* Same slot, same cut-not-wrapped treatment as `.rd-bar-streaming` — only
+     the color changes, matching `.rd-note--failed` in Annotations.css. */
+  .rd-bar-error {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    line-height: 1.2;
+    color: var(--tint-red-fg);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
   .rd-bar-action {
     display: flex;
     flex: 1;
