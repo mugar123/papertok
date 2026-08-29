@@ -35,10 +35,14 @@ export default function ReaderBar({ copy, levelSlot, exportSlot, streaming, visi
       <div className="rd-bar-row" data-row="rest">
         {levelSlot}
 
+        {/* Dots only, the words to assistive tech: three Spanish level labels
+            already claim most of a phone's width, and the full "Reescribiendo"
+            printed itself across the third button on a real iPhone
+            (2026-08-29). The disabled levels plus the dots carry the meaning;
+            `role="status"` announces the label without painting it. */}
         {streaming && (
-          <span className="rd-bar-streaming">
+          <span className="rd-bar-streaming" role="status" aria-label={copy.writing} title={copy.writing}>
             <ThinkingDots />
-            {copy.writing}
           </span>
         )}
 

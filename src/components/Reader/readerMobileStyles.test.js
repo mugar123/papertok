@@ -371,3 +371,23 @@ test('la ruta táctil no monta el raíl de anotaciones ni la selección', async 
   // Y el listener táctil de selectionchange no vuelve por otra puerta.
   assert.doesNotMatch(jsx, /useTouchSelection|selectionchange/);
 });
+
+test('la isla no puede volver a solapar: niveles flexibles, descarga rígida, sin texto de streaming', async () => {
+  const barCss = stripComments(await readFile(READER_BAR_CSS, 'utf8'));
+  // El grupo del nivel flexa y trunca; sin esto, min-width: 0 lo encoge por
+  // debajo de su contenido y sus botones se pintan bajo el vecino (visto dos
+  // veces en un iPhone real en español, 2026-08-29).
+  assert.match(barCss, /\.rd-bar \.rd-panel-group:first-of-type\s*\{[^}]*flex:\s*1 1 auto/);
+  assert.match(barCss, /\.rd-bar \.rd-panel-group:first-of-type button\s*\{[^}]*text-overflow:\s*ellipsis/);
+  assert.match(barCss, /\.rd-bar \.rd-panel-group:last-of-type\s*\{[^}]*flex:\s*0 0 auto/);
+
+  const barJsx = await readFile(READER_BAR_JSX, 'utf8');
+  // El indicador de streaming no lleva palabra visible: tres etiquetas de
+  // nivel en español ya reclaman casi todo el ancho de un teléfono.
+  assert.match(barJsx, /role="status" aria-label=\{copy\.writing\}/);
+  assert.doesNotMatch(barJsx, /<ThinkingDots \/>\s*\{copy\.writing\}/);
+
+  // Y la isla espera a la primera sección: sobre el esqueleto no pinta nada.
+  const jsx = await readFile(READER_JSX, 'utf8');
+  assert.match(jsx, /selectionRoute === 'bar' && sections\.length > 0 &&/);
+});

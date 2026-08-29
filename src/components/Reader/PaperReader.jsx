@@ -1553,9 +1553,13 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             route, morphing in place and hiding with the scroll. The mobile
             reader's whole control surface (2026-08-29): the level, the
             download, and the streaming indicator while a rewrite is being
-            written. Annotations, highlights and "explain this" live on the
-            fine-pointer route only, until their mobile redesign. */}
-        {selectionRoute === 'bar' && (
+            written. Gated on the first section having arrived: during the
+            initial download-and-skeleton phase the island floated over the
+            ghost lines saying nothing anyone could act on (seen on a real
+            iPhone, 2026-08-29). Annotations, highlights and "explain this"
+            live on the fine-pointer route only, until their mobile
+            redesign. */}
+        {selectionRoute === 'bar' && sections.length > 0 && (
           <ReaderBar
             copy={copy}
             levelSlot={levelControl}

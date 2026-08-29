@@ -63,6 +63,36 @@
     align-items: center;
   }
 
+  /* The level group is the flexible one — it takes what the row has and
+     never more. `min-width: 0` inherited from the base `.rd-panel-group`
+     rule is exactly what let it shrink BELOW its content and paint its
+     third button under its neighbours (a real iPhone, in Spanish, whose
+     level labels run wider than English — 2026-08-29); flexing the buttons
+     themselves and letting their text ellipsize is what turns "shrunk" into
+     "truncated" instead of "overlapping". */
+  .rd-bar .rd-panel-group:first-of-type {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .rd-bar .rd-panel-group:first-of-type > :not(.rd-panel-label) {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .rd-bar .rd-panel-group:first-of-type button {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
+  /* The download keeps its size, whatever the levels are doing. */
+  .rd-bar .rd-panel-group:last-of-type {
+    flex: 0 0 auto;
+  }
+
   .rd-bar .rd-panel-label {
     display: none;
   }
@@ -70,15 +100,7 @@
   .rd-bar-streaming {
     display: inline-flex;
     align-items: center;
-    gap: 6px;
-    font: var(--mono-label);
-    letter-spacing: var(--mono-track);
-    text-transform: uppercase;
+    flex: 0 0 auto;
     color: var(--text-tertiary);
-    /* Cut rather than wrapped: the controls either side of it hold their
-       ground, and this is the element with room to give. */
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
   }
 }
