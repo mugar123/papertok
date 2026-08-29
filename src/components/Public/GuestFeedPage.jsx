@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { LogIn, RotateCw, Search } from 'lucide-react';
+import { LogIn, Search } from 'lucide-react';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useGuestFeed } from '../../hooks/useGuestFeed.js';
@@ -49,14 +49,6 @@ export default function GuestFeedPage({ onReady, onAuthRequired, onOpenPdf, onOp
       <header className="guest-feed-header" aria-label={isEnglish ? 'PaperTok guest navigation' : 'Navegación de invitado de PaperTok'}>
         <div className="guest-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
         <div className="guest-header-actions">
-          <button
-            type="button"
-            className={`guest-header-button ${guestFeed.isRefreshing ? 'is-spinning' : ''}`}
-            onClick={guestFeed.refresh}
-            aria-label={isEnglish ? 'Refresh papers' : 'Recargar papers'}
-          >
-            <RotateCw size={17} />
-          </button>
           <button type="button" className="guest-language-button" onClick={() => setLanguage(isEnglish ? 'es' : 'en')}>
             {isEnglish ? 'ES' : 'EN'}
           </button>
