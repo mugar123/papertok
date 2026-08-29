@@ -18,3 +18,17 @@ test('el visor no monta el iframe en puntero grueso: traspasa al visor nativo', 
   // …y el fallback de «no hay PDF» sigue llegando al táctil sin PDF.
   assert.match(source, /shouldShowFallback && !\(coarsePointer && pdfUrl\)/);
 });
+
+test('la tarjeta de traspaso tiene superficie propia y un botón legible', async () => {
+  const css = await readFile(new URL('./PDFViewer.css', import.meta.url), 'utf8');
+  const card = css.match(/\.pdf-fallback\s*\{[^}]*\}/);
+  assert.ok(card, 'PDFViewer.css perdió .pdf-fallback');
+  // Sin superficie, el mensaje flotaba desnudo sobre el contenido oscurecido.
+  assert.match(card[0], /background:\s*var\(--bg-card\)/);
+  const link = css.match(/\.pdf-fallback-link\s*\{[^}]*\}/);
+  assert.ok(link, 'PDFViewer.css perdió .pdf-fallback-link');
+  // El par viejo (--gradient-brand + --text-primary) resolvía tinta sobre
+  // tinta tras el rediseño claro: un rectángulo negro con texto invisible.
+  assert.match(link[0], /background:\s*var\(--accent-primary\)/);
+  assert.match(link[0], /color:\s*var\(--text-inverse\)/);
+});
