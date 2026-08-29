@@ -232,7 +232,6 @@
   }
 
   .rd-bar-input:focus {
-    outline: none;
     border-color: var(--border-ink);
   }
 
