@@ -10,9 +10,16 @@
    made the two fight over headings, borders and form controls. */
 @layer theme, base, components, utilities;
 @import 'tailwindcss/theme.css' layer(theme);
-@import 'tailwindcss/utilities.css' layer(utilities);
-/* Importing Tailwind piecewise skips its automatic source detection, so the
-   class scan has to be declared: without this no utility is ever generated. */
+/* `source(none)` is load-bearing. Importing Tailwind piecewise does *not* turn
+   off its automatic source detection: with no `source(...)` modifier the
+   compiler leaves its scan root unset, and @tailwindcss/vite then falls back to
+   scanning every file under the Vite root that .gitignore does not exclude. That
+   swept in the mockups in design/ and the HTML prototypes at the repo root, and
+   shipped 931 utilities no component ever renders — 74 kB of the built
+   stylesheet, 12 kB of it over the wire. Turning the fallback off makes the
+   @source line below the whole contract rather than an addition to it, so the
+   built CSS can only ever contain what the app actually renders. */
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
 @source '../**/*.{js,jsx}';
 
 /* shadcn expects semantic token names. Rather than a parallel palette, they are
