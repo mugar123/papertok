@@ -5,7 +5,6 @@ import {
   ArrowLeft,
   ExternalLink,
   Download,
-  Highlighter,
   PenLine,
   Sparkles,
 } from 'lucide-react';
@@ -43,7 +42,6 @@ import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
-import { useTouchSelection } from '../../hooks/useTouchSelection.js';
 import { pickSelectionRoute } from '../../utils/readerSelection.js';
 import { nextBarVisibility } from '../../utils/scrollDirection.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
@@ -69,9 +67,6 @@ const COPY = {
     writing: 'Reescribiendo el paper',
     writingHint: 'Las secciones aparecen a medida que se escriben.',
     cached: 'Versión guardada',
-    highlightsOn: 'Destacados activados',
-    highlightsOff: 'Destacados desactivados',
-    toggleHighlights: 'Destacados',
     original: 'Ver el paper original',
     adaptation: 'Adaptación generada por IA a partir del texto completo. No sustituye al artículo original.',
     remaining: (count) => `${count} ${count === 1 ? 'uso' : 'usos'} hoy`,
@@ -111,9 +106,6 @@ const COPY = {
     annotations: 'Anotaciones',
     toggleAnnotations: 'Ver anotaciones',
     settings: 'Ajustes',
-    dismissSelection: 'Descartar selección',
-    removeHighlight: 'Quitar subrayado',
-    removeHighlightNote: 'Quitar subrayado y nota',
     selectionTitle: 'Qué hacer con la selección',
     justHighlight: 'Subrayar',
     writeNote: 'Escribir nota',
@@ -149,9 +141,6 @@ const COPY = {
     writing: 'Rewriting the paper',
     writingHint: 'Sections appear as they are written.',
     cached: 'Saved version',
-    highlightsOn: 'Highlights on',
-    highlightsOff: 'Highlights off',
-    toggleHighlights: 'Highlights',
     original: 'View the original paper',
     adaptation: 'AI adaptation generated from the full text. It does not replace the original article.',
     remaining: (count) => `${count} ${count === 1 ? 'use' : 'uses'} today`,
@@ -191,9 +180,6 @@ const COPY = {
     annotations: 'Annotations',
     toggleAnnotations: 'Show annotations',
     settings: 'Settings',
-    dismissSelection: 'Discard selection',
-    removeHighlight: 'Remove highlight',
-    removeHighlightNote: 'Remove highlight and note',
     selectionTitle: 'What to do with the selection',
     justHighlight: 'Highlight',
     writeNote: 'Write a note',
@@ -677,12 +663,10 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   const [meta, setMeta] = useState(null);
   const [status, setStatus] = useState('idle');
   const [error, setError] = useState(null);
-  const [showHighlights, setShowHighlights] = useState(true);
   const [railOpen, setRailOpen] = useState(true);
   const [sheetOpen, setSheetOpen] = useState(false);
   // Which face the annotation sheet shows once open. Touch never gets a third
   // surface for the level/highlights controls — it gets a tab on this one.
-  const [sheetTab, setSheetTab] = useState('notes');
   const [exportOpen, setExportOpen] = useState(false);
   /* Three switches rather than one "annotations": a bare mark and a mark you
      wrote on are different things to want in a file. */
@@ -912,23 +896,12 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   const selectionRoute = pickSelectionRoute({ coarsePointer });
 
   /**
-   * Whether the margin is a sheet rather than the desktop rail — width alone
-   * (`isNarrow`) for a mouse, unchanged, but *any* coarse pointer now, not
-   * just a narrow one.
-   *
-   * Before the fix-wave review this was `isNarrow` alone, so a coarse pointer
-   * wide enough to miss the 1100px breakpoint (an iPad in landscape) kept the
-   * desktop `'rail'` surface — no settings tab, because only a sheet ever
-   * grows one (`hasSettingsTab` in `AnnotationRail.jsx`). That was fine only
-   * as long as the dock stayed up there to hold the level/highlights/export
-   * controls instead. It no longer does — the dock now hides on any coarse
-   * pointer (see `PaperReader.css`), because `ReaderBar.jsx` had already
-   * started rendering there regardless of width, and the two stacked. Hiding
-   * the dock without this would have traded one dead surface for another: a
-   * settings button in the bar (below) that opened a sheet tab which could
-   * never show, because the rail behind it was still `'rail'`, not `'sheet'`.
+   * Whether the margin is a sheet rather than the desktop rail. Width alone:
+   * the rail only mounts on the fine-pointer route now (the touch route has
+   * no annotations UI at all — 2026-08-29), so a narrow mouse window gets
+   * the sheet and everything else gets the desktop rail.
    */
-  const railIsSheet = isNarrow || selectionRoute === 'bar';
+  const railIsSheet = isNarrow;
 
   // Only wired on the route that actually renders `ReaderBar` — on the
   // desktop route this would be a scroll listener computing a value nothing
@@ -939,16 +912,11 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   const barScrollVisible = useBarScrollVisibility({
     scrollRef,
     enabled: selectionRoute === 'bar',
-    frozen: Boolean(annotations.pending),
+    // Nothing left to freeze for: the touch route no longer creates
+    // selections or opens a composer (the mobile reader is level + download,
+    // 2026-08-29), so scroll direction is always an honest reading signal.
+    frozen: false,
   });
-
-  // A tapped existing mark, waiting for the bar to offer taking it back.
-  // Touch only: on a fine pointer the rail sits open beside the text with a
-  // delete on every card, so there is already a way back; on a phone the
-  // only route used to be opening the sheet and deleting the annotation
-  // (reported from a real iPhone, 2026-08-29 — "no me deja desubrayar").
-  const [tappedMark, setTappedMark] = useState(null);
-
 
   /**
    * A selection stops being a selection and becomes a decision.
@@ -959,20 +927,11 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
    * anchored, the paragraph around it (the model cannot explain "that
    * quantity" without the sentence that named it), and the rectangle to hang
    * the menu off. Capturing it all up front is what lets the browser's own
-   * selection be cleared immediately on the desktop route — the reader paints
-   * its own provisional mark instead, so the highlight you are deciding about
-   * is one you can already see.
-   *
-   * On touch the native selection stays alive AND the reader's own
-   * provisional mark is suppressed (see the `selectionRoute === 'menu'` guard
-   * in `userHighlightIndex` below) — not just the former. Painting the
-   * provisional mark re-renders the paragraph's highlight runs, and React
-   * rewrites the DOM text node the live Range's offsets point into; the
-   * browser responds by collapsing the selection, taking the OS handles and
-   * callout with it. Leaving the native selection uncleared while still
-   * repainting our own mark would still lose the handles one tick later — the
-   * OS's own highlight has to serve as the provisional mark on touch,
-   * precisely because our own provisional mark is what would kill it.
+   * selection be cleared immediately — the reader paints its own provisional
+   * mark instead, so the highlight you are deciding about is one you can
+   * already see. Fine pointers only: the touch route has no annotation
+   * actions (2026-08-29 — the mobile reader is level + download), so nothing
+   * wires this there.
    */
   const handleSelection = useCallback((sectionId, paragraphIndex, paragraphText, paragraphNode) => {
     if (!uid) return;
@@ -985,37 +944,8 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     const anchor = anchorFromSelection(range, paragraphNode, paragraphText)
       || buildSelectionAnchor(selection.toString());
     if (!anchor) return;
-    // Belt-and-braces against a touch re-entry loop: suppressing the
-    // provisional mark (below) already removes the DOM repaint that would
-    // otherwise retrigger `selectionchange`, but this guard means a loop
-    // cannot start even if some other repaint disturbs the same selection.
-    // Scoped to the bar route only: on the menu route there is no
-    // `selectionchange` polling to re-enter, so the guard's only visible
-    // effect there would be skipping `removeAllRanges()` below when the exact
-    // same passage is selected twice in a row (double-click, double-click
-    // again) — a fine pointer seeing new behaviour the branch promised never
-    // happens. Offsets are compared alongside the quote, not the quote alone:
-    // two identical substrings selected back-to-back in the same paragraph
-    // share one quote but not one position, and comparing the string only
-    // would make the second selection a silent no-op. `buildSelectionAnchor`'s
-    // string-only fallback carries no offsets, so both sides fall back to
-    // `undefined === undefined` there — no worse than the old quote-only check.
-    const waiting = annotations.pending;
-    if (waiting
-      && selectionRoute === 'bar'
-      && waiting.sectionId === sectionId
-      && waiting.paragraphIndex === paragraphIndex
-      && waiting.quote === anchor.quote
-      && waiting.quoteStart === anchor.start
-      && waiting.quoteEnd === anchor.end) return;
     const rect = range.getBoundingClientRect();
-    if (selectionRoute === 'menu') selection.removeAllRanges();
-    // A selection can settle while the annotations sheet is expanded — the
-    // document above it stays selectable. Without this the bar morphs to its
-    // `selection` state behind an opaque sheet: the OS callout shows with no
-    // actions visible anywhere. Closing the sheet surfaces the bar the moment
-    // there is something for it to show.
-    if (selectionRoute === 'bar') setSheetOpen(false);
+    selection.removeAllRanges();
     beginAnnotation({
       sectionId,
       paragraphIndex,
@@ -1030,45 +960,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
         right: rect.right,
       },
     });
-  }, [annotations.pending, beginAnnotation, selectionRoute, uid]);
-
-  useTouchSelection({
-    scrollRef,
-    sections,
-    onSelect: handleSelection,
-    enabled: selectionRoute === 'bar',
-  });
-
-  // The bar's two rest-state targets. Both open the same sheet the rail
-  // already is — a settings tab on it, not a third surface next to it.
-  const openAnnotationList = useCallback(() => {
-    setSheetTab('notes');
-    setSheetOpen(true);
-    setRailOpen(true);
-  }, []);
-  const openAnnotationSettings = useCallback(() => {
-    setSheetTab('settings');
-    setSheetOpen(true);
-    setRailOpen(true);
-  }, []);
-
-  /**
-   * Touch leaves the native selection alone while a decision is pending —
-   * the OS's own handles and callout are the provisional mark there, and
-   * clearing early is the bug Task 3 fixed (it silently drags the handles
-   * away mid-adjustment). But that reasoning only covers *deciding*. Once
-   * the reader has decided — by dismissing, or by highlighting, noting or
-   * asking — the selection has nothing left to hold open, and leaving it
-   * on screen only means the OS callout keeps sitting over a passage the
-   * reader has already moved on from. A no-op on the desktop route: the menu
-   * route already clears the native selection the moment it opens
-   * (`handleSelection` above), so there is nothing left here to clear by the
-   * time any of these four fire.
-   */
-  const clearNativeSelectionOnTouch = useCallback(() => {
-    if (selectionRoute !== 'bar') return;
-    try { window.getSelection()?.removeAllRanges(); } catch { /* Selection API absence is not this callback's problem. */ }
-  }, [selectionRoute]);
+  }, [beginAnnotation, uid]);
 
   const sectionOrder = useMemo(() => buildSectionOrder(sections), [sections]);
   const orderedAnnotations = useMemo(
@@ -1205,10 +1097,9 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     || ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE;
   const canRetry = supportsRewrite && !UNRETRYABLE_ERRORS.has(shownError);
 
-  // One truth for all the floating chrome. The bar's overrides (a rewrite or
-  // an ask in flight, an error still on screen) apply as much to the back
-  // button and the uses counter: whatever must keep the bar up should not be
-  // read against a half-empty frame.
+  // One truth for all the floating chrome. A rewrite in flight overrides the
+  // scroll state: the streaming indicator lives on the bar, so the bar (and
+  // the chrome that follows it) has to stay up for it to be seen.
   //
   // Declared HERE, after `isStreaming`, and that placement is load-bearing:
   // an earlier draft sat next to `useBarScrollVisibility` above and shipped a
@@ -1217,8 +1108,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   // evaluated, and the first scroll down was the first evaluation of a const
   // still in its temporal dead zone. The reader worked until you scrolled,
   // then the error boundary took the whole app down (production, 2026-08-29).
-  const barVisible = barScrollVisible || isStreaming
-    || annotations.busy === 'asking' || Boolean(annotations.error);
+  const barVisible = barScrollVisible || isStreaming;
 
   // On the touch route the top chrome follows the bar: reading down, the back
   // button and the uses counter recede with it instead of standing on the
@@ -1233,19 +1123,12 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     ? `${originRect.left + originRect.width / 2}px ${originRect.top + originRect.height / 2}px`
     : '50% 62%';
 
-  /* The dock's four groups, each held once and rendered from both places that
-     need it — the floating dock itself, below, and the sheet's settings tab
-     (`annotationSettingsSlot`, further down). Before this fix round the dock
-     and the settings tab each carried their own copy of the level and
-     highlights JSX: two independent renderings of the same controls, live in
-     the tree at once, with no removal hunk tying them together — exactly the
-     "second implementation to keep in sync" this redesign's decision 3 was
-     written to avoid, one level further in than the surface it named. Held as
-     consts instead, so the dock and the settings tab both read one tree. The
-     annotations-toggle group (open/close the rail or sheet) stays inline in
-     the dock only: it has nothing to reuse it, since inside the sheet itself
-     a button that closes the very sheet you are reading makes no sense, and
-     the sheet already has its own grab-handle for that. */
+  /* The dock's shared groups, each held once and rendered from both places
+     that need them — the floating dock (fine pointer, below) and `ReaderBar`
+     (touch), which receives them as `levelSlot`/`exportSlot`. One tree per
+     control, so the two surfaces cannot drift apart. The annotations-toggle
+     group stays inline in the dock only: the touch route has no annotations
+     UI to toggle (2026-08-29). */
   const levelControl = (
     <div className="rd-panel-group">
       <span className="rd-panel-label">{copy.level}</span>
@@ -1269,28 +1152,9 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     </div>
   );
 
-  const highlightsControl = (
-    <div className="rd-panel-group">
-      <span className="rd-panel-label">{copy.toggleHighlights}</span>
-      <Button
-        variant={showHighlights ? 'brand' : 'outline'}
-        size="icon-sm"
-        onClick={() => setShowHighlights(value => !value)}
-        aria-pressed={showHighlights}
-        title={showHighlights ? copy.highlightsOn : copy.highlightsOff}
-        aria-label={copy.toggleHighlights}
-      >
-        <Highlighter size={15} />
-      </Button>
-    </div>
-  );
-
-  /* The dock's fourth group. Hiding the dock on a narrow, coarse-pointer
-     screen (below) took this button with it and left nothing else in the
-     tree that calls `setExportOpen` — the export feature was reachable
-     nowhere on such a device. Shared here for the same reason as the two
-     controls above it, and reused by the settings tab so the fix is one
-     button, not a second one built to match it. */
+  /* Shared between the dock (fine pointer) and `ReaderBar` (touch): the
+     touch route has no dock, and the export must stay reachable there —
+     hiding it once already shipped a phone with no way to download. */
   const exportControl = (
     <div className="rd-panel-group">
       <span className="rd-panel-label">{copy.download}</span>
@@ -1319,21 +1183,6 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     ? (ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'][annotations.error]
       || ANNOTATION_ERROR_COPY[isEnglish ? 'en' : 'es'].AI_UNAVAILABLE)
     : null;
-
-  /* The dock's four groups minus the one that cannot mean anything inside its
-     own sheet (see above), standing on the sheet's settings tab instead of a
-     third surface. Only for the sheet's settings tab; the rail (desktop,
-     `hidden`/`railOpen`-driven) never renders it because it never has a
-     settings tab to render it into. */
-  const annotationSettingsSlot = (
-    <>
-      {levelControl}
-      <div className="rd-panel-divider" />
-      {highlightsControl}
-      <div className="rd-panel-divider" />
-      {exportControl}
-    </>
-  );
 
   return (
     <AnimatePresence onExitComplete={onClose}>
@@ -1434,10 +1283,6 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
 
             <div className="rd-panel-divider" />
 
-            {highlightsControl}
-
-            <div className="rd-panel-divider" />
-
             {/* Two switches, not one: what the model proposed and what you wrote
                 are different things to want on screen. Dock-only — see the
                 comment on `levelControl` above for why this one group isn't
@@ -1467,44 +1312,10 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
           className="rd-scroll"
           onScroll={() => {
             panel.onScrolled();
-            // Only clear the native selection once there is a settled decision
-            // to clear. iOS auto-scrolls this container when a selection handle
-            // is dragged to its edge, which fires this handler mid-gesture —
-            // before `annotations.pending` exists. Clearing unconditionally
-            // there collapses the live selection the OS handles are attached
-            // to, killing the drag. Gating on `pending` leaves a pre-settle
-            // scroll a no-op (nothing to clear yet) and still clears normally
-            // once a decision has settled and the reader scrolls away from it.
-            if (annotations.pending) clearNativeSelectionOnTouch();
             annotations.dismiss();
-            // Scrolling away is the same "never mind" it is for a selection.
-            // Functional update so the every-scroll case with nothing tapped
-            // stays a no-op instead of a render per scroll event.
-            setTappedMark(current => (current ? null : current));
           }}
         >
-          <article
-            className="rd-doc"
-            data-marks={showHighlights ? undefined : 'off'}
-            onClick={(event) => {
-              // Tap an existing mark to get it back out: touch route only —
-              // the desktop rail already offers deletion per card.
-              if (selectionRoute !== 'bar') return;
-              const mark = event.target.closest?.('mark[data-highlight-id]');
-              if (!mark) {
-                setTappedMark(current => (current ? null : current));
-                return;
-              }
-              // A tap that ends a selection gesture (or lands mid-selection)
-              // is about the selection, not about unhighlighting.
-              if (annotations.pending) return;
-              const selection = window.getSelection();
-              if (selection && !selection.isCollapsed) return;
-              const id = mark.getAttribute('data-highlight-id');
-              const annotation = annotations.annotations.find(item => item.id === id);
-              if (annotation) setTappedMark(annotation);
-            }}
-          >
+          <article className="rd-doc">
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
                 "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
@@ -1661,42 +1472,18 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             )}
           </article>
 
-          {/* Always mounted; the rail hides by sliding out rather than by
+          {/* Fine pointers only. The rail hides by sliding out rather than
               unmounting, so it comes back as the same margin and not a new
-              one. On a mouse-narrow window the sheet still peeks by its
-              header, and the count on that header is what tells you the
-              margin is there at all — but on a coarse pointer the peek is
-              gone (see `collapsesOffscreen` below and the `(pointer: coarse)`
-              rule in `Annotations.css`), so on a phone there is no permanent
-              on-screen trace of it left: `ReaderBar.jsx` is what stands in
-              for that now. */}
+              one; on a mouse-narrow window it is a sheet that peeks by its
+              header. The touch route mounts none of this: the mobile reader
+              is level + download (2026-08-29), and its annotations UI —
+              sheet, tabs, selection bar — went with that decision. */}
+          {selectionRoute === 'menu' && (
           <AnnotationRail
             surface={railIsSheet ? 'sheet' : 'rail'}
             hidden={!railIsSheet && !railOpen}
             expanded={sheetOpen}
-            // A coarse pointer collapses the sheet fully off-screen instead
-            // of leaving it peeking (`(pointer: coarse)` in `Annotations.css`)
-            // — `AnnotationRail` uses this to also take the collapsed sheet
-            // out of the tab order there, so its list, filters and grab
-            // button cannot be focused while invisible. A mouse-narrow window
-            // still peeks and must stay reachable that way, so this only ever
-            // applies on the touch route, never derived from width alone.
-            collapsesOffscreen={selectionRoute === 'bar'}
             onToggle={() => setSheetOpen(value => !value)}
-            tab={sheetTab}
-            onTabChange={setSheetTab}
-            // Pointer-gated: a narrow *desktop* window is also a sheet
-            // (pre-existing, width-driven, via `railIsSheet` above), but the
-            // dock is still there for it — a mouse user never got
-            // `ReaderBar.jsx`, so nothing hid the dock out from under them.
-            // Only the touch route lost the dock, so only the touch route
-            // gets a settings tab standing in for it. `railIsSheet` already
-            // covers every case where this actually renders as a tab —
-            // gating this prop on pointer alone rather than repeating
-            // `railIsSheet` here is just not passing content to a rail that
-            // could never grow a tab for it (`hasSettingsTab` in
-            // `AnnotationRail.jsx` requires `surface === 'sheet'` too).
-            settingsContent={selectionRoute === 'bar' ? annotationSettingsSlot : undefined}
             annotations={visibleAnnotations}
             counts={annotationCounts}
             filter={annotationFilter}
@@ -1710,6 +1497,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             labelFor={annotationLabel}
             copy={copy}
           />
+          )}
         </div>
 
         {/* Over the selection, not in a corner: what it acts on is the passage
@@ -1762,61 +1550,17 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
         </AnimatePresence>
 
         {/* One island rather than a popover: always mounted on the touch
-            route, so it can morph from rest into selection in place instead of
-            a second surface rising over the OS callout. `pending`, not its
-            `anchor` — the bar positions against the bottom edge, not the
-            selection's rectangle. */}
+            route, morphing in place and hiding with the scroll. The mobile
+            reader's whole control surface (2026-08-29): the level, the
+            download, and the streaming indicator while a rewrite is being
+            written. Annotations, highlights and "explain this" live on the
+            fine-pointer route only, until their mobile redesign. */}
         {selectionRoute === 'bar' && (
           <ReaderBar
-            pending={annotations.pending}
             copy={copy}
-            usesLeft={quota?.unlimited ? null : quota?.remainingUses ?? null}
-            unlimited={Boolean(quota?.unlimited)}
-            canAsk={quota ? quota.unlimited || quota.remainingUses > 0 : true}
-            busy={annotations.busy === 'saving'}
-            // The decision is made the moment any of these four fires, so the
-            // native selection (left alone on purpose while it was still live —
-            // see `clearNativeSelectionOnTouch` above) is cleared right here,
-            // not left for the OS to keep showing over an already-settled passage.
-            onHighlight={() => { clearNativeSelectionOnTouch(); annotations.highlight(); }}
-            onSaveNote={(note) => { clearNativeSelectionOnTouch(); annotations.saveNote(note); }}
-            onAsk={() => { clearNativeSelectionOnTouch(); annotations.ask(); }}
-            onClose={() => { clearNativeSelectionOnTouch(); annotations.dismiss(); }}
-            // A live selection speaks for the bar before a previously tapped
-            // mark does (the `state` chain in `ReaderBar` agrees), so the
-            // tapped mark is only ever offered when nothing newer is pending.
-            tappedMark={annotations.pending ? null : tappedMark}
-            onRemoveMark={() => {
-              const target = tappedMark;
-              setTappedMark(null);
-              if (target) annotations.remove(target.id);
-            }}
-            onDismissMark={() => setTappedMark(null)}
-            annotationCount={annotationCounts.total}
-            onOpenList={openAnnotationList}
-            // Unconditional here, not `isNarrow`-gated: this block only ever
-            // renders on `selectionRoute === 'bar'`, and `railIsSheet` above
-            // is true for every device that reaches it — the rail always has
-            // a settings tab to open on the touch route now, an iPad in
-            // landscape included (see `railIsSheet`'s comment for why that
-            // changed: the dock it used to rely on instead is gone).
-            onOpenSettings={openAnnotationSettings}
+            levelSlot={levelControl}
+            exportSlot={exportControl}
             streaming={isStreaming}
-            // "Que me lo explique" working, and having failed, get the same
-            // permanent-visibility treatment as the level rewrite above —
-            // see the comment on `askErrorText` for why this is the only
-            // place left, on touch, that can show either at all.
-            asking={annotations.busy === 'asking'}
-            askError={askErrorText}
-            // Whatever normally governs the chrome's visibility, a rewrite in
-            // flight (or an ask in flight, or a failed one still on screen)
-            // overrides it: these are the controls that keep their permanent
-            // visibility, and they live in the bar's rest row, so the bar
-            // itself has to stay up for them to be seen. Not `panel.shown` —
-            // that rule answers `!canHover`, which is permanently true on
-            // every device that reaches this branch (see
-            // `useBarScrollVisibility` above); the scroll-driven value is the
-            // one that actually varies here.
             visible={barVisible}
           />
         )}

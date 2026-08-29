@@ -360,17 +360,6 @@
   transition: background-color var(--transition-base), box-shadow var(--transition-base);
 }
 
-/* The highlighter switch, which is a colour and not a document: the model's
-   suggestions stay in the paragraph and lose their ink. They used to be built
-   out of the plan entirely, so the switch removed elements — the words shifted
-   by the mark's own padding, and there was nothing left on screen for the
-   colour to fade out of. The reader's own marks are not the model's to
-   withdraw, so they are untouched. */
-.rd-doc[data-marks='off'] .rd-mark[data-proposed] {
-  background-color: transparent;
-  box-shadow: none;
-}
-
 /* A user's own highlight is the saturated pen; the model's suggestions are
    softer, so the reader can tell them apart at a glance. */
 .rd-mark--user {
@@ -751,17 +740,11 @@
   }
 
   /* Scoped to `.rd-panel` (the dock's own panel), not bare, from here through
-     `.rd-panel-divider` below: the settings tab reuses this same JSX
-     (`annotationSettingsSlot` in `PaperReader.jsx`) inside `.rd-rail-settings`
-     — a flex row, not this grid — so a bare `.rd-panel-group`/`-label`/
-     `-divider` rule at this width also matched there. `.rd-panel-label {
-     display: none }` in particular made "Nivel", "Resaltados" and "Descargar"
-     invisible on every phone in portrait, leaving bare icons in the one
-     surface a phone has left for them (the dock is hidden here — see the
-     `(pointer: coarse)` block above). Prefixing keeps this block
-     byte-identical for the dock, which is `.rd-panel`'s direct child, and
-     lets the settings tab fall back to the base rules (`.rd-panel-group`
-     etc. outside any media query, above) it was actually designed against. */
+     `.rd-panel-divider` below: `ReaderBar.jsx` renders the same shared
+     controls (`levelSlot`/`exportSlot`) inside `.rd-bar` — a 56px flex row,
+     not this grid — so a bare `.rd-panel-group`/`-label`/`-divider` rule at
+     this width would also match there and fight the bar's own layout.
+     Prefixing keeps this block byte-identical for the dock. */
   .rd-panel .rd-panel-group {
     align-items: center;
   }

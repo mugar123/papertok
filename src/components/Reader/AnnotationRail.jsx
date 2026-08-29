@@ -27,22 +27,7 @@ export default function AnnotationRail({
   surface = 'rail',
   hidden = false,
   expanded = true,
-  // True only on the touch route, where the collapsed sheet is moved fully
-  // off-screen (`(pointer: coarse)` in `Annotations.css`) rather than left
-  // peeking by its header. `hidden` alone does not cover this: `hidden` is
-  // `!isNarrow && !railOpen`, which is always false for a sheet, so without
-  // this the collapsed-but-offscreen sheet kept its list, filters and grab
-  // button in the tab order — reachable by keyboard while invisible.
-  collapsesOffscreen = false,
   onToggle,
-  // Which face the sheet shows once open — 'notes' (the default, and the only
-  // thing the rail ever shows) or 'settings'. Reusing this one surface for the
-  // reader's level/highlights controls is what keeps mobile down to one island
-  // instead of a third one just for those two switches; the rail (desktop)
-  // never receives `settingsContent`, so it never grows a tab row to switch.
-  tab = 'notes',
-  onTabChange,
-  settingsContent,
   annotations,
   counts,
   filter,
@@ -171,16 +156,11 @@ export default function AnnotationRail({
     }
     onToggle();
   };
-  // Only the sheet ever has settings to switch to, so only the sheet grows a
-  // tab row; the rail keeps showing exactly what it always has.
-  const hasSettingsTab = isSheet && Boolean(settingsContent);
-  const showingSettings = hasSettingsTab && tab === 'settings';
-  // `hidden` covers the desktop rail sliding out of the margin; it says
-  // nothing about a collapsed sheet, which is never `hidden` (`isNarrow` is
-  // true, so `hidden` — `!isNarrow && !railOpen` — is always false there).
-  // On the touch route the collapsed sheet is fully off-screen anyway, so it
-  // needs the same treatment `hidden` already gives the rail.
-  const inert = hidden || (isSheet && collapsesOffscreen && !expanded);
+  // `hidden` covers the desktop rail sliding out of the margin; a collapsed
+  // mouse-narrow sheet still peeks by its header and stays reachable, so it
+  // is never `hidden`. (The fully-offscreen touch sheet this used to also
+  // cover no longer exists — the touch route mounts no rail at all.)
+  const inert = hidden;
   const head = (
     <>
       <span className="rd-rail-title">
@@ -230,37 +210,6 @@ export default function AnnotationRail({
         <div className="rd-rail-head">{head}</div>
       )}
 
-      {/* Only the sheet ever has a settings face to switch to; the rail keeps
-          showing exactly what it always has and never grows this row. */}
-      {hasSettingsTab && (
-        <div className="rd-rail-tabs" role="tablist" aria-label={copy.annotations}>
-          <button
-            type="button"
-            role="tab"
-            className="rd-rail-tab"
-            data-on={!showingSettings ? '' : undefined}
-            aria-selected={!showingSettings}
-            onClick={() => onTabChange?.('notes')}
-          >
-            {copy.annotations}
-          </button>
-          <button
-            type="button"
-            role="tab"
-            className="rd-rail-tab"
-            data-on={showingSettings ? '' : undefined}
-            aria-selected={showingSettings}
-            onClick={() => onTabChange?.('settings')}
-          >
-            {copy.settings}
-          </button>
-        </div>
-      )}
-
-      {showingSettings ? (
-        <div className="rd-rail-settings">{settingsContent}</div>
-      ) : (
-        <>
           <div className="rd-rail-filters" role="group" aria-label={copy.annotations}>
             {ANNOTATION_FILTERS.map(value => (
               <button
@@ -371,8 +320,7 @@ export default function AnnotationRail({
               </p>
             )}
           </div>
-        </>
-      )}
+
     </aside>
   );
 }

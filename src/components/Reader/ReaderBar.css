@@ -1,5 +1,5 @@
 /* ============================================
-   The reader bar — one island, three states
+   The reader bar — one island, one state
 
    Everything in this file is gated by `(pointer: coarse)`, never by a width
    query: the reader already switches its margin for a sheet below 1100px, and
@@ -8,26 +8,22 @@
    with a fine one never sees it, at any width — that is what keeps the desktop
    experience byte-for-byte untouched.
 
+   Since 2026-08-29 the island carries the mobile reader's whole control
+   surface — the level, the download, and the streaming indicator — and
+   nothing else. The selection/composing states, their keyboard-gap tracking
+   and their styles left with the mobile annotations UI; the history is in
+   git, and the redesign note is in docs/superpowers/plans/.
+
    It floats rather than sitting in flow: `position: fixed`, so showing or
-   hiding it — or growing it from the one-line rest state into the taller
-   selection or composing state — never reflows `.rd-scroll` or the paragraph
-   being read. `.rd-scroll`'s own bottom padding (in `PaperReader.css`) is set
-   once, from `--rd-bar-h` below, and stays constant across all three states.
+   hiding it never reflows `.rd-scroll` or the paragraph being read.
+   `.rd-scroll`'s own bottom padding (in `PaperReader.css`) is set once, from
+   `--rd-bar-h` below.
    ============================================ */
 
 @media (pointer: coarse) {
   :root {
     /* The bar's own resting height. Declared here, once, rather than guessed
-       again in `PaperReader.css` — the same reasoning that put
-       `--rd-sheet-peek-total` on `.rd` instead of leaving each consumer to
-       repeat the arithmetic and drift apart.
-
-       Chosen, not measured — unlike the 183px figure this replaces, which an
-       existing comment in `PaperReader.css` says was measured against a real
-       render ("the panel stands 74px up and is 109px tall"). This number has
-       not been checked against an actual phone: it is a starting point for
-       whoever tunes it there, the same way `SELECTION_SETTLE_MS` in
-       `readerSelection.js` is flagged as one, not a result to trust as-is. */
+       again in `PaperReader.css`. */
     --rd-bar-h: 56px;
   }
 
@@ -35,25 +31,9 @@
     position: fixed;
     left: var(--space-3);
     right: var(--space-3);
-    /* `--rd-bar-keyboard-gap` is set from `ReaderBar.jsx`, scoped to the
-       `composing` state and read from `window.visualViewport`: 0px normally,
-       and otherwise however much of the layout viewport's bottom the visual
-       viewport no longer covers — the on-screen keyboard is the reason this
-       exists, but the number itself cannot tell a keyboard apart from any
-       other momentary mismatch between the two viewports (see
-       `keyboardGap.js`). The fallback keeps a browser without
-       `visualViewport` (the property is simply never set) identical to
-       before this rule existed.
-
-       `max()`, not addition, against `--inset-bottom`: the home indicator
-       that inset clears sits *behind* the keyboard, so while the keyboard is
-       up only the taller of the two furniture pieces needs clearing — summing
-       both would float the bar an extra 21–34px above the keyboard for
-       nothing, exactly when landscape leaves the least room to spare. */
-    bottom: calc(var(--space-3) + max(var(--inset-bottom), var(--rd-bar-keyboard-gap, 0px)));
-    z-index: 12048; /* Under the sheet (12050) and the export card, so an
-                        expanded sheet naturally covers it instead of floating
-                        a second control on top of it. */
+    bottom: calc(var(--space-3) + var(--inset-bottom));
+    z-index: 12048; /* Under the export card, so it naturally covers the bar
+                       instead of floating a second control on top of it. */
     min-height: var(--rd-bar-h);
     display: flex;
     align-items: center;
@@ -70,54 +50,21 @@
     width: 100%;
     min-height: var(--rd-bar-h);
     padding: 0 var(--space-3);
-  }
-
-  .rd-bar-row[data-row='rest'] {
     justify-content: space-between;
     gap: var(--space-2);
   }
 
-  .rd-bar-row[data-row='selection'],
-  .rd-bar-row[data-row='mark'] {
-    justify-content: space-between;
-    gap: var(--space-1);
-    position: relative;
-    flex-wrap: wrap;
-  }
-
-  /* In flow on its own wrapped line, not absolutely pinned to the row's
-     bottom edge: pinned at `bottom: 2px` it printed across the action
-     labels and clipped against the bar's border on a real iPhone
-     (2026-08-29). The selection row growing those ~12px is fine — it is
-     an overlay, and the composer already grows far more. */
-  .rd-bar-foot {
-    flex: 1 0 100%;
-    font: 400 0.625rem/1 var(--font-mono);
-    color: var(--text-tertiary);
-  }
-
-  .rd-bar-icon-btn {
-    display: inline-flex;
+  /* The dock's shared controls (`levelControl` / `exportControl` in
+     `PaperReader.jsx`) render here with their `.rd-panel-group` markup. In
+     the bar the mono label above each group is dropped: the level buttons
+     and the download glyph name themselves, and 56px has no second line. */
+  .rd-bar .rd-panel-group {
+    flex-direction: row;
     align-items: center;
-    gap: 6px;
-    min-width: 40px;
-    min-height: 40px;
-    padding: 0 var(--space-2);
-    border: none;
-    border-radius: var(--radius-xl);
-    background: transparent;
-    color: var(--text-primary);
-    cursor: pointer;
-    transition: background var(--transition-fast);
   }
 
-  .rd-bar-icon-btn:active {
-    background: var(--bg-secondary);
-  }
-
-  .rd-bar-count {
-    font: 500 0.75rem/1 var(--font-mono);
-    color: var(--text-secondary);
+  .rd-bar .rd-panel-label {
+    display: none;
   }
 
   .rd-bar-streaming {
@@ -128,155 +75,10 @@
     letter-spacing: var(--mono-track);
     text-transform: uppercase;
     color: var(--text-tertiary);
-    /* Cut rather than wrapped: the two buttons either side of it hold their
+    /* Cut rather than wrapped: the controls either side of it hold their
        ground, and this is the element with room to give. */
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-  }
-
-  /* Same slot, same cut-not-wrapped treatment as `.rd-bar-streaming` — only
-     the color changes, matching `.rd-note--failed` in Annotations.css. */
-  .rd-bar-error {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 0.75rem;
-    line-height: 1.2;
-    color: var(--tint-red-fg);
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-
-  .rd-bar-action {
-    display: flex;
-    flex: 1;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 3px;
-    min-height: 44px;
-    padding: var(--space-1) 2px;
-    border: none;
-    border-radius: var(--radius-xl);
-    background: transparent;
-    color: var(--text-primary);
-    font-size: 0.6875rem;
-    font-weight: var(--fw-medium);
-    cursor: pointer;
-    transition: background var(--transition-fast);
-  }
-
-  .rd-bar-action:active {
-    background: var(--bg-secondary);
-  }
-
-  .rd-bar-action:disabled {
-    color: var(--text-tertiary);
-    cursor: not-allowed;
-  }
-
-  .rd-bar-action small {
-    font: 400 0.5625rem/1 var(--font-mono);
-    color: var(--text-tertiary);
-  }
-
-  .rd-bar-dismiss {
-    display: grid;
-    place-items: center;
-    width: 34px;
-    height: 34px;
-    flex: none;
-    margin-left: var(--space-1);
-    border: none;
-    border-radius: var(--radius-xl);
-    background: transparent;
-    color: var(--text-tertiary);
-    cursor: pointer;
-  }
-
-  .rd-bar-dismiss:active {
-    background: var(--tint-red-bg);
-    color: var(--tint-red-fg);
-  }
-
-  /* ── Composing: the bar grows tall enough for a note, still one surface. ── */
-  .rd-bar-compose {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    width: 100%;
-    padding: var(--space-3);
-  }
-
-  .rd-bar-label {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    font: var(--mono-label);
-    letter-spacing: var(--mono-track);
-    text-transform: uppercase;
-    color: var(--text-tertiary);
-  }
-
-  .rd-bar-input {
-    width: 100%;
-    height: 72px;
-    padding: var(--space-2);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    background: var(--bg-card);
-    color: var(--text-primary);
-    font-family: var(--font-body);
-    /* 16px, and not a token that may drop below it: iOS Safari auto-zooms
-       the whole page when a focused field's font is under 16px, and this
-       textarea only ever exists on the touch route (seen on a real iPhone,
-       2026-08-29 — "Escribir nota" zoomed the reader). */
-    font-size: 1rem;
-    line-height: 1.5;
-    resize: none;
-  }
-
-  .rd-bar-input:focus {
-    border-color: var(--border-ink);
-  }
-
-  .rd-bar-actions {
-    display: flex;
-    gap: var(--space-2);
-  }
-
-  .rd-bar-save {
-    flex: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    min-height: 40px;
-    border: 1px solid var(--border-ink);
-    border-radius: var(--radius-md);
-    background: var(--accent-primary);
-    color: var(--text-inverse);
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-semibold);
-    cursor: pointer;
-  }
-
-  .rd-bar-save:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-
-  .rd-bar-cancel {
-    min-height: 40px;
-    padding: 0 var(--space-4);
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-md);
-    background: var(--bg-card);
-    color: var(--text-secondary);
-    font-size: var(--fs-sm);
-    font-weight: var(--fw-medium);
-    cursor: pointer;
   }
 }

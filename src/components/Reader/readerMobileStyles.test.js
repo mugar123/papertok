@@ -305,30 +305,6 @@ test('el camino de escritorio sigue intacto: onMouseUp en el párrafo', async ()
   assert.match(jsx, /onMouseUp=\{\s*\(event\)\s*=>\s*handleSelection\(/);
 });
 
-/**
- * Fix-wave review, Critical 1: `.rd-scroll`'s `onScroll` used to call
- * `clearNativeSelectionOnTouch()` unconditionally, which collapses the native
- * selection the instant iOS auto-scrolls this container while a handle is
- * being dragged to its edge — killing the drag before it settles. There is no
- * way to reproduce a real handle-drag auto-scroll from this test harness
- * (native selection handles do not respond to synthetic events — see
- * Ruling 5 in the plan's ledger), so this holds the one fact a test *can*
- * hold: the clear is gated on there being a settled decision (`pending`) to
- * clear, not on the scroll event alone. A regression here would silently
- * reopen the exact bug this branch exists to fix, in a narrower form.
- */
-test('limpiar la selección nativa en el scroll espera a que haya una decisión asentada', async () => {
-  const jsx = await readFile(READER_JSX, 'utf8');
-  const onScroll = jsx.match(/onScroll=\{\(\) => \{([\s\S]*?)\}\}/);
-  assert.ok(onScroll, 'expected an `onScroll` handler on `.rd-scroll`');
-  assert.match(onScroll[1], /if\s*\(annotations\.pending\)\s*clearNativeSelectionOnTouch\(\)/);
-  // Exactly one call, and it is the guarded one above — a second, bare call
-  // anywhere else in this handler would re-add the unconditional clear this
-  // test exists to keep out.
-  const calls = onScroll[1].match(/clearNativeSelectionOnTouch\(/g) || [];
-  assert.equal(calls.length, 1, 'expected exactly one call to `clearNativeSelectionOnTouch` in `onScroll`');
-});
-
 test('el kicker que se muda al documento vive solo bajo pointer: coarse', async () => {
   const readerCss = await reader;
   // `contains` picks this block out from the *other* bare
@@ -356,65 +332,6 @@ test('el kicker que se muda al documento vive solo bajo pointer: coarse', async 
   assert.match(jsx, /\{!coarsePointer && <span className="rd-status-kicker">/);
 });
 
-/**
- * Task 6's report named this exact line as the one path whose correctness
- * does not follow from the scroll-freeze logic at all — `visible` (driven by
- * scroll direction) is overridden by `state !== 'rest'` the moment a
- * selection or the composer opens, and by nothing else. No phone check
- * exercises the instant that override switches back off (dismissing a
- * selection without scrolling first), so the line itself is what stands
- * between "the bar hides mid-selection" and "the bar behaves" — the risk the
- * mutation proof for this test has to earn is a real one.
- */
-test('la barra en selección o composición no depende solo del scroll para estar visible', async () => {
-  const barJsx = await readFile(READER_BAR_JSX, 'utf8');
-  // Anchored on the `animate={{ y: … }}` line, then on `state !== 'rest'`
-  // *inside* it — not on the whole expression byte-for-byte. A reformat, or a
-  // legitimate new term added to the condition (an error state forcing the
-  // bar up, say), would turn a whole-expression match red for a reason that
-  // has nothing to do with this guarantee breaking. What has to hold is that
-  // `state !== 'rest'` still overrides `visible` in that prop, not the exact
-  // punctuation around it.
-  const animateY = barJsx.match(/animate=\{\{\s*y:\s*([^}]*)\}\}/);
-  assert.ok(animateY, 'expected an `animate={{ y: … }}` prop on the bar');
-  assert.match(animateY[1], /state !== 'rest'/);
-});
-
-/**
- * La ronda del iPhone real (2026-08-29). Cuatro fallos vistos en el
- * dispositivo, cada uno con su regla exacta aquí para que no vuelvan:
- * el zoom de iOS al enfocar la nota, el solape de la fila de ajustes,
- * el pie de usos pisando los rótulos, y el cromo superior que ahora se
- * aparta al leer.
- */
-test('el textarea de la nota no puede volver a disparar el auto-zoom de iOS', async () => {
-  const barCss = stripComments(await readFile(READER_BAR_CSS, 'utf8'));
-  const input = barCss.match(/\.rd-bar-input\s*\{([^}]*)\}/);
-  assert.ok(input, 'expected a .rd-bar-input rule');
-  // 16px es el umbral duro de iOS Safari: cualquier token que pueda quedar
-  // por debajo (var(--fs-sm)) reintroduce el zoom entero de la página.
-  assert.match(input[1], /font-size:\s*(1rem|16px)/);
-  assert.doesNotMatch(input[1], /font-size:\s*var\(/);
-});
-
-test('la fila de ajustes de la hoja envuelve en vez de comprimir sus grupos', async () => {
-  const annotationsCss = stripComments(await readFile(ANNOTATIONS_CSS, 'utf8'));
-  const row = annotationsCss.match(/\.rd-rail-settings\s*\{([^}]*)\}/);
-  assert.ok(row, 'expected a .rd-rail-settings rule');
-  assert.match(row[1], /flex-wrap:\s*wrap/);
-  // Y los grupos no pueden volver a encoger por el min-width: 0 heredado:
-  // eso es lo que pintaba el nivel debajo del toggle de destacados.
-  assert.match(annotationsCss, /\.rd-rail-settings \.rd-panel-group\s*\{[^}]*flex:\s*0 0 auto/);
-});
-
-test('el pie de usos vive en flujo, no clavado sobre los rótulos de la fila', async () => {
-  const barCss = stripComments(await readFile(READER_BAR_CSS, 'utf8'));
-  const foot = barCss.match(/\.rd-bar-foot\s*\{([^}]*)\}/);
-  assert.ok(foot, 'expected a .rd-bar-foot rule');
-  assert.doesNotMatch(foot[1], /position:\s*absolute/);
-  assert.match(foot[1], /flex:\s*1 0 100%/);
-});
-
 test('el cromo superior se aparta con la barra, y un foco lo trae de vuelta', async () => {
   const readerCss = stripComments(await readFile(READER_CSS, 'utf8'));
   // La regla vive tras el gate de puntero grueso y sobre los HIJOS de los
@@ -428,23 +345,29 @@ test('el cromo superior se aparta con la barra, y un foco lo trae de vuelta', as
   assert.match(jsx, /className="rd-status" data-receded=\{chromeReceded/);
 });
 
-test('un mark tocado ofrece quitarse desde la barra, y todo mark publica su id', async () => {
-  const barJsx = await readFile(READER_BAR_JSX, 'utf8');
-  // El estado nuevo entra en la cadena DETRÁS de la selección viva: lo que
-  // el lector acaba de seleccionar manda sobre lo que tocó antes.
-  assert.match(barJsx, /pending \? 'selection' : tappedMark \? 'mark' : 'rest'/);
-  assert.match(barJsx, /state === 'mark' &&/);
-  assert.match(barJsx, /onClick=\{onRemoveMark\}/);
-
+/**
+ * El recorte del 2026-08-29: en móvil el lector es nivel + descarga, en una
+ * isla que se esconde con el scroll. Estas guardas fijan la frontera — la
+ * isla lleva exactamente los dos slots compartidos con el dock, y la ruta
+ * táctil no monta ni raíl ni selección.
+ */
+test('la isla táctil lleva el nivel y la descarga, compartidos con el dock', async () => {
   const jsx = await readFile(READER_JSX, 'utf8');
-  // El tap se resuelve contra data-highlight-id y solo en la ruta táctil;
-  // el scroll lo descarta igual que descarta una selección.
-  assert.match(jsx, /closest\?\.\('mark\[data-highlight-id\]'\)/);
-  assert.match(jsx, /tappedMark=\{annotations\.pending \? null : tappedMark\}/);
+  assert.match(jsx, /levelSlot=\{levelControl\}/);
+  assert.match(jsx, /exportSlot=\{exportControl\}/);
 
-  // Y las fórmulas marcadas llevan el mismo id que los runs de texto: sin
-  // esto, tocar la parte matemática de un subrayado no lo encontraría.
-  const highlighted = await readFile(new URL('./HighlightedScientificText.jsx', import.meta.url), 'utf8');
-  const mathIdTags = highlighted.match(/data-highlight-id=\{mathId\}/g) || [];
-  assert.equal(mathIdTags.length, 2, 'both math branches (raw and rendered) carry the id');
+  const barJsx = await readFile(READER_BAR_JSX, 'utf8');
+  assert.match(barJsx, /\{levelSlot\}/);
+  assert.match(barJsx, /\{exportSlot\}/);
+  // Y nada de estados de selección: la isla tiene un solo estado.
+  assert.doesNotMatch(barJsx, /'selection'|'composing'|tappedMark/);
+});
+
+test('la ruta táctil no monta el raíl de anotaciones ni la selección', async () => {
+  const jsx = stripComments(await readFile(READER_JSX, 'utf8'));
+  // El raíl cuelga de la ruta de menú (puntero fino): si este gate se cae,
+  // el móvil recupera una hoja de anotaciones sin acciones que la alimenten.
+  assert.match(jsx, /\{selectionRoute === 'menu' && \(\s*<AnnotationRail/);
+  // Y el listener táctil de selectionchange no vuelve por otra puerta.
+  assert.doesNotMatch(jsx, /useTouchSelection|selectionchange/);
 });
