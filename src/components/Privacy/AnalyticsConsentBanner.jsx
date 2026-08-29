@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { BarChart3, Check, LoaderCircle } from 'lucide-react';
+import { BarChart3, Check, LoaderCircle, X } from 'lucide-react';
 import { useLocation } from 'react-router-dom';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import { useAuth } from '../../context/AuthContext';
@@ -16,7 +16,7 @@ const COPY = {
     accept: 'Permitir analítica',
     activating: 'Activando…',
     activated: 'Analítica activada',
-    decline: 'No permitir',
+    dismiss: 'Cerrar y no permitir',
     persistenceError: 'No se pudo guardar tu elección. Inténtalo de nuevo.',
   },
   en: {
@@ -25,7 +25,7 @@ const COPY = {
     accept: 'Allow analytics',
     activating: 'Enabling…',
     activated: 'Analytics enabled',
-    decline: 'Do not allow',
+    dismiss: 'Dismiss and do not allow',
     persistenceError: 'Your choice could not be saved. Please try again.',
   },
 };
@@ -106,14 +106,6 @@ export default function AnalyticsConsentBanner({ guestFeedReady = false }) {
           <div className="analytics-consent-actions">
             <button
               type="button"
-              className="analytics-consent-decline"
-              disabled={decisionInProgress}
-              onClick={handleDecline}
-            >
-              {copy.decline}
-            </button>
-            <button
-              type="button"
               className={`analytics-consent-accept is-${acceptanceState}`}
               disabled={decisionInProgress}
               aria-live="polite"
@@ -127,6 +119,16 @@ export default function AnalyticsConsentBanner({ guestFeedReady = false }) {
               {acceptanceState === 'error' && copy.accept}
             </button>
           </div>
+          <button
+            type="button"
+            className="analytics-consent-dismiss"
+            disabled={decisionInProgress}
+            onClick={handleDecline}
+            aria-label={copy.dismiss}
+            title={copy.dismiss}
+          >
+            <X size={14} aria-hidden="true" />
+          </button>
           {acceptanceState === 'error' && (
             <p className="analytics-consent-error" role="alert">{copy.persistenceError}</p>
           )}
