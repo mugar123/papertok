@@ -1294,7 +1294,18 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
         </motion.div>
 
         <motion.div className="rd-status" variants={prefersReducedMotion ? STILL_CHROME_VARIANTS : CHROME_VARIANTS}>
-          <span className="rd-status-kicker"><Sparkles size={11} /> {copy.title}</span>
+          {/* Identity to the document, state to the chrome. The kicker names
+              *what this is* ("Leer en simple"), which is the same kind of fact
+              as the paper's own title next to it in `rd-doc-title` — so on a
+              coarse pointer it moves down there (see `.rd-doc-kicker` below)
+              and scrolls away with the text it names, instead of floating in
+              this fixed overlay for the whole read. The cache chip and the
+              uses counter report *state* — what is true right now, exactly
+              what a reader wants to check mid-scroll — so they stay pinned
+              here on every pointer. On a fine pointer there is no scrolling
+              chrome to hide behind in the first place, so the kicker simply
+              stays: decision 3 in the reader's mobile plan, desktop untouched. */}
+          {!coarsePointer && <span className="rd-status-kicker"><Sparkles size={11} /> {copy.title}</span>}
           {meta?.cached && <span className="rd-status-chip">{copy.cached}</span>}
           {quota && (
             <span
@@ -1384,6 +1395,10 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             {/* The one title in the app that used to be printed raw: every other
                 surface sends it through the same renderer, so a paper called
                 "the $\mu$-Deformed Model" arrived here still wearing its dollars. */}
+            {/* The kicker's other half of the split above: on a coarse pointer
+                it lives here, in flow, ahead of the title it names, so it
+                scrolls away with the paper instead of hovering over it. */}
+            {coarsePointer && <span className="rd-doc-kicker"><Sparkles size={11} /> {copy.title}</span>}
             <h1 className="rd-doc-title"><ScientificText>{paper?.title}</ScientificText></h1>
             <p className="rd-doc-byline">
               {(paper?.authors || []).slice(0, 6).map(author => author?.name || author).join(', ')}

@@ -234,6 +234,28 @@
   margin-bottom: var(--space-3);
 }
 
+/* On a coarse pointer the kicker moves out of `.rd-status` (see the comment
+   there, in PaperReader.jsx) and into the document, ahead of the title it
+   names — identity to the document, state to the chrome. Gated on pointer
+   alone, the same as `ReaderBar.css`, and at no width: `.rd-doc-kicker` is
+   only ever in the DOM when the JSX's own `coarsePointer` check renders it
+   (a fine pointer never mounts the element), so this block is a second,
+   independent guarantee that a fine pointer can never be styled by it — the
+   same belt-and-braces this reader already applies everywhere pointer type
+   decides layout, not width. */
+@media (pointer: coarse) {
+  .rd-doc-kicker {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font: var(--mono-label);
+    letter-spacing: var(--mono-track);
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: var(--space-2);
+  }
+}
+
 .rd-doc-byline {
   font: 500 0.75rem/1.5 var(--font-mono);
   letter-spacing: 0.02em;
