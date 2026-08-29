@@ -1222,42 +1222,49 @@ const PaperCard = memo(function PaperCard({
             <motion.div
               key="project-badge"
               className="pc-project-badge-slot"
-              // Was a `gridTemplateRows: '0fr' -> '1fr'` tween: a layout
-              // property, so every frame forced a full layout pass of the
-              // card subtree for 620ms. This slot only ever exists in the DOM
-              // while `project` is truthy (it is conditionally rendered, not
-              // toggled in place), so there is no resting "collapsed" state
-              // to preserve -- normal grid auto-sizing reserves its height in
-              // one layout pass on mount, and the entrance rides on
-              // compositor-only properties. Each layer owns one job so the
-              // motion reads as a single gesture: this slot only fades
-              // (stacking opacity on both layers multiplies the curves), and
-              // the inner `.pc-project-badge-motion` carries the whole y/scale
-              // travel on one undelayed curve -- the old split (fast slot
-              // easeOut, then a delayed inner flourish) landed as two
-              // out-of-phase tugs.
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
+              // The badge arrives async, so at mount time the space it needs
+              // does not exist yet and something below has to move. Reserving
+              // it in one layout pass (the previous iteration, after a
+              // 620ms `gridTemplateRows` tween proved too heavy) made the
+              // title jolt down a full row in a single frame -- that snap,
+              // not the easing, read as abrupt. This is the middle ground: a
+              // short measured `height: 0 -> auto` tween eases the space
+              // open. It is a layout property again, knowingly -- 0.45s once
+              // per card, on this slot's subtree. The pill itself stays
+              // invisible until the space has mostly opened, then fades in
+              // via the inner `.pc-project-badge-motion` (which owns all the
+              // opacity/y/scale so the two layers never stack curves). No
+              // overflow clip on this slot on purpose: the global
+              // `:focus-visible` ring overhangs the pill by 4px and a hard
+              // clip would cut it -- the fade delay below is what keeps the
+              // pill from ghosting over the title while the space opens.
+              initial={prefersReducedMotion
+                ? { opacity: 0 }
+                : { height: 0 }}
+              animate={prefersReducedMotion
+                ? { opacity: 1 }
+                : { height: 'auto' }}
               exit={prefersReducedMotion
                 ? { opacity: 0 }
-                : { opacity: 0, y: 6 }}
+                : { height: 0, opacity: 0 }}
               transition={prefersReducedMotion
                 ? { duration: 0.12 }
-                : { duration: 0.5, ease: 'easeOut' }}
+                : { duration: 0.45, ease: [0.25, 0.1, 0.25, 1] }}
             >
               <div className="pc-project-badge-slot-inner">
                 <motion.div
                   className="pc-project-badge-motion"
                   initial={prefersReducedMotion
                     ? false
-                    : { y: 12, scale: 0.97 }}
-                  animate={{ y: 0, scale: 1 }}
-                  exit={prefersReducedMotion
-                    ? { opacity: 0 }
-                    : { y: 2, scale: 0.99 }}
+                    : { opacity: 0, y: 10, scale: 0.98 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, transition: { duration: 0.15 } }}
                   transition={prefersReducedMotion
                     ? { duration: 0.12 }
-                    : { duration: 0.65, ease: [0.22, 1, 0.36, 1] }}
+                    : {
+                      opacity: { delay: 0.3, duration: 0.5, ease: 'easeOut' },
+                      default: { delay: 0.3, duration: 0.6, ease: [0.22, 1, 0.36, 1] },
+                    }}
                 >
                   <button
                     type="button"
