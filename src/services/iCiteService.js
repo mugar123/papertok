@@ -1,4 +1,5 @@
 import { PaperBuilder } from './PaperBuilder.js';
+import { paperFieldsEqual } from '../utils/feedEnrichment.js';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -60,6 +61,12 @@ export function mergeICiteEnrichment(papers, metricsByPmid) {
   return papers.map(paper => {
     const pmid = normalizePmid(paper?.pmid);
     const enrichment = pmid ? metricsByPmid[pmid] : null;
-    return enrichment ? PaperBuilder.merge(paper, enrichment, 'icite') : paper;
+    if (!enrichment) return paper;
+    const merged = PaperBuilder.merge(paper, enrichment, 'icite');
+    // Same identity discipline as mergeOpenAlexEnrichment: a no-op merge
+    // (record present but nothing actually differs) must still return the
+    // original object, or memo(PaperCard)'s IntersectionObserver gets torn
+    // down and rebuilt for a card that didn't really change.
+    return paperFieldsEqual(merged, paper) ? paper : merged;
   });
 }

@@ -54,12 +54,17 @@ export default function ProtectedRoute({ children, requireOnboarding = true }) {
           }
           .loading-atom {
             color: var(--accent-primary);
+            /* Fixed now, not animated: a filter is not a compositor property, so
+               sweeping its blur radius every frame repainted the auth-loading
+               screen for as long as the guard was up. The pulse below reaches
+               for the same breathing glow with transform/opacity instead, which
+               the compositor can animate without ever repainting this element. */
             filter: drop-shadow(0 0 15px var(--accent-primary));
             animation: pulseAtom 2s infinite alternate ease-in-out;
           }
           @keyframes pulseAtom {
-            0% { transform: scale(0.95); filter: drop-shadow(0 0 10px var(--accent-primary)); }
-            100% { transform: scale(1.05); filter: drop-shadow(0 0 25px var(--accent-primary)); }
+            0% { transform: scale(0.95); opacity: 0.6; }
+            100% { transform: scale(1.05); opacity: 1; }
           }
           .loading-text {
             color: var(--text-secondary);

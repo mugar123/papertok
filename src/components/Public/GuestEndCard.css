@@ -23,6 +23,7 @@
   align-items: center;
   justify-content: center;
   padding: clamp(16px, 3vh, 40px);
+  padding: clamp(16px, 3dvh, 40px);
   background: var(--bg-secondary);
   -webkit-tap-highlight-color: transparent;
 }

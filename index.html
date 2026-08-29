@@ -68,9 +68,8 @@
         "inLanguage": ["es-ES", "en-US"]
       }
     </script>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:ital,opsz,wght@0,6..72,300..700;1,6..72,300..600&display=swap" rel="stylesheet">
+    <!-- Fonts are self-hosted (see src/main.jsx) — no more Google Fonts
+         preconnect or render-blocking cross-origin stylesheet here. -->
     <!-- The first three requests of every session, in order: the auth gate
          (identitytoolkit), the Firestore listens behind it, and the Worker.
          Warming DNS+TLS here overlaps the handshakes with the JS download

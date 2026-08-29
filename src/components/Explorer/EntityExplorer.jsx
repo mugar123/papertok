@@ -315,12 +315,29 @@ export default function EntityExplorer({
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(measureExpandableDescriptions);
-    window.addEventListener('resize', measureExpandableDescriptions);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener('resize', measureExpandableDescriptions);
-    };
+    return () => window.cancelAnimationFrame(frame);
   }, [entity?.summary, measureExpandableDescriptions, wikiDescription]);
+
+  // `resize` fires repeatedly on mobile — as the URL bar collapses while
+  // scrolling, and again when the soft keyboard opens — and the unthrottled
+  // handler forced a synchronous layout (getComputedStyle + scrollHeight) on
+  // every single event. Debounced to the trailing edge: each event just
+  // reschedules the timer, so only the resize that actually settles pays for
+  // a measurement, and the read still lands inside a rAF. `measureExpandableDescriptions`
+  // is a stable callback ([] deps), so this effect subscribes once for the
+  // component's life rather than resubscribing on every render.
+  useEffect(() => {
+    let timer = null;
+    const onResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => requestAnimationFrame(measureExpandableDescriptions), 150);
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [measureExpandableDescriptions]);
 
   useEffect(() => {
     if (!isProjectLinksMenuOpen) return undefined;

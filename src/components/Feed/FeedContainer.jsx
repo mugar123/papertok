@@ -184,7 +184,14 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
       },
       {
         root,
-        rootMargin: '0px 0px 500% 0px',
+        // Two viewports of runway, not five: loadPapers' per-source fetch is
+        // capped at FEED_SOURCE_RENDER_BUDGET_MS (4 s worst case, see
+        // FeedContext.jsx) and a typical reader spends far longer than that on
+        // two cards, so this still starts the next page well before the
+        // sentinel's own card is reached. If it ever isn't enough, the
+        // `loading && <SkeletonCard />` snap item below is the fallback, not a
+        // dead end. Five viewports only bought DOM bloat on mobile.
+        rootMargin: '0px 0px 200% 0px',
         threshold: 0,
       }
     );
@@ -384,6 +391,15 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
               onAuthRequired={onAuthRequired}
               analyticsSurface={analyticsSurface}
               position={index + 1}
+              // The scroll hint belongs to the first card only, and this prop is
+              // the only thing that decides it now: a
+              // `.feed-snap-item:not(:first-child) .pc-scroll-hint { display:
+              // none }` CSS rule used to do the same job by DOM position, which
+              // meant every other mounted card still rendered the hint and
+              // relied on that rule (and, off screen, on `content-visibility`)
+              // to keep it invisible. That rule is gone — first-card-only is
+              // decided here, once, instead of being re-derived in CSS.
+              hideScrollHint={index !== 0}
             />
           </div>
         ))}

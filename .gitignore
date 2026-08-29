@@ -19,3 +19,6 @@ lint_output.txt
 # Firestore emulator artefacts (npm run test:rules)
 firestore-debug.log
 firebase-debug.log
+
+# Espacio de trabajo de subagent-driven-development (scratch, no versionado)
+.superpowers/

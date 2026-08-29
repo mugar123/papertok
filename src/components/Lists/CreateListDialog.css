@@ -8,6 +8,7 @@
   padding: 0;
   max-width: 100vw;
   max-height: 100vh;
+  max-height: 100dvh;
   width: 100%;
   height: 100%;
   display: flex;
@@ -16,9 +17,15 @@
 }
 
 .create-list-dialog::backdrop {
+  /* No `backdrop-filter`: this backdrop fades in with `fadeIn`, and
+     animating opacity over a blurred layer forces the blur to be
+     re-resolved every frame — the worst case for a mobile GPU. The rgba
+     scrim alone reads as the backdrop; its 3px blur was invisible under it.
+     This rule fully owns its `::backdrop` (background, animation, and now
+     the absence of a filter) rather than falling through to `dialog::backdrop`
+     in global.css — that base rule carries no `backdrop-filter` of its own
+     either, so nothing reintroduces one here unopposed. */
   background: rgba(17, 19, 24, 0.4);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
   animation: fadeIn 0.15s ease;
 }
 

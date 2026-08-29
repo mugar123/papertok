@@ -9,12 +9,12 @@
    starts below it instead of behind it. Signed out there is no navbar and the
    page's own brand header does the job. */
 .public-list-page--app .public-list-content {
-  padding-top: calc(var(--nav-height) + var(--space-10));
+  padding-top: calc(var(--nav-total) + var(--space-10));
 }
 
 .public-list-page--app .public-list-status {
-  min-height: calc(100dvh - var(--nav-height));
-  padding-top: var(--nav-height);
+  min-height: calc(100dvh - var(--nav-total));
+  padding-top: var(--nav-total);
 }
 
 .public-list-brand {
@@ -325,11 +325,13 @@
   .public-list-brand span { display: none; }
   .public-list-brand .public-list-auth-cta { max-width: 210px; text-align: center; }
   .public-list-content { width: calc(100% - 32px); padding-top: 40px; }
-  .public-list-page--app .public-list-content { padding-top: calc(var(--nav-height-mobile) + var(--space-6)); }
-  .public-list-page--app .public-list-status {
-    min-height: calc(100dvh - var(--nav-height-mobile));
-    padding-top: var(--nav-height-mobile);
-  }
+  /* Kept (not redundant): the app-mode top offset also shrinks --space-10 to
+     --space-6 here, not just the nav token. */
+  .public-list-page--app .public-list-content { padding-top: calc(var(--nav-total) + var(--space-6)); }
+  /* No .public-list-page--app .public-list-status override here: --nav-total
+     already resolves to --nav-height-mobile + --inset-top below 768px, well
+     above this page's own 600px breakpoint, and this rule changed no other
+     spacing token — it only ever restated the height. */
   .public-list-paper { grid-template-columns: 28px minmax(0, 1fr); gap: var(--space-2); }
   .public-list-paper h2 { font-size: var(--fs-lg); }
 }

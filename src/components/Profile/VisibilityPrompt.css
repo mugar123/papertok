@@ -6,8 +6,12 @@
   align-items: center;
   justify-content: center;
   padding: var(--space-4);
+  /* No `backdrop-filter`: VisibilityPrompt.jsx fades this element's own
+     opacity in and out with framer-motion, and a blur under an animated
+     opacity is re-resolved every frame — the worst case for a mobile GPU.
+     The dark veil alone reads as the backdrop; its 6px blur was invisible
+     under it. */
   background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
   overflow-y: auto;
 }
 

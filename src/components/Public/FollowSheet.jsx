@@ -100,7 +100,21 @@ function Row({ uid, profile, unavailableLabel, onNavigate }) {
       >
         <span className="follow-avatar">
           {profile.photo
-            ? <img src={profile.photo} alt="" referrerPolicy="no-referrer" />
+            ? (
+              <img
+                src={profile.photo}
+                alt=""
+                referrerPolicy="no-referrer"
+                // One row in a scrollable follow/followers list -- most rows
+                // start off screen, so this is the one avatar in the batch
+                // that is genuinely worth deferring. `.follow-avatar img`
+                // renders at 36x36.
+                loading="lazy"
+                decoding="async"
+                width="36"
+                height="36"
+              />
+            )
             : <span aria-hidden="true">{initialOf(profile.displayName)}</span>}
         </span>
         <span className="follow-row-body">

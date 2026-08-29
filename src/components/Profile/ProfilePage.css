@@ -495,6 +495,7 @@
   gap: var(--space-3);
   color: var(--text-secondary);
   padding-top: clamp(48px, 12vh, 120px);
+  padding-top: clamp(48px, 12dvh, 120px);
   /* Held back, so a load that answers quickly never flashes a spinner for a
      wait that does not happen. */
   opacity: 0;

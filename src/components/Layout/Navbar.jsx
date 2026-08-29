@@ -128,7 +128,18 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
                 onClick={() => navigate('/profile')}
               >
                 {profilePhoto || user.photoURL ? (
-                  <img src={profilePhoto || user.photoURL} alt="Profile" className="navbar-avatar" referrerPolicy="no-referrer" />
+                  <img
+                    src={profilePhoto || user.photoURL}
+                    alt="Profile"
+                    className="navbar-avatar"
+                    referrerPolicy="no-referrer"
+                    // Always visible above the fold on every route -- lazy
+                    // loading would only delay it for no benefit. `.navbar-avatar`
+                    // renders at 26x26.
+                    decoding="async"
+                    width="26"
+                    height="26"
+                  />
                 ) : (
                   <div className="navbar-avatar navbar-avatar--fallback">
                     {user.email?.charAt(0).toUpperCase() || 'U'}

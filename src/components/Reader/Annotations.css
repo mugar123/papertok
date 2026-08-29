@@ -470,13 +470,32 @@
   flex: none;
   z-index: 12050;
   max-height: 72vh;
+  max-height: 72dvh;
   padding-left: 0;
+  /* Clears the home indicator once the sheet is expanded and its list runs
+     to the true bottom edge. Zero with no home indicator, so nothing moves
+     there. */
+  padding-bottom: var(--inset-bottom);
   border-left: none;
   border-top: 1px solid var(--border-default);
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   background: var(--bg-card);
   box-shadow: 0 -8px 24px rgba(17, 19, 24, 0.08);
-  transform: translateY(calc(100% - var(--rd-sheet-peek, 62px)));
+  /* translateY(100% - X) leaves exactly the sheet's own top X px on screen,
+     anchored to the viewport's bottom edge — that's the peeked state: the
+     grab handle and header, not the padding-bottom above (which lives at the
+     sheet's far end and is entirely off-screen while peeked). Padding alone
+     can't clear the home indicator here, so the peek amount itself grows by
+     --inset-bottom via --rd-sheet-peek-total (defined on `.rd` in
+     PaperReader.css, next to --rd-sheet-peek itself — `.rd` is this
+     element's ancestor, so the custom property inherits straight down to
+     here). PaperReader.css's panel dock and scroll padding below 1100px read
+     the same token, so nothing parked against the sheet can disagree with it
+     about where its top edge actually is. The fallback below only matters if
+     `.rd-rail` is ever used somewhere `.rd` is not an ancestor; it mirrors
+     the old inline arithmetic so behaviour there is unchanged. Zero inset:
+     identical to the plain --rd-sheet-peek reveal from before either way. */
+  transform: translateY(calc(100% - var(--rd-sheet-peek-total, calc(62px + var(--inset-bottom)))));
   transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 

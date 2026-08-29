@@ -21,8 +21,11 @@
   align-items: flex-end;
   justify-content: center;
   padding: 0;
+  /* No `backdrop-filter`: FollowSheet.jsx fades this element's own opacity
+     in and out with framer-motion, and a blur under an animated opacity is
+     re-resolved every frame — the worst case for a mobile GPU. The dark
+     veil alone reads as the backdrop; its 6px blur was invisible under it. */
   background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
 }
 
 /* Anclada al borde inferior en el móvil (de ahí entra), y anclada ARRIBA
@@ -35,6 +38,11 @@
   flex-direction: column;
   width: 100%;
   max-width: 460px;
+  /* Despeja el home indicator: la hoja va a ras del borde inferior del
+     viewport en el móvil, así que sin esto la última fila (`.follow-sheet-more`,
+     o el último seguidor visible) queda debajo de él. Cero en un dispositivo
+     sin home indicator, así que el borde de la hoja no se mueve ahí. */
+  padding-bottom: var(--inset-bottom);
   border: 1px solid var(--border-default);
   border-bottom: none;
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
@@ -78,14 +86,24 @@
   transition: color var(--transition-fast);
 }
 
-.follow-sheet-tab:hover,
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-tab:hover {
+    color: var(--text-secondary);
+  }
+}
+
 .follow-sheet-tab:focus-visible {
   color: var(--text-secondary);
 }
 
-.follow-sheet-tab--active,
-.follow-sheet-tab--active:hover {
+.follow-sheet-tab--active {
   color: var(--text-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-tab--active:hover {
+    color: var(--text-primary);
+  }
 }
 
 /* El contador deja de ser una viñeta dentro de una píldora y vuelve a ser lo
@@ -133,7 +151,13 @@
   transition: border-color var(--transition-fast), color var(--transition-fast);
 }
 
-.follow-sheet-close:hover,
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-close:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+}
+
 .follow-sheet-close:focus-visible {
   border-color: var(--border-strong);
   color: var(--text-primary);
@@ -208,7 +232,12 @@
   transition: background var(--transition-fast);
 }
 
-.follow-row-link:hover,
+@media (hover: hover) and (pointer: fine) {
+  .follow-row-link:hover {
+    background: var(--bg-glass-hover);
+  }
+}
+
 .follow-row-link:focus-visible {
   background: var(--bg-glass-hover);
 }
@@ -387,7 +416,12 @@
   transition: border-color var(--transition-fast);
 }
 
-.follow-sheet-retry:hover,
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-retry:hover {
+    border-color: var(--border-strong);
+  }
+}
+
 .follow-sheet-retry:focus-visible {
   border-color: var(--border-strong);
 }
@@ -411,7 +445,12 @@
   transition: background var(--transition-fast);
 }
 
-.follow-sheet-more:hover:not(:disabled),
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-more:hover:not(:disabled) {
+    background: var(--bg-secondary);
+  }
+}
+
 .follow-sheet-more:focus-visible:not(:disabled) {
   background: var(--bg-secondary);
 }

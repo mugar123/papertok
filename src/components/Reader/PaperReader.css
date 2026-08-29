@@ -20,6 +20,17 @@
      private to `.rd-rail` the other two simply did not know, so the panel and
      the sheet shared the same 62px. */
   --rd-sheet-peek: 62px;
+  /* The sheet's real resting height with the home indicator folded in:
+     Annotations.css lifts the peeked sheet by --inset-bottom on top of
+     --rd-sheet-peek, so its top edge no longer sits at the bare constant.
+     One derived token, read by the sheet itself and by the panel dock and
+     scroll padding below (1100px block) that stand next to it, is what keeps
+     that edge one number instead of three copies free to drift apart again —
+     the same fix as --nav-total, one file over. `.rd-rail` is a descendant
+     of `.rd` (AnnotationRail is mounted inside it in PaperReader.jsx), so
+     this inherits down to Annotations.css. Zero inset: identical to
+     --rd-sheet-peek alone. */
+  --rd-sheet-peek-total: calc(var(--rd-sheet-peek) + var(--inset-bottom));
 }
 
 /* ── Floating chrome ──
@@ -776,25 +787,35 @@
    Every clearance at this width is declared here, after the hover block, so
    there is one place to read them from. The `.rd-scroll` half of it used to sit
    in `Annotations.css` — later in the cascade, which is how it quietly won
-   against the phone rule above and why neither file could be read alone. */
+   against the phone rule above and why neither file could be read alone.
+
+   All three read --rd-sheet-peek-total, not the bare --rd-sheet-peek: on a
+   device with a home indicator the sheet's peeked top edge sits --inset-bottom
+   above the constant (Annotations.css lifts it there), so a rule that still
+   measured from the bare 62px would clear less than the sheet actually needs —
+   touch plus this width is exactly the notched-phone case, and the dock's
+   +12px of slack does not survive a 34px inset. */
 @media (max-width: 1100px) {
   .rd-panel-dock {
-    bottom: calc(var(--rd-sheet-peek) + var(--space-3));
+    bottom: calc(var(--rd-sheet-peek-total) + var(--space-3));
   }
 
   /* Measured rather than guessed: the panel stands 74px up and is 109px tall,
      so its top edge is 183px above the foot of the screen. At `--space-6` of
      slack the last line of the paper landed one pixel under it. */
   .rd-scroll {
-    padding-bottom: calc(var(--rd-sheet-peek) + var(--space-24) + var(--space-12));
+    padding-bottom: calc(var(--rd-sheet-peek-total) + var(--space-24) + var(--space-12));
   }
 }
 
 /* A narrow window on a machine with a mouse: the sheet is still a sheet, but
-   the panel comes and goes with the pointer, so only the peek is standing. */
+   the panel comes and goes with the pointer, so only the peek is standing.
+   Reads --rd-sheet-peek-total for the same reason as the block above, even
+   though a fine pointer with hover support is not the notched-phone case in
+   practice today — the point is that this and the sheet cannot disagree. */
 @media (max-width: 1100px) and (hover: hover) and (pointer: fine) {
   .rd-scroll {
-    padding-bottom: calc(var(--rd-sheet-peek) + var(--space-6));
+    padding-bottom: calc(var(--rd-sheet-peek-total) + var(--space-6));
   }
 }
 

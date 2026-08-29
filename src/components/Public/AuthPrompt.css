@@ -16,9 +16,12 @@
   display: grid;
   place-items: center;
   padding: var(--space-5);
+  /* No `backdrop-filter`: AuthPrompt.jsx fades this element's own opacity
+     in and out with framer-motion (`initial`/`animate`/`exit`), and a blur
+     under an animated opacity is re-resolved every frame — the worst case
+     for a mobile GPU. The ink veil alone reads as the backdrop; its 4px
+     blur was invisible under it. */
   background: rgba(17, 19, 24, 0.5);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 .auth-modal {

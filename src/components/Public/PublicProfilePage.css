@@ -36,12 +36,14 @@
    opened while signed in — the shell clears the fixed bar; the signed-out
    shareable page keeps its own breathing room instead. */
 .public-profile-page--app .public-profile-shell {
-  padding-top: calc(var(--nav-height) + var(--space-10));
+  padding-top: calc(var(--nav-total) + var(--space-10));
 }
 
 @media (max-width: 768px) {
+  /* Kept (not redundant): the app-mode top offset also shrinks --space-10 to
+     --space-6 here, not just the nav token. */
   .public-profile-page--app .public-profile-shell {
-    padding-top: calc(var(--nav-height-mobile) + var(--space-6));
+    padding-top: calc(var(--nav-total) + var(--space-6));
   }
 }
 
@@ -757,6 +759,7 @@ button.profile-stat:disabled {
   align-items: flex-start;
   gap: var(--space-3);
   padding-top: clamp(48px, 12vh, 120px);
+  padding-top: clamp(48px, 12dvh, 120px);
 }
 
 .public-profile-page--state h1 {

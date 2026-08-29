@@ -21,13 +21,24 @@ function Command({ className, ...props }) {
  * that motion belongs in a stylesheet — a Tailwind arbitrary value carrying a
  * `cubic-bezier(...)` is a lot of escaping for something a `.css` file says
  * plainly — and this module has no stylesheet of its own to put it in.
+ *
+ * The top offset is set in `dvh`, not the large-viewport `vh`: this is a
+ * `position: fixed` sheet, so its offset should track the visible viewport as
+ * the URL bar hides and reveals, the same as every other fixed sheet in this
+ * repo. Unlike a `.css` file, a Tailwind arbitrary value cannot carry a
+ * large-viewport fallback the way `FeedContainer.css:15-16` does —
+ * `tailwind-merge` (via `cn`) drops conflicting utilities for the same
+ * property down to the last one, so a second bracket value in the old unit
+ * here would just be dead code, not a fallback. `dvh` already ships bare
+ * elsewhere in this codebase (`FollowSheet.css:190`) and has near-universal
+ * support, so going bare here matches that precedent.
  */
 function CommandDialog({ children, className, title = 'Search', ...props }) {
   return (
     <Dialog {...props}>
       <DialogContent
         showClose={false}
-        className={cn('top-[8vh] max-w-2xl translate-y-0 overflow-hidden p-0', className)}
+        className={cn('top-[8dvh] max-w-2xl translate-y-0 overflow-hidden p-0', className)}
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>
         <Command shouldFilter={false} loop>
@@ -84,10 +95,20 @@ function CommandInput({ className, wrapperClassName, wrapperStyle, ...props }) {
   );
 }
 
+/**
+ * `svh`, not `dvh`: this is the scrolled results list itself
+ * (`overflow-y-auto`), and nothing here transitions its `max-height` the way
+ * `.related-sheet` in `PaperCard.css` transitions its `height` — so a bar
+ * animation that changed a `dvh` bound mid-scroll would snap the clamp
+ * instead of easing it, and could yank the scroll position with it. `svh`
+ * pins the bound to the viewport's smallest state so it never moves under an
+ * open, actively-scrolled list, at the cost of not reclaiming the extra room
+ * once the bar hides — the safer trade for a live scroll container.
+ */
 function CommandList({ className, ...props }) {
   return (
     <CommandPrimitive.List
-      className={cn('max-h-[60vh] overflow-y-auto overflow-x-hidden p-1', className)}
+      className={cn('max-h-[60svh] overflow-y-auto overflow-x-hidden p-1', className)}
       {...props}
     />
   );

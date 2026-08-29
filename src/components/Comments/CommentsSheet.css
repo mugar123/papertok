@@ -23,10 +23,12 @@
   justify-content: center;
   padding: 0;
   /* The system scrim: ink, not black. There is no token for it — AuthPrompt
-     writes the same value, and design.md names it. */
+     writes the same value, and design.md names it. No `backdrop-filter`:
+     CommentsSheet.jsx fades this element's own opacity in and out with
+     framer-motion, and a blur under an animated opacity is re-resolved every
+     frame — the worst case for a mobile GPU. The scrim alone reads as the
+     backdrop; its 4px blur was not adding visible depth. */
   background: rgba(17, 19, 24, 0.4);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
 }
 
 /* Bottom-anchored on phones, floating centered on anything wider — the same
@@ -455,6 +457,7 @@
   flex: 1;
   min-height: 40px;
   max-height: min(9rem, 22vh);
+  max-height: min(9rem, 22dvh);
   resize: none;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--border-default);

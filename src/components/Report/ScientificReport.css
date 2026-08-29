@@ -17,7 +17,10 @@
   width: 100%;
   max-width: 1240px;
   margin: 0 auto;
-  padding: calc(var(--nav-height) + var(--space-8)) var(--space-6) var(--space-16);
+  /* /research is a ProtectedRoute in App.jsx's navbarRoutes: always under the
+     app navbar, no standalone mode. Only the top offset uses the nav token —
+     the trailing --space-16 is plain end-of-page breathing room. */
+  padding: calc(var(--nav-total) + var(--space-8)) var(--space-6) var(--space-16);
   background: var(--bg-primary);
   min-height: 100dvh;
 }
@@ -204,7 +207,7 @@
   grid-column: 2;
   grid-row: 1;
   position: sticky;
-  top: calc(var(--nav-height) + var(--space-6));
+  top: calc(var(--nav-total) + var(--space-6));
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
@@ -1346,8 +1349,12 @@
 }
 
 @media (max-width: 640px) {
+  /* Kept (not redundant): the top offset also shrinks --space-8 to --space-6,
+     and the bottom shrinks --space-16 to --space-12 — neither is just the
+     nav token switching. Bottom stays a plain space value, uninvolved with
+     the nav height at any width. */
   .sr {
-    padding: calc(var(--nav-height-mobile) + var(--space-6)) var(--space-4) var(--space-12);
+    padding: calc(var(--nav-total) + var(--space-6)) var(--space-4) var(--space-12);
   }
 
   .sr-header-top {

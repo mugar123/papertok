@@ -2,7 +2,7 @@
   position: fixed;
   z-index: 1200;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(20px + var(--inset-bottom));
   display: grid;
   width: min(520px, calc(100vw - 40px));
   grid-template-columns: 40px minmax(0, 1fr) auto auto;
@@ -10,16 +10,19 @@
   padding: 16px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
-  box-shadow: 0 20px 54px rgba(17, 19, 24, 0.12);
-  backdrop-filter: blur(18px);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
   transition: border-color 0.28s ease, box-shadow 0.28s ease;
   align-items: center;
 }
 
 .analytics-consent.is-success {
   border-color: rgba(52, 211, 153, 0.38);
-  box-shadow: 0 20px 54px rgba(17, 19, 24, 0.12), 0 0 0 1px rgba(52, 211, 153, 0.06);
+  /* var(--shadow-lg), not the literal the base rule used to carry: that
+     literal was light-mode-only (rgba(17,19,24,...)) and never followed the
+     base rule when it moved to the token, so dark mode paired a near-black
+     --shadow-lg (rgba(0,0,0,0.5)) elsewhere with this still-light shadow. */
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(52, 211, 153, 0.06);
 }
 
 .analytics-consent-icon {
@@ -127,7 +130,7 @@
 @media (max-width: 560px) {
   .analytics-consent {
     right: 12px;
-    bottom: 12px;
+    bottom: calc(12px + var(--inset-bottom));
     width: calc(100vw - 24px);
     padding: 14px;
     grid-template-columns: minmax(0, 1fr) auto auto;

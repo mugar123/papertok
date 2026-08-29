@@ -24,11 +24,16 @@ const DialogDescription = DialogPrimitive.Description;
 // the last frame so the overlay cannot flash back to full opacity before it
 // goes. `motion-safe:` keeps both out of a reduced-motion session, which is how
 // every other animation in this repo is guarded.
+//
+// No `backdrop-blur-*` here: this overlay's own opacity is what `fadeIn`/
+// `fadeOut` animate, and a blur underneath an animated opacity is
+// re-resolved every frame — the same mobile-GPU cost this repo's other
+// backdrops were cleared of. The rgba veil alone reads as the backdrop.
 function DialogOverlay({ className, ...props }) {
   return (
     <DialogPrimitive.Overlay
       className={cn(
-        'fixed inset-0 z-[12050] bg-[rgba(17,19,24,0.4)] backdrop-blur-[3px]',
+        'fixed inset-0 z-[12050] bg-[rgba(17,19,24,0.4)]',
         'motion-safe:data-[state=open]:[animation:fadeIn_150ms_ease]',
         'motion-safe:data-[state=closed]:[animation:fadeOut_150ms_ease_both]',
         className,

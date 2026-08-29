@@ -3,7 +3,11 @@
 
    A solid white bar with a hairline bottom rule instead of a floating
    glass pill: content below it starts at a predictable offset, which is
-   what lets the snap feed measure a full card height.
+   what lets the snap feed measure a full card height. The offset is
+   notch-aware — --nav-total folds --inset-top into --nav-height in one
+   place, so the bar grows into the safe area instead of sitting under it,
+   and FeedContainer.css's own offset reads the same token, so the bar and
+   the feed can never disagree about where the bar ends.
    ============================================ */
 
 .navbar {
@@ -11,7 +15,8 @@
   top: 0;
   left: 0;
   right: 0;
-  height: var(--nav-height);
+  height: var(--nav-total);
+  padding-top: var(--inset-top);
   z-index: var(--z-nav);
   background: var(--bg-primary);
   border-bottom: 1px solid var(--border-default);
@@ -309,9 +314,10 @@
 }
 
 @media (max-width: 768px) {
-  .navbar {
-    height: var(--nav-height-mobile);
-  }
+  /* No .navbar height rule here: --nav-total already resolves to
+     --nav-height-mobile + --inset-top below this breakpoint (see
+     variables.css), and a plain --nav-height-mobile override here would
+     silently drop the inset right where phones actually have a notch. */
 
   .navbar-inner {
     padding: 0 var(--space-3);

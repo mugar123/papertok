@@ -70,12 +70,33 @@ test('the sheet, the panel and the document read one peek', async () => {
   assert.equal(declarations, 1, '--rd-sheet-peek should be declared exactly once');
   assert.match(ruleBody(readerCss, '.rd'), /--rd-sheet-peek:\s*62px/);
 
-  // And all three consumers actually read it.
-  assert.match(annotationsCss, /translateY\(calc\(100% - var\(--rd-sheet-peek/);
+  // The sheet's real peeked top edge is --rd-sheet-peek plus the bottom
+  // safe-area inset, not the bare constant — raising the sheet to clear the
+  // home indicator moved it out from under whatever still measured from the
+  // constant alone. Also declared exactly once, next to --rd-sheet-peek
+  // itself, for the same reason the panel and the sheet share one number.
+  const totalDeclarations = [...readerCss.matchAll(/--rd-sheet-peek-total:/g)].length
+    + [...annotationsCss.matchAll(/--rd-sheet-peek-total:\s*\S/g)].length;
+  assert.equal(totalDeclarations, 1, '--rd-sheet-peek-total should be declared exactly once');
+  assert.match(
+    ruleBody(readerCss, '.rd'),
+    /--rd-sheet-peek-total:\s*calc\(var\(--rd-sheet-peek\)\s*\+\s*var\(--inset-bottom\)\)/
+  );
+
+  // And all four consumers actually read the derived token, not the bare
+  // constant — a rule still measuring from --rd-sheet-peek alone clears less
+  // than the sheet's real (inset-lifted) top edge on a device that has one.
+  assert.match(annotationsCss, /translateY\(calc\(100% - var\(--rd-sheet-peek-total,/);
 
   const narrow = atRuleBody(readerCss, '@media (max-width: 1100px)');
-  assert.match(ruleBody(narrow, '.rd-panel-dock'), /bottom:\s*calc\(var\(--rd-sheet-peek\)/);
-  assert.match(ruleBody(narrow, '.rd-scroll'), /padding-bottom:\s*calc\(var\(--rd-sheet-peek\)/);
+  assert.match(ruleBody(narrow, '.rd-panel-dock'), /bottom:\s*calc\(var\(--rd-sheet-peek-total\)/);
+  assert.match(ruleBody(narrow, '.rd-scroll'), /padding-bottom:\s*calc\(var\(--rd-sheet-peek-total\)/);
+
+  const narrowHover = atRuleBody(
+    readerCss,
+    '@media (max-width: 1100px) and (hover: hover) and (pointer: fine)'
+  );
+  assert.match(ruleBody(narrowHover, '.rd-scroll'), /padding-bottom:\s*calc\(var\(--rd-sheet-peek-total\)/);
 });
 
 test('the foot of the document is set in one file', async () => {

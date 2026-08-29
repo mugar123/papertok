@@ -9,10 +9,12 @@ import { buildHighlightPlan } from './textHighlights.js';
  * each contradicted an assumption that looked safe:
  *
  * 1. `\setmainfont` is not usable. The reader is set in Newsreader, which the
- *    app loads from Google Fonts — it is not installed on the machine that will
- *    compile this, so a `fontspec` preamble fails outright. Latin Modern is
- *    always present, needs no declaration, and lets the file build with pdfLaTeX
- *    as well as XeLaTeX. The Newsreader line ships commented out instead.
+ *    app self-hosts as a bundled webfont (`@fontsource-variable/newsreader`)
+ *    — that puts a `.woff2` in the app's own bundle, not a font file on the
+ *    machine that will compile this, so a `fontspec` preamble still fails
+ *    outright. Latin Modern is always present, needs no declaration, and lets
+ *    the file build with pdfLaTeX as well as XeLaTeX. The Newsreader line
+ *    ships commented out instead.
  * 2. Spanish babel rewrites the decimal point INSIDE maths: `$0.02$` came out as
  *    `0,02`. Correct Spanish typography and a silent change to the paper's
  *    numbers, so `es-nodecimaldot` is not optional here.

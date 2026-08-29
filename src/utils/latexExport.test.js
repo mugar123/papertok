@@ -219,9 +219,10 @@ function build(overrides = {}) {
 }
 
 test('the preamble does not declare a font the compiling machine may not have', () => {
-  // Newsreader is loaded by the app from Google Fonts and is not installed
-  // anywhere else, so a live `\setmainfont` line fails outright. Commented out,
-  // the file builds with pdflatex as well as xelatex.
+  // Newsreader is self-hosted as a bundled webfont (@fontsource-variable),
+  // not a font file installed on the compiling machine, so a live
+  // `\setmainfont` line fails outright. Commented out, the file builds with
+  // pdflatex as well as xelatex.
   const { source } = build();
   assert.match(source, /^% \\setmainfont\{Newsreader\}$/m);
   assert.doesNotMatch(source, /^\\setmainfont/m);

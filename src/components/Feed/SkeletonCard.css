@@ -6,6 +6,7 @@
   align-items: center;
   justify-content: center;
   padding: clamp(16px, 3vh, 40px);
+  padding: clamp(16px, 3dvh, 40px);
   padding-right: clamp(96px, 10vw, 148px);
   overflow: hidden;
   background: var(--bg-secondary);
@@ -27,17 +28,40 @@
   gap: var(--space-3);
 }
 
-/* Shimmer base */
+/* Shimmer base.
+   A solid block plus a translating gradient on `::after`, not an animated
+   `background-position`: the old version repainted the whole block every
+   frame (`background-position` is a paint property, not a compositor one).
+   `transform` on a pseudo-element is the same sweep for free — the block
+   itself never repaints, only the highlight layer moves.
+   None of these seven selectors already own a `::before`/`::after` or a
+   `position`/`overflow`, so `::after` is free for all of them; the circular
+   `.sk-avatar` still clips correctly because `overflow: hidden` clips to
+   its own `border-radius: 50%`. */
 .sk-pill, .sk-small, .sk-title, .sk-name, .sk-text, .sk-btn, .sk-avatar {
+  position: relative;
+  overflow: hidden;
   border-radius: var(--radius-sm);
-  background: linear-gradient(
-    90deg,
-    var(--bg-secondary) 25%,
-    var(--border-subtle) 50%,
-    var(--bg-secondary) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
+  background: var(--bg-secondary);
+}
+
+.sk-pill::after,
+.sk-small::after,
+.sk-title::after,
+.sk-name::after,
+.sk-text::after,
+.sk-btn::after,
+.sk-avatar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--bg-glass-hover), transparent);
+  animation: shimmerSlide 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmerSlide {
+  to { transform: translateX(100%); }
 }
 
 .sk-meta {
@@ -125,7 +149,20 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .sk-pill, .sk-small, .sk-title, .sk-name, .sk-text, .sk-btn, .sk-avatar {
+  .sk-pill::after,
+  .sk-small::after,
+  .sk-title::after,
+  .sk-name::after,
+  .sk-text::after,
+  .sk-btn::after,
+  .sk-avatar::after {
     animation: none;
+    /* `animation: none` alone still leaves the base rule's own transform in
+       place: translateX(-100%), the sweep's start position, parked
+       off-canvas to the left. `overflow: hidden` on the block clips it
+       there completely, so every block renders flat --bg-secondary with no
+       visible highlight at all. Reset the transform so the gradient layer
+       sits over the block instead of beside it. */
+    transform: none;
   }
 }

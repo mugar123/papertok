@@ -1,5 +1,6 @@
 /* Guest header — same flat document bar as the signed-in navbar, so the
-   feed below it can rely on a single --nav-height offset. */
+   feed below it can rely on a single --nav-total offset (that token folds
+   the top safe-area inset into --nav-height in one place, in variables.css). */
 
 .guest-feed-page {
   min-height: 100dvh;
@@ -12,11 +13,11 @@
   top: 0;
   left: 0;
   right: 0;
-  height: var(--nav-height);
+  height: var(--nav-total);
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: 0 var(--space-5);
+  padding: var(--inset-top) var(--space-5) 0;
   border-bottom: 1px solid var(--border-default);
   background: var(--bg-primary);
 }
@@ -86,9 +87,11 @@
 }
 
 @media (max-width: 768px) {
+  /* No height override: --nav-total already resolves to
+     --nav-height-mobile + --inset-top below this breakpoint. Only the
+     horizontal padding narrows here; the top inset stays whatever it is. */
   .guest-feed-header {
-    height: var(--nav-height-mobile);
-    padding: 0 var(--space-3);
+    padding: var(--inset-top) var(--space-3) 0;
   }
 }
 

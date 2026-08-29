@@ -16,6 +16,7 @@
   justify-content: center;
   gap: clamp(8px, 1.5vw, 24px);
   padding: clamp(16px, 3vh, 40px);
+  padding: clamp(16px, 3dvh, 40px);
   background: var(--bg-secondary);
   overflow: hidden;
   -webkit-tap-highlight-color: transparent;
@@ -498,7 +499,6 @@ a.pc-citations {
   grid-template-columns: minmax(0, 1fr);
   width: 100%;
   max-width: 100%;
-  will-change: grid-template-rows, opacity;
 }
 
 .pc-project-badge-slot-inner {
@@ -508,14 +508,18 @@ a.pc-citations {
   overflow-clip-margin: 18px;
 }
 
+/* No `backface-visibility: hidden` here on purpose: nothing in this file
+   ever rotates this element in 3D (no `rotateX/Y`, `translateZ` or an
+   ancestor `perspective`/`transform-style: preserve-3d`), so the property
+   has no back face to hide — it would only survive as the legacy WebKit
+   "force a GPU layer" hack, which is exactly the standing cost this task
+   removes `will-change` for. */
 .pc-project-badge-motion {
   display: inline-flex;
   width: fit-content;
   min-width: 0;
   max-width: 100%;
   transform-origin: left center;
-  backface-visibility: hidden;
-  will-change: transform, opacity;
 }
 
 .pc-project-badge {
@@ -666,6 +670,7 @@ a.pc-citations {
 /* ── Abstract ── */
 .pc-abstract {
   max-height: min(30em, 46vh);
+  max-height: min(30em, 46dvh);
   overflow: hidden;
   position: relative;
   transition:
@@ -756,7 +761,6 @@ a.pc-citations {
   display: grid;
   width: 100%;
   max-width: 100%;
-  will-change: grid-template-rows, opacity;
 }
 
 .pc-linked-resources-slot-inner {
@@ -766,12 +770,13 @@ a.pc-citations {
   overflow-clip-margin: 14px;
 }
 
+/* Same reasoning as `.pc-project-badge-motion` above: no 3D transform, no
+   `perspective` ancestor, so `backface-visibility: hidden` had nothing to
+   do here but force a permanent layer. */
 .pc-linked-resources-motion {
   width: 100%;
   min-width: 0;
   transform-origin: left center;
-  backface-visibility: hidden;
-  will-change: transform, opacity;
 }
 
 /* ── Linked resources ── */
@@ -1026,7 +1031,15 @@ a.pc-citations {
   align-items: center;
   gap: 6px;
   color: var(--text-tertiary);
-  animation: scrollNudge 2.4s cubic-bezier(0.25, 1, 0.5, 1) infinite;
+  /* Four cycles (9.6s) and then it rests dimmed, at the 0.55 opacity the
+     keyframes settle on. `forwards` is required for that: the default
+     fill-mode ("none") drops the element back to full opacity the instant
+     the animation ends, since the base rule below declares no opacity of
+     its own — a real 0.55 → 1 jump, permanent, the opposite of resting.
+     Nobody is still watching a scroll hint after 10 seconds on the first
+     card — an infinite loop kept it animating for the entire session, one
+     of the two animations still running on a feed nobody is touching. */
+  animation: scrollNudge 2.4s cubic-bezier(0.25, 1, 0.5, 1) 4 forwards;
 }
 
 .pc-scroll-hint-label {
@@ -1046,11 +1059,6 @@ a.pc-citations {
 @keyframes scrollNudge {
   0%, 100% { transform: translateX(-50%) translateY(0); opacity: 0.55; }
   50% { transform: translateX(-50%) translateY(5px); opacity: 1; }
-}
-
-/* Hide scroll hint after first card */
-.feed-snap-item:not(:first-child) .pc-scroll-hint {
-  display: none;
 }
 
 /* Reason the paper appears in the Following feed */
@@ -1115,8 +1123,12 @@ a.pc-citations {
   display: flex;
   align-items: flex-end;
   justify-content: center;
+  /* No `backdrop-filter` here on purpose: this overlay animates its own
+     opacity in (`relatedBackdropIn`), which would force the blur to be
+     re-resolved on every frame — the worst case for a mobile GPU. The rgba
+     scrim is what actually reads as a backdrop; the 3px blur it carried was
+     imperceptible under it. */
   background: rgba(17, 19, 24, 0.35);
-  backdrop-filter: blur(3px);
   animation: relatedBackdropIn 0.22s ease-out both;
 }
 
@@ -1127,6 +1139,7 @@ a.pc-citations {
   --graph-source-height: 30px;
   width: min(720px, 100%);
   height: min(68vh, 610px);
+  height: min(68dvh, 610px);
   max-height: 720px;
   overflow: hidden;
   display: flex;
@@ -1141,10 +1154,21 @@ a.pc-citations {
   will-change: transform, opacity;
 }
 
-.related-sheet--loading { height: min(430px, 58vh); }
+/* `--shadow-xl` is a 48px blur, re-rasterized on every frame of the spring
+   this sheet enters with. On a coarse pointer it lands over the dark
+   overlay scrim (or its own dark surface), so the extra spread reads the
+   same as the cheaper shadow — the cost isn't worth it there. Desktop, with
+   a fine pointer and no per-frame budget pressure, keeps the deeper one. */
+@media (pointer: coarse) {
+  .related-sheet {
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+.related-sheet--loading { height: min(430px, 58vh); height: min(430px, 58dvh); }
 .related-sheet--empty,
 .related-sheet--error,
-.related-sheet--unavailable { height: min(350px, 52vh); }
+.related-sheet--unavailable { height: min(350px, 52vh); height: min(350px, 52dvh); }
 
 .related-grabber {
   width: 34px;
@@ -1991,7 +2015,12 @@ a.pc-citations {
   display: flex;
   align-items: center;
   justify-content: center;
+  /* `svh`, not `dvh`: this sibling's `min-height` is pinned to the small
+     (never-grows) viewport so the skeleton never resizes as the URL bar
+     animates. Padding that tracked `dvh` instead would grow independently of
+     that fixed frame and drift out of proportion with it mid-transition. */
   padding: clamp(28px, 6vh, 72px) clamp(20px, 4vw, 72px);
+  padding: clamp(28px, 6svh, 72px) clamp(20px, 4vw, 72px);
   background: var(--bg-secondary);
 }
 
@@ -2166,9 +2195,12 @@ a.pc-citations {
 .pc-authors-modal-overlay {
   position: fixed;
   inset: 0;
+  /* No `backdrop-filter` here: PaperCard.jsx animates this overlay's own
+     opacity in and out with framer-motion (`initial`/`animate`/`exit`), so a
+     blur underneath it would be re-resolved on every frame of that fade —
+     the pattern this pass exists to remove. The rgba scrim carries the
+     backdrop on its own; its 3px blur was not doing visible work. */
   background: rgba(17, 19, 24, 0.35);
-  backdrop-filter: blur(3px);
-  -webkit-backdrop-filter: blur(3px);
   z-index: 10000;
   display: flex;
   flex-direction: column;
@@ -2183,9 +2215,21 @@ a.pc-citations {
   padding: var(--space-5);
   padding-bottom: calc(env(safe-area-inset-bottom, 20px) + var(--space-5));
   max-height: 80vh;
+  max-height: 80dvh;
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-xl);
+}
+
+/* Same trade as `.related-sheet`: this sheet enters on a spring translateY
+   (PaperCard.jsx), so `--shadow-xl`'s 48px blur is re-rasterized every frame
+   of that motion. Scoped to coarse pointers — over the scrim or the sheet's
+   own dark surface the shallower shadow reads the same, and desktop keeps
+   the deeper one since it isn't paying the per-frame cost. */
+@media (pointer: coarse) {
+  .pc-authors-modal-sheet {
+    box-shadow: var(--shadow-lg);
+  }
 }
 
 .pc-authors-modal-header {
@@ -2331,6 +2375,7 @@ a.pc-citations {
 
   .pc-abstract {
     max-height: min(14em, 34vh);
+    max-height: min(14em, 34dvh);
     margin-bottom: var(--space-4);
   }
 
@@ -2412,7 +2457,7 @@ a.pc-citations {
   .related-card-loading-meta { width: 48%; }
   .related-card-loading-title { height: 28px; }
   .related-card-loading-author { width: 68%; }
-  .related-sheet--graph { max-height: min(84vh, 720px); }
+  .related-sheet--graph { max-height: min(84vh, 720px); max-height: min(84dvh, 720px); }
   .graph-map { padding: 12px 14px 10px; }
   .graph-node-label { max-width: 84px; }
   .graph-trail { padding: 0 14px; }

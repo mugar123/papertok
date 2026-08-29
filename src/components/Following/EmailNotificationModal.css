@@ -5,13 +5,18 @@
   display: grid;
   place-items: center;
   padding: 20px;
+  /* No `backdrop-filter`: EmailNotificationModal.jsx fades this element's
+     own opacity in and out with framer-motion, and a blur under an
+     animated opacity is re-resolved every frame — the worst case for a
+     mobile GPU. The dark veil alone reads as the backdrop; its 10px blur
+     was invisible under it. */
   background: rgba(5, 5, 8, 0.72);
-  backdrop-filter: blur(10px);
 }
 
 .email-notification-modal {
   width: min(520px, 100%);
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow-y: auto;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
@@ -267,7 +272,7 @@
 
 @media (max-width: 520px) {
   .email-notification-backdrop { align-items: end; padding: 0; }
-  .email-notification-modal { width: 100%; max-height: 92vh; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  .email-notification-modal { width: 100%; max-height: 92vh; max-height: 92dvh; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
   .email-notification-modal > header,
   .email-notification-body { padding-left: 18px; padding-right: 18px; }
   .email-notification-modal > footer { padding-left: 18px; padding-right: 18px; }

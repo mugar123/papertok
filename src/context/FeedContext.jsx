@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useContext, useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
+import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { FeedContext } from './contexts';
 import { IS_DEMO, db } from '../services/firebase';
 import { doc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
@@ -314,8 +314,40 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     scheduleInteractionProfileFlush(userId, interactionProfile.current);
   }, [user?.uid]);
 
+  // The late-enrichment merges each call this once more (OpenAlex, then
+  // iCite) after the feed has already rendered, just to persist the enriched
+  // papers into the same snapshot key. Debounced: a 500ms setTimeout that a
+  // second call for the SAME (userId, signature) within the window replaces,
+  // so back-to-back merges from the same load pay for one serialisation of up
+  // to 30 papers instead of two. Keyed by a map rather than one slot: a mode
+  // switch or a preference edit can leave a previous load's late-enrichment
+  // still in flight when a new one starts, and those two target different
+  // storage keys — collapsing them into a single pending write would silently
+  // drop whichever one lost.
+  const pendingSnapshotWritesRef = useRef(new Map());
+  const scheduleFeedSnapshotWrite = useCallback((userId, signature, snapshot) => {
+    const writeKey = `${userId}:${signature}`;
+    const pending = pendingSnapshotWritesRef.current.get(writeKey);
+    if (pending) clearTimeout(pending.timer);
+    const flush = () => {
+      pendingSnapshotWritesRef.current.delete(writeKey);
+      writeFeedSnapshot(userId, signature, snapshot);
+    };
+    pendingSnapshotWritesRef.current.set(writeKey, { timer: setTimeout(flush, 500), flush });
+  }, []);
+
   useEffect(() => {
-    const flush = () => { void flushAllInteractionProfiles(); };
+    const flush = () => {
+      void flushAllInteractionProfiles();
+      // Every snapshot debounced behind a 500ms timer must land before a tab
+      // closing inside that window loses it — the feed relies on it to
+      // restore on the next visit. Same guarantee as the interaction-profile
+      // flush above, and on the same two events.
+      pendingSnapshotWritesRef.current.forEach((pending) => {
+        clearTimeout(pending.timer);
+        pending.flush();
+      });
+    };
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') flush();
     };
@@ -479,6 +511,55 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   useLayoutEffect(() => {
     reRankFeedRef.current = reRankFeed;
   }, [reRankFeed]);
+
+  // Re-ranking used to run synchronously on the card-snap path (58-151ms
+  // longtasks measured in production, right when the just-settled card should
+  // be responsive). Deferring it to idle takes it off that path entirely: the
+  // snap observer returns immediately, and the reorder — which only affects
+  // cards further down the queue — lands whenever the main thread next has
+  // spare time.
+  //
+  // `requestIdleCallback` alone is not enough: Safari only shipped it in 16.4,
+  // and a permanently busy tab could starve it forever. So every scheduling
+  // call carries a `timeout`, which forces the browser to run it anyway, and
+  // the `setTimeout` fallback (unconditionally scheduled, no idle gating to
+  // starve) covers browsers with no `requestIdleCallback` at all.
+  //
+  // Only one re-rank is ever pending: a later call while one is already
+  // queued just updates which paper it should split around, rather than
+  // resetting the timer — a stream of calls inside the timeout window must
+  // not be able to push the deadline out indefinitely.
+  const pendingReRankRef = useRef(null);
+  const scheduleReRank = useCallback((sourcePaperId) => {
+    if (pendingReRankRef.current) {
+      pendingReRankRef.current.sourcePaperId = sourcePaperId;
+      return;
+    }
+    const pending = { sourcePaperId, handle: null, isTimeout: false };
+    const run = () => {
+      pendingReRankRef.current = null;
+      reRankFeedRef.current(pending.sourcePaperId);
+    };
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      pending.handle = window.requestIdleCallback(run, { timeout: 800 });
+    } else {
+      pending.isTimeout = true;
+      pending.handle = setTimeout(run, 120);
+    }
+    pendingReRankRef.current = pending;
+  }, []);
+
+  // A deferred re-rank that fires after this provider unmounts would be a
+  // `setState` on a dead component — React 19 swallows it silently, so it
+  // would never surface as a warning or a test failure, only as a re-rank
+  // that quietly never happened.
+  useEffect(() => () => {
+    const pending = pendingReRankRef.current;
+    if (!pending) return;
+    pendingReRankRef.current = null;
+    if (pending.isTimeout) clearTimeout(pending.handle);
+    else window.cancelIdleCallback?.(pending.handle);
+  }, []);
 
   const traverseAndExpandNetwork = useCallback(async (paper) => {
     const sessionId = feedSessionId.current;
@@ -1271,6 +1352,23 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       // Save to cache
       feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
       const preferenceSignature = feedPreferenceSignature(userPreferences);
+      // This write is synchronous and bypasses the debounce map on purpose —
+      // it's the primary persist, not a merge, so it should land immediately.
+      // But it shares its localStorage key (userId, preferenceSignature) with
+      // whatever an in-flight enrichment's `scheduleFeedSnapshotWrite` may
+      // already have pending from an earlier `loadPapers` call (feedSessionId
+      // does not guard this key — only `traverseAndExpandNetwork` bumps it):
+      // an enrichment can schedule against a smaller, older cache object,
+      // and if this fresher write lands before that timer fires, the stale
+      // one would overwrite it 500ms later and regress the snapshot. Cancel
+      // any pending write for this exact key first so this fresher write is
+      // always the one left standing.
+      const snapshotWriteKey = `${activeUserId.current}:${preferenceSignature}`;
+      const pendingSnapshotWrite = pendingSnapshotWritesRef.current.get(snapshotWriteKey);
+      if (pendingSnapshotWrite) {
+        clearTimeout(pendingSnapshotWrite.timer);
+        pendingSnapshotWritesRef.current.delete(snapshotWriteKey);
+      }
       writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
 
       if (!initialOpenAlexData && enrichmentIds.length > 0) {
@@ -1281,7 +1379,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             const cachedMode = feedCache.current[activeMode];
             if (cachedMode) {
               feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
-              writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
             }
             return enriched;
           });
@@ -1296,7 +1394,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             const cachedMode = feedCache.current[activeMode];
             if (cachedMode) {
               feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
-              writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
             }
             return enriched;
           });
@@ -1326,7 +1424,8 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   }, [
     userPreferences, page, papers, loading, feedMode,
     categoryAffinities, relatedCandidates, isKnownPaper,
-    calculateAndAttachScore, followedEntities, recommendationProfileReady
+    calculateAndAttachScore, followedEntities, recommendationProfileReady,
+    scheduleFeedSnapshotWrite,
   ]);
 
   const preferencesSignatureRef = useRef(null);
@@ -1481,6 +1580,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   }, []);
 
   const toggleLike = useCallback(async (paper) => {
+    const userId = user?.uid;
     const isCurrentlyLiked = likedPaperIds.has(paper.id);
     const newLiked = new Set(likedPaperIds);
 
@@ -1516,14 +1616,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         arxivId: paper.arxivId, summary: paper.summary?.substring(0, 500),
       };
       demoSet('savedPapersData', allSaved);
-    } else if (user) {
+    } else if (userId) {
       recordProfileEvent({
         paperId: paper.id,
         kind: isCurrentlyLiked ? 'unlike' : 'like',
         category: paper.primaryCategory,
       });
       try {
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+        const ref = doc(db, 'users', userId, 'interactions', paper.id);
         await setDoc(ref, definedFields({
           liked: !isCurrentlyLiked,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
@@ -1537,10 +1637,11 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         setLikedPaperIds(likedPaperIds);
       }
     }
-  }, [recordProfileEvent, user, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
+  }, [recordProfileEvent, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
 
   const markNotInterested = useCallback(async (paper) => {
-    if (!user) return;
+    const userId = user?.uid;
+    if (!userId) return;
     const newNotInterested = new Set(notInterestedIdsRef.current);
     newNotInterested.add(paper.id);
     setNotInterestedIds(newNotInterested);
@@ -1563,7 +1664,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           kind: 'notInterested',
           category: paper.primaryCategory,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+        const ref = doc(db, 'users', userId, 'interactions', paper.id);
         await setDoc(ref, definedFields({
           notInterested: true, paperCategory: paper.primaryCategory,
           paperAbstract: paper.summary?.substring(0, 500),
@@ -1574,10 +1675,11 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error saving not interested:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, user]);
+  }, [reRankFeed, recordProfileEvent, user?.uid]);
 
   const markAsRead = useCallback(async (paper) => {
-    if (!user) return;
+    const userId = user?.uid;
+    if (!userId) return;
     const newRead = new Set(readPaperIdsRef.current);
     newRead.add(paper.id);
     setReadPaperIds(newRead);
@@ -1588,7 +1690,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         ...current,
         [paper.id]: { ...current[paper.id], paperId: paper.id, paper: storedPaper, readAt },
       };
-      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
       return next;
     });
     
@@ -1614,7 +1716,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           timestamp: readAt,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+        const ref = doc(db, 'users', userId, 'interactions', paper.id);
         await setDoc(ref, definedFields({
           read: true,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
@@ -1628,9 +1730,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error saving read status:', err);
       }
     }
-  }, [recordProfileEvent, user]);
+  }, [recordProfileEvent, user?.uid]);
 
   const trackViewTime = useCallback(async (paper, timeInSeconds) => {
+    const userId = user?.uid;
     if (timeInSeconds < 1) return;
     
     // ─── BOREDOM RESET: user is engaging, not bored ───
@@ -1651,10 +1754,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       traverseAndExpandNetwork(paper);
     }
     if (timeInSeconds >= 3.0) {
-      reRankFeed(paper.id);
+      // Off the snap path: the reader is settled on this card, not watching
+      // the rest of the queue reorder underneath it.
+      scheduleReRank(paper.id);
     }
 
-    if (user && !IS_DEMO) {
+    if (userId && !IS_DEMO) {
       try {
         recordProfileEvent({
           paperId: paper.id,
@@ -1662,7 +1767,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           viewTime: timeInSeconds,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+        const ref = doc(db, 'users', userId, 'interactions', paper.id);
         await setDoc(ref, definedFields({
           viewTime: increment(timeInSeconds),
           paperCategory: paper.primaryCategory,
@@ -1672,26 +1777,27 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error tracking view time:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user]);
+  }, [scheduleReRank, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
 
   const trackPdfOpened = useCallback(async (paper) => {
+    const userId = user?.uid;
     // ─── BOREDOM RESET & GRAFO EXPANSION: opening PDF = highly engaged ───
     boredomLevel.current = 0;
     traverseAndExpandNetwork(paper);
-    
+
     // Instantly update local weights for real-time re-ranking
     applyCategoryAffinityDelta(categoryAffinities.current, paper, 4);
     bumpConceptAffinities(conceptAffinities.current, paper, 1);
     reRankFeed(paper.id);
 
-    if (user && !IS_DEMO) {
+    if (userId && !IS_DEMO) {
       try {
         recordProfileEvent({
           paperId: paper.id,
           kind: 'openedPdf',
           category: paper.primaryCategory,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+        const ref = doc(db, 'users', userId, 'interactions', paper.id);
         await setDoc(ref, definedFields({
           openedPdf: true,
           paperCategory: paper.primaryCategory,
@@ -1703,9 +1809,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error tracking PDF open:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user]);
+  }, [reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
 
   const trackSkips = useCallback(async (papersToSkip) => {
+    const userId = user?.uid;
     const skippedPapers = dedupeInteractionPapers(papersToSkip);
     if (skippedPapers.length === 0) return;
 
@@ -1715,9 +1822,11 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     skippedPapers.forEach((paper) => {
       applyCategoryAffinityDelta(categoryAffinities.current, paper, -1);
     });
-    reRankFeed(skippedPapers[skippedPapers.length - 1].id);
+    // Off the snap path, same as trackViewTime: a fling across several cards
+    // must not pay a synchronous re-rank per card it crosses.
+    scheduleReRank(skippedPapers[skippedPapers.length - 1].id);
 
-    if (user && !IS_DEMO) {
+    if (userId && !IS_DEMO) {
       try {
         const batch = writeBatch(db);
         const timestamp = new Date().toISOString();
@@ -1730,7 +1839,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             category: paper.primaryCategory,
             timestamp,
           });
-          const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+          const ref = doc(db, 'users', userId, 'interactions', paper.id);
           batch.set(ref, definedFields({
             skip: increment(1),
             paperCategory: paper.primaryCategory,
@@ -1745,24 +1854,25 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error tracking skips:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, user]);
+  }, [scheduleReRank, recordProfileEvent, user?.uid]);
 
   const trackSkip = useCallback((paper) => trackSkips([paper]), [trackSkips]);
 
   const trackPdfBounce = useCallback(async (paper) => {
+    const userId = user?.uid;
     // Deduct category affinity for bounce (user opened PDF but closed it instantly)
     applyCategoryAffinityDelta(categoryAffinities.current, paper, -3);
     
     reRankFeed(paper.id);
     
-    if (user && !IS_DEMO) {
+    if (userId && !IS_DEMO) {
       try {
         recordProfileEvent({
           paperId: paper.id,
           kind: 'pdfBounce',
           category: paper.primaryCategory,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
+        const ref = doc(db, 'users', userId, 'interactions', paper.id);
         await setDoc(ref, definedFields({
           pdfBounce: increment(1),
           paperCategory: paper.primaryCategory,
@@ -1774,9 +1884,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error tracking PDF bounce:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, user]);
+  }, [reRankFeed, recordProfileEvent, user?.uid]);
 
   const markSaved = useCallback(async (paperOrId) => {
+    const userId = user?.uid;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || savedPaperIdsRef.current.has(paperId)) return;
 
@@ -1809,14 +1920,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       return;
     }
 
-    if (user) {
+    if (userId) {
       try {
         recordProfileEvent({
           paperId,
           kind: 'save',
           category: paper?.primaryCategory,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paperId);
+        const ref = doc(db, 'users', userId, 'interactions', paperId);
         const interactionData = {
           saved: true,
           timestamp: new Date().toISOString(),
@@ -1833,17 +1944,18 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error saving recommendation interaction:', err);
       }
     }
-  }, [papers, reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user]);
+  }, [papers, reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
 
   const unmarkAsRead = useCallback(async (paperId) => {
-    if (!user) return;
+    const userId = user?.uid;
+    if (!userId) return;
     const newRead = new Set(readPaperIdsRef.current);
     newRead.delete(paperId);
     setReadPaperIds(newRead);
     setPersonalLibrary((current) => {
       if (!current[paperId]) return current;
       const next = { ...current, [paperId]: { ...current[paperId], readAt: null } };
-      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
       return next;
     });
 
@@ -1852,7 +1964,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     } else {
       try {
         recordProfileEvent({ paperId, kind: 'unread' });
-        const ref = doc(db, 'users', user.uid, 'interactions', paperId);
+        const ref = doc(db, 'users', userId, 'interactions', paperId);
         await updateDoc(ref, {
           read: deleteField(),
           readAt: deleteField(),
@@ -1861,10 +1973,11 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error unmarking read status:', err);
       }
     }
-  }, [recordProfileEvent, user]);
+  }, [recordProfileEvent, user?.uid]);
 
   const toggleReadLater = useCallback(async (paper) => {
-    if (!user || !paper?.id) return false;
+    const userId = user?.uid;
+    if (!userId || !paper?.id) return false;
     const nextValue = !personalLibrary[paper.id]?.readLater;
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
@@ -1880,7 +1993,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           updatedAt,
         },
       };
-      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
       return next;
     });
 
@@ -1893,7 +2006,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           timestamp: updatedAt,
         });
-        await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), definedFields({
+        await setDoc(doc(db, 'users', userId, 'interactions', paper.id), definedFields({
           readLater: nextValue,
           paper: storedPaper,
           paperTitle: paper.title,
@@ -1906,10 +2019,11 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       }
     }
     return nextValue;
-  }, [personalLibrary, recordProfileEvent, user]);
+  }, [personalLibrary, recordProfileEvent, user?.uid]);
 
   const saveReadingMetadata = useCallback(async (paper, { note = '', tags = [] }) => {
-    if (!user || !paper?.id) return;
+    const userId = user?.uid;
+    if (!userId || !paper?.id) return;
     const normalizedTags = [...new Set(tags.map(tag => tag.trim()).filter(Boolean))].slice(0, 12);
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
@@ -1926,7 +2040,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           updatedAt,
         },
       };
-      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
       return next;
     });
 
@@ -1938,7 +2052,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           timestamp: updatedAt,
         });
-        await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), definedFields({
+        await setDoc(doc(db, 'users', userId, 'interactions', paper.id), definedFields({
           note: note.trim(),
           tags: normalizedTags,
           paper: storedPaper,
@@ -1951,7 +2065,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error saving reading metadata:', err);
       }
     }
-  }, [recordProfileEvent, user]);
+  }, [recordProfileEvent, user?.uid]);
 
   // The curated interaction ids, most recent first, exactly as the aggregate
   // holds them. `likedPaperIds` and friends are the same ids re-sorted for the
@@ -1977,7 +2091,30 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     readPaperIds: Array.from(readPaperIdsRef.current),
   }), [followedAuthors, followedEntities, recommendationProfileReady, user?.uid, userPreferences]);
 
-  const value = {
+  // Every function key below is already `useCallback`-wrapped (or, for
+  // `setFeedMode`/`loadPapers`, deliberately re-created when the state its own
+  // logic needs — papers/page/feedMode/hasMore — actually changes; see the
+  // per-key audit in the Task 11 report). Wrapping only this object and not
+  // those would be a `useMemo` that never hits: it recomputes whenever any
+  // dependency below gets a new identity, and an unwrapped function has a new
+  // identity on every render regardless of what it reads.
+  //
+  // Every one of those functions that touches the signed-in user depends on
+  // `user?.uid`, never on bare `user` — deliberately, and it matters for all
+  // twelve of them at once, not just individually. Firebase re-emits
+  // `currentUser` with the same uid but a new object identity on every token
+  // refresh; `user` itself is therefore not stable across that refresh, only
+  // `user.uid` is. Because this whole object is a single `useMemo`, a single
+  // function anywhere in this dependency list still keying off bare `user`
+  // would invalidate the entire memo — and therefore re-render every
+  // consumer of this context — on every token refresh, even though every
+  // other function narrowed for nothing. Narrowing eleven of twelve buys
+  // nothing; it has to be all of them or none. If a new action is added here
+  // and it touches the signed-in user, read `user?.uid` into a local
+  // `userId` as its first statement (see `toggleLike` for the pattern) and
+  // depend on `user?.uid`, not `user` — unless it genuinely needs a field of
+  // `user` beyond the id, which none of the current ones do.
+  const value = useMemo(() => ({
     papers, loading, error, hasMore, isRefreshing,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers,
@@ -1988,7 +2125,18 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
-  };
+  }), [
+    papers, loading, error, hasMore, isRefreshing,
+    likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
+    libraryPapers,
+    ensurePersonalLibrary, getCuratedInteractionIds,
+    feedMode, handleSetFeedMode,
+    loadPapers, loadMore, refreshFeed,
+    getRecommendationProfileSnapshot,
+    toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
+    toggleReadLater, saveReadingMetadata,
+    trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce,
+  ]);
 
   return <FeedContext.Provider value={value}>{children}</FeedContext.Provider>;
 }
