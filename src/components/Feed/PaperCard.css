@@ -700,7 +700,12 @@ a.pc-citations {
   mask-size: 100% 100%;
 }
 
-.pc-abstract--open {
+/* Open, or short enough to end on its own: either way there is nothing below
+   the fold to promise, and a fade over the last line of a complete abstract
+   only makes it harder to read. Same 400% as opening, so a panel that turns
+   out to fit eases its fade away instead of blinking it off. */
+.pc-abstract--open,
+.pc-abstract--whole {
   -webkit-mask-size: 100% 400%;
   mask-size: 100% 400%;
 }

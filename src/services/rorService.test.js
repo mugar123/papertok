@@ -45,6 +45,23 @@ test('normalizes ROR v2 institutional metadata', () => {
   assert.equal(institution.rorVerified, true);
 });
 
+// ROR guarda los enlaces tal como los declaró la institución, y una parte de
+// ellos sigue registrada en claro. El Explorer pasa `homepage_url` por
+// `safeExternalUrl` y solo pinta la fila si sobrevive, así que ahí el enlace no
+// quedaba muerto: «Web oficial» desaparecía sin dejar rastro.
+test('sube a HTTPS los enlaces que ROR entrega en claro', () => {
+  const institution = normalizeRorInstitution({
+    ...ROR_RECORD,
+    links: [
+      { type: 'website', value: 'http://www.usal.es' },
+      { type: 'wikipedia', value: 'http://es.wikipedia.org/wiki/Universidad_de_Salamanca' },
+    ],
+  });
+
+  assert.equal(institution.homepage_url, 'https://www.usal.es/');
+  assert.equal(institution.wikipedia_url, 'https://es.wikipedia.org/wiki/Universidad_de_Salamanca');
+});
+
 test('merges ROR identity without losing OpenAlex metrics', () => {
   const ror = normalizeRorInstitution(ROR_RECORD);
   const merged = mergeInstitutionWithRor({

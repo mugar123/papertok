@@ -3,7 +3,8 @@ import { useReducedMotion } from 'framer-motion';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import './PDFViewer.css';
-import { isTrustedInlinePdfUrl, safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
+import { safeDoiUrl } from '../../utils/externalUrl.js';
+import { pdfLinksForPaper } from '../../utils/paperOpenTargets.js';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 
 export default function PDFViewer({ paper, onClose }) {
@@ -14,8 +15,10 @@ export default function PDFViewer({ paper, onClose }) {
   const prefersReducedMotion = useReducedMotion();
   const closeTimerRef = useRef(null);
 
-  const candidatePdfUrl = paper.pdfUrl || (paper.arxivId ? `https://arxiv.org/pdf/${paper.arxivId}` : '');
-  const pdfUrl = isTrustedInlinePdfUrl(candidatePdfUrl) ? safeExternalUrl(candidatePdfUrl) : '';
+  // Que exista un PDF y que se pueda enmarcar son dos preguntas distintas, y
+  // fundirlas hacía que el visor negara un PDF que tenía delante. `fullTextUrl`
+  // es el que hay; `pdfUrl`, el que además admite el iframe.
+  const { fullTextUrl, embedUrl: pdfUrl } = pdfLinksForPaper(paper);
 
   // The embedded route is a desktop privilege. Framed PDFs are crippled on
   // every touch platform: iOS Safari paints only the FIRST page of a PDF
@@ -68,7 +71,10 @@ export default function PDFViewer({ paper, onClose }) {
     };
   }, []);
 
-  const externalUrl = safeExternalUrl(candidatePdfUrl)
+  // Apunta a lo que el lector está viendo cuando hay iframe, y al PDF que no
+  // cabe en él cuando no lo hay.
+  const externalUrl = pdfUrl
+    || fullTextUrl
     || safeDoiUrl(paper.doi)
     || (/^[A-Z]\d+$/i.test(String(paper.id || '')) ? `https://openalex.org/${paper.id}` : '');
   const shouldShowFallback = !pdfUrl || showFallback;
@@ -161,11 +167,17 @@ export default function PDFViewer({ paper, onClose }) {
             hand off. */}
         {shouldShowFallback && !(coarsePointer && pdfUrl) && !iframeLoaded && (
           <div className="pdf-fallback">
-            <p>{!pdfUrl
+            <p>{!fullTextUrl
               ? (isEnglish ? 'No open-access PDF is available.' : 'No hay PDF de acceso abierto disponible.')
-              : (isEnglish ? 'The PDF could not be loaded in the app.' : 'El PDF no pudo cargarse en la app.')}</p>
+              : !pdfUrl
+                ? (isEnglish
+                  ? 'This PDF is hosted somewhere that refuses to be embedded — it opens in its own tab.'
+                  : 'Este PDF está alojado donde no se deja enmarcar: se abre en su propia pestaña.')
+                : (isEnglish ? 'The PDF could not be loaded in the app.' : 'El PDF no pudo cargarse en la app.')}</p>
             {externalUrl && <a href={externalUrl} target="_blank" rel="noopener noreferrer" className="pdf-fallback-link">
-              {isEnglish ? 'Open original source in a new tab →' : 'Abrir fuente original en nueva pestaña →'}
+              {fullTextUrl
+                ? (isEnglish ? 'Open the full PDF →' : 'Abrir el PDF completo →')
+                : (isEnglish ? 'Open original source in a new tab →' : 'Abrir fuente original en nueva pestaña →')}
             </a>}
           </div>
         )}

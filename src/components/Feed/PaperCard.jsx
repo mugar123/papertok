@@ -67,6 +67,7 @@ import {
   safeDoiUrl,
   safeExternalUrl,
 } from '../../utils/externalUrl.js';
+import { openFirstTarget, openTargetsForPaper } from '../../utils/paperOpenTargets.js';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/publicNavigation.js';
@@ -261,7 +262,12 @@ const PaperCard = memo(function PaperCard({
   // abstract only earns its place when there is something to reveal: a short
   // abstract needs no control, and a paper that carries none at all must not
   // offer to expand what it does not have.
-  const [abstractClipped, setAbstractClipped] = useState(false);
+  // `null` until the panel has been measured, which is not the same as "fits":
+  // the fade below is the honest state to show while the answer is unknown, so
+  // a long abstract — the common case — never has one ease in over words that
+  // were already painted clear. The toggle keeps treating anything but a firm
+  // `true` as "nothing hidden", exactly as it did.
+  const [abstractClipped, setAbstractClipped] = useState(null);
   // Read by the measurement below, which must not re-run when the panel opens:
   // a reading taken while it travels between its two heights is of the height
   // the animation is passing through, not the one it rests at.
@@ -900,56 +906,35 @@ const PaperCard = memo(function PaperCard({
             ? 'doi'
             : 'other';
     trackEvent('paper_open', { surface: analyticsSurface, destination, position });
-    if (resolvedOpenCopy?.pdfUrl) {
-      if (isTrustedInlinePdfUrl(resolvedOpenCopy.pdfUrl)) {
-        onOpenPdf({ ...paper, ...resolvedOpenCopy, openAccess: true });
-      } else {
-        openExternalUrl(resolvedOpenCopy.pdfUrl);
-      }
-      return;
-    }
-    if (resolvedOpenCopy?.landingPageUrl) {
-      openExternalUrl(resolvedOpenCopy.landingPageUrl);
-      return;
-    }
-    if (paper.openAccessPdfUrl) {
-      if (isTrustedInlinePdfUrl(paper.openAccessPdfUrl)) {
-        onOpenPdf({ ...paper, pdfUrl: safeExternalUrl(paper.openAccessPdfUrl), openAccess: true });
-      } else {
-        openExternalUrl(paper.openAccessPdfUrl);
-      }
-      return;
-    }
-    const hasValidPdf = isTrustedInlinePdfUrl(paper.pdfUrl);
-    if (paper.arxivId || hasValidPdf) {
-      onOpenPdf(paper);
-      return;
-    }
 
-    if (paper.doi) {
+    // Cada destino se intenta de verdad, y solo se para cuando uno abre. Antes
+    // la cascada daba por bueno el primer candidato con URL: si el navegador la
+    // rechazaba -- un `http://` de repositorio, lo más común en las copias que
+    // este botón ofrece -- el clic terminaba ahí, en silencio.
+    const openBestTarget = (openCopy) => openFirstTarget(openTargetsForPaper(paper, openCopy), {
+      inline: (target) => {
+        onOpenPdf({ ...paper, ...(openCopy || {}), pdfUrl: target.url, openAccess: true });
+        return true;
+      },
+      external: (url) => openExternalUrl(url),
+    });
+
+    if (openBestTarget(resolvedOpenCopy)) return;
+
+    // Nada abrió y el paper no traía copia resuelta: es el momento de preguntar
+    // por una, con el botón en «Buscando acceso...».
+    if (paper.doi && !resolvedOpenCopy) {
       setIsResolvingAccess(true);
       const openCopy = await findOpenAccessCopy(paper.doi);
       setIsResolvingAccess(false);
-      if (openCopy?.pdfUrl) {
+      if (openCopy) {
         setResolvedAccess({ paperId: paper.id, copy: openCopy });
-        if (isTrustedInlinePdfUrl(openCopy.pdfUrl)) {
-          onOpenPdf({ ...paper, ...openCopy, openAccess: true });
-        } else {
-          openExternalUrl(openCopy.pdfUrl);
-        }
-        return;
-      }
-      if (openCopy?.landingPageUrl) {
-        setResolvedAccess({ paperId: paper.id, copy: openCopy });
-        openExternalUrl(openCopy.landingPageUrl);
-        return;
+        if (openBestTarget(openCopy)) return;
       }
     }
 
-    const fallbackUrl = safeExternalUrl(paper.pdfUrl)
-      || safeExternalUrl(paper.landingPageUrl)
-      || safeDoiUrl(paper.doi);
-    openExternalUrl(fallbackUrl);
+    // El enlace de rendirse: la ficha del editor, que al menos existe siempre.
+    openExternalUrl(safeDoiUrl(paper.doi));
   };
 
   // What the status row is allowed to claim. `resolvedOpenCopy` is only ever
@@ -1391,7 +1376,7 @@ const PaperCard = memo(function PaperCard({
         <div
           ref={abstractRef}
           id={abstractId}
-          className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''}`}
+          className={`pc-abstract ${expanded ? 'pc-abstract--open' : ''} ${abstractClipped === false ? 'pc-abstract--whole' : ''}`}
           onClick={(e) => toggleExpanded(e, !expanded)}
           onTransitionEnd={handleAbstractTransitionEnd}
         >
@@ -1432,7 +1417,7 @@ const PaperCard = memo(function PaperCard({
         {/* Only where there is something to reveal. `expanded` keeps it on
             screen once opened, since an open panel clips nothing and would
             otherwise take away the control that closes it. */}
-        {abstractText && (abstractClipped || expanded) && (
+        {abstractText && (abstractClipped === true || expanded) && (
         <button
           type="button"
           className="pc-abstract-toggle"
