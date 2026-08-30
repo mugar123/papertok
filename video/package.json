@@ -22,5 +22,10 @@
     "@types/react-dom": "^19.2.5",
     "pngjs": "^7.0.0",
     "typescript": "^7.0.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
   }
 }

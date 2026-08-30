@@ -1,24 +1,44 @@
 import React from "react";
-import { Series } from "remotion";
+import { AbsoluteFill, Series } from "remotion";
+import { SCRIPT } from "./script";
+import type { Block } from "./script";
 import { ArxivOpen } from "./scenes/ArxivOpen";
 import { LogoZoom } from "./scenes/LogoZoom";
 import { TitleCard } from "./scenes/TitleCard";
 import { FeedSwipe } from "./scenes/FeedSwipe";
+import { ReaderAnnotate } from "./scenes/ReaderAnnotate";
+import { ListsSave } from "./scenes/ListsSave";
+import { ExplorerThread } from "./scenes/ExplorerThread";
+import { ResearchReport } from "./scenes/ResearchReport";
 import { Outro } from "./scenes/Outro";
 
-// Montaje provisional con lo ya construido; el definitivo (Tarea 10)
-// recorre SCRIPT cuando existan las cinco escenas de producto.
+const renderBlock = (b: Block): React.ReactNode => {
+  switch (b.id) {
+    case "arxiv":    return <ArxivOpen />;
+    case "zoom":     return <LogoZoom />;
+    case "feed":     return <FeedSwipe />;
+    case "reader":   return <ReaderAnnotate />;
+    case "lists":    return <ListsSave />;
+    case "explorer": return <ExplorerThread />;
+    case "research": return <ResearchReport />;
+    case "outro":    return <Outro />;
+    default:
+      if (b.kind === "card") {
+        return <TitleCard text={b.text!} highlight={b.highlight!} />;
+      }
+      // Si el guion gana un bloque sin escena, el render falla en voz alta.
+      throw new Error(`Bloque sin componente: ${b.id}`);
+  }
+};
+
 export const Promo: React.FC = () => (
-  <Series>
-    <Series.Sequence durationInFrames={540}><ArxivOpen /></Series.Sequence>
-    <Series.Sequence durationInFrames={240}><LogoZoom /></Series.Sequence>
-    <Series.Sequence durationInFrames={180}>
-      <TitleCard text="Introducing PaperTok" highlight="PaperTok" />
-    </Series.Sequence>
-    <Series.Sequence durationInFrames={150}>
-      <TitleCard text="Science, one swipe at a time" highlight="swipe" />
-    </Series.Sequence>
-    <Series.Sequence durationInFrames={420}><FeedSwipe /></Series.Sequence>
-    <Series.Sequence durationInFrames={3390}><Outro /></Series.Sequence>
-  </Series>
+  <AbsoluteFill>
+    <Series>
+      {SCRIPT.map((b) => (
+        <Series.Sequence key={b.id} durationInFrames={b.durationInFrames}>
+          {renderBlock(b)}
+        </Series.Sequence>
+      ))}
+    </Series>
+  </AbsoluteFill>
 );
