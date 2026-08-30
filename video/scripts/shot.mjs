@@ -36,8 +36,8 @@ await new Promise((r) => (ws.onopen = r));
 
 if (out) {
   await send("Emulation.setDeviceMetricsOverride", {
-    width: 1600,
-    height: 1000,
+    width: Number(get("--w") ?? 1600),
+    height: Number(get("--h") ?? 1000),
     deviceScaleFactor: scale,
     mobile: false,
   });
@@ -49,6 +49,13 @@ if (evalExpr) {
     returnByValue: true,
   });
   console.log("eval:", JSON.stringify(res.result?.value ?? res.result?.description ?? null)?.slice(0, 2000));
+}
+const click = get("--click");
+if (click) {
+  const [x, y] = click.split(",").map(Number);
+  for (const type of ["mousePressed", "mouseReleased"]) {
+    await send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1 });
+  }
 }
 if (key) {
   for (const type of ["rawKeyDown", "keyUp"]) {
