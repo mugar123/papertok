@@ -51,16 +51,30 @@ const ANALYTICS_DAY_7_KEY = 'papertok_analytics_day_7_return_sent';
 const ANALYTICS_ACQUISITION_SESSION_KEY = 'papertok_analytics_acquisition_sent';
 const DAY_7_MS = 7 * 24 * 60 * 60 * 1000;
 
+// Every route `App.jsx` declares has to appear here (or be matched by one of
+// the patterns in `normalizeAnalyticsPath`), because anything else is filed
+// under `/unknown` — a page that exists, is used, and is invisible in every
+// report. `/profile`, `/settings/profile`, `/settings/comments` and
+// `/admin/moderation` shipped missing and took a tenth of all page views with
+// them; `/report` is the legacy alias that redirects to `/research`, and it is
+// listed so those arrivals read as the old link they came from rather than as
+// noise. The test 'every route the app declares is a named analytics path'
+// is what keeps this list from drifting behind the router again.
 const STATIC_ANALYTICS_PATHS = new Set([
   '/',
+  '/admin/moderation',
   '/following',
   '/lists',
   '/login',
   '/onboarding',
+  '/profile',
+  '/report',
   '/research',
   '/search',
   '/settings',
+  '/settings/comments',
   '/settings/following',
+  '/settings/profile',
 ]);
 const EXPLORER_TYPES = new Set(['author', 'institution', 'project', 'topic']);
 const PUBLIC_ANALYTICS_ENTITY_TYPES = new Set([
@@ -235,6 +249,9 @@ export function normalizeAnalyticsPath(pathname = '/') {
   }
   if (/^\/public\/paper\/[^/]+$/.test(path)) return '/public/paper/:id';
   if (/^\/public\/list\/[^/]+$/.test(path)) return '/public/list/:id';
+  // The handle is the person, so it never leaves the browser: the route
+  // collapses to a constant exactly like the id routes above.
+  if (/^\/public\/user\/[^/]+$/.test(path)) return '/public/user/:handle';
 
   return '/unknown';
 }

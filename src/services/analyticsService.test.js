@@ -108,6 +108,15 @@ test('normalizes entity identifiers and strips query strings from analytics path
   assert.equal(normalizeAnalyticsPath('/'), '/');
 });
 
+test('names the routes that reach analytics through the static list', () => {
+  assert.equal(normalizeAnalyticsPath('/profile'), '/profile');
+  assert.equal(normalizeAnalyticsPath('/settings/profile'), '/settings/profile');
+  assert.equal(normalizeAnalyticsPath('/settings/comments'), '/settings/comments');
+  assert.equal(normalizeAnalyticsPath('/admin/moderation'), '/admin/moderation');
+  assert.equal(normalizeAnalyticsPath('/report'), '/report');
+  assert.equal(normalizeAnalyticsPath('/public/user/nicolas?ref=share'), '/public/user/:handle');
+});
+
 test('maps unknown and malformed routes to a fixed analytics path', () => {
   assert.equal(normalizeAnalyticsPath('/paper/10.1234/private-id'), '/unknown');
   assert.equal(normalizeAnalyticsPath('/explorer/person/private-id'), '/explorer/entity/:id');
@@ -390,4 +399,41 @@ test('every event the app emits is registered, with a surface that survives', as
     sanitizeProductEventParams('paper_view', { surface: value }).surface !== value
   ));
   assert.deepEqual(stripped, [], `surface dropped by the sanitizer: ${stripped.join(', ')}`);
+});
+
+
+/**
+ * A route the router serves but `normalizeAnalyticsPath` does not name is not a
+ * missing label — it is a page that disappears. Every one of them lands on
+ * `/unknown`, where they pile up as a single anonymous row: `/profile`,
+ * `/settings/profile`, `/settings/comments` and `/admin/moderation` spent three
+ * months there, together the third most viewed "page" on the site, and nothing
+ * about the report said which pages they were.
+ *
+ * Reading the routes out of `App.jsx` rather than restating them here is the
+ * point: the list cannot pass by being edited alongside the router, only by
+ * matching it.
+ */
+test('every route the app declares is a named analytics path', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const app = await readFile(new URL('../App.jsx', import.meta.url), 'utf8');
+
+  const declared = [...app.matchAll(/\bpath="([^"]+)"/g)]
+    .map(([, path]) => path)
+    // The catch-all is React Router's fallback, not a page anyone lands on.
+    .filter(path => path !== '*');
+
+  assert.ok(declared.length > 10, 'the scan found the router at all');
+
+  // Fill the parameters with values that must never survive into the report,
+  // so a route that leaks one fails here rather than in production.
+  const sample = path => path.replace(/:[A-Za-z]\w*/g, 'private-value');
+
+  const unnamed = declared.filter(path => normalizeAnalyticsPath(sample(path)) === '/unknown');
+  assert.deepEqual(unnamed, [], `routes filed under /unknown: ${unnamed.join(', ')}`);
+
+  const leaked = declared
+    .filter(path => path.includes(':'))
+    .filter(path => normalizeAnalyticsPath(sample(path)).includes('private-value'));
+  assert.deepEqual(leaked, [], `routes leaking their parameter: ${leaked.join(', ')}`);
 });

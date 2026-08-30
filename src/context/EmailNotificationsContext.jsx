@@ -73,6 +73,29 @@ export function EmailNotificationsProvider({ children }) {
     return () => { cancelled = true; };
   }, [language, userEmail, userId]);
 
+  /**
+   * Both callbacks below write the subscription to the server, so both are a
+   * place a subscription can begin — and the event that records it is a delta,
+   * which only fires for whichever one the user reaches first. While only
+   * `savePreferences` reported, anyone who enabled the toggle and pressed
+   * «Enviar prueba» was subscribed for real and silently: by the time they
+   * pressed «Guardar cambios» the delta was already spent, and
+   * `newsletter_change` never arrived once in three months. Applying every
+   * saved response through here keeps the two ends of that decision in one
+   * place.
+   */
+  const applySavedPreferences = useCallback((saved, wasEnabled) => {
+    const normalized = { ...DEFAULT_PREFERENCES, ...saved, language, email: saved.email || userEmail };
+    setPreferences(normalized);
+    if (normalized.enabled !== wasEnabled) {
+      trackEvent('newsletter_change', {
+        action: normalized.enabled ? 'subscribe' : 'unsubscribe',
+      });
+      if (normalized.enabled) markActivation();
+    }
+    return normalized;
+  }, [language, markActivation, trackEvent, userEmail]);
+
   const savePreferences = useCallback(async (nextPreferences) => {
     if (!notificationDataReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');
     if (nextPreferences.enabled && !hasFollows) {
@@ -87,22 +110,14 @@ export function EmailNotificationsProvider({ children }) {
         followedEntities,
         items,
       );
-      const normalized = { ...DEFAULT_PREFERENCES, ...saved, language, email: saved.email || userEmail };
-      setPreferences(normalized);
-      if (normalized.enabled !== wasEnabled) {
-        trackEvent('newsletter_change', {
-          action: normalized.enabled ? 'subscribe' : 'unsubscribe',
-        });
-        if (normalized.enabled) markActivation();
-      }
-      return normalized;
+      return applySavedPreferences(saved, wasEnabled);
     } catch (saveError) {
       setError(saveError);
       throw saveError;
     } finally {
       setSaving(false);
     }
-  }, [followedEntities, hasFollows, items, language, markActivation, notificationDataReady, preferences.enabled, trackEvent, userEmail]);
+  }, [applySavedPreferences, followedEntities, hasFollows, items, language, notificationDataReady, preferences.enabled]);
 
   const sendTest = useCallback(async (nextPreferences = preferences) => {
     if (!notificationDataReady) throw new EmailNotificationServiceError('EMAIL_DATA_LOADING');
@@ -110,13 +125,13 @@ export function EmailNotificationsProvider({ children }) {
     setTesting(true);
     setError(null);
     try {
+      const wasEnabled = preferences.enabled;
       const saved = await saveEmailNotificationPreferences(
         { ...nextPreferences, enabled: true, language },
         followedEntities,
         items,
       );
-      const normalized = { ...DEFAULT_PREFERENCES, ...saved, language, email: saved.email || userEmail };
-      setPreferences(normalized);
+      const normalized = applySavedPreferences(saved, wasEnabled);
       const result = await sendEmailNotificationTest();
       if (result.preferences) {
         setPreferences(current => ({ ...current, ...result.preferences }));
@@ -128,7 +143,7 @@ export function EmailNotificationsProvider({ children }) {
     } finally {
       setTesting(false);
     }
-  }, [followedEntities, hasFollows, items, language, notificationDataReady, preferences, userEmail]);
+  }, [applySavedPreferences, followedEntities, hasFollows, items, language, notificationDataReady, preferences]);
 
   useEffect(() => {
     if (
