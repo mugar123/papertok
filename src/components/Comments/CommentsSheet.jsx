@@ -12,6 +12,12 @@ import {
 } from '../../services/commentService.js';
 import { resolveThreadAnchor } from '../../services/paperStubService.js';
 import {
+  fetchThreadAnchor,
+  invalidateThreadAnchor,
+  localThreadKeys,
+} from '../../services/threadAnchorClient.js';
+import { commentMillis } from '../../utils/commentTime.js';
+import {
   commentTargetPath,
   hideCommentLocally,
   locallyHiddenCommentIds,
@@ -136,9 +142,8 @@ const RELATIVE_STEPS = [
 ];
 
 function relativeTime(value, isEnglish) {
-  const date = typeof value?.toDate === 'function' ? value.toDate() : value;
-  const time = date instanceof Date ? date.getTime() : NaN;
-  if (!Number.isFinite(time)) return '';
+  const time = commentMillis(value);
+  if (!Number.isFinite(time) || time <= 0) return '';
   const elapsed = Math.max(0, (Date.now() - time) / 1000);
   for (const step of RELATIVE_STEPS) {
     if (elapsed < step.seconds) {
@@ -146,7 +151,7 @@ function relativeTime(value, isEnglish) {
       return `${Math.floor(elapsed / step.divisor)} ${isEnglish ? step.en : step.es}`;
     }
   }
-  return date.toLocaleDateString(isEnglish ? 'en' : 'es', { day: 'numeric', month: 'short', year: 'numeric' });
+  return new Date(time).toLocaleDateString(isEnglish ? 'en' : 'es', { day: 'numeric', month: 'short', year: 'numeric' });
 }
 
 function initialOf(name) {
@@ -336,6 +341,14 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     // a healthy attempt completes in 60-390 ms and a stalled one never does,
     // so what matters is retrying and accepting late answers, not slicing.
     const loadThread = async () => {
+      try {
+        const fromEdge = await fetchThreadAnchor(paper);
+        if (fromEdge) return fromEdge;
+      } catch (error) {
+        // Worker down, unconfigured, or timed out: the Firestore path below
+        // is the same chain the sheet used to run alone.
+        console.warn('The edge thread lookup did not answer; reading Firestore', error);
+      }
       const resolved = await resolveThreadAnchor(paper);
       if (!resolved) return { resolved: null };
       const keys = [
@@ -348,7 +361,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       return { resolved, keys, pages };
     };
 
-    const apply = ({ resolved, keys, pages }) => {
+    const apply = ({ resolved, keys, pages, count: counted }) => {
       if (!active) return;
       if (!resolved) {
         // No identity to converge on — a data condition, not a slow read.
@@ -358,13 +371,17 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       setAnchor(resolved);
       const merged = pages
         .flatMap(page => page.comments.map(comment => ({ ...comment, paperKey: page.key })))
-        .sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+        .sort((a, b) => commentMillis(a.createdAt) - commentMillis(b.createdAt));
       setRows(merged);
       setSources(pages.map(page => ({ key: page.key, cursor: page.cursor, hasMore: page.hasMore })));
       // Ready on the thread alone. The count is a header badge, and an
       // aggregation is server-only with no cache fallback — it must never
       // stand between the reader and comments already in hand.
       setStatus('ready');
+      if (counted && typeof counted.count === 'number') {
+        setCount(counted);
+        return;
+      }
       if (keys.length === 0) {
         // No stub means no thread: zero is knowledge already in hand, not a
         // number worth an aggregation read.
@@ -495,7 +512,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       })));
       const fresh = pages
         .flatMap(page => page.comments.map(comment => ({ ...comment, paperKey: page.key })))
-        .sort((a, b) => (a.createdAt?.toMillis?.() ?? 0) - (b.createdAt?.toMillis?.() ?? 0));
+        .sort((a, b) => commentMillis(a.createdAt) - commentMillis(b.createdAt));
       setRows(previous => [...previous, ...fresh]);
       setSources(previous => previous.map(source => {
         const page = pages.find(entry => entry.key === source.key);
@@ -543,6 +560,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         setRows(previous => previous.map(row => (
           row.id === editTarget.id ? { ...row, text: trimmed, editedAt: new Date() } : row
         )));
+        void invalidateThreadAnchor([editTarget.paperKey ?? anchor.key]);
       } else {
         const result = await createComment({
           anchor,
@@ -556,6 +574,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         }]);
         setCount(previous => (previous ? { ...previous, count: previous.count + 1 } : previous));
         if (!anchor.stubExists) setAnchor(previous => ({ ...previous, stubExists: true }));
+        void invalidateThreadAnchor([anchor.key, ...localThreadKeys(paper)]);
       }
       resetComposer();
     } catch (error) {
@@ -584,6 +603,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       setCount(previous => (previous
         ? { ...previous, count: Math.max(0, previous.count - droppedIds.size) }
         : previous));
+      void invalidateThreadAnchor([comment.paperKey ?? anchor.key, anchor.key]);
     } catch (error) {
       console.error('The comment could not be deleted', error);
       setNotice(text(COPY.deleteError));
@@ -713,7 +733,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
 
         <div className="comments-sheet-body">
           {status === 'loading' && (
-            <div className="comments-sheet-loading" aria-label={text(COPY.loading)} aria-busy="true">
+            <div className="comments-sheet-loading" role="status" aria-label={text(COPY.loading)} aria-busy="true">
               {[0, 1, 2].map(index => (
                 <div className="comment-skeleton" key={index} aria-hidden="true">
                   <span /><span /><span />
@@ -724,7 +744,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
           {WAITING_COPY[status] && (
             // 'slow' and 'offline' are still waits — they keep `aria-busy` and
             // the retry loop behind them. Only 'error' is a verdict.
-            <div className="comments-sheet-state" aria-busy={status !== 'error'}>
+            <div className="comments-sheet-state" role="status" aria-busy={status !== 'error'}>
               <p>{text(WAITING_COPY[status])}</p>
               <Button
                 type="button"
@@ -740,7 +760,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
             </div>
           )}
           {status === 'ready' && thread.length === 0 && (
-            <div className="comments-sheet-state">
+            <div className="comments-sheet-state" role="status">
               <span className="comments-sheet-state-icon" aria-hidden="true">
                 <MessageCircle size={20} />
               </span>

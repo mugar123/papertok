@@ -57,6 +57,13 @@ S2_GLOBAL_MINUTE_LIMIT = "60"
 binding = "NOTIFICATION_STORE"
 id = "45c1519982dd48f8a0ea08403c159ae1"
 
+# Comment-thread anchors share this namespace under a `thread:v1:` prefix
+# until a dedicated `THREAD_ANCHOR_STORE` exists. Invalidation is a KV delete
+# on write, with a short TTL as the missed-invalidation net.
+# [[kv_namespaces]]
+# binding = "THREAD_ANCHOR_STORE"
+# id = "<id from wrangler kv namespace create THREAD_ANCHOR_STORE>"
+
 # A rewrite is identical for every reader, so it is cached globally in KV rather
 # than per edge. Until a dedicated namespace exists, ai-rewrite.js falls back to
 # NOTIFICATION_STORE under a "rewrite:" prefix. To separate them, run

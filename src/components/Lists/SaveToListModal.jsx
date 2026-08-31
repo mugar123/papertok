@@ -34,6 +34,7 @@ import {
   rememberOwnLists,
   reviseOwnLists,
 } from '../../utils/profileSessionCaches.js';
+import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.js';
 import './SaveToListModal.css';
 
 /**
@@ -98,7 +99,9 @@ export default function SaveToListModal({ paper, onClose }) {
   // session cache the profile screens already share, and revalidates behind
   // it. Membership is the one thing that is NOT cached — it is per paper, so
   // it is derived here from the cached lists.
-  const seededLists = user?.uid ? ownListsCache.get(user.uid) : null;
+  const seededLists = user?.uid
+    ? (ownListsCache.get(user.uid) ?? readStoredLists(user.uid))
+    : null;
   const seededMembership = useMemo(
     () => listsHolding(seededLists, paper.id),
     [seededLists, paper.id],
@@ -221,7 +224,10 @@ export default function SaveToListModal({ paper, onClose }) {
       const merged = mergeCreatedLists(userLists, createdLists.current);
       setLists(merged);
       if (cached) reviseOwnLists(user?.uid, merged);
-      else rememberOwnLists(user?.uid, merged);
+      else {
+        rememberOwnLists(user?.uid, merged);
+        saveStoredLists(user?.uid, merged);
+      }
       // Only the membership moves. The ticks are derived from it plus what the
       // user did, so a late answer can no longer wipe a toggle, nor turn a
       // list it reveals into a removal.
@@ -412,6 +418,7 @@ export default function SaveToListModal({ paper, onClose }) {
     // screen's shared view of the collection with an array of one.
     if (listsStatus === 'ready') {
       reviseOwnLists(user?.uid, mergeCreatedLists(lists, [newList]));
+      saveStoredLists(user?.uid, ownListsCache.get(user?.uid));
     }
     setListIntent((previous) => toggleListIntent(previous, listId, initialListIds));
   };
@@ -539,6 +546,7 @@ export default function SaveToListModal({ paper, onClose }) {
             mergeCreatedLists(cached, createdLists.current), paper.id,
             { added: toAdd, removed: toRemove },
           ));
+          saveStoredLists(user.uid, ownListsCache.get(user.uid));
         }
       }
 

@@ -63,7 +63,7 @@ diversity.
 - Firestore stores profiles, follows, interactions, preferences, and reading data.
 - Browser storage is used only for bounded caches and must be namespaced by user when it
   contains personalized state.
-- Cloudflare KV stores notification state. Atomic AI and protected-provider request quotas use
+- Cloudflare KV stores notification state and edge-cached comment-thread anchors. Atomic AI and protected-provider request quotas use
   a Durable Object ledger keyed by bounded UTC periods and hashed user identifiers.
 - Scheduled digests query native arXiv categories directly before falling back to OpenAlex,
   avoiding the indexing delay for newly submitted physics and mathematics papers.
@@ -87,6 +87,7 @@ diversity.
 The Worker entry point is `worker/report-api.js`. Its route groups include:
 
 - health and locale: `/health`, `/health/email`, `/health/ai`, `/locale`
+- comment threads: `/thread-anchor` (KV-cached stub + first page at the edge; HTTP `no-store` so a write's KV delete is the invalidation; `POST /thread-anchor/invalidate` after a create, edit or delete)
 - discovery: `/report/trends`, `/related`, `/citation-graph`, `/arxiv`
 - open access: `/oa`
 - specialist sources: `/sources/*`

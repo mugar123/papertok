@@ -48,7 +48,8 @@ import {
   rememberOwnProfile,
   showcaseCache,
 } from '../../utils/profileSessionCaches.js';
-import { readStoredFollowStats, saveStoredFollowStats } from '../../utils/userScopedStorage.js';
+import { readStoredFollowStats, readStoredLists, readStoredProfile, saveStoredFollowStats, saveStoredProfile } from '../../utils/userScopedStorage.js';
+import { toProfileListCards } from '../../utils/ownLists.js';
 import { cleanPaperText, displayAuthorName } from '../../utils/paperText.js';
 import { getIcon } from '../../utils/icons.js';
 import { normalizeHandle } from '../../utils/userHandle.js';
@@ -255,13 +256,23 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   // `{ profile }` wrappers, because "this account has no public profile yet"
   // (a null) is itself a cacheable answer on one's own page.
   const profileCacheKey = selfMode ? ownProfileKey(user?.uid) : handleProfileKey(handle);
-  const seededProfile = profileCacheKey ? ownProfileCache.get(profileCacheKey) : undefined;
+  const cachedProfile = profileCacheKey ? ownProfileCache.get(profileCacheKey) : undefined;
+  const storedOwnProfile = (cachedProfile === undefined && selfMode && user?.uid)
+    ? readStoredProfile(user.uid)
+    : null;
+  const seededProfile = cachedProfile !== undefined
+    ? cachedProfile
+    : (storedOwnProfile ? { profile: storedOwnProfile } : undefined);
   const [profile, setProfile] = useState(seededProfile ? seededProfile.profile : null);
   const [status, setStatus] = useState(seededProfile ? 'ready' : 'loading');
   const [reloadToken, setReloadToken] = useState(0);
   const [requestedTab, setRequestedTab] = useState('lists');
   const [ownLists, setOwnLists] = useState(
-    () => (user?.uid ? ownListsCache.get(user.uid) ?? null : null),
+    () => {
+      if (!user?.uid) return null;
+      const stored = ownListsCache.get(user.uid) ?? readStoredLists(user.uid);
+      return stored ? toProfileListCards(stored) : null;
+    },
   );
   const [ownListsFailed, setOwnListsFailed] = useState(false);
   const [libraryReady, setLibraryReady] = useState(false);
@@ -322,7 +333,10 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
         if (profileCacheKey) {
           // A visitor's not-found is not cached: the profile could be created
           // a moment later, and 'not-found' must stay a fresh answer.
-          if (selfMode) rememberOwnProfile(user?.uid, result);
+          if (selfMode) {
+            rememberOwnProfile(user?.uid, result);
+            if (result) saveStoredProfile(user?.uid, result);
+          }
           else if (result) ownProfileCache.set(profileCacheKey, { profile: result });
           else ownProfileCache.delete(profileCacheKey);
         }
@@ -372,7 +386,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     const uid = user?.uid;
     readOwnLists()
       .then(lists => {
-        if (uid) ownListsCache.set(uid, lists);
+        // Cards, not documents: do not stamp ownListsCache (the save modal and
+        // lists page store full list documents under the same key).
         if (!active) return;
         setOwnLists(lists);
         setOwnListsFailed(false);
@@ -380,8 +395,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       .catch(error => {
         console.error('Error loading own lists:', error);
         if (!active) return;
-        // Lists already on screen (from the session cache) beat an error row.
-        if (uid && ownListsCache.get(uid)) return;
+        // Lists already on screen (session cache or this device) beat an error row.
+        if (uid && (ownListsCache.get(uid) || readStoredLists(uid))) return;
         setOwnLists([]);
         setOwnListsFailed(true);
       });

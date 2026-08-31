@@ -181,6 +181,8 @@ test('SOURCE: every screen that reads the lists collection seeds from the sessio
       `${path}: a screen that reads the collection must stamp the cache`);
     assert.ok(source.includes('ownListsCache.get'),
       `${path}: it must also PAINT from it — stamping a cache nobody reads is the bug`);
+    assert.ok(source.includes('readStoredLists'),
+      `${path}: a reload must seed from this device, not wait on a cold channel`);
     // Seeded in the initialiser, not in an effect: a seed that lands after the
     // first commit still paints the empty state for a frame, which is the
     // flicker this exists to remove.

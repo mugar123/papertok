@@ -5,14 +5,17 @@ import {
   clearUserScopedStorage,
   getFollowStatsStorageKey,
   getOwnListsStorageKey,
+  getOwnProfileStorageKey,
   getSeenPapersStorageKey,
   readSeenPaperIds,
   readStoredFollowStats,
   readStoredLists,
+  readStoredProfile,
   removeLegacySeenPaperIds,
   saveSeenPaperIds,
   saveStoredFollowStats,
   saveStoredLists,
+  saveStoredProfile,
 } from './userScopedStorage.js';
 
 function createStorage() {
@@ -240,4 +243,27 @@ test('signing out takes the lists with it', () => {
   clearUserScopedStorage('uid-l6', storage);
   assert.equal(readStoredLists('uid-l6', storage), null,
     'another account on this device must never be seeded with these');
+});
+
+test('the owner public profile is remembered without its photo', () => {
+  const storage = listStore();
+  saveStoredProfile('uid-p1', {
+    uid: 'uid-p1',
+    handle: 'alice',
+    displayName: 'Alice',
+    bio: 'Hello',
+    photo: 'data:image/png;base64,AAAA',
+    visibility: 'public',
+    createdAt: '2026-03-01T00:00:00.000Z',
+  }, storage);
+  const read = readStoredProfile('uid-p1', storage);
+  assert.equal(read.handle, 'alice');
+  assert.equal(read.displayName, 'Alice');
+  assert.equal(read.photo, undefined);
+  assert.equal(read.createdAt, '2026-03-01T00:00:00.000Z');
+  assert.equal(readStoredProfile('uid-p1', null), null);
+
+  clearUserScopedStorage('uid-p1', storage);
+  assert.equal(readStoredProfile('uid-p1', storage), null);
+  assert.ok(getOwnProfileStorageKey('uid-p1').includes('ownProfile'));
 });

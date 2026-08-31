@@ -1984,3 +1984,21 @@ test('relays a rewrite refusal with its own status, code and quota', async () =>
   assert.ok(payload.quota.resetAt);
   assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
 });
+
+test('the thread-anchor route is origin-gated and public', async () => {
+  const blocked = await reportApi.fetch(new Request(
+    'https://papertok-report-api.example/thread-anchor?ids=doi:10.1234/abc',
+    { headers: { origin: 'https://evil.example' } },
+  ), {});
+  assert.equal(blocked.status, 403);
+
+  const allowed = await reportApi.fetch(new Request(
+    'https://papertok-report-api.example/thread-anchor?ids=doi:10.1234/abc',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), {});
+  // No service account and no KV: the route exists and fails closed as
+  // unavailable, which is what the browser treats as "use Firestore".
+  assert.equal(allowed.status, 503);
+  assert.equal((await allowed.json()).code, 'THREAD_ANCHOR_UNAVAILABLE');
+  assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+});

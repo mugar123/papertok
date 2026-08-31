@@ -287,6 +287,125 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
     },
 
     /**
+     * Several documents in one round trip. Missing names come back as `null`
+     * rather than throwing, matching `getDocument`. Order follows `docs`.
+     */
+    async batchGet(docs) {
+      const names = (Array.isArray(docs) ? docs : []).map(segments => documentName(projectId, segments));
+      if (names.length === 0) return [];
+      const url = `https://firestore.googleapis.com/v1/${documentRoot(projectId)}:batchGet`;
+      const response = await authorizedFetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ documents: names }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new FirestoreAdminError(
+          'FIRESTORE_READ_FAILED',
+          502,
+          payload?.error?.status || '',
+        );
+      }
+      const rows = Array.isArray(payload) ? payload : [];
+      const byName = new Map();
+      for (const row of rows) {
+        if (row?.found?.name) {
+          byName.set(row.found.name, decodeFields(row.found.fields));
+        } else if (typeof row?.missing === 'string') {
+          byName.set(row.missing, null);
+        }
+      }
+      return names.map(name => (byName.has(name) ? byName.get(name) : null));
+    },
+
+    /**
+     * A structured query scoped to a parent document (or the database root
+     * when `parentSegments` is empty). Each hit is `{ id, data }`.
+     */
+    async runQuery({ parentSegments = [], collectionId, orderByField, orderDirection = 'ASCENDING', limit: pageSize } = {}) {
+      if (typeof collectionId !== 'string' || !collectionId || collectionId.includes('/')) {
+        throw new FirestoreAdminError('INVALID_DOCUMENT_PATH', 400);
+      }
+      const parent = parentSegments.length
+        ? documentName(projectId, parentSegments)
+        : documentRoot(projectId);
+      const url = `https://firestore.googleapis.com/v1/${parent}:runQuery`;
+      const structuredQuery = {
+        from: [{ collectionId }],
+        ...(orderByField ? {
+          orderBy: [{
+            field: { fieldPath: orderByField },
+            direction: orderDirection === 'DESCENDING' ? 'DESCENDING' : 'ASCENDING',
+          }],
+        } : {}),
+        ...(Number.isInteger(pageSize) && pageSize > 0 ? { limit: pageSize } : {}),
+      };
+      const response = await authorizedFetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ structuredQuery }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new FirestoreAdminError(
+          'FIRESTORE_READ_FAILED',
+          502,
+          payload?.error?.status || '',
+        );
+      }
+      const rows = Array.isArray(payload) ? payload : [];
+      return rows.flatMap((row) => {
+        const name = row?.document?.name;
+        if (typeof name !== 'string' || !name) return [];
+        const id = name.slice(name.lastIndexOf('/') + 1);
+        return [{ id, data: decodeFields(row.document.fields) }];
+      });
+    },
+
+    /**
+     * A capped `count()` aggregation. Same parent/collection shape as
+     * `runQuery`. Returns an integer; a missing alias is zero.
+     */
+    async countQuery({ parentSegments = [], collectionId, limit: cap } = {}) {
+      if (typeof collectionId !== 'string' || !collectionId || collectionId.includes('/')) {
+        throw new FirestoreAdminError('INVALID_DOCUMENT_PATH', 400);
+      }
+      const parent = parentSegments.length
+        ? documentName(projectId, parentSegments)
+        : documentRoot(projectId);
+      const url = `https://firestore.googleapis.com/v1/${parent}:runAggregationQuery`;
+      const structuredQuery = {
+        from: [{ collectionId }],
+        ...(Number.isInteger(cap) && cap > 0 ? { limit: cap } : {}),
+      };
+      const response = await authorizedFetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          structuredQuery,
+          aggregations: [{ alias: 'count', count: {} }],
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok) {
+        throw new FirestoreAdminError(
+          'FIRESTORE_READ_FAILED',
+          502,
+          payload?.error?.status || '',
+        );
+      }
+      const rows = Array.isArray(payload) ? payload : [payload];
+      for (const row of rows) {
+        const raw = row?.result?.aggregateFields?.count?.integerValue
+          ?? row?.result?.aggregateFields?.count?.doubleValue;
+        const count = Number(raw);
+        if (Number.isFinite(count)) return Math.max(0, Math.trunc(count));
+      }
+      return 0;
+    },
+
+    /**
      * One atomic commit. `writes` are the REST shapes built by the helpers
      * below, so a publish either lands whole or not at all — which is the
      * property the client-side batch had and must not lose.

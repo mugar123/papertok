@@ -17,6 +17,8 @@ import {
 import { settleWithin } from '../utils/asyncTiming';
 import { normalizeProfilePhoto } from '../utils/profileImage';
 import { clearUserScopedStorage } from '../utils/userScopedStorage';
+import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.js';
+import { forgetOwnProfile } from '../utils/profileSessionCaches.js';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
 const PROFILE_NETWORK_TIMEOUT_MS = 7000;
@@ -83,6 +85,8 @@ export function AuthProvider({ children }) {
       setSignInProviders(providerIdsOf(currentUser));
 
       if (currentUser) {
+        hydrateAccountCaches(currentUser.uid);
+        void warmAccountCaches(currentUser.uid);
         const userRef = doc(db, 'users', currentUser.uid);
         const isCurrent = () => !disposed && changeId === authChangeId;
         const applyProfile = (snapshot) => {
@@ -205,6 +209,8 @@ export function AuthProvider({ children }) {
     try {
       await firebaseSignOut(auth);
       clearUserScopedStorage(signingOutUserId);
+      forgetOwnProfile(signingOutUserId);
+      resetAccountWarmup(signingOutUserId);
     } catch (err) {
       setError(err?.code || 'AUTH_FAILED');
     }

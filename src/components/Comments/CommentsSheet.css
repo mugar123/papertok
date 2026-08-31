@@ -221,6 +221,26 @@
 
 .comments-list-item {
   padding: var(--space-4) 0;
+  /* Opacity + translateY only, 200ms, strong ease-out (emilkowalski/skills). */
+  animation: comment-row-in 0.2s cubic-bezier(0.23, 1, 0.32, 1) both;
+}
+
+.comments-list-item:nth-child(1) { animation-delay: 0ms; }
+.comments-list-item:nth-child(2) { animation-delay: 30ms; }
+.comments-list-item:nth-child(3) { animation-delay: 55ms; }
+.comments-list-item:nth-child(4) { animation-delay: 75ms; }
+.comments-list-item:nth-child(5) { animation-delay: 90ms; }
+.comments-list-item:nth-child(n+6) { animation-delay: 100ms; }
+
+@keyframes comment-row-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .comments-list-item + .comments-list-item {
@@ -512,6 +532,10 @@
    common open that never needed it. */
 @media (prefers-reduced-motion: reduce) {
   .comment-skeleton span {
+    animation: none;
+  }
+
+  .comments-list-item {
     animation: none;
   }
 }

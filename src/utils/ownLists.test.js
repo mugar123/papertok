@@ -5,6 +5,7 @@ import {
   mergeCreatedLists,
   readOwnLists,
   snapshotIsAuthoritative,
+  toProfileListCards,
   withPaperMembership,
 } from './ownLists.js';
 
@@ -195,4 +196,18 @@ test('merging nothing returns the fetched lists untouched', () => {
   const fetched = [{ id: 'list_1', paperIds: [] }];
   assert.equal(mergeCreatedLists(fetched, []), fetched);
   assert.equal(mergeCreatedLists(fetched, null), fetched);
+});
+
+test('toProfileListCards maps full documents without inventing titles', () => {
+  const cards = toProfileListCards([
+    { id: 'a', name: 'Notes', paperIds: ['p1', 'p2'], publicShareId: 'share1', color: '#111' },
+    { id: 'b', title: 'Already a card', paperCount: 4, isPublished: true },
+    { id: '', name: 'No id', paperIds: [] },
+    { id: 'c', name: '', paperIds: [] },
+  ]);
+  assert.deepEqual(cards.map(card => [card.id, card.title, card.paperCount, card.isPublished]), [
+    ['a', 'Notes', 2, true],
+    ['b', 'Already a card', 4, true],
+  ]);
+  assert.equal(cards[0].color, '#111');
 });
