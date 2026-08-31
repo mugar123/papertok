@@ -35,6 +35,8 @@ test('SOURCE: auth hydrates and warms the account caches on sign-in', async () =
   assert.match(source, /hydrateAccountCaches/);
   assert.match(source, /warmAccountCaches/);
   assert.match(source, /resetAccountWarmup/);
+  assert.match(source, /readStoredOnboarding/);
+  assert.match(source, /accountLooksOnboarded/);
 });
 
 test('SOURCE: the save modal seeds from this device, not only the session', async () => {

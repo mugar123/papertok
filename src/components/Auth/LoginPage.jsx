@@ -13,7 +13,7 @@ import './LoginPage.css';
 // of every guest bounced off a protected route. Only this one carries a
 // `returnTo`, because only this one took the user away from where they were.
 export default function LoginPage() {
-  const { signInWithGoogle, signInWithGitHub, error, user, onboardingComplete, loading } = useAuth();
+  const { signInWithGoogle, signInWithGitHub, error, user, onboardingComplete, loading, profileLoadError } = useAuth();
   const { language, isEnglish } = useLanguage();
   const [pendingProvider, setPendingProvider] = useState(null);
   const [collision, setCollision] = useState(null);
@@ -37,13 +37,14 @@ export default function LoginPage() {
   // through it first, carrying the destination so the trip ends where it began.
   useEffect(() => {
     if (!loading && user) {
+      if (profileLoadError) return;
       if (onboardingComplete) {
         navigate(returnTo, { replace: true });
       } else {
         navigate('/onboarding', { replace: true, state: { returnTo } });
       }
     }
-  }, [user, loading, onboardingComplete, navigate, returnTo]);
+  }, [user, loading, onboardingComplete, profileLoadError, navigate, returnTo]);
 
   const SIGN_IN_METHODS = {
     google: signInWithGoogle,

@@ -4,17 +4,20 @@ import assert from 'node:assert/strict';
 import {
   clearUserScopedStorage,
   getFollowStatsStorageKey,
+  getOnboardingStorageKey,
   getOwnListsStorageKey,
   getOwnProfileStorageKey,
   getSeenPapersStorageKey,
   readSeenPaperIds,
   readStoredFollowStats,
   readStoredLists,
+  readStoredOnboarding,
   readStoredProfile,
   removeLegacySeenPaperIds,
   saveSeenPaperIds,
   saveStoredFollowStats,
   saveStoredLists,
+  saveStoredOnboarding,
   saveStoredProfile,
 } from './userScopedStorage.js';
 
@@ -266,4 +269,18 @@ test('the owner public profile is remembered without its photo', () => {
   clearUserScopedStorage('uid-p1', storage);
   assert.equal(readStoredProfile('uid-p1', storage), null);
   assert.ok(getOwnProfileStorageKey('uid-p1').includes('ownProfile'));
+});
+
+test('onboarding completion survives a reload, per account', () => {
+  const storage = listStore();
+  saveStoredOnboarding('uid-o1', { complete: true, preferences: ['astro'] }, storage);
+  assert.deepEqual(readStoredOnboarding('uid-o1', storage), {
+    complete: true,
+    preferences: ['astro'],
+  });
+  assert.equal(readStoredOnboarding('uid-o2', storage), null);
+  assert.ok(getOnboardingStorageKey('uid-o1').includes('onboarding'));
+
+  clearUserScopedStorage('uid-o1', storage);
+  assert.equal(readStoredOnboarding('uid-o1', storage), null);
 });

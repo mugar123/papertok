@@ -4,6 +4,7 @@ const DRIFT_CHECK_KEY_PREFIX = 'papertok_profileDriftCheckedAt:';
 const FOLLOW_STATS_KEY_PREFIX = 'papertok_followStats:';
 const OWN_LISTS_KEY_PREFIX = 'papertok_ownLists:';
 const OWN_PROFILE_KEY_PREFIX = 'papertok_ownProfile:';
+const ONBOARDING_KEY_PREFIX = 'papertok_onboarding:';
 
 function getStorage(storage) {
   if (storage) return storage;
@@ -237,6 +238,57 @@ export function saveStoredProfile(userId, profile, storage) {
   }
 }
 
+export function getOnboardingStorageKey(userId) {
+  if (!userId) return null;
+  return `${ONBOARDING_KEY_PREFIX}${encodeURIComponent(userId)}`;
+}
+
+/**
+ * Interests onboarding, as this device last finished it.
+ *
+ * Firestore's in-memory cache dies on reload. A returning visit then waits on
+ * `users/{uid}` before it knows `onboardingComplete`, and a slow or empty
+ * answer sent the account through the interest picker again. Remembering the
+ * flag here lets the router keep them in the app until the document confirms.
+ */
+export function readStoredOnboarding(userId, storage) {
+  const key = getOnboardingStorageKey(userId);
+  const target = getStorage(storage);
+  if (!key || !target) return null;
+
+  try {
+    const parsed = JSON.parse(target.getItem(key) || 'null');
+    if (!parsed || typeof parsed !== 'object') return null;
+    const preferences = Array.isArray(parsed.preferences)
+      ? parsed.preferences.filter(value => typeof value === 'string')
+      : [];
+    if (parsed.complete !== true && preferences.length === 0) return null;
+    return { complete: parsed.complete === true || preferences.length > 0, preferences };
+  } catch {
+    return null;
+  }
+}
+
+export function saveStoredOnboarding(userId, state, storage) {
+  const key = getOnboardingStorageKey(userId);
+  const target = getStorage(storage);
+  if (!key || !target || !state) return;
+
+  try {
+    const preferences = Array.isArray(state.preferences)
+      ? state.preferences.filter(value => typeof value === 'string')
+      : [];
+    const complete = state.complete === true || preferences.length > 0;
+    if (!complete && preferences.length === 0) {
+      target.removeItem(key);
+      return;
+    }
+    target.setItem(key, JSON.stringify({ complete, preferences }));
+  } catch {
+    // Missing local memory only means the next visit waits on Firestore.
+  }
+}
+
 export function getFollowStatsStorageKey(userId) {
   if (!userId) return null;
   return `${FOLLOW_STATS_KEY_PREFIX}${encodeURIComponent(userId)}`;
@@ -315,6 +367,7 @@ export function clearUserScopedStorage(userId, storage) {
     getFollowStatsStorageKey(userId),
     getOwnListsStorageKey(userId),
     getOwnProfileStorageKey(userId),
+    getOnboardingStorageKey(userId),
     `papertok_following_${safeUserId}`,
     `papertok_following_updates_${safeUserId}`,
     `papertok_readingLibrary_${userId}`,

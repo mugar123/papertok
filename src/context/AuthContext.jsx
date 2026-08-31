@@ -16,9 +16,10 @@ import {
 } from '../utils/userSettings';
 import { settleWithin } from '../utils/asyncTiming';
 import { normalizeProfilePhoto } from '../utils/profileImage';
-import { clearUserScopedStorage } from '../utils/userScopedStorage';
+import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/userScopedStorage';
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.js';
 import { forgetOwnProfile } from '../utils/profileSessionCaches.js';
+import { accountLooksOnboarded } from '../utils/accountOnboarding.js';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
 const PROFILE_NETWORK_TIMEOUT_MS = 7000;
@@ -77,8 +78,6 @@ export function AuthProvider({ children }) {
       setLoading(true);
       setProfileLoadError(null);
       setUser(currentUser);
-      setOnboardingComplete(false);
-      setUserPreferences(null);
       setFollowedAuthors([]);
       setReadingPreferences(DEFAULT_READING_PREFERENCES);
       setProfilePhoto(null);
@@ -87,16 +86,34 @@ export function AuthProvider({ children }) {
       if (currentUser) {
         hydrateAccountCaches(currentUser.uid);
         void warmAccountCaches(currentUser.uid);
+        const storedOnboarding = readStoredOnboarding(currentUser.uid);
+        if (storedOnboarding?.complete) {
+          setOnboardingComplete(true);
+          if (storedOnboarding.preferences.length > 0) {
+            setUserPreferences(storedOnboarding.preferences);
+          }
+        } else {
+          setOnboardingComplete(false);
+          setUserPreferences(null);
+        }
         const userRef = doc(db, 'users', currentUser.uid);
         const isCurrent = () => !disposed && changeId === authChangeId;
         const applyProfile = (snapshot) => {
           if (!snapshot?.exists() || !isCurrent()) return false;
           const data = snapshot.data();
-          setOnboardingComplete(Boolean(data.onboardingComplete));
-          setUserPreferences(data.preferences || data.selectedCategories || null);
+          const onboarded = accountLooksOnboarded(data);
+          setOnboardingComplete(onboarded);
+          const preferences = data.preferences || data.selectedCategories || null;
+          setUserPreferences(preferences);
           setFollowedAuthors(data.followedAuthors || []);
           setReadingPreferences(normalizeReadingPreferences(data.readingPreferences));
           setProfilePhoto(normalizeProfilePhoto(data.profilePhoto));
+          if (onboarded) {
+            saveStoredOnboarding(currentUser.uid, {
+              complete: true,
+              preferences: Array.isArray(preferences) ? preferences : [],
+            });
+          }
           return true;
         };
 
@@ -113,10 +130,10 @@ export function AuthProvider({ children }) {
         if (!isCurrent()) return;
 
         if (remote.status === 'fulfilled') {
-          if (!applyProfile(remote.value) && !hydratedFromCache) {
+          if (!applyProfile(remote.value) && !hydratedFromCache && !storedOnboarding?.complete) {
             setOnboardingComplete(false);
           }
-        } else if (!hydratedFromCache) {
+        } else if (!hydratedFromCache && !storedOnboarding?.complete) {
           setProfileLoadError('PROFILE_LOAD_FAILED');
           if (remote.status === 'rejected') {
             console.error('Error fetching user data', remote.reason);
@@ -124,6 +141,9 @@ export function AuthProvider({ children }) {
             console.warn('Profile loading exceeded the timeout');
           }
         }
+      } else {
+        setOnboardingComplete(false);
+        setUserPreferences(null);
       }
       if (!disposed && changeId === authChangeId) setLoading(false);
     });
@@ -232,6 +252,7 @@ export function AuthProvider({ children }) {
         onboardingComplete: true,
         preferences
       }, { merge: true });
+      saveStoredOnboarding(userId, { complete: true, preferences });
     }
   }, [user?.uid]);
 
@@ -248,6 +269,7 @@ export function AuthProvider({ children }) {
       await setDoc(doc(db, 'users', userId), {
         preferences: newPreferences
       }, { merge: true });
+      saveStoredOnboarding(userId, { complete: true, preferences: newPreferences });
     }
   }, [user?.uid]);
 
