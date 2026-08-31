@@ -6,7 +6,7 @@ function authorName(author) {
 export function serializeLibraryPaper(paper = {}) {
   return {
     id: paper.id || paper.arxivId || paper.doi || '',
-    title: paper.title || 'Paper sin titulo',
+    title: typeof paper.title === 'string' ? paper.title : '',
     authors: (paper.authors || []).slice(0, 20),
     primaryCategory: paper.primaryCategory || paper.categories?.[0] || '',
     categories: paper.categories || (paper.primaryCategory ? [paper.primaryCategory] : []),

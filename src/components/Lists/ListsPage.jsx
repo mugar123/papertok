@@ -590,7 +590,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
               ? { id: item.id, ...data.paper }
               : {
                   id: item.id,
-                  title: data.paperTitle || item.id,
+                  title: data.paperTitle || '',
                   authors: data.paperAuthors || [],
                   primaryCategory: data.paperCategory || '',
                   published: data.timestamp,

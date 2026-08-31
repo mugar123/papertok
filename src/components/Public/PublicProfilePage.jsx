@@ -33,6 +33,7 @@ import { getPublicListPath, getPublicPaperPath } from '../../utils/publicNavigat
 import { resolveProfileView } from '../../utils/profileAccess.js';
 import { resolveListColor } from '../../utils/listColors.js';
 import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
+import { resolvedPaperTitle } from '../../utils/paperDisplayTitle.js';
 import {
   createPendingIdRequests,
   requestMissingRecords,
@@ -119,19 +120,25 @@ const rowMotion = (prefersReducedMotion, index) => ({
 function PaperRow({ row, isEnglish, libraryReady }) {
   /**
    * A row with no title is a row we have not heard about, and it must not say
-   * otherwise. It used to print "Untitled paper" — fifty of them at once on a
-   * cold Liked tab, each stating as a fact something no read had established.
+   * otherwise — and it must never print the document id. Those ids (`openalex:W…`,
+   * `hep-th/0603001`) are machine names; showing them on Liked looked like the
+   * list was broken.
    *
-   * While the library read is still out, the row is a shimmer. Once it has
-   * answered and this id still has nothing, the row shows the id in mono, which
-   * is what it actually is and matches how the lists screen says the same thing.
+   * While the read is still out, the row is a shimmer. Once it has answered
+   * and this id still has nothing, a short bilingual note says the title could
+   * not be loaded. The row stays a non-link: there is nothing useful to open.
    */
   if (row.unresolved) {
+    const waiting = !libraryReady || !row.missingTitle;
     return (
-      <div className={`profile-row profile-row--unresolved${libraryReady ? '' : ' profile-row--waiting'}`}>
-        {libraryReady
-          ? <span className="profile-row-title profile-row-title--placeholder">{row.id}</span>
-          : <span className="public-profile-skeleton public-profile-skeleton--row" aria-hidden="true" />}
+      <div className={`profile-row profile-row--unresolved${waiting ? ' profile-row--waiting' : ''}`}>
+        {waiting
+          ? <span className="public-profile-skeleton public-profile-skeleton--row" aria-hidden="true" />
+          : (
+            <span className="profile-row-title profile-row-title--placeholder">
+              {isEnglish ? 'The title could not be loaded' : 'No se pudo cargar el título'}
+            </span>
+          )}
       </div>
     );
   }
@@ -284,6 +291,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   // Releasing a claim mutates a ref, which schedules no render. This token is
   // what turns "these ids are askable again" into an effect that actually runs.
   const [likedRetry, setLikedRetry] = useState(0);
+  const [settledLikedLookups, setSettledLikedLookups] = useState(() => new Set());
   // Follows (F2). `null` still means "not asked yet" — what keeps the header
   // from flashing a zero before the real number lands — but starting there on a
   // page you were looking at two seconds ago announces a wait that need not
@@ -566,6 +574,17 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
         });
       }
       if (error) console.error('Error loading liked paper titles:', error);
+      setSettledLikedLookups(prev => {
+        let changed = false;
+        const next = new Set(prev);
+        wanted.forEach(id => {
+          if (likedRequests.current.isSettled(id) && !next.has(id)) {
+            next.add(id);
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
       // The retry, on the other hand, only makes sense while this effect is
       // still the live one. `retryable` covers both a rejected read and the
       // quieter failure: a "successful" answer served from the local cache
@@ -602,8 +621,12 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     const library = personalLibrary[id]?.paper;
     const extra = likedExtra[id];
     const paper = library || libraryPapers[id] || extra?.paper;
-    const title = paper?.title || extra?.paperTitle || '';
+    const title = resolvedPaperTitle(
+      paper?.title || extra?.paperTitle || '',
+      id,
+    );
     const authors = paper?.authors || extra?.paperAuthors || [];
+    const hasRecord = Boolean(paper || extra);
     return {
       id,
       title,
@@ -611,11 +634,12 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       // It means the read has not answered for this id, and the row has to say
       // that rather than print a definite-sounding "Untitled paper".
       unresolved: !title,
+      missingTitle: !title && (hasRecord || settledLikedLookups.has(id)),
       subtitle: authorLine(authors),
       path: paper ? getPublicPaperPath(paper) || getPublicPaperPath(id) : getPublicPaperPath(id),
       seed: seedPaperFor(id, paper, title, authors, extra?.paperCategory),
     };
-  }), [likedOrder, personalLibrary, libraryPapers, likedExtra]);
+  }), [likedOrder, personalLibrary, libraryPapers, likedExtra, settledLikedLookups]);
 
   // Same source and ordering as the "Leer después" pseudo-list in Mis listas.
   const savedRows = useMemo(() => {
@@ -624,14 +648,19 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       .filter(record => record.readLater)
       .sort((first, second) => new Date(second.updatedAt || 0) - new Date(first.updatedAt || 0))
       .slice(0, PROFILE_TAB_ROW_LIMIT)
-      .map(record => ({
-        id: record.paperId,
-        title: record.paper?.title || '',
-        subtitle: authorLine(record.paper?.authors),
-        path: getPublicPaperPath(record.paper) || getPublicPaperPath(record.paperId),
-        seed: record.paper || null,
-      }));
-  }, [view.isOwner, personalLibrary]);
+      .map(record => {
+        const title = resolvedPaperTitle(record.paper?.title || '', record.paperId);
+        return {
+          id: record.paperId,
+          title,
+          unresolved: !title,
+          missingTitle: !title && libraryReady,
+          subtitle: authorLine(record.paper?.authors),
+          path: getPublicPaperPath(record.paper) || getPublicPaperPath(record.paperId),
+          seed: record.paper || null,
+        };
+      });
+  }, [view.isOwner, personalLibrary, libraryReady]);
 
   const metadata = useMemo(() => {
     const fallbackDescription = {

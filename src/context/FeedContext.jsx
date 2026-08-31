@@ -29,6 +29,7 @@ import {
   saveSeenPaperIds,
 } from '../utils/userScopedStorage';
 import { serializeLibraryPaper } from '../utils/readingLibrary';
+import { isPlaceholderPaperTitle } from '../utils/paperDisplayTitle.js';
 import {
   createEmptyInteractionProfile,
   curatedIds,
@@ -422,14 +423,15 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       records.forEach(({ id, data }) => {
         const paper = data.paper || serializeLibraryPaper({
           id,
-          title: data.paperTitle || id,
+          title: data.paperTitle || '',
           authors: data.paperAuthors || [],
           primaryCategory: data.paperCategory || '',
           published: data.timestamp || '',
         });
-        // Only a real title: the fallback above stands the id in for one, and
-        // storing that would let a stub outrank a proper fetch later.
-        if (paper.title && paper.title !== id) papers[id] = paper;
+        // Only a real title: standing the id in for one used to paint
+        // `openalex:W…` on Liked. An empty title stays empty so a later
+        // fetch can fill it.
+        if (paper.title && !isPlaceholderPaperTitle(paper.title, id)) papers[id] = paper;
 
         if (!(data.read || data.readLater || data.note || data.tags?.length)) return;
         library[id] = {

@@ -135,8 +135,10 @@ test('a row with no title says so, rather than inventing a title for it', async 
 
   assert.match(source, /unresolved: !title/, 'the row must carry the distinction');
   assert.match(source, /if \(row\.unresolved\)/, 'and PaperRow must act on it');
-  // Waiting and answered-with-nothing are different states and look different:
-  // a shimmer while the read is out, the id itself once it is not.
-  assert.match(source, /libraryReady\s*\n?\s*\?\s*<span className="profile-row-title profile-row-title--placeholder">/,
-    'once the read has answered, the id is what there is to show');
+  assert.match(source, /The title could not be loaded/, 'a missing title is a sentence, not an id');
+  assert.doesNotMatch(
+    source.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, ''),
+    />\{row\.id\}</,
+    'the document id must never be painted as the row title',
+  );
 });

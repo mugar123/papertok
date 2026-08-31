@@ -18,6 +18,12 @@ test('serializes the metadata needed by the personal library', () => {
   assert.equal(stored.doi, '10.1234/example');
 });
 
+test('does not invent a title when the paper has none', () => {
+  const stored = serializeLibraryPaper({ id: 'openalex:W1' });
+  assert.equal(stored.title, '');
+  assert.equal(stored.id, 'openalex:W1');
+});
+
 test('exports valid-looking BibTeX and RIS records', () => {
   const bib = papersToBibTeX([paper]);
   const ris = papersToRIS([paper]);

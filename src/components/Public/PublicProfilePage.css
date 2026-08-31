@@ -651,10 +651,10 @@ button.profile-stat:disabled {
   padding-bottom: var(--space-4);
 }
 
-/* Once it has answered and this id still has nothing, the id itself is the
-   honest thing to show — mono, because that is what it is. */
+/* Once it has answered and this id still has nothing, say so in words —
+   never print the document id, which is not a title. */
 .profile-row-title--placeholder {
-  font-family: var(--font-mono);
+  font-family: var(--font-body);
   font-size: var(--fs-sm);
   font-weight: var(--fw-regular);
   color: var(--text-tertiary);
