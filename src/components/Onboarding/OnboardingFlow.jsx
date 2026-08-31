@@ -6,6 +6,15 @@ import { useLanguage } from '../../context/LanguageContext';
 import { CATEGORIES } from '../../data/categories';
 import './OnboardingFlow.css';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
+import VisibilityChoice from '../Profile/VisibilityChoice.jsx';
+import {
+  HandleUnavailableError,
+  PROFILE_VISIBILITY,
+  USER_PROFILE_LIMITS,
+  createUserProfile,
+  readOwnUserProfile,
+} from '../../services/userProfileService.js';
+import { HANDLE_ERRORS, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
 
 const AREA_ENTRIES = Object.entries(CATEGORIES);
 
@@ -16,19 +25,44 @@ const AREA_SIZES = Object.fromEntries(
 
 const TOTAL_SUBCATEGORIES = Object.values(AREA_SIZES).reduce((n, size) => n + size, 0);
 
-/** Los tres tramos del rail, en las dos lenguas. */
+/** The four tramos of the rail, in both languages. */
 const STEPS = [
   { n: '01', label: 'Áreas', labelEn: 'Areas' },
   { n: '02', label: 'Categorías', labelEn: 'Categories' },
   { n: '03', label: 'Tu feed', labelEn: 'Your feed' },
+  { n: '04', label: 'Perfil', labelEn: 'Profile' },
 ];
 
+const HANDLE_ERROR_COPY = {
+  en: {
+    [HANDLE_ERRORS.empty]: 'Choose a handle.',
+    [HANDLE_ERRORS.tooShort]: 'A handle needs at least 3 characters.',
+    [HANDLE_ERRORS.tooLong]: 'A handle can have at most 40 characters.',
+    [HANDLE_ERRORS.charset]: 'Use lowercase letters, numbers and underscores only.',
+    [HANDLE_ERRORS.numericOnly]: 'A handle needs at least one letter.',
+    [HANDLE_ERRORS.reserved]: 'That handle is reserved.',
+  },
+  es: {
+    [HANDLE_ERRORS.empty]: 'Elige un handle.',
+    [HANDLE_ERRORS.tooShort]: 'Un handle necesita al menos 3 caracteres.',
+    [HANDLE_ERRORS.tooLong]: 'Un handle puede tener como mucho 40 caracteres.',
+    [HANDLE_ERRORS.charset]: 'Usa solo minúsculas, números y guiones bajos.',
+    [HANDLE_ERRORS.numericOnly]: 'Un handle necesita al menos una letra.',
+    [HANDLE_ERRORS.reserved]: 'Ese handle está reservado.',
+  },
+};
+
 export default function OnboardingFlow() {
-  const [step, setStep] = useState(1);
+  const [stepState, setStep] = useState(1);
   const [selectedAreas, setSelectedAreas] = useState(new Set());
   const [selectedSubcategories, setSelectedSubcategories] = useState(new Set());
   const [saving, setSaving] = useState(false);
-  const { completeOnboarding } = useAuth();
+  const [visibilityDraft, setVisibilityDraft] = useState(null);
+  const [handleDraft, setHandleDraft] = useState('');
+  const [displayName, setDisplayName] = useState('');
+  const [profileError, setProfileError] = useState(null);
+  const [existingProfile, setExistingProfile] = useState(false);
+  const { completeOnboarding, onboardingComplete, user } = useAuth();
   const { isEnglish, language } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -38,6 +72,29 @@ export default function OnboardingFlow() {
     && !location.state.returnTo.startsWith('//')
     ? location.state.returnTo
     : '/';
+
+  const step = existingProfile && stepState > 3 ? 3 : stepState;
+  const visibleSteps = existingProfile ? STEPS.slice(0, 3) : STEPS;
+  const handleCheck = useMemo(() => inspectHandle(handleDraft), [handleDraft]);
+  const handleError = handleCheck.valid
+    ? null
+    : HANDLE_ERROR_COPY[isEnglish ? 'en' : 'es'][handleCheck.code];
+  const googleDisplayName = user?.displayName
+    ? String(user.displayName).slice(0, USER_PROFILE_LIMITS.displayName)
+    : '';
+  const resolvedDisplayName = displayName.trim() || googleDisplayName;
+
+  useEffect(() => {
+    if (onboardingComplete) navigate(returnTo, { replace: true });
+  }, [onboardingComplete, navigate, returnTo]);
+
+  useEffect(() => {
+    let active = true;
+    readOwnUserProfile()
+      .then(profile => { if (active) setExistingProfile(Boolean(profile)); })
+      .catch(() => { if (active) setExistingProfile(false); });
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     trackEvent('tutorial_begin', { language });
@@ -94,6 +151,8 @@ export default function OnboardingFlow() {
       setStep(2);
     } else if (step === 2 && selectedSubcategories.size > 0) {
       setStep(3);
+    } else if (step === 3 && !existingProfile) {
+      setStep(4);
     }
   };
 
@@ -103,13 +162,37 @@ export default function OnboardingFlow() {
 
   const handleFinish = async () => {
     setSaving(true);
+    setProfileError(null);
     try {
+      if (!existingProfile && visibilityDraft === PROFILE_VISIBILITY.public) {
+        if (!handleCheck.valid || !resolvedDisplayName) {
+          setSaving(false);
+          return;
+        }
+        await createUserProfile({
+          handle: handleCheck.handle,
+          displayName: resolvedDisplayName,
+          bio: '',
+          allowContact: false,
+          photo: '',
+          visibility: PROFILE_VISIBILITY.public,
+        });
+      }
       await completeOnboarding(Array.from(selectedSubcategories));
       trackEvent('tutorial_complete', { language });
       markActivation();
       navigate(returnTo, { replace: true });
     } catch (err) {
-      console.error('Error saving preferences:', err);
+      if (err instanceof HandleUnavailableError) {
+        setProfileError(isEnglish
+          ? 'That handle is already taken. Try another.'
+          : 'Ese handle ya está cogido. Prueba otro.');
+      } else {
+        console.error('Error saving preferences:', err);
+        setProfileError(isEnglish
+          ? 'Could not save. Try again.'
+          : 'No se pudo guardar. Inténtalo de nuevo.');
+      }
       setSaving(false);
     }
   };
@@ -117,7 +200,13 @@ export default function OnboardingFlow() {
   const canProceed =
     (step === 1 && selectedAreas.size > 0) ||
     (step === 2 && selectedSubcategories.size > 0) ||
-    step === 3;
+    step === 3 ||
+    (step === 4 && (
+      visibilityDraft === PROFILE_VISIBILITY.private
+      || (visibilityDraft === PROFILE_VISIBILITY.public
+        && handleCheck.valid
+        && resolvedDisplayName)
+    ));
 
   /* ── Cifras derivadas ──
      El pie de página cuenta en voz alta lo que hay elegido, que es lo que el
@@ -181,13 +270,13 @@ export default function OnboardingFlow() {
           <span className="onboarding-wordmark">Paper<span>Tok</span></span>
         </span>
         <span className="onboarding-stepcount">
-          {isEnglish ? 'Step' : 'Paso'} <b>{STEPS[step - 1].n}</b> / 03
+          {isEnglish ? 'Step' : 'Paso'} <b>{visibleSteps[step - 1].n}</b> / {String(visibleSteps.length).padStart(2, '0')}
         </span>
       </header>
 
       <div className="onboarding-body">
         <nav className="onboarding-rail" aria-label={isEnglish ? 'Progress' : 'Progreso'}>
-          {STEPS.map((s, i) => (
+          {visibleSteps.map((s, i) => (
             <div
               key={s.n}
               className={`onboarding-rail-seg ${i + 1 === step ? 'is-active' : ''} ${i + 1 < step ? 'is-done' : ''}`}
@@ -341,21 +430,33 @@ export default function OnboardingFlow() {
                   : `Vas a ver papers de las ${selectedSubcategories.size} categorías que marcaste, ordenados por lo que vaya funcionando contigo. Puedes ajustar la selección cuando quieras desde Ajustes.`}
               </p>
               <div className="onboarding-actions">
-                <button
-                  type="button"
-                  className="onboarding-btn onboarding-btn--ink onboarding-btn--lg"
-                  onClick={handleFinish}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <span className="onboarding-spinner" />
-                  ) : (
-                    <>
-                      {isEnglish ? 'Start exploring' : 'Empezar a explorar'}
-                      <ArrowRight size={16} strokeWidth={2.25} />
-                    </>
-                  )}
-                </button>
+                {existingProfile ? (
+                  <button
+                    type="button"
+                    className="onboarding-btn onboarding-btn--ink onboarding-btn--lg"
+                    onClick={handleFinish}
+                    disabled={saving}
+                  >
+                    {saving ? (
+                      <span className="onboarding-spinner" />
+                    ) : (
+                      <>
+                        {isEnglish ? 'Start exploring' : 'Empezar a explorar'}
+                        <ArrowRight size={16} strokeWidth={2.25} />
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="onboarding-btn onboarding-btn--ink onboarding-btn--lg"
+                    onClick={handleNext}
+                    disabled={saving}
+                  >
+                    {isEnglish ? 'Next: your profile' : 'Siguiente: tu perfil'}
+                    <ArrowRight size={16} strokeWidth={2.25} />
+                  </button>
+                )}
                 <button
                   type="button"
                   className="onboarding-btn onboarding-btn--ghost"
@@ -401,31 +502,147 @@ export default function OnboardingFlow() {
             </div>
           </div>
         )}
+
+        {step === 4 && (
+          <div className="onboarding-step onboarding-step--profile" key="step4">
+            <div className="onboarding-head">
+              <div className="onboarding-head-copy">
+                <span className="onboarding-eyebrow">{isEnglish ? 'One last thing' : 'Una cosa más'}</span>
+                <h1 className="onboarding-title">
+                  {isEnglish ? 'Do you want a public profile?' : '¿Quieres un perfil público?'}
+                </h1>
+                <p className="onboarding-lede">
+                  {isEnglish
+                    ? 'If you do, pick a handle. That is the name other people will see and the address of your page. You can stay private and skip this — Settings can create it later.'
+                    : 'Si sí, elige un handle. Es el nombre que verán los demás y la dirección de tu página. Puedes quedarte en privado y saltártelo — Ajustes puede crearlo después.'}
+                </p>
+              </div>
+            </div>
+
+            <VisibilityChoice
+              value={visibilityDraft}
+              onChange={(value) => {
+                setVisibilityDraft(value);
+                setProfileError(null);
+              }}
+              isEnglish={isEnglish}
+              idPrefix="onboarding-visibility"
+            />
+
+            {visibilityDraft === PROFILE_VISIBILITY.public && (
+              <div className="onboarding-profile-fields">
+                <div className="onboarding-field">
+                  <label htmlFor="onboarding-handle">{isEnglish ? 'Public handle' : 'Handle público'}</label>
+                  <div className="onboarding-handle-input">
+                    <span aria-hidden="true">@</span>
+                    <input
+                      id="onboarding-handle"
+                      value={handleDraft}
+                      onChange={event => {
+                        setHandleDraft(event.target.value.toLowerCase());
+                        setProfileError(null);
+                      }}
+                      maxLength={HANDLE_MAX_LENGTH}
+                      autoComplete="username"
+                      spellCheck="false"
+                      required
+                      aria-required="true"
+                      aria-invalid={Boolean(handleDraft) && Boolean(handleError)}
+                      aria-describedby="onboarding-handle-hint"
+                    />
+                  </div>
+                  <p
+                    id="onboarding-handle-hint"
+                    className={`onboarding-field-hint${handleDraft && handleError ? ' is-error' : ''}`}
+                    aria-live="polite"
+                  >
+                    {handleDraft && handleError
+                      ? handleError
+                      : (isEnglish
+                        ? 'Lowercase letters, numbers and underscores.'
+                        : 'Minúsculas, números y guiones bajos.')}
+                  </p>
+                </div>
+                <div className="onboarding-field">
+                  <label htmlFor="onboarding-display-name">{isEnglish ? 'Display name' : 'Nombre visible'}</label>
+                  <input
+                    id="onboarding-display-name"
+                    value={displayName || googleDisplayName}
+                    onChange={event => setDisplayName(event.target.value)}
+                    maxLength={USER_PROFILE_LIMITS.displayName}
+                    autoComplete="nickname"
+                    required
+                    aria-required="true"
+                  />
+                </div>
+              </div>
+            )}
+
+            {profileError && (
+              <p className="onboarding-profile-error" role="alert">{profileError}</p>
+            )}
+          </div>
+        )}
       </div>
 
       {/* ── Pie: el recuento vive aquí, y el botón por fin se lee ── */}
-      {step < 3 && (
+      {(step < 3 || step === 4) && (
         <footer className="onboarding-foot">
           <div className="onboarding-foot-inner">
-            <div className="onboarding-tally">
-              <span className={`onboarding-tally-n ${canProceed ? 'is-on' : ''}`}>{tally}</span>
-              <span className="onboarding-tally-hint">{hint}</span>
-            </div>
+            {step === 4 ? (
+              <div className="onboarding-tally">
+                <span className={`onboarding-tally-n ${canProceed ? 'is-on' : ''}`}>
+                  {visibilityDraft === PROFILE_VISIBILITY.public
+                    ? (isEnglish ? 'Public profile' : 'Perfil público')
+                    : visibilityDraft === PROFILE_VISIBILITY.private
+                      ? (isEnglish ? 'Private account' : 'Cuenta privada')
+                      : (isEnglish ? 'Choose one to continue.' : 'Elige una para continuar.')}
+                </span>
+                <span className="onboarding-tally-hint">
+                  {isEnglish
+                    ? 'You can change this later in Settings.'
+                    : 'Puedes cambiarlo después en Ajustes.'}
+                </span>
+              </div>
+            ) : (
+              <div className="onboarding-tally">
+                <span className={`onboarding-tally-n ${canProceed ? 'is-on' : ''}`}>{tally}</span>
+                <span className="onboarding-tally-hint">{hint}</span>
+              </div>
+            )}
             {step > 1 && (
               <button type="button" className="onboarding-btn onboarding-btn--ghost" onClick={handleBack}>
                 <ArrowLeft size={15} strokeWidth={2.25} />
                 {isEnglish ? 'Back' : 'Atrás'}
               </button>
             )}
-            <button
-              type="button"
-              className="onboarding-btn onboarding-btn--ink"
-              onClick={handleNext}
-              disabled={!canProceed}
-            >
-              {isEnglish ? 'Next' : 'Siguiente'}
-              <ArrowRight size={15} strokeWidth={2.25} />
-            </button>
+            {step === 4 ? (
+              <button
+                type="button"
+                className="onboarding-btn onboarding-btn--ink"
+                onClick={handleFinish}
+                disabled={!canProceed || saving}
+              >
+                {saving ? (
+                  <span className="onboarding-spinner" />
+                ) : (
+                  <>
+                    {isEnglish ? 'Start exploring' : 'Empezar a explorar'}
+                    <ArrowRight size={15} strokeWidth={2.25} />
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="onboarding-btn onboarding-btn--ink"
+                onClick={handleNext}
+                disabled={!canProceed}
+              >
+                {isEnglish ? 'Next' : 'Siguiente'}
+                <ArrowRight size={15} strokeWidth={2.25} />
+              </button>
+            )}
           </div>
         </footer>
       )}

@@ -955,3 +955,67 @@
     transition: none;
   }
 }
+
+.onboarding-step--profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 40rem;
+}
+
+.onboarding-profile-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.onboarding-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.onboarding-field label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.onboarding-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-base);
+}
+
+.onboarding-handle-input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.onboarding-handle-input > span {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+}
+
+.onboarding-field-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+.onboarding-field-hint.is-error,
+.onboarding-profile-error {
+  margin: 0;
+  color: var(--accent-danger);
+  font-size: var(--fs-sm);
+}
