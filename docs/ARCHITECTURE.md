@@ -88,6 +88,7 @@ The Worker entry point is `worker/report-api.js`. Its route groups include:
 
 - health and locale: `/health`, `/health/email`, `/health/ai`, `/locale`
 - comment threads: `/thread-anchor` (KV-cached stub + first page at the edge; HTTP `no-store` so a write's KV delete is the invalidation; `POST /thread-anchor/invalidate` after a create, edit or delete)
+- account deletion: `/account/delete` (Firebase identity, service-account Firestore walk, newsletter KV, Auth last; retryable 202 slices)
 - discovery: `/report/trends`, `/related`, `/citation-graph`, `/arxiv`
 - open access: `/oa`
 - specialist sources: `/sources/*`

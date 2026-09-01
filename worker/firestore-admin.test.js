@@ -354,7 +354,30 @@ test('runQuery returns id plus decoded fields, skipping readTime-only rows', asy
     orderByField: 'createdAt',
     limit: 20,
   });
-  assert.deepEqual(rows, [{ id: 'c1', data: { text: 'Hi' } }]);
+  assert.deepEqual(rows, [{
+    id: 'c1',
+    data: { text: 'Hi' },
+    path: ['papers', 'k', 'comments', 'c1'],
+  }]);
+});
+
+test('runQuery sends a field filter and collection-group descendants', async () => {
+  let body;
+  const { admin } = adminWith(async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify([]), { status: 200 });
+  });
+  await admin.runQuery({
+    collectionId: 'comments',
+    allDescendants: true,
+    where: { field: 'authorUid', op: 'EQUAL', value: 'uid-1' },
+    limit: 80,
+  });
+  assert.equal(body.structuredQuery.from[0].allDescendants, true);
+  assert.equal(body.structuredQuery.where.fieldFilter.field.fieldPath, 'authorUid');
+  assert.equal(body.structuredQuery.where.fieldFilter.op, 'EQUAL');
+  assert.equal(body.structuredQuery.where.fieldFilter.value.stringValue, 'uid-1');
+  assert.equal(body.structuredQuery.limit, 80);
 });
 
 test('countQuery reads the integer aggregation alias', async () => {

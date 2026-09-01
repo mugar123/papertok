@@ -838,6 +838,24 @@ async function deleteSubscription(env, uid, subscription) {
   ]);
 }
 
+/**
+ * Account deletion: drop the newsletter records even when the account never
+ * subscribed. Missing KV is not a failure here — there is nothing to erase.
+ */
+export async function purgeEmailSubscription(env, uid) {
+  if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
+  const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+  const subscription = await env.NOTIFICATION_STORE.get(key, 'json');
+  await Promise.all([
+    env.NOTIFICATION_STORE.delete(key),
+    env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, subscription || { uid })),
+    subscription?.unsubscribeToken
+      ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`)
+      : Promise.resolve(),
+  ]);
+  return { purged: true };
+}
+
 async function saveSubscription(request, env, identity) {
   if (!env.NOTIFICATION_STORE) throw new EmailNotificationError('EMAIL_NOT_CONFIGURED', 503);
   const body = await readBoundedJson(request);

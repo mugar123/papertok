@@ -117,6 +117,7 @@ export function serializeComment(row) {
     createdAt: asIso(data.createdAt),
     ...(data.editedAt ? { editedAt: asIso(data.editedAt) } : {}),
     ...(typeof data.replyTo === 'string' && data.replyTo ? { replyTo: data.replyTo } : {}),
+    ...(data.dissociated === true ? { dissociated: true } : {}),
   };
 }
 
