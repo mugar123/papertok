@@ -2,6 +2,12 @@ name = "papertok-report-api"
 main = "worker/report-api.js"
 compatibility_date = "2026-07-16"
 
+# Declarar `[[routes]]` hace que wrangler apague workers.dev por defecto, y esa
+# es la URL que sigue llamando el bundle en produccion: sin esta linea, el
+# despliegue que anade api.papertok.app deja la web viva sin API. Se queda
+# encendida hasta que el frontend haya migrado del todo.
+workers_dev = true
+
 # El Custom Domain del Worker. Cloudflare crea aqui el registro DNS y el
 # certificado al desplegar, y solo puede hacerlo con la zona papertok.app ya en
 # la cuenta: un deploy antes de mover los nameservers falla con "zone not
