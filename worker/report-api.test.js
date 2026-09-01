@@ -195,6 +195,28 @@ test('proxies OpenReview forum papers while excluding imported public records', 
   assert.equal(payload.notes[0].id, 'submission');
 });
 
+// api2 answers `sort=tcdate:desc` with `SearchError: No mapping found for
+// [tcdate] in order to sort on` and a 400, which the route relayed as its own
+// 502 -- so OpenReview looked like an upstream that fails at random when what
+// actually varied was whether the feed asked for the recent ordering at all.
+// `cdate` is the creation date the index does map, which is what `tcdate` meant.
+test('sorts OpenReview by a field the search index actually maps', async () => {
+  let upstreamUrl = '';
+  const response = await withWorkerFetchMock(async url => {
+    upstreamUrl = String(url);
+    return new Response(JSON.stringify({ count: 0, notes: [] }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/openreview?q=neuroscience&limit=5&sort=recent',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), {}));
+
+  assert.equal(response.status, 200);
+  assert.doesNotMatch(upstreamUrl, /tcdate/);
+  assert.match(upstreamUrl, /sort=cdate%3Adesc/);
+});
+
 test('proxies Hugging Face paper search through the specialist source contract', async () => {
   const response = await withWorkerFetchMock(async url => {
     assert.match(String(url), /huggingface\.co\/api\/papers\/search/);

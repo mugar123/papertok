@@ -1160,7 +1160,12 @@ async function handleOpenReview(request, env) {
     url.searchParams.set('source', 'forum');
     url.searchParams.set('limit', String(Math.min(50, context.limit * 3)));
     url.searchParams.set('offset', String((context.page - 1) * context.limit));
-    if (context.sort === 'recent') url.searchParams.set('sort', 'tcdate:desc');
+    // `cdate`, not `tcdate`: api2's search index maps the creation date under the
+    // former, and answers the latter with `SearchError: No mapping found for
+    // [tcdate] in order to sort on` and a 400 -- which this route then relayed as
+    // its own 502. That is why OpenReview read as an upstream failing at random:
+    // what varied was the sort mode, and only the recent one built this URL.
+    if (context.sort === 'recent') url.searchParams.set('sort', 'cdate:desc');
     const payload = await fetchJsonUpstream(url);
     return {
       notes: (payload?.notes || [])
