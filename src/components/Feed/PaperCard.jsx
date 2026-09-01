@@ -1696,6 +1696,7 @@ const PaperCard = memo(function PaperCard({
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
+            transition={{ duration: prefersReducedMotion ? 0.1 : 0.2, ease: 'easeOut' }}
             onClick={(e) => { e.stopPropagation(); setShowAuthorsModal(false); }}
           >
             <motion.div 

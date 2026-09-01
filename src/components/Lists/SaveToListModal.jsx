@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useReducedMotion } from 'framer-motion';
 import { IS_DEMO, db } from '../../services/firebase';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc, limit, query } from 'firebase/firestore';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead';
@@ -36,6 +37,9 @@ import {
 } from '../../utils/profileSessionCaches.js';
 import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.js';
 import './SaveToListModal.css';
+
+/** Kept in step with the exit animation in SaveToListModal.css. */
+const DIALOG_EXIT_MS = 160;
 
 /**
  * States where the lists are still on their way. 'slow' and 'offline' keep the
@@ -155,7 +159,10 @@ export default function SaveToListModal({ paper, onClose }) {
   const savingRef = useRef(false);
   const [saveError, setSaveError] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
   const dialogRef = useRef(null);
+  const closeTimer = useRef(null);
 
   // What the library says today: the dirty check and the save diff compare
   // against this, and untouched fields render it directly.
@@ -302,6 +309,10 @@ export default function SaveToListModal({ paper, onClose }) {
     if (dialog && !dialog.open) dialog.showModal();
   }, []);
 
+  useEffect(() => () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
+
   /* --- Write-free pending-state handlers --------------------------------- */
 
   // Editing anything is an implicit "keep editing": it dismisses the discard
@@ -371,13 +382,38 @@ export default function SaveToListModal({ paper, onClose }) {
 
   /* --- Close paths, all through the guard -------------------------------- */
 
+  /**
+   * Every close path lands here once the discard guard has already decided
+   * the window can go.
+   *
+   * `.close()` before the parent unmounts us, always: the platform hands focus
+   * back to the button that opened the dialog when it is closed, and not when
+   * it is merely removed from the document.
+   *
+   * The window has to survive its own exit animation, so the close is held for
+   * the length of it and the card is marked on the way out. A TIMER decides
+   * when that is over, not `animationend`: under `prefers-reduced-motion` the
+   * animation is `none`, no `animationend` ever fires, and a window waiting for
+   * one would never close at all. Reduced motion skips the wait entirely.
+   */
   const closeDialog = () => {
-    dialogRef.current?.close();
-    onClose();
+    if (closeTimer.current) return;
+    if (prefersReducedMotion) {
+      dialogRef.current?.close();
+      onClose();
+      return;
+    }
+    setClosing(true);
+    closeTimer.current = setTimeout(() => {
+      closeTimer.current = null;
+      dialogRef.current?.close();
+      onClose();
+      setClosing(false);
+    }, DIALOG_EXIT_MS);
   };
 
   const requestClose = () => {
-    if (saving) return;
+    if (saving || closing || closeTimer.current) return;
     if (dirty) {
       setConfirmingDiscard(true);
       return;
@@ -636,16 +672,17 @@ export default function SaveToListModal({ paper, onClose }) {
   return (
     <dialog
       ref={dialogRef}
-      className="save-modal-dialog"
-      onClose={onClose}
+      className={`save-modal-dialog${closing ? ' is-closing' : ''}`}
+      onClose={(event) => event.stopPropagation()}
       onCancel={(event) => {
         // Escape: through the same guard as every other close path.
         event.preventDefault();
+        event.stopPropagation();
         requestClose();
       }}
       onClick={(e) => { if (e.target === dialogRef.current) requestClose(); }}
     >
-      <div className="save-modal">
+      <div className={`save-modal${closing ? ' is-closing' : ''}`}>
         <header className="save-modal-header">
           <div>
             <p className="save-modal-kicker">{copy.kicker}</p>

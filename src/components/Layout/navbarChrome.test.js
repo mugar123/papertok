@@ -58,3 +58,12 @@ test('el popover se ancla al botón y anima solo con CSS', async () => {
   assert.match(rule[1], /position:\s*absolute/);
   assert.match(css, /prefers-reduced-motion/, 'el popover debe respetar reduced motion');
 });
+
+test('el popover anima la salida, no solo la entrada', async () => {
+  const css = await prefsCss;
+  const jsx = await prefsJsx;
+  assert.match(css, /@keyframes navPrefsOut/, 'NavPreferencesMenu.css perdió navPrefsOut');
+  assert.match(css, /\.nav-prefs-menu\.is-closing/, 'la clase de salida no tiene regla');
+  assert.match(jsx, /setClosing\(true\)/, 'el menú no se marca al cerrar');
+  assert.match(jsx, /MENU_EXIT_MS/, 'el temporizador de salida desapareció');
+});

@@ -975,6 +975,7 @@ a.pc-citations {
   color: var(--text-inverse);
   background: var(--accent-save);
   border-color: var(--accent-save);
+  animation: likePopIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .pc-side-btn--saved .pc-side-label { color: var(--accent-save); }
 
