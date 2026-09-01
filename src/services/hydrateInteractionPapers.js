@@ -75,7 +75,7 @@ export async function hydrateInteractionPapers(ids, {
   const loadChunks = async (entries, size, fetchValues) => {
     if (entries.length === 0) return;
     for (const group of chunk(entries, size)) {
-      let papers = [];
+      let papers;
       try {
         papers = await fetchValues(group.map(entry => entry.value));
       } catch (error) {
