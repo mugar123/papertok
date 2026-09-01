@@ -34,6 +34,11 @@ import {
   PublicListApiError,
 } from './public-list-api.js';
 import {
+  ACCOUNT_DELETE_PATH,
+  AccountDeletionError,
+  handleAccountDeletionRequest,
+} from './account-deletion.js';
+import {
   fetchPaperFigures,
   FIGURE_CACHE_SECONDS,
   FIGURE_EMPTY_CACHE_SECONDS,
@@ -2024,6 +2029,24 @@ export default {
       } catch (error) {
         const knownError = error instanceof EmailNotificationError;
         return json({ code: knownError ? error.code : 'EMAIL_UNAVAILABLE' }, knownError ? error.status : 502, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'no-store',
+        });
+      }
+    }
+    if (url.pathname === ACCOUNT_DELETE_PATH) {
+      if (!origin || !allowedOrigins(env).has(origin)) {
+        return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
+      }
+      try {
+        const payload = await handleAccountDeletionRequest(request, env);
+        return json(payload, payload.complete ? 200 : 202, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'private, no-store',
+        });
+      } catch (error) {
+        const known = error instanceof AccountDeletionError || error instanceof WorkerAuthError;
+        return json({ code: known ? error.code : 'ACCOUNT_DELETION_FAILED' }, known ? error.status : 502, {
           ...corsHeaders(origin, env),
           'cache-control': 'no-store',
         });

@@ -40,6 +40,7 @@ export function hydrateComment(row, paperKey) {
     createdAt: commentDate(row.createdAt),
     ...(row.editedAt ? { editedAt: commentDate(row.editedAt) } : {}),
     ...(typeof row.replyTo === 'string' && row.replyTo ? { replyTo: row.replyTo } : {}),
+    ...(row.dissociated === true ? { dissociated: true } : {}),
     ...(paperKey ? { paperKey } : {}),
   };
 }

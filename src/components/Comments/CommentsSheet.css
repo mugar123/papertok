@@ -307,7 +307,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .comment-row-handle:hover {
+  a.comment-row-handle:hover {
     color: var(--text-primary);
     text-decoration: underline;
     text-underline-offset: 2px;

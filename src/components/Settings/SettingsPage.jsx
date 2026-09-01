@@ -24,6 +24,7 @@ import {
   SlidersHorizontal,
   Sparkles,
   Tag,
+  Trash2,
   UserRound,
   UsersRound,
 } from 'lucide-react';
@@ -41,6 +42,7 @@ import { ownProfileCache, ownProfileKey } from '../../utils/profileSessionCaches
 import { SIGN_IN_PROVIDERS } from '../../services/authIdentityService';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import EditInterestsModal from './EditInterestsModal';
+import DeleteAccountDialog from './DeleteAccountDialog';
 import EmailNotificationModal from '../Following/EmailNotificationModal';
 import './SettingsPage.css';
 
@@ -218,6 +220,9 @@ const SETTINGS_COPY = {
     analyticsEnabled: 'Activada',
     analyticsDisabled: 'Desactivada',
     analyticsToggleLabel: 'Permitir analítica de uso',
+    deleteAccount: 'Eliminar cuenta',
+    deleteAccountDescription: 'Borra tu perfil, tus datos y el acceso. No se puede deshacer.',
+    deleteAccountAction: 'Eliminar',
     community: 'Comunidad',
     communityDescription: 'Descubre el proyecto y participa en su desarrollo.',
     openSource: 'PaperTok es open source',
@@ -308,6 +313,9 @@ const SETTINGS_COPY = {
     analyticsEnabled: 'On',
     analyticsDisabled: 'Off',
     analyticsToggleLabel: 'Allow usage analytics',
+    deleteAccount: 'Delete account',
+    deleteAccountDescription: 'Deletes your profile, your data, and sign-in access. It cannot be undone.',
+    deleteAccountAction: 'Delete',
     community: 'Community',
     communityDescription: 'Explore the project and take part in its development.',
     openSource: 'PaperTok is open source',
@@ -405,6 +413,7 @@ export default function SettingsPage() {
   const [languageFeedback, setLanguageFeedback] = useState(null);
   const [linkingGitHub, setLinkingGitHub] = useState(false);
   const [linkFeedback, setLinkFeedback] = useState(null);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
 
   const sectionIds = useMemo(() => SETTINGS_SECTIONS.map(section => section.id), []);
   const activeSection = useSectionSpy(sectionIds);
@@ -579,6 +588,15 @@ export default function SettingsPage() {
 
   const handleSignOut = async () => {
     await signOut();
+    navigate('/login');
+  };
+
+  const handleAccountDeleted = async () => {
+    try {
+      await signOut();
+    } catch {
+      // The Auth user may already be gone; the tab still has to leave.
+    }
     navigate('/login');
   };
 
@@ -966,6 +984,21 @@ export default function SettingsPage() {
                       </button>
                     </div>
                   </div>
+
+                  <div className="settings-row" style={{ '--settings-index': 6 }}>
+                    <span className="settings-row-icon is-rose"><Trash2 size={20} /></span>
+                    <div className="settings-row-content">
+                      <h3>{copy.deleteAccount}</h3>
+                      <p>{copy.deleteAccountDescription}</p>
+                    </div>
+                    <button
+                      type="button"
+                      className="settings-signout"
+                      onClick={() => setDeleteAccountOpen(true)}
+                    >
+                      {copy.deleteAccountAction}
+                    </button>
+                  </div>
                 </div>
               </section>
 
@@ -1067,6 +1100,14 @@ export default function SettingsPage() {
         isOpen={isNotificationsOpen}
         onClose={() => setIsNotificationsOpen(false)}
       />
+      {deleteAccountOpen && (
+        <DeleteAccountDialog
+          open
+          language={language}
+          onClose={() => setDeleteAccountOpen(false)}
+          onDeleted={handleAccountDeleted}
+        />
+      )}
     </>
   );
 }

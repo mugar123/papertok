@@ -30,6 +30,12 @@ const ERROR_MESSAGES = {
     PUBLISH_UNREACHABLE: 'Tus cambios están guardados. El enlace público se pondrá al día cuando vuelva la conexión.',
     PUBLISH_QUOTA_EXCEEDED: 'Has llegado al límite diario de cambios en enlaces públicos. El enlace se pondrá al día mañana.',
     PROFILE_PHOTO_SAVE_FAILED: 'No se pudo guardar la foto de perfil.',
+    ACCOUNT_DELETION_FAILED: 'No se pudo eliminar la cuenta. Inténtalo de nuevo.',
+    ACCOUNT_DELETION_UNREACHABLE: 'No se pudo contactar con el servidor para eliminar la cuenta.',
+    ACCOUNT_DELETION_NOT_CONFIGURED: 'El borrado de cuenta no está disponible ahora mismo.',
+    AUTH_RECENT_LOGIN_REQUIRED: 'Por seguridad, vuelve a iniciar sesión y pide el borrado otra vez.',
+    CONFIRMATION_REQUIRED: 'Confirma el borrado desde el diálogo de ajustes.',
+    ACCOUNT_DELETION_UNSUPPORTED_IN_DEMO: 'El modo demostración no puede borrar una cuenta real.',
   },
   en: {
     GENERAL_ERROR: 'An unexpected error occurred. Try again.',
@@ -58,6 +64,12 @@ const ERROR_MESSAGES = {
     PUBLISH_UNREACHABLE: 'Your changes are saved. The public link will catch up when the connection is back.',
     PUBLISH_QUOTA_EXCEEDED: 'You have reached the daily limit for public link changes. The link will catch up tomorrow.',
     PROFILE_PHOTO_SAVE_FAILED: 'The profile photo could not be saved.',
+    ACCOUNT_DELETION_FAILED: 'The account could not be deleted. Try again.',
+    ACCOUNT_DELETION_UNREACHABLE: 'The account could not be deleted because the server could not be reached.',
+    ACCOUNT_DELETION_NOT_CONFIGURED: 'Account deletion is not available right now.',
+    AUTH_RECENT_LOGIN_REQUIRED: 'For security, sign in again and then request deletion.',
+    CONFIRMATION_REQUIRED: 'Confirm deletion from the settings dialog.',
+    ACCOUNT_DELETION_UNSUPPORTED_IN_DEMO: 'Demo mode cannot delete a real account.',
   },
 };
 

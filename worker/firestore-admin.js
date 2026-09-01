@@ -321,9 +321,22 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
 
     /**
      * A structured query scoped to a parent document (or the database root
-     * when `parentSegments` is empty). Each hit is `{ id, data }`.
+     * when `parentSegments` is empty). Each hit is `{ id, data, path }`.
+     *
+     * `path` is the document segments after `/documents/`, so a collection
+     * group hit can be addressed again without reconstructing the parent from
+     * the id. `where` is a single field filter (`EQUAL` and friends).
+     * `allDescendants: true` is a collection-group query.
      */
-    async runQuery({ parentSegments = [], collectionId, orderByField, orderDirection = 'ASCENDING', limit: pageSize } = {}) {
+    async runQuery({
+      parentSegments = [],
+      collectionId,
+      orderByField,
+      orderDirection = 'ASCENDING',
+      limit: pageSize,
+      where: whereFilter,
+      allDescendants = false,
+    } = {}) {
       if (typeof collectionId !== 'string' || !collectionId || collectionId.includes('/')) {
         throw new FirestoreAdminError('INVALID_DOCUMENT_PATH', 400);
       }
@@ -332,7 +345,16 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
         : documentRoot(projectId);
       const url = `https://firestore.googleapis.com/v1/${parent}:runQuery`;
       const structuredQuery = {
-        from: [{ collectionId }],
+        from: [{ collectionId, allDescendants: allDescendants === true }],
+        ...(whereFilter?.field ? {
+          where: {
+            fieldFilter: {
+              field: { fieldPath: String(whereFilter.field) },
+              op: whereFilter.op || 'EQUAL',
+              value: encodeValue(whereFilter.value),
+            },
+          },
+        } : {}),
         ...(orderByField ? {
           orderBy: [{
             field: { fieldPath: orderByField },
@@ -358,8 +380,14 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
       return rows.flatMap((row) => {
         const name = row?.document?.name;
         if (typeof name !== 'string' || !name) return [];
-        const id = name.slice(name.lastIndexOf('/') + 1);
-        return [{ id, data: decodeFields(row.document.fields) }];
+        const marker = '/documents/';
+        const index = name.indexOf(marker);
+        const rest = index >= 0 ? name.slice(index + marker.length) : '';
+        const path = rest
+          ? rest.split('/').map(segment => decodeURIComponent(segment))
+          : [name.slice(name.lastIndexOf('/') + 1)];
+        const id = path[path.length - 1];
+        return [{ id, data: decodeFields(row.document.fields), path }];
       });
     },
 

@@ -26,6 +26,7 @@ import {
 } from '../../services/reportService.js';
 import { profileIsPublic, readOwnUserProfile } from '../../services/userProfileService.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
+import { commentIsDissociated } from '../../utils/commentIdentity.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
 import { isReadTimeout, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
@@ -118,6 +119,7 @@ const COPY = {
   throttled: { es: 'Vas demasiado rápido. Espera unos segundos y vuelve a intentarlo.', en: 'Too fast. Wait a few seconds and try again.' },
   writeError: { es: 'No se pudo publicar. Revisa tu conexión.', en: 'It could not be posted. Check your connection.' },
   deleteError: { es: 'No se pudo borrar. Vuelve a intentarlo.', en: 'It could not be deleted. Try again.' },
+  deletedAccount: { es: 'Cuenta eliminada', en: 'Deleted account' },
 };
 
 /**
@@ -172,20 +174,25 @@ async function explainDenial(error, text) {
 }
 
 function CommentBody({ comment, isEnglish, text, onNavigate }) {
+  const dissociated = commentIsDissociated(comment);
   return (
     <>
       {/* The machine line: who, when, and whether it was touched since. */}
       <div className="comment-row-meta">
-        <span className="comment-avatar" aria-hidden="true">{initialOf(comment.authorHandle)}</span>
-        {/* Navigating from inside a modal closes the modal (the FollowSheet
-            contract) — otherwise the sheet would sit over the profile. */}
-        <Link
-          className="comment-row-handle"
-          to={getPublicProfilePath(comment.authorHandle) || '#'}
-          onClick={onNavigate}
-        >
-          @{comment.authorHandle}
-        </Link>
+        <span className="comment-avatar" aria-hidden="true">
+          {dissociated ? '?' : initialOf(comment.authorHandle)}
+        </span>
+        {dissociated ? (
+          <span className="comment-row-handle">{text(COPY.deletedAccount)}</span>
+        ) : (
+          <Link
+            className="comment-row-handle"
+            to={getPublicProfilePath(comment.authorHandle) || '#'}
+            onClick={onNavigate}
+          >
+            @{comment.authorHandle}
+          </Link>
+        )}
         <span className="comment-row-dot" aria-hidden="true">·</span>
         <span className="comment-row-time">{relativeTime(comment.createdAt, isEnglish)}</span>
         {comment.editedAt && (
