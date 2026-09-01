@@ -1,7 +1,7 @@
 # Public Discovery
 
 PaperTok is deployed as a Vite single-page application on the GitHub Pages project
-site `https://mugar123.github.io/papertok/`. This document records the URL and metadata
+site `https://papertok.app/`. This document records the URL and metadata
 contract for public discovery surfaces without changing the existing authenticated routes.
 
 ## URL Contract
@@ -13,7 +13,7 @@ contract for public discovery surfaces without changing the existing authenticat
 - `getPublicPaperPath(paper)` returns `/public/paper/<key>` for a DOI or arXiv paper.
 - `getSharedListPath(listId)` returns `/public/list/<id>`.
 - The corresponding `*Url` helpers add the Vite base and the `#` required by `HashRouter`,
-producing URLs such as `https://mugar123.github.io/papertok/#/public/paper/<key>`.
+producing URLs such as `https://papertok.app/#/public/paper/<key>`.
 
 Signed-out visitors can browse a bounded multi-provider sample feed and open public paper or
 entity pages. Actions that create personal state (likes, follows, saved papers, lists, or AI

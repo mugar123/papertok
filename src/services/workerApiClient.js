@@ -1,7 +1,15 @@
 import { auth } from './firebase.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
 
-const PRODUCTION_WORKER_ORIGIN = 'https://papertok-report-api.papertok-mugar123.workers.dev';
+// El Worker responde en los dos: `api.papertok.app` es el Custom Domain, y
+// `*.workers.dev` sigue siendo su ruta nativa. Los dos se admiten porque el
+// valor que llega aqui viene de una variable de GitHub Actions que cambia sin
+// commit: si solo se admitiera el nuevo, un despliegue hecho antes de tocar la
+// variable enviaria un bundle que no alcanza ningun backend.
+const PRODUCTION_WORKER_ORIGINS = Object.freeze([
+  'https://api.papertok.app',
+  'https://papertok-report-api.papertok-mugar123.workers.dev',
+]);
 
 function configuredWorkerOrigin() {
   const configured = import.meta.env?.VITE_PAPER_API_BASE_URL;
@@ -11,7 +19,7 @@ function configuredWorkerOrigin() {
     const isLocalDevelopment = import.meta.env?.DEV
       && ['localhost', '127.0.0.1'].includes(url.hostname)
       && ['http:', 'https:'].includes(url.protocol);
-    return url.origin === PRODUCTION_WORKER_ORIGIN || isLocalDevelopment ? url.origin : '';
+    return PRODUCTION_WORKER_ORIGINS.includes(url.origin) || isLocalDevelopment ? url.origin : '';
   } catch {
     return '';
   }

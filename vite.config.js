@@ -9,8 +9,9 @@ import { describeDeployFlagDrift, findDeployFlagDrift } from './src/utils/deploy
 
 // Shared with the `base` field below and with the service-worker precache
 // derivation, which needs to strip this same prefix off every asset URL
-// dist/index.html references.
-const BASE_PATH = '/papertok/'
+// dist/index.html references. Since papertok.app the site is served from the
+// domain root, not from the /papertok/ project path GitHub Pages imposed.
+const BASE_PATH = '/'
 // build.outDir is not overridden anywhere in this config, so it is Vite's
 // default: 'dist' relative to this file's own directory.
 const DIST_DIR = join(fileURLToPath(new URL('.', import.meta.url)), 'dist')

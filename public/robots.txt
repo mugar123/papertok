@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://mugar123.github.io/papertok/sitemap.xml
+Sitemap: https://papertok.app/sitemap.xml

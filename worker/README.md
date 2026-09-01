@@ -29,11 +29,16 @@ Brevo is the primary notification provider when `EMAIL_PROVIDER = "brevo"`.
 `BREVO_FROM_EMAIL` must match an active sender in the Brevo account. Resend remains
 available as a fallback by changing `EMAIL_PROVIDER` to `resend`.
 
-After deployment, set the GitHub Actions repository variable `VITE_PAPER_API_BASE_URL` to:
+After deployment, set the GitHub Actions repository variable `VITE_PAPER_API_BASE_URL` to
+the Worker's Custom Domain:
 
 ```text
-https://papertok-report-api.<account>.workers.dev
+https://api.papertok.app
 ```
+
+The native `https://papertok-report-api.<account>.workers.dev` route still answers and is
+still accepted by `src/services/workerApiClient.js`, so a bundle built before the variable
+was flipped keeps working.
 
 Available routes are `/locale`, `/thread-anchor`, `/thread-anchor/invalidate`, `/report/trends`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/explain`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, and `/health`. `/locale` returns only Cloudflare's country code for the automatic Spanish/English interface choice and is never cached. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback.
 

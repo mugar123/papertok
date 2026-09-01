@@ -50,7 +50,12 @@ export { KimiBudgetLedger } from './kimi-budget-ledger.js';
 export { EmailDeliveryLedger } from './email-delivery-ledger.js';
 export { RequestQuotaLedger } from './request-quota-ledger.js';
 
+// `mugar123.github.io` sigue en la lista: GitHub Pages redirige el sitio viejo
+// al dominio nuevo, pero un service worker ya instalado alli puede servir el
+// bundle cacheado una vez mas antes de ver la redireccion.
 const DEFAULT_ALLOWED_ORIGINS = [
+  'https://papertok.app',
+  'https://www.papertok.app',
   'https://mugar123.github.io',
   'http://localhost:5173',
   'http://127.0.0.1:5173',

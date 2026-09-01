@@ -2,7 +2,7 @@ import { isValidHandle, normalizeHandle } from './userHandle.js';
 
 const VITE_BASE_URL = import.meta.env?.BASE_URL || '/';
 
-export const DEFAULT_PUBLIC_ORIGIN = 'https://mugar123.github.io';
+export const DEFAULT_PUBLIC_ORIGIN = 'https://papertok.app';
 export const DEFAULT_SHARE_IMAGE_PATH = '/og/papertok-share-0.2.png';
 export const PUBLIC_ROUTE_PREFIX = '/public';
 export const PUBLIC_ENTITY_TYPES = Object.freeze([

@@ -2,10 +2,18 @@ name = "papertok-report-api"
 main = "worker/report-api.js"
 compatibility_date = "2026-07-16"
 
+# El Custom Domain del Worker. Cloudflare crea aqui el registro DNS y el
+# certificado al desplegar, y solo puede hacerlo con la zona papertok.app ya en
+# la cuenta: un deploy antes de mover los nameservers falla con "zone not
+# found". La ruta nativa papertok-report-api.<cuenta>.workers.dev sigue viva.
+[[routes]]
+pattern = "api.papertok.app"
+custom_domain = true
+
 [vars]
 # 5174/5175 are here because Vite increments the port when 5173 is taken, and a
 # missing origin only shows up as a blocked POST after a successful preflight.
-ALLOWED_ORIGINS = "https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175,http://localhost:4175,http://127.0.0.1:4175"
+ALLOWED_ORIGINS = "https://papertok.app,https://www.papertok.app,https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175,http://localhost:4175,http://127.0.0.1:4175"
 AI_PROVIDER = "gemini"
 # Cost order: DeepSeek on NVIDIA is free, Kimi on Modal pays per token, so the
 # chain only reaches Modal when NVIDIA could not answer.
@@ -30,7 +38,7 @@ FIREBASE_PROJECT_ID = "papertok-168df"
 # far under the Firebase Spark daily allowance (20k writes, 50k reads).
 PUBLIC_LIST_USER_DAILY_LIMIT = "60"
 PUBLIC_LIST_GLOBAL_DAILY_LIMIT = "2000"
-WORKER_PUBLIC_URL = "https://papertok-report-api.papertok-mugar123.workers.dev"
+WORKER_PUBLIC_URL = "https://api.papertok.app"
 EMAIL_PROVIDER = "brevo"
 EMAIL_DAILY_SEND_LIMIT = "290"
 PROVIDER_USER_MINUTE_LIMIT = "60"
