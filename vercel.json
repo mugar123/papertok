@@ -3,6 +3,14 @@
   "framework": "vite",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "has": [{ "type": "host", "value": "papertok-ten.vercel.app" }],
+      "destination": "https://papertok.app/:path*",
+      "permanent": true
+    }
+  ],
   "rewrites": [
     { "source": "/:path((?!_vercel/).*)", "destination": "/index.html" }
   ],
