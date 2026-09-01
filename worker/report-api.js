@@ -1967,6 +1967,21 @@ export default {
         },
       });
     }
+    // Cloudflare sirve su propio robots.txt gestionado para cualquier host de
+    // una zona, y por defecto dice `Allow: /`. Para una API eso esta al reves:
+    // nada enlaza a estas rutas, pero un rastreador que las encuentre gasta los
+    // presupuestos de OpenAlex, PubMed y Semantic Scholar, que son globales y no
+    // por llamante -- la misma bolsa de la que lee el feed de invitados. Se
+    // contesta antes que nada porque un rastreador no manda `origin`.
+    if (url.pathname === '/robots.txt') {
+      return new Response('User-agent: *\nDisallow: /\n', {
+        status: 200,
+        headers: {
+          'content-type': 'text/plain; charset=utf-8',
+          'cache-control': 'public, max-age=86400',
+        },
+      });
+    }
     if (url.pathname === '/thread-anchor' || url.pathname === '/thread-anchor/invalidate') {
       // Public comments: a guest can open a thread, so this is origin-gated
       // rather than session-gated. Invalidation still requires a Firebase

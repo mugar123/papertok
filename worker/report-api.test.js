@@ -2002,3 +2002,18 @@ test('the thread-anchor route is origin-gated and public', async () => {
   assert.equal((await allowed.json()).code, 'THREAD_ANCHOR_UNAVAILABLE');
   assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
 });
+
+test('closes the API host to crawlers with its own robots.txt', async () => {
+  // Un rastreador no manda `origin`, asi que la ruta tiene que contestar sin el.
+  const response = await reportApi.fetch(
+    new Request('https://api.papertok.app/robots.txt'),
+    {},
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^text\/plain/);
+  const body = await response.text();
+  assert.match(body, /^User-agent: \*$/m);
+  assert.match(body, /^Disallow: \/$/m);
+  assert.doesNotMatch(body, /^Allow: \//m);
+});
