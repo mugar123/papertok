@@ -5,6 +5,12 @@
   "outputDirectory": "dist",
   "redirects": [
     {
+      "source": "/",
+      "has": [{ "type": "host", "value": "papertok-ten.vercel.app" }],
+      "destination": "https://papertok.app/",
+      "permanent": true
+    },
+    {
       "source": "/:path*",
       "has": [{ "type": "host", "value": "papertok-ten.vercel.app" }],
       "destination": "https://papertok.app/:path*",
