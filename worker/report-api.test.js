@@ -195,26 +195,49 @@ test('proxies OpenReview forum papers while excluding imported public records', 
   assert.equal(payload.notes[0].id, 'submission');
 });
 
-// api2 answers `sort=tcdate:desc` with `SearchError: No mapping found for
-// [tcdate] in order to sort on` and a 400, which the route relayed as its own
-// 502 -- so OpenReview looked like an upstream that fails at random when what
-// actually varied was whether the feed asked for the recent ordering at all.
-// `cdate` is the creation date the index does map, which is what `tcdate` meant.
-test('sorts OpenReview by a field the search index actually maps', async () => {
-  let upstreamUrl = '';
-  const response = await withWorkerFetchMock(async url => {
-    upstreamUrl = String(url);
-    return new Response(JSON.stringify({ count: 0, notes: [] }), {
+// api2's search accepts `sort=cdate:desc` and does nothing with it: measured
+// 2026-09-02, `cdate:asc`, `cdate:desc`, `tmdate:*` and no sort at all returned
+// the same sequence for three different queries (`tcdate`, `mdate` and `pdate`
+// are refused with a 400). So the recent ordering is the Worker's to produce,
+// over the relevance pool `limit * 3` already fetches, and with the same date
+// precedence the client shows on the card: `pdate`, then `cdate`, then `tcdate`.
+test('orders OpenReview by date itself because api2 accepts the sort and ignores it', async () => {
+  const notes = [
+    { id: 'older', forum: 'older', domain: 'ICLR.cc/2024/Conference', cdate: 1_700_000_000_000, content: { title: { value: 'Older' } } },
+    { id: 'newest', forum: 'newest', domain: 'ICLR.cc/2026/Conference', cdate: 1_760_000_000_000, content: { title: { value: 'Newest' } } },
+    {
+      id: 'published-late',
+      forum: 'published-late',
+      domain: 'ICLR.cc/2025/Conference',
+      cdate: 1_710_000_000_000,
+      pdate: 1_780_000_000_000,
+      content: { title: { value: 'Published late' } },
+    },
+  ];
+  const upstream = [];
+  const fetchMock = async url => {
+    upstream.push(new URL(String(url)));
+    return new Response(JSON.stringify({ count: 3, notes }), {
       headers: { 'content-type': 'application/json' },
     });
-  }, () => reportApi.fetch(new Request(
+  };
+
+  const recent = await withWorkerFetchMock(fetchMock, () => reportApi.fetch(new Request(
     'https://papertok-report-api.example/sources/openreview?q=neuroscience&limit=5&sort=recent',
     { headers: { origin: 'https://mugar123.github.io' } },
   ), {}));
 
-  assert.equal(response.status, 200);
-  assert.doesNotMatch(upstreamUrl, /tcdate/);
-  assert.match(upstreamUrl, /sort=cdate%3Adesc/);
+  assert.equal(recent.status, 200);
+  assert.equal(upstream[0].searchParams.has('sort'), false, 'a sort api2 ignores is not worth sending');
+  assert.deepEqual((await recent.json()).notes.map(note => note.id), ['published-late', 'newest', 'older']);
+
+  const relevance = await withWorkerFetchMock(fetchMock, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/openreview?q=neuroscience&limit=5',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), {}));
+
+  assert.equal(relevance.status, 200);
+  assert.deepEqual((await relevance.json()).notes.map(note => note.id), ['older', 'newest', 'published-late'], 'relevance keeps the upstream order');
 });
 
 test('proxies Hugging Face paper search through the specialist source contract', async () => {

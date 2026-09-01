@@ -1153,6 +1153,13 @@ function isOpenReviewSubmission(note) {
   ].some(prefix => domain.startsWith(prefix));
 }
 
+// The date the card shows. `mapOpenReviewNote` builds `published` from `pdate`,
+// then `cdate`, then `tcdate`; an order that disagrees with the date printed on
+// the card reads as no order at all, so the Worker sorts by the same precedence.
+function openReviewNoteDate(note) {
+  return Number(note?.pdate || note?.cdate || note?.tcdate) || 0;
+}
+
 async function handleOpenReview(request, env) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
@@ -1165,18 +1172,18 @@ async function handleOpenReview(request, env) {
     url.searchParams.set('source', 'forum');
     url.searchParams.set('limit', String(Math.min(50, context.limit * 3)));
     url.searchParams.set('offset', String((context.page - 1) * context.limit));
-    // `cdate`, not `tcdate`: api2's search index maps the creation date under the
-    // former, and answers the latter with `SearchError: No mapping found for
-    // [tcdate] in order to sort on` and a 400 -- which this route then relayed as
-    // its own 502. That is why OpenReview read as an upstream failing at random:
-    // what varied was the sort mode, and only the recent one built this URL.
-    if (context.sort === 'recent') url.searchParams.set('sort', 'cdate:desc');
+    // No `sort` on the URL. api2's search accepts `cdate:desc` (and refuses
+    // `tcdate`, `mdate` and `pdate` with a 400) but does not act on it: measured
+    // 2026-09-02, `cdate:asc`, `cdate:desc`, `tmdate:*` and no sort at all
+    // returned the same sequence for three different queries. Recency is
+    // therefore ours to produce, over the relevance pool `limit * 3` fetches.
     const payload = await fetchJsonUpstream(url);
+    const notes = (payload?.notes || []).filter(isOpenReviewSubmission);
+    if (context.sort === 'recent') {
+      notes.sort((a, b) => openReviewNoteDate(b) - openReviewNoteDate(a));
+    }
     return {
-      notes: (payload?.notes || [])
-        .filter(isOpenReviewSubmission)
-        .slice(0, context.limit)
-        .map(compactOpenReviewNote),
+      notes: notes.slice(0, context.limit).map(compactOpenReviewNote),
       count: Number(payload?.count) || 0,
     };
   }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
