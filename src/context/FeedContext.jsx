@@ -56,7 +56,7 @@ import {
   needsOpenAlexEnrichment,
   takeFeedPage,
 } from '../utils/feedEnrichment';
-import { resolveWithin, settleWithin } from '../utils/asyncTiming';
+import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
@@ -1002,13 +1002,17 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             queryMode,
           );
 
-          const sourceResults = await Promise.all(
-            [arxivProm, pubmedProm, openAlexProm, domainProm]
-              .map(sourcePromise => settleWithin(sourcePromise, FEED_SOURCE_RENDER_BUDGET_MS))
+          const { first, all } = settleSourcesForFirstPaint(
+            [arxivProm, pubmedProm, openAlexProm, domainProm],
+            FEED_SOURCE_RENDER_BUDGET_MS,
+            (papers) => PaperBuilder.deduplicate(papers).length >= PAGE_SIZE,
           );
-          mainPapers = PaperBuilder.deduplicate(
-            sourceResults.flatMap(result => result.status === 'fulfilled' ? result.value : [])
-          );
+          let sourceResults = await first;
+          mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
+          if (mainPapers.length === 0) {
+            sourceResults = await all;
+            mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
+          }
           mainSourceResults = sourceResults;
         } catch (e) {
           console.error("Error fetching main papers:", e);
