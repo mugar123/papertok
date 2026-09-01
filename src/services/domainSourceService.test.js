@@ -7,6 +7,7 @@ import {
   getDomainSourcePlan,
   getEligibleDomainSources,
   reportDomainSourceFailures,
+  settleDomainSources,
   mapBioRxivPaper,
   mapCoreWork,
   mapEuropePmcSearchResult,
@@ -207,4 +208,38 @@ test('a rejected source names its path instead of vanishing', () => {
   assert.equal(logged.length, 2);
   assert.match(logged[0], /\/sources\/physics.*WORKER_AUTH_REQUIRED/);
   assert.match(logged[1], /\/sources\/nasa.*429/);
+});
+
+// The regression this file exists to hold: `Promise.allSettled` settles only
+// when its slowest member does, and every caller wraps the whole domain branch
+// in one render budget -- so a single upstream stalling past that budget threw
+// away the papers its siblings had already delivered. Budgeting each source on
+// its own is what keeps a stall local to the source that stalled.
+test('a source that hangs past its budget does not discard the ones that answered', async () => {
+  const logged = [];
+  const requests = [
+    { path: '/sources/biorxiv', promise: new Promise(() => {}) },
+    { path: '/sources/europepmc', promise: Promise.resolve([{ id: 'europepmc-1' }]) },
+    { path: '/sources/huggingface', promise: Promise.resolve([{ id: 'hf-1' }]) },
+  ];
+
+  const settled = await settleDomainSources(requests, 20, message => logged.push(message));
+
+  assert.deepEqual(settled.map(result => result.status), ['timed_out', 'fulfilled', 'fulfilled']);
+  assert.deepEqual(settled[1].value, [{ id: 'europepmc-1' }]);
+  assert.deepEqual(settled[2].value, [{ id: 'hf-1' }]);
+  assert.match(logged.join('\n'), /\/sources\/biorxiv/, 'a stalled source is named, not silent');
+});
+
+test('a rejected source still names its path once each source is budgeted alone', async () => {
+  const logged = [];
+  const requests = [
+    { path: '/sources/openreview', promise: Promise.reject(new Error('/sources/openreview returned 502')) },
+    { path: '/sources/europepmc', promise: Promise.resolve([{ id: 'europepmc-1' }]) },
+  ];
+
+  const settled = await settleDomainSources(requests, 20, message => logged.push(message));
+
+  assert.deepEqual(settled.map(result => result.status), ['rejected', 'fulfilled']);
+  assert.match(logged.join('\n'), /\/sources\/openreview failed: \/sources\/openreview returned 502/);
 });

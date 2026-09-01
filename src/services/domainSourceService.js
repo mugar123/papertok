@@ -6,10 +6,16 @@ import { mapOpenReviewNote } from './openReviewService.js';
 import { mapHuggingFacePaper } from './huggingFaceService.js';
 import { authenticatedWorkerFetch, hasWorkerSession } from './workerApiClient.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
+import { settleWithin } from '../utils/asyncTiming.js';
 import { mapEuropePmcRecord } from '../utils/europePmcRecord.js';
 
 const PAPER_API_BASE = import.meta.env?.VITE_PAPER_API_BASE_URL?.replace(/\/$/, '') || '';
 const REQUEST_TIMEOUT_MS = 10_000;
+// Per source, and deliberately under the 4 s render budget every caller wraps
+// this whole branch in: the inner cut has to win that race, or the outer one
+// discards the sources that already answered along with the one that stalled.
+// It matches `OPTIONAL_SOURCE_RENDER_BUDGET_MS` in the feed for the same reason.
+const DOMAIN_SOURCE_BUDGET_MS = 3_500;
 
 const BIORXIV_CATEGORIES = {
   'bio.gen': 'genetics',
@@ -515,14 +521,38 @@ export function getEligibleDomainSources(plan, { hasSession = false, scopusEnabl
 // same thing: nothing. It is what kept the failing physics branch invisible.
 export function reportDomainSourceFailures(settled, entries, logger = console.warn) {
   settled.forEach((result, index) => {
+    const path = entries[index]?.path || 'unknown';
+    // A source cut at its budget is not a rejection and used to leave no trace at
+    // all -- the same silence that once hid the failing physics branch, in the
+    // one shape `allSettled` cannot produce.
+    if (result.status === 'timed_out') {
+      logger(`Domain source ${path} failed: timed out`);
+      return;
+    }
     if (result.status !== 'rejected') return;
     const reason = result.reason;
     const detail = reason?.code || reason?.status || reason?.message || String(reason);
-    logger(`Domain source ${entries[index]?.path || 'unknown'} failed: ${detail}`, reason);
+    logger(`Domain source ${path} failed: ${detail}`, reason);
   });
 }
 
-export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMode = 'recent') {
+/**
+ * Settles every domain source under its own budget instead of one shared with
+ * the slowest of them. `Promise.allSettled` resolves only when its last member
+ * does, and each caller then wraps this branch in a single render budget -- so
+ * an upstream that stalls past that budget used to take the papers its siblings
+ * had already returned down with it. bioRxiv hangs outright on about a quarter
+ * of calls (measured 2026-09-01), which made that the common case, not the edge.
+ */
+export async function settleDomainSources(requests, sourceBudgetMs = DOMAIN_SOURCE_BUDGET_MS, logger = console.warn) {
+  const settled = await Promise.all(
+    requests.map(entry => settleWithin(entry.promise, sourceBudgetMs)),
+  );
+  reportDomainSourceFailures(settled, requests, logger);
+  return settled;
+}
+
+export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMode = 'recent', { sourceBudgetMs = DOMAIN_SOURCE_BUDGET_MS } = {}) {
   const plan = getDomainSourcePlan(categories);
   const eligible = getEligibleDomainSources(plan, {
     hasSession: hasWorkerSession(),
@@ -622,8 +652,7 @@ export async function fetchDomainPapers(categories, page = 1, limit = 8, queryMo
   }
 
   if (requests.length === 0) return [];
-  const settled = await Promise.allSettled(requests.map(entry => entry.promise));
-  reportDomainSourceFailures(settled, requests);
+  const settled = await settleDomainSources(requests, sourceBudgetMs);
   return PaperBuilder.deduplicate(
     settled.flatMap(result => result.status === 'fulfilled' ? result.value.filter(Boolean) : [])
   ).slice(0, safeLimit * 2);
