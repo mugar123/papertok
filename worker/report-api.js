@@ -1973,6 +1973,13 @@ export default {
     // presupuestos de OpenAlex, PubMed y Semantic Scholar, que son globales y no
     // por llamante -- la misma bolsa de la que lee el feed de invitados. Se
     // contesta antes que nada porque un rastreador no manda `origin`.
+    //
+    // Medido el 2026-09-01: en `api.papertok.app` Cloudflare intercepta
+    // /robots.txt ANTES que el Worker, asi que esta ruta solo se ve hoy en
+    // `papertok-report-api.*.workers.dev`. No esta rota: entra en vigor en el
+    // dominio propio en cuanto se apague el robots.txt gestionado de la zona
+    // (panel de Cloudflare, AI Crawl Control). Antes de tocarla, comprueba cual
+    // de los dos esta contestando.
     if (url.pathname === '/robots.txt') {
       return new Response('User-agent: *\nDisallow: /\n', {
         status: 200,
