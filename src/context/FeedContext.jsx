@@ -44,11 +44,11 @@ import {
 } from '../utils/interactionProfileLoader';
 import {
   createInteractionProfileClient,
-  fetchLibraryRecords,
   flushAllInteractionProfiles,
   flushInteractionProfileNow,
   scheduleInteractionProfileFlush,
 } from '../services/interactionProfileStore';
+import { fetchLibraryRecordsHydrated } from '../services/hydrateInteractionPapers.js';
 import { fetchDomainPapers } from '../services/domainSourceService';
 import {
   getOpenAlexEnrichmentId,
@@ -396,7 +396,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         ...curatedIds(profile, 'liked'),
       ])].slice(0, PERSONAL_LIBRARY_MAX_RECORDS);
 
-      const { records, fromCache } = await fetchLibraryRecords(userId, paperIds);
+      const { records, fromCache } = await fetchLibraryRecordsHydrated(userId, paperIds);
       if (activeUserId.current !== userId) {
         // Abandoned, not finished. Leaving the status on 'loading' would make
         // every later call short-circuit on a library that was never filled,
@@ -448,9 +448,6 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       setPersonalLibrary(current => ({ ...library, ...current }));
       // Existing entries win, exactly as above: a paper already in hand came
       // from a screen that fetched it deliberately and may be richer.
-      setLibraryPapers(current => ({ ...papers, ...current }));
-      // Existing entries win, exactly as above: a paper already in hand came
-      // from a screen that fetched it deliberately.
       setLibraryPapers(current => ({ ...papers, ...current }));
       // A cache-served answer is worth showing but not worth latching: with
       // the backend unreachable, getDocs resolves against the in-memory cache

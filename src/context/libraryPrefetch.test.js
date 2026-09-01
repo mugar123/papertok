@@ -57,6 +57,8 @@ test('what the read fetches is kept, even when the record is filtered out', asyn
 
   assert.match(source, /setLibraryPapers\(/, 'the kept papers must reach state');
   assert.match(source, /^\s*libraryPapers,$/m, 'and be exposed on the context');
+  assert.match(source, /fetchLibraryRecordsHydrated/,
+    'the mount must hydrate titles Firestore cannot name');
 });
 
 test('the lists screen counts the prefetch as already in hand', async () => {
@@ -107,11 +109,15 @@ test('the Liked tab counts the prefetch as already in hand', async () => {
     source.indexOf('if (wanted.length === 0)'),
   );
   assert.ok(wanted.length > 0, 'expected to have found the liked-id filter');
-  assert.match(wanted, /!libraryPapers\[id\]/,
+  assert.match(wanted, /libraryPapers\[id\]/,
     'a liked paper the mount already fetched must not be fetched a second time');
+  assert.match(wanted, /resolvedPaperTitle/,
+    'a placeholder cached extra must still be hydrated');
 
   assert.match(source, /libraryPapers\[id\] \|\| extra\?\.paper/,
     'and the row must render from it');
+  assert.match(source, /fetchLibraryRecordsHydrated/,
+    'and slash-bearing ids must be hydrated instead of poisoning the query');
 });
 
 /**

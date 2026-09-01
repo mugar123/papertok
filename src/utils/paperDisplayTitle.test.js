@@ -12,6 +12,7 @@ test('empty and identity-shaped strings are not titles', () => {
   assert.equal(isPlaceholderPaperTitle('ads:2021JHEP...03..014J', 'ads:2021JHEP...03..014J'), true);
   assert.equal(isPlaceholderPaperTitle('Paper sin titulo', 'x'), true);
   assert.equal(isPlaceholderPaperTitle('Untitled paper', 'x'), true);
+  assert.equal(isPlaceholderPaperTitle('No Title', 'x'), true);
 });
 
 test('resolvedPaperTitle drops placeholders and keeps real names', () => {

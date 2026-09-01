@@ -30,6 +30,7 @@ import { db } from './firebase';
 import { serializeInteractionProfile } from '../utils/interactionProfile.js';
 import { mapWithConcurrency } from '../utils/mapWithConcurrency.js';
 import { FIRESTORE_IN_FILTER_MAX } from '../utils/firestoreLimits.js';
+import { fetchableDocumentIds } from '../utils/listPaperMetadataPlan.js';
 
 export const INTERACTION_PROFILE_COLLECTION = 'aggregates';
 export const INTERACTION_PROFILE_DOC_ID = 'interactions';
@@ -171,12 +172,6 @@ export function flushAllInteractionProfiles() {
 /**
  * Fetches the library records for a bounded list of paper ids.
  *
- * The reading library used to arrive as a side effect of scanning every
- * interaction document on feed load. It is now loaded on demand by the screens
- * that render it, from the ids the aggregate already holds, in the largest
- * batches the `in` operator accepts.
- */
-/**
  * Returns `{ records, fromCache }`, not a bare array, because the caller has
  * to know how much the answer is worth. With the backend unreachable,
  * `getDocs` does not reject — it resolves against the local cache, and this
@@ -185,12 +180,18 @@ export function flushAllInteractionProfiles() {
  * is what turned a connectivity blip into a page of untitled rows.
  * `fromCache` is true if ANY batch was served locally: absence is only
  * trustworthy when every batch heard back from the server.
+ *
+ * Ids are filtered with `fetchableDocumentIds` first. A legacy arXiv id such
+ * as `hep-th/0603001` is not a legal document id, and one of them inside an
+ * `in` filter rejects the whole query — every other liked paper sharing the
+ * batch stays blank.
  */
 export async function fetchLibraryRecords(userId, paperIds) {
-  if (!userId || !paperIds?.length) return { records: [], fromCache: false };
+  const queryIds = fetchableDocumentIds(paperIds);
+  if (!userId || !queryIds.length) return { records: [], fromCache: false };
   const batches = [];
-  for (let index = 0; index < paperIds.length; index += LIBRARY_BATCH_SIZE) {
-    batches.push(paperIds.slice(index, index + LIBRARY_BATCH_SIZE));
+  for (let index = 0; index < queryIds.length; index += LIBRARY_BATCH_SIZE) {
+    batches.push(queryIds.slice(index, index + LIBRARY_BATCH_SIZE));
   }
 
   const settled = await mapWithConcurrency(batches, LIBRARY_READ_CONCURRENCY, async (batch) => {
