@@ -29,6 +29,7 @@ const INJECTED_PROPERTIES = new Map([
   // Which entry of the index rail the marker sits on, set on the list itself
   // so the marker's travel is a multiplication rather than a measurement.
   ['--settings-active', '../Settings/SettingsPage.jsx'],
+  ['--profile-toc-active', '../Profile/ProfilePage.jsx'],
   ['--follow-rows', '../Public/FollowSheet.jsx'],
   // The comments sheet takes the research field of the paper it hangs off, the
   // same way a card or an entity header does, so its rules and monogram are
@@ -130,4 +131,15 @@ test('la fila de listas envuelve en móvil en vez de estrujar el título a una l
   assert.ok(narrow, 'ProfilePage.css perdió su bloque de max-width: 640px');
   assert.match(narrow[0], /\.profile-pin-list li\s*\{[^}]*flex-wrap:\s*wrap/);
   assert.match(narrow[0], /\.profile-pin-actions\s*\{[^}]*flex:\s*1 1 100%/);
+});
+
+test('the editor keeps a table of contents and a live preview beside the form', async () => {
+  const css = await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8');
+  assert.match(css, /\.profile-layout\s*\{[^}]*grid-template-columns:\s*176px minmax\(0, 1fr\) 340px/);
+  assert.match(css, /\.profile-toc-marker/);
+  assert.match(css, /\.profile-preview-chrome/);
+  const jsx = await readFile(new URL('./ProfilePage.jsx', import.meta.url), 'utf8');
+  assert.match(jsx, /aria-label=\{copy\.tocLabel\}/);
+  assert.match(jsx, /id="profile-identity"/);
+  assert.match(jsx, /className="profile-inline-link" to="\/settings"/);
 });
