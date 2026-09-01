@@ -1,6 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { dedupeInteractionPapers, definedFields } from './feedInteractions.js';
+import {
+  dedupeInteractionPapers,
+  definedFields,
+  selectSemanticProfilePositiveIds,
+  SEMANTIC_PROFILE_POSITIVE_CAP,
+} from './feedInteractions.js';
+
+test('caps liked+saved ids used for the OpenAlex semantic overlay', () => {
+  const liked = Array.from({ length: 40 }, (_, index) => `liked-${index}`);
+  const saved = ['liked-0', 'saved-a', 'saved-b'];
+  const selected = selectSemanticProfilePositiveIds(liked, saved, 24);
+
+  assert.equal(selected.length, 24);
+  assert.equal(selected[0], 'liked-0');
+  assert.ok(!selected.includes('saved-a'));
+  assert.equal(SEMANTIC_PROFILE_POSITIVE_CAP, 24);
+});
+
+test('skips blank ids when building the semantic overlay sample', () => {
+  assert.deepEqual(
+    selectSemanticProfilePositiveIds(['', '  ', 'a'], [null, 'a', 'b'], 10),
+    ['a', 'b'],
+  );
+});
 
 test('deduplicates queued paper interactions while preserving their order', () => {
   const first = { id: 'paper-1', title: 'First' };

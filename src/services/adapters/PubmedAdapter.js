@@ -1,7 +1,4 @@
 import { CATEGORIES } from '../../data/categories.js';
-import { openAlexJson } from '../openAlexClient.js';
-import { reconstructOpenAlexAbstract } from '../../utils/openAlexAbstract.js';
-import { enrichPubmedIds } from '../europePmcService.js';
 import { BaseAdapter } from './BaseAdapter.js';
 import { readSourceCache, writeSourceCache } from '../../utils/sourceCache.js';
 import { fetchWorkerSourceJson } from '../workerApiClient.js';
@@ -184,111 +181,40 @@ export class PubmedAdapter extends BaseAdapter {
       const results = pmids.map(pmid => summaryData.result[pmid]).filter(Boolean);
       let mappedPapers = results.map(item => this.mapToStandard(item));
 
-      // 2. Enrich with EFetch, OpenAlex, and Europe PMC. Every source is optional.
+      // Abstracts live in the Worker's efetch payload already. Waiting here for
+      // OpenAlex + Europe PMC used to keep PubMed last in the 4 s first-page
+      // race; those sources still enrich the visible cards through the shared
+      // feed/card paths after paint.
       try {
+        const xmlText = pubmedData?.efetch || '';
+        if (xmlText && typeof DOMParser === 'function') {
           const enrichmentMap = {};
-          if (pmids.length > 0) {
-              // The Worker already fetched this alongside the summaries; an empty
-              // string is its way of saying efetch was the half that failed.
-              const fetchProm = Promise.resolve(pubmedData?.efetch || '');
-
-              const oaUrl = `https://api.openalex.org/works?filter=ids.pmid:${pmids.join('|')}&select=ids,abstract_inverted_index,concepts`;
-              const oaProm = openAlexJson(oaUrl, {
-                  timeoutMs: 8000,
-                  cacheTtlMs: 24 * 60 * 60 * 1000,
-                  staleIfError: true,
-              }).catch(() => null);
-
-              const europePmcProm = enrichPubmedIds(pmids).catch(() => new Map());
-              
-              const [xmlText, oaData, europePmcData] = await Promise.all([fetchProm, oaProm, europePmcProm]);
-              
-              // Parse XML (EFetch)
-              if (xmlText) {
-                  const parser = new DOMParser();
-                  const xmlDoc = parser.parseFromString(xmlText, "text/xml");
-                  
-                  const articles = xmlDoc.querySelectorAll('PubmedArticle');
-                  articles.forEach(article => {
-                      const pmidEl = article.querySelector('PMID');
-                      if (!pmidEl) return;
-                      const pmid = pmidEl.textContent;
-                      
-                      const abstractTexts = article.querySelectorAll('AbstractText');
-                      const abstract = Array.from(abstractTexts).map(el => el.textContent).join(' ');
-                      
-                      const meshHeadings = article.querySelectorAll('MeshHeading > DescriptorName');
-                      const categories = Array.from(meshHeadings).map(el => el.textContent);
-                      
-                      enrichmentMap[`pmid:${pmid}`] = { abstract, categories };
-                  });
-              }
-              
-              // Parse OpenAlex
-              if (oaData && oaData.results) {
-                  oaData.results.forEach(work => {
-                      if (work.ids && work.ids.pmid) {
-                          const pmid = work.ids.pmid.split('/').pop();
-                          const pmidKey = `pmid:${pmid}`;
-                          if (!enrichmentMap[pmidKey]) enrichmentMap[pmidKey] = { abstract: '', categories: [] };
-                          
-                          const abstract = reconstructOpenAlexAbstract(work.abstract_inverted_index);
-                          const categories = work.concepts?.map(c => c.display_name) || [];
-                          
-                          // Merge (prefer efetch abstract if exists, prefer whichever has categories)
-                          if (!enrichmentMap[pmidKey].abstract && abstract) {
-                              enrichmentMap[pmidKey].abstract = abstract;
-                          }
-                          if (enrichmentMap[pmidKey].categories.length === 0 && categories.length > 0) {
-                              enrichmentMap[pmidKey].categories = categories;
-                          }
-                      }
-                  });
-              }
-
-              mappedPapers = mappedPapers.map(p => {
-                const enrichment = enrichmentMap[p.id];
-                if (enrichment) {
-                  if (enrichment.abstract) p.abstract = enrichment.abstract;
-                  if (enrichment.categories && enrichment.categories.length > 0) {
-                    p.categories = enrichment.categories;
-                    p.keywords = enrichment.categories;
-                  }
-                }
-
-                const pmid = p.id.replace(/^pmid:/, '');
-                const europePmc = europePmcData.get(pmid);
-                if (europePmc) {
-                  if (!p.abstract && europePmc.abstract) p.abstract = europePmc.abstract;
-                  if (europePmc.biomedicalTerms.length > 0) {
-                    p.categories = [...new Set([...(p.categories || []), ...europePmc.biomedicalTerms])];
-                    p.keywords = [...new Set([...(p.keywords || []), ...europePmc.biomedicalTerms])];
-                    p.biomedicalTerms = europePmc.biomedicalTerms;
-                    p.concepts = europePmc.concepts;
-                  }
-                  p.citationsCount = Math.max(p.citationsCount || 0, europePmc.citationCount || 0);
-                  p.pmcid = europePmc.pmcid;
-                  p.europePmcUrl = europePmc.europePmcUrl;
-                  p.openAccessPdfUrl = europePmc.openAccessPdfUrl;
-                  p.license = europePmc.license;
-                  p.hasReferences = europePmc.hasReferences;
-                  p.hasData = europePmc.hasData;
-                  p.hasSupplement = europePmc.hasSupplement;
-                  if (europePmc.openAccess) {
-                    p.openAccess = true;
-                    p.accessSource = 'europepmc';
-                    if (europePmc.landingPageUrl) p.landingPageUrl = europePmc.landingPageUrl;
-                  }
-                  p.sources = {
-                    ...p.sources,
-                    enrichedBy: [...new Set([...(p.sources?.enrichedBy || []), 'europepmc'])],
-                  };
-                }
-                return p;
-              });
-          }
+          const parser = new DOMParser();
+          const xmlDoc = parser.parseFromString(xmlText, 'text/xml');
+          const articles = xmlDoc.querySelectorAll('PubmedArticle');
+          articles.forEach((article) => {
+            const pmidEl = article.querySelector('PMID');
+            if (!pmidEl) return;
+            const pmid = pmidEl.textContent;
+            const abstractTexts = article.querySelectorAll('AbstractText');
+            const abstract = Array.from(abstractTexts).map(el => el.textContent).join(' ');
+            const meshHeadings = article.querySelectorAll('MeshHeading > DescriptorName');
+            const categories = Array.from(meshHeadings).map(el => el.textContent);
+            enrichmentMap[`pmid:${pmid}`] = { abstract, categories };
+          });
+          mappedPapers = mappedPapers.map((paper) => {
+            const enrichment = enrichmentMap[paper.id];
+            if (!enrichment) return paper;
+            if (enrichment.abstract) paper.abstract = enrichment.abstract;
+            if (enrichment.categories?.length > 0) {
+              paper.categories = enrichment.categories;
+              paper.keywords = enrichment.categories;
+            }
+            return paper;
+          });
+        }
       } catch (err) {
-        console.warn("PubmedAdapter enrichment failed:", err);
+        console.warn('PubmedAdapter enrichment failed:', err);
       }
 
       if (filters.internalCategories?.length > 0) {

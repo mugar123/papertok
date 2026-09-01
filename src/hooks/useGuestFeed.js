@@ -10,16 +10,9 @@ import { enrichPapersBatch } from '../services/openAlexService.js';
 import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
-  waitForInitialEnrichment,
 } from '../utils/feedEnrichment.js';
 
 const GUEST_PAGE_SIZE = 12;
-// How long the first paint may wait for OpenAlex metadata. Enrichment lands in
-// 0.2–0.9 s when the Worker edge is warm (measured 2026-08-22), so this budget
-// covers the common case; anything slower merges into the visible cards via
-// the late-enrichment path below instead of holding the skeleton hostage —
-// the old 4.5 s budget was most of the measured 9.5 s worst case.
-const INITIAL_ENRICHMENT_BUDGET_MS = 900;
 // Per-source cap. The slowest healthy source measured 2.4 s (OpenAlex, cold
 // edge); the only thing ever seen above 4 s is OpenReview's cold upstream at
 // 5.2 s, which no realistic budget saves. Waiting 5 s for it bought nothing.
@@ -81,21 +74,14 @@ export function useGuestFeed() {
 
       const ids = discovered.map(getOpenAlexEnrichmentId).filter(Boolean);
       const enrichmentRequest = enrichPapersBatch(ids, { timeoutMs: 6_500 }).catch(() => ({}));
-      const initialEnrichment = await waitForInitialEnrichment(
-        enrichmentRequest,
-        INITIAL_ENRICHMENT_BUDGET_MS,
-      );
-      if (requestId !== requestIdRef.current) return;
-      setPapers(initialEnrichment
-        ? mergeOpenAlexEnrichment(discovered, initialEnrichment)
-        : discovered);
-
-      if (!initialEnrichment) {
-        enrichmentRequest.then((lateEnrichment) => {
-          if (requestId !== requestIdRef.current || !Object.keys(lateEnrichment).length) return;
-          setPapers(current => mergeOpenAlexEnrichment(current, lateEnrichment));
-        });
-      }
+      // Paint the ranked page immediately. Citations and concepts merge into
+      // the same objects once they land; waiting up to 900 ms here was the
+      // last serial slice of the skeleton after sources had already answered.
+      setPapers(discovered);
+      enrichmentRequest.then((lateEnrichment) => {
+        if (requestId !== requestIdRef.current || !lateEnrichment || !Object.keys(lateEnrichment).length) return;
+        setPapers(current => mergeOpenAlexEnrichment(current, lateEnrichment));
+      });
     } catch (loadError) {
       if (requestId === requestIdRef.current) {
         console.error('Guest feed could not be loaded', loadError);

@@ -55,11 +55,10 @@ import {
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   takeFeedPage,
-  waitForInitialEnrichment,
 } from '../utils/feedEnrichment';
 import { resolveWithin, settleWithin } from '../utils/asyncTiming';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard';
-import { dedupeInteractionPapers, definedFields } from '../utils/feedInteractions';
+import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
 // once a feed load actually ranks followed topics, so it loads on first use
@@ -74,13 +73,6 @@ const PAGE_SIZE = 15;
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
 const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
-// How long the first paint may wait for enrichment. Warm-edge enrichment lands
-// in 0.2–0.9 s (measured 2026-08-22); slower responses merge into the visible
-// cards through the existing late-enrichment path instead of holding the
-// skeleton — the old 4.5 s wait was the largest single slice of the measured
-// 9.5 s worst case.
-const OPENALEX_FEED_WAIT_BUDGET_MS = 900;
-const ICITE_FEED_WAIT_BUDGET_MS = 900;
 const INTERACTIONS_NETWORK_TIMEOUT_MS = 5000;
 // Upper bound on the reading-library records fetched on demand by the library
 // screens. How many queries that costs depends on the `in` operator's cap,
@@ -680,6 +672,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   // Load user interactions
   useEffect(() => {
     let cancelled = false;
+    let semanticIdleHandle = null;
     const userId = user?.uid || null;
     const sessionId = ++feedSessionId.current;
 
@@ -822,39 +815,45 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         relatedCandidates.current = [];
         setRecommendationProfileUserId(userId);
 
-        // --- OpenAlex Semantic Profile ---
-        const positiveIds = [...liked, ...saved];
-        let conceptWeights = {};
-        let relatedWorksPool = [];
-
-        if (positiveIds.length > 0) {
-           const openAlexData = await enrichPapersBatch(positiveIds);
-
-           positiveIds.forEach(id => {
-              const pid = id.startsWith('arxiv:') ? id.split(':')[1].replace(/v\d+$/, '') : id.replace(/v\d+$/, '');
-              const data = openAlexData[pid];
-              if (data) {
-                 data.concepts.forEach(c => {
-                    if (!conceptWeights[c.id]) conceptWeights[c.id] = 0;
-                    conceptWeights[c.id] += c.score; // Score is confidence [0, 1]
-                 });
-                 if (data.related_works) {
-                    relatedWorksPool.push(...data.related_works);
-                 }
-              }
-           });
-        }
-
-        const relatedArxivIds = await getArxivIdsForOpenAlexWorks(relatedWorksPool);
-
-        if (cancelled) return;
-
-        Object.keys(conceptWeights).forEach((id) => {
-          conceptWeights[id] = Math.max(CONCEPT_AFFINITY_MIN, Math.min(CONCEPT_AFFINITY_MAX, conceptWeights[id]));
+        // OpenAlex concept weights are a ranking overlay, not a gate. Cap the
+        // sample and run it after the first source wave has the network, so a
+        // large liked library cannot stall the first cards.
+        const positiveIds = selectSemanticProfilePositiveIds(liked, saved);
+        const scheduleIdle = typeof requestIdleCallback === 'function'
+          ? (fn) => requestIdleCallback(fn, { timeout: 2500 })
+          : (fn) => setTimeout(fn, 0);
+        const semanticIdleHandleId = scheduleIdle(() => {
+          void (async () => {
+            if (cancelled) return;
+            let conceptWeights = {};
+            let relatedWorksPool = [];
+            if (positiveIds.length > 0) {
+              const openAlexData = await enrichPapersBatch(positiveIds);
+              if (cancelled) return;
+              positiveIds.forEach((id) => {
+                const pid = id.startsWith('arxiv:') ? id.split(':')[1].replace(/v\d+$/, '') : id.replace(/v\d+$/, '');
+                const data = openAlexData[pid];
+                if (!data) return;
+                data.concepts.forEach((c) => {
+                  if (!conceptWeights[c.id]) conceptWeights[c.id] = 0;
+                  conceptWeights[c.id] += c.score;
+                });
+                if (data.related_works) {
+                  relatedWorksPool.push(...data.related_works);
+                }
+              });
+            }
+            const relatedArxivIds = await getArxivIdsForOpenAlexWorks(relatedWorksPool);
+            if (cancelled) return;
+            Object.keys(conceptWeights).forEach((id) => {
+              conceptWeights[id] = Math.max(CONCEPT_AFFINITY_MIN, Math.min(CONCEPT_AFFINITY_MAX, conceptWeights[id]));
+            });
+            conceptAffinities.current = conceptWeights;
+            relatedCandidates.current = relatedArxivIds;
+            reRankFeedRef.current();
+          })();
         });
-        conceptAffinities.current = conceptWeights;
-        relatedCandidates.current = relatedArxivIds;
-        reRankFeedRef.current();
+        semanticIdleHandle = semanticIdleHandleId;
       } catch (err) {
         if (!cancelled) console.error('Error loading interactions:', err);
       } finally {
@@ -865,6 +864,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
     return () => {
       cancelled = true;
+      if (semanticIdleHandle != null) {
+        if (typeof cancelIdleCallback === 'function') {
+          try { cancelIdleCallback(semanticIdleHandle); }
+          catch { clearTimeout(semanticIdleHandle); }
+        } else {
+          clearTimeout(semanticIdleHandle);
+        }
+      }
       // Anything still sitting in the write debounce belongs to the account we
       // are leaving, so it has to land before the profile ref is reused.
       if (userId && interactionProfileHydrated.current) void flushInteractionProfileNow(userId);
@@ -905,11 +912,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
         
-        // ─── STEP 1: Rank user's selected categories by learned affinity ───
-        const followedTopicIds = followedEntities.length > 0
-          ? (await loadTopicRetrieval()).getFollowedTopicCategoryIds(followedEntities)
-          : [];
-        const rankedPreferences = [...new Set([...userPreferences, ...followedTopicIds])].sort((a, b) => {
+        // Followed-topic category ids used to sit on the critical path
+        // (`await loadTopicRetrieval()`) before arXiv/PubMed/OpenAlex started.
+        // Those papers still arrive through fetchFollowedEntityCandidates.
+        const rankedPreferences = [...userPreferences].sort((a, b) => {
           const affA = categoryAffinities.current[a] || 0;
           const affB = categoryAffinities.current[b] || 0;
           return affB - affA;
@@ -1306,25 +1312,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
       const iCitePmids = [...new Set(filtered.map(paper => paper?.pmid).filter(Boolean))];
       const iCitePromise = fetchICiteMetrics(iCitePmids);
-
-      const [initialOpenAlexData, initialICiteData] = await Promise.all([
-        waitForInitialEnrichment(enrichmentPromise, OPENALEX_FEED_WAIT_BUDGET_MS),
-        resolveWithin(iCitePromise, ICITE_FEED_WAIT_BUDGET_MS, null),
-      ]);
       if (requestId !== feedRequestId.current) return;
-      if (initialOpenAlexData) {
-        filtered = mergeOpenAlexEnrichment(filtered, initialOpenAlexData);
-      }
-      if (initialICiteData) {
-        filtered = mergeICiteEnrichment(filtered, initialICiteData);
-      }
 
+      // Paint now. A second shuffle after enrichment used to reorder the
+      // cards the reader had just started looking at; late merge keeps order
+      // and identity (paperFieldsEqual) so citations appear in place.
       if (activeMode === 'top' || activeMode === null) {
-        filtered = diversifiedWeightedShuffle(filtered, {
-          scorePaper: calculateAndAttachScore,
-          weights: recommendationWeights.current,
-          initialPapers: reset ? [] : papers,
-        });
         logRankingBatch('fresh feed', filtered);
       }
 
@@ -1373,7 +1366,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       }
       writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
 
-      if (!initialOpenAlexData && enrichmentIds.length > 0) {
+      if (enrichmentIds.length > 0) {
         enrichmentPromise.then((lateEnrichment) => {
           if (feedSessionId.current !== activeSessionId || !lateEnrichment || Object.keys(lateEnrichment).length === 0) return;
           setPapers(current => {
@@ -1388,7 +1381,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         });
       }
 
-      if (!initialICiteData && iCitePmids.length > 0) {
+      if (iCitePmids.length > 0) {
         iCitePromise.then((lateMetrics) => {
           if (feedSessionId.current !== activeSessionId || !lateMetrics || Object.keys(lateMetrics).length === 0) return;
           setPapers(current => {

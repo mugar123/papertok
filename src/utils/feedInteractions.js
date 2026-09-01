@@ -1,3 +1,25 @@
+export const SEMANTIC_PROFILE_POSITIVE_CAP = 24;
+
+/**
+ * Liked+saved IDs used to build OpenAlex concept weights. Unbounded, this
+ * fan-out raced the first feed page for every paper the account had ever
+ * kept. The ranking still sees the rest through category affinities on the
+ * aggregate; only the semantic overlay is capped.
+ */
+export function selectSemanticProfilePositiveIds(liked = [], saved = [], cap = SEMANTIC_PROFILE_POSITIVE_CAP) {
+  const limit = Number.isFinite(cap) ? Math.max(0, Math.floor(cap)) : SEMANTIC_PROFILE_POSITIVE_CAP;
+  const ids = [];
+  const seen = new Set();
+  for (const value of [...liked, ...saved]) {
+    const id = String(value || '').trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    if (ids.length >= limit) break;
+  }
+  return ids;
+}
+
 export function dedupeInteractionPapers(papers = []) {
   const uniquePapers = new Map();
 

@@ -56,6 +56,7 @@ import { getIcon } from '../../utils/icons.js';
 import { normalizeHandle } from '../../utils/userHandle.js';
 import ScientificText from '../ScientificText.js';
 import FollowSheet from './FollowSheet.jsx';
+import { loadProfileFonts } from '../../utils/loadDisplayFonts.js';
 import './PublicProfilePage.css';
 
 /**
@@ -259,6 +260,10 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     likedPaperIds, personalLibrary, libraryPapers, ensurePersonalLibrary, getCuratedInteractionIds,
   } = useFeed();
   const { followedEntities, loading: followingLoading } = useFollowing();
+
+  useEffect(() => {
+    void loadProfileFonts();
+  }, []);
 
   // `{ profile }` wrappers, because "this account has no public profile yet"
   // (a null) is itself a cacheable answer on one's own page.

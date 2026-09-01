@@ -45,6 +45,7 @@ import { SETTINGS_BREADCRUMB } from '../Settings/settingsBreadcrumb.js';
 import { getIcon } from '../../utils/icons.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { HANDLE_ERRORS, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
+import { loadProfileFonts } from '../../utils/loadDisplayFonts.js';
 import './ProfilePage.css';
 
 const HANDLE_ERROR_COPY = {
@@ -120,6 +121,10 @@ export default function ProfilePage() {
   const location = useLocation();
   const { user, profilePhoto } = useAuth();
   const { isEnglish } = useLanguage();
+
+  useEffect(() => {
+    void loadProfileFonts();
+  }, []);
 
   // Seeded from the cache the public profile page fills (and fills for it), so
   // the crossing between the two screens paints instead of spinning.

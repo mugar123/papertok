@@ -40,19 +40,10 @@ import '@fontsource/inter/700.css'
 import '@fontsource/ibm-plex-mono/400.css'
 import '@fontsource/ibm-plex-mono/500.css'
 import '@fontsource/ibm-plex-mono/600.css'
-// Newsreader is a two-axis variable font (optical size 6-72, weight
-// 200-800). Fontsource's `wght.css`/`index.css` files pin opsz to its
-// default and expose weight only — confirmed by reading their @font-face
-// files and the fvar table inside the woff2 (fonttools ttx -t fvar). Only
-// `opsz.css`/`opsz-italic.css` carry both axes, which is what reproduces
-// the original two-axis Google Fonts request. No subset-scoped files exist
-// for this package, so latin/latin-ext arrive together with vietnamese.
+// Newsreader roman is the paper title face. Italic and Nunito (profile bio)
+// load on the screens that paint them — see src/utils/loadDisplayFonts.js —
+// so a feed-first session does not download those files before the first card.
 import '@fontsource-variable/newsreader/opsz.css'
-import '@fontsource-variable/newsreader/opsz-italic.css'
-// Nunito carries the one warm line on a profile: the bio. Weight is its only
-// real axis, so `wght.css` is the whole font — no opsz question like
-// Newsreader's above. Only fetched when a profile card actually paints.
-import '@fontsource-variable/nunito/wght.css'
 // KaTeX's stylesheet ships with the on-demand KaTeX chunk (see
 // components/ScientificText.js); loading it here put 23 KB of CSS in front of
 // every first paint, math or no math.

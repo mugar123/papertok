@@ -16,7 +16,6 @@ import { EmailNotificationsProvider } from './context/EmailNotificationsContext'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import FeedContainer from './components/Feed/FeedContainer'
 import Navbar from './components/Layout/Navbar'
-import SearchCommand from './components/Search/SearchCommand'
 import AnalyticsConsentBanner from './components/Privacy/AnalyticsConsentBanner'
 import GuestFeedPage from './components/Public/GuestFeedPage'
 import AuthPrompt from './components/Public/AuthPrompt'
@@ -51,6 +50,7 @@ const PublicPaperPage = lazy(() => import('./components/Public/PublicPaperPage')
 const PublicListPage = lazy(() => import('./components/Lists/PublicListPage'))
 const PublicProfilePage = lazy(() => import('./components/Public/PublicProfilePage'))
 const ProfilePage = lazy(() => import('./components/Profile/ProfilePage'))
+const SearchCommand = lazy(() => import('./components/Search/SearchCommand'))
 
 function AppContent() {
   const [pdfPaper, setPdfPaper] = useState(null)
@@ -123,6 +123,7 @@ function AppContent() {
       import('./components/Report/ScientificReport').catch(() => {})
       import('./components/Following/FollowingFeedPage').catch(() => {})
       import('./components/Reader/PaperReader.jsx').catch(() => {})
+      import('./components/Search/SearchCommand').catch(() => {})
     }
     const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
     const timer = setTimeout(() => schedule(prefetch), 2500)
@@ -378,7 +379,11 @@ function AppContent() {
       </Suspense>
       </div>
 
-      {user && <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} />}
+      {user && searchOpen && (
+        <Suspense fallback={null}>
+          <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} />
+        </Suspense>
+      )}
 
       <AnalyticsConsentBanner guestFeedReady={guestFeedReady} />
 

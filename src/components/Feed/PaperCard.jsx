@@ -17,7 +17,7 @@ import { getProjectForPaper } from '../../services/openAireService';
 import { useNavigate, Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import './PaperCard.css';
-import RelatedPapersSheet from './RelatedPapersSheet';
+const RelatedPapersSheet = lazy(() => import('./RelatedPapersSheet'));
 import { findOpenAccessCopy } from '../../services/unpaywallService';
 import { getRelatedResearchResources } from '../../services/dataCiteService';
 import { getHuggingFaceResearchResources } from '../../services/huggingFaceService';
@@ -107,6 +107,7 @@ const RESOURCE_KIND_CONFIG = {
   version: { label: { es: 'Versión', en: 'Version' }, Icon: History },
 };
 const ENRICHMENT_SETTLE_DELAY_MS = 240;
+const SECONDARY_NETWORK_DELAY_MS = 900;
 const RELATED_PAPER_HYDRATION_TIMEOUT_MS = 8_000;
 
 // Read once at module load, not per render: every card in the feed was
@@ -298,6 +299,7 @@ const PaperCard = memo(function PaperCard({
   const [linkedResources, setLinkedResources] = useState({ paperId: null, items: [] });
   const [isCardVisible, setIsCardVisible] = useState(false);
   const [isCardSettled, setIsCardSettled] = useState(false);
+  const [isCardIdle, setIsCardIdle] = useState(false);
   const [figures, setFigures] = useState([]);
   const { followedByType, isFollowing } = useFollowing();
   const { language, isEnglish } = useLanguage();
@@ -335,16 +337,21 @@ const PaperCard = memo(function PaperCard({
   useEffect(() => {
     if (!isCardVisible) {
       setIsCardSettled(false);
+      setIsCardIdle(false);
       return undefined;
     }
 
-    const timer = setTimeout(() => setIsCardSettled(true), ENRICHMENT_SETTLE_DELAY_MS);
-    return () => clearTimeout(timer);
+    const settleTimer = setTimeout(() => setIsCardSettled(true), ENRICHMENT_SETTLE_DELAY_MS);
+    const idleTimer = setTimeout(() => setIsCardIdle(true), SECONDARY_NETWORK_DELAY_MS);
+    return () => {
+      clearTimeout(settleTimer);
+      clearTimeout(idleTimer);
+    };
   }, [isCardVisible]);
 
   useEffect(() => {
     let active = true;
-    if (!isCardSettled || !paper?.doi || paper.openAccess || paper.pdfUrl || paper.openAccessPdfUrl || paper.citationMetadataResolved) {
+    if (!isCardIdle || !paper?.doi || paper.openAccess || paper.pdfUrl || paper.openAccessPdfUrl || paper.citationMetadataResolved) {
       return () => { active = false; };
     }
 
@@ -353,13 +360,13 @@ const PaperCard = memo(function PaperCard({
     });
 
     return () => { active = false; };
-  }, [isCardSettled, paper?.citationMetadataResolved, paper?.doi, paper?.id, paper?.openAccess, paper?.openAccessPdfUrl, paper?.pdfUrl]);
+  }, [isCardIdle, paper?.citationMetadataResolved, paper?.doi, paper?.id, paper?.openAccess, paper?.openAccessPdfUrl, paper?.pdfUrl]);
 
   useEffect(() => {
     let active = true;
     const baseResources = paper?.researchResources || [];
     setLinkedResources({ paperId: paper?.id, items: baseResources });
-    if (!isCardSettled) return () => { active = false; };
+    if (!isCardIdle) return () => { active = false; };
 
     const providers = new Set([paper?.sources?.primary, ...(paper?.sources?.enrichedBy || [])]);
     const requests = [];
@@ -378,7 +385,7 @@ const PaperCard = memo(function PaperCard({
       });
     });
     return () => { active = false; };
-  }, [isCardSettled, paper?.arxivId, paper?.doi, paper?.id, paper?.researchResources, paper?.sources, paper?.title]);
+  }, [isCardIdle, paper?.arxivId, paper?.doi, paper?.id, paper?.researchResources, paper?.sources, paper?.title]);
 
   useEffect(() => {
     if (!cardRef.current || showRelated || selectedRelatedPaper) return;
@@ -463,14 +470,14 @@ const PaperCard = memo(function PaperCard({
 
   useEffect(() => {
     let isMounted = true;
-    if (!isCardSettled || !paper) return;
+    if (!isCardIdle || !paper) return;
     getProjectForPaper(paper.arxivId, paper.doi).then(proj => {
       if (isMounted && proj) {
         setProject(proj);
       }
     });
     return () => { isMounted = false; };
-  }, [isCardSettled, paper]);
+  }, [isCardIdle, paper]);
 
   const toggleExpanded = (e, newState) => {
     e.stopPropagation();
@@ -1745,12 +1752,14 @@ const PaperCard = memo(function PaperCard({
         )}
       </AnimatePresence>
       {showRelated && createPortal(
-        <RelatedPapersSheet
-          paper={paper}
-          onClose={closeRelatedSheet}
-          onPreparePaper={prepareRelatedPaper}
-          onSelectPaper={selectRelatedPaper}
-        />,
+        <Suspense fallback={null}>
+          <RelatedPapersSheet
+            paper={paper}
+            onClose={closeRelatedSheet}
+            onPreparePaper={prepareRelatedPaper}
+            onSelectPaper={selectRelatedPaper}
+          />
+        </Suspense>,
         document.body,
         `papertok-related-sheet:${getRelatedPaperIdentity(paper) || 'current'}`,
       )}

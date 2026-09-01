@@ -516,6 +516,27 @@ function getTrailingCategoryRun(papers) {
   return { lastCategory, count };
 }
 
+// The visible page is 15 cards. Scoring and shuffling hundreds of extras is
+// main-thread work the reader never sees; keep a scored head that is still
+// wide enough for diversity, then shuffle that.
+export const FEED_SHUFFLE_POOL_CAP = 80;
+
+export function trimScoredCandidatePool(papers, options = {}) {
+  const list = Array.isArray(papers) ? [...papers] : [];
+  const requestedCap = options.cap ?? FEED_SHUFFLE_POOL_CAP;
+  const cap = Number.isFinite(requestedCap) ? Math.max(0, Math.floor(requestedCap)) : FEED_SHUFFLE_POOL_CAP;
+  if (list.length <= cap) return list;
+  const scorePaper = options.scorePaper;
+  if (typeof scorePaper === 'function') {
+    const emptyRecent = {
+      preprint: 0, published: 0, openAccess: 0, subscription: 0, journal: 0, conference: 0,
+    };
+    list.forEach((paper) => scorePaper(paper, emptyRecent));
+  }
+  list.sort((left, right) => (right._dynamicScore || 0) - (left._dynamicScore || 0));
+  return list.slice(0, cap);
+}
+
 export function diversifiedWeightedShuffle(papers, options = {}) {
   const {
     scorePaper,
@@ -523,10 +544,11 @@ export function diversifiedWeightedShuffle(papers, options = {}) {
     initialPapers = [],
     random = Math.random,
     maxConsecutiveCategory = 3,
+    poolCap = FEED_SHUFFLE_POOL_CAP,
   } = options;
 
   const config = mergeRecommendationWeights(weights);
-  const pool = [...papers];
+  const pool = trimScoredCandidatePool(papers, { scorePaper, cap: poolCap });
   const result = [];
   const history = [...initialPapers];
   let { lastCategory, count: consecutiveCategoryCount } = getTrailingCategoryRun(history);

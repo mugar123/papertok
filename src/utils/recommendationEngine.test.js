@@ -4,8 +4,10 @@ import {
   applyCategoryAffinityDelta,
   applyRecommendationScore,
   diversifiedWeightedShuffle,
+  FEED_SHUFFLE_POOL_CAP,
   mergeRecommendationWeights,
   scorePaperForRecommendation,
+  trimScoredCandidatePool,
   weightedShuffle,
 } from './recommendationEngine.js';
 
@@ -337,4 +339,23 @@ test('the diversified shuffle does not re-score the whole pool on every iteratio
   // and a vacuous pass would hide the very quadratic this test exists to catch.
   assert.ok(signalPasses >= papers.length, `expensive half ran ${signalPasses} times, expected at least one pass per paper`);
   assert.ok(signalPasses <= papers.length * 2, `the expensive half of the score ran ${signalPasses} times`);
+});
+
+test('trims the shuffle pool to a scored head instead of walking hundreds of extras', () => {
+  const papers = Array.from({ length: 120 }, (_, index) => ({
+    id: `pool-${index}`,
+    primaryCategory: 'cs.AI',
+    _dynamicScore: index,
+  }));
+  const trimmed = trimScoredCandidatePool(papers, { cap: 10 });
+  assert.equal(trimmed.length, 10);
+  assert.equal(trimmed[0].id, 'pool-119');
+  assert.equal(trimmed[9].id, 'pool-110');
+  assert.equal(FEED_SHUFFLE_POOL_CAP, 80);
+
+  const shuffled = diversifiedWeightedShuffle(papers, {
+    poolCap: 12,
+    random: () => 0,
+  });
+  assert.equal(shuffled.length, 12);
 });
