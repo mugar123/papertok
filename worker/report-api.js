@@ -2338,11 +2338,19 @@ export default {
         // that makes a rate limit worse. Scopus already relayed its own 429;
         // every source route does now, because every one of them can be refused.
         const rateLimited = error.status === 429;
+        // `AbortSignal.timeout` rejects with a `TimeoutError`, and a stall has no
+        // status to relay -- so it gets a name instead of the generic 502 body.
+        const timedOut = error?.name === 'TimeoutError';
         const status = rateLimited ? 429 : 502;
         return json({
           error: isScopus ? 'Scopus unavailable' : 'Specialist source unavailable',
           ...(rateLimited ? { code: 'UPSTREAM_RATE_LIMITED' } : {}),
-          ...(isScopus && error.status ? { upstreamStatus: error.status } : {}),
+          ...(timedOut ? { code: 'UPSTREAM_TIMEOUT' } : {}),
+          // For every source, not only Scopus: a 400 we caused and an outage they
+          // had both left here as the same 502, and the number that told them
+          // apart stayed in `wrangler tail` (`Upstream error: 400`) -- which is
+          // how the OpenReview `tcdate` bug went unseen for weeks.
+          ...(error.status ? { upstreamStatus: error.status } : {}),
           ...(isScopus && error.resetAt ? { resetAt: error.resetAt } : {}),
         }, status, {
           ...corsHeaders(origin, env),

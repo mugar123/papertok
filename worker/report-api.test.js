@@ -1892,6 +1892,45 @@ test('falls back to a minute when the upstream refused without saying for how lo
   assert.equal(response.headers.get('retry-after'), '60');
 });
 
+// A 400 of our own making (a URL we built wrong) and an outage of theirs both
+// left the Worker as the same `Specialist source unavailable` 502; the one
+// number that told them apart -- `Upstream error: 400` -- lived only in
+// `wrangler tail`. That is how the OpenReview `tcdate` bug stayed invisible
+// for weeks. Scopus already relayed `upstreamStatus`; every source does now.
+test('names the upstream status on every source so a 400 of ours is not a 502 of theirs', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response(JSON.stringify({ name: 'SearchError', message: 'No mapping found for [tcdate]' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/openreview?q=neuroscience',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), {}),
+  );
+
+  assert.equal(response.status, 502);
+  const body = await response.json();
+  assert.equal(body.error, 'Specialist source unavailable');
+  assert.equal(body.upstreamStatus, 400);
+  assert.equal(body.code, undefined, 'a plain upstream error carries no code, only its status');
+});
+
+test('names a timed-out upstream instead of dressing it as a generic failure', async () => {
+  const response = await withWorkerFetchMock(
+    async () => { throw new DOMException('aborted due to timeout', 'TimeoutError'); },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/openreview?q=neuroscience',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), {}),
+  );
+
+  assert.equal(response.status, 502);
+  const body = await response.json();
+  assert.equal(body.code, 'UPSTREAM_TIMEOUT');
+  assert.equal(body.upstreamStatus, undefined, 'a stall has no status to relay');
+});
+
 /* ============================================================
    /ai/rewrite
    ============================================================ */
