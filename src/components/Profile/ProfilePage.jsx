@@ -67,6 +67,41 @@ const HANDLE_ERROR_COPY = {
 };
 
 /**
+ * Which numbered section is currently in the reading band below the navbar.
+ * Same idea as the settings hub: document order, not whichever observer
+ * callback arrived last, so two overlapping sections cannot flicker the
+ * marker between them.
+ */
+function useSectionSpy(sectionIds) {
+  const [activeId, setActiveId] = useState(sectionIds[0]);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver !== 'function') return undefined;
+    const nodes = sectionIds
+      .map(id => document.getElementById(id))
+      .filter(Boolean);
+    if (nodes.length === 0) return undefined;
+
+    const visible = new Set();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) visible.add(entry.target.id);
+          else visible.delete(entry.target.id);
+        }
+        const first = sectionIds.find(id => visible.has(id));
+        if (first) setActiveId(first);
+      },
+      { rootMargin: '-96px 0px -62% 0px' },
+    );
+    nodes.forEach(node => observer.observe(node));
+    return () => observer.disconnect();
+  }, [sectionIds]);
+
+  return activeId;
+}
+
+/**
  * The owner's view of their public profile: create it, edit it, decide what it
  * shows, and unpublish it.
  *
@@ -164,8 +199,13 @@ export default function ProfilePage() {
     loadingLists: 'Looking for your published lists...',
     pin: 'Pin',
     unpin: 'Unpin from top',
+    toc: 'On this page',
+    tocLabel: 'Sections of the public profile editor',
     preview: 'Preview · your public page',
     previewHint: 'This is your page as anyone with the link sees it. It follows what you save here.',
+    previewUrl: 'Public URL',
+    previewPublicBadge: 'Public',
+    previewPrivateBadge: 'Private',
     previewNoBio: 'No bio yet.',
     previewLists: 'Lists',
     previewNoLists: 'No lists on your profile yet.',
@@ -238,8 +278,13 @@ export default function ProfilePage() {
     loadingLists: 'Buscando tus listas publicadas...',
     pin: 'Fijar',
     unpin: 'Desfijar',
+    toc: 'En esta página',
+    tocLabel: 'Secciones del editor del perfil público',
     preview: 'Vista previa · tu página pública',
     previewHint: 'Así ve tu página cualquiera con el enlace. Se actualiza con lo que guardes aquí.',
+    previewUrl: 'URL pública',
+    previewPublicBadge: 'Público',
+    previewPrivateBadge: 'Privado',
     previewNoBio: 'Todavía sin biografía.',
     previewLists: 'Listas',
     previewNoLists: 'Todavía no muestras ninguna lista en tu perfil.',
@@ -383,6 +428,29 @@ export default function ProfilePage() {
   // A profile still being created has only the two sections it can fill; the
   // pinned lists and the unpublish block arrive with the profile itself.
   const sectionTotal = status === 'ready' ? 4 : 2;
+  const editorSections = useMemo(() => {
+    const identity = { id: 'profile-identity', label: copy.sectionIdentity };
+    const privacy = { id: 'profile-privacy', label: copy.sectionPrivacy };
+    if (status !== 'ready') return [identity, privacy];
+    return [
+      identity,
+      privacy,
+      { id: 'profile-pinned', label: copy.pinned },
+      { id: 'profile-danger', label: copy.sectionDanger },
+    ];
+  }, [copy.pinned, copy.sectionDanger, copy.sectionIdentity, copy.sectionPrivacy, status]);
+  const editorSectionIds = useMemo(
+    () => editorSections.map(section => section.id),
+    [editorSections],
+  );
+  const activeSection = useSectionSpy(editorSectionIds);
+  const jumpToSection = useCallback((id) => {
+    const node = document.getElementById(id);
+    if (!node) return;
+    const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches;
+    node.scrollIntoView({ behavior: reduced ? 'auto' : 'smooth', block: 'start' });
+    node.focus({ preventScroll: true });
+  }, []);
   const pinnedShareIds = profile?.pinnedShareIds || [];
   /** What the public page will actually show, pinned lists first. */
   const previewLists = useMemo(() => {
@@ -767,9 +835,39 @@ export default function ProfilePage() {
         )}
 
         <div className="profile-layout">
+          <nav className="profile-toc" aria-label={copy.tocLabel}>
+            <span className="profile-toc-title">{copy.toc}</span>
+            <div
+              className="profile-toc-list"
+              style={{ '--profile-toc-active': Math.max(0, editorSections.findIndex(section => section.id === activeSection)) }}
+            >
+              <span className="profile-toc-marker" aria-hidden="true" />
+              {editorSections.map((section, position) => {
+                const active = section.id === activeSection;
+                return (
+                  <button
+                    key={section.id}
+                    type="button"
+                    className={active ? 'is-active' : ''}
+                    aria-current={active ? 'true' : undefined}
+                    onClick={() => jumpToSection(section.id)}
+                  >
+                    <span aria-hidden="true">{String(position + 1).padStart(2, '0')}</span>
+                    {section.label}
+                  </button>
+                );
+              })}
+            </div>
+          </nav>
+
           <div className="profile-main">
             <form className="profile-form" onSubmit={onSubmit}>
-              <section className="profile-section" aria-labelledby="profile-identity-title">
+              <section
+                id="profile-identity"
+                tabIndex={-1}
+                className="profile-section"
+                aria-labelledby="profile-identity-title"
+              >
                 <div className="profile-section-head">
                   <span className="profile-section-index">{copy.section(1, sectionTotal)}</span>
                   <h2 id="profile-identity-title">{copy.sectionIdentity}</h2>
@@ -785,65 +883,83 @@ export default function ProfilePage() {
                           referrerPolicy="no-referrer"
                           // The page's own masthead avatar, visible on load --
                           // not lazy. `.profile-identity-avatar img` renders at
-                          // 52x52.
+                          // 72x72.
                           decoding="async"
-                          width="52"
-                          height="52"
+                          width="72"
+                          height="72"
                         />
                       )
-                      : <span>{(displayName || user.email || '?').trim().charAt(0).toUpperCase()}</span>}
+                      : (
+                        <span aria-hidden="true">
+                          {(displayName || user.email || '?').trim().charAt(0).toUpperCase()}
+                        </span>
+                      )}
                   </div>
                   <p className="profile-identity-hint">
                     {copy.photoMirror}{' '}
-                    <button type="button" className="profile-inline-link" onClick={() => navigate('/settings')}>
+                    <Link className="profile-inline-link" to="/settings">
                       {copy.photoMirrorAction}
-                    </button>
+                    </Link>
                   </p>
                 </div>
 
-                <div className="profile-field">
-                  <label htmlFor="profile-handle">{copy.handle}</label>
-                  <div className="profile-handle-input">
-                    <span aria-hidden="true">@</span>
+                <div className="profile-identity-fields">
+                  <div className="profile-field">
+                    <label htmlFor="profile-handle">{copy.handle}</label>
+                    <div className="profile-handle-input">
+                      <span aria-hidden="true">@</span>
+                      <input
+                        id="profile-handle"
+                        value={handleDraft}
+                        onChange={event => setHandleDraft(event.target.value.toLowerCase())}
+                        maxLength={HANDLE_MAX_LENGTH}
+                        autoComplete="off"
+                        spellCheck="false"
+                        aria-invalid={handleError ? 'true' : undefined}
+                        aria-describedby="profile-handle-hint"
+                      />
+                    </div>
+                    <p id="profile-handle-hint" className={`profile-hint${handleError ? ' is-error' : ''}`}>
+                      {handleError || copy.handleHint}
+                    </p>
+                  </div>
+
+                  <div className="profile-field">
+                    <label htmlFor="profile-name">{copy.displayName}</label>
                     <input
-                      id="profile-handle"
-                      value={handleDraft}
-                      onChange={event => setHandleDraft(event.target.value.toLowerCase())}
-                      maxLength={HANDLE_MAX_LENGTH}
-                      autoComplete="off"
-                      spellCheck="false"
-                      aria-describedby="profile-handle-hint"
+                      id="profile-name"
+                      value={displayName}
+                      onChange={event => setDisplayName(event.target.value)}
+                      maxLength={USER_PROFILE_LIMITS.displayName}
+                      autoComplete="name"
                     />
                   </div>
-                  <p id="profile-handle-hint" className={`profile-hint${handleError ? ' is-error' : ''}`}>
-                    {handleError || copy.handleHint}
-                  </p>
                 </div>
 
                 <div className="profile-field">
-                  <label htmlFor="profile-name">{copy.displayName}</label>
-                  <input
-                    id="profile-name"
-                    value={displayName}
-                    onChange={event => setDisplayName(event.target.value)}
-                    maxLength={USER_PROFILE_LIMITS.displayName}
-                  />
-                </div>
-
-                <div className="profile-field">
-                  <label htmlFor="profile-bio">{copy.bio}</label>
+                  <div className="profile-field-head">
+                    <label htmlFor="profile-bio">{copy.bio}</label>
+                    <span id="profile-bio-count" className="profile-char-count">
+                      {bio.length} / {USER_PROFILE_LIMITS.bio}
+                    </span>
+                  </div>
                   <textarea
                     id="profile-bio"
                     value={bio}
                     rows={4}
                     onChange={event => setBio(event.target.value)}
                     maxLength={USER_PROFILE_LIMITS.bio}
+                    aria-describedby="profile-bio-count"
                   />
-                  <p className="profile-hint">{bio.length} / {USER_PROFILE_LIMITS.bio}</p>
                 </div>
               </section>
 
-              <section className="profile-section" aria-labelledby="profile-privacy-title">
+              <section
+                id="profile-privacy"
+                tabIndex={-1}
+                className="profile-section"
+                aria-labelledby="profile-privacy-title"
+              >
                 <div className="profile-section-head">
                   <span className="profile-section-index">{copy.section(2, sectionTotal)}</span>
                   <h2 id="profile-privacy-title">{copy.sectionPrivacy}</h2>
@@ -961,7 +1077,12 @@ export default function ProfilePage() {
             </form>
 
             {status === 'ready' && (
-              <section className="profile-section profile-pinned" aria-labelledby="profile-pinned-title">
+              <section
+                id="profile-pinned"
+                tabIndex={-1}
+                className="profile-section profile-pinned"
+                aria-labelledby="profile-pinned-title"
+              >
                 <div className="profile-section-head">
                   <span className="profile-section-index">{copy.section(3, sectionTotal)}</span>
                   <h2 id="profile-pinned-title">{copy.pinned}</h2>
@@ -1035,7 +1156,12 @@ export default function ProfilePage() {
             )}
 
             {status === 'ready' && profile && (
-              <section className="profile-section profile-danger" aria-labelledby="profile-danger-title">
+              <section
+                id="profile-danger"
+                tabIndex={-1}
+                className="profile-section profile-danger"
+                aria-labelledby="profile-danger-title"
+              >
                 <div className="profile-section-head">
                   <span className="profile-section-index">{copy.section(4, sectionTotal)}</span>
                   <h2 id="profile-danger-title">{copy.sectionDanger}</h2>
@@ -1064,6 +1190,18 @@ export default function ProfilePage() {
           <aside className="profile-preview" aria-label={copy.preview}>
             <span className="profile-preview-label">{copy.preview}</span>
             <div className="profile-preview-card">
+              <div className="profile-preview-chrome">
+                <span className="profile-preview-url-label">{copy.previewUrl}</span>
+                <span className="profile-preview-url">
+                  {publicPath || `/public/user/${handleCheck.valid ? handleCheck.handle : (handleDraft || '…')}`}
+                </span>
+                <span className={`profile-preview-badge${status === 'ready' && !isPublicProfile ? ' is-private' : ''}`}>
+                  {status === 'ready' && !isPublicProfile
+                    ? <><Lock size={11} aria-hidden="true" /> {copy.previewPrivateBadge}</>
+                    : <><Globe2 size={11} aria-hidden="true" /> {copy.previewPublicBadge}</>}
+                </span>
+              </div>
+              <div className="profile-preview-body">
               <div className="profile-preview-identity">
                 <div className="profile-preview-avatar">
                   {showPhoto && appAvatar
@@ -1110,7 +1248,7 @@ export default function ProfilePage() {
                     const Icon = getIcon(list.emoji);
                     const isPinned = pinnedShareIds.includes(list.shareId);
                     return (
-                      <div className="profile-preview-list" key={list.shareId}>
+                      <div className={`profile-preview-list${isPinned ? ' is-pinned' : ''}`} key={list.shareId}>
                         <Icon size={16} aria-hidden="true" />
                         <span>
                           <strong>{list.title}</strong>
@@ -1125,6 +1263,7 @@ export default function ProfilePage() {
                   })}
                 </div>
               )}
+              </div>
             </div>
             <p className="profile-preview-hint">{copy.previewHint}</p>
           </aside>
