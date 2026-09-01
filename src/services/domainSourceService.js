@@ -452,6 +452,27 @@ export const PROTECTED_SOURCE_PATHS = Object.freeze(new Set([
   DOMAIN_SOURCE_PATHS.scopus,
 ]));
 
+/**
+ * The error a source route's refusal becomes.
+ *
+ * The Worker answers a failed upstream with a body -- `code` for a refusal or a
+ * stall, `upstreamStatus` for the code the upstream itself returned -- and
+ * `${path} returned 502` threw all of it away. A 400 we caused and an outage they
+ * had reached the console as the same line; NCBI's 429 and the ledger's too. The
+ * body travels on the error instead, where `reportDomainSourceFailures` already
+ * looks for `code`, and the message carries it for anyone reading a log.
+ */
+export function sourceResponseError(path, status, body = null) {
+  const code = typeof body?.code === 'string' ? body.code : '';
+  const upstreamStatus = Number.isInteger(body?.upstreamStatus) ? body.upstreamStatus : 0;
+  const detail = [code, upstreamStatus ? `upstream ${upstreamStatus}` : ''].filter(Boolean).join(', ');
+  const error = new Error(`${path} returned ${status}${detail ? ` (${detail})` : ''}`);
+  error.status = status;
+  if (code) error.code = code;
+  if (upstreamStatus) error.upstreamStatus = upstreamStatus;
+  return error;
+}
+
 async function fetchJson(path, params) {
   if (!PAPER_API_BASE) return null;
   const url = new URL(`${PAPER_API_BASE}${path}`);
@@ -465,7 +486,12 @@ async function fetchJson(path, params) {
   const response = PROTECTED_SOURCE_PATHS.has(path)
     ? await authenticatedWorkerFetch(url, options)
     : await fetch(url, options);
-  if (!response.ok) throw new Error(`${path} returned ${response.status}`);
+  if (!response.ok) {
+    // Read under the same deadline as the headers (`withRequestDeadline` keeps
+    // the signal armed for the body); a body that is not JSON is simply no body.
+    const body = await response.json().catch(() => null);
+    throw sourceResponseError(path, response.status, body);
+  }
   return response.json();
 }
 
@@ -531,7 +557,11 @@ export function reportDomainSourceFailures(settled, entries, logger = console.wa
     }
     if (result.status !== 'rejected') return;
     const reason = result.reason;
-    const detail = reason?.code || reason?.status || reason?.message || String(reason);
+    // `code` first (it is the discriminant: UPSTREAM_RATE_LIMITED vs
+    // PROVIDER_RATE_LIMITED vs UPSTREAM_TIMEOUT), then the message, which since
+    // `sourceResponseError` carries the upstream status. The bare status came
+    // before the message here, and hid exactly that detail.
+    const detail = reason?.code || reason?.message || reason?.status || String(reason);
     logger(`Domain source ${path} failed: ${detail}`, reason);
   });
 }
