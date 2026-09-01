@@ -65,3 +65,10 @@ test('the bookmark rail pops the way like and read already do', async () => {
   assert.ok(saved, 'lost .pc-side-btn--saved .pc-side-icon');
   assert.match(saved[1], /animation:\s*likePopIn/, 'saving a paper does not pop the bookmark');
 });
+
+test('the guest save prompt traps focus and closes on Escape', async () => {
+  const source = await readFile(new URL('../Public/AuthPrompt.jsx', import.meta.url), 'utf8');
+  assert.match(source, /useDialogFocus\(true, onClose\)/, 'AuthPrompt lost the shared dialog keyboard contract');
+  assert.match(source, /data-dialog-initial-focus/, 'nothing inside the prompt is marked as the initial focus');
+  assert.match(source, /scale:\s*0\.96/, 'the prompt enter is too small to read as an arrival');
+});

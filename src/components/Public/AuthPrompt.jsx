@@ -4,6 +4,7 @@ import { X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { Button } from '../ui/button.jsx';
 import './AuthPrompt.css';
@@ -18,6 +19,7 @@ export default function AuthPrompt({ onClose }) {
   const { language, isEnglish } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
   const prefersReducedMotion = useReducedMotion();
+  const dialogRef = useDialogFocus(true, onClose);
   const [pendingProvider, setPendingProvider] = useState(null);
   const [collision, setCollision] = useState(null);
 
@@ -60,23 +62,27 @@ export default function AuthPrompt({ onClose }) {
       initial={prefersReducedMotion ? false : { opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
+      transition={{ duration: prefersReducedMotion ? 0.1 : 0.2, ease: 'easeOut' }}
       onClick={onClose}
     >
       <motion.section
+        ref={dialogRef}
         className="auth-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-modal-title"
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 16, scale: 0.985 }}
+        tabIndex={-1}
+        initial={prefersReducedMotion ? false : { opacity: 0, y: 16, scale: 0.96 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={{ opacity: 0, y: 10, scale: 0.99 }}
-        transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+        exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
+        transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
         onClick={(event) => event.stopPropagation()}
       >
         <Button
           variant="ghost"
           size="icon-sm"
           className="auth-modal-close"
+          data-dialog-initial-focus
           onClick={onClose}
           aria-label={isEnglish ? 'Close' : 'Cerrar'}
         >
