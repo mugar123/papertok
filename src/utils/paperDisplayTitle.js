@@ -14,6 +14,7 @@ const INVENTED = new Set([
   'paper sin título',
   'untitled paper',
   'untitled',
+  'no title',
 ]);
 
 export function isPlaceholderPaperTitle(title, paperId) {

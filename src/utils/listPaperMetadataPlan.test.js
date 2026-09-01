@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   FIRESTORE_IN_FILTER_MAX,
   PAPER_METADATA_BATCH_SIZE,
+  fetchableDocumentIds,
   isFetchableDocumentId,
   planMetadataRequests,
   planRetryRequests,
@@ -59,6 +60,18 @@ test('an id that cannot be a document id never reaches a batch', () => {
       'one bad id must not be able to poison a batch');
   }
   assert.deepEqual(requests[0].paperIds, ['2401.01234', '2402.09876']);
+});
+
+test('fetchableDocumentIds drops slash-bearing ids and keeps the rest', () => {
+  assert.deepEqual(
+    fetchableDocumentIds([
+      'openalex:W2269592689',
+      'hep-th/0603001',
+      '1807.10247',
+      'ads:2021JHEP...03..014J',
+    ]),
+    ['openalex:W2269592689', '1807.10247', 'ads:2021JHEP...03..014J'],
+  );
 });
 
 test('both collections are asked for every batch, and the arithmetic holds', () => {

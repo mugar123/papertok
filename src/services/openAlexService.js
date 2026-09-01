@@ -1657,6 +1657,41 @@ export async function fetchPapersByDois(dois, options = {}) {
   });
 }
 
+/**
+ * Full papers for OpenAlex work ids (`W123` or `openalex:W123`).
+ *
+ * Liked rows are often keyed by that id and stored without a title. Enrichment
+ * only returns citation counts; the Liked tab needs the name.
+ */
+export async function fetchPapersByOpenAlexIds(ids, options = {}) {
+  if (!ids || ids.length === 0) return [];
+
+  const cleanIds = [...new Set(ids
+    .map(id => String(id || '').trim().replace(/^openalex:/i, ''))
+    .filter(id => /^W\d+$/i.test(id)))];
+  if (cleanIds.length === 0) return [];
+
+  const results = [];
+  const chunkSize = 20;
+  for (let i = 0; i < cleanIds.length; i += chunkSize) {
+    const filter = buildOpenAlexIdFilter(cleanIds.slice(i, i + chunkSize));
+    if (!filter) continue;
+    const url = `https://api.openalex.org/works?filter=${filter}&per-page=50`;
+    try {
+      const response = await fetchWithTimeout(url, options.timeoutMs ?? 10000);
+      if (response.ok) {
+        const data = await response.json();
+        if (data?.results) results.push(...data.results);
+      }
+    } catch (err) {
+      console.error('OpenAlex fetchPapersByOpenAlexIds failed', err);
+      if (options.throwOnProviderError) throw err;
+    }
+  }
+
+  return results.map(work => formatOpenAlexWorkAsPaper(work));
+}
+
 function formatOpenAlexWorkAsPaper(work) {
   const summary = reconstructOpenAlexAbstract(work.abstract_inverted_index) || 'Resumen no disponible.';
   

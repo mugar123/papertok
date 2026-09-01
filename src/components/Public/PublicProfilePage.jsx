@@ -27,7 +27,7 @@ import {
   isFollowing as readIsFollowing,
   unfollowUser,
 } from '../../services/followUserService.js';
-import { fetchLibraryRecords } from '../../services/interactionProfileStore.js';
+import { fetchLibraryRecordsHydrated } from '../../services/hydrateInteractionPapers.js';
 import { IS_DEMO } from '../../services/firebase.js';
 import { getPublicListPath, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import { resolveProfileView } from '../../utils/profileAccess.js';
@@ -547,9 +547,13 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     // `libraryPapers` is the mount's own read, which now KEEPS what it fetches.
     // Every liked paper is in its id set, so in the ordinary case this filter
     // empties and the second fan-out over the same collection never happens.
-    const wanted = likedOrder.filter(
-      id => !personalLibrary[id]?.paper && !libraryPapers[id] && !likedExtra[id],
-    );
+    const wanted = likedOrder.filter((id) => {
+      // Skip only once a real title is in hand. A session-cached extra whose
+      // paperTitle is still `hep-th/0603001` must not block hydration.
+      const extra = likedExtra[id];
+      const paper = personalLibrary[id]?.paper || libraryPapers[id] || extra?.paper;
+      return !resolvedPaperTitle(paper?.title || extra?.paperTitle || '', id);
+    });
     if (wanted.length === 0) return undefined;
     let abandoned = false;
     let retryTimer = null;
@@ -561,7 +565,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     requestMissingRecords({
       ids: wanted,
       requests: likedRequests.current,
-      fetchRecords: ids => fetchLibraryRecords(user.uid, ids),
+      fetchRecords: ids => fetchLibraryRecordsHydrated(user.uid, ids),
     }).then(({ records, retryable, attempt, error }) => {
       // The merge is deliberately not cancelled: `likedExtra` is a cache keyed
       // by id, so a response arriving after a tab switch is idempotent and
@@ -981,7 +985,10 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   );
 
   const paperRows = rows => (
-    <div className="profile-row-list">
+    <div
+      className="profile-row-list"
+      aria-busy={rows.some(row => row.unresolved && (!libraryReady || !row.missingTitle)) || undefined}
+    >
       {rows.map((row, index) => (
         <motion.div key={row.id} {...rowMotion(prefersReducedMotion, index)}>
           <PaperRow row={row} isEnglish={isEnglish} libraryReady={libraryReady} />

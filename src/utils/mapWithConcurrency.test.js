@@ -92,6 +92,10 @@ test('STRUCTURAL: the library read fans out through the bounded pool', async () 
     'fetchLibraryRecords must run its batches through the bounded pool',
   );
   assert.ok(
+    body.includes('fetchableDocumentIds(paperIds)'),
+    'slash-bearing ids must be dropped before the in-query, or they reject the batch',
+  );
+  assert.ok(
     !/Promise\.all\(\s*batches/.test(body),
     'and must not go back to starting every batch at once',
   );

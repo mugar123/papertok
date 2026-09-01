@@ -48,6 +48,10 @@ export function isFetchableDocumentId(id) {
   return new TextEncoder().encode(id).length <= 1500;
 }
 
+export function fetchableDocumentIds(ids) {
+  return (Array.isArray(ids) ? ids : []).filter(isFetchableDocumentId);
+}
+
 /**
  * Turns the ids a list is missing into the requests that will fetch them.
  *
