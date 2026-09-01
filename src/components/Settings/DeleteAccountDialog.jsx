@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useId, useState } from 'react';
 import { LoaderCircle, Trash2, X } from 'lucide-react';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { deleteAccount } from '../../services/accountDeletionService.js';
@@ -44,14 +44,6 @@ export default function DeleteAccountDialog({ open, language, onClose, onDeleted
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
   const dialogRef = useDialogFocus(open, working ? null : onClose);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    setTyped('');
-    setError('');
-    setWorking(false);
-    return undefined;
-  }, [open]);
 
   if (!open) return null;
 

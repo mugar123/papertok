@@ -377,11 +377,12 @@ export function createFirestoreAdmin(env, { fetchImpl = fetch, now = () => Date.
         );
       }
       const rows = Array.isArray(payload) ? payload : [];
-      const prefix = `${documentRoot(projectId)}/`;
       return rows.flatMap((row) => {
         const name = row?.document?.name;
         if (typeof name !== 'string' || !name) return [];
-        const rest = name.startsWith(prefix) ? name.slice(prefix.length) : '';
+        const marker = '/documents/';
+        const index = name.indexOf(marker);
+        const rest = index >= 0 ? name.slice(index + marker.length) : '';
         const path = rest
           ? rest.split('/').map(segment => decodeURIComponent(segment))
           : [name.slice(name.lastIndexOf('/') + 1)];

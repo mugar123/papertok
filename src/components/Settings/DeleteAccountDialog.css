@@ -19,12 +19,8 @@
   text-align: left;
 }
 
-.delete-account-dialog:focus {
-  outline: none;
-}
-
 .delete-account-dialog:focus-visible {
-  outline: 2px solid var(--accent-primary);
+  outline: 2px solid var(--focus-ring, var(--accent-primary));
   outline-offset: 3px;
 }
 
@@ -78,8 +74,11 @@
   font: inherit;
 }
 
+.delete-account-cancel:focus-visible,
+.delete-account-confirm:focus-visible,
+.delete-account-close:focus-visible,
 .delete-account-field input:focus-visible {
-  outline: 2px solid var(--accent-primary);
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
@@ -134,13 +133,6 @@
 
 .delete-account-confirm:disabled {
   opacity: 0.45;
-}
-
-.delete-account-cancel:focus-visible,
-.delete-account-confirm:focus-visible,
-.delete-account-close:focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
 }
 
 @media (hover: hover) and (pointer: fine) {

@@ -1100,12 +1100,14 @@ export default function SettingsPage() {
         isOpen={isNotificationsOpen}
         onClose={() => setIsNotificationsOpen(false)}
       />
-      <DeleteAccountDialog
-        open={deleteAccountOpen}
-        language={language}
-        onClose={() => setDeleteAccountOpen(false)}
-        onDeleted={handleAccountDeleted}
-      />
+      {deleteAccountOpen && (
+        <DeleteAccountDialog
+          open
+          language={language}
+          onClose={() => setDeleteAccountOpen(false)}
+          onDeleted={handleAccountDeleted}
+        />
+      )}
     </>
   );
 }
