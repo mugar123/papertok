@@ -36,7 +36,7 @@
      in global.css — that base rule carries no `backdrop-filter` of its own
      either, so nothing reintroduces one here unopposed. */
   background: rgba(17, 19, 24, 0.4);
-  animation: fadeIn 0.15s ease;
+  animation: fadeIn 0.22s ease;
 }
 
 .save-modal {
@@ -51,7 +51,37 @@
   border: 1px solid var(--border-default);
   border-radius: var(--radius-2xl);
   box-shadow: var(--shadow-xl);
-  animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  /* The previous `scaleIn` was a 2% scale over 200ms — below the threshold
+     at which a 440px sheet reads as arriving, so opening looked like a
+     hard cut. 16px of travel and 4% of scale, on the same spring the
+     comments sheet uses on desktop, is what makes the window drop into
+     place. The exit is shorter: getting out of the way should never make
+     anybody wait. */
+  animation: saveModalIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes saveModalIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes saveModalOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+
+/* `forwards` matters: the window stays mounted for the length of this, and
+   without it the card would snap back to full opacity for the last frame. */
+.save-modal.is-closing {
+  animation: saveModalOut 0.16s ease forwards;
+}
+
+.save-modal-dialog.is-closing::backdrop {
+  animation: fadeOut 0.16s ease forwards;
+}
+
+.save-modal-dialog.is-closing {
+  pointer-events: none;
 }
 
 /* ── Head ─────────────────────────────────────────────────────────────── */
@@ -210,14 +240,21 @@
   transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
-.save-modal-tick > svg { opacity: 0; }
+.save-modal-tick > svg {
+  opacity: 0;
+  transform: scale(0.55);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
 
 .save-modal-row.is-selected .save-modal-tick {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
 }
 
-.save-modal-row.is-selected .save-modal-tick > svg { opacity: 1; }
+.save-modal-row.is-selected .save-modal-tick > svg {
+  opacity: 1;
+  transform: scale(1);
+}
 
 .save-modal-row-icon {
   flex-shrink: 0;
@@ -380,6 +417,12 @@
   color: var(--text-secondary);
   max-width: 100%;
   overflow: hidden;
+  animation: save-modal-chip-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes save-modal-chip-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: none; }
 }
 
 .save-modal-tag-remove {
@@ -464,6 +507,12 @@
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-3);
+  animation: save-modal-discard-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes save-modal-discard-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 
 .save-modal-discard p {
@@ -482,7 +531,17 @@
 
 @media (prefers-reduced-motion: reduce) {
   .save-modal,
-  .save-modal-dialog::backdrop {
+  .save-modal.is-closing,
+  .save-modal-dialog::backdrop,
+  .save-modal-dialog.is-closing::backdrop,
+  .save-modal-tag-chip,
+  .save-modal-discard {
     animation: none;
+  }
+
+  .save-modal-tick > svg,
+  .save-modal-row.is-selected .save-modal-tick > svg {
+    transition: none;
+    transform: none;
   }
 }

@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useReducedMotion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { Check, Moon, Settings, SlidersHorizontal, Sun } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import './NavPreferencesMenu.css';
+
+/** Kept in step with the exit animation in NavPreferencesMenu.css. */
+const MENU_EXIT_MS = 140;
 
 /**
  * Las preferencias rápidas de la barra, plegadas tras un solo icono: el tema
@@ -14,20 +18,42 @@ import './NavPreferencesMenu.css';
  */
 export default function NavPreferencesMenu() {
   const [open, setOpen] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const prefersReducedMotion = useReducedMotion();
   const rootRef = useRef(null);
   const themeRowRef = useRef(null);
+  const closeTimer = useRef(null);
   const { isDark, toggleTheme } = useTheme();
   const { language, isEnglish, setLanguage } = useLanguage();
   const { user } = useAuth();
   const navigate = useNavigate();
+  const visible = open || closing;
+
+  const closeMenu = useCallback(() => {
+    if (!open || closing || closeTimer.current) return;
+    if (prefersReducedMotion) {
+      setOpen(false);
+      return;
+    }
+    setClosing(true);
+    closeTimer.current = setTimeout(() => {
+      closeTimer.current = null;
+      setOpen(false);
+      setClosing(false);
+    }, MENU_EXIT_MS);
+  }, [open, closing, prefersReducedMotion]);
+
+  useEffect(() => () => {
+    if (closeTimer.current) clearTimeout(closeTimer.current);
+  }, []);
 
   useEffect(() => {
     if (!open) return undefined;
     const onPointerDown = (event) => {
-      if (rootRef.current && !rootRef.current.contains(event.target)) setOpen(false);
+      if (rootRef.current && !rootRef.current.contains(event.target)) closeMenu();
     };
     const onKeyDown = (event) => {
-      if (event.key === 'Escape') setOpen(false);
+      if (event.key === 'Escape') closeMenu();
     };
     window.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('keydown', onKeyDown);
@@ -35,7 +61,7 @@ export default function NavPreferencesMenu() {
       window.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('keydown', onKeyDown);
     };
-  }, [open]);
+  }, [open, closeMenu]);
 
   const label = isEnglish ? 'Preferences' : 'Preferencias';
 
@@ -43,17 +69,25 @@ export default function NavPreferencesMenu() {
     <div className="nav-prefs" ref={rootRef}>
       <button
         type="button"
-        className={`navbar-icon-btn nav-prefs-trigger ${open ? 'is-open' : ''}`}
-        aria-expanded={open}
+        className={`navbar-icon-btn nav-prefs-trigger ${visible ? 'is-open' : ''}`}
+        aria-expanded={visible}
         aria-label={label}
         title={label}
-        onClick={() => setOpen((wasOpen) => !wasOpen)}
+        onClick={() => {
+          if (closing) return;
+          if (open) closeMenu();
+          else setOpen(true);
+        }}
       >
         <SlidersHorizontal size={17} aria-hidden="true" />
       </button>
 
-      {open && (
-        <div className="nav-prefs-menu" role="group" aria-label={label}>
+      {visible && (
+        <div
+          className={`nav-prefs-menu${closing ? ' is-closing' : ''}`}
+          role="group"
+          aria-label={label}
+        >
           <button
             type="button"
             ref={themeRowRef}
@@ -93,7 +127,7 @@ export default function NavPreferencesMenu() {
                 type="button"
                 className="nav-prefs-row"
                 onClick={() => {
-                  setOpen(false);
+                  closeMenu();
                   navigate('/settings');
                 }}
               >

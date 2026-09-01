@@ -24,14 +24,30 @@
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
   box-shadow: 0 16px 40px rgba(17, 19, 24, 0.14);
-  animation: navPrefsIn 0.16s ease-out;
+  animation: navPrefsIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes navPrefsIn {
   from {
     opacity: 0;
-    transform: translateY(-4px);
+    transform: translateY(-8px);
   }
+}
+
+@keyframes navPrefsOut {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+  }
+}
+
+.nav-prefs-menu.is-closing {
+  animation: navPrefsOut 0.14s ease forwards;
+  pointer-events: none;
 }
 
 .nav-prefs-row {
@@ -106,6 +122,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .nav-prefs-menu,
+  .nav-prefs-menu.is-closing,
   .nav-prefs-row,
   .nav-prefs-lang button {
     animation: none;

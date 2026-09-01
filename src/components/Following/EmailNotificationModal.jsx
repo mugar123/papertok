@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Check, CheckCircle2, Clock3, Loader2, Mail, Send, X } from 'lucide-react';
 import { useEmailNotifications } from '../../context/EmailNotificationsContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -45,6 +45,7 @@ const wait = milliseconds => new Promise(resolve => setTimeout(resolve, millisec
 
 export default function EmailNotificationModal({ isOpen, onClose }) {
   const { language, isEnglish } = useLanguage();
+  const prefersReducedMotion = useReducedMotion();
   const {
     preferences,
     health,
@@ -133,6 +134,7 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
+          transition={{ duration: prefersReducedMotion ? 0.1 : 0.2, ease: 'easeOut' }}
           onMouseDown={event => event.target === event.currentTarget && onClose()}
         >
           <motion.section
@@ -140,10 +142,10 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
             role="dialog"
             aria-modal="true"
             aria-labelledby="email-notification-title"
-            initial={{ opacity: 0, y: 18, scale: 0.985 }}
+            initial={prefersReducedMotion ? false : { opacity: 0, y: 16, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 12, scale: 0.99 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
+            transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
           >
             <header>
               <div className="email-notification-icon"><Mail size={20} /></div>
