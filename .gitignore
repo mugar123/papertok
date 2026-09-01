@@ -1,6 +1,7 @@
 node_modules
 dist
 .wrangler
+.vercel
 .dev.vars*
 .env
 .env.local
@@ -24,3 +25,4 @@ firebase-debug.log
 .superpowers/
 
 .superpowers/
+emergent-ventures/

@@ -185,9 +185,11 @@
 
       <h2>Analítica</h2>
       <p>
-        PaperTok usa Google Analytics 4 y <strong>solo empieza a medir si lo aceptas</strong>
+        PaperTok usa Vercel Web Analytics y <strong>solo empieza a medir si lo aceptas</strong>
         en el aviso que aparece la primera vez. Si no lo aceptas, la librería ni siquiera
-        se carga.
+        se carga. No usa cookies: para distinguir visitas, Vercel deriva un identificador
+        del propio navegador que caduca cada día y no permite seguirte entre un día y otro
+        ni entre sitios distintos.
       </p>
       <p>
         Lo único que se envía son páginas vistas, y con la ruta despojada de
@@ -221,10 +223,10 @@
         proveedores necesarios para que la aplicación funcione:
       </p>
       <ul>
-        <li><strong>Google</strong> (Firebase Authentication, Firestore, Analytics) — cuentas, datos de la app y analítica.</li>
+        <li><strong>Google</strong> (Firebase Authentication, Firestore) — cuentas y datos de la app.</li>
+        <li><strong>Vercel</strong> — alojamiento de la web y analítica de páginas vistas.</li>
         <li><strong>Cloudflare</strong> (Workers, KV) — servidor intermedio y almacenamiento del boletín.</li>
         <li><strong>Brevo</strong> — envío de los correos.</li>
-        <li><strong>GitHub Pages</strong> — alojamiento de la web.</li>
       </ul>
 
       <h2>Cuánto tiempo se conservan</h2>

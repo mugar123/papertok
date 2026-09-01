@@ -159,7 +159,9 @@ PaperTok is primarily built with:
 - **Framer Motion**
 - **KaTeX**
 
-The frontend is deployed through **GitHub Pages**.
+The frontend is deployed through **Vercel** (Git-connected: a push to `main` is a production
+deploy, any other branch or PR gets a preview URL). DNS for `papertok.app` is managed in
+Cloudflare.
 
 A **Cloudflare Worker** is used for server-side functionality such as caching scientific queries, protecting provider credentials and proxying APIs that should not be called directly from the browser. It also serves the AI features — plain-words rewriting and passage explanations — behind a server-enforced daily allowance that reserves usage before the model runs and refunds it on failure.
 
@@ -213,7 +215,7 @@ papertok/
 ├── public/                 Static assets
 ├── docs/                   Architecture and development guides
 ├── scripts/diagnostics/    Manual provider and proxy probes
-└── .github/workflows/      GitHub Pages deployment
+└── vercel.json             Vercel build, SPA fallback and cache headers
 ```
 
 ## Documentation

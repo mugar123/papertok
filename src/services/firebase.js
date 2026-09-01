@@ -9,8 +9,6 @@ import { initializeApp } from 'firebase/app';
 import { getAuth, GithubAuthProvider, GoogleAuthProvider } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
-export const ANALYTICS_MEASUREMENT_ID = import.meta.env?.VITE_GA_MEASUREMENT_ID || 'G-LHG0SGJ6G8';
-
 const firebaseConfig = {
   apiKey: "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0",
   authDomain: "papertok-168df.firebaseapp.com",
@@ -18,7 +16,10 @@ const firebaseConfig = {
   storageBucket: "papertok-168df.firebasestorage.app",
   messagingSenderId: "310243065214",
   appId: "1:310243065214:web:623735321262c6e154c72f",
-  measurementId: ANALYTICS_MEASUREMENT_ID,
+  // No `measurementId`: it named the GA4 property this app used to report to,
+  // and the only thing Firebase does with it is hand it to `firebase/analytics`.
+  // Measurement is Vercel Web Analytics now (src/services/analyticsService.js),
+  // so leaving the id here would only invite that import back.
 };
 
 const app = initializeApp(firebaseConfig);

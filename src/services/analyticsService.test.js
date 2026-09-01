@@ -10,6 +10,7 @@ import {
   persistAnalyticsConsent,
   PRODUCT_ANALYTICS_EVENTS,
   readAnalyticsConsent,
+  sanitizeAnalyticsEventUrl,
   sanitizeAnalyticsLocation,
   sanitizeProductEventParams,
   setAnalyticsConsent,
@@ -227,6 +228,39 @@ test('builds page locations from the sanitized path and origin only', () => {
     'https://papertok.example/explorer/project/:id',
   );
   assert.equal(sanitizeAnalyticsLocation('/search?q=private', location), 'https://papertok.example/search');
+});
+
+/**
+ * The payload Vercel's own script builds, not the one this app hands it. It
+ * reads `location.href`, and under HashRouter that URL carries the real entity
+ * id in the fragment -- so this is the function standing between a paper id and
+ * a request leaving the browser. The policy published at /privacy.html promises
+ * it never does.
+ */
+test('strips the identifier out of the hash before the page-view URL is sent', () => {
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/#/public/paper/10.1234%2Fprivate-doi'),
+    'https://papertok.app/public/paper/:id',
+  );
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/#/explorer/author/a5023888391'),
+    'https://papertok.app/explorer/author/:id',
+  );
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/#/search?q=private+query'),
+    'https://papertok.app/search',
+  );
+  assert.equal(sanitizeAnalyticsEventUrl('https://papertok.app/#/'), 'https://papertok.app/');
+});
+
+test('falls back to the real path when there is no hash route, and never returns the input', () => {
+  // Non-hash URLs still exist on this origin: /privacy.html, and any deep link
+  // the SPA fallback serves. Neither should arrive as a raw string.
+  assert.equal(sanitizeAnalyticsEventUrl('https://papertok.app/'), 'https://papertok.app/');
+  assert.equal(sanitizeAnalyticsEventUrl('https://papertok.app/lists'), 'https://papertok.app/lists');
+  assert.equal(sanitizeAnalyticsEventUrl('https://papertok.app/some/private/path'), 'https://papertok.app/unknown');
+  assert.equal(sanitizeAnalyticsEventUrl('not a url at all'), '/');
+  assert.equal(sanitizeAnalyticsEventUrl(undefined), '/');
 });
 
 test('keeps only event-specific categorical and bounded analytics parameters', () => {

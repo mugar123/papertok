@@ -1,4 +1,10 @@
-import app, { ANALYTICS_MEASUREMENT_ID } from './firebase.js';
+// The transport is Vercel Web Analytics. What did NOT move with it is this
+// file's actual subject: the consent gate, the event registry, and the path
+// normalizer that keeps an identifier out of a report. `track` queues into
+// `window.vaq` even before the script the <Analytics /> component injects has
+// loaded, so nothing here waits for -- or checks -- an instance the way the
+// Firebase `getAnalytics()` handle had to be checked.
+import { track as sendVercelEvent } from '@vercel/analytics';
 
 export const ANALYTICS_CONSENT_KEY = 'papertok_analytics_consent';
 export const ANALYTICS_CONSENT_COOKIE_KEY = 'papertok_analytics_decision';
@@ -150,19 +156,7 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   guest_demo_end: { position: 'boundedNumber', language: 'language' },
 });
 
-let analyticsInstance = null;
-let analyticsModule = null;
-let analyticsPromise = null;
 let acquisitionTrackedInMemory = false;
-
-function analyticsConsentPayload(value) {
-  return {
-    analytics_storage: value === ANALYTICS_CONSENT.GRANTED ? 'granted' : 'denied',
-    ad_storage: 'denied',
-    ad_user_data: 'denied',
-    ad_personalization: 'denied',
-  };
-}
 
 function getBrowserStorage() {
   try {
@@ -267,6 +261,28 @@ export function sanitizeAnalyticsLocation(pathname, browserLocation = globalThis
   }
 }
 
+/**
+ * The second door, and the one that is easy to miss. `route`/`path` on the
+ * <Analytics /> component are normalized before they are passed, but the Vercel
+ * script builds its payload's `url` field from `location.href` on its own — and
+ * under HashRouter the route lives in the fragment, so that string reads
+ * `https://papertok.app/#/public/paper/<the real id>`. That is precisely the
+ * value the privacy policy promises never leaves the browser. `beforeSend` is
+ * where it gets replaced, so the fragment is read here and normalized like any
+ * other path.
+ */
+export function sanitizeAnalyticsEventUrl(url) {
+  try {
+    const parsed = new URL(url);
+    const fragmentPath = parsed.hash.startsWith('#/') ? parsed.hash.slice(1) : '';
+    return sanitizeAnalyticsLocation(fragmentPath || parsed.pathname, parsed);
+  } catch {
+    // An unparseable URL is not a reason to ship the original: fall back to the
+    // path with no origin, which is still a valid page for the report.
+    return normalizeAnalyticsPath('/');
+  }
+}
+
 export function sanitizeProductEventParams(eventName, params = {}) {
   const schema = EVENT_PARAMETER_SCHEMAS[eventName];
   if (!schema || !params || typeof params !== 'object' || Array.isArray(params)) return {};
@@ -282,36 +298,15 @@ export function sanitizeProductEventParams(eventName, params = {}) {
   }, {});
 }
 
-async function getAnalyticsInstance() {
-  if (!ANALYTICS_MEASUREMENT_ID || typeof window === 'undefined') return null;
-  if (analyticsInstance) return analyticsInstance;
-  if (analyticsPromise) return analyticsPromise;
-
-  analyticsPromise = import('firebase/analytics')
-    .then(async module => {
-      analyticsModule = module;
-      if (!(await module.isSupported())) return null;
-      const currentConsent = readAnalyticsConsent();
-      module.setConsent(analyticsConsentPayload(currentConsent));
-      analyticsInstance = module.initializeAnalytics(app, {
-        config: {
-          send_page_view: false,
-          allow_google_signals: false,
-          allow_ad_personalization_signals: false,
-        },
-      });
-      module.setAnalyticsCollectionEnabled(
-        analyticsInstance,
-        currentConsent === ANALYTICS_CONSENT.GRANTED,
-      );
-      return analyticsInstance;
-    })
-    .catch(() => null);
-
-  return analyticsPromise;
-}
-
-function removeAnalyticsCookies() {
+/**
+ * Anyone who granted consent before the move to Vercel is carrying `_ga` and
+ * `_ga_<id>` cookies with a two-year expiry, set by a measurement library this
+ * app no longer loads. Nothing reads them any more and nothing else will ever
+ * clear them, so they would sit in the browser until 2028 as the only remaining
+ * trace of GA4. Vercel Web Analytics sets no cookies of its own, which is why
+ * this is a one-off cleanup on mount rather than part of withdrawing consent.
+ */
+export function removeLegacyGoogleAnalyticsCookies() {
   if (typeof document === 'undefined') return;
   document.cookie.split(';').forEach(cookie => {
     const name = cookie.split('=')[0]?.trim();
@@ -332,62 +327,45 @@ function clearConsentScopedAnalyticsState(storage = getBrowserStorage()) {
   }
 }
 
+// Granting no longer has to reach into a loaded SDK and turn collection on:
+// `AnalyticsProvider` renders <Analytics /> only while consent is granted, so
+// the script is not on the page at all until then, and unmounting stops the
+// page views. Kept `async` because every caller awaits it.
 export async function setAnalyticsConsent(value) {
   if (!persistAnalyticsConsent(value)) return false;
-  if (value === ANALYTICS_CONSENT.GRANTED) {
-    const analytics = await getAnalyticsInstance();
-    if (
-      analytics
-      && analyticsModule
-      && readAnalyticsConsent() === ANALYTICS_CONSENT.GRANTED
-    ) {
-      analyticsModule.setConsent(analyticsConsentPayload(ANALYTICS_CONSENT.GRANTED));
-      analyticsModule.setAnalyticsCollectionEnabled(analytics, true);
-    }
-    return true;
-  }
-
-  if (analyticsModule?.setConsent) {
-    analyticsModule.setConsent(analyticsConsentPayload(ANALYTICS_CONSENT.DENIED));
-  }
-  if (analyticsInstance && analyticsModule) {
-    analyticsModule.setAnalyticsCollectionEnabled(analyticsInstance, false);
-  }
+  if (value === ANALYTICS_CONSENT.GRANTED) return true;
   clearConsentScopedAnalyticsState();
-  removeAnalyticsCookies();
   return true;
 }
 
-export async function trackPageView(pathname) {
-  if (readAnalyticsConsent() !== ANALYTICS_CONSENT.GRANTED) return false;
-  const analytics = await getAnalyticsInstance();
-  if (
-    !analytics
-    || !analyticsModule
-    || readAnalyticsConsent() !== ANALYTICS_CONSENT.GRANTED
-  ) return false;
+// There is no `trackPageView` any more. The <Analytics /> component takes
+// `route` and `path`, and passing `route` makes it set `disableAutoTrack` on the
+// injected script and emit each view itself -- which is the only reason page
+// views work here at all: the script's own tracking reads `location.pathname`,
+// and under HashRouter that is `/` for every route in the app. A manual emitter
+// on top of that component would double-count every visit.
 
-  const pagePath = normalizeAnalyticsPath(pathname);
-  analyticsModule.logEvent(analytics, 'page_view', {
-    page_path: pagePath,
-    page_location: sanitizeAnalyticsLocation(pagePath),
-    page_title: 'PaperTok',
-  });
-  return true;
-}
-
+// On the Hobby plan Vercel accepts page views but DISCARDS custom events, so
+// every call below is sent, billed as nothing, and never appears in the
+// dashboard. The instrumentation stays wired regardless: the day the project
+// moves to Pro these start landing with no code change. `true` here means
+// "handed to the transport", which is as much as a fire-and-forget queue can
+// honestly report.
 export async function trackProductEvent(eventName, params = {}) {
   if (!Object.hasOwn(EVENT_PARAMETER_SCHEMAS, eventName)) return false;
   if (readAnalyticsConsent() !== ANALYTICS_CONSENT.GRANTED) return false;
-  const analytics = await getAnalyticsInstance();
-  if (
-    !analytics
-    || !analyticsModule
-    || readAnalyticsConsent() !== ANALYTICS_CONSENT.GRANTED
-  ) return false;
+  if (typeof window === 'undefined') return false;
 
-  analyticsModule.logEvent(analytics, eventName, sanitizeProductEventParams(eventName, params));
-  return true;
+  try {
+    sendVercelEvent(eventName, sanitizeProductEventParams(eventName, params));
+    return true;
+  } catch {
+    // `track` throws in development when a property is not a scalar. The
+    // sanitizer above only ever emits scalars, so this is the unreachable
+    // branch that keeps a caller's `activation`/`day_7_return` bookkeeping from
+    // recording a send that did not happen.
+    return false;
+  }
 }
 
 function hostnameMatches(hostname, patterns) {
