@@ -4,7 +4,7 @@ import { isScopusEnabled, ScopusAdapter } from './adapters/ScopusAdapter.js';
 import { isTechnicalClassification } from '../utils/scientificClassification.js';
 import { mapOpenReviewNote } from './openReviewService.js';
 import { mapHuggingFacePaper } from './huggingFaceService.js';
-import { authenticatedWorkerFetch, hasWorkerSession } from './workerApiClient.js';
+import { authenticatedWorkerFetch, hasWorkerSession, sourceResponseError } from './workerApiClient.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
 import { settleWithin } from '../utils/asyncTiming.js';
 import { mapEuropePmcRecord } from '../utils/europePmcRecord.js';
@@ -451,27 +451,6 @@ export const PROTECTED_SOURCE_PATHS = Object.freeze(new Set([
   DOMAIN_SOURCE_PATHS.physics,
   DOMAIN_SOURCE_PATHS.scopus,
 ]));
-
-/**
- * The error a source route's refusal becomes.
- *
- * The Worker answers a failed upstream with a body -- `code` for a refusal or a
- * stall, `upstreamStatus` for the code the upstream itself returned -- and
- * `${path} returned 502` threw all of it away. A 400 we caused and an outage they
- * had reached the console as the same line; NCBI's 429 and the ledger's too. The
- * body travels on the error instead, where `reportDomainSourceFailures` already
- * looks for `code`, and the message carries it for anyone reading a log.
- */
-export function sourceResponseError(path, status, body = null) {
-  const code = typeof body?.code === 'string' ? body.code : '';
-  const upstreamStatus = Number.isInteger(body?.upstreamStatus) ? body.upstreamStatus : 0;
-  const detail = [code, upstreamStatus ? `upstream ${upstreamStatus}` : ''].filter(Boolean).join(', ');
-  const error = new Error(`${path} returned ${status}${detail ? ` (${detail})` : ''}`);
-  error.status = status;
-  if (code) error.code = code;
-  if (upstreamStatus) error.upstreamStatus = upstreamStatus;
-  return error;
-}
 
 async function fetchJson(path, params) {
   if (!PAPER_API_BASE) return null;

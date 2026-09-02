@@ -8,7 +8,6 @@ import {
   getEligibleDomainSources,
   reportDomainSourceFailures,
   settleDomainSources,
-  sourceResponseError,
   mapBioRxivPaper,
   mapCoreWork,
   mapEuropePmcSearchResult,
@@ -17,6 +16,9 @@ import {
   mapNasaRecord,
   mapOstiRecord,
 } from './domainSourceService.js';
+// Shared with `fetchWorkerSourceJson`, so it lives in the module both source
+// entry points can import without closing a cycle.
+import { sourceResponseError } from './workerApiClient.js';
 
 test('routes biology and engineering categories only to relevant specialist sources', () => {
   const plan = getDomainSourcePlan(['bio.cell', 'mech.aero', 'chemeng.energy', 'physics.optics']);
