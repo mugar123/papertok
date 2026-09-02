@@ -120,8 +120,11 @@ function unwrapEnsureMath(match, expression, offset, source) {
 // (`\ensuremath{\mathrm{*}}`); anything deeper stays as it came.
 const ENSUREMATH = /\\ensuremath\{((?:\\[a-zA-Z]+|[^{}]|\{[^{}]*\})*)\}/g;
 // `\ifmmode A\else B\fi{}`: A is the maths spelling, B the text one.
-const IFMMODE = /\\ifmmode\s*([\s\S]*?)\\else\s*([\s\S]*?)\\fi(?:\{\})?/g;
-const STACKREL_TILDE = /\\stackrel\{\\ifmmode\s*\\tilde\{\}\s*\\else\s*\\~\{\}\s*\\fi\{\}\}\{((?:\\[a-zA-Z]+|[^{}])+)\}/g;
+const IFMMODE = /\\ifmmode\s*([\s\S]*?)(?:\\else\s*([\s\S]*?))?\\fi(?:\{\})?/g;
+// The argument may carry one brace level (`{\ensuremath{\gamma}}`): in prose
+// it is matched BEFORE the generic `\ensuremath` pass, so that pass cannot
+// have flattened it yet.
+const STACKREL_TILDE = /\\stackrel\{\\ifmmode\s*\\tilde\{\}\s*\\else\s*\\~\{\}\s*\\fi\{\}\}\{((?:\\[a-zA-Z]+|[^{}]|\{[^{}]*\})+)\}/g;
 
 /**
  * Text-only macros with no maths spelling: the character is the whole answer.
@@ -197,6 +200,7 @@ function normalizeMathRun(value) {
  */
 function normalizeProseRun(value) {
   return value
+    .replace(STACKREL_TILDE, (match, expression) => `\\(\\tilde{${expression.replace(ENSUREMATH, '$1')}}\\)`)
     .replace(ENSUREMATH, (match, expression) => `\\(${expression}\\)`)
     .replace(IFMMODE, (match, mathBranch) => `\\(${mathBranch.trim()}\\)`)
     .replace(TEXT_SYMBOL, (match, name) => TEXT_SYMBOLS[name]);

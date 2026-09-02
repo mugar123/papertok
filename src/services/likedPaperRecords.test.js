@@ -19,14 +19,15 @@ function stubs({ records = [], fromCache = false, arxiv = [] } = {}) {
   };
 }
 
-test('sends legal ids to Firestore and slash-bearing arXiv ids to arXiv', async () => {
+test('asks Firestore for every id and arXiv only for the legacy ids it did not answer', async () => {
   const io = stubs({
     records: [{ id: 'openalex:W1', data: { paperTitle: 'Stored title' } }],
     arxiv: [{ id: 'hep-th/0603001', arxivId: 'hep-th/0603001', title: 'Quantum gravity note', authors: [{ name: 'A. Author' }] }],
   });
   const result = await fetchLikedPaperRecords('uid', ['openalex:W1', 'hep-th/0603001'], io);
 
-  assert.deepEqual(io.calls.firestore, [['openalex:W1']]);
+  assert.deepEqual(io.calls.firestore, [['openalex:W1', 'hep-th/0603001']],
+    'the store encodes the slash itself; a legacy paper liked after the fix HAS a document');
   assert.deepEqual(io.calls.arxiv, [['hep-th/0603001']]);
   assert.equal(result.records.length, 2);
   const hydrated = result.records.find(record => record.id === 'hep-th/0603001');
@@ -35,6 +36,14 @@ test('sends legal ids to Firestore and slash-bearing arXiv ids to arXiv', async 
   assert.deepEqual(hydrated.data.paperAuthors, [{ name: 'A. Author' }]);
   assert.equal(result.fromCache, false);
   assert.equal(result.authoritative, true);
+  assert.deepEqual(result.unsettled, []);
+});
+
+test('a legacy id Firestore already names is not sent to arXiv', async () => {
+  const io = stubs({ records: [{ id: 'hep-th/0603001', data: { paperTitle: 'Stored legacy title' } }] });
+  const result = await fetchLikedPaperRecords('uid', ['hep-th/0603001'], io);
+  assert.deepEqual(io.calls.arxiv, []);
+  assert.equal(result.records[0].data.paperTitle, 'Stored legacy title');
 });
 
 test('matches an arXiv answer back to the requested id even with a version suffix', async () => {
@@ -44,26 +53,19 @@ test('matches an arXiv answer back to the requested id even with a version suffi
   assert.equal(result.records[0].data.paperTitle, 'Versioned');
 });
 
-test('does not touch arXiv when no id needs it', async () => {
+test('does not touch arXiv when no legacy id is missing', async () => {
   const io = stubs({ records: [{ id: 'openalex:W1', data: {} }] });
   await fetchLikedPaperRecords('uid', ['openalex:W1'], io);
   assert.deepEqual(io.calls.arxiv, []);
 });
 
-test('does not touch Firestore when only legacy ids are wanted', async () => {
-  const io = stubs({ arxiv: [] });
-  const result = await fetchLikedPaperRecords('uid', ['hep-th/0603001'], io);
-  assert.deepEqual(io.calls.firestore, []);
-  assert.deepEqual(result.records, []);
-  assert.equal(result.authoritative, true, 'arXiv answered and had nothing: that absence is final');
-});
-
-test('a failed arXiv read leaves those ids retryable without losing the Firestore answer', async () => {
+test('a failed arXiv read leaves only the legacy ids retryable, not the Firestore-confirmed absences', async () => {
   const io = stubs({ records: [{ id: 'openalex:W1', data: { paperTitle: 'Stored title' } }] });
   io.fetchArxivPapers = async () => { throw new Error('arxiv down'); };
-  const result = await fetchLikedPaperRecords('uid', ['openalex:W1', 'hep-th/0603001'], io);
+  const result = await fetchLikedPaperRecords('uid', ['openalex:W1', 'openalex:W2', 'hep-th/0603001'], io);
   assert.equal(result.records.length, 1);
-  assert.equal(result.authoritative, false);
+  assert.equal(result.authoritative, true, 'Firestore answered from the server: W2 has no record, and that is final');
+  assert.deepEqual(result.unsettled, ['hep-th/0603001'], 'only what arXiv failed to answer stays askable');
 });
 
 test('a cache-served Firestore answer is still reported as such', async () => {

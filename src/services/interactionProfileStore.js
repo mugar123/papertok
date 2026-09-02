@@ -31,6 +31,7 @@ import { serializeInteractionProfile } from '../utils/interactionProfile.js';
 import { mapWithConcurrency } from '../utils/mapWithConcurrency.js';
 import { FIRESTORE_IN_FILTER_MAX } from '../utils/firestoreLimits.js';
 import { planLibraryBatches } from '../utils/listPaperMetadataPlan.js';
+import { decodeInteractionDocId, encodeInteractionDocId } from '../utils/interactionDocId.js';
 
 export const INTERACTION_PROFILE_COLLECTION = 'aggregates';
 export const INTERACTION_PROFILE_DOC_ID = 'interactions';
@@ -97,6 +98,16 @@ export function interactionsRef(userId) {
   return collection(db, 'users', userId, 'interactions');
 }
 
+/**
+ * The one way to address a paper's interaction document. The id is encoded
+ * (see utils/interactionDocId.js): a raw `doc(..., 'hep-th/0603001')` threw on
+ * the slash after the aggregate had already recorded the interaction, which is
+ * what left likes the Liked tab could not name.
+ */
+export function interactionDocRef(userId, paperId) {
+  return doc(interactionsRef(userId), encodeInteractionDocId(paperId));
+}
+
 export function createInteractionProfileClient(userId) {
   return {
     userId,
@@ -110,9 +121,10 @@ export function createInteractionProfileClient(userId) {
       // optional field and an orderBy on it would silently drop any document
       // that never received one.
       const constraints = [orderBy(documentId()), limit(pageSize)];
-      if (startAfterId) constraints.splice(1, 0, startAfter(startAfterId));
+      if (startAfterId) constraints.splice(1, 0, startAfter(encodeInteractionDocId(startAfterId)));
       const snapshot = await getDocs(query(interactionsRef(userId), ...constraints));
-      const documents = snapshot.docs.map(item => ({ id: item.id, data: item.data() }));
+      // Decoded: the rebuilt aggregate must carry paper ids, never document names.
+      const documents = snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() }));
       countReads('interactions', documents.length);
       return { documents, hasMore: documents.length === pageSize };
     },
@@ -189,11 +201,11 @@ export function flushAllInteractionProfiles() {
  */
 export async function fetchLibraryRecords(userId, paperIds) {
   if (!userId || !paperIds?.length) return { records: [], fromCache: false };
-  // A liked paper keyed by a pre-2007 arXiv id (`hep-th/0603001`) has no
-  // document — the write threw on the slash — and asking for it rejected the
-  // whole `in` query, so every other paper in its batch went blank with it.
-  // The plan keeps those ids out; the Liked tab names them from arXiv itself.
-  const { batches } = planLibraryBatches(paperIds, LIBRARY_BATCH_SIZE);
+  // Ids are encoded into document names first (utils/interactionDocId.js), so
+  // a pre-2007 arXiv id is a batch member like any other; the plan still keeps
+  // out what no encoding can save (`..`, `__x__`). A slash in an `in` filter
+  // used to reject the whole query and blank every paper in its batch.
+  const { batches } = planLibraryBatches(paperIds.map(encodeInteractionDocId), LIBRARY_BATCH_SIZE);
   if (batches.length === 0) return { records: [], fromCache: false };
 
   const settled = await mapWithConcurrency(batches, LIBRARY_READ_CONCURRENCY, async (batch) => {
@@ -202,7 +214,7 @@ export async function fetchLibraryRecords(userId, paperIds) {
     );
     return {
       fromCache: snapshot.metadata.fromCache,
-      records: snapshot.docs.map(item => ({ id: item.id, data: item.data() })),
+      records: snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() })),
     };
   });
   // A bounded pool cannot abandon its in-flight workers the way Promise.all

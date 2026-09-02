@@ -150,3 +150,15 @@ test('renders the quasiparticle abstract with no raw macro left on screen', asyn
   assert.doesNotMatch(rendered, /\\(?:ifmmode|ensuremath|texttimes)/);
   assert.equal((rendered.match(/class="katex"/g) || []).length, 8);
 });
+
+test('a text-mode \\stackrel tilde becomes one formula, not a stackrel around two', () => {
+  assert.equal(
+    normalizeLatexText('the photino \\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}} decays'),
+    'the photino \\(\\tilde{\\gamma}\\) decays',
+  );
+});
+
+test('an \\ifmmode without an \\else branch still yields its maths spelling', () => {
+  assert.equal(normalizeLatexText('4\\ifmmode\\times\\fi{}4 sites'), '4\\(\\times\\)4 sites');
+  assert.equal(normalizeLatexText('$L=4\\ifmmode\\times\\fi{}4$'), '$L=4\\times4$');
+});
