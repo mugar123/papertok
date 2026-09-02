@@ -119,16 +119,22 @@
 }
 
 .sr-tab {
-  padding: 2px 0;
+  /* The rule is an absolutely positioned child that travels from tab to tab,
+     so every tab has to be able to hold it. */
+  position: relative;
+  /* 2px of breathing room under the label plus the 3px the rule occupies,
+     reserved on every tab and not only the active one: as a border that grew
+     from 2px to 3px on activation, the chosen tab was a pixel taller than its
+     neighbours and sat half a pixel higher in the row. */
+  padding: 2px 0 5px;
   border: none;
-  border-bottom: 2px solid transparent;
   border-radius: 0;
   background: none;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   cursor: pointer;
-  transition: color var(--transition-fast), border-color var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -140,8 +146,18 @@
 .sr-tab.active {
   color: var(--text-primary);
   font-weight: var(--fw-semibold);
-  border-bottom-color: var(--brand-yellow);
-  border-bottom-width: 3px;
+}
+
+/* The travelling rule, the same gesture the navbar makes between feeds. It was
+   `border-bottom-color` on the active tab, and a border cannot move: it can
+   only appear on one element and vanish from another. */
+.sr-tab-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--brand-yellow);
 }
 
 .sr-custom-date-slot {
@@ -1357,6 +1373,18 @@
   .sr-cell--s6 {
     grid-column: span 1;
     padding: var(--space-5) 0;
+  }
+
+  /* The column rule has to be turned off at the specificity it was turned on
+     with. `.sr-cell:not(.is-row-end)` is two classes and a media query adds
+     none, so the plain `.sr-cell` above never reached it: on one column, every
+     cell the forme had not planned as a row's last still drew a vertical rule
+     down the right of the measure — and with `padding-right` at 0 here, the
+     year and the source line ended up 1px from it (measured at 390px: half the
+     cells with the rule, half without, depending on where they fell in the
+     six-column plan they are no longer in). There are no columns to separate
+     when there is one column. */
+  .sr-cell:not(.is-row-end) {
     border-right: none;
   }
 
@@ -1436,7 +1464,8 @@
   .sr-stat-value,
   .sr-stat-meter::after,
   .sr-btn,
-  .sr-tab {
+  .sr-tab,
+  .sr-tab-rule {
     animation: none;
     transition: none;
   }

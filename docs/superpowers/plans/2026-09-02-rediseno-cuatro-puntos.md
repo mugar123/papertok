@@ -202,3 +202,37 @@ Following se cargan con `lazy()`. La primera vez que se entra a esas pestañas e
 una sesión, React sustituye el árbol entero por `RouteFallback` y corta la
 animación de salida en seco; a partir de la segunda ya no. Arreglarlo significa
 mover el límite de Suspense dentro de cada ruta, y eso toca el enrutado entero.
+
+---
+
+## Lo que salió después, ya en producción
+
+Tres cosas que solo aparecieron con la aplicación desplegada y el usuario
+mirándola desde un teléfono.
+
+**El muelle de la barra amarilla tenía cola.** `stiffness: 420, damping: 38,
+mass: 0.7` da ζ ≈ 1,11 — sobreamortiguado. Medido en el salto Para ti →
+Siguiendo (133 px a 390 px de ancho): el 90 % del recorrido en 224 ms y el 10 %
+restante en otros 216. Y como el filete crece mientras viaja, el borde
+izquierdo llegaba con el derecho todavía a diez píxeles: se leía como llegar
+corto, pararse y reptar. Ningún afinado del muelle lo arregla (medidos
+`bounce: 0`, `bounce: 0.15` y uno críticamente amortiguado: todos entre el 43 y
+el 50 % del tiempo en ese último décimo). Un tween acotado —
+`{ duration: 0.28, ease: [0.4, 0, 0.2, 1] }` — lo baja al 28 %.
+
+**El inset del filete no seguía al padding.** `left: 10px; right: 10px` a pelo
+contra un padding que baja por breakpoints: el filete quedaba 2 px corto por
+lado a 700, 4 a 390 y 6 a 360. Ahora es `--nav-rule-inset`.
+
+**Una trampa de especificidad en la reja del forme.** `.sr-cell:not(.is-row-end)`
+son dos clases; el override móvil `.sr-cell` es una, y un media query no suma
+especificidad. La regla vertical entre columnas nunca se apagó en una sola
+columna: la mitad de las celdas —las que el plan de seis columnas no marcó como
+final de fila— seguían dibujando un filete gris al borde de la medida, y con
+`padding-right: 0` el año quedaba a 1 px de él. El apagado se repite ahora a la
+misma especificidad.
+
+Y la selección de periodo de Research estrena el mismo filete viajero que la
+navbar (`layoutId` compartido, misma curva). En móvil la fila envuelve a dos
+líneas: el salto entre ellas cae por el hueco entre filas y sigue por la banda
+de subrayado, sin cruzar tipografía.

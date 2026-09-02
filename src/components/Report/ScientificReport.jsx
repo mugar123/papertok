@@ -77,6 +77,32 @@ function AnimatedNumber({ value, duration = 600, locale = 'es-ES' }) {
 }
 
 /**
+ * The yellow rule under the period you are reading.
+ *
+ * The same element and the same curve as the navbar's feed indicator, because
+ * it is the same gesture one level down: a row of siblings where one is
+ * chosen. It was `border-bottom-color` on `.sr-tab.active`, and a border
+ * belongs to its element — it can appear and vanish, never travel. Sharing one
+ * `layoutId` makes it one rule that moves.
+ *
+ * The tween is bounded on purpose (see `RULE_TRAVEL` in `Navbar.jsx`): a
+ * spring's tail leaves the rule drifting the last few pixels long after the
+ * move reads as over.
+ */
+const PERIOD_RULE_TRAVEL = { duration: 0.28, ease: [0.4, 0, 0.2, 1] };
+
+function ActivePeriodRule({ reduced }) {
+  return (
+    <motion.span
+      className="sr-tab-rule"
+      layoutId="sr-active-period"
+      aria-hidden="true"
+      transition={reduced ? { duration: 0 } : PERIOD_RULE_TRAVEL}
+    />
+  );
+}
+
+/**
  * One measurement in the sidebar, with its own skeleton.
  *
  * The two branches carry keys because they are both `<span>`s in the same
@@ -429,16 +455,22 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
         <nav className="sr-tabs" aria-label={isEnglish ? 'Edition period' : 'Periodo de la edición'}>
           <span className="sr-tabs-label">{isEnglish ? 'Edition' : 'Edición'}</span>
-          {timeOptions.map((o) => (
-            <button
-              key={o.id}
-              className={`sr-tab ${timeframe === o.id || (o.id === 'custom' && customRange) ? 'active' : ''}`}
-              onClick={() => {
-                if (o.id === 'custom') setShowCustomPicker(p => !p);
-                else { setTimeframe(o.id); setCustomRange(null); setShowCustomPicker(false); }
-              }}
-            >{o.label}</button>
-          ))}
+          {timeOptions.map((o) => {
+            const isActive = Boolean(timeframe === o.id || (o.id === 'custom' && customRange));
+            return (
+              <button
+                key={o.id}
+                className={`sr-tab ${isActive ? 'active' : ''}`}
+                onClick={() => {
+                  if (o.id === 'custom') setShowCustomPicker(p => !p);
+                  else { setTimeframe(o.id); setCustomRange(null); setShowCustomPicker(false); }
+                }}
+              >
+                {o.label}
+                {isActive && <ActivePeriodRule reduced={prefersReducedMotion} />}
+              </button>
+            );
+          })}
         </nav>
       </header>
 
