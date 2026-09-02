@@ -215,7 +215,7 @@ papertok/
 ├── public/                 Static assets
 ├── docs/                   Architecture and development guides
 ├── scripts/diagnostics/    Manual provider and proxy probes
-└── vercel.json             Vercel build, SPA fallback and cache headers
+└── vercel.json             Vercel build, SPA fallback, auth proxy and cache headers
 ```
 
 ## Documentation
