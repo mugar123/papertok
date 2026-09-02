@@ -317,6 +317,12 @@
 }
 
 .sr-stat-number {
+  /* A fixed line box, so the bone and the figure that replaces it occupy
+     exactly the same height and nothing under the number moves when the
+     edition lands. */
+  display: flex;
+  align-items: center;
+  min-height: calc(1.35rem * 1.1);
   font-family: var(--font-mono);
   font-size: 1.35rem;
   font-weight: var(--fw-semibold);
@@ -324,6 +330,24 @@
   letter-spacing: -0.02em;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
+}
+
+/* The figure arriving in place of its bone. `srEnter` is the page-wide gesture
+   and this is its small version: the same curve, half the distance, no
+   stagger — the three measurements are one block and should resolve together. */
+.sr-stat-value {
+  display: block;
+  animation: srValueIn 0.36s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+@keyframes srValueIn {
+  from { opacity: 0; transform: translateY(5px); }
+  to { opacity: 1; transform: none; }
+}
+
+.sr-bone--stat {
+  height: 17px;
+  border-radius: var(--radius-sm);
 }
 
 .sr-stat-label {
@@ -357,6 +381,15 @@
   height: 100%;
   width: var(--fill, 0%);
   background: var(--accent-success);
+  transition: width var(--transition-slow);
+}
+
+/* An empty track would read as "none of them are open", which is a claim about
+   an edition that does not exist yet. It shimmers with the bones instead. */
+.sr-stat-meter--waiting {
+  background: linear-gradient(90deg, var(--border-subtle) 20%, var(--border-default) 48%, var(--border-subtle) 76%);
+  background-size: 240% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
 }
 
 /* ── Trends ── */
@@ -1400,6 +1433,8 @@
   .sr-cell,
   .sr-trend-item--enter,
   .sr-real-trends,
+  .sr-stat-value,
+  .sr-stat-meter::after,
   .sr-btn,
   .sr-tab {
     animation: none;
@@ -1408,6 +1443,7 @@
 
   .sr-spinner,
   .sr-trend-skeleton,
+  .sr-stat-meter--waiting,
   .sr-bone,
   .sr-plate--bone,
   .sr-plate:not(.is-loaded) .sr-plate-well {

@@ -157,6 +157,17 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* The country section's second child is a block that collapses to nothing and
+   then unmounts, and a flex `gap` cannot be animated away with it: the 12px
+   between the toggle and the panel survived the whole fold and then
+   disappeared in the frame after it, jolting everything below by exactly that
+   much (measured: the actions row went 281px → 269px at unmount, one frame
+   after the height reached 0). The gap moves inside the collapsing box as
+   padding, where the fold takes it along. */
+.rf-section--country {
+  gap: 0;
+}
+
 .rf-section-label,
 .rf-country-toggle > span,
 .rf-quick-label {
@@ -199,7 +210,9 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding-top: var(--space-2);
+  /* --space-3 (the gap `.rf-section--country` gave up) + --space-2 (what this
+     already had), so the resting layout is unchanged to the pixel. */
+  padding-top: var(--space-5);
 }
 
 .rf-country-note {
@@ -463,9 +476,16 @@
 }
 
 /* ── Map ── */
+/* The cap is what makes the centring necessary. `.rf-country-controls` is a
+   flex column, so `align-items` is `stretch`; a child that declares a width
+   stops stretching and settles against the cross-start edge — the left. At the
+   report's full 1240px the panel is 1192px wide and the map is 780, so the
+   world sat hard left with 414px of paper beside it while the note, the search
+   field and the quick list below it all ran the full width. */
 .rf-map-wrap {
   position: relative;
   width: min(100%, 780px);
+  margin-inline: auto;
 }
 
 .rf-map-hint {

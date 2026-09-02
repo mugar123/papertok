@@ -41,14 +41,17 @@
   margin-bottom: var(--space-8);
 }
 
+/* No rule under the nameplate. `3px double` draws two hairlines with a gap
+   between them, and those two lines are what the masthead was being read as —
+   a divider rather than a heading. Without it the standfirst has to sit close
+   enough to the title to be read as belonging to it, which is what the
+   `--space-3` below does; the rule used to hold them apart. */
 .lists-masthead-row {
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-6);
-  padding-bottom: var(--space-3);
-  border-bottom: 3px double var(--border-ink);
 }
 
 .lists-masthead-block {
@@ -458,8 +461,11 @@
   align-items: flex-start;
   flex-wrap: wrap;
   gap: var(--space-4);
-  padding-bottom: var(--space-4);
-  border-bottom: 3px double var(--border-ink);
+  /* The twin of `.lists-masthead-row`, and it loses its rule for the same
+     reason. What the rule was also doing was spacing: it is now the only gap
+     between the nameplate and whatever follows, so the tools row below gives
+     up the padding it carried to clear the line. */
+  padding-bottom: var(--space-5);
 }
 
 .lists-expanded-titleblock {
@@ -576,8 +582,11 @@
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin: var(--space-4) 0 var(--space-6);
-  padding-top: var(--space-4);
+  /* No top margin and no top padding: the gap above this row is the
+     nameplate's own `padding-bottom` (or the share note's margin when there is
+     one), so the row sits the same distance from the header whether or not the
+     note is there. */
+  margin: 0 0 var(--space-6);
 }
 
 .lists-export-actions {

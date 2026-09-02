@@ -137,10 +137,20 @@
 }
 
 .navbar-link {
+  /* Every link, not only the active one: the rule is an absolutely positioned
+     child that moves from link to link, and each one has to be able to hold
+     it. */
+  position: relative;
+  /* The rule spans the label, so its inset is the link's horizontal padding
+     and has to follow it down the breakpoints. It used to be a hardcoded
+     10px on both: correct at full width and wrong everywhere below it —
+     measured, the rule fell 2px short of the word at 700px, 4px at 390 and
+     6px at 360, which is 12px of a 56px word left unmarked on a phone. */
+  --nav-rule-inset: 10px;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 10px;
+  padding: 6px var(--nav-rule-inset);
   border: none;
   border-radius: var(--radius-md);
   background: none;
@@ -171,17 +181,19 @@
 }
 
 .navbar-link.active {
-  position: relative;
   background: transparent;
   color: var(--text-primary);
   font-weight: var(--fw-semibold);
 }
 
-.navbar-link.active::after {
-  content: '';
+/* The travelling rule. It was a `::after` on the active link, which cannot
+   move: a pseudo-element belongs to its own element and can only appear and
+   disappear. This is one `motion.span` with a shared `layoutId`, so switching
+   feeds slides it across instead of blinking it. */
+.navbar-link-rule {
   position: absolute;
-  left: 10px;
-  right: 10px;
+  left: var(--nav-rule-inset);
+  right: var(--nav-rule-inset);
   bottom: -2px;
   height: 3px;
   border-radius: var(--radius-full);
@@ -333,7 +345,7 @@
   }
 
   .navbar-link {
-    padding: 6px 8px;
+    --nav-rule-inset: 8px;
     font-size: 0.8125rem;
   }
 
@@ -358,7 +370,7 @@
 
 @media (max-width: 420px) {
   .navbar-link {
-    padding: 6px 6px;
+    --nav-rule-inset: 6px;
     font-size: 0.75rem;
   }
 
@@ -376,7 +388,7 @@
   }
 
   .navbar-link {
-    padding: 6px 4px;
+    --nav-rule-inset: 4px;
   }
 
   .navbar-right {

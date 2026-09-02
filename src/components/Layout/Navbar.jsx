@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { motion, useReducedMotion } from 'framer-motion';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -7,10 +8,34 @@ import { Search, Layers, Newspaper, UserCheck } from 'lucide-react';
 import NavPreferencesMenu from './NavPreferencesMenu';
 import './Navbar.css';
 
+/**
+ * The yellow rule under the tab you are on.
+ *
+ * It used to be `.navbar-link.active::after`: a pseudo-element that blinked out
+ * of one link and into the next, so the three feeds read as three unrelated
+ * places. One element with a shared `layoutId` is the same rule travelling —
+ * framer measures where it was and where it landed and tweens between the two,
+ * width included, which is what ties "For you", Research and Following
+ * together as one row.
+ */
+function ActiveTabRule({ reduced }) {
+  return (
+    <motion.span
+      className="navbar-link-rule"
+      layoutId="navbar-active-tab"
+      aria-hidden="true"
+      transition={reduced
+        ? { duration: 0 }
+        : { type: 'spring', stiffness: 420, damping: 38, mass: 0.7 }}
+    />
+  );
+}
+
 export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) {
   const { user, profilePhoto } = useAuth();
   const { feedMode, setFeedMode } = useFeed();
   const { isEnglish } = useLanguage();
+  const reduced = useReducedMotion();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
@@ -77,6 +102,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           >
             <Layers size={15} aria-hidden="true" />
             {isEnglish ? 'For you' : 'Para ti'}
+            {isHomeActive && feedMode === 'top' && <ActiveTabRule reduced={reduced} />}
           </button>
 
           <NavLink
@@ -85,6 +111,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           >
             <Newspaper size={15} aria-hidden="true" />
             Research
+            {isResearchActive && <ActiveTabRule reduced={reduced} />}
           </NavLink>
 
           <NavLink
@@ -93,6 +120,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           >
             <UserCheck size={15} aria-hidden="true" />
             {isEnglish ? 'Following' : 'Siguiendo'}
+            {isFollowingActive && <ActiveTabRule reduced={reduced} />}
           </NavLink>
         </div>
 

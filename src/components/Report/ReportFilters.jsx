@@ -9,6 +9,17 @@ import { useLanguage } from '../../context/LanguageContext';
 import './ReportFilters.css';
 
 const EASE = [0.16, 1, 0.3, 1];
+/**
+ * Opening and closing are not the same movement played backwards.
+ *
+ * `EASE` is an expo-out: nearly all of its speed is spent in the first frames.
+ * Coming in that is what a panel should do — arrive fast, settle gently. Going
+ * out it means the block falls off a cliff and then crawls: measured on the
+ * affiliation-country section, 155 of its 579 pixels went in a single 17ms
+ * frame and the last 8 took 133ms. It read as a cut, not as a fold. Closing
+ * gets a curve that eases at both ends instead.
+ */
+const EASE_CLOSE = [0.4, 0, 0.2, 1];
 const QUICK_COUNTRIES = ['US', 'GB', 'DE', 'FR', 'CN', 'JP', 'ES', 'CA'];
 
 function normalizeFilters(filters = {}) {
@@ -34,9 +45,22 @@ function Collapse({ isOpen, children, reduced, id }) {
         <motion.div
           id={id}
           initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={reduced ? { duration: 0 } : { height: { duration: 0.32, ease: EASE }, opacity: { duration: 0.22 } }}
+          animate={{
+            height: 'auto',
+            opacity: 1,
+            transition: reduced
+              ? { duration: 0 }
+              : { height: { duration: 0.32, ease: EASE }, opacity: { duration: 0.22 } },
+          }}
+          exit={{
+            height: 0,
+            opacity: 0,
+            transition: reduced
+              ? { duration: 0 }
+              // The content goes before the box does, so the last frames of the
+              // fold are empty rather than a strip of clipped text.
+              : { height: { duration: 0.28, ease: EASE_CLOSE }, opacity: { duration: 0.16, ease: 'easeIn' } },
+          }}
           style={{ overflow: 'hidden' }}
         >
           {children}
@@ -247,7 +271,10 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
             </motion.div>
           </div>
 
-          <div className="rf-section">
+          {/* `--country` carries no gap: see the note on the rule. The space
+              between the toggle and the block below it has to live *inside*
+              the block, or it vanishes in one frame when the block unmounts. */}
+          <div className="rf-section rf-section--country">
             <button
               className="rf-country-toggle"
               type="button"

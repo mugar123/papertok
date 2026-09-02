@@ -27,6 +27,23 @@ const EXIT_MS = 0.2;
 const EASE = [0.16, 1, 0.3, 1];
 
 /**
+ * Leaving is not arriving reversed.
+ *
+ * `EASE` is an expo-out. Arriving, that is the whole point: the page appears
+ * at once and settles. Leaving, it means the page is gone before it has
+ * started going — measured on a switch between two feeds, the outgoing page
+ * was at 14% opacity 59ms in and at 0.1% by 159ms, while `mode="wait"` held
+ * the incoming one back until 226ms. That left **184ms of blank screen**
+ * between two tabs of the same bar, which is the whole of the "it doesn't
+ * flow" feeling: not a slow transition, a gap in the middle of a fast one.
+ *
+ * An ease-in holds the outgoing page up and drops it at the end, so the
+ * handover is one page giving way to another instead of two pages either side
+ * of nothing.
+ */
+const EASE_LEAVING = [0.4, 0, 1, 1];
+
+/**
  * `direction` is 1 going deeper, -1 coming back, 0 when the router cannot say.
  *
  * The sign is what makes a hierarchy feel like one: opening an author brings
@@ -53,7 +70,7 @@ const routeVariants = {
     // what makes the two look like one movement instead of two.
     x: direction * -TRAVEL_PX * 0.6,
     scale: isProject ? 0.997 : 0.999,
-    transition: { duration: EXIT_MS, ease: EASE },
+    transition: { duration: EXIT_MS, ease: EASE_LEAVING },
   }),
 };
 

@@ -76,6 +76,22 @@ function AnimatedNumber({ value, duration = 600, locale = 'es-ES' }) {
   return <>{(value === 0 ? 0 : display).toLocaleString(locale)}</>;
 }
 
+/**
+ * One measurement in the sidebar, with its own skeleton.
+ *
+ * The two branches carry keys because they are both `<span>`s in the same
+ * slot: without them React keeps the node and only swaps its class, the
+ * element never mounts, and `srValueIn` — a CSS animation, which runs on mount
+ * and nowhere else — never plays. With them the bone leaves, the value
+ * arrives, and it arrives fading up while `AnimatedNumber` counts it out.
+ */
+function StatValue({ loading, width = '64%', children }) {
+  if (loading) {
+    return <span key="bone" className="sr-bone sr-bone--stat" style={{ width }} />;
+  }
+  return <span key="value" className="sr-stat-value">{children}</span>;
+}
+
 const SOURCE_STATUS_LABELS = {
   es: {
     active: 'disponible',
@@ -515,24 +531,37 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           </div>
         </div>
       ) : (
-        <AnimatePresence mode="wait" initial={false}>
+        /* No key, and no `AnimatePresence`. The body used to be keyed on the
+           ids of the edition it was showing, inside `mode="wait"`, so every
+           new edition made the whole thing — sidebar included — fade out to
+           nothing and then fade back in from nothing: a blank page between two
+           editions. And it happened twice per period change, because
+           `fetchReport` publishes the edition, waits for the trends and then
+           publishes it again re-ranked. The regions still make their own
+           entrances off `sr-enter`; they are keyed by paper, so they mount
+           when their paper is new and stay put when it is not. */
         <motion.div
           className={`sr-body ${loading ? 'updating' : ''}`}
-          key={reportContentKey}
-          initial={prefersReducedMotion ? { opacity: 1 } : { opacity: 0 }}
+          initial={false}
           animate={{ opacity: loading ? 0.76 : 1 }}
-          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0 }}
           transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.22 }}
         >
 
-
           <div className="sr-layout">
           <aside className="sr-aside">
+          {/* The measurements. While the next edition compiles they go to
+              bones like everything else on the page — they used to be the one
+              block still asserting numbers, and the numbers were the previous
+              period's. The icons, the labels and the meter's track stay: they
+              are the sidebar's furniture, not the edition's data, the same way
+              the trends keep their heading and skeleton only the list. */}
           <div className="sr-stats-bar sr-enter" style={{ '--enter-order': ENTER.stats }}>
             <div className="sr-stat" title={isEnglish ? 'Papers included in this editorial selection' : 'Papers incluidos en esta selección editorial'}>
               <BarChart3 size={16} />
               <div className="sr-stat-info">
-                <span className="sr-stat-number"><AnimatedNumber value={totalPapers} locale={locale} /></span>
+                <span className="sr-stat-number">
+                  <StatValue loading={loading}><AnimatedNumber value={totalPapers} locale={locale} /></StatValue>
+                </span>
                 <span className="sr-stat-label">{isEnglish ? 'Selected' : 'Seleccionados'}</span>
               </div>
             </div>
@@ -540,7 +569,9 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             <div className="sr-stat" title={isEnglish ? 'Total citations of selected papers' : 'Suma de citas de los papers seleccionados'}>
               <TrendingUp size={16} />
               <div className="sr-stat-info">
-                <span className="sr-stat-number"><AnimatedNumber value={totalCitations} duration={800} locale={locale} /></span>
+                <span className="sr-stat-number">
+                  <StatValue loading={loading} width="72%"><AnimatedNumber value={totalCitations} duration={800} locale={locale} /></StatValue>
+                </span>
                 <span className="sr-stat-label">{isEnglish ? 'Selection citations' : 'Citas selección'}</span>
               </div>
             </div>
@@ -548,12 +579,14 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             <div className="sr-stat" title={isEnglish ? 'Open Access papers in the selection' : 'Papers Open Access dentro de la selección'}>
               <Unlock size={16} />
               <div className="sr-stat-info">
-                <span className="sr-stat-number">{oaCount}/{totalPapers}</span>
+                <span className="sr-stat-number">
+                  <StatValue loading={loading} width="58%">{oaCount}/{totalPapers}</StatValue>
+                </span>
                 <span className="sr-stat-label">{isEnglish ? 'Selection OA' : 'OA selección'}</span>
                 {/* The ratio is easier to read as a proportion than as a fraction. */}
                 <span
-                  className="sr-stat-meter"
-                  style={{ '--fill': `${totalPapers > 0 ? Math.round((oaCount / totalPapers) * 100) : 0}%` }}
+                  className={`sr-stat-meter${loading ? ' sr-stat-meter--waiting' : ''}`}
+                  style={{ '--fill': `${!loading && totalPapers > 0 ? Math.round((oaCount / totalPapers) * 100) : 0}%` }}
                   aria-hidden="true"
                 />
               </div>
@@ -798,7 +831,6 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           </div>
 
         </motion.div>
-        </AnimatePresence>
       )}
 
       {/* Opening a paper takes the screen, with a back arrow in the corner —

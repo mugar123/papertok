@@ -1692,10 +1692,12 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         </motion.div>
       ) : (
         <motion.div key="index" {...viewMotion}>
-          {/* A nameplate, the same block the Report opens with: mono kicker,
-              serif masthead, a 3px double rule. The `h1` used to be Inter with
-              a clipped gradient over it, and the kicker and standfirst below
-              rendered with no rule behind them at all. */}
+          {/* A nameplate: mono kicker, serif masthead, standfirst. The `h1`
+              used to be Inter with a clipped gradient over it, and the kicker
+              and standfirst below rendered with no rule behind them at all.
+              There used to be a double rule under the row as well; without it
+              the standfirst carries the whole hierarchy, so it sits tight to
+              the title. */}
           <header className="lists-header">
             <div className="lists-masthead-row">
               <div className="lists-masthead-block">
