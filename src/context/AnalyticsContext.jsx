@@ -18,9 +18,9 @@ import {
   trackProductEvent,
 } from '../services/analyticsService';
 
-// Declared once, outside the component: the Analytics component re-registers
-// `beforeSend` on every change of identity, so an inline arrow would
-// re-register it on every render of the whole app.
+// Declared once, outside the component: `<Analytics />` re-registers its
+// `beforeSend` on every change of identity, so an inline arrow would re-register
+// it on every render of the whole app.
 const sanitizeOutgoingEvent = event => ({ ...event, url: sanitizeAnalyticsEventUrl(event.url) });
 
 export function AnalyticsProvider({ children }) {
