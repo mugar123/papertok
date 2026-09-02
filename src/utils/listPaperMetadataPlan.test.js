@@ -40,7 +40,7 @@ test('the batch never exceeds the cap the backend actually enforces', () => {
  */
 test('an id that cannot be a document id never reaches a batch', () => {
   assert.equal(isFetchableDocumentId('2401.01234'), true);
-  assert.equal(isFetchableDocumentId('math/0309285'), false, 'legacy arXiv ids carry a slash');
+  assert.equal(isFetchableDocumentId('math/0309285'), false, 'raw, a legacy arXiv id carries a slash');
   assert.equal(isFetchableDocumentId(''), false);
   assert.equal(isFetchableDocumentId('.'), false);
   assert.equal(isFetchableDocumentId('..'), false);
@@ -51,14 +51,26 @@ test('an id that cannot be a document id never reaches a batch', () => {
   assert.equal(isFetchableDocumentId('x'.repeat(1500)), true);
 
   const { requests, unfetchable } = planMetadataRequests({
-    missingIds: ['2401.01234', 'math/0309285', '2402.09876'],
+    missingIds: ['2401.01234', '__name__', '2402.09876', '..'],
   });
-  assert.deepEqual(unfetchable, ['math/0309285']);
+  assert.deepEqual(unfetchable, ['__name__', '..']);
   for (const request of requests) {
-    assert.ok(!request.paperIds.includes('math/0309285'),
+    assert.ok(!request.paperIds.includes('__name__') && !request.paperIds.includes('..'),
       'one bad id must not be able to poison a batch');
   }
   assert.deepEqual(requests[0].paperIds, ['2401.01234', '2402.09876']);
+});
+
+// The documents of slash-bearing papers are stored under an encoded name
+// (utils/firestoreDocId.js), so the plan judges the ENCODED form: a legacy
+// arXiv id is a batch member, and only what no encoding can save is dropped.
+test('a legacy arXiv id reaches a batch, because its document name is encoded', () => {
+  const { requests, unfetchable } = planMetadataRequests({
+    missingIds: ['2401.01234', 'math/0309285', 'doi:10.1103/physrevb.42.892'],
+  });
+  assert.deepEqual(unfetchable, []);
+  assert.deepEqual(requests[0].paperIds, ['2401.01234', 'math/0309285', 'doi:10.1103/physrevb.42.892'],
+    'the plan keeps the paper ids; the caller encodes at query time and decodes what comes back');
 });
 
 test('both collections are asked for every batch, and the arithmetic holds', () => {
@@ -84,9 +96,9 @@ test('nothing to ask for produces no requests at all', () => {
   assert.deepEqual(planMetadataRequests().requests, []);
   // All unfetchable is not "ask for nothing and call it a success": the ids
   // come back so the caller can stop those rows waiting.
-  const allBad = planMetadataRequests({ missingIds: ['a/b', 'c/d'] });
+  const allBad = planMetadataRequests({ missingIds: ['..', '__x__'] });
   assert.deepEqual(allBad.requests, []);
-  assert.deepEqual(allBad.unfetchable, ['a/b', 'c/d']);
+  assert.deepEqual(allBad.unfetchable, ['..', '__x__']);
 });
 
 /**

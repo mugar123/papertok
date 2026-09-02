@@ -83,3 +83,38 @@ test('the Liked tab reads through fetchLikedPaperRecords', async () => {
   assert.ok(effect.length > 0, 'expected to have found the liked fan-out');
   assert.match(effect, /fetchLikedPaperRecords\(user\.uid, ids\)/);
 });
+
+/* --- The arXiv leg on its own, for the lists screen --------------------- */
+
+test('isLegacyArxivId names the pre-2007 shapes and nothing else', async () => {
+  const { isLegacyArxivId } = await import('./likedPaperRecords.js');
+  for (const id of ['hep-th/0603001', 'math.GT/0309136v2', 'arxiv:cond-mat/0101001']) {
+    assert.equal(isLegacyArxivId(id), true, id);
+  }
+  for (const id of ['2401.01234', 'openalex:W1', 'doi:10.1103/physrevb.42.892', 'pmid:1', '']) {
+    assert.equal(isLegacyArxivId(id), false, id);
+  }
+});
+
+test('hydrateLegacyArxivPapers names the legacy ids from arXiv and reports a failure', async () => {
+  const { hydrateLegacyArxivPapers } = await import('./likedPaperRecords.js');
+  const asked = [];
+  const ok = await hydrateLegacyArxivPapers(['hep-th/0603001', 'openalex:W1'], {
+    fetchArxivPapers: async (ids) => { asked.push(ids); return [{ id: 'hep-th/0603001', arxivId: 'hep-th/0603001', title: 'Named' }]; },
+  });
+  assert.deepEqual(asked, [['hep-th/0603001']], 'only the legacy shapes go to arXiv');
+  assert.equal(ok.failed, false);
+  assert.deepEqual(ok.records.map(record => record.id), ['hep-th/0603001']);
+  assert.equal(ok.records[0].data.paperTitle, 'Named');
+
+  const down = await hydrateLegacyArxivPapers(['hep-th/0603001'], {
+    fetchArxivPapers: async () => { throw new Error('arxiv down'); },
+  });
+  assert.equal(down.failed, true);
+  assert.deepEqual(down.records, []);
+
+  const nothing = await hydrateLegacyArxivPapers(['openalex:W1'], {
+    fetchArxivPapers: async () => { throw new Error('must not be called'); },
+  });
+  assert.deepEqual(nothing, { records: [], failed: false });
+});
