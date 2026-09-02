@@ -233,13 +233,11 @@ PubMed de 3 a 10 req/s y la ruta responde sin ella (`/health` lo dice ahora con
 
 ```bash
 npx wrangler secret put SEMANTIC_SCHOLAR_API_KEY   # https://www.semanticscholar.org/product/api#api-key-form
-npx wrangler secret put NCBI_API_KEY               # opcional, NCBI account settings
+# npx wrangler secret put NCBI_API_KEY             # hecho 01-09 (B2)
 ```
 
-`NCBI_API_KEY` se puso el 01-09 (B2), y `PUBMED_GLOBAL_MINUTE_LIMIT` **se queda
-en 60 a propósito**: cada fallo de caché gasta tres llamadas a E-utilities, seis
-si cada una se rechaza y se reintenta, así que los 10 req/s de la clave compran
-100 fallos al minuto y el 60 es margen, no un techo pendiente de subir.
+`PUBMED_GLOBAL_MINUTE_LIMIT` **se queda en 60 a propósito**: es margen, no un
+techo pendiente de subir.
 
 ### Verificado por mutación
 
