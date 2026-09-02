@@ -127,3 +127,32 @@ test('a retry rebatches rather than reissuing the shape that failed', () => {
     assert.equal(request.source, 'interaction');
   }
 });
+
+/* --- The library read shares the same rule ------------------------------- */
+
+test('planLibraryBatches keeps a legacy arXiv id out of every batch', async () => {
+  const { planLibraryBatches } = await import('./listPaperMetadataPlan.js');
+  const { batches, unfetchable } = planLibraryBatches(
+    ['openalex:W1', 'hep-th/0603001', '1807.10247', 'openalex:W2'],
+    2,
+  );
+  assert.deepEqual(batches, [['openalex:W1', '1807.10247'], ['openalex:W2']]);
+  assert.deepEqual(unfetchable, ['hep-th/0603001']);
+});
+
+test('planLibraryBatches has nothing to ask for when every id is illegal', async () => {
+  const { planLibraryBatches } = await import('./listPaperMetadataPlan.js');
+  assert.deepEqual(planLibraryBatches(['hep-th/0603001'], 30), { batches: [], unfetchable: ['hep-th/0603001'] });
+  assert.deepEqual(planLibraryBatches(undefined, 30), { batches: [], unfetchable: [] });
+});
+
+// One liked paper with a pre-2007 arXiv id (`hep-th/0603001`) used to reject
+// the `in` query it rode in, and with it every other liked paper of the batch
+// — the whole Liked tab sat on a skeleton, retrying the same rejection.
+test('the library read plans its batches through planLibraryBatches', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(new URL('../services/interactionProfileStore.js', import.meta.url), 'utf8');
+  const body = source.slice(source.indexOf('export async function fetchLibraryRecords'));
+  assert.match(body, /planLibraryBatches\(/, 'the batches must come from the plan that drops illegal ids');
+  assert.doesNotMatch(body, /paperIds\.slice\(/, 'and never from slicing the raw id list');
+});

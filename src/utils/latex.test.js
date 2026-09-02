@@ -95,3 +95,58 @@ test('keeps malformed or incomplete math visible instead of dropping its delimit
   );
   assert.match(rendered, /\$\\notARealCommand\$/);
 });
+
+/* --- Macros that OpenAlex leaves OUTSIDE the maths delimiters ------------- */
+
+// Verbatim from OpenAlex (W2029887339, Phys. Rev. B 42, 892). APS abstracts
+// arrive with `\ensuremath{…}` and `\ifmmode…\else…\fi{}` in TEXT mode: the
+// macro is the whole formula, there is no `$` around it.
+const QUASIPARTICLE_ABSTRACT = 'The coherent mass ${\\mathit{m}}^{\\mathrm{*}}$ of the quasiparticle and the frequency-dependent conductivity \\ensuremath{\\sigma}(\\ensuremath{\\omega}) are calculated for clusters with 4\\ifmmode\\times\\else\\texttimes\\fi{}4 and 8\\ifmmode\\times\\else\\texttimes\\fi{}4 sites. In particular, \\ensuremath{\\sigma}(\\ensuremath{\\omega}) shows an isolated quasiparticle peak at small \\ensuremath{\\omega}.';
+
+test('a text-mode \\ensuremath becomes its own inline formula', () => {
+  assert.equal(
+    normalizeLatexText('conductivity \\ensuremath{\\sigma}(\\ensuremath{\\omega}) are'),
+    'conductivity \\(\\sigma\\)(\\(\\omega\\)) are',
+  );
+});
+
+test('a text-mode \\ifmmode picks the maths branch as an inline formula', () => {
+  assert.equal(
+    normalizeLatexText('clusters with 4\\ifmmode\\times\\else\\texttimes\\fi{}4 sites'),
+    'clusters with 4\\(\\times\\)4 sites',
+  );
+});
+
+test('an \\ifmmode inside a formula keeps the maths branch bare', () => {
+  assert.equal(
+    normalizeLatexText('$L=4\\ifmmode\\times\\else\\texttimes\\fi{}4$'),
+    '$L=4\\times4$',
+  );
+});
+
+test('an \\ensuremath inside a formula is still unwrapped, not nested', () => {
+  assert.equal(normalizeLatexText('$25 \\mathrm{GeV}\\ensuremath{\\lesssim}m$'), '$25 \\mathrm{GeV}\\lesssim m$');
+});
+
+test('text-only symbol macros paint as their character', () => {
+  assert.equal(normalizeLatexText('a 3.2 \\AA{} bond, \\textcopyright 2020'), 'a 3.2 Å bond, © 2020');
+});
+
+test('renders the quasiparticle abstract with no raw macro left on screen', async () => {
+  await loadKatex();
+  const normalized = normalizeLatexText(QUASIPARTICLE_ABSTRACT);
+  assert.doesNotMatch(normalized, /\\(?:ifmmode|ensuremath|texttimes|else|fi)\b/);
+  const formulas = splitLatexText(QUASIPARTICLE_ABSTRACT).filter(chunk => chunk.type === 'math');
+  assert.equal(formulas.length, 8);
+  for (const formula of formulas) {
+    assert.doesNotThrow(() => katex.renderToString(formula.value, { throwOnError: true }));
+  }
+
+  const rendered = renderToStaticMarkup(
+    React.createElement(ScientificText, null, QUASIPARTICLE_ABSTRACT),
+  );
+  // KaTeX keeps the TeX source in a MathML annotation, so the raw-macro check
+  // is on the prose only: every formula must have become a KaTeX span.
+  assert.doesNotMatch(rendered, /\\(?:ifmmode|ensuremath|texttimes)/);
+  assert.equal((rendered.match(/class="katex"/g) || []).length, 8);
+});

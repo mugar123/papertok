@@ -125,3 +125,22 @@ export function planRetryRequests({ failedRequests, missingIds, batchSize } = {}
     unfetchable,
   };
 }
+
+/**
+ * The batches for the library read (`fetchLibraryRecords`), under the rule the
+ * lists' plan already follows: an id Firestore cannot hold never reaches a
+ * query. A pre-2007 arXiv id (`hep-th/0603001`) inside an `in` filter rejects
+ * the whole query, and with it every other paper of its batch.
+ */
+export function planLibraryBatches(ids, size) {
+  const fetchable = [];
+  const unfetchable = [];
+  for (const id of Array.isArray(ids) ? ids : []) {
+    (isFetchableDocumentId(id) ? fetchable : unfetchable).push(id);
+  }
+  const batches = [];
+  for (let index = 0; index < fetchable.length; index += size) {
+    batches.push(fetchable.slice(index, index + size));
+  }
+  return { batches, unfetchable };
+}

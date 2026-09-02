@@ -645,10 +645,45 @@ button.profile-stat:disabled {
   cursor: default;
 }
 
-/* While the library read is still out, the row is its own silhouette. */
+/* While the library read is still out, the row is its own silhouette: the
+   same padding and rule as a finished row, and three lines whose heights
+   follow the type they stand in for — the 10px mono kicker, the serif title
+   on its 1.35 line-height, the 11px meta — so the row keeps its height when
+   the title lands. */
 .profile-row--waiting {
-  padding-top: var(--space-4);
-  padding-bottom: var(--space-4);
+  cursor: progress;
+}
+
+.profile-row-skeleton-line {
+  display: block;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  animation: public-profile-pulse 1.4s ease-in-out infinite;
+}
+
+.profile-row-skeleton-line--kicker {
+  width: 72px;
+  height: 10px;
+}
+
+.profile-row-skeleton-line--title {
+  margin-top: 9px;
+  width: 78%;
+  max-width: 560px;
+  height: 15px;
+}
+
+.profile-row-skeleton-line--meta {
+  margin-top: 8px;
+  width: 38%;
+  max-width: 220px;
+  height: 11px;
+}
+
+/* Alternate rows breathe half a beat apart, so the column does not blink as
+   one block. */
+.profile-row-list > :nth-child(2n) .profile-row-skeleton-line {
+  animation-delay: 700ms;
 }
 
 /* Once it has answered and this id still has nothing, say so in words —
@@ -1058,6 +1093,7 @@ button.profile-stat:disabled {
 
 @media (prefers-reduced-motion: reduce) {
   .public-profile-skeleton,
+  .profile-row-skeleton-line,
   .profile-stat-pending {
     animation: none;
   }
