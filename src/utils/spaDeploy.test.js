@@ -25,7 +25,37 @@ test('the SPA rewrite never answers a missing chunk with index.html', async () =
 
 test('SOURCE: a failed chunk load reloads the tab once a minute at most', async () => {
   const source = await readFile(MAIN, 'utf8');
-  assert.match(source, /addEventListener\('vite:preloadError'/);
-  assert.match(source, /sessionStorage/);
-  assert.match(source, /window\.location\.reload\(\)/);
+  // Comments are prose, not code: this file in particular carries long
+  // explanatory comments right above this listener, and a decoy inside one
+  // of them must never make this test see a brake that is not really there.
+  // Strip them first, the same way analyticsPageviews.test.js does.
+  const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+
+  const handler = code.match(
+    /window\.addEventListener\('vite:preloadError', \(event\) => \{[\s\S]*?\n\s*\}\)/,
+  );
+  assert.ok(handler, 'the vite:preloadError listener is gone');
+  // The real listener is well under twenty lines. A much longer capture
+  // means the regex ran past it into unrelated code below.
+  const handlerLines = handler[0].split('\n');
+  assert.ok(handlerLines.length <= 16, `listener capture spans ${handlerLines.length} lines, past the real handler`);
+
+  const body = handler[0];
+  // A handler that reloads on every failure, with no brake, used to satisfy
+  // this test too: the three substrings it checked for all still appear
+  // somewhere in a handler like that, and an unbraked reload loop is exactly
+  // what this listener exists to prevent. Tie the threshold guard, the write
+  // that remembers this attempt, and the reload it gates into one contiguous
+  // match inside the SAME handler, in that order.
+  assert.match(
+    body,
+    /if \(now - last < 60_000\) return\s*sessionStorage\.setItem\(PRELOAD_RELOAD_KEY, String\(now\)\)\s*\}[\s\S]*?event\.preventDefault\(\)\s*window\.location\.reload\(\)/,
+    'a reload must be gated by the 60s threshold and follow the recorded attempt',
+  );
+  // ...and that the guarded pair is not ALSO reachable earlier, unconditionally:
+  // tying the order proves a guarded path exists, not that it is the only one.
+  const preventDefaultCalls = body.match(/event\.preventDefault\(\)/g) ?? [];
+  assert.equal(preventDefaultCalls.length, 1, 'preventDefault must run on exactly one path: the guarded reload');
+  const reloadCalls = body.match(/window\.location\.reload\(\)/g) ?? [];
+  assert.equal(reloadCalls.length, 1, 'the tab must be reloaded from exactly one place in this handler');
 });

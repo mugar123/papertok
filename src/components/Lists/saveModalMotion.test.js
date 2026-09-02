@@ -51,23 +51,42 @@ test('the close timer matches the exit duration so the last frame is held', asyn
 
 test('every close path still funnels through the unsaved-changes guard', async () => {
   const jsx = await readFile(JSX, 'utf8');
-  assert.match(jsx, /onCancel/, 'the <dialog> Escape path must be intercepted');
-  assert.match(jsx, /requestClose/, 'every close path funnels through requestClose');
-  assert.match(jsx, /if \(saving \|\| closing \|\| closeTimer\.current\) return/);
+  // Comments are prose, not code: a decoy comment reproducing
+  // handleNativeClose's body must never make this test see a guard that is
+  // not really there. Strip them first, the same way
+  // analyticsPageviews.test.js does, so only real code is scanned below.
+  const code = jsx.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+
+  assert.match(code, /onCancel/, 'the <dialog> Escape path must be intercepted');
+  assert.match(code, /requestClose/, 'every close path funnels through requestClose');
+  assert.match(code, /if \(saving \|\| closing \|\| closeTimer\.current\) return/);
   // A native `close` this component did not issue — a `dialog.close()` from
   // elsewhere, or the browser's own dismissal — has to reach the parent, or the
   // window is gone while `saveModalPaper` still says it is open and no card
   // can reopen it. A close this component issued must NOT reach it twice.
-  assert.match(jsx, /onClose=\{handleNativeClose\}/);
+  assert.match(code, /onClose=\{handleNativeClose\}/);
+
+  const fn = code.match(/const handleNativeClose = \(event\) => \{[\s\S]*?\};/);
+  assert.ok(fn, 'handleNativeClose is gone');
+  // The real handler is under a dozen lines. A much longer capture means the
+  // regex ran past the real function into unrelated code below it.
+  const fnLines = fn[0].split('\n');
+  assert.ok(fnLines.length <= 10, `handleNativeClose capture spans ${fnLines.length} lines, past a single function`);
   assert.match(
-    jsx,
-    /const handleNativeClose = \(event\) => \{\s*event\.stopPropagation\(\);\s*if \(closedByScript\.current\) \{\s*closedByScript\.current = false;\s*return;\s*\}\s*onClose\(\);\s*\};/,
+    fn[0],
+    /^const handleNativeClose = \(event\) => \{\s*event\.stopPropagation\(\);\s*if \(closedByScript\.current\) \{\s*closedByScript\.current = false;\s*return;\s*\}\s*onClose\(\);\s*\};$/,
   );
+  // The same net closeNative gets below, but scoped to this function: a
+  // regression that fires onClose() twice, or drops it entirely, must fail
+  // here even if it leaves the surrounding text otherwise intact.
+  const notifiesParent = fn[0].match(/\bonClose\(\)/g) ?? [];
+  assert.equal(notifiesParent.length, 1, 'handleNativeClose must notify the parent exactly once');
+
   assert.match(
-    jsx,
+    code,
     /const closeNative = \(\) => \{\s*closedByScript\.current = true;\s*dialogRef\.current\?\.close\(\);\s*\};/,
   );
-  const scriptedCloses = jsx.match(/dialogRef\.current\?\.close\(\)/g) ?? [];
+  const scriptedCloses = code.match(/dialogRef\.current\?\.close\(\)/g) ?? [];
   assert.equal(scriptedCloses.length, 1, 'every scripted close goes through closeNative()');
 });
 
