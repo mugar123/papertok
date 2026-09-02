@@ -133,13 +133,75 @@ test('la fila de listas envuelve en móvil en vez de estrujar el título a una l
   assert.match(narrow[0], /\.profile-pin-actions\s*\{[^}]*flex:\s*1 1 100%/);
 });
 
+/** A stylesheet without its comments, so prose cannot satisfy a rule check. */
+function rules(css) {
+  return css.replace(/\/\*[\s\S]*?\*\//g, '');
+}
+
 test('the editor keeps a table of contents and a live preview beside the form', async () => {
-  const css = await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8');
-  assert.match(css, /\.profile-layout\s*\{[^}]*grid-template-columns:\s*176px minmax\(0, 1fr\) 340px/);
+  const css = rules(await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8'));
+  // One grid for the whole screen: the heading sits in it, and the preview
+  // rises to the heading's height instead of starting where the form does.
+  assert.match(css, /\.profile-layout\s*\{[^}]*grid-template-columns:\s*var\(--profile-rail\) minmax\(0, 1fr\) var\(--profile-aside\)/);
+  assert.match(css, /\.profile-layout\s*\{[^}]*grid-template-areas:\s*\n?\s*"head head preview"\s*\n?\s*"toc main preview"/);
+  assert.match(css, /\.profile-layout > \.settings-subheader\s*\{[^}]*grid-area:\s*head/);
+  assert.match(css, /\.profile-preview\s*\{[^}]*grid-area:\s*preview/);
   assert.match(css, /\.profile-toc-marker/);
   assert.match(css, /\.profile-preview-chrome/);
   const jsx = await readFile(new URL('./ProfilePage.jsx', import.meta.url), 'utf8');
   assert.match(jsx, /aria-label=\{copy\.tocLabel\}/);
   assert.match(jsx, /id="profile-identity"/);
   assert.match(jsx, /className="profile-inline-link" to="\/settings"/);
+  // The heading is inside the grid, and the way to the public page moved
+  // from a pill under the title to the preview card's foot.
+  assert.match(jsx, /<div className="profile-layout">\s*<SettingsSubheader/);
+  assert.match(jsx, /className="profile-preview-open"/);
+  assert.doesNotMatch(jsx, /className="profile-public-link"/);
+});
+
+test('in the dark theme, what sits on the soft yellow is the flipping ink, not the fixed one', async () => {
+  const css = rules(await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8'));
+  // `--text-on-brand` is ink in both themes because the full yellow does not
+  // flip; the SOFT yellow does (#fff4c9 -> #35290b), so ink on it measured
+  // 1.30:1 in the dark theme -- the pinned state's label was invisible.
+  const pinned = css.match(/\.profile-pin-toggle\.is-pinned\s*\{[^}]*\}/);
+  assert.ok(pinned, 'ProfilePage.css lost .profile-pin-toggle.is-pinned');
+  assert.match(pinned[0], /color:\s*var\(--text-primary\)/);
+  assert.doesNotMatch(pinned[0], /--text-on-brand/);
+});
+
+test('the editor names its transitions and guards its entrance for reduced motion', async () => {
+  const css = rules(await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8'));
+  // global.css animates `all` on every button at 250ms -- layout included,
+  // which is the "soft button" feel. The three button classes of this page
+  // name what moves instead.
+  const buttons = css.match(/\.profile-secondary,\s*\.profile-pin-toggle,\s*\.profile-primary\s*\{[^}]*\}/);
+  assert.ok(buttons, 'ProfilePage.css lost the shared button rule');
+  assert.match(buttons[0], /transition:\s*background var\(--transition-fast\)/);
+  assert.doesNotMatch(buttons[0], /transition:\s*all/);
+  // The grid's parts rise a beat apart; a reader who asked for less motion
+  // gets them at once.
+  assert.match(css, /\.profile-layout > \*\s*\{[^}]*animation:\s*profile-rise/);
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[^{}]*\.profile-layout > \*[^{}]*\{[^}]*animation:\s*none/);
+  assert.ok(reduced, 'the staggered entrance has no prefers-reduced-motion guard');
+});
+
+test('the dark theme gets stronger lines for fields and rules, the light theme keeps its hairlines', async () => {
+  const css = rules(await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8'));
+  // Measured 2026-09-03: --border-default sits at 1.37:1 on --bg-card in the
+  // dark theme and the cards themselves at 1.06:1 on the page, so fields and
+  // section rules all but vanished. The page keeps two local lines: the
+  // structural rule and the field boundary, each redefined for the dark side.
+  const light = css.match(/\.profile-page\s*\{[^}]*\}/);
+  assert.ok(light, 'ProfilePage.css lost .profile-page');
+  assert.match(light[0], /--profile-rule:\s*var\(--border-default\)/);
+  assert.match(light[0], /--profile-line-field:\s*var\(--border-default\)/);
+  const dark = css.match(/:root\[data-theme='dark'\] \.profile-page\s*\{[^}]*\}/);
+  assert.ok(dark, 'ProfilePage.css has no dark-theme block for .profile-page');
+  assert.match(dark[0], /--profile-rule:\s*var\(--border-strong\)/);
+  assert.match(dark[0], /--profile-line-field:\s*color-mix\(in srgb, var\(--text-tertiary\) 70%, var\(--bg-card\)\)/);
+  // And the rules that draw structure use them rather than the raw tokens.
+  assert.match(css, /\.profile-section\s*\{[^}]*border-top:\s*1px solid var\(--profile-rule\)/);
+  assert.match(css, /\.profile-field textarea\s*\{[^}]*border:\s*1px solid var\(--profile-line-field\)/);
+  assert.match(css, /\.profile-handle-input\s*\{[^}]*border:\s*1px solid var\(--profile-line-field\)/);
 });

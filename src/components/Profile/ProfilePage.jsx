@@ -42,6 +42,7 @@ import { visibilityCopy } from './visibilityCopy.js';
 import VisibilityPrompt from './VisibilityPrompt.jsx';
 import SettingsSubheader from '../Settings/SettingsSubheader.jsx';
 import { SETTINGS_BREADCRUMB } from '../Settings/settingsBreadcrumb.js';
+import { cameFromProfile } from './editorOrigin.js';
 import { getIcon } from '../../utils/icons.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { clearStoredProfile } from '../../utils/userScopedStorage.js';
@@ -169,6 +170,8 @@ export default function ProfilePage() {
 
   const copy = isEnglish ? {
     back: 'Back',
+    backToProfile: 'Back to profile',
+    eyebrowFromProfile: 'Profile · Settings',
     title: 'Public profile',
     createIntro: 'Pick a handle and your profile becomes visible at its own public link.',
     editIntro: 'This screen decides everything your public page shows.',
@@ -196,6 +199,7 @@ export default function ProfilePage() {
     allowContactHint: 'Your email is never shown or shared either way.',
     create: 'Create my profile',
     save: 'Save changes',
+    autosaveNote: 'Lists and unpublishing save on their own, without this button.',
     saving: 'Saving...',
     saved: 'Saved',
     pinned: 'Lists on my profile',
@@ -248,6 +252,8 @@ export default function ProfilePage() {
     unpublished: 'Profile unpublished.',
   } : {
     back: 'Volver',
+    backToProfile: 'Volver al perfil',
+    eyebrowFromProfile: 'Perfil · Ajustes',
     title: 'Perfil público',
     createIntro: 'Elige un handle y tu perfil pasa a ser visible en su propio enlace público.',
     editIntro: 'Esta pantalla decide todo lo que muestra tu página pública.',
@@ -275,6 +281,7 @@ export default function ProfilePage() {
     allowContactHint: 'Tu correo no se muestra ni se comparte en ningún caso.',
     create: 'Crear mi perfil',
     save: 'Guardar cambios',
+    autosaveNote: 'Las listas y despublicar se guardan al momento, sin este botón.',
     saving: 'Guardando...',
     saved: 'Guardado',
     pinned: 'Listas en mi perfil',
@@ -487,6 +494,12 @@ export default function ProfilePage() {
     if (location.key !== 'default') navigate(-1);
     else navigate('/profile');
   };
+  // Which door was used. The profile's gear and "Edit profile" say so and the
+  // heading answers in the profile's voice; the hub says nothing and keeps
+  // the hub's. A direct load has no history and returns to the profile, so
+  // its back control borrows the profile's label too.
+  const fromProfile = cameFromProfile(location);
+  const returnsToProfile = fromProfile || location.key === 'default';
 
   const reportError = useCallback((error) => {
     console.error('Profile write failed:', error);
@@ -805,43 +818,18 @@ export default function ProfilePage() {
   return (
     <main className="profile-page">
       <div className="profile-shell">
-        <SettingsSubheader
-          eyebrow={SETTINGS_BREADCRUMB[isEnglish ? 'en' : 'es']}
-          title={copy.title}
-          subtitle={status === 'new' ? copy.createIntro : copy.editIntro}
-          backLabel={copy.back}
-          onBack={goBack}
-        >
-          {publicPath && (
-            <Link className="profile-public-link" to={publicPath}>
-              {copy.viewPublic} <ExternalLink size={14} />
-            </Link>
-          )}
-        </SettingsSubheader>
-
-        {/* The one decision the F12 migration cannot take alone: pins the
-            owner had explicitly hidden. Everything else migrates silently. */}
-        {hiddenPinsPrompt && (
-          <div className="profile-stale" role="alert">
-            <div>
-              <strong>{copy.hiddenPinsTitle}</strong>
-              <p>{copy.hiddenPinsBody}</p>
-            </div>
-            <div className="profile-stale-actions">
-              <button type="button" className="profile-secondary" onClick={() => resolveHiddenPins(true)}>
-                {copy.hiddenPinsShow}
-              </button>
-              <button type="button" className="profile-secondary" onClick={() => resolveHiddenPins(false)}>
-                {copy.hiddenPinsKeep}
-              </button>
-            </div>
-          </div>
-        )}
-        {migration === 'failed' && (
-          <p className="profile-hint" role="alert">{copy.migrationFailed}</p>
-        )}
-
+        {/* One grid for the whole screen. The heading is its first row, so
+            the back control lines up with the index rail and the title with
+            the form; the preview spans both rows and rises to meet it. */}
         <div className="profile-layout">
+          <SettingsSubheader
+            eyebrow={fromProfile ? copy.eyebrowFromProfile : SETTINGS_BREADCRUMB[isEnglish ? 'en' : 'es']}
+            title={copy.title}
+            subtitle={status === 'new' ? copy.createIntro : copy.editIntro}
+            backLabel={returnsToProfile ? copy.backToProfile : copy.back}
+            onBack={goBack}
+          />
+
           <nav className="profile-toc" aria-label={copy.tocLabel}>
             <span className="profile-toc-title">{copy.toc}</span>
             <div
@@ -868,6 +856,28 @@ export default function ProfilePage() {
           </nav>
 
           <div className="profile-main">
+            {/* The one decision the F12 migration cannot take alone: pins the
+                owner had explicitly hidden. Everything else migrates silently. */}
+            {hiddenPinsPrompt && (
+              <div className="profile-stale" role="alert">
+                <div>
+                  <strong>{copy.hiddenPinsTitle}</strong>
+                  <p>{copy.hiddenPinsBody}</p>
+                </div>
+                <div className="profile-stale-actions">
+                  <button type="button" className="profile-secondary" onClick={() => resolveHiddenPins(true)}>
+                    {copy.hiddenPinsShow}
+                  </button>
+                  <button type="button" className="profile-secondary" onClick={() => resolveHiddenPins(false)}>
+                    {copy.hiddenPinsKeep}
+                  </button>
+                </div>
+              </div>
+            )}
+            {migration === 'failed' && (
+              <p className="profile-hint" role="alert">{copy.migrationFailed}</p>
+            )}
+
             <form className="profile-form" onSubmit={onSubmit}>
               <section
                 id="profile-identity"
@@ -890,10 +900,10 @@ export default function ProfilePage() {
                           referrerPolicy="no-referrer"
                           // The page's own masthead avatar, visible on load --
                           // not lazy. `.profile-identity-avatar img` renders at
-                          // 72x72.
+                          // 56x56.
                           decoding="async"
-                          width="72"
-                          height="72"
+                          width="56"
+                          height="56"
                         />
                       )
                       : (
@@ -1066,19 +1076,27 @@ export default function ProfilePage() {
                 </label>
               </section>
 
-              <div className="profile-actions">
-                <button
-                  type="submit"
-                  className="profile-primary"
-                  disabled={saving || deleting || !handleCheck.valid
-                    || (status === 'new' && !visibilityDraft)}
-                >
-                  {saving ? copy.saving : (status === 'new' ? copy.create : copy.save)}
-                </button>
-                {feedback && (
-                  <span className={`profile-feedback is-${feedback.state}`} role="status">
-                    {feedback.state === 'saved' && <Check size={16} />} {feedback.message}
-                  </span>
+              {/* The form ends here and says so: the two sections below save
+                  on their own, so without the rule and the note the page read
+                  as if it stopped at Privacy. */}
+              <div className="profile-form-foot">
+                <div className="profile-actions">
+                  <button
+                    type="submit"
+                    className="profile-primary"
+                    disabled={saving || deleting || !handleCheck.valid
+                      || (status === 'new' && !visibilityDraft)}
+                  >
+                    {saving ? copy.saving : (status === 'new' ? copy.create : copy.save)}
+                  </button>
+                  {feedback && (
+                    <span className={`profile-feedback is-${feedback.state}`} role="status">
+                      {feedback.state === 'saved' && <Check size={16} />} {feedback.message}
+                    </span>
+                  )}
+                </div>
+                {status === 'ready' && (
+                  <p className="profile-actions-note">{copy.autosaveNote}</p>
                 )}
               </div>
             </form>
@@ -1271,6 +1289,15 @@ export default function ProfilePage() {
                 </div>
               )}
               </div>
+              {/* The way to the page itself, at the foot of its likeness. It
+                  used to be a pill under the title, saying what the URL row
+                  above already says. */}
+              {publicPath && (
+                <Link className="profile-preview-open" to={publicPath}>
+                  <span>{copy.viewPublic}</span>
+                  <ExternalLink size={14} aria-hidden="true" />
+                </Link>
+              )}
             </div>
             <p className="profile-preview-hint">{copy.previewHint}</p>
           </aside>
