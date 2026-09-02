@@ -58,6 +58,7 @@ import {
 } from '../utils/feedEnrichment';
 import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard';
+import { lateSourceCandidates } from '../utils/feedLateCandidates';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
@@ -247,6 +248,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   const feedRequestId = useRef(0);
   const feedSessionId = useRef(0);
   const openAlexEnrichmentAttempts = useRef(new Set());
+  // Papers the slower sources returned after the page painted (see
+  // utils/feedLateCandidates.js). Offered to the next page's pool, once.
+  const lateSourceCandidatesRef = useRef([]);
   const openAlexEnrichmentRequests = useRef(new Map());
   const activeUserId = useRef(user?.uid || null);
   const sessionSeenPapers = useRef(readSeenPaperIds(user?.uid));
@@ -897,6 +901,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     if (reset) {
       openAlexEnrichmentAttempts.current.clear();
       openAlexEnrichmentRequests.current.clear();
+      lateSourceCandidatesRef.current = [];
     }
 
     setLoading(true);
@@ -1012,6 +1017,15 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           if (mainPapers.length === 0) {
             sourceResults = await all;
             mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
+          } else {
+            // The sources still running answer into the next page's pool.
+            // Guarded by session, not request: a later page of the same
+            // session is exactly who should receive them.
+            const painted = mainPapers;
+            all.then((settled) => {
+              if (feedSessionId.current !== activeSessionId) return;
+              lateSourceCandidatesRef.current = lateSourceCandidates(painted, settled);
+            });
           }
           mainSourceResults = sourceResults;
         } catch (e) {
@@ -1208,7 +1222,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         }
 
         // ─── STEP 7: Merge, deduplicate, score, and shuffle ───
-        const allFetched = [...mainPapers, ...graphPapers, ...followedPapers, ...explorationPapers];
+        const lateMain = lateSourceCandidatesRef.current.splice(0);
+        lateMain.forEach(p => { p._type = 'exploit'; });
+        const allFetched = [...mainPapers, ...lateMain, ...graphPapers, ...followedPapers, ...explorationPapers];
         
         const uniqueMap = new Map();
         allFetched.forEach(p => {
