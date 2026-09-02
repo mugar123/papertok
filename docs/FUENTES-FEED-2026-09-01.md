@@ -96,6 +96,12 @@ borde dura 10 min, así que N invitados simultáneos producen *un* fallo de
 caché, no N. Sí podría manifestarse en el feed con sesión, donde las consultas
 varían por usuario.
 
+**Cerrado:** `c1ec8cb` reintenta una vez cada llamada a E-utilities que NCBI
+rechace con 429, tras una espera corta con jitter (o el `retry-after`
+anunciado, si cabe en el deadline de 6 s); como NCBI cuenta por ventanas de
+un segundo, ese reintento cae ya en la siguiente. `71bf61a` y `1f200bd`
+corrigieron el retry-after negativo y en blanco del propio mecanismo.
+
 ---
 
 ## B3 — Una fuente colgada descartaba los resultados de las sanas
@@ -180,8 +186,8 @@ el impacto es de un lector cada media hora.
 
 ## B6 — El Worker enmascara el estado real del upstream, y el cliente tira el cuerpo
 
-**Estado: abierto.** Es el hallazgo que explica por qué B1 tardó semanas en
-verse.
+**Estado: corregido en `8163f7a` y `35e0a25`.** Es el hallazgo que explica por
+qué B1 tardó semanas en verse.
 
 Dos pérdidas de información encadenadas:
 
@@ -207,16 +213,20 @@ navegador si un 429 lo puso NCBI o el ledger.
 
 ## B7 — `PUBMED_GLOBAL_MINUTE_LIMIT` quedó desalineado con la clave
 
-**Estado: abierto, latente.** No está causando daño hoy.
+**Estado: corregido en `c1ec8cb`, `71bf61a` y `1f200bd`.**
 
-El comentario de `wrangler.toml` justifica el 60 así: 60 fallos de ruta × 3
+El comentario de `wrangler.toml` justificaba el 60 así: 60 fallos de ruta × 3
 llamadas = 180/min = 3 req/s, que es el techo anónimo de NCBI. Con
 `NCBI_API_KEY` puesta ese techo pasa a 10 req/s, así que el paralelo
-aritmético serían 200.
+aritmético serían 200 — pero esa cuenta no contaba el reintento: cada fallo
+de caché gasta tres llamadas a E-utilities, seis si cada una se rechaza una
+vez y se reintenta, así que 60 fallos de ruta al minuto son como mucho 360
+llamadas, y los 10 req/s de la clave compran 100 fallos al minuto en ese
+peor caso, no 200.
 
 Se dejó en 60 **a propósito**: el ledger no rechazó nada en ninguna medición
-(151/151 aceptadas), así que nunca ha sido la restricción que ata. Queda
-anotado como desalineación conocida, no como algo a cambiar a ciegas.
+(151/151 aceptadas), así que nunca ha sido la restricción que ata. El
+comentario ya dice la aritmética real, no los 200 de antes.
 
 ---
 
