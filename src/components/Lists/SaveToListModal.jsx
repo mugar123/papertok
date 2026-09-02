@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { IS_DEMO, db } from '../../services/firebase';
+import { savedPaperDocRef } from '../../services/savedPaperStore.js';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc, limit, query } from 'firebase/firestore';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead';
 import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService';
@@ -531,12 +532,16 @@ export default function SaveToListModal({ paper, onClose }) {
          * pressing Save again redoes only what is missing.
          */
         if (toAdd.length > 0) {
-          markSaved(paper);
           await setDoc(
-            doc(db, 'users', user.uid, 'savedPapers', paper.id),
+            savedPaperDocRef(user.uid, paper.id),
             buildSavedPaperPayload(paper, new Date().toISOString()),
             { merge: true },
           );
+          // The aggregate learns of the save only once the document exists.
+          // The other order left an orphan whenever this write was refused:
+          // "saved" everywhere, a paper in no list, and a Save that could
+          // never succeed again because markSaved saw it as already saved.
+          markSaved(paper);
         }
 
         // `updatedAt` rides along on every list write. It is what tells a

@@ -1,3 +1,5 @@
+import { encodeFirestoreDocId } from './firestoreDocId.js';
+
 /**
  * How a list's papers are asked of Firestore.
  *
@@ -72,8 +74,11 @@ export function planMetadataRequests({ missingIds, batchSize = PAPER_METADATA_BA
 
   const fetchable = [];
   const unfetchable = [];
+  // Judged on the ENCODED name (utils/firestoreDocId.js), which is what the
+  // query will actually carry: a legacy arXiv id is a batch member, and only
+  // what no encoding can save (`..`, `__x__`, 1500+ bytes) is dropped.
   for (const id of ids) {
-    (isFetchableDocumentId(id) ? fetchable : unfetchable).push(id);
+    (isFetchableDocumentId(encodeFirestoreDocId(id)) ? fetchable : unfetchable).push(id);
   }
 
   const requests = [];

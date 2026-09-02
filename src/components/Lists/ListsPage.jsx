@@ -32,6 +32,8 @@ import { AlertTriangle, Check, Download, Globe2, Library, Lock, Pencil, Plus, Sh
 import { shareOrCopyLink } from '../../utils/shareLink.js';
 import { downloadCitationFile } from '../../utils/readingLibrary';
 import { settleWithin } from '../../utils/asyncTiming';
+import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestoreDocId.js';
+import { hydrateLegacyArxivPapers } from '../../services/likedPaperRecords.js';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
 import {
@@ -584,22 +586,25 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         const loadedPapers = {};
         snapshot.forEach((item) => {
           const data = item.data();
+          // Decoded: the document is named by the encoded id, the row by the
+          // paper id the list holds.
+          const paperId = decodeFirestoreDocId(item.id);
           const rawPaper = source === 'saved'
-            ? { id: item.id, ...data }
+            ? { id: paperId, ...data }
             : data.paper
-              ? { id: item.id, ...data.paper }
+              ? { id: paperId, ...data.paper }
               : {
-                  id: item.id,
+                  id: paperId,
                   title: data.paperTitle || '',
                   authors: data.paperAuthors || [],
                   primaryCategory: data.paperCategory || '',
                   published: data.timestamp,
-                  arxivId: item.id,
+                  arxivId: paperId,
                 };
           const paper = paperLegacyAdapter(rawPaper);
-          loadedPapers[item.id] = paper;
-          if (paper.title && paper.title !== item.id) {
-            resolvedIds.add(item.id);
+          loadedPapers[paperId] = paper;
+          if (paper.title && paper.title !== paperId) {
+            resolvedIds.add(paperId);
           }
         });
 
@@ -629,7 +634,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
           : 'interactions';
         const metadataQuery = query(
           collection(db, 'users', user.uid, sourceCollection),
-          where(documentId(), 'in', requestDefinition.paperIds),
+          where(documentId(), 'in', requestDefinition.paperIds.map(encodeFirestoreDocId)),
         );
 
         /**
@@ -764,6 +769,28 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       dropPending(missingIds.filter((paperId) => !stillAnswerable.has(paperId)));
 
       const unresolvedIds = missingIds.filter((paperId) => !resolvedIds.has(paperId));
+
+      // A legacy arXiv id (`hep-th/0603001`) saved or liked before document
+      // names were encoded has no document to answer for it. arXiv names it,
+      // the way the profile's Liked tab does; a superseded open paints nothing.
+      const legacyMissing = unresolvedIds.filter((paperId) => !stillAnswerable.has(paperId));
+      if (legacyMissing.length > 0) {
+        setPendingPaperIds((current) => {
+          const next = new Set(current);
+          legacyMissing.forEach((paperId) => next.add(paperId));
+          return next;
+        });
+        hydrateLegacyArxivPapers(legacyMissing).then(({ records }) => {
+          if (metadataRequestId.current !== requestId) return;
+          const named = {};
+          records.forEach(({ id, data }) => { named[id] = { ...data.paper, id }; });
+          if (Object.keys(named).length > 0) {
+            rememberListPapers(user.uid, named);
+            setSavedPapers((current) => ({ ...named, ...current }));
+          }
+          dropPending(legacyMissing);
+        }).catch(() => dropPending(legacyMissing));
+      }
 
       if (failedRequests.length > 0 && unresolvedIds.length > 0) {
         failedMetadataRequests.current.set(list.id, failedRequests);
@@ -1560,7 +1587,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
                             <span className="lists-skeleton-bar lists-skeleton-bar--meta" />
                           </div>
                         ) : (
-                          <p className="lists-paper-title lists-paper-placeholder">{paperId}</p>
+                          <p className="lists-paper-title lists-paper-placeholder">
+                            {isEnglish ? 'The title could not be loaded' : 'No se pudo cargar el título'}
+                          </p>
                         )}
                       </div>
                     );
