@@ -26,12 +26,12 @@
 }
 
 /* ── Nameplate ── */
-/* No rule under the nameplate, for the reason spelled out in ListsPage.css:
-   `3px double` draws two hairlines with a gap, and the pair reads as a divider
-   laid across the page rather than as the edge of a heading. The FILTERS row
-   right below already carries its own hairline, so the space the rule used to
-   sit in is all the separation the edition block needs. */
+/* One rule, not two: `3px double` draws a pair of hairlines with a gap, and
+   the pair reads as a band laid across the page rather than as the edge of the
+   nameplate. A single ink hairline closes the edition block just as clearly
+   and leaves the masthead the heaviest thing up here. */
 .sr-header {
+  border-bottom: 1px solid var(--border-ink);
   padding-bottom: var(--space-3);
   margin-bottom: var(--space-4);
 }
