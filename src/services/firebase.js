@@ -11,7 +11,15 @@ import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0",
-  authDomain: "papertok-168df.firebaseapp.com",
+  // Google's sign-in page shows the host of the redirect URI ("Ir a ..."), so
+  // the default `papertok-168df.firebaseapp.com` greeted every visitor with a
+  // project id nobody recognises. Point it at our own domain: Vercel proxies
+  // /__/auth/* straight through to Firebase's handler (see vercel.json), which
+  // as a bonus makes the auth cookies first-party. Both OAuth clients must
+  // send their callback here — Google's authorized redirect URIs and GitHub's
+  // single Authorization callback URL — or sign-in fails with redirect_uri
+  // mismatch.
+  authDomain: "papertok.app",
   projectId: "papertok-168df",
   storageBucket: "papertok-168df.firebasestorage.app",
   messagingSenderId: "310243065214",

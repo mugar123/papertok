@@ -18,7 +18,11 @@
     }
   ],
   "rewrites": [
-    { "source": "/:path((?!_vercel/|assets/).*)", "destination": "/index.html" }
+    {
+      "source": "/__/auth/:path*",
+      "destination": "https://papertok-168df.firebaseapp.com/__/auth/:path*"
+    },
+    { "source": "/:path((?!_vercel/|assets/|__/auth/).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
