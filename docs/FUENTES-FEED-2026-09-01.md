@@ -193,8 +193,8 @@ Dos pérdidas de información encadenadas:
 
 1. **En el Worker** (`report-api.js`, manejador de `DOMAIN_SOURCE_HANDLERS`):
    cualquier upstream que no sea 429 se relaya como **502 genérico**. El campo
-   `upstreamStatus` existe pero está condicionado a `isScopus`, así que el
-   resto de fuentes no lo emiten.
+   `upstreamStatus` existía pero estaba condicionado a `isScopus`, así que el
+   resto de fuentes no lo emitían.
 
 2. **En el cliente** (`domainSourceService.js`, `fetchJson`):
    `throw new Error(\`${path} returned ${response.status}\`)` descarta el
@@ -213,7 +213,7 @@ navegador si un 429 lo puso NCBI o el ledger.
 
 ## B7 — `PUBMED_GLOBAL_MINUTE_LIMIT` quedó desalineado con la clave
 
-**Estado: corregido en `c1ec8cb`, `71bf61a` y `1f200bd`.**
+**Estado: corregido en `c1ec8cb` y `71bf61a`.**
 
 El comentario de `wrangler.toml` justificaba el 60 así: 60 fallos de ruta × 3
 llamadas = 180/min = 3 req/s, que es el techo anónimo de NCBI. Con
