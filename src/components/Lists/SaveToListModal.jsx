@@ -163,6 +163,10 @@ export default function SaveToListModal({ paper, onClose }) {
   const prefersReducedMotion = useReducedMotion();
   const dialogRef = useRef(null);
   const closeTimer = useRef(null);
+  // True between a `dialog.close()` this component issued and the native
+  // `close` event it produces. `closeDialog` tells the parent itself, once;
+  // the flag is how `handleNativeClose` knows not to tell it again.
+  const closedByScript = useRef(false);
 
   // What the library says today: the dirty check and the save diff compare
   // against this, and untouched fields render it directly.
@@ -396,17 +400,35 @@ export default function SaveToListModal({ paper, onClose }) {
    * animation is `none`, no `animationend` ever fires, and a window waiting for
    * one would never close at all. Reduced motion skips the wait entirely.
    */
+  const closeNative = () => {
+    closedByScript.current = true;
+    dialogRef.current?.close();
+  };
+
+  // A native `close` the component did not issue: Escape when `onCancel` was
+  // not fired, a `close()` from outside, a form with method="dialog". The
+  // parent has to hear about it, or `saveModalPaper` stays set on a window
+  // that is no longer there.
+  const handleNativeClose = (event) => {
+    event.stopPropagation();
+    if (closedByScript.current) {
+      closedByScript.current = false;
+      return;
+    }
+    onClose();
+  };
+
   const closeDialog = () => {
     if (closeTimer.current) return;
     if (prefersReducedMotion) {
-      dialogRef.current?.close();
+      closeNative();
       onClose();
       return;
     }
     setClosing(true);
     closeTimer.current = setTimeout(() => {
       closeTimer.current = null;
-      dialogRef.current?.close();
+      closeNative();
       onClose();
       setClosing(false);
     }, DIALOG_EXIT_MS);
@@ -673,7 +695,7 @@ export default function SaveToListModal({ paper, onClose }) {
     <dialog
       ref={dialogRef}
       className={`save-modal-dialog${closing ? ' is-closing' : ''}`}
-      onClose={(event) => event.stopPropagation()}
+      onClose={handleNativeClose}
       onCancel={(event) => {
         // Escape: through the same guard as every other close path.
         event.preventDefault();

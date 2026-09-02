@@ -54,9 +54,21 @@ test('every close path still funnels through the unsaved-changes guard', async (
   assert.match(jsx, /onCancel/, 'the <dialog> Escape path must be intercepted');
   assert.match(jsx, /requestClose/, 'every close path funnels through requestClose');
   assert.match(jsx, /if \(saving \|\| closing \|\| closeTimer\.current\) return/);
-  // Native `onClose` used to unmount immediately. It must not call the parent
-  // callback any more — that is what cut the exit short.
-  assert.match(jsx, /onClose=\{\(event\) => event\.stopPropagation\(\)\}/);
+  // A native `close` this component did not issue — a `dialog.close()` from
+  // elsewhere, or the browser's own dismissal — has to reach the parent, or the
+  // window is gone while `saveModalPaper` still says it is open and no card
+  // can reopen it. A close this component issued must NOT reach it twice.
+  assert.match(jsx, /onClose=\{handleNativeClose\}/);
+  assert.match(
+    jsx,
+    /const handleNativeClose = \(event\) => \{\s*event\.stopPropagation\(\);\s*if \(closedByScript\.current\) \{\s*closedByScript\.current = false;\s*return;\s*\}\s*onClose\(\);\s*\};/,
+  );
+  assert.match(
+    jsx,
+    /const closeNative = \(\) => \{\s*closedByScript\.current = true;\s*dialogRef\.current\?\.close\(\);\s*\};/,
+  );
+  const scriptedCloses = jsx.match(/dialogRef\.current\?\.close\(\)/g) ?? [];
+  assert.equal(scriptedCloses.length, 1, 'every scripted close goes through closeNative()');
 });
 
 test('the bookmark rail pops the way like and read already do', async () => {
