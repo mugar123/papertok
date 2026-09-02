@@ -115,7 +115,7 @@ cada llamante envolvía esa rama entera en **un único presupuesto de 4 s**:
 - `FeedContext.jsx` — `FEED_SOURCE_RENDER_BUDGET_MS`, en tres puntos distintos
 
 `allSettled` solo resuelve cuando lo hace su miembro más lento, y `settleWithin`
-devuelve `{status:'timed_out'}` al vencer, que el llamante descarta. Resultado:
+devuelve `{status:'timed_out'}` al vencer, que el llamante descartaba. Resultado:
 un upstream que se pasara del presupuesto **se llevaba por delante los papers
 que sus hermanas ya habían devuelto**.
 
@@ -186,8 +186,8 @@ el impacto es de un lector cada media hora.
 
 ## B6 — El Worker enmascara el estado real del upstream, y el cliente tira el cuerpo
 
-**Estado: corregido en `8163f7a` y `35e0a25`.** Es el hallazgo que explica por
-qué B1 tardó semanas en verse.
+**Estado: corregido en `8163f7a`, `35e0a25` y `fa457652`.** Es el hallazgo
+que explica por qué B1 tardó semanas en verse.
 
 Dos pérdidas de información encadenadas:
 
@@ -197,17 +197,23 @@ Dos pérdidas de información encadenadas:
    resto de fuentes no lo emitían.
 
 2. **En el cliente** (`domainSourceService.js`, `fetchJson`):
-   `throw new Error(\`${path} returned ${response.status}\`)` descarta el
+   `throw new Error(\`${path} returned ${response.status}\`)` descartaba el
    cuerpo de la respuesta, y con él el `code` y cualquier detalle.
 
 Consecuencia: un **400** (petición malformada nuestra) y una **caída real del
-upstream** llegan al navegador exactamente igual, como
-`/sources/openreview returned 502`. La información existe —
+upstream** llegaban al navegador exactamente igual, como
+`/sources/openreview returned 502`. La información existía —
 `Specialist source failed: /sources/openreview, Error: Upstream error: 400` —
-pero solo en los logs del Worker, no donde se depura.
+pero solo en los logs del Worker, no donde se depuraba.
 
-Esto afecta también a B2: sin `wrangler tail` no hay forma de saber desde el
-navegador si un 429 lo puso NCBI o el ledger.
+Esto afectaba también a B2: sin `wrangler tail` no había forma de saber desde
+el navegador si un 429 lo puso NCBI o el ledger. El cliente resultó tener dos
+entradas independientes hacia `/sources/*`: `fetchJson` cubre los nueve paths
+de `DOMAIN_SOURCE_PATHS`, pero `/sources/pubmed` y `/sources/s2` no están
+entre ellos y llegan por `fetchWorkerSourceJson` (`workerApiClient.js`).
+`35e0a25` arregló solo la primera entrada, así que este hallazgo sobrevivió
+justo donde más dolía —PubMed es la ruta que motivó B2— hasta que `fa457652`
+movió `sourceResponseError` a `workerApiClient.js` y lo aplicó también ahí.
 
 ---
 
