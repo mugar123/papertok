@@ -90,6 +90,29 @@ import './styles/global.css'
 // there is no cost to the wait. `registerSW` is a no-op string import when
 // the build has no service worker (e.g. `vite dev`), so this is safe
 // outside a production build too.
+
+// A deploy replaces every hashed chunk. A tab that outlives one keeps asking
+// for chunks by their old hash; vercel.json keeps `/assets` out of the SPA
+// rewrite so that request is a 404 and not index.html served as JavaScript,
+// and Vite reports the failure here. One reload fetches the new graph. The
+// timestamp is what keeps a deploy that is genuinely broken from reloading
+// forever: a second failure inside a minute surfaces as the error it is.
+const PRELOAD_RELOAD_KEY = 'papertok_preload_reloaded_at'
+window.addEventListener('vite:preloadError', (event) => {
+  const now = Date.now()
+  let last
+  try {
+    last = Number(sessionStorage.getItem(PRELOAD_RELOAD_KEY)) || 0
+    if (now - last < 60_000) return
+    sessionStorage.setItem(PRELOAD_RELOAD_KEY, String(now))
+  } catch {
+    // No session storage means no way to stop a loop: let the error surface.
+    return
+  }
+  event.preventDefault()
+  window.location.reload()
+})
+
 registerSW()
 
 ReactDOM.createRoot(document.getElementById('root')).render(

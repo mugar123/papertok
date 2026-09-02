@@ -18,7 +18,7 @@
     }
   ],
   "rewrites": [
-    { "source": "/:path((?!_vercel/).*)", "destination": "/index.html" }
+    { "source": "/:path((?!_vercel/|assets/).*)", "destination": "/index.html" }
   ],
   "headers": [
     {
