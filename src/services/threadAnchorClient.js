@@ -55,14 +55,22 @@ export function threadIdentitiesOf(paper) {
  */
 export function normalizeThreadAnchorPayload(payload) {
   if (!payload?.key) return null;
-  const pages = (Array.isArray(payload.pages) ? payload.pages : []).map(page => ({
-    key: page.key,
-    comments: (Array.isArray(page.comments) ? page.comments : [])
+  const pages = (Array.isArray(payload.pages) ? payload.pages : []).map(page => {
+    const comments = (Array.isArray(page.comments) ? page.comments : [])
       .map(row => hydrateComment(row, page.key))
-      .filter(Boolean),
-    cursor: null,
-    hasMore: page.hasMore === true,
-  }));
+      .filter(Boolean);
+    const last = comments[comments.length - 1];
+    return {
+      key: page.key,
+      comments,
+      // `startAfter` takes a field value as readily as a snapshot, so the last
+      // comment's createdAt is the cursor `fetchThreadPage` pages from. Without
+      // it the sheet's `loadMore` — `hasMore && cursor` — never paged a thread
+      // the Worker had served.
+      cursor: page.hasMore === true && last?.createdAt instanceof Date ? last.createdAt : null,
+      hasMore: page.hasMore === true,
+    };
+  });
   const alternates = Array.isArray(payload.alternates) ? payload.alternates : [];
   return {
     resolved: {

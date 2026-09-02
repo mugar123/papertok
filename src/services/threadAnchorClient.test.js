@@ -51,6 +51,36 @@ test('the Worker payload becomes the sheet\'s { resolved, keys, pages } tuple', 
   assert.equal(normalizeThreadAnchorPayload({}), null);
 });
 
+test('a full first page from the Worker carries a cursor the sheet can page from', () => {
+  const comments = Array.from({ length: 20 }, (unused, index) => ({
+    id: `c${index}`,
+    authorUid: 'u1',
+    authorHandle: 'alice',
+    text: String(index),
+    status: 'visible',
+    createdAt: `2026-08-31T12:00:${String(index).padStart(2, '0')}.000Z`,
+  }));
+  const full = normalizeThreadAnchorPayload({
+    identity: DOI, key: KEY, stubExists: true, alternates: [],
+    pages: [{ key: KEY, hasMore: true, comments }],
+    count: { count: 45, capped: false },
+  });
+  assert.deepEqual(full.pages[0].cursor, new Date('2026-08-31T12:00:19.000Z'));
+
+  const short = normalizeThreadAnchorPayload({
+    identity: DOI, key: KEY, stubExists: true, alternates: [],
+    pages: [{ key: KEY, hasMore: false, comments: comments.slice(0, 3) }],
+    count: { count: 3, capped: false },
+  });
+  assert.equal(short.pages[0].cursor, null);
+});
+
+test('SOURCE: paging appends by id, because a value cursor can hand back its own comment', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const sheet = await readFile(new URL('../components/Comments/CommentsSheet.jsx', import.meta.url), 'utf8');
+  assert.match(sheet, /appendNewRows\(previous, fresh\)/);
+});
+
 test('fetchThreadAnchor asks /thread-anchor with canonical ids', async () => {
   let seen = '';
   const result = await fetchThreadAnchor(

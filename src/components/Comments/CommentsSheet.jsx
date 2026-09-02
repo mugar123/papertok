@@ -17,6 +17,7 @@ import {
   localThreadKeys,
 } from '../../services/threadAnchorClient.js';
 import { commentMillis } from '../../utils/commentTime.js';
+import { appendNewRows } from '../../utils/threadRows.js';
 import {
   commentTargetPath,
   hideCommentLocally,
@@ -520,7 +521,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       const fresh = pages
         .flatMap(page => page.comments.map(comment => ({ ...comment, paperKey: page.key })))
         .sort((a, b) => commentMillis(a.createdAt) - commentMillis(b.createdAt));
-      setRows(previous => [...previous, ...fresh]);
+      setRows(previous => appendNewRows(previous, fresh));
       setSources(previous => previous.map(source => {
         const page = pages.find(entry => entry.key === source.key);
         return page ? { key: source.key, cursor: page.cursor, hasMore: page.hasMore } : source;
