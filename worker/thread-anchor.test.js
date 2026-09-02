@@ -341,3 +341,19 @@ test('the minute ceiling comes from env with a bounded default', () => {
   assert.equal(threadQuotaFromEnv({ REQUEST_QUOTA_LEDGER: 'ledger' }).ledger, 'ledger');
   assert.equal(threadQuotaFromEnv({}).ledger, null);
 });
+
+test('a miss with several identities reserves their count in one ledger call', async () => {
+  const ledger = fakeLedger(true);
+  const store = memoryStore();
+  const admin = { batchGet: async () => [null, null], runQuery: async () => [], countQuery: async () => 0 };
+  const quota = { ledger, limit: 120 };
+  await resolveThreadAnchorFromStore(
+    [
+      { identity: DOI, key: DOI_KEY },
+      { identity: ARXIV, key: ARXIV_KEY },
+    ],
+    { store, admin, quota },
+  );
+  assert.equal(ledger.reservations.length, 1, 'both misses are one round trip to the ledger');
+  assert.equal(ledger.reservations[0].amount, 2, 'each missing identity is up to three reads, not one');
+});

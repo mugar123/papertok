@@ -61,8 +61,11 @@ const MAX_INVALIDATE_KEYS = 8;
  * only and is not counted. Each miss is up to three reads per identity (stub,
  * first page, count) against the service account — nothing the rules meter —
  * so the ceiling is global, like OpenAlex's, and reserved only when KV had
- * nothing. 120 misses a minute is 360 reads a minute at worst: an audience
- * opening new threads, not a script draining the daily Spark allowance.
+ * nothing. The unit reserved is one missing identity, not one call: a request
+ * can miss on up to `MAX_IDENTITIES` identities at once, and charging per call
+ * would let it spend every one of them for the price of one. 120 missing
+ * identities a minute is 360 reads a minute at worst: an audience opening new
+ * threads, not a script draining the daily Spark allowance.
  */
 export const THREAD_FIRESTORE_MINUTE_LIMIT_DEFAULT = 120;
 
@@ -74,7 +77,7 @@ export function threadQuotaFromEnv(env) {
   return { ledger: env?.REQUEST_QUOTA_LEDGER || null, limit };
 }
 
-async function reserveFirestoreMiss(quota) {
+async function reserveFirestoreMiss(quota, amount) {
   if (!quota) return;
   const minute = new Date().toISOString().slice(0, 16);
   const reservation = await reserveRequestQuota(quota.ledger, {
@@ -82,6 +85,7 @@ async function reserveFirestoreMiss(quota) {
     subject: 'thread:shared',
     subjectLimit: quota.limit,
     globalLimit: quota.limit,
+    amount,
   });
   // No ledger bound is a deploy mistake, and the safe answer to one is the
   // same 503 the browser already treats as "read Firestore yourself".
@@ -255,7 +259,7 @@ export async function resolveThreadAnchorFromStore(identities, { admin, store, q
   });
 
   if (missing.length && admin) {
-    await reserveFirestoreMiss(quota);
+    await reserveFirestoreMiss(quota, missing.length);
     const stubs = await admin.batchGet(missing.map(index => ['papers', identities[index].key]));
     const fetched = await Promise.all(missing.map(async (slot, offset) => {
       const identity = identities[slot];
