@@ -48,6 +48,22 @@
  * @property {string[]} [categories] - Legacy/arXiv categories
  */
 
+const ARXIV_ID_PATTERN = /^(?:\d{4}\.\d{4,5}|[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)?\/\d{7})(?:v\d+)?$/i;
+
+/**
+ * The arXiv id in a stored value, or nothing: `2401.12345v2`, `hep-th/0603001`,
+ * with an `arxiv:` prefix or as an arxiv.org URL. Any other shape — an OpenAlex
+ * work id, a PubMed id, a DOI — is not an arXiv id, however it arrived.
+ */
+export function readArxivId(value) {
+  const cleaned = String(value || '')
+    .trim()
+    .replace(/^arxiv:\s*/i, '')
+    .replace(/^(?:https?:\/\/)?(?:export\.)?arxiv\.org\/(?:abs|pdf)\//i, '')
+    .replace(/\.pdf$/i, '');
+  return ARXIV_ID_PATTERN.test(cleaned) ? cleaned : '';
+}
+
 /**
  * Convierte un paper antiguo almacenado en localStorage/Firebase al nuevo formato Paper unificado.
  * Esto evita romper la app al leer colecciones guardadas previamente.
@@ -61,8 +77,15 @@ export function paperLegacyAdapter(legacyPaper) {
     return legacyPaper;
   }
 
-  const arxivId = legacyPaper.arxivId || legacyPaper.id;
-  const year = legacyPaper.published 
+  // Only an id that IS an arXiv id counts as one. This used to take any bare
+  // `id` for an arXiv id, so a stored copy of an OpenAlex or PubMed paper
+  // (`openalex:W…`, `pmid:…`) came out with `https://arxiv.org/pdf/W….pdf` as
+  // its PDF, an arXiv landing page nobody served, and a canonical id of
+  // `arxiv:openalex:W…` that no public paper key could read — which is how a
+  // click on such a paper in a list opened a broken arXiv PDF instead of the
+  // paper page.
+  const arxivId = readArxivId(legacyPaper.arxivId) || readArxivId(legacyPaper.id);
+  const year = legacyPaper.published
     ? new Date(legacyPaper.published).getFullYear() 
     : (legacyPaper.year || new Date().getFullYear());
 
@@ -79,8 +102,11 @@ export function paperLegacyAdapter(legacyPaper) {
 
   const journal = legacyPaper.journalRef || openAlexData.journal || '';
 
+  // arXiv links are derived only for an arXiv paper; anything else keeps the
+  // links it was stored with, or the DOI resolver, or nothing.
   const pdfUrl = legacyPaper.pdfUrl || (arxivId ? `https://arxiv.org/pdf/${arxivId.split('/').pop()}.pdf` : undefined);
-  const landingPageUrl = arxivId ? `https://arxiv.org/abs/${arxivId.split('/').pop()}` : (doi ? `https://doi.org/${doi}` : '');
+  const landingPageUrl = legacyPaper.landingPageUrl
+    || (arxivId ? `https://arxiv.org/abs/${arxivId.split('/').pop()}` : (doi ? `https://doi.org/${doi}` : ''));
 
   // Extract pure ID for canonical identification
   let canonicalId = doi || (arxivId ? `arxiv:${arxivId.split('/').pop()}` : String(legacyPaper.id || Date.now()));
@@ -88,12 +114,13 @@ export function paperLegacyAdapter(legacyPaper) {
   return {
     id: canonicalId,
     sources: {
-      primary: legacyPaper.source || 'arxiv',
+      primary: legacyPaper.source || (arxivId ? 'arxiv' : 'stored'),
       enrichedBy: legacyPaper.openAlex ? ['openalex'] : []
     },
     title: legacyPaper.title || 'Untitled',
     abstract: legacyPaper.summary || legacyPaper.abstract || 'No abstract available.',
     authors,
+    arxivId: arxivId || undefined,
     doi: doi || undefined,
     journal: journal || undefined,
     year,

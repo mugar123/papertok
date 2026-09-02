@@ -22,6 +22,7 @@ import {
   parsePaperKey,
 } from '../../utils/publicNavigation.js';
 import { paperLegacyAdapter } from '../../models/Paper.js';
+import { seedPaintsWhole } from '../../utils/paperSeed.js';
 import PaperCard from '../Feed/PaperCard.jsx';
 import SkeletonCard from '../Feed/SkeletonCard.jsx';
 import { Button } from '../ui/button.jsx';
@@ -152,12 +153,17 @@ export default function PublicPaperPage({
     }
   }, [location.state, paperKey]);
 
+  // A copy that carries its abstract is the page until the network upgrades
+  // it. A copy without one — a list entry, a profile row — is kept for the
+  // failure paths below but not painted: it showed "Abstract unavailable." for
+  // a beat before the real text popped in. The skeleton covers that beat.
+  const seedPainted = seedPaintsWhole(seededPaper);
   const requestKey = `${paperKey}:${attempt}`;
   const hasCurrentResult = result.requestKey === requestKey;
-  const paper = hasCurrentResult ? result.paper : seededPaper;
+  const paper = hasCurrentResult ? result.paper : (seedPainted ? seededPaper : null);
   const status = hasCurrentResult
     ? result.status
-    : (seededPaper ? 'ready' : (identity ? 'loading' : 'not-found'));
+    : (seedPainted ? 'ready' : (identity ? 'loading' : 'not-found'));
   const isEnglish = language === 'en';
   const text = useCallback((entry) => entry[isEnglish ? 'en' : 'es'], [isEnglish]);
 
@@ -169,7 +175,7 @@ export default function PublicPaperPage({
   const prefersReducedMotion = useReducedMotion();
   // Purely derived: a seed was on screen and the network has now answered, so
   // this render is the upgrade. Without a seed the card is simply entering.
-  const cardPhase = hasCurrentResult && seededPaper ? 'dissolve' : 'shown';
+  const cardPhase = hasCurrentResult && seedPainted ? 'dissolve' : 'shown';
 
   const cardVariants = useMemo(() => ({
     hidden: { opacity: 0, y: prefersReducedMotion ? 0 : 10 },
@@ -199,7 +205,7 @@ export default function PublicPaperPage({
   // the cover to bridge. Without this it went up anyway and sat over a finished
   // page until the card's own animation reported in: a skeleton on top of the
   // paper it was standing in for.
-  const [seededOnArrival] = useState(() => Boolean(seededPaper));
+  const [seededOnArrival] = useState(() => seedPainted);
   useEffect(() => {
     if (status !== 'ready' || cardRevealed) return undefined;
     // Belt and braces: if the animation's completion callback never lands,
