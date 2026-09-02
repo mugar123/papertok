@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { keyFromIdentity } from '../src/utils/paperCanonicalKey.js';
 import {
   THREAD_KV_PREFIX,
+  THREAD_KV_THREAD_TTL_SECONDS,
   handleThreadAnchorRequest,
   parseInvalidateKeys,
   parseThreadIdentities,
@@ -25,7 +26,12 @@ function memoryStore(initial = {}) {
       if (value == null) return null;
       return type === 'json' ? JSON.parse(value) : value;
     },
-    async put(key, value) {
+    async put(key, value, options) {
+      // Production KV refuses TTLs under a minute; the fake has to as well, or
+      // a TTL that never caches anything passes every test.
+      if (options?.expirationTtl !== undefined && options.expirationTtl < 60) {
+        throw new Error(`Invalid expiration_ttl of ${options.expirationTtl}. Expiration TTL must be at least 60.`);
+      }
       data.set(key, value);
     },
     async delete(key) {
@@ -217,4 +223,34 @@ test('HTTP responses are no-store so a KV delete is the actual invalidation', as
   const body = await response.json();
   assert.equal(body.cache, 'kv');
   assert.equal(body.stubExists, false);
+});
+
+test('a live thread is cached: its TTL clears the KV floor of 60 s', async () => {
+  const store = memoryStore();
+  await resolveThreadAnchorFromStore(
+    [{ identity: DOI, key: DOI_KEY }],
+    {
+      store,
+      admin: {
+        batchGet: async () => [{ canonicalKey: DOI, title: 'A result' }],
+        runQuery: async () => ([{
+          id: 'c1',
+          data: {
+            authorUid: 'u1',
+            authorHandle: 'alice',
+            text: 'First',
+            status: 'visible',
+            createdAt: new Date('2026-08-31T10:00:00.000Z'),
+          },
+        }]),
+        countQuery: async () => 1,
+      },
+    },
+  );
+  assert.ok(
+    THREAD_KV_THREAD_TTL_SECONDS >= 60,
+    `TTL ${THREAD_KV_THREAD_TTL_SECONDS} is under the KV floor`,
+  );
+  const cached = await store.get(threadKvKey(DOI_KEY), 'json');
+  assert.equal(cached?.stubExists, true, 'the live thread never reached KV');
 });

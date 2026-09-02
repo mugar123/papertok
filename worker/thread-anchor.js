@@ -45,8 +45,13 @@ export const THREAD_COUNT_CAP = 1000;
 export const THREAD_KV_PREFIX = 'thread:v1:';
 /** Empty papers are the common case and change only when someone comments. */
 export const THREAD_KV_EMPTY_TTL_SECONDS = 120;
-/** A live thread is invalidated on write; this is only the missed-invalidation net. */
-export const THREAD_KV_THREAD_TTL_SECONDS = 20;
+/**
+ * A live thread is invalidated on write; this is only the missed-invalidation
+ * net. 60 is KV's floor, not a choice: an `expirationTtl` under a minute is
+ * rejected by production KV — the put throws, `writeCachedEntry` swallows it,
+ * and no live thread is ever cached, so every open paid Firestore REST.
+ */
+export const THREAD_KV_THREAD_TTL_SECONDS = 60;
 const MAX_IDENTITIES = 4;
 const MAX_INVALIDATE_KEYS = 8;
 
