@@ -29,9 +29,14 @@ not a snapshot: editing a published list rebuilds it in the background, with no 
 removed.
 
 Path identifiers are encoded as individual URL segments. Paper keys are base64url-encoded
-payloads with an explicit `doi:` or `arxiv:` prefix. They are reversible URL-safe encodings,
-not secrets or access controls. DOI values are normalized to lowercase; arXiv versions are
-preserved. DOI identity takes precedence when a paper has both identifiers.
+payloads with an explicit `doi:`, `arxiv:`, `openalex:` or `pmid:` prefix. They are
+reversible URL-safe encodings, not secrets or access controls. DOI values are normalized to
+lowercase; arXiv versions are preserved; OpenAlex work ids are uppercased (`W…`); PubMed ids
+are the bare number and are only recognized behind a `pmid:` prefix or a PubMed URL. The
+precedence is DOI, then arXiv, then the provider id the feed keyed the paper by. The last two
+exist because a paper liked or saved from an OpenAlex or PubMed card is remembered under
+`openalex:W…` or `pmid:…`; the public paper page resolves both through OpenAlex's
+`GET /works/{id}`.
 
 The Vite base comes from `import.meta.env.BASE_URL`, so the same helpers work at `/` during
 local development and at `/papertok/` on the project site. A runtime origin is used in the

@@ -9,6 +9,7 @@ import { fetchPapersByIds } from '../../services/arxivService.js';
 import {
   enrichPapersBatch,
   fetchPaperByArxivIdViaOpenAlex,
+  fetchPaperByWorkId,
   fetchPapersByDois,
 } from '../../services/openAlexService.js';
 import {
@@ -66,6 +67,14 @@ async function loadPaper(identity) {
   if (identity.type === 'doi') {
     const papers = await fetchPapersByDois([identity.value], { throwOnProviderError: true });
     return papers[0] || null;
+  }
+
+  // Papers the feed keys by provider id — an OpenAlex work, a PubMed record —
+  // and remembered that way in Liked and Saved. OpenAlex resolves both ids
+  // directly, abstract included; a failure here rejects so the page can
+  // offer a retry rather than declare the paper missing.
+  if (identity.type === 'openalex' || identity.type === 'pmid') {
+    return fetchPaperByWorkId(identity.type, identity.value);
   }
 
   let paper = null;

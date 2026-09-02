@@ -1730,6 +1730,48 @@ export async function fetchPaperByArxivIdViaOpenAlex(arxivId, { timeoutMs = 8000
   }
 }
 
+/**
+ * One work fetched from OpenAlex by a provider id the feed keys papers with:
+ * an OpenAlex work id (`W2741809807`) or a PubMed id (`pmid:31234567`), both
+ * of which `GET /works/{id}` resolves directly. This is how the public paper
+ * page opens the likes and saves the feed remembered under those ids — a
+ * paper liked from an OpenAlex or PubMed card had no DOI or arXiv id stored
+ * beside it, so its row on the profile could not link anywhere.
+ *
+ * The returned paper carries the id the feed would have given it
+ * (`openalex:W…` / `pmid:…`), so a like made on the page lands on the same
+ * interaction document as one made on the card.
+ *
+ * `openAlexJson` is injectable for the test: the shared client binds
+ * `globalThis.fetch` when the module loads, so swapping the global would not
+ * reach it.
+ */
+export async function fetchPaperByWorkId(type, value, options = {}) {
+  const kind = String(type || '').toLowerCase();
+  const clean = String(value || '').trim();
+  const lookup = kind === 'openalex' && /^W\d+$/i.test(clean)
+    ? clean.toUpperCase()
+    : kind === 'pmid' && /^\d+$/.test(clean) ? `pmid:${clean}` : '';
+  if (!lookup) return null;
+  const feedId = kind === 'openalex' ? `openalex:${lookup}` : lookup;
+
+  const requestJson = options.openAlexJson || openAlexJson;
+  try {
+    const work = await requestJson(`https://api.openalex.org/works/${encodeURIComponent(lookup)}`, {
+      timeoutMs: options.timeoutMs ?? 8000,
+      retries: 0,
+      cacheTtlMs: 5 * 60 * 1000,
+    });
+    if (!work?.id) return null;
+    return { ...formatOpenAlexWorkAsPaper(work), id: feedId };
+  } catch (error) {
+    // A 404 is an id nobody can open, which the page reports as not found;
+    // anything else is the provider misbehaving, and the page offers a retry.
+    if (error?.status === 404) return null;
+    throw error;
+  }
+}
+
 export async function getTrendingPapers() {
   const cacheKey = 'trending_papers_v2';
   const cached = CACHE.get(cacheKey);

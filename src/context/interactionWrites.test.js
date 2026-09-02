@@ -37,3 +37,18 @@ test('SOURCE: the aggregate rebuild scan decodes ids, or a rebuilt aggregate wou
   assert.match(page, /startAfter\(encodeInteractionDocId\(startAfterId\)\)/);
   assert.match(page, /\{ id: decodeInteractionDocId\(item\.id\), data: item\.data\(\) \}/);
 });
+
+/**
+ * The Liked tab could not link most of its rows because the like write kept
+ * only the title, three authors and a category: no DOI, no arXiv id, no year.
+ * A save keeps the serialized paper beside the flag; a like must too, so the
+ * row can build its link and its kicker from the same copy.
+ */
+test('SOURCE: a like stores the serialized paper beside the flag, the way a save does', async () => {
+  const code = stripComments(await read('./FeedContext.jsx'));
+  const start = code.indexOf('const toggleLike = useCallback(');
+  const like = code.slice(start, code.indexOf('const markNotInterested = useCallback(', start));
+  assert.ok(like.length > 0, 'expected to have found toggleLike');
+  assert.match(like, /liked: !isCurrentlyLiked,[\s\S]*?paper: isCurrentlyLiked \? undefined : serializeLibraryPaper\(paper\),/,
+    'the like write carries the paper; an unlike only flips the flag');
+});

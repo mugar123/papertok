@@ -1699,6 +1699,11 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
           paperCategory: paper.primaryCategory,
           paperAbstract: paper.summary?.substring(0, 500),
+          // The same copy a save keeps. A like used to store only the title
+          // and three authors, so the row on the Liked tab knew no DOI, no
+          // arXiv id and no year for the paper — nothing to build a link or a
+          // kicker from. Written on like only; an unlike changes the flag.
+          paper: isCurrentlyLiked ? undefined : serializeLibraryPaper(paper),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
         }), { merge: true });

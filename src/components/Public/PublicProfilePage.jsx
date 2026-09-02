@@ -176,11 +176,12 @@ function PaperRow({ row, index = 0, isEnglish, libraryReady }) {
       {row.subtitle && <span className="profile-row-meta">{row.subtitle}</span>}
     </>
   );
-  // Interaction ids that predate the canonical paper key (raw OpenAlex ids and
-  // friends) do not map to a public paper page; those rows are labels, not
-  // links. The rows that do link hand over whatever copy of the paper is
-  // already in memory, so the paper page can render without waiting on — or
-  // being rate-limited by — arXiv.
+  // A row links whenever its paper has a loadable identity: a DOI, an arXiv
+  // id, or the OpenAlex / PubMed id the feed keyed it by. Only the ids nothing
+  // can open (a Semantic Scholar hash, a Scopus id) leave a row as a label.
+  // The rows that link hand over whatever copy of the paper is already in
+  // memory, so the paper page can render without waiting on — or being
+  // rate-limited by — arXiv.
   return row.path
     ? (
       <Link

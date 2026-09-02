@@ -14,6 +14,7 @@ import {
   dedupeAuthors,
   enrichAuthorInstitutionLocalization,
   fetchRecentImpactWorks,
+  fetchPaperByWorkId,
   getLocalTopicEntity,
   isOpenAlexEnrichmentId,
   mapOpenAlexEnrichmentWork,
@@ -459,4 +460,63 @@ test('ROR identifiers OR as values of one filter, like every other OpenAlex filt
   assert.equal(buildRorIdFilter(['not-a-ror', '']), '');
   assert.equal(buildRorIdFilter([]), '');
   assert.equal(buildRorIdFilter(null), '');
+});
+
+/**
+ * The public paper page opens the likes the feed remembered under a provider
+ * id — `openalex:W…` from an OpenAlex card, `pmid:…` from a PubMed one — and
+ * OpenAlex resolves both through `GET /works/{id}`. The paper comes back with
+ * the id the feed would have given it, so a like made on the page and one
+ * made on the card are the same interaction document.
+ */
+const WORK_FIXTURE = {
+  id: 'https://openalex.org/W2741809807',
+  doi: 'https://doi.org/10.7717/peerj.4375',
+  title: 'The state of OA',
+  publication_date: '2018-02-13',
+  cited_by_count: 12,
+  authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Heather Piwowar' }, institutions: [] }],
+  abstract_inverted_index: { Open: [0], access: [1] },
+  primary_location: { landing_page_url: 'https://peerj.com/articles/4375', source: { display_name: 'PeerJ', type: 'journal' } },
+  open_access: { is_oa: true, oa_url: 'https://peerj.com/articles/4375.pdf' },
+  concepts: [],
+};
+
+test('opens an OpenAlex work id or a PubMed id through /works/{id}, keyed as the feed keys it', async () => {
+  const requested = [];
+  const openAlexJson = async (url) => { requested.push(url); return WORK_FIXTURE; };
+
+  const byWork = await fetchPaperByWorkId('openalex', 'w2741809807', { openAlexJson });
+  assert.equal(byWork.id, 'openalex:W2741809807');
+  assert.equal(byWork.title, 'The state of OA');
+  assert.equal(byWork.doi, '10.7717/peerj.4375');
+  assert.equal(byWork.abstract, 'Open access');
+
+  const byPmid = await fetchPaperByWorkId('pmid', '31234567', { openAlexJson });
+  assert.equal(byPmid.id, 'pmid:31234567');
+
+  assert.deepEqual(requested, [
+    'https://api.openalex.org/works/W2741809807',
+    'https://api.openalex.org/works/pmid%3A31234567',
+  ]);
+});
+
+test('refuses to ask OpenAlex for an id that is not a work or a PubMed number', async () => {
+  const openAlexJson = async () => { throw new Error('must not be called'); };
+  assert.equal(await fetchPaperByWorkId('openalex', 'A2741809807', { openAlexJson }), null);
+  assert.equal(await fetchPaperByWorkId('pmid', '12a', { openAlexJson }), null);
+  assert.equal(await fetchPaperByWorkId('doi', '10.1/x', { openAlexJson }), null);
+  assert.equal(await fetchPaperByWorkId('openalex', '', { openAlexJson }), null);
+});
+
+test('a work OpenAlex does not have is not found; a provider failure is an error the page can retry', async () => {
+  const notFound = Object.assign(new Error('OpenAlex API error: 404'), { status: 404 });
+  assert.equal(await fetchPaperByWorkId('openalex', 'W1', { openAlexJson: async () => { throw notFound; } }), null);
+  assert.equal(await fetchPaperByWorkId('openalex', 'W1', { openAlexJson: async () => ({}) }), null);
+
+  const down = Object.assign(new Error('OpenAlex API error: 503'), { status: 503 });
+  await assert.rejects(
+    fetchPaperByWorkId('openalex', 'W1', { openAlexJson: async () => { throw down; } }),
+    down,
+  );
 });

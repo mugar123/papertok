@@ -61,6 +61,53 @@ test('prefers DOI identity and places paper keys in public router paths', () => 
   assert.equal(getPublicPaperPath({ title: 'No stable identifier' }), null);
 });
 
+/**
+ * The Liked tab is keyed by the feed's `paper.id`, and for an OpenAlex or
+ * PubMed card that id is `openalex:W…` or `pmid:…` with no DOI stored beside
+ * it. Those rows rendered as plain labels because nothing here could name a
+ * page for them. Both ids open through OpenAlex, so both are identities.
+ */
+test('keys OpenAlex work ids and PubMed ids so provider-keyed likes can link', () => {
+  const openAlexKey = encodePaperKey('openalex:w2741809807');
+  assert.equal(decodePaperKey(openAlexKey), 'openalex:W2741809807');
+  assert.deepEqual(parsePaperKey(openAlexKey), { type: 'openalex', value: 'W2741809807' });
+  assert.equal(encodePaperKey('W2741809807'), openAlexKey, 'the bare id OpenAlex-built papers carry');
+  assert.equal(encodePaperKey('https://openalex.org/W2741809807'), openAlexKey, 'the URL form the API returns');
+  assert.equal(encodePaperKey({ id: 'openalex:W2741809807', doi: '', arxivId: '' }), openAlexKey,
+    'a like serialized from its stored title has empty DOI and arXiv fields');
+  assert.equal(getPublicPaperPath('openalex:W2741809807'), `/public/paper/${openAlexKey}`);
+  assert.equal(getPublicPaperPath('openalex', 'W2741809807'), `/public/paper/${openAlexKey}`);
+
+  const pmidKey = encodePaperKey('pmid:31234567');
+  assert.equal(decodePaperKey(pmidKey), 'pmid:31234567');
+  assert.deepEqual(parsePaperKey(pmidKey), { type: 'pmid', value: '31234567' });
+  assert.equal(encodePaperKey('https://pubmed.ncbi.nlm.nih.gov/31234567/'), pmidKey);
+  assert.equal(encodePaperKey({ id: 'pmid:31234567' }), pmidKey);
+  assert.equal(encodePaperKey({ pmid: '31234567' }), pmidKey, 'a PubMed paper names its pmid as a field too');
+});
+
+test('a DOI or arXiv id still outranks the provider id the paper was keyed by', () => {
+  assert.equal(
+    encodePaperKey({ id: 'openalex:W2741809807', doi: '10.5555/Some.DOI' }),
+    encodePaperKey({ doi: '10.5555/some.doi' }),
+  );
+  assert.equal(
+    encodePaperKey({ id: 'pmid:31234567', arxivId: '2401.12345' }),
+    encodePaperKey({ arxivId: '2401.12345' }),
+  );
+});
+
+test('an id nobody can open is still no key at all', () => {
+  assert.equal(encodePaperKey('31234567'), null, 'a bare number is not taken for a PubMed id');
+  assert.equal(encodePaperKey('pmid:abc'), null);
+  assert.equal(encodePaperKey('openalex:A2741809807'), null, 'an author id is not a work');
+  assert.equal(encodePaperKey('openalex:W'), null);
+  assert.equal(encodePaperKey('scopus:85012345678'), null);
+  assert.equal(encodePaperKey('649def34f8be52c8b66281af98ae884c09aef38b'), null, 'a Semantic Scholar hash');
+  assert.equal(getPublicPaperPath('openalex', 'not-a-work'), null);
+  assert.equal(getPublicPaperPath('pmid', '12a'), null);
+});
+
 test('builds shared-list paths and absolute share URLs with the Vite base', () => {
   assert.equal(getSharedListPath('list/with spaces'), '/public/list/list%2Fwith%20spaces');
   assert.equal(

@@ -158,6 +158,42 @@ function normalizeArxivId(value) {
   return arxivId.toLowerCase();
 }
 
+/**
+ * An OpenAlex work id (`W2741809807`), with the `openalex:` prefix the feed
+ * adapter puts on paper ids and the `https://openalex.org/` form the API
+ * returns both stripped. Uppercased, so one work has one key.
+ */
+function normalizeOpenAlexWorkId(value) {
+  const workId = cleanText(value)
+    .replace(/^openalex:\s*/i, '')
+    .replace(/^(?:https?:\/\/)?(?:api\.)?openalex\.org\/(?:works\/)?/i, '');
+  if (!/^W\d+$/i.test(workId)) return '';
+  return workId.toUpperCase();
+}
+
+/**
+ * A PubMed id, only when it says so: the `pmid:` prefix the PubMed adapter
+ * mints or a pubmed.ncbi.nlm.nih.gov URL. A bare run of digits is not taken
+ * for one — too many things are a run of digits.
+ */
+function normalizePmid(value) {
+  const text = cleanText(value);
+  const match = text.match(/^pmid:\s*(\d+)$/i)
+    || text.match(/^(?:https?:\/\/)?(?:www\.)?(?:pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov\/pubmed)\/(\d+)\/?$/i);
+  return match ? match[1] : '';
+}
+
+/**
+ * The identity a public paper URL carries, in order of preference: DOI, arXiv
+ * id, OpenAlex work id, PubMed id. Every one of them is loadable — a URL
+ * nobody can open is worse than no URL — which is why a Semantic Scholar hash
+ * or a Scopus id still yields nothing here.
+ *
+ * The last two exist for the papers the feed keys by provider id: an OpenAlex
+ * or PubMed paper liked from the feed is remembered under `openalex:W…` or
+ * `pmid:…`, and the Liked tab has nothing else to go on for it. Without an
+ * identity for those ids, every such row was a label instead of a link.
+ */
 function getPaperIdentity(typeOrPaper, identifier) {
   if (typeOrPaper && typeof typeOrPaper === 'object') {
     const doi = normalizeDoi(typeOrPaper.doi || typeOrPaper.externalIds?.DOI);
@@ -166,7 +202,11 @@ function getPaperIdentity(typeOrPaper, identifier) {
     const arxivId = normalizeArxivId(typeOrPaper.arxivId || typeOrPaper.externalIds?.ArXiv);
     if (arxivId) return `arxiv:${arxivId}`;
 
-    return getPaperIdentity(typeOrPaper.id || typeOrPaper.paperId, undefined);
+    const fromId = getPaperIdentity(typeOrPaper.id || typeOrPaper.paperId, undefined);
+    if (fromId) return fromId;
+
+    const pmid = normalizePmid(typeOrPaper.pmid ? `pmid:${typeOrPaper.pmid}` : '');
+    return pmid ? `pmid:${pmid}` : '';
   }
 
   if (identifier !== undefined) {
@@ -178,6 +218,14 @@ function getPaperIdentity(typeOrPaper, identifier) {
     if (type === 'arxiv' || type === 'arxivid') {
       const arxivId = normalizeArxivId(identifier);
       return arxivId ? `arxiv:${arxivId}` : '';
+    }
+    if (type === 'openalex') {
+      const workId = normalizeOpenAlexWorkId(identifier);
+      return workId ? `openalex:${workId}` : '';
+    }
+    if (type === 'pmid') {
+      const pmid = normalizePmid(`pmid:${cleanText(identifier)}`);
+      return pmid ? `pmid:${pmid}` : '';
     }
     return '';
   }
@@ -191,6 +239,14 @@ function getPaperIdentity(typeOrPaper, identifier) {
   if (/^(?:arxiv:|(?:https?:\/\/)?(?:export\.)?arxiv\.org\/|\d{4}\.\d{4,5}|[a-z][a-z0-9-]*(?:\.[a-z0-9-]+)?\/\d{7})/i.test(value)) {
     const arxivId = normalizeArxivId(value);
     return arxivId ? `arxiv:${arxivId}` : '';
+  }
+  if (/^(?:openalex:|(?:https?:\/\/)?(?:api\.)?openalex\.org\/|W\d+$)/i.test(value)) {
+    const workId = normalizeOpenAlexWorkId(value);
+    return workId ? `openalex:${workId}` : '';
+  }
+  if (/^(?:pmid:|(?:https?:\/\/)?(?:www\.)?(?:pubmed\.ncbi\.nlm\.nih\.gov|ncbi\.nlm\.nih\.gov\/pubmed)\/)/i.test(value)) {
+    const pmid = normalizePmid(value);
+    return pmid ? `pmid:${pmid}` : '';
   }
   return '';
 }
