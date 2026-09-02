@@ -354,3 +354,17 @@ confirmada en `SOURCE_CACHE_SECONDS.openreview`.
 - Los tres puntos de `FEED_SOURCE_RENDER_BUDGET_MS` en `FeedContext.jsx` están
   en las líneas 1001, 1109 y 1185, y el default de 3,5 s de `fetchDomainPapers`
   los cubre sin cambios en los llamantes.
+
+### Verificación tras el despliegue — 2026-09-02
+
+Worker `edfe24fb` desplegado hacia las 11:40 desde un worktree con los 13
+commits rebasados sobre `origin/main` (`ef82a42`), porque otra sesión estaba
+commiteando en el árbol principal. Frontend construido por Vercel tras el push
+de `2adc9f4`.
+
+| Comprobación | Resultado |
+|---|---|
+| `/sources/openreview?q=…&sort=recent`, fallo de caché forzado | Fechas en orden descendente (antes del despliegue: `descending: False`) |
+| 8 fallos de caché concurrentes en `/sources/pubmed` | **8/8** en 200, 0,9–4,1 s (antes: 5/8, con 3 `UPSTREAM_RATE_LIMITED`) |
+| `POST /account/delete` sin `Origin` | 403 `ORIGIN_NOT_ALLOWED`: la ruta que venía de `origin/main` sigue en el Worker, nada revertido |
+| Literal `upstream ` en el bundle | Presente en `assets/workerApiClient-2A36RDIu.js`. Ausente en `index-*.js`, que ya no contiene los servicios: hay que buscarlo en todos los chunks que referencia `index.html`, no solo en el de entrada |
