@@ -64,6 +64,10 @@ cache, and a **global** per-minute ceiling reserved only after a cache miss
 ceiling with `/sources/s2` because both spend the same provider allowance; the browser's old
 per-tab limiter counted per caller, so N tabs were N times the limit.
 
+`/thread-anchor` takes the same trade for the comments sheet: origin gate (`Origin` required — the
+API host has no same-origin page), KV as the cache, and a **global** per-minute ceiling on Firestore
+REST misses only (`THREAD_ANCHOR_GLOBAL_MINUTE_LIMIT`, default 120). A hit costs KV and nothing else.
+
 `SEMANTIC_SCHOLAR_API_KEY` is listed above as if it were optional. It is not, in practice.
 Measured on 2026-08-24, Semantic Scholar's anonymous pool refused **10 of 10** requests from a
 residential address and **9 of 10** from the Worker: without a key, `/sources/s2` and `/related`

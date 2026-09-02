@@ -2155,6 +2155,21 @@ test('the thread-anchor route is origin-gated and public', async () => {
   ), {});
   assert.equal(blocked.status, 403);
 
+  // No Origin at all is not one of our browsers: a cross-origin fetch always
+  // carries it, and the API host has no same-origin page. Refusing it keeps a
+  // script from draining Firestore through the service account.
+  const anonymous = await reportApi.fetch(new Request(
+    'https://papertok-report-api.example/thread-anchor?ids=doi:10.1234/abc',
+  ), {});
+  assert.equal(anonymous.status, 403);
+  assert.equal((await anonymous.json()).code, 'ORIGIN_NOT_ALLOWED');
+
+  const anonymousInvalidate = await reportApi.fetch(new Request(
+    'https://papertok-report-api.example/thread-anchor/invalidate',
+    { method: 'POST', body: '{"keys":["k"]}' },
+  ), {});
+  assert.equal(anonymousInvalidate.status, 403);
+
   const allowed = await reportApi.fetch(new Request(
     'https://papertok-report-api.example/thread-anchor?ids=doi:10.1234/abc',
     { headers: { origin: 'https://mugar123.github.io' } },

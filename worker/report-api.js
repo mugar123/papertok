@@ -2061,9 +2061,11 @@ export default {
     }
     if (url.pathname === '/thread-anchor' || url.pathname === '/thread-anchor/invalidate') {
       // Public comments: a guest can open a thread, so this is origin-gated
-      // rather than session-gated. Invalidation still requires a Firebase
-      // identity because it is a write against the shared cache.
-      if (origin && !allowedOrigins(env).has(origin)) {
+      // rather than session-gated — and `Origin` is required, not optional:
+      // every fetch from the app is cross-origin and carries it, and a request
+      // without one is not a browser of ours. Invalidation still requires a
+      // Firebase identity because it is a write against the shared cache.
+      if (!origin || !allowedOrigins(env).has(origin)) {
         return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
       }
       try {

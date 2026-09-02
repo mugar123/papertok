@@ -71,6 +71,10 @@ OPENALEX_GLOBAL_DAILY_LIMIT = "8000"
 # /sources/s2 and /related, which spend the same allowance.
 PUBMED_GLOBAL_MINUTE_LIMIT = "60"
 S2_GLOBAL_MINUTE_LIMIT = "60"
+# Firestore REST misses of /thread-anchor a minute, global: a KV hit is free
+# and not counted, and each miss is up to three service-account reads per
+# identity, which no Firestore rule meters.
+THREAD_ANCHOR_GLOBAL_MINUTE_LIMIT = "120"
 
 [[kv_namespaces]]
 binding = "NOTIFICATION_STORE"

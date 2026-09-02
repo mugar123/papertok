@@ -2,14 +2,18 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { keyFromIdentity } from '../src/utils/paperCanonicalKey.js';
 import {
+  THREAD_FIRESTORE_MINUTE_LIMIT_DEFAULT,
   THREAD_KV_PREFIX,
   THREAD_KV_THREAD_TTL_SECONDS,
+  ThreadAnchorError,
   handleThreadAnchorRequest,
   parseInvalidateKeys,
   parseThreadIdentities,
   resolveThreadAnchorFromStore,
   serializeComment,
+  threadAnchorErrorResponse,
   threadKvKey,
+  threadQuotaFromEnv,
 } from './thread-anchor.js';
 
 const DOI = 'doi:10.1234/abc';
@@ -37,6 +41,22 @@ function memoryStore(initial = {}) {
     async delete(key) {
       data.delete(key);
     },
+  };
+}
+
+function fakeLedger(accepted = true) {
+  const reservations = [];
+  return {
+    reservations,
+    idFromName: name => String(name),
+    get: () => ({
+      fetch: async (_url, options) => {
+        reservations.push(JSON.parse(options.body));
+        return new Response(JSON.stringify(accepted
+          ? { accepted: true }
+          : { accepted: false, scope: 'global' }));
+      },
+    }),
   };
 }
 
@@ -278,4 +298,46 @@ test('a Firestore failure is an error to fall back from, not an empty thread to 
     /count 503/,
   );
   assert.equal(store.data.has(threadKvKey(DOI_KEY)), false, 'a failed count was cached as zero');
+});
+
+test('a miss reserves one shared minute slot before Firestore; a hit reserves nothing', async () => {
+  const ledger = fakeLedger(true);
+  const store = memoryStore();
+  const admin = { batchGet: async () => [null], runQuery: async () => [], countQuery: async () => 0 };
+  const quota = { ledger, limit: 120 };
+  await resolveThreadAnchorFromStore([{ identity: DOI, key: DOI_KEY }], { store, admin, quota });
+  assert.equal(ledger.reservations.length, 1);
+  assert.equal(ledger.reservations[0].globalLimit, 120);
+  await resolveThreadAnchorFromStore([{ identity: DOI, key: DOI_KEY }], { store, admin, quota });
+  assert.equal(ledger.reservations.length, 1, 'a KV hit must not spend the ledger');
+});
+
+test('an exhausted minute is a 429 with retry-after, and Firestore is never asked', async () => {
+  const ledger = fakeLedger(false);
+  let asked = 0;
+  const admin = {
+    batchGet: async () => { asked += 1; return [null]; },
+    runQuery: async () => [],
+    countQuery: async () => 0,
+  };
+  await assert.rejects(
+    resolveThreadAnchorFromStore(
+      [{ identity: DOI, key: DOI_KEY }],
+      { store: memoryStore(), admin, quota: { ledger, limit: 1 } },
+    ),
+    error => error.code === 'THREAD_ANCHOR_RATE_LIMITED' && error.status === 429,
+  );
+  assert.equal(asked, 0);
+  const response = threadAnchorErrorResponse(new ThreadAnchorError('THREAD_ANCHOR_RATE_LIMITED', 429));
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('retry-after'), '60');
+});
+
+test('the minute ceiling comes from env with a bounded default', () => {
+  assert.equal(threadQuotaFromEnv({}).limit, THREAD_FIRESTORE_MINUTE_LIMIT_DEFAULT);
+  assert.equal(threadQuotaFromEnv({ THREAD_ANCHOR_GLOBAL_MINUTE_LIMIT: '30' }).limit, 30);
+  assert.equal(threadQuotaFromEnv({ THREAD_ANCHOR_GLOBAL_MINUTE_LIMIT: 'lots' }).limit, THREAD_FIRESTORE_MINUTE_LIMIT_DEFAULT);
+  assert.equal(threadQuotaFromEnv({ THREAD_ANCHOR_GLOBAL_MINUTE_LIMIT: '0' }).limit, 1);
+  assert.equal(threadQuotaFromEnv({ REQUEST_QUOTA_LEDGER: 'ledger' }).ledger, 'ledger');
+  assert.equal(threadQuotaFromEnv({}).ledger, null);
 });

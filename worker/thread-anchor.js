@@ -28,6 +28,7 @@ import {
   isServiceAccountConfigured,
 } from './firestore-admin.js';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.js';
+import { reserveRequestQuota } from './request-quota-ledger.js';
 
 export class ThreadAnchorError extends Error {
   constructor(code, status = 400) {
@@ -54,6 +55,41 @@ export const THREAD_KV_EMPTY_TTL_SECONDS = 120;
 export const THREAD_KV_THREAD_TTL_SECONDS = 60;
 const MAX_IDENTITIES = 4;
 const MAX_INVALIDATE_KEYS = 8;
+
+/**
+ * Firestore REST misses a minute, shared by every caller. A KV hit costs KV
+ * only and is not counted. Each miss is up to three reads per identity (stub,
+ * first page, count) against the service account — nothing the rules meter —
+ * so the ceiling is global, like OpenAlex's, and reserved only when KV had
+ * nothing. 120 misses a minute is 360 reads a minute at worst: an audience
+ * opening new threads, not a script draining the daily Spark allowance.
+ */
+export const THREAD_FIRESTORE_MINUTE_LIMIT_DEFAULT = 120;
+
+export function threadQuotaFromEnv(env) {
+  const parsed = Number.parseInt(env?.THREAD_ANCHOR_GLOBAL_MINUTE_LIMIT, 10);
+  const limit = Number.isInteger(parsed)
+    ? Math.max(1, Math.min(100_000, parsed))
+    : THREAD_FIRESTORE_MINUTE_LIMIT_DEFAULT;
+  return { ledger: env?.REQUEST_QUOTA_LEDGER || null, limit };
+}
+
+async function reserveFirestoreMiss(quota) {
+  if (!quota) return;
+  const minute = new Date().toISOString().slice(0, 16);
+  const reservation = await reserveRequestQuota(quota.ledger, {
+    periodKey: `thread:${minute}`,
+    subject: 'thread:shared',
+    subjectLimit: quota.limit,
+    globalLimit: quota.limit,
+  });
+  // No ledger bound is a deploy mistake, and the safe answer to one is the
+  // same 503 the browser already treats as "read Firestore yourself".
+  if (!reservation.accepted && reservation.code) {
+    throw new ThreadAnchorError('THREAD_ANCHOR_UNAVAILABLE', 503);
+  }
+  if (!reservation.accepted) throw new ThreadAnchorError('THREAD_ANCHOR_RATE_LIMITED', 429);
+}
 
 export function threadKvKey(paperKey) {
   return `${THREAD_KV_PREFIX}${paperKey}`;
@@ -208,7 +244,7 @@ async function loadThreadPage(admin, identity, key) {
  * The first identity is the canonical write target. Alternates that already
  * hold a stub are surfaced so a split-brain thread is still readable.
  */
-export async function resolveThreadAnchorFromStore(identities, { admin, store }) {
+export async function resolveThreadAnchorFromStore(identities, { admin, store, quota = null }) {
   const cached = await Promise.all(identities.map(entry => readCachedEntry(store, entry.key)));
   const entries = [];
   const missing = [];
@@ -219,6 +255,7 @@ export async function resolveThreadAnchorFromStore(identities, { admin, store })
   });
 
   if (missing.length && admin) {
+    await reserveFirestoreMiss(quota);
     const stubs = await admin.batchGet(missing.map(index => ['papers', identities[index].key]));
     const fetched = await Promise.all(missing.map(async (slot, offset) => {
       const identity = identities[slot];
@@ -300,7 +337,11 @@ export async function handleThreadAnchorRequest(request, env, url, { cors = {} }
     admin = createFirestoreAdmin(env);
   }
 
-  const payload = await resolveThreadAnchorFromStore(identities, { admin, store });
+  const payload = await resolveThreadAnchorFromStore(identities, {
+    admin,
+    store,
+    quota: threadQuotaFromEnv(env),
+  });
   // KV is the cache. An HTTP max-age here would outlive a KV delete, so a
   // comment posted in this region could still serve the empty page from a
   // CDN edge for those seconds. no-store keeps invalidation honest.
@@ -318,5 +359,9 @@ export function threadAnchorErrorResponse(error, cors = {}) {
   const code = known
     ? (error.code || 'THREAD_ANCHOR_UNAVAILABLE')
     : 'THREAD_ANCHOR_UNAVAILABLE';
-  return json({ code }, status, { ...cors, 'cache-control': 'no-store' });
+  return json({ code }, status, {
+    ...cors,
+    'cache-control': 'no-store',
+    ...(status === 429 ? { 'retry-after': '60' } : {}),
+  });
 }
