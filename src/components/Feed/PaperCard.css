@@ -49,7 +49,13 @@
   overflow-x: hidden;
   overflow-y: hidden;
   padding: clamp(20px, 2.5vw, 32px) 0;
-  animation: cardSlideUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  /* Travel only. The sheet used to fade from 0 as well, over 0.42s, while the
+     page it sits in was already fading in over 0.3s: measured, the page was at
+     0.98 when the sheet had reached 0.67, and the sheet kept fading for 300 ms
+     after the frame had arrived — content appearing after its page. The fade
+     now belongs to the pieces (`pcArrive` below), which start with the frame;
+     the sheet only settles into place. */
+  animation: cardSlideUp 0.36s cubic-bezier(0.16, 1, 0.3, 1) backwards;
 }
 
 /* ── Figure cards ──
@@ -233,7 +239,55 @@
 }
 
 @keyframes cardSlideUp {
-  0% { opacity: 0; transform: translateY(14px); }
+  0% { transform: translateY(10px); }
+  100% { transform: none; }
+}
+
+/* ── The arrival ──
+   A card composes in rather than popping in: the reason it is here (in the
+   Following feed), then the kicker, the title, the authors, the abstract, and
+   last the actions, each 38 ms behind the one before and each on the same
+   short settle. Everything used to share the sheet's one fade and appear at
+   once, a beat after the page — "spontaneously", the reader said. The order is
+   an explicit `--arrive` step per piece rather than `nth-child`, because half
+   of these pieces are optional and the sequence must not shift when one is
+   absent. `backwards` holds the first frame during the delay and nothing after
+   the run: once each piece has landed, no transform is left on it. */
+.pc-follow-reason { --arrive: 0; }
+.pc-meta,
+.pc-chips { --arrive: 1; }
+.pc-topics,
+.pc-title { --arrive: 2; }
+.pc-authors { --arrive: 3; }
+.pc-abstract { --arrive: 4; }
+.pc-action-bar,
+.pc-side-actions { --arrive: 5; }
+
+.pc-follow-reason,
+.pc-meta,
+.pc-chips,
+.pc-topics,
+.pc-title,
+.pc-authors,
+.pc-abstract,
+.pc-action-bar,
+.pc-side-actions {
+  animation: pcArrive 0.3s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--arrive, 0) * 38ms) backwards;
+}
+
+/* The reason arrives from the side it reads from, the way a label is slid
+   under a picture; everything else rises the few pixels the sheet does. */
+.pc-follow-reason {
+  animation-name: pcArriveAside;
+}
+
+@keyframes pcArrive {
+  0% { opacity: 0; transform: translateY(6px); }
+  100% { opacity: 1; transform: none; }
+}
+
+@keyframes pcArriveAside {
+  0% { opacity: 0; transform: translateX(-8px); }
   100% { opacity: 1; transform: none; }
 }
 
@@ -2484,6 +2538,14 @@ a.pc-citations {
   .pc,
   .pc-sheet,
   .pc-figure,
+  .pc-follow-reason,
+  .pc-meta,
+  .pc-chips,
+  .pc-topics,
+  .pc-title,
+  .pc-authors,
+  .pc-action-bar,
+  .pc-side-actions,
   .pc-abstract,
   .pc-side-icon,
   .pc-side-btn,

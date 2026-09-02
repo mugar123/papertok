@@ -159,3 +159,50 @@ test('breaks otherwise equal relevance with citations and tolerates empty input'
   assert.deepEqual(ordered, ['high', 'low']);
   assert.deepEqual(orderFollowingFeedPapers(undefined, undefined), []);
 });
+
+import { readFile } from 'node:fs/promises';
+import { mergeOrderedPapers } from './followingFeed.js';
+
+const readSource = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+
+/**
+ * A silent refresh landing while the Following feed is on screen used to
+ * re-rank the whole list under the reader. The cards already showing keep
+ * their places, under their fresh copies; what the refresh dropped goes,
+ * what it brought is appended in its own order.
+ */
+test('a refresh keeps the cards on screen where they are and appends what is new', () => {
+  const previous = [
+    { id: 'a', title: 'A', citationCount: 1 },
+    { id: 'b', title: 'B', citationCount: 1 },
+    { id: 'c', title: 'C', citationCount: 1 },
+  ];
+  const fresh = [
+    { id: 'd', title: 'D', citationCount: 9 },
+    { id: 'c', title: 'C', citationCount: 5 },
+    { id: 'a', title: 'A', citationCount: 4 },
+    { id: 'e', title: 'E', citationCount: 2 },
+  ];
+  const merged = mergeOrderedPapers(previous, fresh);
+  assert.deepEqual(merged.map(paper => paper.id), ['a', 'c', 'd', 'e'], 'a and c stay in order, b is gone, d and e follow');
+  assert.equal(merged[0].citationCount, 4, 'the copy on screen is the fresh one');
+  assert.equal(mergeOrderedPapers([], fresh), fresh, 'nothing on screen: the fresh ranking as is');
+  assert.deepEqual(mergeOrderedPapers(previous, []), [], 'the refresh emptied the feed');
+});
+
+test('SOURCE: the Following page ranks on its first render and merges refreshes', async () => {
+  const code = await readSource('../components/Following/FollowingFeedPage.jsx');
+  assert.match(code, /useState\(\(\) => orderFollowingFeedPapers\(items, seenIds\)\)/,
+    'an empty initial state painted the empty state for a frame before the cards');
+  assert.match(code, /setOrderedPapers\(current => mergeOrderedPapers\(current, orderFollowingFeedPapers\(items, seenIds\)\)\)/);
+});
+
+test('SOURCE: the follow-reason pill arrives as the first step of the card, not on a fade of its own', async () => {
+  const jsx = await readSource('../components/Feed/PaperCard.jsx');
+  const css = await readSource('../components/Feed/PaperCard.css');
+  assert.match(jsx, /<div className="pc-follow-reason">/);
+  assert.doesNotMatch(jsx, /<motion\.div\s+className="pc-follow-reason"/);
+  assert.match(css, /\.pc-follow-reason \{ --arrive: 0; \}/);
+  assert.match(css, /@keyframes pcArrive \{/);
+  assert.match(css, /@keyframes cardSlideUp \{\s*0% \{ transform: translateY\(10px\); \}/, 'the sheet only travels; the pieces carry the fade');
+});

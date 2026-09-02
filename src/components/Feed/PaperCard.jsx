@@ -1080,16 +1080,15 @@ const PaperCard = memo(function PaperCard({
             language,
           );
           if (!reason) return null;
+          // A plain element: its entrance is the first step of the card's
+          // own arrival (`pcArrive` in the stylesheet), so it lands with the
+          // kicker and the title instead of on a fade of its own that ran
+          // inside — and finished before — the sheet's.
           return (
-            <motion.div
-              className="pc-follow-reason"
-              initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: prefersReducedMotion ? 0 : 0.25 }}
-            >
+            <div className="pc-follow-reason">
               <UserCheck size={13} aria-hidden="true" />
               <span>{reason}</span>
-            </motion.div>
+            </div>
           );
         })()}
         <div className="pc-meta">

@@ -165,3 +165,29 @@ export function orderFollowingFeedPapers(items = [], seenIds = new Set(), option
   }
   return ordered;
 }
+
+/**
+ * A refresh that lands while the feed is on screen must not reshuffle it.
+ *
+ * The ranking above is run once per visit, from the items the page opened
+ * with. When a silent refresh replaces those items a few seconds in, the
+ * papers already on screen keep their places — each under its fresh copy, so
+ * new citations and matches still reach the card — papers the refresh no
+ * longer carries are dropped, and papers it brings for the first time are
+ * appended in the fresh ranking's order. A card moving under the thumb read
+ * as the feed glitching; the next visit ranks everything again from scratch.
+ */
+export function mergeOrderedPapers(previousOrdered = [], freshOrdered = []) {
+  if (!previousOrdered.length) return freshOrdered;
+  const freshByKey = new Map(freshOrdered.map(paper => [getFollowingUpdatePaperKey(paper), paper]));
+  const kept = [];
+  const keptKeys = new Set();
+  previousOrdered.forEach((paper) => {
+    const key = getFollowingUpdatePaperKey(paper);
+    if (!freshByKey.has(key) || keptKeys.has(key)) return;
+    keptKeys.add(key);
+    kept.push(freshByKey.get(key));
+  });
+  const appended = freshOrdered.filter(paper => !keptKeys.has(getFollowingUpdatePaperKey(paper)));
+  return [...kept, ...appended];
+}

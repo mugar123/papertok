@@ -5,7 +5,7 @@ import FeedContainer from '../Feed/FeedContainer';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFollowingUpdates } from '../../context/FollowingUpdatesContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { orderFollowingFeedPapers } from '../../utils/followingFeed';
+import { mergeOrderedPapers, orderFollowingFeedPapers } from '../../utils/followingFeed';
 import './FollowingFeedPage.css';
 
 /**
@@ -22,14 +22,22 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
   const { followedEntities } = useFollowing();
   const { items, seenIds, loading, refreshing, error, refresh, markSeen } = useFollowingUpdates();
 
+  // Ranked on the first render, not in an effect after it: the state used to
+  // start empty and be filled by an effect, so the page's first paint was the
+  // "nothing new from what you follow" state for a frame, and the cards then
+  // replaced it — the first of the pops the reader saw on entering.
+  //
   // Ranking captures the seen-set only when the item list itself changes:
   // marking cards as seen mid-scroll must never reshuffle under the thumb.
-  const [orderedPapers, setOrderedPapers] = useState([]);
-  const lastItemsRef = useRef(null);
+  // And a refresh that lands while the cards are on screen keeps their order
+  // (`mergeOrderedPapers`): the fresh ranking is applied in full on the next
+  // visit, when nobody is reading it.
+  const [orderedPapers, setOrderedPapers] = useState(() => orderFollowingFeedPapers(items, seenIds));
+  const lastItemsRef = useRef(items);
   useEffect(() => {
     if (lastItemsRef.current === items) return;
     lastItemsRef.current = items;
-    setOrderedPapers(orderFollowingFeedPapers(items, seenIds));
+    setOrderedPapers(current => mergeOrderedPapers(current, orderFollowingFeedPapers(items, seenIds)));
   }, [items, seenIds]);
 
   const hasFollows = followedEntities.length > 0;
