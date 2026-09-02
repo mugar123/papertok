@@ -49,4 +49,11 @@ test('SOURCE: a retry after a failed completeOnboarding does not claim the handl
     /await createUserProfile\(\{[\s\S]*?\}\);\s*profileCreated\.current = true;\s*\}$/,
     'profileCreated.current must be set only once createUserProfile has actually succeeded',
   );
+  // The capture above is bounded to the guarded block on purpose, so it can
+  // never see a SECOND call sitting just outside it -- a sibling block,
+  // reachable without the profileCreated guard, would double-claim the
+  // handle and this test would still pass. Count every call in the whole
+  // file instead, the same way saveModalMotion.test.js's scriptedCloses does.
+  const profileCreateCalls = code.match(/createUserProfile\(/g) ?? [];
+  assert.equal(profileCreateCalls.length, 1, 'createUserProfile must be called from exactly the guarded block above');
 });

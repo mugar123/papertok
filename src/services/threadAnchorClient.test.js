@@ -78,7 +78,11 @@ test('a full first page from the Worker carries a cursor the sheet can page from
 test('SOURCE: paging appends by id, because a value cursor can hand back its own comment', async () => {
   const { readFile } = await import('node:fs/promises');
   const sheet = await readFile(new URL('../components/Comments/CommentsSheet.jsx', import.meta.url), 'utf8');
-  assert.match(sheet, /appendNewRows\(previous, fresh\)/);
+  // Comments are prose, not code: strip them first, the same way
+  // analyticsPageviews.test.js does, so a decoy comment cannot stand in for
+  // the real paging call asserted below.
+  const code = sheet.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+  assert.match(code, /appendNewRows\(previous, fresh\)/);
 });
 
 test('fetchThreadAnchor asks /thread-anchor with canonical ids', async () => {

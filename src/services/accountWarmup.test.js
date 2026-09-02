@@ -93,5 +93,11 @@ test('a failed profile read keeps the device copy: absence is not the same as si
 
 test('SOURCE: unpublishing forgets the profile on this device, not only in the session', async () => {
   const source = await readFile(new URL('../components/Profile/ProfilePage.jsx', import.meta.url), 'utf8');
-  assert.match(source, /forgetOwnProfile\(user\.uid, unpublishedHandle\);\s*clearStoredProfile\(user\.uid\);/);
+  // Comments are prose, not code: ProfilePage.jsx carries heavy explanatory
+  // comments elsewhere in the file, and a decoy reproducing this exact pair
+  // of calls must never make this test see a device-copy clear that is not
+  // really there. Strip them first, the same way analyticsPageviews.test.js
+  // does, so only real code is scanned below.
+  const code = source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+  assert.match(code, /forgetOwnProfile\(user\.uid, unpublishedHandle\);\s*clearStoredProfile\(user\.uid\);/);
 });
