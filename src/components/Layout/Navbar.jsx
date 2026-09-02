@@ -9,6 +9,25 @@ import NavPreferencesMenu from './NavPreferencesMenu';
 import './Navbar.css';
 
 /**
+ * How the rule travels: a tween that ends, not a spring that approaches.
+ *
+ * It was a spring — `stiffness: 420, damping: 38, mass: 0.7`, a damping ratio
+ * of about 1.11, so overdamped, so an exponential tail. Measured on the longest
+ * hop ("For you" to Following, 133px): the first 90% of the travel took 224ms
+ * and the last 10% took another 216ms. Half the animation was spent drifting
+ * the final thirteen pixels. And because the rule grows as it goes — the two
+ * words are not the same width — the left edge was home while the right edge
+ * still had ten pixels to cover, so it read as the bar arriving short of the
+ * word, stopping, and then creeping right.
+ *
+ * A spring cannot fix that by retuning: every variant measured (bounce 0,
+ * bounce 0.15, a critically damped one) still spent 43–50% of its time on that
+ * last tenth, because that is the shape of a spring. A bounded tween does not
+ * have a tail: this one spends 28%, and both edges land on the same frame.
+ */
+const RULE_TRAVEL = { duration: 0.28, ease: [0.4, 0, 0.2, 1] };
+
+/**
  * The yellow rule under the tab you are on.
  *
  * It used to be `.navbar-link.active::after`: a pseudo-element that blinked out
@@ -24,9 +43,7 @@ function ActiveTabRule({ reduced }) {
       className="navbar-link-rule"
       layoutId="navbar-active-tab"
       aria-hidden="true"
-      transition={reduced
-        ? { duration: 0 }
-        : { type: 'spring', stiffness: 420, damping: 38, mass: 0.7 }}
+      transition={reduced ? { duration: 0 } : RULE_TRAVEL}
     />
   );
 }
