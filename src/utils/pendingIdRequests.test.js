@@ -210,3 +210,27 @@ test('persistent failure keeps retrying with growing attempts and recovers at th
   assert.equal(tab.titleOf(IDS[0]), 'Attention Is All You Need');
   assert.equal(tab.titleOf(IDS[1]), 'Deep Residual Learning');
 });
+
+// Two sources behind one read: Firestore answered from the server for most
+// ids, arXiv failed for the rest. The server-confirmed absences must settle;
+// only what the failed source owed stays askable — otherwise every retry of
+// the arXiv leg re-issues the Firestore query too, for the life of the page.
+test('an answer can settle most ids and leave a named few askable', async () => {
+  const requests = createPendingIdRequests();
+  const outcome = await requestMissingRecords({
+    ids: ['a', 'b', 'legacy/1'],
+    requests,
+    fetchRecords: async () => ({
+      records: [{ id: 'a', data: { paperTitle: 'A' } }],
+      fromCache: false,
+      authoritative: true,
+      unsettled: ['legacy/1'],
+    }),
+  });
+  assert.equal(outcome.retryable, true);
+  assert.equal(outcome.attempt, 1);
+  assert.equal(requests.isSettled('a'), true, 'a record in hand settles');
+  assert.equal(requests.isSettled('b'), true, 'a server-confirmed absence settles');
+  assert.equal(requests.isSettled('legacy/1'), false, 'what the failed source owed stays askable');
+  assert.equal(requests.isInFlight('legacy/1'), false);
+});

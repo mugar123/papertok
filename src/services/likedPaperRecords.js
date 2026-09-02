@@ -1,5 +1,3 @@
-import { isFetchableDocumentId } from '../utils/listPaperMetadataPlan.js';
-
 // Both readers are reached lazily: the library read pulls in the Firebase
 // client, which has no business being loaded by a unit test of this routing,
 // and in the app both modules are already resident by the time a profile
@@ -14,12 +12,12 @@ const readArxivPapers = async (ids) => {
 };
 
 /**
- * The Liked tab is keyed by the feed's `paper.id`. For a pre-2007 arXiv paper
- * that id carries a slash (`hep-th/0603001`, `math.GT/0309136`), which no
- * Firestore document can be named by: the like reached the aggregate, the
- * document write threw, and there is nothing in the library to read. Those
- * rows take their title from arXiv itself; every other id goes to the library
- * read as before.
+ * Some liked papers are keyed by ids with a slash (`hep-th/0603001`,
+ * `doi:10.1103/...`). Since the write side encodes document names
+ * (utils/interactionDocId.js) those have a record like any other — but the
+ * likes made BEFORE that fix never got one, and the Liked tab still has to
+ * name them. Firestore is asked for every id; only the legacy arXiv ids it
+ * does not answer go to arXiv.
  */
 const LEGACY_ARXIV_ID = /^(?:arxiv:)?[a-z][a-z-]*(?:\.[a-z-]+)?\/\d{7}(?:v\d+)?$/i;
 
@@ -30,32 +28,31 @@ const arxivKey = value => String(value || '')
 
 /**
  * Same contract as `fetchLibraryRecords` — `{ records, fromCache }` — plus
- * `authoritative: false` when arXiv did not answer, so the caller leaves those
- * ids askable instead of settling them as "no title".
+ * `unsettled`: the ids arXiv failed to answer for, which the caller leaves
+ * askable while everything Firestore answered (or confirmed absent) settles.
  */
 export async function fetchLikedPaperRecords(userId, paperIds, {
   readRecords = readLibraryRecords,
   fetchArxivPapers = readArxivPapers,
 } = {}) {
   const ids = Array.isArray(paperIds) ? paperIds.filter(Boolean) : [];
-  const stored = [];
-  const legacy = [];
-  for (const id of ids) {
-    if (isFetchableDocumentId(id)) stored.push(id);
-    else if (LEGACY_ARXIV_ID.test(id)) legacy.push(id);
+  const library = ids.length > 0 ? await readRecords(userId, ids) : { records: [], fromCache: false };
+  const answered = new Set(library.records.map(record => record.id));
+  const legacy = ids.filter(id => !answered.has(id) && LEGACY_ARXIV_ID.test(id));
+  if (legacy.length === 0) {
+    return { records: library.records, fromCache: library.fromCache, authoritative: true, unsettled: [] };
   }
 
-  const [library, arxiv] = await Promise.all([
-    stored.length > 0 ? readRecords(userId, stored) : { records: [], fromCache: false },
-    legacy.length > 0
-      ? fetchArxivPapers(legacy.map(id => id.replace(/^arxiv:/i, '')))
-        .then(papers => ({ papers: papers || [], failed: false }))
-        .catch(() => ({ papers: [], failed: true }))
-      : { papers: [], failed: false },
-  ]);
+  let arxivPapers = [];
+  let arxivFailed = false;
+  try {
+    arxivPapers = (await fetchArxivPapers(legacy.map(id => id.replace(/^arxiv:/i, '')))) || [];
+  } catch {
+    arxivFailed = true;
+  }
 
   const byKey = new Map();
-  for (const paper of arxiv.papers) {
+  for (const paper of arxivPapers) {
     for (const key of [paper?.arxivId, paper?.id]) {
       if (key) byKey.set(arxivKey(key), paper);
     }
@@ -70,5 +67,10 @@ export async function fetchLikedPaperRecords(userId, paperIds, {
     });
   }
 
-  return { records, fromCache: library.fromCache, authoritative: !arxiv.failed };
+  return {
+    records,
+    fromCache: library.fromCache,
+    authoritative: true,
+    unsettled: arxivFailed ? legacy : [],
+  };
 }

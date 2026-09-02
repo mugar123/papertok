@@ -2,7 +2,7 @@
 import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { FeedContext } from './contexts';
 import { IS_DEMO, db } from '../services/firebase';
-import { doc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
+import { setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { useFollowing } from './FollowingContext';
 import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
@@ -45,6 +45,7 @@ import {
 import {
   createInteractionProfileClient,
   fetchLibraryRecords,
+  interactionDocRef,
   flushAllInteractionProfiles,
   flushInteractionProfileNow,
   scheduleInteractionProfileFlush,
@@ -1622,7 +1623,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         category: paper.primaryCategory,
       });
       try {
-        const ref = doc(db, 'users', userId, 'interactions', paper.id);
+        const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           liked: !isCurrentlyLiked,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
@@ -1663,7 +1664,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           kind: 'notInterested',
           category: paper.primaryCategory,
         });
-        const ref = doc(db, 'users', userId, 'interactions', paper.id);
+        const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           notInterested: true, paperCategory: paper.primaryCategory,
           paperAbstract: paper.summary?.substring(0, 500),
@@ -1715,7 +1716,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           timestamp: readAt,
         });
-        const ref = doc(db, 'users', userId, 'interactions', paper.id);
+        const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           read: true,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
@@ -1766,7 +1767,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           viewTime: timeInSeconds,
         });
-        const ref = doc(db, 'users', userId, 'interactions', paper.id);
+        const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           viewTime: increment(timeInSeconds),
           paperCategory: paper.primaryCategory,
@@ -1796,7 +1797,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           kind: 'openedPdf',
           category: paper.primaryCategory,
         });
-        const ref = doc(db, 'users', userId, 'interactions', paper.id);
+        const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           openedPdf: true,
           paperCategory: paper.primaryCategory,
@@ -1838,7 +1839,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             category: paper.primaryCategory,
             timestamp,
           });
-          const ref = doc(db, 'users', userId, 'interactions', paper.id);
+          const ref = interactionDocRef(userId, paper.id);
           batch.set(ref, definedFields({
             skip: increment(1),
             paperCategory: paper.primaryCategory,
@@ -1871,7 +1872,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           kind: 'pdfBounce',
           category: paper.primaryCategory,
         });
-        const ref = doc(db, 'users', userId, 'interactions', paper.id);
+        const ref = interactionDocRef(userId, paper.id);
         await setDoc(ref, definedFields({
           pdfBounce: increment(1),
           paperCategory: paper.primaryCategory,
@@ -1926,7 +1927,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           kind: 'save',
           category: paper?.primaryCategory,
         });
-        const ref = doc(db, 'users', userId, 'interactions', paperId);
+        const ref = interactionDocRef(userId, paperId);
         const interactionData = {
           saved: true,
           timestamp: new Date().toISOString(),
@@ -1963,7 +1964,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     } else {
       try {
         recordProfileEvent({ paperId, kind: 'unread' });
-        const ref = doc(db, 'users', userId, 'interactions', paperId);
+        const ref = interactionDocRef(userId, paperId);
         await updateDoc(ref, {
           read: deleteField(),
           readAt: deleteField(),
@@ -2005,7 +2006,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           timestamp: updatedAt,
         });
-        await setDoc(doc(db, 'users', userId, 'interactions', paper.id), definedFields({
+        await setDoc(interactionDocRef(userId, paper.id), definedFields({
           readLater: nextValue,
           paper: storedPaper,
           paperTitle: paper.title,
@@ -2051,7 +2052,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           timestamp: updatedAt,
         });
-        await setDoc(doc(db, 'users', userId, 'interactions', paper.id), definedFields({
+        await setDoc(interactionDocRef(userId, paper.id), definedFields({
           note: note.trim(),
           tags: normalizedTags,
           paper: storedPaper,
