@@ -73,3 +73,55 @@ test('SOURCE: the next page pools the late candidates and then forgets them', as
   assert.match(reset, /lateSourceCandidatesRef\.current = \[\];/,
     'a reset (new session, preference change) starts with an empty pool');
 });
+
+/**
+ * ade641a took Europe PMC out of PubmedAdapter.fetchSearch so PubMed would
+ * stop losing the first-page race, and nothing picked it up again: the cards
+ * lost open access, the PMC PDF, citations and the biomedical terms. It
+ * belongs after the paint, never in front of it.
+ */
+test('SOURCE: PubMed cards get Europe PMC after paint, never before setPapers', async () => {
+  const code = stripComments(await read('./FeedContext.jsx'));
+  // Tied in one regex: the request must be built from the pmids of the page
+  // that was just selected (`iCitePmids`), and it must sit AFTER the promise
+  // that iCite already builds from those same ids — which is itself after
+  // `filtered` is final. A loose `enrichPubmedIds(` would pass on a call
+  // placed in front of the first paint.
+  assert.match(
+    code,
+    /const iCitePromise = fetchICiteMetrics\(iCitePmids\);[\s\S]{0,400}?const europePmcPromise = enrichPubmedIds\(iCitePmids\)\.catch\(/,
+    'Europe PMC is requested next to iCite, from the painted page\'s pmids',
+  );
+  const merge = bounded(
+    code,
+    'europePmcPromise.then((lateRecords) => {',
+    '} catch {',
+    'the Europe PMC late merge',
+    20,
+  );
+  assert.match(
+    merge,
+    /if \(feedSessionId\.current !== activeSessionId \|\| !lateRecords \|\| lateRecords\.size === 0\) return;\s*setPapers\(current => \{\s*const enriched = mergeEuropePmcEnrichment\(current, lateRecords\);/,
+    'merged into state under the session guard, with the identity-preserving helper',
+  );
+});
+
+test('SOURCE: the guest feed enriches its PubMed cards too', async () => {
+  const code = stripComments(await read('../hooks/useGuestFeed.js'));
+  const enrich = bounded(code, 'const enrichVisible = (batch) => {', '};', 'enrichVisible', 22);
+  assert.match(
+    enrich,
+    /const pmids = \[\.\.\.new Set\(batch\.map\(paper => paper\?\.pmid\)\.filter\(Boolean\)\)\];\s*if \(pmids\.length > 0\) \{\s*enrichPubmedIds\(pmids\)/,
+    'the pmids of the batch on screen are asked for',
+  );
+  assert.match(enrich, /setPapers\(\(current\) => mergeEuropePmcEnrichment\(current, lateRecords\)\);/);
+  // The OpenAlex half must not early-return past the pmid half.
+  assert.doesNotMatch(enrich, /if \(ids\.length === 0\) return;/,
+    'an early return on the OpenAlex ids would skip Europe PMC entirely');
+});
+
+test('SOURCE: the PubMed adapter itself stays free of browser-side enrichment', async () => {
+  const code = stripComments(await read('../services/adapters/PubmedAdapter.js'));
+  assert.doesNotMatch(code, /enrichPubmedIds|openAlexJson/,
+    'PubmedAdapter.test.js forbids extra fetches inside fetchSearch');
+});

@@ -7,6 +7,7 @@ import { fetchDomainPapers } from '../services/domainSourceService.js';
 import { settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming.js';
 import { GUEST_CATEGORIES, buildGuestDiscoveryQuery } from '../utils/guestFeedPlan.js';
 import { enrichPapersBatch } from '../services/openAlexService.js';
+import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.js';
 import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
@@ -84,11 +85,22 @@ export function useGuestFeed() {
 
       const enrichVisible = (batch) => {
         const ids = batch.map(getOpenAlexEnrichmentId).filter(Boolean);
-        if (ids.length === 0) return;
-        enrichPapersBatch(ids, { timeoutMs: 6_500 }).catch(() => ({})).then((lateEnrichment) => {
-          if (requestId !== requestIdRef.current || !lateEnrichment || !Object.keys(lateEnrichment).length) return;
-          setPapers((current) => mergeOpenAlexEnrichment(current, lateEnrichment));
-        });
+        if (ids.length > 0) {
+          enrichPapersBatch(ids, { timeoutMs: 6_500 }).catch(() => ({})).then((lateEnrichment) => {
+            if (requestId !== requestIdRef.current || !lateEnrichment || !Object.keys(lateEnrichment).length) return;
+            setPapers((current) => mergeOpenAlexEnrichment(current, lateEnrichment));
+          });
+        }
+        // The guest feed shows PubMed cards too, and they carry the same debt
+        // ade641a left behind: no open access, no PMC PDF, no citations until
+        // Europe PMC answers. Asked for after the batch is on screen.
+        const pmids = [...new Set(batch.map(paper => paper?.pmid).filter(Boolean))];
+        if (pmids.length > 0) {
+          enrichPubmedIds(pmids).catch(() => new Map()).then((lateRecords) => {
+            if (requestId !== requestIdRef.current || !lateRecords || lateRecords.size === 0) return;
+            setPapers((current) => mergeEuropePmcEnrichment(current, lateRecords));
+          });
+        }
       };
 
       const early = dedupePapers(

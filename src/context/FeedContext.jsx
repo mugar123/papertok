@@ -61,6 +61,7 @@ import { shouldAbortFeedLoad } from '../utils/feedLoadGuard';
 import { lateSourceCandidates } from '../utils/feedLateCandidates';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
+import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
 // once a feed load actually ranks followed topics, so it loads on first use
 // instead of riding in the boot graph of every route.
@@ -1332,6 +1333,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
       const iCitePmids = [...new Set(filtered.map(paper => paper?.pmid).filter(Boolean))];
       const iCitePromise = fetchICiteMetrics(iCitePmids);
+      // Same pmids, same moment: after the page is on screen. ade641a took
+      // this out of PubmedAdapter to win the first-page race and nothing
+      // picked it up again (audit 2026-09-02, A2). A failure here is a page
+      // without Europe PMC data, never a page that fails to paint.
+      const europePmcPromise = enrichPubmedIds(iCitePmids).catch((err) => {
+        console.warn('Europe PMC feed enrichment failed', err);
+        return new Map();
+      });
       if (requestId !== feedRequestId.current) return;
 
       // Paint now. A second shuffle after enrichment used to reorder the
@@ -1406,6 +1415,19 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           if (feedSessionId.current !== activeSessionId || !lateMetrics || Object.keys(lateMetrics).length === 0) return;
           setPapers(current => {
             const enriched = mergeICiteEnrichment(current, lateMetrics);
+            const cachedMode = feedCache.current[activeMode];
+            if (cachedMode) {
+              feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
+              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+            }
+            return enriched;
+          });
+        });
+
+        europePmcPromise.then((lateRecords) => {
+          if (feedSessionId.current !== activeSessionId || !lateRecords || lateRecords.size === 0) return;
+          setPapers(current => {
+            const enriched = mergeEuropePmcEnrichment(current, lateRecords);
             const cachedMode = feedCache.current[activeMode];
             if (cachedMode) {
               feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
