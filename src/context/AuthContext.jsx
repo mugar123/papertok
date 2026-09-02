@@ -20,6 +20,7 @@ import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } fr
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.js';
 import { forgetOwnProfile } from '../utils/profileSessionCaches.js';
 import { accountLooksOnboarded } from '../utils/accountOnboarding.js';
+import { toggleFollowedAuthor } from '../utils/followedAuthors.js';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
 const PROFILE_NETWORK_TIMEOUT_MS = 7000;
@@ -130,10 +131,14 @@ export function AuthProvider({ children }) {
         if (!isCurrent()) return;
 
         if (remote.status === 'fulfilled') {
-          if (!applyProfile(remote.value) && !hydratedFromCache && !storedOnboarding?.complete) {
+          // The server is the authority on whether the document exists. A
+          // remembered onboarding only decided the paint while this read was
+          // in flight; it does not get to overrule a missing document.
+          if (!applyProfile(remote.value)) {
             setOnboardingComplete(false);
+            saveStoredOnboarding(currentUser.uid, { complete: false, preferences: [] });
           }
-        } else if (!hydratedFromCache && !storedOnboarding?.complete) {
+        } else if (!hydratedFromCache) {
           setProfileLoadError('PROFILE_LOAD_FAILED');
           if (remote.status === 'rejected') {
             console.error('Error fetching user data', remote.reason);
@@ -277,22 +282,17 @@ export function AuthProvider({ children }) {
   // both written to Firestore and (in demo mode) to storage in this same call,
   // so a functional state update alone would not hand it back for that.
   const toggleFollowAuthor = useCallback(async (authorName) => {
-    const newFollowed = followedAuthors.includes(authorName)
-      ? followedAuthors.filter(a => a !== authorName)
-      : [...followedAuthors, authorName];
-
-    setFollowedAuthors(newFollowed);
+    const { next, patch } = toggleFollowedAuthor(followedAuthors, authorName);
+    setFollowedAuthors(next);
 
     if (IS_DEMO) {
-      demoSet('followedAuthors', newFollowed);
+      demoSet('followedAuthors', next);
       return;
     }
 
     const userId = user?.uid;
     if (userId) {
-      await setDoc(doc(db, 'users', userId), {
-        followedAuthors: newFollowed
-      }, { merge: true });
+      await setDoc(doc(db, 'users', userId), patch, { merge: true });
     }
   }, [followedAuthors, user?.uid]);
 
