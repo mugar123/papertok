@@ -1018,18 +1018,22 @@ function pubmedUrl(endpoint, env, params) {
 // 429. The window is a second, so one retry after a short, jittered wait lands
 // in the next one. One, not more: a second refusal means the key is exhausted,
 // and that is the ledger's problem, not this route's. And when NCBI names a
-// wait close to the six seconds each fetch is already budgeted for
-// (`SOURCE_UPSTREAM_TIMEOUT_MS`), retrying would blow past what the caller of
-// that fetch is already waiting on, so the refusal is relayed as it is -- the
-// client already knows what a 429 with `retry-after` means.
+// wait longer than the two seconds `PUBMED_RETRY_MAX_MS` allows, the refusal
+// is relayed as it is: each fetch is already budgeted six seconds
+// (`SOURCE_UPSTREAM_TIMEOUT_MS`), and stacking a longer wait on top of that is
+// more than the caller of that fetch is waiting for -- the client already
+// knows what a 429 with `retry-after` means.
 const PUBMED_RETRY_BASE_MS = 300;
 const PUBMED_RETRY_JITTER_MS = 500;
 const PUBMED_RETRY_MAX_MS = 2_000;
 
 function pubmedRetryDelayMs(error) {
   if (error?.status !== 429) return null;
-  if (error.retryAfter !== '' && error.retryAfter !== undefined) {
-    const advertisedMs = Number(error.retryAfter) * 1000;
+  // Trimmed so a whitespace-only value takes the empty branch instead of
+  // coercing to the number 0 and reading as an advertised instant retry.
+  const advertised = String(error.retryAfter ?? '').trim();
+  if (advertised !== '') {
+    const advertisedMs = Number(advertised) * 1000;
     // A negative number is nonsense from upstream, not a request to retry
     // instantly -- it must not be more aggressive than a legitimate `0`.
     if (!Number.isFinite(advertisedMs) || advertisedMs < 0) return null;
