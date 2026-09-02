@@ -190,11 +190,13 @@ const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
 const DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT = 60;
 const DEFAULT_S2_GLOBAL_MINUTE_LIMIT = 60;
 const SHARED_MINUTE_CEILINGS = Object.freeze({
-  // 60 route misses a minute are at most 180 E-utilities calls -- three per miss.
-  // `NCBI_API_KEY` is set (10 req/s, i.e. 200 misses a minute), so 60 is a
-  // deliberate margin, not the anonymous 3 req/s it once mirrored; it has never
-  // been the binding limit. What NCBI refuses are per-second bursts, which no
-  // per-minute ceiling can see -- `withPubmedRetry` is what absorbs those.
+  // Each miss spends three E-utilities calls, six if every one is refused once
+  // and retried -- what NCBI actually refuses is per-second bursts, which no
+  // per-minute ceiling can see; `withPubmedRetry` is what absorbs those. So 60
+  // route misses a minute are at most 360 calls, and `NCBI_API_KEY` (10 req/s)
+  // buys 100 misses a minute at that worst case. 60 is a deliberate margin, not
+  // the anonymous 3 req/s it once mirrored, and it has never been the binding
+  // limit (151/151 reservations accepted, 2026-09-01).
   '/sources/pubmed': { namespace: 'pubmed', variable: 'PUBMED_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT },
   '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT },
   '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT },
@@ -1015,9 +1017,11 @@ function pubmedUrl(endpoint, env, params) {
 // 2026-09-01 and reproduced 2026-09-02: 8 concurrent misses, 3 refused with a
 // 429. The window is a second, so one retry after a short, jittered wait lands
 // in the next one. One, not more: a second refusal means the key is exhausted,
-// and that is the ledger's problem, not this route's. And when NCBI names a wait
-// the route cannot afford under its six-second deadline, the refusal is relayed
-// as it is -- the client already knows what a 429 with `retry-after` means.
+// and that is the ledger's problem, not this route's. And when NCBI names a
+// wait close to the six seconds each fetch is already budgeted for
+// (`SOURCE_UPSTREAM_TIMEOUT_MS`), retrying would blow past what the caller of
+// that fetch is already waiting on, so the refusal is relayed as it is -- the
+// client already knows what a 429 with `retry-after` means.
 const PUBMED_RETRY_BASE_MS = 300;
 const PUBMED_RETRY_JITTER_MS = 500;
 const PUBMED_RETRY_MAX_MS = 2_000;
@@ -1026,7 +1030,9 @@ function pubmedRetryDelayMs(error) {
   if (error?.status !== 429) return null;
   if (error.retryAfter !== '' && error.retryAfter !== undefined) {
     const advertisedMs = Number(error.retryAfter) * 1000;
-    if (!Number.isFinite(advertisedMs)) return null;
+    // A negative number is nonsense from upstream, not a request to retry
+    // instantly -- it must not be more aggressive than a legitimate `0`.
+    if (!Number.isFinite(advertisedMs) || advertisedMs < 0) return null;
     return advertisedMs <= PUBMED_RETRY_MAX_MS ? advertisedMs : null;
   }
   return PUBMED_RETRY_BASE_MS + Math.random() * PUBMED_RETRY_JITTER_MS;

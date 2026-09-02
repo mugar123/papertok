@@ -59,15 +59,16 @@ OPENALEX_GLOBAL_MINUTE_LIMIT = "300"
 # (which spends outside this ledger) and the health probe.
 OPENALEX_GLOBAL_DAILY_LIMIT = "8000"
 # PubMed and Semantic Scholar limit by provider, not by caller, and the guest feed
-# reads both, so their ceiling is global like OpenAlex's. Sixty route misses a
-# minute are at most 180 E-utilities calls -- three per miss. NCBI_API_KEY has
-# been set since 2026-09-01 (/health reports pubmedKeyConfigured), which buys
-# 10 req/s = 200 misses a minute, so 60 is a deliberate margin and not the
-# anonymous 3 req/s it once mirrored. It has never been the binding limit
-# (151/151 reservations accepted, 2026-09-01), and a per-minute ceiling cannot
-# stop the per-second bursts NCBI actually refuses -- the route's own single
-# retry does that. Sixty is also roughly the 1 req/s Semantic Scholar allows,
-# shared by /sources/s2 and /related, which spend the same allowance.
+# reads both, so their ceiling is global like OpenAlex's. Each miss spends three
+# E-utilities calls, six if every one is refused once and retried -- what NCBI
+# actually refuses is per-second bursts, which a per-minute ceiling cannot see;
+# withPubmedRetry is what absorbs those. So 60 route misses a minute are at most
+# 360 calls, and NCBI_API_KEY (set since 2026-09-01; /health reports
+# pubmedKeyConfigured) buys 10 req/s = 100 misses a minute at that worst case.
+# 60 is a deliberate margin, not the anonymous 3 req/s it once mirrored, and it
+# has never been the binding limit (151/151 reservations accepted, 2026-09-01).
+# Sixty is also roughly the 1 req/s Semantic Scholar allows, shared by
+# /sources/s2 and /related, which spend the same allowance.
 PUBMED_GLOBAL_MINUTE_LIMIT = "60"
 S2_GLOBAL_MINUTE_LIMIT = "60"
 
