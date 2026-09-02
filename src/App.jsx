@@ -214,7 +214,7 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <ListsPage onEditPaper={setSaveModalPaper} />
+                  <ListsPage onOpenPdf={openPdf} onEditPaper={setSaveModalPaper} />
                 </PageTransition>
               </ProtectedRoute>
             }

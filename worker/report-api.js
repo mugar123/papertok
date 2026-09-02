@@ -1136,7 +1136,9 @@ async function fetchPubmedArticleXml(pmids, env) {
   return response.text();
 }
 
-const S2_SEARCH_FIELDS = 'paperId,title,abstract,authors,year,isOpenAccess,venue,publicationTypes,citationCount,referenceCount,openAccessPdf';
+// `externalIds` carries the DOI and the arXiv id; without them a paper from
+// this source is known only by its S2 hash, which no paper page can load.
+const S2_SEARCH_FIELDS = 'paperId,title,abstract,authors,year,isOpenAccess,venue,publicationTypes,citationCount,referenceCount,openAccessPdf,externalIds';
 const S2_MAX_LIMIT = 25;
 const S2_MAX_OFFSET = 1_000;
 

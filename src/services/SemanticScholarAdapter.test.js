@@ -83,3 +83,26 @@ test('gives up on an unavailable Semantic Scholar instead of retrying locally', 
     restore();
   }
 });
+
+/**
+ * A paper saved from a Semantic Scholar card was remembered under its S2 hash
+ * alone: the adapter wrote `doi: null` whatever the API said. The DOI and the
+ * arXiv id arrive in `externalIds`, and they are the paper's only addresses.
+ */
+test('keeps the DOI and the arXiv id Semantic Scholar reports, and nothing invented when it reports none', () => {
+  const adapter = new SemanticScholarAdapter();
+  const addressed = adapter.mapToStandard({
+    paperId: '649def34f8be52c8b66281af98ae884c09aef38b',
+    title: 'Attention Is All You Need',
+    externalIds: { DOI: '10.48550/arXiv.1706.03762', ArXiv: '1706.03762', CorpusId: 13756489 },
+  });
+  assert.equal(addressed.id, '649def34f8be52c8b66281af98ae884c09aef38b', 'the S2 hash stays the id');
+  assert.equal(addressed.doi, '10.48550/arXiv.1706.03762');
+  assert.equal(addressed.arxivId, '1706.03762');
+
+  const bare = adapter.mapToStandard({ paperId: 'abc', title: 'One', externalIds: { CorpusId: 1 } });
+  assert.equal(bare.doi, null);
+  assert.equal(bare.arxivId, undefined);
+  const absent = adapter.mapToStandard({ paperId: 'abc', title: 'One' });
+  assert.equal(absent.doi, null);
+});

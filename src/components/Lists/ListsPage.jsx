@@ -53,8 +53,9 @@ import {
   publicListSyncKey,
   toEpochMillis,
 } from '../../utils/publicListFreshness.js';
-import { getPublicListUrl } from '../../utils/publicNavigation.js';
-import { searchPaperDestination } from '../../utils/searchDestinations.js';
+import { getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
+import PaperCard from '../Feed/PaperCard.jsx';
+import PaperOverlay from '../Feed/PaperOverlay.jsx';
 import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService.js';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
 import {
@@ -150,7 +151,7 @@ function publicBadgeState(status) {
 }
 
 
-export default function ListsPage({ onEditPaper }) {
+export default function ListsPage({ onOpenPdf, onEditPaper }) {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -159,13 +160,28 @@ export default function ListsPage({ onEditPaper }) {
   const {
     unmarkAsRead,
     toggleLike,
+    markNotInterested,
+    markAsRead,
+    trackViewTime,
+    trackSkip,
     personalLibrary,
     ensurePersonalLibrary,
     libraryPapers,
     toggleReadLater,
     likedPaperIds,
+    savedPaperIds,
     readPaperIds,
   } = useFeed();
+
+  // The paper open in the card overlay below: one that has no address on the
+  // public paper page, so the card is painted from the stored copy instead.
+  const [overlayPaper, setOverlayPaper] = useState(null);
+  const closeOverlayPaper = useCallback(() => setOverlayPaper(null), []);
+  const getInteractionState = useCallback((paper) => ({
+    isLiked: likedPaperIds.has(paper.id),
+    isSaved: savedPaperIds.has(paper.id),
+    isRead: readPaperIds.has(paper.id),
+  }), [likedPaperIds, readPaperIds, savedPaperIds]);
 
   // Notes, tags and read timestamps no longer ride along on every feed load;
   // this screen is the one that renders them, so it is the one that fetches
@@ -849,19 +865,27 @@ export default function ListsPage({ onEditPaper }) {
    * pointing wherever it pointed before.
    */
   const openPaperCard = (paper) => {
-    // The public paper page when the paper has an address there; otherwise
-    // the search page carrying the title, where the same paper opens in an
-    // overlay that needs no identifier. The fallback used to hand the PDF
-    // viewer the raw id as an arXiv id (`openalex:W…`, a Semantic Scholar
-    // hash), which built a PDF link nothing served.
-    const destination = searchPaperDestination(paper);
+    // The public paper page when the paper has an address there — a DOI, an
+    // arXiv id, the OpenAlex or PubMed id it was keyed by — with the stored
+    // copy riding along so the page paints at once. A paper with no such
+    // address (a Semantic Scholar hash saved before the adapter kept the DOI,
+    // a Scopus eid) is still the paper the reader saved: its card opens right
+    // here, in the same overlay the search and the explorer use, painted from
+    // the stored copy. No URL is invented for it — one nobody could load is
+    // worse than none — and the PDF viewer is never handed the raw id as an
+    // arXiv id, which built a PDF link nothing served.
+    const path = getPublicPaperPath(paper) || getPublicPaperPath(paper.id);
+    if (!path) {
+      setOverlayPaper(paper);
+      return;
+    }
     if (expandedList) {
       navigate(location.pathname, {
         replace: true,
         state: { openListId: expandedList, fromRoute: openedFromRoute },
       });
     }
-    navigate(destination.path, { state: destination.state });
+    navigate(path, { state: { paper } });
   };
 
   useEffect(() => () => clearTimeout(metadataBudgetTimer.current), []);
@@ -1816,6 +1840,34 @@ export default function ListsPage({ onEditPaper }) {
         </motion.div>
       )}
       </AnimatePresence>
+
+      {/* The card for a saved paper that has no public paper page — see
+          `openPaperCard`. Same takeover the search and the explorer use,
+          painted from the stored copy, with the feed's own actions wired so a
+          like or a read here lands where one from the feed would. */}
+      <PaperOverlay
+        open={Boolean(overlayPaper)}
+        onClose={closeOverlayPaper}
+        isEnglish={isEnglish}
+        label={isEnglish ? 'Paper details' : 'Detalles del paper'}
+      >
+        {overlayPaper && (
+          <PaperCard
+            paper={overlayPaper}
+            isLiked={likedPaperIds.has(overlayPaper.id)}
+            isSaved={savedPaperIds.has(overlayPaper.id)}
+            isRead={readPaperIds.has(overlayPaper.id)}
+            onLike={toggleLike}
+            onNotInterested={(paper) => { markNotInterested(paper); closeOverlayPaper(); }}
+            onMarkAsRead={markAsRead}
+            onOpenPdf={(paper) => onOpenPdf?.(paper)}
+            onSaveToList={(paper) => onEditPaper?.(paper)}
+            getInteractionState={getInteractionState}
+            trackViewTime={trackViewTime}
+            trackSkip={trackSkip}
+          />
+        )}
+      </PaperOverlay>
 
       {/* Outside the AnimatePresence on purpose: Edit is reachable from a card
           in the grid AND from inside an open list, and a window that lived in

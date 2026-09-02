@@ -34,11 +34,16 @@ test('SOURCE: both the Liked and the Saved rows go through rowDestination', asyn
     'no row builder computes its own path anymore');
 });
 
-test('SOURCE: the lists page opens a paper with no address through the same search fallback', async () => {
+test('SOURCE: the lists page opens a paper with no address as a card from the stored copy', async () => {
   const code = stripComments(await read('../Lists/ListsPage.jsx'));
   const start = code.indexOf('const openPaperCard = (paper) => {');
   const body = code.slice(start, code.indexOf('};', start));
-  assert.match(body, /searchPaperDestination\(paper\)/);
+  assert.match(body, /const path = getPublicPaperPath\(paper\) \|\| getPublicPaperPath\(paper\.id\)/);
+  assert.match(body, /if \(!path\) \{\s*setOverlayPaper\(paper\);\s*return;\s*\}/,
+    'no address: the card opens in the overlay, painted from what was saved');
+  assert.match(body, /navigate\(path, \{ state: \{ paper \} \}\)/, 'an address: the paper page, copy riding along');
   assert.doesNotMatch(body, /arxivId: paper\.arxivId \|\| paper\.id/,
     'the raw id is never dressed up as an arXiv id for the PDF viewer again');
+  assert.match(code, /<PaperOverlay[\s\S]*?<PaperCard[\s\S]*?paper=\{overlayPaper\}/,
+    'the overlay hosts the same PaperCard the search page uses');
 });
