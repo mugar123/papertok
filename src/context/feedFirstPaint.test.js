@@ -125,3 +125,22 @@ test('SOURCE: the PubMed adapter itself stays free of browser-side enrichment', 
   assert.doesNotMatch(code, /enrichPubmedIds|openAlexJson/,
     'PubmedAdapter.test.js forbids extra fetches inside fetchSearch');
 });
+
+/**
+ * ade641a capped the OpenAlex concept sample at 24 ids, but fed it the Sets
+ * the lists render, which `orderedSet` sorts by document id. The cap then
+ * kept the alphabetically-first likes forever: the overlay never followed
+ * what the reader had actually been liking (audit 2026-09-02, A3).
+ */
+test('SOURCE: the semantic sample is the most recent likes, not the lowest ids', async () => {
+  const code = stripComments(await read('./FeedContext.jsx'));
+  assert.match(
+    code,
+    /const positiveIds = selectSemanticProfilePositiveIds\(\s*curatedIds\(profile, 'liked'\),\s*curatedIds\(profile, 'saved'\),\s*\);/,
+    'the cap must read the aggregate order (newest first), never the id-sorted Sets',
+  );
+  // `orderedSet` still exists and still sorts — the lists need that order.
+  // It must simply never be what the semantic overlay samples.
+  assert.doesNotMatch(code, /selectSemanticProfilePositiveIds\((?:liked|saved)\b/,
+    'the id-sorted Sets must not be handed to the cap');
+});

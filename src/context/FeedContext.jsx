@@ -822,8 +822,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
         // OpenAlex concept weights are a ranking overlay, not a gate. Cap the
         // sample and run it after the first source wave has the network, so a
-        // large liked library cannot stall the first cards.
-        const positiveIds = selectSemanticProfilePositiveIds(liked, saved);
+        // large liked library cannot stall the first cards. The sample comes
+        // from the aggregate's own order (newest first): `liked`/`saved` above
+        // are Sets sorted by id for the lists, and cutting those to 24 kept
+        // the alphabetically-first likes forever (audit 2026-09-02, A3).
+        const positiveIds = selectSemanticProfilePositiveIds(
+          curatedIds(profile, 'liked'),
+          curatedIds(profile, 'saved'),
+        );
         const scheduleIdle = typeof requestIdleCallback === 'function'
           ? (fn) => requestIdleCallback(fn, { timeout: 2500 })
           : (fn) => setTimeout(fn, 0);
