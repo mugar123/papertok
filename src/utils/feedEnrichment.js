@@ -76,17 +76,3 @@ export function mergeOpenAlexEnrichment(papers, enrichmentById) {
     return paperFieldsEqual(merged, paper) ? paper : merged;
   });
 }
-
-export async function waitForInitialEnrichment(enrichmentPromise, timeoutMs = 2500) {
-  let timeoutId;
-  try {
-    return await Promise.race([
-      enrichmentPromise,
-      new Promise((resolve) => {
-        timeoutId = setTimeout(() => resolve(null), timeoutMs);
-      }),
-    ]);
-  } finally {
-    clearTimeout(timeoutId);
-  }
-}

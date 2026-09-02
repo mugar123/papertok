@@ -58,8 +58,10 @@ import {
 } from '../utils/feedEnrichment';
 import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard';
+import { lateSourceCandidates } from '../utils/feedLateCandidates';
 import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
+import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
 // once a feed load actually ranks followed topics, so it loads on first use
 // instead of riding in the boot graph of every route.
@@ -72,6 +74,11 @@ const PAGE_SIZE = 15;
 // which the previous 5 s budget lost anyway after waiting the full 5 s for it.
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
+// How long the main query may wait for the followed-topic category ids. The
+// topic module is prewarmed the moment a topic follow is known (see the
+// following effect), so this is normally 0 ms and the budget only ever covers
+// a cold chunk on a slow connection.
+const FOLLOWED_TOPIC_RANK_BUDGET_MS = 300;
 const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
 const INTERACTIONS_NETWORK_TIMEOUT_MS = 5000;
 // Upper bound on the reading-library records fetched on demand by the library
@@ -247,6 +254,13 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   const feedRequestId = useRef(0);
   const feedSessionId = useRef(0);
   const openAlexEnrichmentAttempts = useRef(new Set());
+  // Papers the slower sources returned after the page painted (see
+  // utils/feedLateCandidates.js). Offered to the next page's pool, once.
+  const lateSourceCandidatesRef = useRef([]);
+  // Bumped on every reset. The session id only changes with the account, but
+  // a preference or follow change resets the feed too, and a query still in
+  // flight from before must not refill the pool for the old preferences.
+  const latePoolGenerationRef = useRef(0);
   const openAlexEnrichmentRequests = useRef(new Map());
   const activeUserId = useRef(user?.uid || null);
   const sessionSeenPapers = useRef(readSeenPaperIds(user?.uid));
@@ -817,8 +831,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
         // OpenAlex concept weights are a ranking overlay, not a gate. Cap the
         // sample and run it after the first source wave has the network, so a
-        // large liked library cannot stall the first cards.
-        const positiveIds = selectSemanticProfilePositiveIds(liked, saved);
+        // large liked library cannot stall the first cards. The sample comes
+        // from the aggregate's own order (newest first): `liked`/`saved` above
+        // are Sets sorted by id for the lists, and cutting those to 24 kept
+        // the alphabetically-first likes forever (audit 2026-09-02, A3).
+        const positiveIds = selectSemanticProfilePositiveIds(
+          curatedIds(profile, 'liked'),
+          curatedIds(profile, 'saved'),
+        );
         const scheduleIdle = typeof requestIdleCallback === 'function'
           ? (fn) => requestIdleCallback(fn, { timeout: 2500 })
           : (fn) => setTimeout(fn, 0);
@@ -897,7 +917,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     if (reset) {
       openAlexEnrichmentAttempts.current.clear();
       openAlexEnrichmentRequests.current.clear();
+      lateSourceCandidatesRef.current = [];
+      latePoolGenerationRef.current += 1;
     }
+    const poolGeneration = latePoolGenerationRef.current;
 
     setLoading(true);
     setError(null);
@@ -912,10 +935,19 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
         
-        // Followed-topic category ids used to sit on the critical path
-        // (`await loadTopicRetrieval()`) before arXiv/PubMed/OpenAlex started.
-        // Those papers still arrive through fetchFollowedEntityCandidates.
-        const rankedPreferences = [...userPreferences].sort((a, b) => {
+        // Followed topics widen the main query. The lookup used to be an
+        // unbounded `await loadTopicRetrieval()` in front of every source;
+        // dropping it altogether left a followed topic worth at most six
+        // papers (audit 2026-09-02, A4). It is budgeted now, and normally
+        // served from the module the following effect already warmed.
+        const followedTopicIds = followedEntities.some(entity => entity?.type === 'topic')
+          ? await resolveWithin(
+            loadTopicRetrieval().then(module => module.getFollowedTopicCategoryIds(followedEntities)),
+            FOLLOWED_TOPIC_RANK_BUDGET_MS,
+            [],
+          )
+          : [];
+        const rankedPreferences = [...new Set([...userPreferences, ...followedTopicIds])].sort((a, b) => {
           const affA = categoryAffinities.current[a] || 0;
           const affB = categoryAffinities.current[b] || 0;
           return affB - affA;
@@ -1012,6 +1044,18 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           if (mainPapers.length === 0) {
             sourceResults = await all;
             mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
+          } else {
+            // The sources still running answer into the next page's pool.
+            // Guarded by session and pool generation, not request: a later
+            // page of the same feed is exactly who should receive them, a
+            // reset feed is not. Appended, not assigned: the auto-fetch path
+            // starts page N+1 before N's late answer lands.
+            const painted = mainPapers;
+            all.then((settled) => {
+              if (feedSessionId.current !== activeSessionId || latePoolGenerationRef.current !== poolGeneration) return;
+              const pooled = lateSourceCandidatesRef.current;
+              lateSourceCandidatesRef.current = [...pooled, ...lateSourceCandidates([...painted, ...pooled], settled)];
+            });
           }
           mainSourceResults = sourceResults;
         } catch (e) {
@@ -1208,7 +1252,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         }
 
         // ─── STEP 7: Merge, deduplicate, score, and shuffle ───
-        const allFetched = [...mainPapers, ...graphPapers, ...followedPapers, ...explorationPapers];
+        const lateMain = lateSourceCandidatesRef.current.splice(0);
+        lateMain.forEach(p => { p._type = 'exploit'; });
+        const allFetched = [...mainPapers, ...lateMain, ...graphPapers, ...followedPapers, ...explorationPapers];
         
         const uniqueMap = new Map();
         allFetched.forEach(p => {
@@ -1316,6 +1362,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
       const iCitePmids = [...new Set(filtered.map(paper => paper?.pmid).filter(Boolean))];
       const iCitePromise = fetchICiteMetrics(iCitePmids);
+      // Same pmids, same moment: after the page is on screen. ade641a took
+      // this out of PubmedAdapter to win the first-page race and nothing
+      // picked it up again (audit 2026-09-02, A2). A failure here is a page
+      // without Europe PMC data, never a page that fails to paint.
+      const europePmcPromise = enrichPubmedIds(iCitePmids).catch((err) => {
+        console.warn('Europe PMC feed enrichment failed', err);
+        return new Map();
+      });
       if (requestId !== feedRequestId.current) return;
 
       // Paint now. A second shuffle after enrichment used to reorder the
@@ -1390,6 +1444,19 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           if (feedSessionId.current !== activeSessionId || !lateMetrics || Object.keys(lateMetrics).length === 0) return;
           setPapers(current => {
             const enriched = mergeICiteEnrichment(current, lateMetrics);
+            const cachedMode = feedCache.current[activeMode];
+            if (cachedMode) {
+              feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
+              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+            }
+            return enriched;
+          });
+        });
+
+        europePmcPromise.then((lateRecords) => {
+          if (feedSessionId.current !== activeSessionId || !lateRecords || lateRecords.size === 0) return;
+          setPapers(current => {
+            const enriched = mergeEuropePmcEnrichment(current, lateRecords);
             const cachedMode = feedCache.current[activeMode];
             if (cachedMode) {
               feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
@@ -1498,6 +1565,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   const followingSignatureRef = useRef(null);
 
   useEffect(() => {
+    // Warm the topic table as soon as a topic follow is known, off the feed's
+    // critical path, so loadPapers meets a resident module.
+    if (followedEntities.some(entity => entity?.type === 'topic')) void loadTopicRetrieval();
     if (followingLoading) return;
     const signature = followedEntities
       .map(entity => `${entity.type}:${entity.canonicalId}`)

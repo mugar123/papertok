@@ -5,7 +5,6 @@ import {
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   takeFeedPage,
-  waitForInitialEnrichment,
 } from './feedEnrichment.js';
 
 test('normalizes arXiv versions for OpenAlex enrichment', () => {
@@ -107,9 +106,4 @@ test('paper identity survives a late OpenAlex merge that adds nothing new', () =
   assert.ok(!Object.is(result[1], realChange), 'record with new data: different object');
   assert.equal(result[1].citationCount, 9);
   assert.ok(Object.is(result[2], noopChange), 'record present but changes nothing: same object');
-});
-
-test('stops waiting when initial enrichment exceeds its budget', async () => {
-  const result = await waitForInitialEnrichment(new Promise(() => {}), 5);
-  assert.equal(result, null);
 });
