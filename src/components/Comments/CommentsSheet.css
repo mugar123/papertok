@@ -217,30 +217,19 @@
   list-style: none;
   margin: 0;
   padding: 0;
+  /* `AnimatePresence mode="popLayout"` takes a leaving row out of flow while it
+     fades, and an out-of-flow row needs a containing block or it goes looking
+     for the viewport. */
+  position: relative;
 }
 
+/* The row's entrance, its exit and the way its neighbours close over it are one
+   system now, and it lives in the component: the stagger and the 200ms
+   ease-out are the same as the `comment-row-in` keyframes that used to be
+   here, but a CSS animation only ever runs on mount, so deleting a comment had
+   nothing to play and the thread jumped by a row's height. */
 .comments-list-item {
   padding: var(--space-4) 0;
-  /* Opacity + translateY only, 200ms, strong ease-out (emilkowalski/skills). */
-  animation: comment-row-in 0.2s cubic-bezier(0.23, 1, 0.32, 1) both;
-}
-
-.comments-list-item:nth-child(1) { animation-delay: 0ms; }
-.comments-list-item:nth-child(2) { animation-delay: 30ms; }
-.comments-list-item:nth-child(3) { animation-delay: 55ms; }
-.comments-list-item:nth-child(4) { animation-delay: 75ms; }
-.comments-list-item:nth-child(5) { animation-delay: 90ms; }
-.comments-list-item:nth-child(n+6) { animation-delay: 100ms; }
-
-@keyframes comment-row-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
 }
 
 .comments-list-item + .comments-list-item {
@@ -355,6 +344,14 @@
 /* ── Actions, grouped by intent ──
    What you can do to the conversation on the left; the one thing you can do
    about the comment behind a rule on the right. */
+/* One slot at the foot of a row, holding whichever of the three feet is
+   current. It exists so the swap between them has something to cross-fade
+   inside, and it is not rendered at all when a row has no foot — an empty flex
+   child would still buy the column's gap. */
+.comment-row-foot {
+  min-width: 0;
+}
+
 .comment-row-actions {
   display: flex;
   align-items: center;
@@ -441,16 +438,22 @@
   font-weight: var(--fw-semibold);
 }
 
+/* No `gap`. Two of this column's children — the reply/edit chip and the error
+   — open and close, and a flex gap cannot be animated to nothing: it holds its
+   8px for the whole fold and then disappears in the frame after, jolting the
+   box and everything above it. The spacing lives inside each of them instead,
+   where the fold takes it along. */
 .comments-composer {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
 }
 
 .comments-composer-context {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  /* The gap the column gave up. */
+  padding-bottom: var(--space-2);
   color: var(--text-tertiary);
   font: 500 0.6875rem/1.6 var(--font-mono);
   letter-spacing: 0.01em;
@@ -489,6 +492,21 @@
   line-height: var(--lh-normal);
 }
 
+/* iOS Safari zooms the whole page into any form control it focuses whose
+   computed font-size is under 16px, and `--fs-sm` is 14. Tapping the box to
+   write a comment therefore scaled the sheet up and left the reader zoomed in
+   with no way back. The two other fixes for this are both worse: a
+   `maximum-scale=1` viewport takes pinch-zoom away from everyone, and a
+   transform-based counter-scale lies to the layout. Sixteen pixels where the
+   zoom rule applies — coarse pointers, which is exactly the set of devices
+   that do it — costs nothing: the box is a single row either way, and the
+   serif at 16px is the size the comment will be read at once posted. */
+@media (pointer: coarse) {
+  .comments-composer-input {
+    font-size: var(--fs-base);
+  }
+}
+
 /* The prompt is a control, not prose. */
 .comments-composer-input::placeholder {
   color: var(--text-tertiary);
@@ -500,7 +518,10 @@
 }
 
 .comments-composer-error {
-  margin: 0;
+  /* Inside the folding box, so it collapses with it (the column has no gap —
+     see `.comments-composer`). `overflow: hidden` on the wrapper opens a
+     formatting context, so this margin cannot escape it. */
+  margin: var(--space-2) 0 0;
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--tint-red-line);
   border-radius: var(--radius-sm);
@@ -535,7 +556,7 @@
     animation: none;
   }
 
-  .comments-list-item {
-    animation: none;
-  }
+  /* The rows, the reply chip, the error and the foot of every row are
+     framer's now, and every one of them reads `useReducedMotion` in the
+     component. There is nothing left in this file for them to switch off. */
 }

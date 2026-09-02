@@ -40,7 +40,7 @@ import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.
 import './SaveToListModal.css';
 
 /** Kept in step with the exit animation in SaveToListModal.css. */
-const DIALOG_EXIT_MS = 160;
+const DIALOG_EXIT_MS = 240;
 
 /**
  * States where the lists are still on their way. 'slow' and 'offline' keep the

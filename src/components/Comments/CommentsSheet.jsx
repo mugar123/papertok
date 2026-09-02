@@ -174,6 +174,53 @@ async function explainDenial(error, text) {
   return text(COPY.throttled);
 }
 
+/* ── The thread's motion vocabulary ──
+   One set of curves for the whole sheet, and the same ones the rest of the app
+   already speaks: things arrive on an expo-out, leave on an ease-in, and a box
+   that changes size eases at both ends. Nothing travels more than a dozen
+   pixels — a thread is a list of small things, and a big movement in it reads
+   as the list being rebuilt rather than one row changing. */
+const ARRIVE = [0.16, 1, 0.3, 1];
+const LEAVE = [0.4, 0, 1, 1];
+const RESIZE = [0.4, 0, 0.2, 1];
+
+/* The reveal keeps the shape the stylesheet had: the first rows land close
+   together and everything from the fifth on shares one delay, so a long thread
+   does not turn into a countdown. */
+const ROW_DELAYS = [0, 0.03, 0.055, 0.075, 0.09];
+const rowDelay = index => ROW_DELAYS[index] ?? 0.1;
+
+/**
+ * A block that opens and closes in place instead of appearing and vanishing.
+ *
+ * The spacing lives *inside* it, never in the parent's `gap`: a flex gap
+ * cannot be animated to nothing, so it survives the whole fold and then
+ * disappears in the frame after — which is a jolt of exactly one gap, and the
+ * reason `.comments-composer` gives its own away below.
+ */
+function ThreadSlot({ children, reduced }) {
+  return (
+    <motion.div
+      initial={{ height: 0, opacity: 0 }}
+      animate={{
+        height: 'auto',
+        opacity: 1,
+        transition: reduced ? { duration: 0 }
+          : { height: { duration: 0.24, ease: ARRIVE }, opacity: { duration: 0.18, delay: 0.04 } },
+      }}
+      exit={{
+        height: 0,
+        opacity: 0,
+        transition: reduced ? { duration: 0 }
+          : { height: { duration: 0.2, ease: RESIZE }, opacity: { duration: 0.12 } },
+      }}
+      style={{ overflow: 'hidden' }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 function CommentBody({ comment, isEnglish, text, onNavigate }) {
   const dissociated = commentIsDissociated(comment);
   return (
@@ -218,16 +265,40 @@ function CommentRow({
   onReply, onEdit, onDelete, onReport, isEnglish, text, onNavigate,
 }) {
   const [confirming, setConfirming] = useState(null); // 'delete' | 'report'
+  const reduced = useReducedMotion();
   const own = viewerUid && comment.authorUid === viewerUid;
 
   // `own` implies a viewer, so the two groups between them cover every case a
   // signed-in reader has; a guest only ever sees the thread.
   const hasActions = canInteract || Boolean(viewerUid);
 
+  /* The three feet of a row — actions, the delete confirmation, the report
+     reasons — are one slot with three contents, and they are different
+     heights. `mode="wait"` so they never overlap, and `layout` on the row so
+     the thread below settles into the new height instead of stepping into it.
+     Both halves are short: this is a control answering a tap, not a page. */
+  const footKey = confirming ?? (hasActions ? 'actions' : 'none');
+  const footMotion = reduced ? {
+    initial: false,
+    animate: { opacity: 1 },
+    exit: { opacity: 0, transition: { duration: 0 } },
+  } : {
+    initial: { opacity: 0, y: 4 },
+    animate: { opacity: 1, y: 0, transition: { duration: 0.16, ease: ARRIVE } },
+    exit: { opacity: 0, y: -2, transition: { duration: 0.1, ease: LEAVE } },
+  };
+
   return (
-    <div className={`comment-row${isReply ? ' comment-row--reply' : ''}`}>
+    <motion.div
+      className={`comment-row${isReply ? ' comment-row--reply' : ''}`}
+      layout={reduced ? false : 'position'}
+      transition={{ duration: 0.24, ease: RESIZE }}
+    >
       <CommentBody comment={comment} isEnglish={isEnglish} text={text} onNavigate={onNavigate} />
 
+      <AnimatePresence mode="wait" initial={false}>
+      {footKey !== 'none' && (
+      <motion.div key={footKey} className="comment-row-foot" {...footMotion}>
       {confirming === 'delete' ? (
         <div className="comment-row-confirm comment-row-confirm--danger" role="alert">
           <span>{text(isReply ? COPY.deleteReplyConfirm : COPY.deleteConfirm)}</span>
@@ -286,7 +357,10 @@ function CommentRow({
           )}
         </div>
       )}
-    </div>
+      </motion.div>
+      )}
+      </AnimatePresence>
+    </motion.div>
   );
 }
 
@@ -778,8 +852,33 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
           )}
           {status === 'ready' && thread.length > 0 && (
             <ul className="comments-list">
-              {thread.map(entry => (
-                <li key={entry.id} className="comments-list-item">
+              {/* `popLayout` takes the leaving row out of flow, so the rows
+                  under it can start closing the gap in the same frame instead
+                  of waiting for it to finish; `layout` is what makes them
+                  travel rather than jump. Deleting a comment used to teleport
+                  the rest of the thread upward by the height of the row. */}
+              <AnimatePresence mode="popLayout">
+              {thread.map((entry, index) => (
+                <motion.li
+                  key={entry.id}
+                  className="comments-list-item"
+                  layout={prefersReducedMotion ? false : 'position'}
+                  initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
+                  animate={{
+                    opacity: 1,
+                    y: 0,
+                    transition: prefersReducedMotion
+                      ? { duration: 0 }
+                      : { duration: 0.2, ease: [0.23, 1, 0.32, 1], delay: rowDelay(index) },
+                  }}
+                  /* Out to the side, not down: a row that leaves along the
+                     axis the list scrolls on is indistinguishable from the
+                     list scrolling. */
+                  exit={prefersReducedMotion
+                    ? { opacity: 0, transition: { duration: 0.1 } }
+                    : { opacity: 0, x: -16, transition: { duration: 0.18, ease: LEAVE } }}
+                  transition={{ duration: 0.24, ease: RESIZE }}
+                >
                   <CommentRow
                     comment={entry}
                     isReply={false}
@@ -796,8 +895,24 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                   />
                   {entry.replies.length > 0 && (
                     <ul className="comments-replies">
+                      <AnimatePresence mode="popLayout">
                       {entry.replies.map(reply => (
-                        <li key={reply.id}>
+                        <motion.li
+                          key={reply.id}
+                          layout={prefersReducedMotion ? false : 'position'}
+                          initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+                          animate={{
+                            opacity: 1,
+                            y: 0,
+                            transition: prefersReducedMotion
+                              ? { duration: 0 }
+                              : { duration: 0.18, ease: [0.23, 1, 0.32, 1] },
+                          }}
+                          exit={prefersReducedMotion
+                            ? { opacity: 0, transition: { duration: 0.1 } }
+                            : { opacity: 0, x: -12, transition: { duration: 0.16, ease: LEAVE } }}
+                          transition={{ duration: 0.24, ease: RESIZE }}
+                        >
                           <CommentRow
                             comment={reply}
                             isReply
@@ -812,12 +927,14 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                             text={text}
                             onNavigate={onClose}
                           />
-                        </li>
+                        </motion.li>
                       ))}
+                      </AnimatePresence>
                     </ul>
                   )}
-                </li>
+                </motion.li>
               ))}
+              </AnimatePresence>
             </ul>
           )}
           {status === 'ready' && hasMore && (
@@ -861,26 +978,36 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
           )}
           {composerState === 'ready' && (
             <div className="comments-composer">
-              {replyTarget && (
-                <div className="comments-composer-context">
-                  <CornerDownRight size={13} aria-hidden="true" />
-                  <span>{text(COPY.replyingTo)} @{replyTarget.authorHandle}</span>
-                  <Button type="button" variant="ghost" size="icon-sm"
-                    onClick={() => setReplyTarget(null)} aria-label={text(COPY.cancel)}>
-                    <X size={14} />
-                  </Button>
-                </div>
-              )}
-              {editTarget && (
-                <div className="comments-composer-context">
-                  <Pencil size={13} aria-hidden="true" />
-                  <span>{text(COPY.editing)}</span>
-                  <Button type="button" variant="ghost" size="icon-sm"
-                    onClick={resetComposer} aria-label={text(COPY.cancel)}>
-                    <X size={14} />
-                  </Button>
-                </div>
-              )}
+              {/* Answering somebody, or editing your own note, changes what the
+                  box below means. The chip that says so used to appear and
+                  vanish outright, shoving the box and the thread above it by
+                  its own height in a single frame. */}
+              <AnimatePresence initial={false}>
+                {replyTarget && (
+                  <ThreadSlot key="reply" reduced={prefersReducedMotion}>
+                    <div className="comments-composer-context">
+                      <CornerDownRight size={13} aria-hidden="true" />
+                      <span>{text(COPY.replyingTo)} @{replyTarget.authorHandle}</span>
+                      <Button type="button" variant="ghost" size="icon-sm"
+                        onClick={() => setReplyTarget(null)} aria-label={text(COPY.cancel)}>
+                        <X size={14} />
+                      </Button>
+                    </div>
+                  </ThreadSlot>
+                )}
+                {editTarget && (
+                  <ThreadSlot key="edit" reduced={prefersReducedMotion}>
+                    <div className="comments-composer-context">
+                      <Pencil size={13} aria-hidden="true" />
+                      <span>{text(COPY.editing)}</span>
+                      <Button type="button" variant="ghost" size="icon-sm"
+                        onClick={resetComposer} aria-label={text(COPY.cancel)}>
+                        <X size={14} />
+                      </Button>
+                    </div>
+                  </ThreadSlot>
+                )}
+              </AnimatePresence>
               <div className="comments-composer-row">
                 <textarea
                   ref={composerInput}
@@ -906,17 +1033,16 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                   {text(editTarget ? COPY.save : COPY.send)}
                 </Button>
               </div>
-              <AnimatePresence>
+              {/* The error opened by fading a full-height box in, which pushed
+                  the composer up under the reader's thumb mid-fade. It opens
+                  the way the reply chip does now. */}
+              <AnimatePresence initial={false}>
                 {composerError && (
-                  <motion.p
-                    className="comments-composer-error"
-                    role="alert"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                  >
-                    {composerError}
-                  </motion.p>
+                  <ThreadSlot key="error" reduced={prefersReducedMotion}>
+                    <p className="comments-composer-error" role="alert">
+                      {composerError}
+                    </p>
+                  </ThreadSlot>
                 )}
               </AnimatePresence>
             </div>

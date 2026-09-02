@@ -36,7 +36,10 @@
      in global.css — that base rule carries no `backdrop-filter` of its own
      either, so nothing reintroduces one here unopposed. */
   background: rgba(17, 19, 24, 0.4);
-  animation: fadeIn 0.22s ease;
+  /* The scrim used to finish 60ms before the window it is behind, so the
+     backdrop settled while the card was still arriving. Same length, same
+     curve, one movement. */
+  animation: fadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .save-modal {
@@ -55,8 +58,7 @@
      at which a 440px sheet reads as arriving, so opening looked like a
      hard cut. 16px of travel and 4% of scale, on the same spring the
      comments sheet uses on desktop, is what makes the window drop into
-     place. The exit is shorter: getting out of the way should never make
-     anybody wait. */
+     place. */
   animation: saveModalIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -65,19 +67,28 @@
   to { opacity: 1; transform: none; }
 }
 
+/* Leaving used to be an afterthought: 160ms against an entrance of 280, over
+   half the distance (8px and 2% against 16px and 4%), on `ease` — which for a
+   departure spends its first frames barely moving and then drops the window in
+   the last few. Short is not the same as quick, and this was short enough to
+   read as the window being deleted rather than dismissed. It now travels the
+   same distance it arrived from, in 240ms, on the ease-in the page transition
+   and the filter panel already leave by: it holds while it goes, and goes at
+   the end. `DIALOG_EXIT_MS` in the component matches this to the millisecond,
+   and `saveModalMotion.test.js` fails if they ever drift. */
 @keyframes saveModalOut {
   from { opacity: 1; transform: none; }
-  to { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 0; transform: translateY(16px) scale(0.96); }
 }
 
 /* `forwards` matters: the window stays mounted for the length of this, and
    without it the card would snap back to full opacity for the last frame. */
 .save-modal.is-closing {
-  animation: saveModalOut 0.16s ease forwards;
+  animation: saveModalOut 0.24s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 .save-modal-dialog.is-closing::backdrop {
-  animation: fadeOut 0.16s ease forwards;
+  animation: fadeOut 0.24s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 .save-modal-dialog.is-closing {
