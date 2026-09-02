@@ -20,36 +20,44 @@ import AnalyticsConsentBanner from './components/Privacy/AnalyticsConsentBanner'
 import GuestFeedPage from './components/Public/GuestFeedPage'
 import AuthPrompt from './components/Public/AuthPrompt'
 import { getPublicPaperPath } from './utils/publicNavigation'
+import { lazyRoute } from './utils/lazyRoute'
 import './App.css'
 
 // Only what the first paint of the feed needs loads eagerly. Everything below
 // is its own chunk: the 2 MB single bundle was the measured cost of every
-// screen riding in the boot graph (25 static screens, 0.9–1.3 s of parse), and
-// React Router v7 navigations run inside startTransition, so switching to a
-// route whose chunk is still downloading keeps the current screen on instead
-// of flashing a fallback.
+// screen riding in the boot graph (25 static screens, 0.9–1.3 s of parse).
+//
+// React Router v7 navigations run inside startTransition, but that does not
+// keep the current screen on while a chunk downloads here: `AnimatePresence
+// mode="wait"` mounts the incoming screen from its own exit-complete callback,
+// outside the transition, so a screen that suspends there commits the
+// RouteFallback above the presence wrapper. The outgoing screen has finished
+// leaving by then (measured: opacity 0 before the fallback ever commits), so
+// nothing is cut; what a cold chunk costs is a gap between exit and entrance,
+// kept invisible under 320 ms by the fallback's own delay. The screens are
+// `lazyRoute`s so the ones prefetched below never suspend at all.
 
 // The sign-in page rides in that same list rather than in the boot graph, as it
 // used to: a session that already exists never renders it, and a guest reaches
 // it by a redirect or a direct link — both can afford one chunk.
-const LoginPage = lazy(() => import('./components/Auth/LoginPage'))
-const OnboardingFlow = lazy(() => import('./components/Onboarding/OnboardingFlow'))
-const ListsPage = lazy(() => import('./components/Lists/ListsPage'))
+const LoginPage = lazyRoute(() => import('./components/Auth/LoginPage'))
+const OnboardingFlow = lazyRoute(() => import('./components/Onboarding/OnboardingFlow'))
+const ListsPage = lazyRoute(() => import('./components/Lists/ListsPage'))
 const PDFViewer = lazy(() => import('./components/PDF/PDFViewer'))
 const SaveToListModal = lazy(() => import('./components/Lists/SaveToListModal'))
 const CommentsSheet = lazy(() => import('./components/Comments/CommentsSheet'))
-const SearchPage = lazy(() => import('./components/Search/SearchPage'))
-const EntityExplorer = lazy(() => import('./components/Explorer/EntityExplorer'))
-const ScientificReport = lazy(() => import('./components/Report/ScientificReport'))
-const FollowingFeedPage = lazy(() => import('./components/Following/FollowingFeedPage'))
-const SettingsPage = lazy(() => import('./components/Settings/SettingsPage'))
-const FollowingSettingsPage = lazy(() => import('./components/Settings/FollowingSettingsPage'))
-const MyCommentsPage = lazy(() => import('./components/Settings/MyCommentsPage'))
-const ModerationPage = lazy(() => import('./components/Admin/ModerationPage'))
-const PublicPaperPage = lazy(() => import('./components/Public/PublicPaperPage'))
-const PublicListPage = lazy(() => import('./components/Lists/PublicListPage'))
-const PublicProfilePage = lazy(() => import('./components/Public/PublicProfilePage'))
-const ProfilePage = lazy(() => import('./components/Profile/ProfilePage'))
+const SearchPage = lazyRoute(() => import('./components/Search/SearchPage'))
+const EntityExplorer = lazyRoute(() => import('./components/Explorer/EntityExplorer'))
+const ScientificReport = lazyRoute(() => import('./components/Report/ScientificReport'))
+const FollowingFeedPage = lazyRoute(() => import('./components/Following/FollowingFeedPage'))
+const SettingsPage = lazyRoute(() => import('./components/Settings/SettingsPage'))
+const FollowingSettingsPage = lazyRoute(() => import('./components/Settings/FollowingSettingsPage'))
+const MyCommentsPage = lazyRoute(() => import('./components/Settings/MyCommentsPage'))
+const ModerationPage = lazyRoute(() => import('./components/Admin/ModerationPage'))
+const PublicPaperPage = lazyRoute(() => import('./components/Public/PublicPaperPage'))
+const PublicListPage = lazyRoute(() => import('./components/Lists/PublicListPage'))
+const PublicProfilePage = lazyRoute(() => import('./components/Public/PublicProfilePage'))
+const ProfilePage = lazyRoute(() => import('./components/Profile/ProfilePage'))
 const SearchCommand = lazy(() => import('./components/Search/SearchCommand'))
 
 function AppContent() {
@@ -120,8 +128,16 @@ function AppContent() {
       import('./components/Comments/CommentsSheet').catch(() => {})
       import('./components/PDF/PDFViewer').catch(() => {})
       import('./components/Lists/SaveToListModal').catch(() => {})
-      import('./components/Report/ScientificReport').catch(() => {})
-      import('./components/Following/FollowingFeedPage').catch(() => {})
+      // The screens go through `preload()`, not a bare `import()`: the import
+      // warms the module cache, but the first render of a `lazy` component
+      // still suspends on it (see utils/lazyRoute.js), and under the presence
+      // wrapper below that first render lands right after the outgoing
+      // screen has left — so React committed RouteFallback and held it for
+      // its 300 ms throttle. Measured: a 300 ms blank beat between exit and
+      // entrance on the first visit to Research or Following, chunk cached or
+      // not, and none on the second. Preloaded, the first visit is the second.
+      ScientificReport.preload().catch(() => {})
+      FollowingFeedPage.preload().catch(() => {})
       import('./components/Reader/PaperReader.jsx').catch(() => {})
       import('./components/Search/SearchCommand').catch(() => {})
     }

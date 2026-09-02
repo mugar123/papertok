@@ -203,6 +203,24 @@ una sesión, React sustituye el árbol entero por `RouteFallback` y corta la
 animación de salida en seco; a partir de la segunda ya no. Arreglarlo significa
 mover el límite de Suspense dentro de cada ruta, y eso toca el enrutado entero.
 
+**Auditado después, medido fotograma a fotograma en Chromium (dev server,
+`/` → `/login`, tres escenarios).** El diagnóstico de arriba era inexacto en
+las dos mitades. La salida NO se corta: con `mode="wait"` la pantalla entrante
+no se monta hasta el callback de fin de salida de framer-motion, así que la
+saliente llega a opacidad 0 (224 ms) antes de que exista ningún fallback. Lo que
+sí hay es un **hueco en blanco de ~300 ms** entre salida y entrada en la primera
+visita, con el chunk ya precargado o sin precargar: ese montaje ocurre fuera de
+la `startTransition` del router, el `lazy` suspende en su primer render aunque
+el módulo esté en caché (la promesa resuelve un microtask después), React
+compromete `RouteFallback` y lo retiene su `FALLBACK_THROTTLE_MS = 300`. Mover
+el límite de Suspense dentro de cada ruta no lo arregla: medido, entra una
+página vacía con el spinner dentro y el contenido aparece a los 300 ms sin
+animación. Lo que lo arregla es que el primer render no suspenda:
+`utils/lazyRoute.js` da a cada pantalla un `preload()` que deja el módulo
+resuelto, y la precarga en reposo de `App.jsx` lo usa para Research y Following.
+Medido con precarga: primera visita idéntica a la segunda (salida a 0 en 224 ms,
+entrada arranca en 240 ms). El límite de Suspense se queda donde estaba.
+
 ---
 
 ## Lo que salió después, ya en producción
