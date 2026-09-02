@@ -254,3 +254,28 @@ test('a live thread is cached: its TTL clears the KV floor of 60 s', async () =>
   const cached = await store.get(threadKvKey(DOI_KEY), 'json');
   assert.equal(cached?.stubExists, true, 'the live thread never reached KV');
 });
+
+test('a Firestore failure is an error to fall back from, not an empty thread to cache', async () => {
+  const store = memoryStore();
+  const failing = {
+    batchGet: async () => [{ canonicalKey: DOI, title: 'A result' }],
+    runQuery: async () => { throw new Error('REST 503'); },
+    countQuery: async () => 1,
+  };
+  await assert.rejects(
+    resolveThreadAnchorFromStore([{ identity: DOI, key: DOI_KEY }], { store, admin: failing }),
+    /REST 503/,
+  );
+  assert.equal(store.data.has(threadKvKey(DOI_KEY)), false, 'a failed read was cached as empty');
+
+  const countFailing = {
+    ...failing,
+    runQuery: async () => [],
+    countQuery: async () => { throw new Error('count 503'); },
+  };
+  await assert.rejects(
+    resolveThreadAnchorFromStore([{ identity: DOI, key: DOI_KEY }], { store, admin: countFailing }),
+    /count 503/,
+  );
+  assert.equal(store.data.has(threadKvKey(DOI_KEY)), false, 'a failed count was cached as zero');
+});

@@ -170,6 +170,10 @@ function emptyEntry(identity, key) {
 }
 
 async function loadThreadPage(admin, identity, key) {
+  // No catch here on purpose. A REST failure has to reach the route as an
+  // error: the browser treats anything but a 200 as "read Firestore yourself",
+  // which is the path this cache replaced. Swallowing it served an empty
+  // thread — and cached it — for as long as the TTL lasted.
   const [comments, rawCount] = await Promise.all([
     admin.runQuery({
       parentSegments: ['papers', key],
@@ -177,12 +181,12 @@ async function loadThreadPage(admin, identity, key) {
       orderByField: 'createdAt',
       orderDirection: 'ASCENDING',
       limit: THREAD_PAGE_SIZE,
-    }).catch(() => []),
+    }),
     admin.countQuery({
       parentSegments: ['papers', key],
       collectionId: 'comments',
       limit: THREAD_COUNT_CAP,
-    }).catch(() => 0),
+    }),
   ]);
   const rows = Array.isArray(comments) ? comments : [];
   const serialized = rows.map(serializeComment).filter(Boolean);
