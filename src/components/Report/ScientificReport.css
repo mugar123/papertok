@@ -26,12 +26,8 @@
 }
 
 /* ── Nameplate ── */
-/* One rule, not two: `3px double` draws a pair of hairlines with a gap, and
-   the pair reads as a band laid across the page rather than as the edge of the
-   nameplate. A single ink hairline closes the edition block just as clearly
-   and leaves the masthead the heaviest thing up here. */
 .sr-header {
-  border-bottom: 1px solid var(--border-ink);
+  border-bottom: 3px double var(--border-ink);
   padding-bottom: var(--space-3);
   margin-bottom: var(--space-4);
 }
