@@ -36,3 +36,9 @@ test('the row silhouette has a kicker, a title and a meta line, and respects red
   const reduced = css.slice(css.indexOf('prefers-reduced-motion'));
   assert.match(reduced, /profile-row-skeleton-line/, 'the shimmer must stop under reduced motion');
 });
+
+test('the waiting list is a status region, so its label actually reaches a screen reader', async () => {
+  const jsx = await read('./PublicProfilePage.jsx');
+  const waiting = jsx.slice(jsx.indexOf('const loadingRowList = ('), jsx.indexOf('const loadingRows = ('));
+  assert.match(waiting, /role="status"/, 'aria-label on a bare <div> is not exposed');
+});

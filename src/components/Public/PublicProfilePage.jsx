@@ -1015,13 +1015,13 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   // tile skeleton above belongs to the lists grid; under Saved and Liked it
   // read as four blank slabs where rows were promised.
   const loadingRowList = (
-    <div className="profile-row-list" aria-label={copy.loadingRows} aria-busy="true">
+    <div className="profile-row-list" role="status" aria-label={copy.loadingRows} aria-busy="true">
       {[0, 1, 2, 3].map(index => <RowSkeleton key={index} index={index} />)}
     </div>
   );
 
   const loadingRows = (
-    <div className="profile-skeleton-rows" aria-label={copy.loadingRows} aria-busy="true">
+    <div className="profile-skeleton-rows" role="status" aria-label={copy.loadingRows} aria-busy="true">
       <div className="public-profile-skeleton public-profile-skeleton--row" />
       <div className="public-profile-skeleton public-profile-skeleton--row" />
       <div className="public-profile-skeleton public-profile-skeleton--row" />
