@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
@@ -62,6 +62,10 @@ export default function OnboardingFlow() {
   const [displayName, setDisplayName] = useState('');
   const [profileError, setProfileError] = useState(null);
   const [existingProfile, setExistingProfile] = useState(false);
+  // Set the moment createUserProfile succeeds. A retry after a failed
+  // completeOnboarding must skip the create: the handle is already this
+  // account's, and a second create hits its own reservation as "taken".
+  const profileCreated = useRef(false);
   const { completeOnboarding, onboardingComplete, user } = useAuth();
   const { isEnglish, language } = useLanguage();
   const navigate = useNavigate();
@@ -164,7 +168,7 @@ export default function OnboardingFlow() {
     setSaving(true);
     setProfileError(null);
     try {
-      if (!existingProfile && visibilityDraft === PROFILE_VISIBILITY.public) {
+      if (!existingProfile && !profileCreated.current && visibilityDraft === PROFILE_VISIBILITY.public) {
         if (!handleCheck.valid || !resolvedDisplayName) {
           setSaving(false);
           return;
@@ -177,6 +181,7 @@ export default function OnboardingFlow() {
           photo: '',
           visibility: PROFILE_VISIBILITY.public,
         });
+        profileCreated.current = true;
       }
       await completeOnboarding(Array.from(selectedSubcategories));
       trackEvent('tutorial_complete', { language });
