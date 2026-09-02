@@ -1635,6 +1635,85 @@ test('keeps the PubMed summaries when only the abstract half fails', async () =>
   assert.doesNotMatch(response.headers.get('cache-control'), /stale-while-revalidate/);
 });
 
+// NCBI counts per second. A burst of route misses spends esearch calls all at
+// once and then twice as many esummary+efetch calls all at once -- eight misses
+// are past the 10 req/s the key buys, and 3 of the 8 came back 429 (measured
+// 2026-09-01, reproduced 2026-09-02). The window is a second, so one retry after
+// a short wait lands in the next one. `retry-after: 0` here so the test does not
+// sleep; in production NCBI sends none and the route waits 300-800 ms.
+test('retries a PubMed call NCBI refused for a second instead of losing the batch', async () => {
+  const calls = [];
+  const response = await withWorkerFetchMock(async url => {
+    const endpoint = new URL(String(url)).pathname.split('/').pop();
+    calls.push(endpoint);
+    if (endpoint === 'esearch.fcgi') {
+      return new Response(JSON.stringify({ esearchresult: { count: '1', idlist: ['31000001'] } }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (endpoint === 'esummary.fcgi') {
+      if (calls.filter(name => name === 'esummary.fcgi').length === 1) {
+        return new Response(JSON.stringify({ error: 'API rate limit exceeded' }), {
+          status: 429,
+          headers: { 'content-type': 'application/json', 'retry-after': '0' },
+        });
+      }
+      return new Response(JSON.stringify({ result: { 31000001: { uid: '31000001', title: 'One' } } }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response('<PubmedArticleSet><PubmedArticle/></PubmedArticleSet>', {
+      headers: { 'content-type': 'application/xml' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/pubmed?q=malaria',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), OPEN_ROUTE_ENV));
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.result['31000001'].title, 'One');
+  assert.equal(payload._papertok.efetch, 'ok');
+  assert.equal(calls.filter(name => name === 'esummary.fcgi').length, 2, 'refused once, retried once');
+  assert.equal(calls.filter(name => name === 'esearch.fcgi').length, 1, 'a call that succeeded is not repeated');
+});
+
+test('a second PubMed refusal is relayed as a refusal, not retried again', async () => {
+  let attempts = 0;
+  const response = await withWorkerFetchMock(async () => {
+    attempts += 1;
+    return new Response('{}', {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': '0' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/pubmed?q=malaria',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), OPEN_ROUTE_ENV));
+
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).code, 'UPSTREAM_RATE_LIMITED');
+  assert.equal(attempts, 2, 'esearch: one refusal, one retry, then the refusal is relayed');
+});
+
+test('does not retry a PubMed refusal whose advertised wait the route cannot afford', async () => {
+  let attempts = 0;
+  const response = await withWorkerFetchMock(async () => {
+    attempts += 1;
+    return new Response('{}', {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': '30' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/pubmed?q=malaria',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), OPEN_ROUTE_ENV));
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('retry-after'), '30');
+  assert.equal(attempts, 1, 'thirty seconds do not fit in a six-second route');
+});
+
 test('drops identifiers PubMed did not answer with before putting them in a URL', async () => {
   const upstream = [];
   await withWorkerFetchMock(async url => {
