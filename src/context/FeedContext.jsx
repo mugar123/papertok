@@ -74,6 +74,11 @@ const PAGE_SIZE = 15;
 // which the previous 5 s budget lost anyway after waiting the full 5 s for it.
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
+// How long the main query may wait for the followed-topic category ids. The
+// topic module is prewarmed the moment a topic follow is known (see the
+// following effect), so this is normally 0 ms and the budget only ever covers
+// a cold chunk on a slow connection.
+const FOLLOWED_TOPIC_RANK_BUDGET_MS = 300;
 const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
 const INTERACTIONS_NETWORK_TIMEOUT_MS = 5000;
 // Upper bound on the reading-library records fetched on demand by the library
@@ -924,10 +929,19 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
         
-        // Followed-topic category ids used to sit on the critical path
-        // (`await loadTopicRetrieval()`) before arXiv/PubMed/OpenAlex started.
-        // Those papers still arrive through fetchFollowedEntityCandidates.
-        const rankedPreferences = [...userPreferences].sort((a, b) => {
+        // Followed topics widen the main query. The lookup used to be an
+        // unbounded `await loadTopicRetrieval()` in front of every source;
+        // dropping it altogether left a followed topic worth at most six
+        // papers (audit 2026-09-02, A4). It is budgeted now, and normally
+        // served from the module the following effect already warmed.
+        const followedTopicIds = followedEntities.some(entity => entity?.type === 'topic')
+          ? await resolveWithin(
+            loadTopicRetrieval().then(module => module.getFollowedTopicCategoryIds(followedEntities)),
+            FOLLOWED_TOPIC_RANK_BUDGET_MS,
+            [],
+          )
+          : [];
+        const rankedPreferences = [...new Set([...userPreferences, ...followedTopicIds])].sort((a, b) => {
           const affA = categoryAffinities.current[a] || 0;
           const affB = categoryAffinities.current[b] || 0;
           return affB - affA;
@@ -1542,6 +1556,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   const followingSignatureRef = useRef(null);
 
   useEffect(() => {
+    // Warm the topic table as soon as a topic follow is known, off the feed's
+    // critical path, so loadPapers meets a resident module.
+    if (followedEntities.some(entity => entity?.type === 'topic')) void loadTopicRetrieval();
     if (followingLoading) return;
     const signature = followedEntities
       .map(entity => `${entity.type}:${entity.canonicalId}`)

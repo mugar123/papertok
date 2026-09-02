@@ -144,3 +144,52 @@ test('SOURCE: the semantic sample is the most recent likes, not the lowest ids',
   assert.doesNotMatch(code, /selectSemanticProfilePositiveIds\((?:liked|saved)\b/,
     'the id-sorted Sets must not be handed to the cap');
 });
+
+/**
+ * ade641a dropped the followed-topic category ids from the main query to get
+ * `await loadTopicRetrieval()` off the critical path. Those topics then only
+ * reached the feed through fetchFollowedEntityCandidates: four follows at
+ * random, three papers each, six in total (audit 2026-09-02, A4). They rank
+ * the query again — but budgeted, and against a prewarmed module.
+ */
+test('SOURCE: followed topics rank the main query again, inside a budget', async () => {
+  const code = stripComments(await read('./FeedContext.jsx'));
+  assert.match(code, /const FOLLOWED_TOPIC_RANK_BUDGET_MS = 300;/);
+  const ranked = bounded(
+    code,
+    'const followedTopicIds = ',
+    'const rankedPreferences = ',
+    'the followed-topic lookup',
+    14,
+  );
+  // One contiguous regex: the await must be wrapped in resolveWithin with the
+  // named budget and an empty fallback. Checking `resolveWithin` and the
+  // constant separately would pass on an unbounded await sitting next to an
+  // unused budget constant.
+  assert.match(
+    ranked,
+    /await resolveWithin\(\s*loadTopicRetrieval\(\)\.then\(module => module\.getFollowedTopicCategoryIds\(followedEntities\)\),\s*FOLLOWED_TOPIC_RANK_BUDGET_MS,\s*\[\],\s*\)/,
+    'the lookup is budgeted and falls back to "no topic ids", never to a throw',
+  );
+  assert.match(
+    code,
+    /const rankedPreferences = \[\.\.\.new Set\(\[\.\.\.userPreferences, \.\.\.followedTopicIds\]\)\]/,
+    'and the ids actually widen the ranked preferences',
+  );
+});
+
+test('SOURCE: the topic table is prewarmed when a topic follow is known', async () => {
+  const code = stripComments(await read('./FeedContext.jsx'));
+  const effect = bounded(
+    code,
+    'const followingSignatureRef = useRef(null);',
+    'const signature = followedEntities',
+    'the following effect',
+    12,
+  );
+  assert.match(
+    effect,
+    /if \(followedEntities\.some\(entity => entity\?\.type === 'topic'\)\) void loadTopicRetrieval\(\);/,
+    'the 32 KB topic table loads off the critical path, so loadPapers meets it resident',
+  );
+});
