@@ -44,6 +44,7 @@ import SettingsSubheader from '../Settings/SettingsSubheader.jsx';
 import { SETTINGS_BREADCRUMB } from '../Settings/settingsBreadcrumb.js';
 import { getIcon } from '../../utils/icons.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
+import { clearStoredProfile } from '../../utils/userScopedStorage.js';
 import { HANDLE_ERRORS, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
 import { loadProfileFonts } from '../../utils/loadDisplayFonts.js';
 import './ProfilePage.css';
@@ -746,6 +747,7 @@ export default function ProfilePage() {
       const unpublishedHandle = profile?.handle;
       await deleteOwnUserProfile();
       forgetOwnProfile(user.uid, unpublishedHandle);
+      clearStoredProfile(user.uid);
       setProfile(null);
       setStatus('new');
       setShowPhoto(true);

@@ -238,6 +238,18 @@ export function saveStoredProfile(userId, profile, storage) {
   }
 }
 
+export function clearStoredProfile(userId, storage) {
+  const key = getOwnProfileStorageKey(userId);
+  const target = getStorage(storage);
+  if (!key || !target) return;
+
+  try {
+    target.removeItem(key);
+  } catch {
+    // A copy that cannot be removed is corrected by the next read, as before.
+  }
+}
+
 export function getOnboardingStorageKey(userId) {
   if (!userId) return null;
   return `${ONBOARDING_KEY_PREFIX}${encodeURIComponent(userId)}`;

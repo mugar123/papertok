@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  clearStoredProfile,
   clearUserScopedStorage,
   getFollowStatsStorageKey,
   getOnboardingStorageKey,
@@ -269,6 +270,16 @@ test('the owner public profile is remembered without its photo', () => {
   clearUserScopedStorage('uid-p1', storage);
   assert.equal(readStoredProfile('uid-p1', storage), null);
   assert.ok(getOwnProfileStorageKey('uid-p1').includes('ownProfile'));
+});
+
+test('clearing the remembered profile leaves the rest of the device state alone', () => {
+  const storage = listStore();
+  saveStoredProfile('uid-p2', { uid: 'uid-p2', handle: 'bob', displayName: 'Bob' }, storage);
+  saveStoredLists('uid-p2', [{ id: 'l1', name: 'Notes', paperIds: ['p1'] }], storage);
+  clearStoredProfile('uid-p2', storage);
+  assert.equal(readStoredProfile('uid-p2', storage), null);
+  assert.equal(readStoredLists('uid-p2', storage)?.[0]?.id, 'l1');
+  clearStoredProfile('uid-p2', null);
 });
 
 test('onboarding completion survives a reload, per account', () => {

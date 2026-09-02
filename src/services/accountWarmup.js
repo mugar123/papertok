@@ -22,6 +22,7 @@ import {
   reviseOwnLists,
 } from '../utils/profileSessionCaches.js';
 import {
+  clearStoredProfile,
   readStoredLists,
   readStoredProfile,
   saveStoredLists,
@@ -52,25 +53,40 @@ export function hydrateAccountCaches(uid, { storage } = {}) {
   }
 }
 
-export async function warmAccountCaches(uid) {
+async function defaultReadLists(uid) {
+  return getDocs(query(
+    collection(db, 'users', uid, 'lists'),
+    limit(OWN_LISTS_PAGE_SIZE),
+  ));
+}
+
+export async function warmAccountCaches(uid, {
+  storage,
+  readProfile = readOwnUserProfile,
+  readLists = defaultReadLists,
+} = {}) {
   if (!uid || IS_DEMO || warmed.has(uid)) return;
   warmed.add(uid);
-  hydrateAccountCaches(uid);
-  const [profile, listsSnapshot] = await Promise.all([
-    readOwnUserProfile().catch(() => null),
-    getDocs(query(
-      collection(db, 'users', uid, 'lists'),
-      limit(OWN_LISTS_PAGE_SIZE),
-    )).catch(() => null),
+  hydrateAccountCaches(uid, { storage });
+  const [profileRead, listsSnapshot] = await Promise.all([
+    // A failed read and "no profile" are different answers, and only the
+    // second one may erase what this device remembers: an unpublished
+    // profile that came back from storage on every reload was the first
+    // one wearing the second one's clothes.
+    readProfile().then(profile => ({ profile }), () => null),
+    readLists(uid).catch(() => null),
   ]);
-  if (profile) {
-    rememberOwnProfile(uid, profile);
-    saveStoredProfile(uid, profile);
+  if (profileRead?.profile) {
+    rememberOwnProfile(uid, profileRead.profile);
+    saveStoredProfile(uid, profileRead.profile, storage);
+  } else if (profileRead) {
+    rememberOwnProfile(uid, null);
+    clearStoredProfile(uid, storage);
   }
   if (listsSnapshot && queryIsAuthoritative(listsSnapshot)) {
     const lists = [];
     listsSnapshot.forEach(item => lists.push({ id: item.id, ...item.data() }));
     rememberOwnLists(uid, lists);
-    saveStoredLists(uid, lists);
+    saveStoredLists(uid, lists, storage);
   }
 }
