@@ -39,7 +39,7 @@
   /* The scrim used to finish 60ms before the window it is behind, so the
      backdrop settled while the card was still arriving. Same length, same
      curve, one movement. */
-  animation: fadeIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: fadeIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .save-modal {
@@ -59,7 +59,7 @@
      hard cut. 16px of travel and 4% of scale, on the same spring the
      comments sheet uses on desktop, is what makes the window drop into
      place. */
-  animation: saveModalIn 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: saveModalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes saveModalIn {
@@ -72,9 +72,11 @@
    departure spends its first frames barely moving and then drops the window in
    the last few. Short is not the same as quick, and this was short enough to
    read as the window being deleted rather than dismissed. It now travels the
-   same distance it arrived from, in 240ms, on the ease-in the page transition
-   and the filter panel already leave by: it holds while it goes, and goes at
-   the end. `DIALOG_EXIT_MS` in the component matches this to the millisecond,
+   same distance it arrived from, on the ease-in the page transition and the
+   filter panel already leave by: it holds while it goes, and goes at the end.
+   240ms was then trimmed to 200: a dismissal is read in its first frames, and
+   the last 40ms were the reader waiting on a window already gone in their
+   head. `DIALOG_EXIT_MS` in the component matches this to the millisecond,
    and `saveModalMotion.test.js` fails if they ever drift. */
 @keyframes saveModalOut {
   from { opacity: 1; transform: none; }
@@ -84,11 +86,11 @@
 /* `forwards` matters: the window stays mounted for the length of this, and
    without it the card would snap back to full opacity for the last frame. */
 .save-modal.is-closing {
-  animation: saveModalOut 0.24s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: saveModalOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 .save-modal-dialog.is-closing::backdrop {
-  animation: fadeOut 0.24s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: fadeOut 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 .save-modal-dialog.is-closing {

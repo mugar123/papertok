@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
@@ -20,7 +20,7 @@ import AnalyticsConsentBanner from './components/Privacy/AnalyticsConsentBanner'
 import GuestFeedPage from './components/Public/GuestFeedPage'
 import AuthPrompt from './components/Public/AuthPrompt'
 import { getPublicPaperPath } from './utils/publicNavigation'
-import { lazyRoute } from './utils/lazyRoute'
+import { lazyWithPreload } from './utils/lazyPreload'
 import './App.css'
 
 // Only what the first paint of the feed needs loads eagerly. Everything below
@@ -35,30 +35,30 @@ import './App.css'
 // leaving by then (measured: opacity 0 before the fallback ever commits), so
 // nothing is cut; what a cold chunk costs is a gap between exit and entrance,
 // kept invisible under 320 ms by the fallback's own delay. The screens are
-// `lazyRoute`s so the ones prefetched below never suspend at all.
+// preloadable (`lazyWithPreload`) so the ones prefetched below never suspend at all.
 
 // The sign-in page rides in that same list rather than in the boot graph, as it
 // used to: a session that already exists never renders it, and a guest reaches
 // it by a redirect or a direct link — both can afford one chunk.
-const LoginPage = lazyRoute(() => import('./components/Auth/LoginPage'))
-const OnboardingFlow = lazyRoute(() => import('./components/Onboarding/OnboardingFlow'))
-const ListsPage = lazyRoute(() => import('./components/Lists/ListsPage'))
-const PDFViewer = lazy(() => import('./components/PDF/PDFViewer'))
-const SaveToListModal = lazy(() => import('./components/Lists/SaveToListModal'))
-const CommentsSheet = lazy(() => import('./components/Comments/CommentsSheet'))
-const SearchPage = lazyRoute(() => import('./components/Search/SearchPage'))
-const EntityExplorer = lazyRoute(() => import('./components/Explorer/EntityExplorer'))
-const ScientificReport = lazyRoute(() => import('./components/Report/ScientificReport'))
-const FollowingFeedPage = lazyRoute(() => import('./components/Following/FollowingFeedPage'))
-const SettingsPage = lazyRoute(() => import('./components/Settings/SettingsPage'))
-const FollowingSettingsPage = lazyRoute(() => import('./components/Settings/FollowingSettingsPage'))
-const MyCommentsPage = lazyRoute(() => import('./components/Settings/MyCommentsPage'))
-const ModerationPage = lazyRoute(() => import('./components/Admin/ModerationPage'))
-const PublicPaperPage = lazyRoute(() => import('./components/Public/PublicPaperPage'))
-const PublicListPage = lazyRoute(() => import('./components/Lists/PublicListPage'))
-const PublicProfilePage = lazyRoute(() => import('./components/Public/PublicProfilePage'))
-const ProfilePage = lazyRoute(() => import('./components/Profile/ProfilePage'))
-const SearchCommand = lazy(() => import('./components/Search/SearchCommand'))
+const LoginPage = lazyWithPreload(() => import('./components/Auth/LoginPage'))
+const OnboardingFlow = lazyWithPreload(() => import('./components/Onboarding/OnboardingFlow'))
+const ListsPage = lazyWithPreload(() => import('./components/Lists/ListsPage'))
+const PDFViewer = lazyWithPreload(() => import('./components/PDF/PDFViewer'))
+const SaveToListModal = lazyWithPreload(() => import('./components/Lists/SaveToListModal'))
+const CommentsSheet = lazyWithPreload(() => import('./components/Comments/CommentsSheet'))
+const SearchPage = lazyWithPreload(() => import('./components/Search/SearchPage'))
+const EntityExplorer = lazyWithPreload(() => import('./components/Explorer/EntityExplorer'))
+const ScientificReport = lazyWithPreload(() => import('./components/Report/ScientificReport'))
+const FollowingFeedPage = lazyWithPreload(() => import('./components/Following/FollowingFeedPage'))
+const SettingsPage = lazyWithPreload(() => import('./components/Settings/SettingsPage'))
+const FollowingSettingsPage = lazyWithPreload(() => import('./components/Settings/FollowingSettingsPage'))
+const MyCommentsPage = lazyWithPreload(() => import('./components/Settings/MyCommentsPage'))
+const ModerationPage = lazyWithPreload(() => import('./components/Admin/ModerationPage'))
+const PublicPaperPage = lazyWithPreload(() => import('./components/Public/PublicPaperPage'))
+const PublicListPage = lazyWithPreload(() => import('./components/Lists/PublicListPage'))
+const PublicProfilePage = lazyWithPreload(() => import('./components/Public/PublicProfilePage'))
+const ProfilePage = lazyWithPreload(() => import('./components/Profile/ProfilePage'))
+const SearchCommand = lazyWithPreload(() => import('./components/Search/SearchCommand'))
 
 function AppContent() {
   const [pdfPaper, setPdfPaper] = useState(null)
@@ -125,21 +125,23 @@ function AppContent() {
       const conn = navigator.connection
       const frugal = conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))
       if (frugal) return
-      import('./components/Comments/CommentsSheet').catch(() => {})
-      import('./components/PDF/PDFViewer').catch(() => {})
-      import('./components/Lists/SaveToListModal').catch(() => {})
-      // The screens go through `preload()`, not a bare `import()`: the import
-      // warms the module cache, but the first render of a `lazy` component
-      // still suspends on it (see utils/lazyRoute.js), and under the presence
-      // wrapper below that first render lands right after the outgoing
-      // screen has left — so React committed RouteFallback and held it for
-      // its 300 ms throttle. Measured: a 300 ms blank beat between exit and
-      // entrance on the first visit to Research or Following, chunk cached or
-      // not, and none on the second. Preloaded, the first visit is the second.
+      // Everything goes through `preload()`, not a bare `import()`: the
+      // import warms the module cache, but the first render of a `lazy`
+      // component still suspends on it (see utils/lazyPreload.js), and React
+      // then commits the Suspense fallback and holds it for its 300 ms
+      // throttle. Measured on the screens: a 300 ms blank beat between exit
+      // and entrance on the first visit to Research or Following, chunk
+      // cached or not. Measured on the overlays: the comments sheet appeared
+      // ~420 ms after the tap that opened it the first time in a session,
+      // chunk cached or not, and at once every time after. Preloaded, the
+      // first time is every other time.
+      CommentsSheet.preload().catch(() => {})
+      PDFViewer.preload().catch(() => {})
+      SaveToListModal.preload().catch(() => {})
       ScientificReport.preload().catch(() => {})
       FollowingFeedPage.preload().catch(() => {})
       import('./components/Reader/PaperReader.jsx').catch(() => {})
-      import('./components/Search/SearchCommand').catch(() => {})
+      SearchCommand.preload().catch(() => {})
     }
     const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
     const timer = setTimeout(() => schedule(prefetch), 2500)

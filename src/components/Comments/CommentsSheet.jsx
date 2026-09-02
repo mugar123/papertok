@@ -727,49 +727,57 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     animate: {
       y: 0,
       // Near-critically damped (damping ~ 2*sqrt(stiffness*mass)): the sheet
-      // glides in and lands without a bounce. The old 420-stiffness spring
-      // covered the distance so fast it read as a snap.
-      transition: { type: 'spring', stiffness: 260, damping: 31, mass: 0.95 },
+      // glides in and lands without a bounce. Measured, the 260/31/0.95
+      // spring was still 32px short of home 280 ms in and needed 530 ms to
+      // settle — a sheet that kept arriving after the reader had started
+      // reading it. This one covers the distance in ~220 ms and is at rest by
+      // ~330, on the same damping ratio, so it still lands rather than snaps.
+      transition: { type: 'spring', stiffness: 420, damping: 38, mass: 0.85 },
     },
     exit: {
       y: '100%',
-      transition: { duration: 0.3, ease: [0.4, 0, 1, 1] },
+      transition: { duration: 0.22, ease: [0.4, 0, 1, 1] },
     },
   } : {
-    initial: { opacity: 0, scale: 0.94, y: 18 },
+    initial: { opacity: 0, scale: 0.96, y: 14 },
     animate: {
       opacity: 1,
       scale: 1,
       y: 0,
       transition: {
         type: 'spring',
-        stiffness: 280,
-        damping: 30,
-        mass: 0.9,
+        stiffness: 380,
+        damping: 34,
+        mass: 0.8,
         // Opacity on a spring flickers at the settle; give it its own tween,
-        // long enough to keep pace with the slower spring.
-        opacity: { duration: 0.3, ease: [0.16, 1, 0.3, 1] },
+        // long enough to keep pace with the spring.
+        opacity: { duration: 0.2, ease: [0.16, 1, 0.3, 1] },
       },
     },
+    // Leaving is a dismissal, not an arrival in reverse: less travel, less
+    // scale, and gone in 180 ms. Measured before: 280 ms of fade during which
+    // the window sat almost still (2px of travel at the halfway mark) — long
+    // enough to read as the app thinking about it.
     exit: {
       opacity: 0,
-      scale: 0.98,
-      y: 10,
-      transition: { duration: 0.28, ease: [0.4, 0, 1, 1] },
+      scale: 0.985,
+      y: 6,
+      transition: { duration: 0.18, ease: [0.4, 0, 1, 1] },
     },
   };
 
-  // Slightly slower out than the sheet, so the dimmed backdrop is the last
-  // thing to go and the sheet never flashes against the bare page.
+  // The backdrop keeps pace with the sheet on the way in and is the last
+  // thing to go on the way out — just behind the sheet, never long after it,
+  // so the page is not dimmed for a beat with nothing on it.
   const backdropMotion = {
     initial: { opacity: 0 },
     animate: {
       opacity: 1,
-      transition: { duration: prefersReducedMotion ? 0.12 : 0.3, ease: 'easeOut' },
+      transition: { duration: prefersReducedMotion ? 0.12 : 0.2, ease: 'easeOut' },
     },
     exit: {
       opacity: 0,
-      transition: { duration: prefersReducedMotion ? 0.12 : 0.36, ease: 'easeIn' },
+      transition: { duration: prefersReducedMotion ? 0.12 : (slidesFromBottom ? 0.26 : 0.22), ease: 'easeIn' },
     },
   };
 

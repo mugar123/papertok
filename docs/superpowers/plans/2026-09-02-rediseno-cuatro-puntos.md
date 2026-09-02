@@ -216,7 +216,7 @@ compromete `RouteFallback` y lo retiene su `FALLBACK_THROTTLE_MS = 300`. Mover
 el límite de Suspense dentro de cada ruta no lo arregla: medido, entra una
 página vacía con el spinner dentro y el contenido aparece a los 300 ms sin
 animación. Lo que lo arregla es que el primer render no suspenda:
-`utils/lazyRoute.js` da a cada pantalla un `preload()` que deja el módulo
+`utils/lazyPreload.js` da a cada pantalla un `preload()` que deja el módulo
 resuelto, y la precarga en reposo de `App.jsx` lo usa para Research y Following.
 Medido con precarga: primera visita idéntica a la segunda (salida a 0 en 224 ms,
 entrada arranca en 240 ms). El límite de Suspense se queda donde estaba.

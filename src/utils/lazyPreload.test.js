@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createElement, Suspense } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { lazyRoute } from './lazyRoute.js';
+import { lazyWithPreload } from './lazyPreload.js';
 
 /**
  * Under `AnimatePresence mode="wait"` the incoming screen first renders the
@@ -22,14 +22,14 @@ function paint(Route, props) {
 
 test('a preloaded route renders its screen on the first paint, with no fallback', async () => {
   let loads = 0;
-  const Route = lazyRoute(async () => { loads += 1; return { default: Screen }; });
+  const Route = lazyWithPreload(async () => { loads += 1; return { default: Screen }; });
   await Route.preload();
   assert.equal(paint(Route, { label: 'research' }), '<p>research</p>');
   assert.equal(loads, 1);
 });
 
 test('a cold route still goes through the fallback, exactly as React.lazy does', async () => {
-  const Route = lazyRoute(async () => ({ default: Screen }));
+  const Route = lazyWithPreload(async () => ({ default: Screen }));
   assert.equal(paint(Route), '<i>fallback</i>');
   await Route.preload();
   assert.equal(paint(Route), '<p>screen</p>', 'and lands once the module is in');
@@ -37,7 +37,7 @@ test('a cold route still goes through the fallback, exactly as React.lazy does',
 
 test('preload shares one load between the prefetch and the render, and forgets a failure', async () => {
   let attempts = 0;
-  const Route = lazyRoute(async () => {
+  const Route = lazyWithPreload(async () => {
     attempts += 1;
     if (attempts === 1) throw new Error('chunk unreachable');
     return { default: Screen };
