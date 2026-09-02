@@ -83,6 +83,9 @@ export function useGuestFeed() {
         (papers) => PaperBuilder.deduplicate(papers).length >= GUEST_EARLY_PAINT_COUNT,
       );
 
+      // Europe PMC has no in-flight map, and the early and late batches
+      // overlap: each pmid is asked for once per load.
+      const askedPmids = new Set();
       const enrichVisible = (batch) => {
         const ids = batch.map(getOpenAlexEnrichmentId).filter(Boolean);
         if (ids.length > 0) {
@@ -94,8 +97,9 @@ export function useGuestFeed() {
         // The guest feed shows PubMed cards too, and they carry the same debt
         // ade641a left behind: no open access, no PMC PDF, no citations until
         // Europe PMC answers. Asked for after the batch is on screen.
-        const pmids = [...new Set(batch.map(paper => paper?.pmid).filter(Boolean))];
+        const pmids = [...new Set(batch.map(paper => paper?.pmid).filter(pmid => pmid && !askedPmids.has(pmid)))];
         if (pmids.length > 0) {
+          pmids.forEach(pmid => askedPmids.add(pmid));
           enrichPubmedIds(pmids).catch(() => new Map()).then((lateRecords) => {
             if (requestId !== requestIdRef.current || !lateRecords || lateRecords.size === 0) return;
             setPapers((current) => mergeEuropePmcEnrichment(current, lateRecords));

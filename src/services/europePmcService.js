@@ -106,6 +106,8 @@ export async function enrichPubmedIds(rawPmids) {
   return results;
 }
 
+const CLOSED_RECORD_ACCESS_FIELDS = ['openAccess', 'accessSource', 'landingPageUrl'];
+
 const normalizePmid = value => String(value || '').trim().replace(/^pmid:/i, '');
 
 function unionStrings(base, extra) {
@@ -133,17 +135,24 @@ export function mergeEuropePmcEnrichment(papers, recordsByPmid) {
     const record = pmid ? lookup.get(pmid) : null;
     if (!record) return paper;
 
-    const merged = PaperBuilder.merge(paper, record, 'europepmc');
+    // Access only ever goes UP, as the adapter code ade641a removed did:
+    // PubMed marks a card open the moment a PMC id exists, and an embargoed
+    // author manuscript answers isOpenAccess 'N' — handing that to
+    // PaperBuilder.merge would flip the card closed a second after it
+    // painted. When the record IS open, its landing page replaces PubMed's.
+    let patch = record;
+    if (!record.openAccess) {
+      patch = { ...record };
+      for (const field of CLOSED_RECORD_ACCESS_FIELDS) delete patch[field];
+    }
+    const merged = PaperBuilder.merge(paper, patch, 'europepmc');
+    if (record.openAccess && record.landingPageUrl) merged.landingPageUrl = record.landingPageUrl;
     if (record.biomedicalTerms?.length > 0) {
+      // PaperBuilder.merge unions the terms; the categories and keywords the
+      // classifier reads are unioned here, the way the old adapter did.
       merged.biomedicalTerms = record.biomedicalTerms;
       merged.categories = unionStrings(merged.categories, record.biomedicalTerms);
       merged.keywords = unionStrings(merged.keywords, record.biomedicalTerms);
-    }
-    // hasReferences / hasData / hasSupplement are already ORed in by
-    // PaperBuilder.merge. Only the two fields it does not know about are
-    // handled here: the biomedical terms above, and the landing page below.
-    if (record.openAccess && !merged.landingPageUrl && record.landingPageUrl) {
-      merged.landingPageUrl = record.landingPageUrl;
     }
     return paperFieldsEqual(merged, paper) ? paper : merged;
   });

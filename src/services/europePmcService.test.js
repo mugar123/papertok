@@ -111,3 +111,24 @@ test('an empty answer is not a reason to rebuild the page', () => {
   const papers = [pubmedPaper('555')];
   assert.ok(Object.is(mergeEuropePmcEnrichment(papers, new Map()), papers));
 });
+
+test('never downgrades a card PubMed already marked open (embargoed PMC record)', () => {
+  // PubmedAdapter sets openAccess: true whenever a PMC id exists, with no pdfUrl.
+  // Europe PMC answers isOpenAccess 'N' for an embargoed author manuscript.
+  const paper = pubmedPaper('666', { pmcid: 'PMC6', openAccess: true, accessSource: 'pmc' });
+  const [merged] = mergeEuropePmcEnrichment([paper], new Map([['666', {
+    pmid: '666', openAccess: false, accessSource: undefined, citationCount: 4,
+  }]]));
+  assert.equal(merged.openAccess, true, 'the old adapter only ever upgraded access');
+  assert.equal(merged.accessSource, 'pmc');
+  assert.equal(merged.citationCount, 4, 'the rest of the record still lands');
+});
+
+test('an open record points the landing page at Europe PMC, as the adapter used to', () => {
+  const paper = pubmedPaper('777', { landingPageUrl: 'https://pubmed.ncbi.nlm.nih.gov/777/' });
+  const [merged] = mergeEuropePmcEnrichment([paper], new Map([['777', {
+    pmid: '777', openAccess: true, landingPageUrl: 'https://europepmc.org/article/MED/777', accessSource: 'europepmc',
+  }]]));
+  assert.equal(merged.landingPageUrl, 'https://europepmc.org/article/MED/777');
+  assert.equal(merged.openAccess, true);
+});

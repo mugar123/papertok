@@ -41,10 +41,17 @@ test('SOURCE: the feed keeps what the slower sources return after the first pain
   // the papers that actually painted and stored under a session guard. Three
   // loose substrings would pass on code that stored the unfiltered pool, or
   // stored it for a session the reader has already left.
+  // The guard names BOTH the session and the pool generation: a preference
+  // change, a follow change or a refresh reset the feed without bumping the
+  // session, and a query still in flight from before must not refill the
+  // pool with candidates for the old preferences. And the answer APPENDS,
+  // filtered against what painted and what is already pooled: the auto-fetch
+  // path starts page N+1 before N's late answer lands, and an assignment
+  // would let N+1's answer overwrite N's.
   assert.match(
     block,
-    /all\.then\(\(settled\) => \{\s*if \(feedSessionId\.current !== activeSessionId\) return;\s*lateSourceCandidatesRef\.current = lateSourceCandidates\(painted, settled\);/,
-    'the late papers are filtered against what painted, guarded by session, and stored',
+    /all\.then\(\(settled\) => \{\s*if \(feedSessionId\.current !== activeSessionId \|\| latePoolGenerationRef\.current !== poolGeneration\) return;\s*const pooled = lateSourceCandidatesRef\.current;\s*lateSourceCandidatesRef\.current = \[\.\.\.pooled, \.\.\.lateSourceCandidates\(\[\.\.\.painted, \.\.\.pooled\], settled\)\];/,
+    'the late papers are filtered against what painted and what is pooled, guarded by session and generation, and appended',
   );
   assert.match(block, /const painted = mainPapers;/, 'what painted is captured before the late merge');
 });
@@ -70,8 +77,10 @@ test('SOURCE: the next page pools the late candidates and then forgets them', as
     'the reset block',
     12,
   );
-  assert.match(reset, /lateSourceCandidatesRef\.current = \[\];/,
-    'a reset (new session, preference change) starts with an empty pool');
+  assert.match(reset, /lateSourceCandidatesRef\.current = \[\];\s*latePoolGenerationRef\.current \+= 1;/,
+    'a reset (new session, preference change) starts with an empty pool and a new generation');
+  assert.match(code, /const poolGeneration = latePoolGenerationRef\.current;/,
+    'and the generation is captured after the reset, so this load\'s own answers still count');
 });
 
 /**
@@ -109,12 +118,14 @@ test('SOURCE: PubMed cards get Europe PMC after paint, never before setPapers', 
 test('SOURCE: the guest feed enriches its PubMed cards too', async () => {
   const code = stripComments(await read('../hooks/useGuestFeed.js'));
   const enrich = bounded(code, 'const enrichVisible = (batch) => {', '};', 'enrichVisible', 22);
+  // Each pmid is asked for once per load: `enrichVisible` runs for the early
+  // batch and again for the late one, which overlap, and the service has no
+  // in-flight map. The answer is dropped when a newer load has started.
   assert.match(
     enrich,
-    /const pmids = \[\.\.\.new Set\(batch\.map\(paper => paper\?\.pmid\)\.filter\(Boolean\)\)\];\s*if \(pmids\.length > 0\) \{\s*enrichPubmedIds\(pmids\)/,
-    'the pmids of the batch on screen are asked for',
+    /const pmids = \[\.\.\.new Set\(batch\.map\(paper => paper\?\.pmid\)\.filter\(pmid => pmid && !askedPmids\.has\(pmid\)\)\)\];\s*if \(pmids\.length > 0\) \{\s*pmids\.forEach\(pmid => askedPmids\.add\(pmid\)\);\s*enrichPubmedIds\(pmids\)\.catch\(\(\) => new Map\(\)\)\.then\(\(lateRecords\) => \{\s*if \(requestId !== requestIdRef\.current \|\| !lateRecords \|\| lateRecords\.size === 0\) return;\s*setPapers\(\(current\) => mergeEuropePmcEnrichment\(current, lateRecords\)\);/,
+    'the pmids of the batch on screen are asked for once, and the answer is guarded by request',
   );
-  assert.match(enrich, /setPapers\(\(current\) => mergeEuropePmcEnrichment\(current, lateRecords\)\);/);
   // The OpenAlex half must not early-return past the pmid half.
   assert.doesNotMatch(enrich, /if \(ids\.length === 0\) return;/,
     'an early return on the OpenAlex ids would skip Europe PMC entirely');

@@ -257,6 +257,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   // Papers the slower sources returned after the page painted (see
   // utils/feedLateCandidates.js). Offered to the next page's pool, once.
   const lateSourceCandidatesRef = useRef([]);
+  // Bumped on every reset. The session id only changes with the account, but
+  // a preference or follow change resets the feed too, and a query still in
+  // flight from before must not refill the pool for the old preferences.
+  const latePoolGenerationRef = useRef(0);
   const openAlexEnrichmentRequests = useRef(new Map());
   const activeUserId = useRef(user?.uid || null);
   const sessionSeenPapers = useRef(readSeenPaperIds(user?.uid));
@@ -914,7 +918,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       openAlexEnrichmentAttempts.current.clear();
       openAlexEnrichmentRequests.current.clear();
       lateSourceCandidatesRef.current = [];
+      latePoolGenerationRef.current += 1;
     }
+    const poolGeneration = latePoolGenerationRef.current;
 
     setLoading(true);
     setError(null);
@@ -1040,12 +1046,15 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
           } else {
             // The sources still running answer into the next page's pool.
-            // Guarded by session, not request: a later page of the same
-            // session is exactly who should receive them.
+            // Guarded by session and pool generation, not request: a later
+            // page of the same feed is exactly who should receive them, a
+            // reset feed is not. Appended, not assigned: the auto-fetch path
+            // starts page N+1 before N's late answer lands.
             const painted = mainPapers;
             all.then((settled) => {
-              if (feedSessionId.current !== activeSessionId) return;
-              lateSourceCandidatesRef.current = lateSourceCandidates(painted, settled);
+              if (feedSessionId.current !== activeSessionId || latePoolGenerationRef.current !== poolGeneration) return;
+              const pooled = lateSourceCandidatesRef.current;
+              lateSourceCandidatesRef.current = [...pooled, ...lateSourceCandidates([...painted, ...pooled], settled)];
             });
           }
           mainSourceResults = sourceResults;
