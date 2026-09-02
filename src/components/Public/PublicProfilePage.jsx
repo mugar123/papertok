@@ -27,7 +27,7 @@ import {
   isFollowing as readIsFollowing,
   unfollowUser,
 } from '../../services/followUserService.js';
-import { fetchLibraryRecords } from '../../services/interactionProfileStore.js';
+import { fetchLikedPaperRecords } from '../../services/likedPaperRecords.js';
 import { IS_DEMO } from '../../services/firebase.js';
 import { getPublicListPath, getPublicPaperPath } from '../../utils/publicNavigation.js';
 import { resolveProfileView } from '../../utils/profileAccess.js';
@@ -118,7 +118,23 @@ const rowMotion = (prefersReducedMotion, index) => ({
   },
 });
 
-function PaperRow({ row, isEnglish, libraryReady }) {
+// The finished row's silhouette — rule, kicker, title, meta — so the title
+// landing changes ink, not layout. Title widths vary by position, so a column
+// of them reads as rows of text rather than as one tile repeated.
+const ROW_SKELETON_TITLE_WIDTHS = ['82%', '61%', '90%', '56%', '73%'];
+
+function RowSkeleton({ index = 0 }) {
+  const width = ROW_SKELETON_TITLE_WIDTHS[index % ROW_SKELETON_TITLE_WIDTHS.length];
+  return (
+    <div className="profile-row profile-row--unresolved profile-row--waiting" aria-hidden="true">
+      <span className="profile-row-skeleton-line profile-row-skeleton-line--kicker" />
+      <span className="profile-row-skeleton-line profile-row-skeleton-line--title" style={{ width }} />
+      <span className="profile-row-skeleton-line profile-row-skeleton-line--meta" />
+    </div>
+  );
+}
+
+function PaperRow({ row, index = 0, isEnglish, libraryReady }) {
   /**
    * A row with no title is a row we have not heard about, and it must not say
    * otherwise — and it must never print the document id. Those ids (`openalex:W…`,
@@ -131,15 +147,12 @@ function PaperRow({ row, isEnglish, libraryReady }) {
    */
   if (row.unresolved) {
     const waiting = !libraryReady || !row.missingTitle;
+    if (waiting) return <RowSkeleton index={index} />;
     return (
-      <div className={`profile-row profile-row--unresolved${waiting ? ' profile-row--waiting' : ''}`}>
-        {waiting
-          ? <span className="public-profile-skeleton public-profile-skeleton--row" aria-hidden="true" />
-          : (
-            <span className="profile-row-title profile-row-title--placeholder">
-              {isEnglish ? 'The title could not be loaded' : 'No se pudo cargar el título'}
-            </span>
-          )}
+      <div className="profile-row profile-row--unresolved">
+        <span className="profile-row-title profile-row-title--placeholder">
+          {isEnglish ? 'The title could not be loaded' : 'No se pudo cargar el título'}
+        </span>
       </div>
     );
   }
@@ -566,7 +579,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     requestMissingRecords({
       ids: wanted,
       requests: likedRequests.current,
-      fetchRecords: ids => fetchLibraryRecords(user.uid, ids),
+      fetchRecords: ids => fetchLikedPaperRecords(user.uid, ids),
     }).then(({ records, retryable, attempt, error }) => {
       // The merge is deliberately not cancelled: `likedExtra` is a cache keyed
       // by id, so a response arriving after a tab switch is idempotent and
@@ -986,12 +999,24 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   );
 
   const paperRows = rows => (
-    <div className="profile-row-list">
+    <div
+      className="profile-row-list"
+      aria-busy={rows.some(row => row.unresolved && (!libraryReady || !row.missingTitle)) || undefined}
+    >
       {rows.map((row, index) => (
         <motion.div key={row.id} {...rowMotion(prefersReducedMotion, index)}>
-          <PaperRow row={row} isEnglish={isEnglish} libraryReady={libraryReady} />
+          <PaperRow row={row} index={index} isEnglish={isEnglish} libraryReady={libraryReady} />
         </motion.div>
       ))}
+    </div>
+  );
+
+  // Rows that have not been heard about yet, in the panel's own shape. The
+  // tile skeleton above belongs to the lists grid; under Saved and Liked it
+  // read as four blank slabs where rows were promised.
+  const loadingRowList = (
+    <div className="profile-row-list" aria-label={copy.loadingRows} aria-busy="true">
+      {[0, 1, 2, 3].map(index => <RowSkeleton key={index} index={index} />)}
     </div>
   );
 
@@ -1278,7 +1303,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   </>
                 )}
 
-                {activeTab === 'saved' && (!libraryReady ? loadingRows
+                {activeTab === 'saved' && (!libraryReady ? loadingRowList
                   : savedRows.length === 0 ? (
                     <EmptyState
                       Icon={Bookmark}
@@ -1295,7 +1320,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   ))}
 
                 {activeTab === 'liked' && (likedRows.length === 0 ? (
-                  !libraryReady ? loadingRows : (
+                  !libraryReady ? loadingRowList : (
                     <EmptyState
                       Icon={Heart}
                       title={copy.emptyLikedTitle}

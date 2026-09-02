@@ -30,6 +30,7 @@ import { db } from './firebase';
 import { serializeInteractionProfile } from '../utils/interactionProfile.js';
 import { mapWithConcurrency } from '../utils/mapWithConcurrency.js';
 import { FIRESTORE_IN_FILTER_MAX } from '../utils/firestoreLimits.js';
+import { planLibraryBatches } from '../utils/listPaperMetadataPlan.js';
 
 export const INTERACTION_PROFILE_COLLECTION = 'aggregates';
 export const INTERACTION_PROFILE_DOC_ID = 'interactions';
@@ -188,10 +189,12 @@ export function flushAllInteractionProfiles() {
  */
 export async function fetchLibraryRecords(userId, paperIds) {
   if (!userId || !paperIds?.length) return { records: [], fromCache: false };
-  const batches = [];
-  for (let index = 0; index < paperIds.length; index += LIBRARY_BATCH_SIZE) {
-    batches.push(paperIds.slice(index, index + LIBRARY_BATCH_SIZE));
-  }
+  // A liked paper keyed by a pre-2007 arXiv id (`hep-th/0603001`) has no
+  // document — the write threw on the slash — and asking for it rejected the
+  // whole `in` query, so every other paper in its batch went blank with it.
+  // The plan keeps those ids out; the Liked tab names them from arXiv itself.
+  const { batches } = planLibraryBatches(paperIds, LIBRARY_BATCH_SIZE);
+  if (batches.length === 0) return { records: [], fromCache: false };
 
   const settled = await mapWithConcurrency(batches, LIBRARY_READ_CONCURRENCY, async (batch) => {
     const snapshot = await getDocs(
