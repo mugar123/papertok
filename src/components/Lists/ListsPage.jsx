@@ -53,7 +53,8 @@ import {
   publicListSyncKey,
   toEpochMillis,
 } from '../../utils/publicListFreshness.js';
-import { getPublicListUrl, getPublicPaperPath } from '../../utils/publicNavigation.js';
+import { getPublicListUrl } from '../../utils/publicNavigation.js';
+import { searchPaperDestination } from '../../utils/searchDestinations.js';
 import { OWN_LISTS_PAGE_SIZE } from '../../services/userProfileService.js';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
 import {
@@ -149,7 +150,7 @@ function publicBadgeState(status) {
 }
 
 
-export default function ListsPage({ onOpenPdf, onEditPaper }) {
+export default function ListsPage({ onEditPaper }) {
   const { user } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -848,20 +849,19 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
    * pointing wherever it pointed before.
    */
   const openPaperCard = (paper) => {
-    const path = getPublicPaperPath(paper) || getPublicPaperPath(paper.id);
-    if (!path) {
-      // No canonical key (legacy id shapes): the PDF is still better than a
-      // click that does nothing.
-      onOpenPdf?.({ ...paper, arxivId: paper.arxivId || paper.id });
-      return;
-    }
+    // The public paper page when the paper has an address there; otherwise
+    // the search page carrying the title, where the same paper opens in an
+    // overlay that needs no identifier. The fallback used to hand the PDF
+    // viewer the raw id as an arXiv id (`openalex:W…`, a Semantic Scholar
+    // hash), which built a PDF link nothing served.
+    const destination = searchPaperDestination(paper);
     if (expandedList) {
       navigate(location.pathname, {
         replace: true,
         state: { openListId: expandedList, fromRoute: openedFromRoute },
       });
     }
-    navigate(path, { state: { paper } });
+    navigate(destination.path, { state: destination.state });
   };
 
   useEffect(() => () => clearTimeout(metadataBudgetTimer.current), []);

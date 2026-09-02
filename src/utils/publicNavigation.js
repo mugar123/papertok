@@ -232,6 +232,22 @@ function getPaperIdentity(typeOrPaper, identifier) {
 
   const value = cleanText(typeOrPaper);
   if (!value) return '';
+  // Provider ids that carry the DOI inside them: bioRxiv (`biorxiv:<encoded
+  // doi>:v2`), Crossref (`crossref:<doi>`) and Scopus without an eid
+  // (`scopus:doi:<doi>`). A like made from one of those cards was remembered
+  // under the provider id alone, and the DOI in it is the paper's address.
+  const embeddedDoi = value.match(/^biorxiv:(.+?)(?::v\d+)?$/i)
+    || value.match(/^(?:crossref|scopus:doi):(.+)$/i);
+  if (embeddedDoi) {
+    let candidate = embeddedDoi[1];
+    try {
+      candidate = decodeURIComponent(candidate);
+    } catch {
+      // Not percent-encoded; the DOI grammar below decides.
+    }
+    const doi = normalizeDoi(candidate);
+    return doi ? `doi:${doi}` : '';
+  }
   if (/^(?:doi:|(?:https?:\/\/)?(?:dx\.)?doi\.org\/|10\.)/i.test(value)) {
     const doi = normalizeDoi(value);
     return doi ? `doi:${doi}` : '';

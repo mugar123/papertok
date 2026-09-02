@@ -97,6 +97,15 @@ test('a DOI or arXiv id still outranks the provider id the paper was keyed by', 
   );
 });
 
+test('a provider id that carries the DOI inside it is keyed by that DOI', () => {
+  const doiKey = encodePaperKey({ doi: '10.1101/2026.01.01.123456' });
+  assert.equal(encodePaperKey('biorxiv:10.1101%2F2026.01.01.123456:v2'), doiKey, 'bioRxiv, percent-encoded with a version');
+  assert.equal(encodePaperKey('crossref:10.1101/2026.01.01.123456'), doiKey, 'Crossref');
+  assert.equal(encodePaperKey('scopus:doi:10.1101/2026.01.01.123456'), doiKey, 'Scopus without an eid');
+  assert.equal(encodePaperKey('scopus:85012345678'), null, 'a Scopus eid is still not an address');
+  assert.equal(encodePaperKey('biorxiv:not-a-doi:v1'), null);
+});
+
 test('an id nobody can open is still no key at all', () => {
   assert.equal(encodePaperKey('31234567'), null, 'a bare number is not taken for a PubMed id');
   assert.equal(encodePaperKey('pmid:abc'), null);

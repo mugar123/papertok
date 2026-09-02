@@ -30,6 +30,7 @@ import {
 import { fetchLikedPaperRecords } from '../../services/likedPaperRecords.js';
 import { IS_DEMO } from '../../services/firebase.js';
 import { getPublicListPath, getPublicPaperPath } from '../../utils/publicNavigation.js';
+import { searchPaperDestination } from '../../utils/searchDestinations.js';
 import { resolveProfileView } from '../../utils/profileAccess.js';
 import { resolveListColor } from '../../utils/listColors.js';
 import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
@@ -176,12 +177,12 @@ function PaperRow({ row, index = 0, isEnglish, libraryReady }) {
       {row.subtitle && <span className="profile-row-meta">{row.subtitle}</span>}
     </>
   );
-  // A row links whenever its paper has a loadable identity: a DOI, an arXiv
-  // id, or the OpenAlex / PubMed id the feed keyed it by. Only the ids nothing
-  // can open (a Semantic Scholar hash, a Scopus id) leave a row as a label.
-  // The rows that link hand over whatever copy of the paper is already in
-  // memory, so the paper page can render without waiting on — or being
-  // rate-limited by — arXiv.
+  // Every titled row links: to the public paper page when the paper has an
+  // address there (`rowDestination`), otherwise to a title search. The rows
+  // that reach the paper page hand over whatever copy of the paper is already
+  // in memory, so it can render without waiting on — or being rate-limited
+  // by — arXiv. The static branch only remains for a row that somehow has a
+  // title and no path, which `rowDestination` never produces.
   return row.path
     ? (
       <Link
@@ -224,6 +225,26 @@ function EmptyState({ Icon, title, hint, action }) {
       {action}
     </div>
   );
+}
+
+/**
+ * Where a row goes when it is clicked, and what it carries there.
+ *
+ * The public paper page, whenever the paper has an address there — a DOI, an
+ * arXiv id, the OpenAlex or PubMed id the feed keyed it by — with the copy in
+ * memory riding along so the page paints at once. A paper with no address at
+ * all (a Semantic Scholar hash, a Scopus eid, an ADS bibcode liked before the
+ * like stored the paper) goes to the search page carrying its title, where the
+ * same paper opens in an overlay that needs no identifier: the destination the
+ * search palette already uses for exactly this case. Every titled row is a
+ * link; a row that is nothing but its id used to be a label with nothing to do.
+ */
+function rowDestination(id, paper, title, seed) {
+  const path = paper ? getPublicPaperPath(paper) || getPublicPaperPath(id) : getPublicPaperPath(id);
+  if (path) return { path, seed };
+  if (!title) return { path: null, seed };
+  const fallback = searchPaperDestination({ title }, title);
+  return { path: fallback.path, seed: null };
 }
 
 /**
@@ -655,8 +676,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       unresolved: !title,
       missingTitle: !title && (hasRecord || settledLikedLookups.has(id)),
       subtitle: authorLine(authors),
-      path: paper ? getPublicPaperPath(paper) || getPublicPaperPath(id) : getPublicPaperPath(id),
-      seed: seedPaperFor(id, paper, title, authors, extra?.paperCategory),
+      ...rowDestination(id, paper, title, seedPaperFor(id, paper, title, authors, extra?.paperCategory)),
     };
   }), [likedOrder, personalLibrary, libraryPapers, likedExtra, settledLikedLookups]);
 
@@ -675,8 +695,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
           unresolved: !title,
           missingTitle: !title && libraryReady,
           subtitle: authorLine(record.paper?.authors),
-          path: getPublicPaperPath(record.paper) || getPublicPaperPath(record.paperId),
-          seed: record.paper || null,
+          ...rowDestination(record.paperId, record.paper, title, record.paper || null),
         };
       });
   }, [view.isOwner, personalLibrary, libraryReady]);
