@@ -244,22 +244,24 @@
 }
 
 /* ── The arrival ──
-   A card composes in rather than popping in: the reason it is here (in the
-   Following feed), then the kicker, the title, the authors, the abstract, and
-   last the actions, each 38 ms behind the one before and each on the same
-   short settle. Everything used to share the sheet's one fade and appear at
-   once, a beat after the page — "spontaneously", the reader said. The order is
-   an explicit `--arrive` step per piece rather than `nth-child`, because half
-   of these pieces are optional and the sequence must not shift when one is
-   absent. `backwards` holds the first frame during the delay and nothing after
-   the run: once each piece has landed, no transform is left on it. */
-.pc-follow-reason { --arrive: 0; }
+   A card composes in rather than popping in, and the paper comes before its
+   label: the title first, then the kicker, the authors, the abstract, and
+   only then the reason it is here — the "Because you follow" pill slides in
+   under the kicker once there is a paper to explain — and last the actions.
+   The pill used to be the first thing on screen, alone for a beat before
+   anything else, which is exactly what read as it appearing out of nowhere.
+   Each step is 45 ms behind the one before on the same short settle. The
+   order is an explicit `--arrive` step per piece rather than `nth-child`,
+   because half of these pieces are optional and the sequence must not shift
+   when one is absent. `backwards` holds the first frame during the delay and
+   nothing after the run: once each piece has landed, no transform is left. */
+.pc-title { --arrive: 0; }
 .pc-meta,
-.pc-chips { --arrive: 1; }
-.pc-topics,
-.pc-title { --arrive: 2; }
-.pc-authors { --arrive: 3; }
-.pc-abstract { --arrive: 4; }
+.pc-chips,
+.pc-topics { --arrive: 1; }
+.pc-authors { --arrive: 2; }
+.pc-abstract { --arrive: 3; }
+.pc-follow-reason { --arrive: 4; }
 .pc-action-bar,
 .pc-side-actions { --arrive: 5; }
 
@@ -272,7 +274,7 @@
 .pc-abstract,
 .pc-action-bar,
 .pc-side-actions {
-  animation: pcArrive 0.3s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--arrive, 0) * 38ms) backwards;
+  animation: pcArrive 0.32s cubic-bezier(0.16, 1, 0.3, 1) calc(var(--arrive, 0) * 45ms) backwards;
 }
 
 /* The reason arrives from the side it reads from, the way a label is slid
@@ -282,12 +284,12 @@
 }
 
 @keyframes pcArrive {
-  0% { opacity: 0; transform: translateY(6px); }
+  0% { opacity: 0; transform: translateY(8px); }
   100% { opacity: 1; transform: none; }
 }
 
 @keyframes pcArriveAside {
-  0% { opacity: 0; transform: translateX(-8px); }
+  0% { opacity: 0; transform: translateX(-10px); }
   100% { opacity: 1; transform: none; }
 }
 

@@ -197,12 +197,13 @@ test('SOURCE: the Following page ranks on its first render and merges refreshes'
   assert.match(code, /setOrderedPapers\(current => mergeOrderedPapers\(current, orderFollowingFeedPapers\(items, seenIds\)\)\)/);
 });
 
-test('SOURCE: the follow-reason pill arrives as the first step of the card, not on a fade of its own', async () => {
+test('SOURCE: the follow-reason pill arrives after the paper it explains, not on a fade of its own ahead of it', async () => {
   const jsx = await readSource('../components/Feed/PaperCard.jsx');
   const css = await readSource('../components/Feed/PaperCard.css');
   assert.match(jsx, /<div className="pc-follow-reason">/);
   assert.doesNotMatch(jsx, /<motion\.div\s+className="pc-follow-reason"/);
-  assert.match(css, /\.pc-follow-reason \{ --arrive: 0; \}/);
+  assert.match(css, /\.pc-title \{ --arrive: 0; \}/, 'the paper comes first');
+  assert.match(css, /\.pc-follow-reason \{ --arrive: 4; \}/, 'and its label after the abstract, never alone ahead of it');
   assert.match(css, /@keyframes pcArrive \{/);
   assert.match(css, /@keyframes cardSlideUp \{\s*0% \{ transform: translateY\(10px\); \}/, 'the sheet only travels; the pieces carry the fade');
 });
