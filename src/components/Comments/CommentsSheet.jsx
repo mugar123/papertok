@@ -641,10 +641,19 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     if (busy || !anchor || !draft.trim()) return;
     setBusy(true);
     setComposerError(null);
-    // Cleared, not left at whatever it last said: an identical confirmation
-    // twice in a row (post, then edit that same comment straight back to
-    // wording that also says "Comment posted.") would otherwise set the same
-    // string twice, and React skips a state update that does not change.
+    // Cleared here, before the network call below -- not merely "before
+    // setting the new text". Clearing and setting in the very same tick is
+    // NOT enough on its own: React batches synchronous updates from one
+    // event into a single commit, and if the batch's net result is the same
+    // string the DOM already shows, react-dom's diffing skips the write
+    // entirely (confirmed against react-dom-client and with a jsdom +
+    // MutationObserver repro elsewhere in this same delivery -- see
+    // EditInterestsModal.jsx). What actually guarantees two real commits
+    // here is the `await` a few lines down: it forces the eventual
+    // `setNotice` below onto a later commit than this one, so an identical
+    // confirmation twice in a row (post, then edit that same comment right
+    // back to wording that also says "Comment posted.") still lands as a
+    // genuine '' -> text transition each time, not a same-string no-op.
     setNotice({ tone: 'status', text: '' });
     try {
       if (editTarget) {
@@ -681,6 +690,9 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
 
   const remove = async (comment) => {
     setBusy(true);
+    // See the longer note in submit() above: this only reaches a distinct
+    // commit from the setNotice calls below because of the await a few
+    // lines down, not merely because it runs first.
     setNotice({ tone: 'status', text: '' });
     try {
       await deleteComment({
@@ -710,6 +722,8 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
 
   const report = async (comment, reason) => {
     setBusy(true);
+    // Same reasoning as submit() and remove(): the await below is what
+    // actually separates this clear from either setNotice outcome.
     setNotice({ tone: 'status', text: '' });
     try {
       await submitReport({
