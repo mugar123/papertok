@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { UsersRound, X } from 'lucide-react';
@@ -15,6 +15,7 @@ import {
   readFollowList,
   rememberFollowList,
 } from '../../utils/profileSessionCaches.js';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import './FollowSheet.css';
 
 /**
@@ -190,8 +191,9 @@ export default function FollowSheet({
   const [pages, setPages] = useState(() => seedPages(uid));
   const [attempt, setAttempt] = useState(0);
   const [paging, setPaging] = useState(false);
-  const sheet = useRef(null);
-  const closeButton = useRef(null);
+  // The sheet only exists in the tree while it is shown, so `open` is always
+  // true here — the same contract AuthPrompt uses.
+  const dialogRef = useDialogFocus(true, onClose);
   const current = pages[mode] || EMPTY_PAGE;
   // Decided once per open: this drives which entrance the sheet plays (slide
   // from the bottom edge it is anchored to on phones, a scale-fade when it
@@ -376,34 +378,6 @@ export default function FollowSheet({
     }
   };
 
-  // A modal dialog owns the keyboard while it is open: Escape closes, and Tab
-  // cycles inside the sheet instead of wandering into the blurred page behind.
-  useEffect(() => {
-    closeButton.current?.focus();
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        onClose();
-        return;
-      }
-      if (event.key !== 'Tab' || !sheet.current) return;
-      const focusable = [...sheet.current.querySelectorAll(
-        'button:not(:disabled), a[href]',
-      )];
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
-
   const sheetMotion = prefersReducedMotion ? {
     initial: { opacity: 0 },
     animate: { opacity: 1 },
@@ -431,11 +405,12 @@ export default function FollowSheet({
       onClick={onClose}
     >
       <motion.div
-        ref={sheet}
+        ref={dialogRef}
         className="follow-sheet"
         role="dialog"
         aria-modal="true"
         aria-label={mode === 'followers' ? copy.followers : copy.following}
+        tabIndex={-1}
         {...sheetMotion}
         style={expectedRows != null ? { '--follow-rows': expectedRows } : undefined}
         onClick={event => event.stopPropagation()}
@@ -473,9 +448,9 @@ export default function FollowSheet({
           </div>
           <div className="follow-sheet-close-wrap">
             <button
-              ref={closeButton}
               type="button"
               className="follow-sheet-close"
+              data-dialog-initial-focus
               onClick={onClose}
               aria-label={copy.close}
             >
