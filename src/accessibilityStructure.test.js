@@ -254,12 +254,6 @@ const OUTLINE_OFF_ON_PURPOSE = new Map([
     + 'on :focus-within; keeping both painted two rings around one field',
   ],
   [
-    '.profile-field .profile-handle-input input:focus, .profile-field .profile-handle-input input:focus-visible',
-    'the @ prefix and the field are one control: .profile-handle-input:focus-within '
-    + 'draws the ink border plus inset hairline on the group, and a second ring on '
-    + 'the inner input would sit inside the @ prefix instead of around the whole field',
-  ],
-  [
     '#main-content:focus',
     'not a control and never a tab stop — the skip link and RouteAnnouncer move focus '
     + 'here programmatically, and a ring drawn around the whole page region reads as a '
