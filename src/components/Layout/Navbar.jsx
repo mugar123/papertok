@@ -1,6 +1,6 @@
-import { useEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
-import { motion, useReducedMotion } from 'framer-motion';
+import { ruleTransform } from '../../utils/navRule.js';
 import { useAuth } from '../../context/AuthContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -9,50 +9,53 @@ import NavPreferencesMenu from './NavPreferencesMenu';
 import './Navbar.css';
 
 /**
- * How the rule travels: a tween that ends, not a spring that approaches.
- *
- * It was a spring — `stiffness: 420, damping: 38, mass: 0.7`, a damping ratio
- * of about 1.11, so overdamped, so an exponential tail. Measured on the longest
- * hop ("For you" to Following, 133px): the first 90% of the travel took 224ms
- * and the last 10% took another 216ms. Half the animation was spent drifting
- * the final thirteen pixels. And because the rule grows as it goes — the two
- * words are not the same width — the left edge was home while the right edge
- * still had ten pixels to cover, so it read as the bar arriving short of the
- * word, stopping, and then creeping right.
- *
- * A spring cannot fix that by retuning: every variant measured (bounce 0,
- * bounce 0.15, a critically damped one) still spent 43–50% of its time on that
- * last tenth, because that is the shape of a spring. A bounded tween does not
- * have a tail: this one spends 28%, and both edges land on the same frame.
- */
-const RULE_TRAVEL = { duration: 0.28, ease: [0.4, 0, 0.2, 1] };
-
-/**
  * The yellow rule under the tab you are on.
  *
- * It used to be `.navbar-link.active::after`: a pseudo-element that blinked out
- * of one link and into the next, so the three feeds read as three unrelated
- * places. One element with a shared `layoutId` is the same rule travelling —
- * framer measures where it was and where it landed and tweens between the two,
- * width included, which is what ties "For you", Research and Following
- * together as one row.
+ * It was a `::after` on the active link, which could only blink from one
+ * link to the next; then a framer `layoutId` element, which travelled — but
+ * in JavaScript, on the main thread, which is exactly the thread a tab switch
+ * keeps busy mounting the next feed. Measured: the rule slid, froze short of
+ * the word for ~200 ms while the cards mounted, and slid the rest.
+ *
+ * Now it is one element positioned with a transform the CSS transition
+ * animates on the compositor, so it keeps moving whatever the main thread is
+ * doing. This hook measures the active link — after every render, and again
+ * when the row resizes (the active link is semibold, so activating one changes
+ * its width and shifts its neighbours) — and returns the transform. The first
+ * measurement is applied without a transition, so the rule does not slide in
+ * from the row's left edge on load.
  */
-function ActiveTabRule({ reduced }) {
-  return (
-    <motion.span
-      className="navbar-link-rule"
-      layoutId="navbar-active-tab"
-      aria-hidden="true"
-      transition={reduced ? { duration: 0 } : RULE_TRAVEL}
-    />
-  );
+function useActiveTabRule(rowRef, activeKey) {
+  const [rule, setRule] = useState({ transform: '', measured: false });
+
+  useLayoutEffect(() => {
+    const row = rowRef.current;
+    if (!row) return undefined;
+    const measure = () => {
+      const link = row.querySelector('.navbar-link.active');
+      if (!link) {
+        setRule(current => (current.transform ? { ...current, transform: '' } : current));
+        return;
+      }
+      const inset = parseFloat(getComputedStyle(link).paddingLeft) || 0;
+      const transform = ruleTransform(link.getBoundingClientRect(), row.getBoundingClientRect().left, inset);
+      setRule(current => (current.transform === transform && current.measured ? current : { transform, measured: true }));
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    row.querySelectorAll('.navbar-link').forEach(link => observer.observe(link));
+    return () => observer.disconnect();
+  }, [rowRef, activeKey]);
+
+  return rule;
 }
 
 export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) {
   const { user, profilePhoto } = useAuth();
   const { feedMode, setFeedMode } = useFeed();
   const { isEnglish } = useLanguage();
-  const reduced = useReducedMotion();
   const navigate = useNavigate();
   const location = useLocation();
   const pathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '');
@@ -75,6 +78,9 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   const isFollowingActive = pathname === '/following';
   const isResearchActive = pathname === '/research' || pathname === '/report';
   const isHomeActive = pathname === '/';
+  const activeTab = isHomeActive && feedMode === 'top' ? 'home' : isResearchActive ? 'research' : isFollowingActive ? 'following' : '';
+  const linksRef = useRef(null);
+  const rule = useActiveTabRule(linksRef, `${activeTab}:${isEnglish}`);
 
   return (
     <nav className="navbar" aria-label={isEnglish ? 'Main navigation' : 'Navegación principal'}>
@@ -107,7 +113,12 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           <kbd aria-hidden="true">/</kbd>
         </button>
 
-        <div className="navbar-links">
+        <div className="navbar-links" ref={linksRef}>
+          <span
+            className={`navbar-link-rule${rule.measured ? ' is-measured' : ''}`}
+            aria-hidden="true"
+            style={{ transform: rule.transform || undefined, opacity: rule.transform ? 1 : 0 }}
+          />
           <button
             type="button"
             className={`navbar-link ${isHomeActive && feedMode === 'top' ? 'active' : ''}`}
@@ -119,7 +130,6 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           >
             <Layers size={15} aria-hidden="true" />
             {isEnglish ? 'For you' : 'Para ti'}
-            {isHomeActive && feedMode === 'top' && <ActiveTabRule reduced={reduced} />}
           </button>
 
           <NavLink
@@ -128,7 +138,6 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           >
             <Newspaper size={15} aria-hidden="true" />
             Research
-            {isResearchActive && <ActiveTabRule reduced={reduced} />}
           </NavLink>
 
           <NavLink
@@ -137,7 +146,6 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           >
             <UserCheck size={15} aria-hidden="true" />
             {isEnglish ? 'Following' : 'Siguiendo'}
-            {isFollowingActive && <ActiveTabRule reduced={reduced} />}
           </NavLink>
         </div>
 

@@ -6,6 +6,12 @@ import { getUiErrorMessage } from '../../utils/errorMessages';
 
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
+import {
+  growMountWindow,
+  inMountWindow,
+  initialMountWindow,
+  mountWindowCovers,
+} from '../../utils/feedMountWindow.js';
 import AnimatedAtom from './AnimatedAtom';
 import { FEED_DISPLAY_STATES, getFeedDisplayState } from '../../utils/feedLoadingState';
 import './FeedContainer.css';
@@ -13,6 +19,9 @@ import './FeedContainer.css';
 // Per-surface scroll memory: the Siguiendo feed shares this container with
 // For You and must not clobber its saved position.
 const savedScrollByKey = {};
+// The card each feed was left on, so a remount can open its mount window
+// there instead of at the top (utils/feedMountWindow.js).
+const savedIndexByKey = {};
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
@@ -84,6 +93,26 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const sentinelRef = useRef(null);
   const [showLoader, setShowLoader] = useState(false);
   const [initialFeedReady, setInitialFeedReady] = useState(false);
+  // The cards mounted right now: a window around the card this feed was left
+  // on, grown outwards in idle chunks until it covers every paper. Mounting
+  // the whole feed in the same commit as the tab switch was what blocked the
+  // main thread for ~200 ms at a time and froze the transition.
+  const [mountWindow, setMountWindow] = useState(
+    () => initialMountWindow({ total: papers.length, anchorIndex: savedIndexByKey[scrollKey] || 0 }),
+  );
+  useEffect(() => {
+    if (mountWindowCovers(mountWindow, papers.length)) return undefined;
+    // `requestIdleCallback` where it exists, so a chunk never lands inside a
+    // frame the transition or a scroll needs; a short timeout elsewhere.
+    const schedule = typeof window.requestIdleCallback === 'function'
+      ? (fn) => window.requestIdleCallback(fn, { timeout: 120 })
+      : (fn) => setTimeout(fn, 32);
+    const cancel = typeof window.cancelIdleCallback === 'function'
+      ? (id) => window.cancelIdleCallback(id)
+      : (id) => clearTimeout(id);
+    const handle = schedule(() => setMountWindow(current => growMountWindow(current, papers.length)));
+    return () => cancel(handle);
+  }, [mountWindow, papers.length]);
   const initialLoadStartedRef = useRef(false);
   const scrollIdleTimerRef = useRef(null);
   const skipFlushTimerRef = useRef(null);
@@ -265,6 +294,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const handleScroll = useCallback((event) => {
     const container = event.currentTarget;
     savedScrollByKey[scrollKey] = container.scrollTop;
+    savedIndexByKey[scrollKey] = container.clientHeight > 0
+      ? Math.round(container.scrollTop / container.clientHeight)
+      : 0;
     if (!container.classList.contains('feed-container--scrolling')) {
       container.classList.add('feed-container--scrolling');
     }
@@ -373,6 +405,12 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     <FeedLandmark landmark={landmark}>
       <div className="feed-container" ref={feedRef} onScroll={handleScroll}>
         {papers.map((paper, index) => (
+          !inMountWindow(mountWindow, index) ? (
+            // Outside the mount window: a full-height slot, so the scroll
+            // extent and the snap points are already those of the finished
+            // feed. It becomes a card when the window reaches it.
+            <div key={paper.id} className="feed-snap-item feed-snap-item--pending" aria-hidden="true" />
+          ) : (
           <div key={paper.id} className="feed-snap-item">
             <PaperCard
               paper={paper}
@@ -404,6 +442,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
               hideScrollHint={index !== 0}
             />
           </div>
+          )
         ))}
 
         {loading && (
