@@ -20,6 +20,7 @@ import {
   readUserProfileByHandle,
 } from '../../services/userProfileService.js';
 import VisibilityPrompt from '../Profile/VisibilityPrompt.jsx';
+import { EDITOR_FROM_PROFILE } from '../Profile/editorOrigin.js';
 import {
   countFollowedUsers,
   countFollowers,
@@ -1062,7 +1063,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
           <div className="profile-private-notice">
             <Lock size={14} aria-hidden="true" />
             <span>{copy.privateNotice}</span>
-            <button type="button" onClick={() => navigate('/settings/profile')}>
+            <button type="button" onClick={() => navigate('/settings/profile', EDITOR_FROM_PROFILE)}>
               {copy.privateManage}
             </button>
           </div>
@@ -1085,7 +1086,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                 // menu's link); a gear ON the profile that landed on the
                 // whole hub made the reader hunt for the profile section
                 // (asked for on 2026-08-29).
-                onClick={() => navigate('/settings/profile')}
+                onClick={() => navigate('/settings/profile', EDITOR_FROM_PROFILE)}
                 aria-label={copy.settings}
                 title={copy.settings}
               >
@@ -1146,7 +1147,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                 <button
                   type="button"
                   className="profile-handle-cta"
-                  onClick={() => navigate('/settings/profile')}
+                  onClick={() => navigate('/settings/profile', EDITOR_FROM_PROFILE)}
                 >
                   {copy.createProfile} →
                 </button>
@@ -1159,7 +1160,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   <button
                     type="button"
                     className="profile-edit-button"
-                    onClick={() => navigate('/settings/profile')}
+                    onClick={() => navigate('/settings/profile', EDITOR_FROM_PROFILE)}
                   >
                     {copy.editProfile}
                   </button>

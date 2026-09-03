@@ -1,8 +1,31 @@
 .profile-page {
+  /* The grid's measures, shared by the layout and by the heading that has to
+     line up with it. */
+  --profile-rail: 176px;
+  --profile-aside: 340px;
+  --profile-gap-x: 48px;
+  /* The three lines the page draws with. On paper they are the app's
+     hairlines. On ink they were not lines at all: --border-default measured
+     1.37:1 on --bg-card and 1.45:1 on the page, --border-subtle 1.16:1, and
+     the cards themselves 1.06:1 on the page (2026-09-03), so sections,
+     cards and fields all but vanished in the dark theme. The rule and the
+     card edge step up to --border-strong (2.2:1 -- separators, not
+     controls); the field boundary is a UI component, so it is mixed from the
+     tertiary ink to clear 3:1 (WCAG 1.4.11) against the field's own surface.
+     The light theme keeps its hairlines. */
+  --profile-rule: var(--border-default);
+  --profile-card-line: var(--border-subtle);
+  --profile-line-field: var(--border-default);
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--bg-primary);
   color: var(--text-primary);
+}
+
+:root[data-theme='dark'] .profile-page {
+  --profile-rule: var(--border-strong);
+  --profile-card-line: var(--border-strong);
+  --profile-line-field: color-mix(in srgb, var(--text-tertiary) 70%, var(--bg-card));
 }
 
 /* Wide enough for the form and the preview side by side; the form itself
@@ -38,30 +61,11 @@
   border-radius: var(--radius-lg);
   cursor: pointer;
   font-size: var(--fs-sm);
-}
-
-.profile-public-link {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  width: fit-content;
-  min-height: 32px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  text-decoration: none;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .profile-public-link:hover {
-    border-color: var(--border-ink);
-    background: var(--bg-secondary);
-  }
+  /* Named, so the global `button { transition: all }` does not animate their
+     layout too -- that is the "soft button" feel, and a state flip should
+     only move colour. */
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast), opacity var(--transition-fast);
 }
 
 .profile-form {
@@ -95,7 +99,7 @@
   width: 100%;
   min-height: 44px;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--profile-line-field);
   border-radius: var(--radius-md);
   background: var(--bg-card);
   color: var(--text-primary);
@@ -133,7 +137,7 @@
   display: flex;
   align-items: stretch;
   min-height: 44px;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--profile-line-field);
   border-radius: var(--radius-md);
   background: var(--bg-card);
   transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
@@ -154,7 +158,9 @@
   font-size: var(--fs-base);
 }
 
-.profile-handle-input input {
+/* Outranks `.profile-field input:not([type])` above, which would otherwise
+   draw a second field border inside the wrapper's. */
+.profile-field .profile-handle-input input {
   width: 100%;
   min-width: 0;
   min-height: 44px;
@@ -168,8 +174,8 @@
   box-shadow: none;
 }
 
-.profile-handle-input input:focus,
-.profile-handle-input input:focus-visible {
+.profile-field .profile-handle-input input:focus,
+.profile-field .profile-handle-input input:focus-visible {
   outline: none;
   border: none;
   box-shadow: none;
@@ -217,10 +223,14 @@
   color: var(--text-primary);
 }
 
+/* The soft yellow flips with the theme (#fff4c9 -> #35290b), so what sits
+   on it takes the ink that flips too. `--text-on-brand` is for the FULL
+   yellow, which does not flip; on the dark soft surface it measured 1.30:1
+   and the pinned label was invisible (2026-09-03). */
 .profile-pin-toggle.is-pinned {
   border-color: var(--border-ink);
   background: var(--brand-yellow-soft);
-  color: var(--text-on-brand);
+  color: var(--text-primary);
 }
 
 /* --- Sections -------------------------------------------------------------- */
@@ -233,7 +243,7 @@
   flex-direction: column;
   gap: var(--space-4);
   padding-top: var(--space-6);
-  border-top: 1px solid var(--border-default);
+  border-top: 1px solid var(--profile-rule);
   scroll-margin-top: calc(var(--nav-total) + var(--space-4));
 }
 
@@ -260,7 +270,7 @@
 
 .profile-privacy-column {
   padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--profile-card-line);
   border-left: 3px solid var(--brand-yellow);
   border-radius: var(--radius-md);
   background: var(--bg-card);
@@ -302,7 +312,7 @@
   gap: var(--space-4);
   min-height: 64px;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--profile-card-line);
   border-radius: var(--radius-md);
   background: var(--bg-card);
   cursor: pointer;
@@ -338,7 +348,7 @@
   flex: 0 0 auto;
   width: 42px;
   height: 24px;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--profile-line-field);
   border-radius: var(--radius-full);
   background: var(--bg-elevated);
   transition: background var(--transition-fast), border-color var(--transition-fast);
@@ -370,11 +380,28 @@
   outline-offset: 2px;
 }
 
+/* The form ends here, and says so: the two sections under it save on their
+   own, so the page used to read as if it stopped at Privacy. */
+.profile-form-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--profile-rule);
+}
+
 .profile-actions {
   display: flex;
   align-items: center;
   gap: var(--space-4);
   flex-wrap: wrap;
+}
+
+.profile-actions-note {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
 }
 
 .profile-primary {
@@ -398,6 +425,12 @@
   align-items: center;
   gap: var(--space-2);
   font-size: var(--fs-sm);
+  animation: profile-feedback-in 0.2s ease-out both;
+}
+
+@keyframes profile-feedback-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 .profile-feedback.is-error { color: var(--accent-danger); }
@@ -540,7 +573,7 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--profile-card-line);
   border-radius: var(--radius-md);
   background: var(--bg-card);
 }
@@ -602,7 +635,7 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-4);
-  margin-top: var(--space-6);
+  margin: 0 0 var(--space-6);
   padding: var(--space-4);
   border: 1px solid var(--accent-danger);
   border-radius: 14px;
@@ -638,6 +671,11 @@
 
 .profile-stale-actions button {
   margin-left: 0;
+}
+
+/* The migration's failure note, above the form it explains. */
+.profile-main > .profile-hint {
+  margin-bottom: var(--space-4);
 }
 
 /* A list row carries two controls now (F12): the attribution switch and,
@@ -681,16 +719,16 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--border-default);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--profile-card-line);
   border-radius: var(--radius-md);
   background: var(--bg-card);
 }
 
 .profile-identity-avatar {
   flex: 0 0 auto;
-  width: 72px;
-  height: 72px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   overflow: hidden;
   background: var(--gradient-brand);
@@ -734,25 +772,68 @@
    The form writes; the preview beside it shows what the public link will
    serve. They are the same state, so the preview moves as the owner types —
    the point being that nothing about the public page is a surprise. */
+
+/* The four parts of the grid arrive in reading order, a beat apart, on top
+   of the shell's own rise: heading, rail, form, then the preview settling
+   beside them. Opacity and transform only, so it costs the compositor and
+   not the layout. */
+@keyframes profile-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.profile-layout > * {
+  animation: profile-rise 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--profile-enter, 0) * 50ms);
+}
+
+.profile-layout > :nth-child(2) {
+  --profile-enter: 1;
+}
+
+.profile-layout > :nth-child(3) {
+  --profile-enter: 2;
+}
+
+.profile-layout > :nth-child(4) {
+  --profile-enter: 3;
+}
+
 .profile-layout {
   display: grid;
-  grid-template-columns: 176px minmax(0, 1fr) 340px;
-  gap: 40px 48px;
+  grid-template-columns: var(--profile-rail) minmax(0, 1fr) var(--profile-aside);
+  grid-template-areas:
+    "head head preview"
+    "toc main preview";
+  gap: 40px var(--profile-gap-x);
   align-items: start;
 }
 
+/* The heading is the grid's first row, set on the same columns: the back
+   control in the rail, the eyebrow and title over the form. It used to sit
+   above the grid on its own, 200px higher than the preview beside it. */
+.profile-layout > .settings-subheader {
+  grid-area: head;
+  display: grid;
+  grid-template-columns: var(--profile-rail) minmax(0, 1fr);
+  column-gap: var(--profile-gap-x);
+  margin-bottom: 0;
+}
+
 .profile-main {
+  grid-area: main;
   min-width: 0;
   max-width: 680px;
 }
 
 .profile-toc {
+  grid-area: toc;
   position: sticky;
   top: calc(var(--nav-total) + var(--space-6));
   display: flex;
   flex-direction: column;
   padding-top: 14px;
-  border-top: 1px solid var(--border-default);
+  border-top: 1px solid var(--profile-rule);
 }
 
 .profile-toc-title {
@@ -823,6 +904,7 @@
 }
 
 .profile-preview {
+  grid-area: preview;
   position: sticky;
   top: calc(var(--nav-total) + var(--space-6));
   display: flex;
@@ -842,7 +924,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--profile-rule);
   border-radius: var(--radius-lg);
   background: var(--bg-card);
 }
@@ -853,7 +935,7 @@
   align-items: center;
   gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--profile-card-line);
   background: var(--bg-sunken);
 }
 
@@ -985,7 +1067,7 @@
   gap: var(--space-2);
   margin: 0;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--profile-card-line);
   border-radius: var(--radius-md);
   background: var(--bg-sunken);
   color: var(--text-secondary);
@@ -997,7 +1079,7 @@
   flex-direction: column;
   gap: var(--space-2);
   padding-top: var(--space-3);
-  border-top: 1px solid var(--border-subtle);
+  border-top: 1px solid var(--profile-card-line);
 }
 
 .profile-preview-lists-label {
@@ -1013,7 +1095,7 @@
   gap: var(--space-2);
   min-width: 0;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--profile-card-line);
   border-radius: var(--radius-md);
   background: var(--bg-sunken);
   color: var(--text-secondary);
@@ -1053,7 +1135,7 @@
 .profile-preview-list small {
   color: var(--text-tertiary);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: 10px;
 }
 
 .profile-preview-empty,
@@ -1062,6 +1144,40 @@
   color: var(--text-tertiary);
   font-size: 11px;
   line-height: var(--lh-normal);
+}
+
+/* The way to the page itself, at the foot of its likeness. */
+.profile-preview-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  border-top: 1px solid var(--profile-card-line);
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+  transition: background var(--transition-fast);
+}
+
+.profile-preview-open svg {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .profile-preview-open:hover {
+    background: var(--bg-secondary);
+  }
+}
+
+/* The card clips its corners, so the ring sits inside the edge. */
+.profile-preview-open:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 /* What a save just committed, said in the brand mark rather than in a toast:
@@ -1095,14 +1211,23 @@
 }
 
 @media (max-width: 1180px) {
+  /* No rail: the index becomes a strip between the heading and the form,
+     and the preview keeps the right column beside all three. */
   .profile-layout {
     grid-template-columns: minmax(0, 1fr) 320px;
-    gap: 40px;
+    grid-template-areas:
+      "head preview"
+      "toc preview"
+      "main preview";
+    gap: 32px 40px;
+  }
+
+  .profile-layout > .settings-subheader {
+    display: flex;
   }
 
   .profile-toc {
     position: static;
-    grid-column: 1 / -1;
     padding-top: 0;
     border-top: none;
   }
@@ -1136,6 +1261,11 @@
      cover the field being typed into. */
   .profile-layout {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "toc"
+      "main"
+      "preview";
     gap: var(--space-8);
   }
 
@@ -1146,8 +1276,17 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .profile-preview .is-flashing {
+  .profile-preview .is-flashing,
+  .profile-layout > *,
+  .profile-feedback {
     animation: none;
+  }
+
+  .profile-preview-open,
+  .profile-secondary,
+  .profile-pin-toggle,
+  .profile-primary {
+    transition: none;
   }
 }
 

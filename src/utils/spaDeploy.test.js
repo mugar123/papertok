@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 
 const VERCEL = new URL('../../vercel.json', import.meta.url);
 const MAIN = new URL('../main.jsx', import.meta.url);
+const FIREBASE = new URL('../services/firebase.js', import.meta.url);
 
 test('the SPA rewrite never answers a missing chunk with index.html', async () => {
   const config = JSON.parse(await readFile(VERCEL, 'utf8'));
@@ -21,6 +22,40 @@ test('the SPA rewrite never answers a missing chunk with index.html', async () =
   // be a 404 Vite can report, not HTML served as JavaScript with a 200.
   assert.ok(!matches('assets/index-DToPZZZM.js'));
   assert.ok(!matches('assets/CommentsSheet-Da9L05_h.css'));
+  // Firebase's sign-in handler is proxied, not part of the SPA: answered with
+  // index.html it would hand Google an HTML page instead of the handler and
+  // every sign-in would hang on a blank popup.
+  assert.ok(!matches('__/auth/handler'));
+});
+
+test('sign-in redirects to our own domain, and its handler reaches Firebase', async () => {
+  const config = JSON.parse(await readFile(VERCEL, 'utf8'));
+  const proxy = config.rewrites.find(rule => rule.source.startsWith('/__/auth/'));
+  assert.ok(proxy, 'the auth handler proxy is gone');
+  assert.equal(proxy.source, '/__/auth/:path*');
+  // `handler` pulls `handler.js` and `experiments.js` as relative paths, so the
+  // whole subtree has to be proxied, not just the handler document.
+  assert.equal(
+    proxy.destination,
+    'https://papertok-168df.firebaseapp.com/__/auth/:path*',
+  );
+  // Vercel takes the first rewrite that matches. Behind the SPA catch-all this
+  // rule would never run, and the exclusion above would be the only guard.
+  const spa = config.rewrites.findIndex(rule => rule.destination === '/index.html');
+  assert.ok(
+    config.rewrites.indexOf(proxy) < spa,
+    'the proxy must come before the SPA rewrite',
+  );
+
+  // The proxy is only half of it: unless the SDK is told to use our domain,
+  // Google keeps redirecting to the firebaseapp.com host and keeps announcing
+  // it on the sign-in page. Strip comments first so prose above this line
+  // cannot pass for config, but leave `//` inside URLs alone.
+  const code = (await readFile(FIREBASE, 'utf8'))
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1');
+  const authDomain = code.match(/authDomain:\s*['"]([^'"]+)['"]/)?.[1];
+  assert.equal(authDomain, 'papertok.app');
 });
 
 test('SOURCE: a failed chunk load reloads the tab once a minute at most', async () => {
