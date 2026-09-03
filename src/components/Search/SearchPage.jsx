@@ -556,6 +556,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   const visibleResultCount = activeSearchFilter === 'all'
     ? paperResults.length + authorResults.length + institutionResults.length
       + conceptResults.length + projectResults.length + userResults.length
+      + (cleanOrcid ? 1 : 0)
     : activeSearchFilter === 'users'
       ? userResults.length
       : activeSearchFilter === 'papers'
@@ -624,6 +625,14 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
    * nobody found). A successful people list is the only one of those states
    * with no voice of its own, so this only speaks for the Users pill there —
    * never on top of an announcement that already ran.
+   *
+   * Switching filter tabs never forces a re-announcement (that would be the
+   * chattiness this whole region exists to avoid), but the count alone can
+   * coincidentally repeat across tabs -- 12 papers, then 12 institutions --
+   * which would otherwise read as the tab switch having done nothing. The
+   * active filter's own name is folded into the non-empty text for exactly
+   * that reason: the string itself changes on every tab switch, with no
+   * extra firing and no special-casing of "did the count change".
    */
   const resultAnnouncement = (!query.trim() || !hasSearched || searchPending)
     ? ''
@@ -633,8 +642,8 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
         ? ''
         : visibleResultCount > 0
           ? (isEnglish
-            ? `${visibleResultCount} ${visibleResultCount === 1 ? 'result' : 'results'} found for "${query}"`
-            : `${visibleResultCount} ${visibleResultCount === 1 ? 'resultado encontrado' : 'resultados encontrados'} para "${query}"`)
+            ? `${visibleResultCount} ${visibleResultCount === 1 ? 'result' : 'results'} found${activeSearchFilter !== 'all' ? ` in ${activeFilterOption.labelEn}` : ''} for "${query}"`
+            : `${visibleResultCount} ${visibleResultCount === 1 ? 'resultado encontrado' : 'resultados encontrados'}${activeSearchFilter !== 'all' ? ` en ${activeFilterOption.labelEs}` : ''} para "${query}"`)
           : emptyResultsMessage;
 
   // Memoised so the order is recomputed only when the results themselves
