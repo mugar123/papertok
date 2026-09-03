@@ -1,14 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getSemanticScholarPaperId } from './relatedPapersService.js';
+import { clearRelatedPapersCache, getRelatedPapers, getSemanticScholarPaperId } from './relatedPapersService.js';
 
 test('prefers DOI and normalizes provider prefixes for related papers', () => {
   assert.equal(getSemanticScholarPaperId({ doi: 'https://doi.org/10.1000/TEST', arxivId: '1234.5' }), 'DOI:10.1000/TEST');
   assert.equal(getSemanticScholarPaperId({ arxivId: '2607.12345v2' }), 'ARXIV:2607.12345');
   assert.equal(getSemanticScholarPaperId({}), null);
 });
-
-import { clearRelatedPapersCache, getRelatedPapers } from './relatedPapersService.js';
 
 const WORKER = 'https://papertok-report-api.example';
 
@@ -61,6 +59,25 @@ test('shares one request between two callers that ask for the same paper at once
   assert.deepEqual(forSheetAgain, forSheet);
 });
 
+test('shares one request between the feed asking for twenty and the sheet asking for eight, in the same tick', async () => {
+  clearRelatedPapersCache();
+  let calls = 0;
+  const fetchWorker = async () => { calls += 1; return twentyRecommendations(); };
+  const paper = { id: 'arxiv:2607.12345', arxivId: '2607.12345' };
+
+  // The pairing the in-flight map exists for: `traverseAndExpandNetwork` seeds
+  // from twenty on a like, and the sheet opens on eight in the same second.
+  const [forFeed, forSheet] = await Promise.all([
+    getRelatedPapers(paper, 20, { fetchWorker, apiBase: WORKER }),
+    getRelatedPapers(paper, 8, { fetchWorker, apiBase: WORKER }),
+  ]);
+
+  assert.equal(calls, 1);
+  assert.equal(forFeed.length, 20);
+  assert.equal(forSheet.length, 8);
+  assert.deepEqual(forSheet, forFeed.slice(0, 8), 'each caller trims its own view of one shared answer');
+});
+
 test('does not remember a failed request as the paper\'s answer', async () => {
   clearRelatedPapersCache();
   let calls = 0;
@@ -100,15 +117,21 @@ test('gives the Worker eleven seconds before giving up, not eight', async t => {
   // this file's lint config allows).
   const flush = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve(); };
 
-  let settled = false;
+  // Observed through a flag and a microtask drain, never awaited directly: a
+  // budget longer than the ticks below would leave `pending` unsettled for
+  // ever, and `await assert.rejects(pending)` would then hang the whole suite
+  // under `node --test`'s default of no timeout, rather than fail this test.
+  let outcome = null;
   const pending = getRelatedPapers(paper, 8, { fetchWorker, apiBase: WORKER });
-  pending.then(() => { settled = true; }, () => { settled = true; });
+  pending.then(value => { outcome = { value }; }, error => { outcome = { error }; });
 
   await flush();
   t.mock.timers.tick(10_999);
   await flush();
-  assert.equal(settled, false, 'must still be waiting just under eleven seconds in');
+  assert.equal(outcome, null, 'must still be waiting just under eleven seconds in');
 
   t.mock.timers.tick(1);
-  await assert.rejects(() => pending, /aborted/, 'must abort once eleven seconds are up');
+  await flush();
+  assert.ok(outcome, 'must have settled once eleven seconds are up -- a longer budget would leave this null');
+  assert.match(String(outcome.error), /aborted/, 'must abort, not resolve');
 });

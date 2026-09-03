@@ -1,5 +1,54 @@
 # Estado / pendientes
 
+## Deuda diferida de Semantic Scholar, cerrada (2026-09-03)
+
+**Los diez hallazgos que las revisiones del endurecimiento dejaron diferidos,
+cerrados en siete tareas — plan en
+`docs/superpowers/plans/2026-09-03-semantic-scholar-deuda-diferida.md`.** Lo
+que cambia de verdad: un rechazo del compás **devuelve el asiento de minuto**
+que ya había gastado (el mismo asiento, no uno recalculado), así que una ráfaga
+ya no gasta sesenta unidades para tres respuestas ni da consejos contradictorios;
+y la cabecera `retry-after` del compás pasa de `2` a **`3`**, derivada de su
+ventana de 2,5 s en vez de inventada al lado. El resto son tests que ahora
+mueren donde antes callaban: el del presupuesto del cliente **falla en vez de
+colgar la suite** si alguien alarga los 11 s; el recomendador tiene que
+reenviar *el* paper (un mutante que reconstruía sus identificadores pasaba toda
+la suite y rompía el autofiltrado); el feed a 20 y la hoja a 8 comparten
+petición en el mismo tick; y el cuelgue de `/related` no relaya un estado que
+no tiene. Sigue abierto: **S6** (la caché partida por origen); seis fugas de la
+misma familia — un asiento ya gastado que una puerta posterior rechaza sin
+devolver —, previas a este trabajo, observadas y no arregladas. Tres son del
+asiento de minuto compartido: la cuota de identidad
+(`reserveProtectedProviderQuota`) puede rechazar después de reservado el
+asiento y no lo devuelve, un `throw` de `awaitUpstreamSlot`, de la propia
+`reserveProtectedProviderQuota` al llegar a su Durable Object — distinto del
+que reserva el minuto, entre esa reserva y el compás — o del fetcher lo pierde
+igual, y la rama 503 `PROVIDER_QUOTA_NOT_CONFIGURED` de `awaitSharedPace`
+tampoco lo devuelve (alcanzable solo como `QUOTA_LEDGER_UNAVAILABLE`, porque
+`s2:pace` es un Durable Object distinto de `s2:<minuto>` y puede fallar con el
+asiento ya reservado); el arreglo de esta última — subir la devolución por
+encima de esa rama — queda para una tarea propia, con su propio test. La cuarta
+va al revés: el asiento de identidad, el que `reserveProtectedProviderQuota`
+reserva por usuario y gasta *antes* de que corra el compás, se pierde cuando es
+el compás quien rechaza *después* — `awaitSharedPace` solo sabe devolver
+`minuteReservation`, y no tiene forma de saber que el otro asiento existe. La
+quinta también es del asiento de identidad: un rechazo de
+`reserveOpenAlexBudget` (`report-api.js:506-509`) sale sin devolver el que
+`reserveProtectedProviderQuota` reservó en `:502`. Alcanzable siempre: las dos
+rutas que pasan `openAlexCalls` — `/report/trends` (`:396-397`) y
+`/citation-graph` (`:910-911`) — pasan también `identity`, y ninguna de las dos
+tiene entrada en `SHARED_MINUTE_CEILINGS`, así que ahí no se arriesga ningún
+asiento de minuto, solo el de identidad. La sexta es de un asiento distinto, el
+de minuto de OpenAlex: dentro de esa misma función (`:1953-1974`) el bucle
+reserva `openalex:<minuto>` antes que `openalex:day:<fecha>`; un rechazo del
+día deja gastada y sin devolver la reserva del minuto. Y sigue pendiente de
+@mugar la solicitud a Semantic Scholar de un límite mayor que 1 RPS.
+
+**Implementado, probado (suite entera 1.969/1.969, cero `cancelled`) y
+revisado. No desplegado.** Si se despliega, el Worker antes que el frontend —
+la regla vigente desde el 03-09 (ver la entrada de abajo): un bundle nuevo
+contra un Worker viejo siembra el feed con ocho candidatos en vez de veinte,
+sin ningún error visible que lo delate.
 ## La entrada del feed en móvil deja de dar un salto (2026-09-03)
 
 **`pc-abstract-toggle` («Leer el abstract completo», 25 px) se montaba dos
@@ -125,8 +174,8 @@ dejó de rechazar y colgó la conexión dos veces (`UPSTREAM_TIMEOUT`) — ver
 convierta en seis de seis es lo que predice el diseño, no algo que se haya
 visto todavía contra `api.papertok.app` real: la verificación en vivo (los
 seis espaciados y la ráfaga de tres del plan) queda pendiente del despliegue.
-Pendiente también, y sin relación con este código: la solicitud a Semantic
-Scholar de un límite mayor que 1 RPS.
+Pendiente también de @mugar, y sin relación con este código: la solicitud a
+Semantic Scholar de un límite mayor que 1 RPS.
 
 ## Semantic Scholar vuelve a responder: la clave está puesta (2026-09-03)
 

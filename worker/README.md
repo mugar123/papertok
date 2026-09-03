@@ -85,7 +85,13 @@ five requests in one second, one is answered and four refused at once, with no `
 the same average and no say over which second, so under it both routes keep a one-a-second beat
 (`worker/upstream-pace.js`): a caller takes the first free second in the shared ledger and sleeps
 for it — at most 2.5 s of sleep, which does not count the handful of ledger round trips around it —
-and is refused here with `retry-after: 2` rather than upstream when none is free within that budget.
+and is refused here with `retry-after: 3` rather than upstream when none is free within that budget.
+That local refusal also gives back the minute unit this request had already spent against
+`S2_GLOBAL_MINUTE_LIMIT` — the beat runs after that reservation on purpose, so a caller it turns away
+no longer forfeits the unit to a request that never reached the provider.
+Derived from the beat's own 2.5 s wait budget rather than written beside it, so the two cannot drift
+apart; the router's separate fallback of 2 s for a refusal Semantic Scholar itself sends speaks for
+the provider's one-second window and stays as it is.
 A refusal Semantic Scholar does send is relayed with the same short wait from both routes;
 `/related` used to flatten every failure into a bare 502. Raising the ceiling does not help at
 1 RPS — asking Semantic Scholar for a higher limit is what does.

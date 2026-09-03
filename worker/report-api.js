@@ -49,8 +49,8 @@ import {
   threadAnchorErrorResponse,
 } from './thread-anchor.js';
 import { isServiceAccountConfigured } from './firestore-admin.js';
-import { reserveRequestQuota } from './request-quota-ledger.js';
-import { awaitUpstreamSlot } from './upstream-pace.js';
+import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.js';
+import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS } from './upstream-pace.js';
 
 export { KimiBudgetLedger } from './kimi-budget-ledger.js';
 export { EmailDeliveryLedger } from './email-delivery-ledger.js';
@@ -424,39 +424,47 @@ function getSafeLimit(value, fallback = 8, max = 10) {
 // allowance is a daily sum of dollars, while NCBI and Semantic Scholar publish a
 // rate -- requests per second -- which a per-minute ceiling is the direct
 // expression of, and a daily one would not bound at all.
-async function reserveSharedMinuteQuota(request, env, origin) {
-  const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
-  if (!ceiling) return null;
+//
+// Returns the ledger request it reserved with, not just a verdict, because the
+// beat behind it may refuse the caller after this unit is spent and has to give
+// back *this* unit: the same minute, the same subject. Recomputing the minute at
+// release time credits the next one whenever the request straddled the boundary.
+async function reserveSharedMinuteQuota(ceiling, env, origin) {
   const minute = new Date().toISOString().slice(0, 16);
   const limit = boundedLimit(env[ceiling.variable], ceiling.fallback, 100_000);
-  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+  const ledgerRequest = {
     periodKey: `${ceiling.namespace}:${minute}`,
     subject: `${ceiling.namespace}:shared`,
     subjectLimit: limit,
     globalLimit: limit,
-  });
+  };
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {
-    return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+    return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
       ...corsHeaders(origin, env),
       'cache-control': 'no-store',
-    });
+    }) };
   }
   if (!reservation.accepted) {
-    return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+    return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
       ...corsHeaders(origin, env),
       'cache-control': 'no-store',
       'retry-after': '60',
-    });
+    }) };
   }
-  return null;
+  return { reservation: ledgerRequest };
 }
 
 // The beat under the ceiling, for the providers that count per second. It runs
 // last of the three gates because it is the only one that costs wall-clock: a
 // caller the minute ceiling or the identity quota is about to turn away must not
 // first take a second away from somebody who would have used it.
-async function awaitSharedPace(request, env, origin) {
-  const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
+//
+// The price of running last is that the minute unit is already spent when this
+// refuses, so the refusal gives it back -- the exact unit, via the request the
+// reserve was made with. Same shape as `releaseAIQuota`: a refund that cannot be
+// delivered must not replace the answer the caller is owed.
+async function awaitSharedPace(ceiling, env, origin, minuteReservation) {
   if (!ceiling?.paced) return null;
   const slot = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, { namespace: ceiling.namespace });
   if (slot.accepted) return null;
@@ -466,12 +474,16 @@ async function awaitSharedPace(request, env, origin) {
       'cache-control': 'no-store',
     });
   }
-  // Two seconds, not a minute: the next free second is at most 2.5 s away and
-  // the caller is being told to come back, not to give up.
+  try {
+    await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, minuteReservation);
+  } catch {
+    // The caller is owed a 429 either way; a failed refund is a leak, not an error.
+  }
+  // The beat's own window, not a literal next to a comment that promised it.
   return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
     ...corsHeaders(origin, env),
     'cache-control': 'no-store',
-    'retry-after': '2',
+    'retry-after': PACE_RETRY_AFTER_SECONDS,
   });
 }
 
@@ -482,11 +494,14 @@ async function cacheResponse(request, origin, env, ttl, fetcher, options = {}) {
   const cacheKey = canonicalCacheKey(request, origin, options.canonicalParams);
   const cached = await caches.default.match(cacheKey);
   if (cached) return cached;
-  const sharedQuotaError = await reserveSharedMinuteQuota(request, env, origin);
-  if (sharedQuotaError) return sharedQuotaError;
+  // Resolved once here and handed to both gates: the beat used to re-parse the
+  // URL to find the same ceiling the minute reservation had just looked up.
+  const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
+  const minute = ceiling ? await reserveSharedMinuteQuota(ceiling, env, origin) : {};
+  if (minute.error) return minute.error;
   const quotaError = await reserveProtectedProviderQuota(options.identity || null, env, origin);
   if (quotaError) return quotaError;
-  const paceError = await awaitSharedPace(request, env, origin);
+  const paceError = await awaitSharedPace(ceiling, env, origin, minute.reservation);
   if (paceError) return paceError;
   if (options.openAlexCalls) {
     const budgetError = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
