@@ -1,5 +1,26 @@
 # Estado / pendientes
 
+## La dirección de las páginas sale del índice del historial (2026-09-03)
+
+**React Router 7.18 con `HashRouter` informa `POP` en todas las navegaciones
+(medido en la barra: el NavLink a Siguiendo y el `navigate('/')` de Para ti
+llegan como POP con `history.state.idx` en 1 y 2). Leída por el tipo, cada
+página entraba desde la izquierda «como una vuelta» y las tarjetas del feed
+nunca componían al cambiar de pestaña: la llegada coreografiada de la
+tarjeta solo se veía en el arranque.** `directionForHistoryIndex`
+(utils/routeDirection.js) deriva ahora la dirección del índice — sube =
+avance, baja = vuelta, igual = reemplazo, primer índice = llegada — con una
+memoria de módulo para que los muchos renders de una navegación lean lo
+mismo; el tipo del router solo queda de reserva cuando no hay índice.
+Medido sobre el build de producción en 390×844: Para ti → Siguiendo y
+Siguiendo → Para ti entran desde la derecha con el título 0 → 1 y el carril
+0 → 1; `history.back()` entra desde la izquierda con la tarjeta en reposo.
+Con CPU ×4 no hay tareas largas ni frames >34 ms en la entrada (las tareas
+de 90–135 ms que se vieron primero eran del modo desarrollo de Vite/React,
+no del build). La sonda gana el modo `tabswitch` (`demo,mobile,slow,late`;
+siembra un autor seguido para que Siguiendo tenga tarjetas).
+
+
 ## El carril de botones ya no salta al llegar en móvil (2026-09-03)
 
 **Bajo 900 px el carril de Me gusta/Guardar/… se centraba con

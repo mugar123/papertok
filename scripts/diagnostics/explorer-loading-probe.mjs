@@ -261,6 +261,40 @@ try {
     console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
   }
 
+  if (mode === 'tabswitch') {
+    // A tab switch on the bar, both ways: the outgoing and incoming page
+    // (opacity, transform), the veil, the skeleton, the empty state and the
+    // first card's sheet and title, every frame. `extra`: `demo`, `mobile`.
+    const flags = new Set((extra || '').split(',').filter(Boolean));
+    if (flags.has('demo')) {
+      await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { try { localStorage.setItem('papertok_user', JSON.stringify({ uid: 'probe-demo', email: 'probe@example.com', displayName: 'Probe' })); localStorage.setItem('papertok_onboardingComplete', 'true'); localStorage.setItem('papertok_selectedCategories', JSON.stringify(['quant-ph', 'cond-mat.mtrl-sci', 'cs.AI'])); localStorage.setItem('papertok_following_probe-demo', JSON.stringify([{ type: 'author', id: 'A5006398227', name: 'Probe author', source: 'openalex' }])); } catch {} })();` });
+    }
+    if (flags.has('mobile')) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    }
+    if (flags.has('slow')) await cdp.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    // Long tasks and the animations in flight: which thread the entrance runs
+    // on, and what blocks it.
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { window.__lt = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lt.push({ t: Math.round(e.startTime), d: Math.round(e.duration) }); }).observe({ type: 'longtask', buffered: true }); } catch {} })();` });
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { window.__ts = []; window.__tsOn = false; const op = (el) => el ? Number(getComputedStyle(el).opacity).toFixed(2) : null; const tf = (el) => el ? getComputedStyle(el).transform : null; const tick = () => { if (window.__tsOn) { const pages = [...document.querySelectorAll('#main-content > div')]; const sheet = document.querySelector('.pc-sheet'); const title = document.querySelector('.pc-title'); const rail = document.querySelector('.pc-side-actions'); window.__ts.push({ t: Math.round(performance.now()), pages: pages.map((p) => op(p) + '@' + tf(p)).join(' | '), hash: location.hash, dir: pages.map((p) => p.getAttribute('data-nav-direction')).join('|'), idx: (history.state && history.state.idx) + ' nt=' + window.__navType, veil: op(document.querySelector('.feed-empty--veil')), sk: document.querySelectorAll('.sk').length, empty: !!document.querySelector('.ff-empty, .feed-empty:not(.feed-empty--veil)'), cards: document.querySelectorAll('.feed-snap-item').length, sheet: sheet ? op(sheet) + '@' + tf(sheet) : null, title: title ? op(title) + '@' + tf(title) : null, rail: rail ? op(rail) : null, anims: (window.__ts.length % 10 === 3) ? document.getAnimations().map((a) => (a.animationName || a.effect?.target?.className?.toString().slice(0, 24) || '?') + ':' + (a.constructor.name)).slice(0, 8).join(',') : undefined }); } requestAnimationFrame(tick); }; requestAnimationFrame(tick); })();` });
+    await cdp.send('Page.navigate', { url });
+    await pollUntil(cdp, "document.querySelectorAll('.pc-sheet').length > 0", 40000, 100);
+    // `late`: past the 2.5 s prefetch in App.jsx, so the Following chunk is warm.
+    await sleep(flags.has('late') ? 6000 : 1500);
+    const run = async (label, clickExpr) => {
+      await cdp.eval('window.__ts = []; window.__tsOn = true; true');
+      await cdp.eval(clickExpr);
+      await sleep(2500);
+      const report = await cdp.eval(`(() => { window.__tsOn = false; const p = window.__ts; const t0 = p[0]?.t || 0; const changes = []; let last = ''; for (const x of p) { const k = JSON.stringify([x.pages, x.hash, x.dir, x.idx, x.veil, x.sk, x.empty, x.cards > 0, x.sheet, x.title, x.rail]); if (k !== last) { last = k; changes.push({ ...x, t: x.t - t0 }); } } const gaps = []; for (let i = 1; i < p.length; i++) { const g = p[i].t - p[i - 1].t; if (g > 34) gaps.push({ at: p[i - 1].t - t0, gap: g }); } const longTasks = window.__lt.filter((e) => e.t >= t0 - 50 && e.t <= t0 + 1500).map((e) => ({ at: e.t - t0, d: e.d })); const anims = p.map((x) => x.anims).filter(Boolean); return { frames: p.length, frameGapsOver34ms: gaps, longTasks, animsSample: anims.slice(0, 3), changes }; })()`);
+      console.log(`\n## ${label}`);
+      console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
+    };
+    await run('For you -> Following', "document.querySelector('.navbar-link[href=\"#/following\"]').click(); true");
+    await run('Following -> For you', "[...document.querySelectorAll('.navbar-link')].find((l) => /For you|Para ti/.test(l.textContent)).click(); true");
+    await run('back (history.back)', 'history.back(); true');
+  }
+
   if (mode === 'consent') {
     // The analytics banner in the guest feed: press "Allow analytics" and
     // sample the button's faces, the check, the button's width and the

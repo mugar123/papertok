@@ -47,7 +47,8 @@ test('the veil sits over the container and lets framer own its opacity', async (
 
 test('on the first entry the card composes under the veil instead of sitting at rest', async () => {
   const transition = await read('../Layout/PageTransition.jsx');
-  assert.match(transition, /directionForNavigationType\(useNavigationType\(\), \{\s*historyIndex: typeof window !== 'undefined' \? window\.history\.state\?\.idx : null,\s*\}\)/);
+  // The first index the page ever sees is an arrival (routeDirection.js).
+  assert.match(transition, /directionForHistoryIndex\(\s*typeof window !== 'undefined' \? window\.history\.state\?\.idx : null/);
 });
 
 /**
@@ -90,4 +91,16 @@ test('the navbar fades in on its first mount of the session, and only then', asy
   assert.match(css, /@keyframes navbarArrive \{\s*from \{ opacity: 0; \}\s*to \{ opacity: 1; \}\s*\}/);
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g) || [];
   assert.ok(reduced.some((block) => /\.navbar--arriving[\s\S]*?animation: none;/.test(block)), 'reduced motion drops the arrival');
+});
+
+/**
+ * Measured on the bar (React Router 7.18, HashRouter): every navigation
+ * reports POP, with the history index climbing 1, 2 — so read through the
+ * type, both feeds entered from the left as a return and their cards sat at
+ * rest. The page reads the index now (utils/routeDirection.js).
+ */
+test('the page transition takes its direction from the history index', async () => {
+  const transition = await read('../Layout/PageTransition.jsx');
+  assert.match(transition, /directionForHistoryIndex\(\s*typeof window !== 'undefined' \? window\.history\.state\?\.idx : null,\s*undefined,\s*useNavigationType\(\),?\s*\)/);
+  assert.doesNotMatch(transition, /directionForNavigationType\(useNavigationType\(\)/);
 });

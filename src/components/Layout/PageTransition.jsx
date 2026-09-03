@@ -1,6 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion';
 import { useLocation, useNavigationType } from 'react-router-dom';
-import { directionForNavigationType } from '../../utils/routeDirection.js';
+import { directionForHistoryIndex } from '../../utils/routeDirection.js';
 
 /**
  * How far a page travels on its way in or out.
@@ -88,11 +88,16 @@ export default function PageTransition({ children }) {
   // remember the previous route even if it tried. `handleBack` in the Explorer
   // calls `navigate(-1)` whenever there is history behind it, which is exactly
   // what makes this report POP.
-  // The index is what tells the first entry (0, an arrival) from a pop back
-  // through history: both report POP.
-  const direction = directionForNavigationType(useNavigationType(), {
-    historyIndex: typeof window !== 'undefined' ? window.history.state?.idx : null,
-  });
+  // The index, not the type: this router reports POP for every navigation
+  // (measured on the tab bar — a push arrived as POP with the index at 1),
+  // so the type alone made every page a return. The index grows on a push,
+  // shrinks on a step back, holds on a replace; the type only stands in
+  // where there is no index at all.
+  const direction = directionForHistoryIndex(
+    typeof window !== 'undefined' ? window.history.state?.idx : null,
+    undefined,
+    useNavigationType(),
+  );
   const prefersReducedMotion = useReducedMotion();
 
   const isProject = location.pathname.startsWith('/explorer/project/');

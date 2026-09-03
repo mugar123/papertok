@@ -32,3 +32,32 @@ export function directionForNavigationType(navigationType, { historyIndex = null
   // so there is no step to animate. A redirect should cross-fade, not slide.
   return 0;
 }
+
+/**
+ * The direction of the current entry, from the history index alone.
+ *
+ * React Router 7.18's HashRouter reports POP for every navigation here —
+ * measured on the tab bar: a NavLink push and a `navigate('/')` both arrived
+ * as POP with `history.state.idx` at 1 and 2. Read through the type, every
+ * page entered from the left as a return and the feed's cards sat at rest,
+ * on the very tab switch they were choreographed for. The index cannot be
+ * misreported: it grows on a push, shrinks on a step back, holds on a
+ * replace. `memory` keeps the last index and the direction it produced, so
+ * the many renders of one navigation (the leaving page re-rendered inside
+ * AnimatePresence, the arriving page mounting, both animating) all read the
+ * same answer. The first index this memory sees is an arrival — the first
+ * entry, or a reload deep in history — and a missing index (no
+ * `history.state`) falls back to the router's own type.
+ */
+const historyDirectionMemory = {};
+
+export function directionForHistoryIndex(historyIndex, memory = historyDirectionMemory, navigationType = null) {
+  if (typeof historyIndex !== 'number') return directionForNavigationType(navigationType);
+  if (memory.index === historyIndex) return memory.direction;
+  const direction = typeof memory.index === 'number'
+    ? Math.sign(historyIndex - memory.index)
+    : 0;
+  memory.index = historyIndex;
+  memory.direction = direction;
+  return direction;
+}
