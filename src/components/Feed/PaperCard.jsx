@@ -231,6 +231,10 @@ function RelatedPaperCardSkeleton({ label }) {
   );
 }
 
+// How long the slot keeps its release class after a read mark is taken back:
+// the eye's delayed spring (0.06 s + 0.36 s) plus a frame of slack.
+const READ_RELEASE_MS = 450;
+
 const PaperCard = memo(function PaperCard({ 
   paper, 
   isLiked = false, 
@@ -239,6 +243,7 @@ const PaperCard = memo(function PaperCard({
   onLike = () => {},
   onNotInterested = () => {},
   onMarkAsRead = () => {},
+  onUnmarkAsRead = () => {},
   trackViewTime = () => {},
   trackSkip = () => {},
   onOpenPdf = () => {},
@@ -276,6 +281,11 @@ const PaperCard = memo(function PaperCard({
   const expandedRef = useRef(expanded);
   expandedRef.current = expanded;
   const [showHeart, setShowHeart] = useState(false);
+  // True for the moment after a read mark is taken back, so the slot can
+  // play its release (PaperCard.css) — a class the resting state cannot carry.
+  const [releasingRead, setReleasingRead] = useState(false);
+  const releaseTimerRef = useRef(null);
+  useEffect(() => () => clearTimeout(releaseTimerRef.current), []);
   const [copied, setCopied] = useState(false);
   // Only papers with a canonical identity can anchor a thread; for the rest
   // the button would open a sheet with nowhere to converge, so it does not
@@ -775,13 +785,21 @@ const PaperCard = memo(function PaperCard({
   // pull it from the feed — the paper the reader had just finished with
   // vanished under their thumb. It stays now: the eye turns into a tick and
   // the label says so, and the feed drops it on the next load, not this one.
+  // The button is a toggle: a second press takes the mark back, the tick
+  // folds away and the eye springs back in.
   const handleMarkAsRead = (e) => {
     e.stopPropagation();
     if (publicMode) {
       requireAuthentication('mark_read');
       return;
     }
-    if (isRead) return;
+    if (isRead) {
+      onUnmarkAsRead(paper.id);
+      setReleasingRead(true);
+      clearTimeout(releaseTimerRef.current);
+      releaseTimerRef.current = setTimeout(() => setReleasingRead(false), READ_RELEASE_MS);
+      return;
+    }
     onMarkAsRead(paper);
   };
 
@@ -1641,9 +1659,12 @@ const PaperCard = memo(function PaperCard({
         </button>
 
         <button
-          className={`pc-side-btn pc-side-btn--seen ${isReadActive ? 'pc-side-btn--read' : ''}`}
+          className={`pc-side-btn pc-side-btn--seen ${isReadActive ? 'pc-side-btn--read' : ''} ${releasingRead && !isReadActive ? 'pc-side-btn--unreading' : ''}`}
           onClick={handleMarkAsRead}
           aria-pressed={isReadActive}
+          title={isReadActive
+            ? (isEnglish ? 'Mark as unread' : 'Marcar como no leído')
+            : (isEnglish ? 'Mark as read' : 'Marcar como leído')}
         >
           {/* Both glyphs are always in the slot, one over the other, so the
               eye can shrink away while the tick springs in (PaperCard.css)
@@ -1810,6 +1831,7 @@ const PaperCard = memo(function PaperCard({
                 onLike={onLike}
                 onNotInterested={onNotInterested}
                 onMarkAsRead={onMarkAsRead}
+                onUnmarkAsRead={onUnmarkAsRead}
                 trackViewTime={trackViewTime}
                 trackSkip={trackSkip}
                 onOpenPdf={onOpenPdf}

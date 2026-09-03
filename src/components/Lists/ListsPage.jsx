@@ -998,8 +998,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
     if (expandedList === listId) setExpandedList(null);
   };
 
-  const handleUnmarkAsRead = (e, paperId) => {
-    e.stopPropagation();
+  // Taking a read mark back, from the row's own button or from the card's
+  // read toggle in the overlay: the mark goes, and the row leaves the list.
+  const forgetRead = (paperId) => {
     unmarkAsRead(paperId);
     setLists((prev) => prev.map((list) => {
       if (list.id === '__read__') {
@@ -1007,6 +1008,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
       }
       return list;
     }));
+  };
+
+  const handleUnmarkAsRead = (e, paperId) => {
+    e.stopPropagation();
+    forgetRead(paperId);
   };
 
   const handleUnlike = async (e, paperId, paper) => {
@@ -1863,6 +1869,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
             onLike={toggleLike}
             onNotInterested={(paper) => { markNotInterested(paper); closeOverlayPaper(); }}
             onMarkAsRead={markAsRead}
+            onUnmarkAsRead={forgetRead}
             onOpenPdf={(paper) => onOpenPdf?.(paper)}
             onSaveToList={(paper) => onEditPaper?.(paper)}
             getInteractionState={getInteractionState}

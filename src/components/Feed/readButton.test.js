@@ -15,7 +15,61 @@ test('SOURCE: marking a paper read keeps it in the feed', async () => {
   assert.doesNotMatch(body, /setPapers\(/, 'the card is not removed from the feed when it is marked read');
   const card = stripComments(await read('./PaperCard.jsx'));
   assert.doesNotMatch(card, /isMarkingRead|pc--fade-out/, 'no fade-out, no delayed unmount');
-  assert.match(card, /if \(isRead\) return;\s*onMarkAsRead\(paper\);/, 'the mark lands at once, and only once');
+  assert.match(card, /if \(isRead\) \{\s*onUnmarkAsRead\(paper\.id\);[\s\S]*?return;\s*\}\s*onMarkAsRead\(paper\);/,
+    'the mark lands at once; a second press takes it back instead of landing again');
+});
+
+/**
+ * The read button is a toggle. Pressing it on a read paper takes the mark
+ * back: the tick folds away first, the eye springs back a beat later, and the
+ * slot dips as its teal fill drains. Every surface that mounts a card hands
+ * it the way back, not only the way in.
+ */
+test('SOURCE: every card mount can take a read mark back', async () => {
+  const card = stripComments(await read('./PaperCard.jsx'));
+  assert.match(card, /onUnmarkAsRead = \(\) => \{\},/, 'the prop has a safe default');
+  assert.match(card, /setReleasingRead\(true\);[\s\S]*?setTimeout\(\(\) => setReleasingRead\(false\), READ_RELEASE_MS\)/,
+    'the release class is transient');
+  assert.match(card, /useEffect\(\(\) => \(\) => clearTimeout\(releaseTimerRef\.current\), \[\]\)/,
+    'and its timer is cleared on unmount');
+  assert.match(card, /releasingRead && !isReadActive \? 'pc-side-btn--unreading' : ''/);
+  assert.match(card, /onUnmarkAsRead=\{onUnmarkAsRead\}/, 'the related-paper card gets it too');
+  const mounts = [
+    ['../Feed/FeedContainer.jsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
+    ['../Search/SearchPage.jsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
+    ['../Explorer/EntityExplorer.jsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
+    ['../Report/ScientificReport.jsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
+    ['../Public/PublicPaperPage.jsx', /onUnmarkAsRead=\{unmarkAsRead\}/],
+    ['../Lists/ListsPage.jsx', /onUnmarkAsRead=\{forgetRead\}/],
+  ];
+  for (const [path, pattern] of mounts) {
+    assert.match(await read(path), pattern, `${path} hands the card the way back`);
+  }
+  const lists = stripComments(await read('../Lists/ListsPage.jsx'));
+  assert.match(lists, /const forgetRead = \(paperId\) => \{\s*unmarkAsRead\(paperId\);[\s\S]*?'__read__'/,
+    'on the lists page the row also leaves the reading list');
+});
+
+test('SOURCE: the way back is the same gesture played the other way', async () => {
+  const css = stripComments(await read('./PaperCard.css'));
+  // The rule that opens with this selector alone — not the one where it is
+  // the last of a comma-separated list.
+  const rule = (selector) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = css.match(new RegExp(`(?<=^|[^,]\\n)${escaped} \\{[^}]*`));
+    assert.ok(match, `expected a rule for ${selector}`);
+    return match[0];
+  };
+  assert.match(rule('.pc-side-icon--morph .pc-icon-eye'), /transition-delay: 0\.06s/, 'at rest the eye is the arriving glyph');
+  const checkRest = rule('.pc-side-icon--morph .pc-icon-check');
+  assert.match(checkRest, /transition-duration: 0\.18s, 0\.22s/, 'the tick folds fast');
+  assert.match(checkRest, /transition-delay: 0s/, 'and first');
+  const checkRead = rule('.pc-side-btn--read .pc-side-icon--morph .pc-icon-check');
+  assert.match(checkRead, /cubic-bezier\(0\.34, 1\.56, 0\.64, 1\)/, 'in the read state the tick is the one that springs');
+  assert.match(rule('.pc-side-btn--read .pc-side-icon--morph .pc-icon-eye'), /transition-delay: 0s/, 'and the eye leaves at once');
+  assert.match(css, /@keyframes readRelease \{[\s\S]*?45% \{ transform: scale\(0\.9\); \}/, 'the slot dips');
+  assert.match(css, /\.pc-side-btn--unreading \.pc-side-icon \{\s*animation: readRelease/);
+  assert.match(css, /prefers-reduced-motion: reduce\)[\s\S]*?\.pc-side-btn--unreading \.pc-side-icon \{\s*animation: none;/);
 });
 
 test('SOURCE: the eye and the tick share the slot so one can turn into the other', async () => {

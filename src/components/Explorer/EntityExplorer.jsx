@@ -134,7 +134,7 @@ export default function EntityExplorer({
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
-    toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip,
+    toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
 
   const [entity, setEntity] = useState(null);
@@ -2299,6 +2299,7 @@ export default function EntityExplorer({
             onLike={toggleLike}
             onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}
+            onUnmarkAsRead={unmarkAsRead}
             onOpenPdf={(paper) => setPdfPaperToView(paper)}
             onSaveToList={onSaveToList}
             getInteractionState={getInteractionState}

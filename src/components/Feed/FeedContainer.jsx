@@ -96,7 +96,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const analyticsSurface = source?.surface || (scrollKey === 'following' ? 'following' : 'feed');
   const {
     trackPdfOpened,
-    likedPaperIds, savedPaperIds, readPaperIds, toggleLike, markNotInterested, markAsRead,
+    likedPaperIds, savedPaperIds, readPaperIds, toggleLike, markNotInterested, markAsRead, unmarkAsRead,
     trackViewTime, trackSkip, trackSkips: trackSkippedPapers,
   } = feed;
   const papers = source ? source.papers : feed.papers;
@@ -467,6 +467,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
               onLike={toggleLike}
               onNotInterested={markNotInterested}
               onMarkAsRead={markAsRead}
+              onUnmarkAsRead={unmarkAsRead}
               trackViewTime={handleViewTime}
               trackSkip={handleSkip}
               onOpenPdf={handleOpenPdf}

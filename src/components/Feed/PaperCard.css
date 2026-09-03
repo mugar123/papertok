@@ -1055,12 +1055,18 @@ a.pc-citations {
 }
 .pc-side-btn--read .pc-side-label { color: var(--accent-teal); }
 
-/* The eye becomes the tick. Both glyphs sit in the slot; at rest the tick is
-   folded away (scaled down, invisible) under the eye. Marking the paper read
-   shrinks the eye out with a small turn and lets the tick spring past its
-   size and settle — a transformation the reader can follow, where a swap
-   between two frames was a blink. The slot's own pop and teal fill run at
-   the same time, so the three read as one gesture. */
+/* The eye becomes the tick, and back. Both glyphs sit in the slot; at rest
+   the tick is folded away (scaled down, invisible) under the eye. Marking the
+   paper read shrinks the eye out with a small turn and lets the tick spring
+   past its size and settle — a transformation the reader can follow, where a
+   swap between two frames was a blink. The slot's own pop and teal fill run
+   at the same time, so the three read as one gesture.
+
+   Taking the mark back is the same gesture played the other way: whichever
+   glyph is leaving folds away fast and first (an ease-in, no delay), and the
+   one arriving springs in a beat later. Each rule below therefore carries
+   two timings — its own for arriving, and the leaving ones under the state
+   it leaves from. */
 .pc-side-icon--morph {
   position: relative;
 }
@@ -1072,12 +1078,23 @@ a.pc-citations {
     transform 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
+/* At rest the eye is the glyph that has arrived: it springs back in a beat
+   after the tick has folded. (On first paint nothing transitions, so the
+   delay costs nothing there.) */
+.pc-side-icon--morph .pc-icon-eye {
+  transition-delay: 0.06s;
+}
+
+/* At rest the tick is the glyph that has left: it folds fast and at once. */
 .pc-side-icon--morph .pc-icon-check {
   position: absolute;
   inset: 0;
   margin: auto;
   opacity: 0;
   transform: scale(0.4) rotate(-30deg);
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1), cubic-bezier(0.4, 0, 1, 1);
+  transition-duration: 0.18s, 0.22s;
+  transition-delay: 0s;
 }
 
 .pc-side-btn--read .pc-side-icon--morph .pc-icon-eye {
@@ -1085,12 +1102,29 @@ a.pc-citations {
   transform: scale(0.5) rotate(20deg);
   transition-timing-function: cubic-bezier(0.4, 0, 1, 1), cubic-bezier(0.4, 0, 1, 1);
   transition-duration: 0.18s, 0.22s;
+  transition-delay: 0s;
 }
 
 .pc-side-btn--read .pc-side-icon--morph .pc-icon-check {
   opacity: 1;
   transform: none;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1), cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition-duration: 0.22s, 0.36s;
   transition-delay: 0.06s;
+}
+
+/* The slot's answer to the mark being taken back: the teal fill drains
+   through the slot's own colour transition while the slot dips and comes
+   back to size — the pop that filled it, played in reverse. The class lasts
+   only as long as the release (READ_RELEASE_MS in PaperCard.jsx). */
+@keyframes readRelease {
+  0% { transform: scale(1.04); }
+  45% { transform: scale(0.9); }
+  100% { transform: scale(1); }
+}
+
+.pc-side-btn--unreading .pc-side-icon {
+  animation: readRelease 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 
@@ -2590,6 +2624,9 @@ a.pc-citations {
   .pc-side-icon--morph .pc-icon-eye,
   .pc-side-icon--morph .pc-icon-check {
     transition: none;
+  }
+  .pc-side-btn--unreading .pc-side-icon {
+    animation: none;
   }
 
   .pc,

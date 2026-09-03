@@ -126,6 +126,7 @@ export default function PublicPaperPage({
     toggleLike,
     markNotInterested,
     markAsRead,
+    unmarkAsRead,
     trackViewTime,
     trackSkip,
     trackPdfOpened,
@@ -354,6 +355,7 @@ export default function PublicPaperPage({
             onLike={toggleLike}
             onNotInterested={markNotInterested}
             onMarkAsRead={markAsRead}
+            onUnmarkAsRead={unmarkAsRead}
             trackViewTime={trackViewTime}
             trackSkip={trackSkip}
             getInteractionState={getInteractionState}

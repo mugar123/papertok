@@ -194,7 +194,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
-    toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip,
+    toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
   
   // Seeded from the URL, so a search is a place you can be sent to. The
@@ -1318,6 +1318,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
             onLike={toggleLike}
             onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}
+            onUnmarkAsRead={unmarkAsRead}
             onOpenPdf={(paper) => setPdfPaper(paper)}
             onSaveToList={onSaveToList}
             getInteractionState={getInteractionState}

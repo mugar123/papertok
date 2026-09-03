@@ -241,7 +241,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
 
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
-    toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip,
+    toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
   const getInteractionState = useCallback((paper) => ({
     isLiked: likedPaperIds.has(paper.id),
@@ -882,6 +882,7 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             onLike={toggleLike}
             onNotInterested={(paper) => { markNotInterested(paper); closeOverlay(); }}
             onMarkAsRead={markAsRead}
+            onUnmarkAsRead={unmarkAsRead}
             trackViewTime={trackViewTime}
             trackSkip={trackSkip}
             onOpenPdf={onOpenPdf}
