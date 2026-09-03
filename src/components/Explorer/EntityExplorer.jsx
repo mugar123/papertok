@@ -19,6 +19,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
 import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.js';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { Button } from '../ui/button.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFeed } from '../../context/FeedContext';
@@ -202,6 +203,10 @@ export default function EntityExplorer({
     peerReviewed: false,
     dateRange: ''
   });
+  // Same shared dialog contract as the app's other overlays: initial focus,
+  // a contained Tab cycle, Escape, and returning focus to the filter button
+  // that opened the drawer.
+  const filterDrawerRef = useDialogFocus(showFilters, () => setShowFilters(false));
 
   const [entityAuthors, setEntityAuthors] = useState([]);
   const [isLoadingAuthors, setIsLoadingAuthors] = useState(false);
@@ -2193,8 +2198,9 @@ export default function EntityExplorer({
               animate={{opacity:1}} 
               exit={{opacity:0}} 
             />
-            <motion.div 
-              className="ee-filter-drawer" 
+            <motion.div
+              ref={filterDrawerRef}
+              className="ee-filter-drawer"
               initial={prefersReducedMotion ? { opacity: 0 } : { x: '100%' }}
               animate={prefersReducedMotion ? { opacity: 1 } : { x: 0 }}
               exit={prefersReducedMotion ? { opacity: 0 } : { x: '100%' }}
@@ -2202,10 +2208,11 @@ export default function EntityExplorer({
               role="dialog"
               aria-modal="true"
               aria-labelledby="entity-filter-title"
+              tabIndex={-1}
             >
               <div className="ee-filter-header">
                 <h3 id="entity-filter-title"><SlidersHorizontal size={18}/> {isEnglish ? 'Advanced filters' : 'Filtros avanzados'}</h3>
-                <Button variant="ghost" size="icon" onClick={() => setShowFilters(false)} aria-label={isEnglish ? 'Close filters' : 'Cerrar filtros'} title={isEnglish ? 'Close' : 'Cerrar'}><X size={20}/></Button>
+                <Button variant="ghost" size="icon" data-dialog-initial-focus onClick={() => setShowFilters(false)} aria-label={isEnglish ? 'Close filters' : 'Cerrar filtros'} title={isEnglish ? 'Close' : 'Cerrar'}><X size={20}/></Button>
               </div>
               <div className="ee-filter-body">
                 <div className="ee-filter-section">
