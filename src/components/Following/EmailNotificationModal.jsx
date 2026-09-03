@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { Check, CheckCircle2, Clock3, Loader2, Mail, Send, X } from 'lucide-react';
 import { useEmailNotifications } from '../../context/EmailNotificationsContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import './EmailNotificationModal.css';
 
 const ERROR_COPY = {
@@ -62,15 +63,14 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
   const [testState, setTestState] = useState('idle');
   const preferencesRef = useRef(preferences);
   const testFeedbackTimerRef = useRef(null);
-  const onCloseRef = useRef(onClose);
+  // Initial focus, a contained Tab cycle, Escape and focus return — the
+  // shared dialog contract every overlay in the app now uses, instead of a
+  // one-off Escape listener with no Tab containment at all.
+  const dialogRef = useDialogFocus(isOpen, onClose);
 
   useEffect(() => {
     preferencesRef.current = preferences;
   }, [preferences]);
-
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -79,12 +79,9 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
       setFeedback(null);
       setTestState('idle');
     }, 0);
-    const closeOnEscape = event => event.key === 'Escape' && onCloseRef.current();
-    document.addEventListener('keydown', closeOnEscape);
     return () => {
       clearTimeout(timeoutId);
       clearTimeout(testFeedbackTimerRef.current);
-      document.removeEventListener('keydown', closeOnEscape);
     };
   }, [isOpen]);
 
@@ -138,10 +135,12 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
           onMouseDown={event => event.target === event.currentTarget && onClose()}
         >
           <motion.section
+            ref={dialogRef}
             className="email-notification-modal"
             role="dialog"
             aria-modal="true"
             aria-labelledby="email-notification-title"
+            tabIndex={-1}
             initial={prefersReducedMotion ? false : { opacity: 0, y: 16, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
@@ -155,7 +154,7 @@ export default function EmailNotificationModal({ isOpen, onClose }) {
                   ? 'Receive a compact digest even when PaperTok is closed.'
                   : 'Recibe un digest compacto aunque PaperTok esté cerrado.'}</p>
               </div>
-              <button className="email-notification-close" onClick={onClose} title={isEnglish ? 'Close' : 'Cerrar'}><X size={20} /></button>
+              <button className="email-notification-close" data-dialog-initial-focus onClick={onClose} title={isEnglish ? 'Close' : 'Cerrar'}><X size={20} /></button>
             </header>
 
             <div className="email-notification-body">
