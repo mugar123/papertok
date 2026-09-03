@@ -133,52 +133,45 @@
   gap: var(--space-4);
 }
 
-.profile-handle-input {
-  display: flex;
-  align-items: stretch;
-  min-height: 44px;
-  border: 1px solid var(--profile-line-field);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
+/* The @ and the field are one control, so there is ONE box and the @ lives
+   inside it.
 
-.profile-handle-input:focus-within {
-  border-color: var(--border-ink);
-  box-shadow: inset 0 0 0 1px var(--border-ink);
+   This was a flex row where the wrapper drew the box and the input drew
+   another one within it. At rest both were hairlines and the inner one went
+   unnoticed; on focus the global text-field rule in `styles/global.css` --
+   `input:not([type='checkbox']):not([type='radio']):not([type='range'])
+   :focus-visible`, specificity (0,4,1) -- painted its ink border and inset
+   hairline on the inner input, which no ordinary component override outranks.
+   That was the second box, and it framed the field without the @.
+
+   Overlaying the prefix instead of laying it out beside the field makes the
+   input an ordinary text field: it draws the only box, and it takes the app's
+   focus treatment like every other field, with nothing to override. */
+.profile-handle-input {
+  position: relative;
 }
 
 .profile-handle-input > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--space-4);
   display: grid;
-  flex: 0 0 auto;
   place-items: center;
-  padding: 0 0 0 var(--space-4);
   color: var(--text-tertiary);
   font-family: var(--font-mono);
   font-size: var(--fs-base);
+  /* Decoration painted over the field: a click on the @ has to reach the
+     input underneath it. */
+  pointer-events: none;
 }
 
-/* Outranks `.profile-field input:not([type])` above, which would otherwise
-   draw a second field border inside the wrapper's. */
+/* Room for the prefix, and the mono face a handle is typed in. The border,
+   the radius and the surface come from the shared field rule above -- which
+   is the whole point of the change. */
 .profile-field .profile-handle-input input {
-  width: 100%;
-  min-width: 0;
-  min-height: 44px;
-  padding: var(--space-3) var(--space-4) var(--space-3) var(--space-2);
-  border: none;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--text-primary);
+  padding-left: calc(var(--space-4) + 1.4em);
   font-family: var(--font-mono);
-  font-size: var(--fs-base);
-  box-shadow: none;
-}
-
-.profile-field .profile-handle-input input:focus,
-.profile-field .profile-handle-input input:focus-visible {
-  outline: none;
-  border: none;
-  box-shadow: none;
 }
 
 .profile-hint {
