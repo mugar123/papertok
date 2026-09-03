@@ -608,7 +608,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       
       try {
         // Fetch ML recommendations from Semantic Scholar first (High quality)
-        const semanticRecs = await getPaperRecommendations(paper.arxivId);
+        const semanticRecs = await getPaperRecommendations(paper);
         relatedArxivIds = [...semanticRecs];
       } catch (err) {
         console.warn("Semantic Scholar fetch failed", err);
