@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { PROFILE_VISIBILITY, saveProfileVisibility } from '../../services/userProfileService.js';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import VisibilityChoice from './VisibilityChoice.jsx';
 import './VisibilityPrompt.css';
 
@@ -21,8 +22,9 @@ export default function VisibilityPrompt({ isEnglish, onResolved, onDismiss }) {
   const [choice, setChoice] = useState(null);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
-  const dialog = useRef(null);
-  const dismissButton = useRef(null);
+  // The prompt only exists in the tree while it is shown, so `open` is always
+  // true here — the same contract AuthPrompt uses.
+  const dialogRef = useDialogFocus(true, onDismiss);
 
   const copy = isEnglish ? {
     eyebrow: 'One-time question',
@@ -43,30 +45,6 @@ export default function VisibilityPrompt({ isEnglish, onResolved, onDismiss }) {
     failed: 'No se pudo completar. Inténtalo de nuevo.',
     close: 'Cerrar',
   };
-
-  useEffect(() => {
-    dismissButton.current?.focus();
-    const onKeyDown = (event) => {
-      if (event.key === 'Escape') {
-        onDismiss();
-        return;
-      }
-      if (event.key !== 'Tab' || !dialog.current) return;
-      const focusable = [...dialog.current.querySelectorAll('button:not(:disabled)')];
-      if (focusable.length === 0) return;
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onDismiss]);
 
   const submit = async () => {
     if (!choice || saving) return;
@@ -93,11 +71,12 @@ export default function VisibilityPrompt({ isEnglish, onResolved, onDismiss }) {
       onClick={onDismiss}
     >
       <motion.div
-        ref={dialog}
+        ref={dialogRef}
         className="visibility-prompt"
         role="dialog"
         aria-modal="true"
         aria-labelledby="visibility-prompt-title"
+        tabIndex={-1}
         initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.98 }}
@@ -123,9 +102,9 @@ export default function VisibilityPrompt({ isEnglish, onResolved, onDismiss }) {
 
         <div className="visibility-prompt-actions">
           <button
-            ref={dismissButton}
             type="button"
             className="visibility-prompt-later"
+            data-dialog-initial-focus
             onClick={onDismiss}
             disabled={saving}
           >
