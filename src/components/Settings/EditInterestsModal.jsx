@@ -68,9 +68,26 @@ export default function EditInterestsModal({ isOpen, onClose }) {
 
   const handleSave = async () => {
     if (selected.size === 0) {
-      setFormError(isEnglish
-        ? 'Select at least one research area.'
-        : 'Selecciona al menos un área de investigación.');
+      // A clear immediately followed by the same-tick set is not enough:
+      // React 18+ batches both calls from one click into a single commit, and
+      // when the resulting text matches what was already committed (a repeat
+      // click with nothing selected), react-dom's own prop diff skips the DOM
+      // write ('next === last' short-circuits before touching textContent) —
+      // confirmed by reading react-dom-client's updateProperties and by a
+      // jsdom repro with a MutationObserver: same-tick clear+set produced no
+      // mutation and no re-announcement on the second click.
+      // The failure branch below does not have this problem only because the
+      // `await` separates its clear from its set into two distinct commits —
+      // the element actually unmounts (formError is '', falsy) and remounts
+      // fresh, which is a real, always-observable mutation. `setTimeout(0)`
+      // recreates that same separation here, on the same tick-deferral this
+      // file already uses elsewhere (see the init effect and handleClose).
+      setFormError('');
+      setTimeout(() => {
+        setFormError(isEnglish
+          ? 'Select at least one research area.'
+          : 'Selecciona al menos un área de investigación.');
+      }, 0);
       return;
     }
     setFormError('');
