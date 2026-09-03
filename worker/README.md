@@ -83,9 +83,10 @@ The key's introductory rate limit is **1 RPS**, and Semantic Scholar applies it 
 five requests in one second, one is answered and four refused at once, with no `retry-after`
 (measured 2026-09-03). `S2_GLOBAL_MINUTE_LIMIT` (60, shared by `/sources/s2` and `/related`) is
 the same average and no say over which second, so under it both routes keep a one-a-second beat
-(`worker/upstream-pace.js`): a caller takes the first free second in the shared ledger, waits for
-it (at most 2.5 s), and is refused here with `retry-after: 2` rather than upstream when none is
-free. A refusal Semantic Scholar does send is relayed with the same short wait from both routes;
+(`worker/upstream-pace.js`): a caller takes the first free second in the shared ledger and sleeps
+for it — at most 2.5 s of sleep, which does not count the handful of ledger round trips around it —
+and is refused here with `retry-after: 2` rather than upstream when none is free within that budget.
+A refusal Semantic Scholar does send is relayed with the same short wait from both routes;
 `/related` used to flatten every failure into a bare 502. Raising the ceiling does not help at
 1 RPS — asking Semantic Scholar for a higher limit is what does.
 

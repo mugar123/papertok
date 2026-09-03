@@ -49,7 +49,15 @@ async function fetchRelatedFromWorker(paperId, paper, { fetchWorker, apiBase }) 
   const url = workerSourceUrl('/related', { paper_id: paperId }, apiBase);
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 8000);
+  // 11 s, not 8: the Worker's own fetch to Semantic Scholar can take up to 6 s
+  // (`SOURCE_UPSTREAM_TIMEOUT_MS`), and the one-a-second beat in front of it
+  // (`awaitSharedPace`) can add up to 2.5 s of sleep plus a couple of ledger
+  // round trips before that fetch even starts. 8 s was a comfortable margin
+  // over the 6 s upstream deadline alone; once the beat could add up to 2.5 s
+  // more on top of it, 8 s would abort mid-beat on exactly the contended
+  // requests the beat exists to pace, throwing away the second (and the
+  // provider call, once it lands) for nobody.
+  const timeout = setTimeout(() => controller.abort(), 11000);
   try {
     const response = await fetchWorker(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Semantic Scholar API error: ${response.status}`);

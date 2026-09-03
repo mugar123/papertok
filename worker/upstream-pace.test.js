@@ -88,3 +88,51 @@ test('relays a ledger that is not there instead of treating it as a full second'
   assert.deepEqual(slot, { accepted: false, code: 'QUOTA_LEDGER_UNAVAILABLE' });
   assert.equal(seen.calls, 1);
 });
+
+// Every test above pins `now` to the constant `AT_SECOND_TEN`, so none of them
+// would notice a regression in the wait arithmetic itself -- the only part of
+// this module that reads the clock more than once per call. This ledger
+// instead advances a shared clock by a scripted amount on each round trip, the
+// way a real Durable Object fetch costs real time, so the test below can
+// reproduce what a slow round trip actually does to that arithmetic.
+function advancingLedger(answers, roundTripsMs, clock, seen) {
+  let call = 0;
+  return {
+    idFromName: name => { seen.periodKeys.push(String(name)); return `quota-${name}`; },
+    get: () => ({
+      fetch: async (_url, options) => {
+        clock.value += roundTripsMs[Math.min(call, roundTripsMs.length - 1)];
+        const body = JSON.parse(options.body);
+        seen.reservations ??= [];
+        seen.reservations.push({ subjectKey: body.subjectKey, subjectLimit: body.subjectLimit });
+        const answer = answers[Math.min(call, answers.length - 1)];
+        call += 1;
+        seen.calls = call;
+        return new Response(JSON.stringify(answer));
+      },
+    }),
+  };
+}
+
+test('a reservation confirmed after its second has closed is not spent -- the caller retries for the second that is actually current', async () => {
+  const seen = { periodKeys: [], calls: 0 };
+  const clock = { value: 10_000 }; // same baseline as AT_SECOND_TEN, but this one moves
+  // Second 10 is refused fast (200 ms round trip). Second 11 is accepted, but
+  // that round trip alone takes 2 s, landing the clock at 12 200 -- already
+  // inside second 12, not second 11. Probed against the pre-fix module with
+  // exactly this shape: the old arithmetic returned `{ second: 11, waitedMs: 0
+  // }` right there, and the caller would have sent inside a second it never
+  // held. A third, fast (100 ms) round trip for second 12 then confirms it
+  // while the clock is still inside second 12 -- the correct, non-stale slot.
+  const roundTripsMs = [200, 2000, 100];
+  const answers = [{ accepted: false, scope: 'user' }, { accepted: true }, { accepted: true }];
+  const slept = [];
+
+  const slot = await awaitUpstreamSlot(advancingLedger(answers, roundTripsMs, clock, seen), {
+    namespace: 's2', now: () => clock.value, sleep: async ms => { slept.push(ms); },
+  });
+
+  assert.deepEqual(slot, { accepted: true, second: 12, waitedMs: 0 });
+  assert.equal(seen.calls, 3, 'the stale accept of second 11 must cost a retry, not be spent as a send');
+  assert.deepEqual(slept, [], 'the clock had already passed both seconds it tried by the time each was confirmed');
+});

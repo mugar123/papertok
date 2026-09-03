@@ -530,8 +530,15 @@ async function handleRelated(request, env, identity) {
     // Through the source helper, not a bare `fetchWithDeadline`: this used to
     // throw a plain Error with the status in its message and nothing on the
     // error itself, which is why the router could only ever answer 502. Six
-    // seconds rather than eight, too -- the browser gives this route eight, and
-    // an answer that lands as the client leaves is cached for nobody.
+    // seconds for this fetch -- but `awaitSharedPace` runs ahead of it in
+    // `cacheResponse` and can itself add up to 2.5 s of sleep plus a couple of
+    // ledger round trips, so the two no longer share a separate margin against
+    // the browser. The client's abort budget for this route
+    // (`relatedPapersService.js`) was raised from 8 s to 11 s to hold both,
+    // rather than shrinking this deadline to carve room out of it: that would
+    // hand a contended request -- one that hit the beat's wait precisely
+    // because Semantic Scholar is already under pressure -- less time to talk
+    // to a provider that is by hypothesis already slow.
     return fetchJsonUpstream(url, env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {});
   }, { identity, canonicalParams: { paper_id: paperId } });
 }

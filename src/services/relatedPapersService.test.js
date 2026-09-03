@@ -77,3 +77,38 @@ test('does not remember a failed request as the paper\'s answer', async () => {
   assert.equal(calls, 2, 'the failure must not stay in flight, or in the cache');
   assert.equal(related.length, 8);
 });
+
+test('gives the Worker eleven seconds before giving up, not eight', async t => {
+  // The Worker's own upstream fetch can take up to 6 s, and the one-a-second
+  // beat in front of it can add up to 2.5 s of sleep plus a couple of ledger
+  // round trips -- 8 s stopped being a safe margin once that beat shipped.
+  // Mock timers, not a real wait: a `fetchWorker` that only settles when the
+  // abort signal fires stands in for a Worker call that is still in flight,
+  // and the clock is advanced by hand rather than slept through for real.
+  clearRelatedPapersCache();
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const paper = { id: 'arxiv:2607.12345', arxivId: '2607.12345' };
+  const fetchWorker = (_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(new Error('aborted')));
+  });
+
+  // `getRelatedPapers` chains several `.then`/`.finally` hops onto the abort
+  // rejection before it reaches `pending`, so one microtask turn after a tick
+  // is not enough to observe whether it has settled -- draining a generous
+  // number of microtask turns is (a real timer would too, but `setTimeout` is
+  // exactly what is mocked here, and `setImmediate` is not a browser global
+  // this file's lint config allows).
+  const flush = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve(); };
+
+  let settled = false;
+  const pending = getRelatedPapers(paper, 8, { fetchWorker, apiBase: WORKER });
+  pending.then(() => { settled = true; }, () => { settled = true; });
+
+  await flush();
+  t.mock.timers.tick(10_999);
+  await flush();
+  assert.equal(settled, false, 'must still be waiting just under eleven seconds in');
+
+  t.mock.timers.tick(1);
+  await assert.rejects(() => pending, /aborted/, 'must abort once eleven seconds are up');
+});
