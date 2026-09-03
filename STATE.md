@@ -1,5 +1,21 @@
 # Estado / pendientes
 
+## El carril de botones ya no salta al llegar en móvil (2026-09-03)
+
+**Bajo 900 px el carril de Me gusta/Guardar/… se centraba con
+`transform: translateY(-50%)`, y la llegada de cada pieza de la tarjeta
+(`pcArrive`) anima `transform`: durante los 0,55 s de la llegada el valor de
+la animación sustituía el centrado, el carril quedaba media altura más abajo
+(medido en 390×844: top 456 → 448, y 288 el frame en que soltaba la
+propiedad) y saltaba arriba al terminar.** Visible desde que la primera
+entrada compone (`1c01d24`, esta mañana); antes la regla
+`[data-nav-direction="-1"]` apagaba la llegada en el arranque y lo
+escondía. El centrado es ahora la propiedad individual `translate`, que
+compone con el `transform` animado en vez de sustituirlo: medido después,
+el carril solo asienta los 8 px de la coreografía (296 → 288). Test de
+fuente en `paperCardArrival.test.js`; la sonda `bootload` muestrea también
+el carril (`rail`).
+
 ## Un solo átomo del arranque a la primera tarjeta (2026-09-03)
 
 **La puerta de auth ya no pinta un átomo propio sobre `/`: mientras carga la

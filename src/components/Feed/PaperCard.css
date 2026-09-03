@@ -2496,7 +2496,13 @@ a.pc-citations {
     position: absolute;
     right: var(--space-2);
     top: 50%;
-    transform: translateY(-50%);
+    /* The individual `translate` property, not a `transform`: the arrival
+       (`pcArrive`, above) animates `transform`, and while it ran the
+       animation's value replaced this centring — the rail sat half its
+       height too low for 0.55 s and jumped up when the property was
+       released (measured on 390×844). `translate` composes with the
+       animated transform instead. */
+    translate: 0 -50%;
     gap: var(--space-3);
   }
 }
