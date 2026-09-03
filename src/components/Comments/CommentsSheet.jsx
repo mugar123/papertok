@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CornerDownRight, Flag, MessageCircle, Pencil, Trash2, X } from 'lucide-react';
@@ -84,6 +84,9 @@ const COPY = {
   retry: { es: 'Reintentar', en: 'Try again' },
   more: { es: 'Cargar más', en: 'Load more' },
   placeholder: { es: 'Añade un comentario...', en: 'Add a comment...' },
+  // The visible placeholder vanishes once the composer holds any text, so the
+  // field needs a real accessible name of its own.
+  composerLabel: { es: 'Comentario', en: 'Comment' },
   replyingTo: { es: 'Respondiendo a', en: 'Replying to' },
   editing: { es: 'Editando tu comentario', en: 'Editing your comment' },
   cancel: { es: 'Cancelar', en: 'Cancel' },
@@ -400,6 +403,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   // node created at the same moment as its message is frequently missed.
   const [notice, setNotice] = useState({ tone: 'status', text: '' });
   const [composerError, setComposerError] = useState(null);
+  const composerErrorId = useId();
   const [draft, setDraft] = useState('');
   const [replyTarget, setReplyTarget] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
@@ -1100,6 +1104,9 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                   maxLength={4000}
                   rows={1}
                   placeholder={text(COPY.placeholder)}
+                  aria-label={text(COPY.composerLabel)}
+                  aria-invalid={composerError ? 'true' : undefined}
+                  aria-describedby={composerError ? composerErrorId : undefined}
                   onChange={event => setDraft(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {
@@ -1123,7 +1130,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               <AnimatePresence initial={false}>
                 {composerError && (
                   <ThreadSlot key="error" reduced={prefersReducedMotion}>
-                    <p className="comments-composer-error" role="alert">
+                    <p id={composerErrorId} className="comments-composer-error" role="alert">
                       {composerError}
                     </p>
                   </ThreadSlot>
