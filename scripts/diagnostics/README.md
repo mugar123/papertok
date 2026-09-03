@@ -48,3 +48,17 @@ then traces three seconds of it and counts `Paint`, `RasterTask`, `GPUTask` and
 style recalculation; `old` restores the previous `background-position` shimmer
 by injecting a stylesheet, for a before/after on the same page. `PORT=9225`
 picks another debugging port so runs can go in parallel.
+
+Two more, added the same day:
+
+```bash
+node scripts/diagnostics/explorer-loading-probe.mjs wikiexit '#/explorer/topic/query-ec129ead?q=gravitational+lensing+of+quasars&source=free-text'
+node scripts/diagnostics/explorer-loading-probe.mjs comments '#/'
+```
+
+`wikiexit` opens a topic whose Wikipedia lookup misses and samples the list's
+top edge every frame while the reserved block folds away, reporting the biggest
+single-frame move — a fold that ends in a jump shows up as one frame carrying
+tens of pixels. `comments` opens the first card's thread in the guest feed and
+samples the skeleton's and the empty state's computed opacity every frame
+through the handover.

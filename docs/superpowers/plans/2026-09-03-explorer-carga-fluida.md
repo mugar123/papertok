@@ -115,3 +115,49 @@ lento; en escritorio el barrido antiguo ya cabía en el frame.
 `utils/entityExplorer.test.js` cubre la clave de petición: los detalles de un
 proyecto no cambian la clave; página, orden, búsqueda, filtros, parámetros,
 reintentos e identidad del autor sí.
+
+## Segunda tanda (misma tarde): el pliegue de Wikipedia, los comentarios y dos tiempos
+
+**El bloque de Wikipedia que se pliega.** En un tema (o institución) sin
+extracto en Wikipedia, el bloque reservado se retira con la salida de
+`AnimatePresence`: `height: 0`, opacidad y 6 px de subida. Medido con la sonda
+(`wikiexit`, muestreando cada frame el borde superior del listado): la altura
+llegaba a 0 pero el `border-box` se quedaba en sus 26 px de padding y borde, y
+al desmontarse el elemento se iban de golpe esos 26 px más los 16 px del hueco
+del flex — **42 px en un solo frame**, 400 ms después de que el pliegue
+pareciera acabado. Es exactamente «la sección de papers sube un poco más de
+golpe». El bloque va ahora dentro de un plegador sin caja propia
+(`.ehc-wiki-fold`) cuya altura sí llega a cero y que anima además
+`marginTop` hasta `-16px` (`HERO_STACK_GAP_PX`, el `--space-4` con que apila
+`.explorer-hero-content`) para llevarse el hueco consigo. Después: el frame
+del desmontaje mueve **0 px** en las tres corridas; el pliegue reparte sus
+162 px en frames de 30 px como máximo con la curva expo. Observado y no
+resuelto aquí: en una de tres corridas, la llegada de las 30 filas del tema
+coincidió con el pliegue y bloqueó el hilo 315 ms; es coste del render de
+las filas, no del pliegue, y estaba antes.
+
+**Los comentarios, del esqueleto a «Nadie ha comentado todavía».** React
+cambiaba uno por otro en un frame. Los dos van ahora en un
+`AnimatePresence mode="popLayout"`: el esqueleto sale del flujo y se funde
+(180 ms, 6 px hacia abajo) mientras el mensaje sube a su sitio (320 ms desde
+10 px, curva expo). `initial={false}` para que un hilo servido de caché abra
+directamente en su estado. Dos detalles que importan: el retraso de 320 ms
+del esqueleto se mueve de `.comments-sheet-loading` a sus filas, porque una
+animación CSS sobre la misma `opacity` pisaría el valor en línea de framer
+durante toda la salida; y `.comments-sheet-body` pasa a `position: relative`,
+que es el ancestro contra el que `popLayout` fija el elemento saliente.
+Medido (`comments`, feed de invitado, primer hilo): en el frame en que llega
+el veredicto el esqueleto ya está `absolute` y el mensaje montado a opacidad
+0 y 10 px abajo; el esqueleto baja de 1 a 0 en 185 ms y el mensaje sube a 1
+en 320 ms; en ningún frame el cuerpo está vacío.
+
+**La paleta y el modal de guardar, más lentos.** A petición: la paleta entra
+en 380 ms y sale en 220 (eran 260 y 140), y el modal de guardar entra en 360
+y sale en 300 (eran 240 y 200), con `DIALOG_EXIT_MS` a juego. El velo de la
+paleta era el compartido de `dialog.jsx` (150 ms), que ahora despejaría el
+fondo antes de que la hoja se fuera: `CommandDialog` y `DialogContent`
+aceptan `overlayClassName`, y `.sc-scrim` va en los dos relojes de la hoja.
+Clase doblada porque la regla compartida es una variante `data-state` de
+Tailwind con la misma especificidad. Pruebas: `paletteMotion.test.js`,
+`saveModalMotion.test.js` (tiempos nuevos), `commentsSheetStates.test.js` y
+el plegador en `explorerLoading.test.js`.

@@ -46,6 +46,11 @@ import './EntityExplorer.css';
 
 const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
 const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
+// The gap `.explorer-hero-content` stacks its blocks with (`--space-4`, 1rem).
+// A block that folds away takes its gap with it, so the fold animates this
+// much negative margin alongside its height: the box reaches nothing before
+// it unmounts, and nothing below it moves at unmount.
+const HERO_STACK_GAP_PX = 16;
 
 
 /**
@@ -1779,22 +1784,32 @@ export default function EntityExplorer({
               folds the block away instead of cutting it. */}
           <AnimatePresence initial={false}>
             {(wikiDescription || entity?.homepage_url || (isWikiRequestPending && ['concept', 'topic', 'institution'].includes(type))) && (
-              <motion.div 
+              <motion.div
                 layout
-                className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''} ${isWikiRequestPending && !wikiDescription ? 'is-loading' : ''}`}
-                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -8 }}
-                animate={{ opacity: 1, height: 'auto', y: 0 }}
-                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6 }}
+                className="ehc-wiki-fold"
+                // The fold is a box of its own around the padded block, so
+                // that `height: 0` means nothing rather than the 26px of
+                // padding and border a border-box clamps at — and it carries
+                // the stack gap out with it. Measured before this: a 400ms
+                // fold that stopped at 26px, then a 42px jump of the list the
+                // frame the block unmounted.
+                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -8 }}
+                animate={{ opacity: 1, height: 'auto', marginTop: 0, y: 0 }}
+                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6 }}
                 transition={prefersReducedMotion
                   ? { duration: 0 }
                   : {
                     opacity: { duration: 0.3 },
                     height: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
+                    marginTop: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
                     y: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
                     layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
                   }}
-                aria-busy={isWikiRequestPending && !wikiDescription}
               >
+                <div
+                  className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''} ${isWikiRequestPending && !wikiDescription ? 'is-loading' : ''}`}
+                  aria-busy={isWikiRequestPending && !wikiDescription}
+                >
                 {isWikiRequestPending && !wikiDescription ? (
                   <div className="ehc-wiki-skeleton" role="status" aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}>
                     {/* Three lines because the collapsed paragraph is clamped
@@ -1847,6 +1862,7 @@ export default function EntityExplorer({
                       {isEnglish ? 'Official website' : 'Web oficial'} <ExternalLink size={14} />
                     </a>
                   )}
+                </div>
                 </div>
               </motion.div>
             )}

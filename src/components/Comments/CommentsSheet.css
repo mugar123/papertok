@@ -112,6 +112,10 @@
 }
 
 .comments-sheet-body {
+  /* The positioned ancestor for the skeleton on its way out: `popLayout`
+     (CommentsSheet.jsx) fixes the leaving element against the nearest one,
+     and without this that was the sheet, header and all. */
+  position: relative;
   height: min(58dvh, 520px);
   overflow-y: auto;
   /* The feed underneath snap-scrolls: without this, running out of thread
@@ -130,8 +134,13 @@
    `animation: … forwards` from `opacity: 0` is the pattern that dies inside a
    `content-visibility: auto` subtree. This sheet is mounted at the root of
    App/PublicPaperPage, never inside `.feed-snap-item`, so it runs — keep it
-   that way if the sheet is ever moved. */
-.comments-sheet-loading {
+   that way if the sheet is ever moved.
+
+   On the rows, not on `.comments-sheet-loading`: that element is framer's now
+   (it fades out as the empty state arrives), and a CSS animation on the same
+   element's `opacity` would sit above the inline value framer writes for the
+   whole of the exit. */
+.comments-sheet-loading .comment-skeleton {
   opacity: 0;
   animation: comments-skeleton-reveal 140ms ease-out 320ms forwards;
 }

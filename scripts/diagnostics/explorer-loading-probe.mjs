@@ -4,11 +4,15 @@
 //        node probe.mjs paint '#/explorer/author/A…' new|old
 import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = Number(process.env.PORT || 9224);
 const ORIGIN = 'http://localhost:5173';
-const PROFILE = new URL(`./chrome-profile-${process.pid}`, import.meta.url).pathname;
+// Under the OS temp dir, never beside this script: a run that dies leaves
+// its profile behind, and inside the repo that is an untracked directory.
+const PROFILE = join(tmpdir(), `papertok-probe-${process.pid}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function launch() {
@@ -133,6 +137,33 @@ try {
     console.log(JSON.stringify({ worksBefore, rowsBefore, authorsCount, backSameFrame: back, backAfter600ms: after, authorsAgain: again }, null, 1));
     console.log('timeline since the first tab click:');
     console.log(JSON.stringify(tl, null, 0).replace(/\},\{/g, '},\n{'));
+  }
+
+  if (mode === 'wikiexit') {
+    // A topic whose Wikipedia lookup misses: the block's skeleton folds away.
+    // Sample the list's top edge every frame around the fold and report the
+    // biggest single-frame move — a jump is one frame carrying many pixels.
+    await cdp.send('Page.navigate', { url });
+    const shown = await pollUntil(cdp, "!!document.querySelector('.ehc-wiki')", 30000, 100);
+    console.log('wiki block shown:', shown);
+    await cdp.eval(`(() => { window.__pos = []; const tick = () => { const w = document.querySelector('.ehc-wiki'); const c = document.querySelector('.explorer-content'); window.__pos.push({ t: Math.round(performance.now()), top: c ? Math.round(c.getBoundingClientRect().top * 10) / 10 : null, wiki: w ? Math.round(w.getBoundingClientRect().height * 10) / 10 : null }); if (window.__pos.length < 3000) requestAnimationFrame(tick); }; requestAnimationFrame(tick); return 'sampling'; })()`);
+    const gone = await pollUntil(cdp, "!document.querySelector('.ehc-wiki')", 30000, 100);
+    console.log('wiki block gone:', gone);
+    await sleep(1200);
+    const report = await cdp.eval(`(() => { const p = window.__pos; const moves = []; for (let i = 1; i < p.length; i++) { const d = (p[i].top ?? 0) - (p[i - 1].top ?? 0); if (Math.abs(d) > 0.05 || (p[i].wiki === null) !== (p[i - 1].wiki === null)) moves.push({ t: p[i].t - p[0].t, dt: p[i].t - p[i - 1].t, top: p[i].top, move: Math.round(d * 10) / 10, wiki: p[i].wiki }); } const biggest = moves.reduce((m, x) => Math.abs(x.move) > Math.abs(m.move) ? x : m, { move: 0 }); return { frames: p.length, biggestSingleFrameMove: biggest, moves: moves.slice(-40) }; })()`);
+    console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
+  }
+
+  if (mode === 'comments') {
+    // The feed as a guest, the first card's comments opened: sample the
+    // skeleton and the empty state every frame through the handover.
+    await cdp.send('Page.navigate', { url });
+    const card = await pollUntil(cdp, "[...document.querySelectorAll('.pc-side-btn')].some(b => /coment|comment/i.test(b.textContent))", 45000, 250);
+    console.log('comments button:', card);
+    await cdp.eval(`(() => { window.__cs = []; const tick = () => { const l = document.querySelector('.comments-sheet-loading'); const e = document.querySelector('.comments-sheet-state'); window.__cs.push({ t: Math.round(performance.now()), skel: l ? Number(getComputedStyle(l).opacity).toFixed(2) : null, skelPos: l ? getComputedStyle(l).position : null, empty: e ? Number(getComputedStyle(e).opacity).toFixed(2) : null, emptyY: e ? getComputedStyle(e).transform : null }); if (window.__cs.length < 900) requestAnimationFrame(tick); }; requestAnimationFrame(tick); const b = [...document.querySelectorAll('.pc-side-btn')].find(x => /coment|comment/i.test(x.textContent)); b.click(); return b.textContent.trim(); })()`).then((c) => console.log('clicked:', c));
+    await sleep(6000);
+    const report = await cdp.eval(`(() => { const p = window.__cs; const changes = []; let last = ''; for (const x of p) { const k = JSON.stringify([x.skel, x.skelPos, x.empty, x.emptyY]); if (k !== last) { last = k; changes.push(x); } } return { frames: p.length, changes: changes.slice(0, 60) }; })()`);
+    console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
   }
 
   if (mode === 'paint') {

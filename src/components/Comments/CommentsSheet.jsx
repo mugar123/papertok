@@ -822,15 +822,50 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         </header>
 
         <div className="comments-sheet-body">
+          {/* The skeleton and the empty verdict cross-fade rather than swap.
+              React used to replace one with the other in a single frame:
+              three grey lines, then a centred message, with nothing between.
+              `popLayout` takes the leaving skeleton out of flow, so the
+              message has the body to itself in the same frame and the lines
+              fade over it, settling 6px as they go, while it rises into
+              place. `initial={false}`: a thread served from the cache opens
+              straight on its state, and an entrance there would be motion
+              for nothing. */}
+          <AnimatePresence mode="popLayout" initial={false}>
           {status === 'loading' && (
-            <div className="comments-sheet-loading" role="status" aria-label={text(COPY.loading)} aria-busy="true">
+            <motion.div
+              key="loading"
+              className="comments-sheet-loading"
+              role="status"
+              aria-label={text(COPY.loading)}
+              aria-busy="true"
+              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 6 }}
+              transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.18, ease: [0.4, 0, 1, 1] }}
+            >
               {[0, 1, 2].map(index => (
                 <div className="comment-skeleton" key={index} aria-hidden="true">
                   <span /><span /><span />
                 </div>
               ))}
-            </div>
+            </motion.div>
           )}
+          {status === 'ready' && thread.length === 0 && (
+            <motion.div
+              key="empty"
+              className="comments-sheet-state"
+              role="status"
+              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={prefersReducedMotion ? { duration: 0.12 } : { duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <span className="comments-sheet-state-icon" aria-hidden="true">
+                <MessageCircle size={20} />
+              </span>
+              <h3 className="comments-sheet-state-title">{text(COPY.emptyTitle)}</h3>
+              <p>{text(COPY.empty)}</p>
+            </motion.div>
+          )}
+          </AnimatePresence>
           {WAITING_COPY[status] && (
             // 'slow' and 'offline' are still waits — they keep `aria-busy` and
             // the retry loop behind them. Only 'error' is a verdict.
@@ -847,15 +882,6 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               >
                 {text(COPY.retry)}
               </Button>
-            </div>
-          )}
-          {status === 'ready' && thread.length === 0 && (
-            <div className="comments-sheet-state" role="status">
-              <span className="comments-sheet-state-icon" aria-hidden="true">
-                <MessageCircle size={20} />
-              </span>
-              <h3 className="comments-sheet-state-title">{text(COPY.emptyTitle)}</h3>
-              <p>{text(COPY.empty)}</p>
             </div>
           )}
           {status === 'ready' && thread.length > 0 && (

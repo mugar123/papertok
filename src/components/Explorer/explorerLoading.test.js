@@ -108,3 +108,26 @@ test('the page skeleton reserves as many rows as the list skeleton paints', asyn
   assert.ok(pageSkeletonRows, 'five rows in the page skeleton');
   assert.match(jsx, /isLoadingPapers && !isFetchingMore && \[1, 2, 3, 4, 5\]\.map/);
 });
+
+/**
+ * A topic whose Wikipedia lookup misses folds its block away. Measured before
+ * the fix: the block's `height` reached 0 but its padding and border (26px)
+ * stayed, and the parent's 16px flex gap went with it at unmount — the list
+ * jumped 42px in one frame after a 400ms fold that had looked finished.
+ */
+test('the Wikipedia block folds inside a wrapper that also absorbs the stack gap', async () => {
+  const jsx = await read('./EntityExplorer.jsx');
+  assert.match(jsx, /const HERO_STACK_GAP_PX = 16;/);
+  const fold = jsx.match(/<motion\.div\s+layout\s+className="ehc-wiki-fold"[\s\S]*?>\s*<div\s+className=\{`ehc-wiki /);
+  assert.ok(fold, 'the motion wrapper is a box of its own around the padded `.ehc-wiki`');
+  assert.match(fold[0], /initial=\{prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -8 \}\}/);
+  assert.match(fold[0], /animate=\{\{ opacity: 1, height: 'auto', marginTop: 0, y: 0 \}\}/);
+  assert.match(fold[0], /exit=\{prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6 \}\}/);
+  assert.match(fold[0], /marginTop: \{ duration: 0\.42, ease: \[0\.16, 1, 0\.3, 1\] \}/);
+  const css = await read('./EntityExplorer.css');
+  assert.match(css, /\.ehc-wiki-fold \{\s*overflow: hidden;\s*\}/);
+  // The constant stands for `--space-4`, the gap `.explorer-hero-content` stacks with.
+  const tokens = await read('../../styles/variables.css');
+  assert.match(tokens, /--space-4: 1rem;/);
+  assert.match(css, /\.explorer-hero-content \{[^}]*gap: var\(--space-4\);/);
+});

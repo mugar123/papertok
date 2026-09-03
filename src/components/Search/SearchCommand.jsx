@@ -155,7 +155,7 @@ export default function SearchCommand({ open, onOpenChange }) {
   // between opens (App.jsx), so `open` turning false is the START of the exit,
   // not the end of the palette: a reset there repainted the sheet with the
   // empty-query view — results gone, suggestions cascading in — inside the
-  // 140 ms it was fading out. A layout effect on open runs before that opening
+  // 220 ms it was fading out. A layout effect on open runs before that opening
   // is painted, so the previous answer is never on screen either way.
   useLayoutEffect(() => {
     if (open) reset();
@@ -395,7 +395,7 @@ export default function SearchCommand({ open, onOpenChange }) {
   });
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} title={copy.placeholder} className="sc-sheet">
+    <CommandDialog open={open} onOpenChange={onOpenChange} title={copy.placeholder} className="sc-sheet" overlayClassName="sc-scrim">
       {/* The field leads the entrance rather than sitting it out.
           Everything in the list below already rose into place while the one
           element the palette exists for — the field you are about to type in —

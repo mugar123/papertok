@@ -592,6 +592,14 @@
   overflow: hidden;
 }
 
+/* The fold around the block: a box with no padding or border of its own, so
+   its `height` can reach zero (EntityExplorer.jsx animates it, together with
+   a negative top margin that takes the stack gap out). `overflow: hidden` is
+   what clips the block while the fold closes. */
+.ehc-wiki-fold {
+  overflow: hidden;
+}
+
 .ehc-wiki p {
   margin: 0 0 8px 0;
   max-height: 4.8em;
