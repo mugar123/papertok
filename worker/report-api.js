@@ -202,6 +202,52 @@ const SHARED_MINUTE_CEILINGS = Object.freeze({
   '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT },
 });
 
+// What the router tells a client to wait when the upstream refused without
+// saying for how long. Semantic Scholar's 429 carries no `retry-after` (measured
+// 2026-09-03) and its window is one second: the introductory key admits one
+// request per second and refuses the rest of that second at once, so a minute
+// is fifty-nine seconds of a reader waiting for a slot that opened long ago. A
+// minute stays the answer everywhere else, where the window really is a minute.
+const UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS = Object.freeze({
+  '/sources/s2': '2',
+  '/related': '2',
+});
+const DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS = '60';
+
+function upstreamRetryAfter(pathname, error) {
+  return error?.retryAfter
+    || UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS[pathname]
+    || DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS;
+}
+
+// One mapping for every route that spends a provider. `/sources/*` had it and
+// `/related` did not, so the same Semantic Scholar 429 reached the browser from
+// one route as `429 UPSTREAM_RATE_LIMITED retry-after` and from the other as
+// `502 Related papers unavailable` -- the one shape a client retries at once,
+// which is the one thing that makes a rate limit worse.
+function upstreamFailureResponse(pathname, error, origin, env, label) {
+  const isScopus = pathname === '/sources/scopus';
+  const rateLimited = error?.status === 429;
+  // `AbortSignal.timeout` rejects with a `TimeoutError`, and a stall has no
+  // status to relay -- so it gets a name instead of the generic 502 body.
+  const timedOut = error?.name === 'TimeoutError';
+  const status = rateLimited ? 429 : 502;
+  return json({
+    error: label,
+    ...(rateLimited ? { code: 'UPSTREAM_RATE_LIMITED' } : {}),
+    ...(timedOut ? { code: 'UPSTREAM_TIMEOUT' } : {}),
+    // For every route, not only Scopus: a 400 we caused and an outage they had
+    // both used to leave here as the same 502, and the number that told them
+    // apart stayed in `wrangler tail` -- which is how the OpenReview `tcdate`
+    // bug went unseen for weeks.
+    ...(error?.status ? { upstreamStatus: error.status } : {}),
+    ...(isScopus && error?.resetAt ? { resetAt: error.resetAt } : {}),
+  }, status, {
+    ...corsHeaders(origin, env),
+    ...(rateLimited ? { 'retry-after': upstreamRetryAfter(pathname, error) } : {}),
+  });
+}
+
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
     status,
@@ -446,11 +492,12 @@ async function handleRelated(request, env, identity) {
   return cacheResponse(request, origin, env, RELATED_CACHE_SECONDS, async () => {
     const fields = 'paperId,title,abstract,authors,year,externalIds,url,venue,publicationDate,citationCount,isOpenAccess,openAccessPdf,publicationTypes';
     const url = `https://api.semanticscholar.org/recommendations/v1/papers/forpaper/${encodeURIComponent(paperId)}?fields=${encodeURIComponent(fields)}&limit=${limit}`;
-    const headers = { accept: 'application/json' };
-    if (env.SEMANTIC_SCHOLAR_API_KEY) headers['x-api-key'] = env.SEMANTIC_SCHOLAR_API_KEY;
-    const response = await fetchWithDeadline(url, { headers }, SOURCE_UPSTREAM_TIMEOUT_MS);
-    if (!response.ok) throw new Error(`Semantic Scholar error: ${response.status}`);
-    return response.json();
+    // Through the source helper, not a bare `fetchWithDeadline`: this used to
+    // throw a plain Error with the status in its message and nothing on the
+    // error itself, which is why the router could only ever answer 502. Six
+    // seconds rather than eight, too -- the browser gives this route eight, and
+    // an answer that lands as the client leaves is cached for nobody.
+    return fetchJsonUpstream(url, env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {});
   }, { identity, canonicalParams: { paper_id: paperId, limit: String(limit) } });
 }
 
@@ -2364,8 +2411,9 @@ export default {
     if (url.pathname === '/related') {
       try {
         return await handleRelated(request, env, protectedIdentity);
-      } catch {
-        return json({ error: 'Related papers unavailable' }, 502, corsHeaders(origin, env));
+      } catch (error) {
+        console.error('Related papers failed', error);
+        return upstreamFailureResponse('/related', error, origin, env, 'Related papers unavailable');
       }
     }
     if (url.pathname === '/citation-graph') {
@@ -2395,30 +2443,8 @@ export default {
         return await DOMAIN_SOURCE_HANDLERS[url.pathname](request, env, protectedIdentity);
       } catch (error) {
         console.error(`Specialist source failed: ${url.pathname}`, error);
-        const isScopus = url.pathname === '/sources/scopus';
-        // A refusal relayed as a 502 reads as "this source is broken", and a
-        // client that believes that retries at once -- which is the one thing
-        // that makes a rate limit worse. Scopus already relayed its own 429;
-        // every source route does now, because every one of them can be refused.
-        const rateLimited = error.status === 429;
-        // `AbortSignal.timeout` rejects with a `TimeoutError`, and a stall has no
-        // status to relay -- so it gets a name instead of the generic 502 body.
-        const timedOut = error?.name === 'TimeoutError';
-        const status = rateLimited ? 429 : 502;
-        return json({
-          error: isScopus ? 'Scopus unavailable' : 'Specialist source unavailable',
-          ...(rateLimited ? { code: 'UPSTREAM_RATE_LIMITED' } : {}),
-          ...(timedOut ? { code: 'UPSTREAM_TIMEOUT' } : {}),
-          // For every source, not only Scopus: a 400 we caused and an outage they
-          // had both left here as the same 502, and the number that told them
-          // apart stayed in `wrangler tail` (`Upstream error: 400`) -- which is
-          // how the OpenReview `tcdate` bug went unseen for weeks.
-          ...(error.status ? { upstreamStatus: error.status } : {}),
-          ...(isScopus && error.resetAt ? { resetAt: error.resetAt } : {}),
-        }, status, {
-          ...corsHeaders(origin, env),
-          ...(rateLimited ? { 'retry-after': error.retryAfter || '60' } : {}),
-        });
+        const label = url.pathname === '/sources/scopus' ? 'Scopus unavailable' : 'Specialist source unavailable';
+        return upstreamFailureResponse(url.pathname, error, origin, env, label);
       }
     }
     return json({ error: 'Not found' }, 404, corsHeaders(origin, env));

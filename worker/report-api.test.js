@@ -1915,6 +1915,55 @@ test('lets /related ask for the twenty recommendations the feed seeds from', asy
   assert.match(upstreamUrl, /limit=20/);
 });
 
+// Semantic Scholar's 429 reached the browser from `/sources/s2` as a 429 with a
+// code and from `/related` as `502 Related papers unavailable` -- the one shape a
+// client retries at once. Both routes spend the same key; they relay the same way.
+test('/related relays a Semantic Scholar refusal with its code, its status and a short wait', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response('{}', { status: 429, headers: { 'content-type': 'application/json' } }),
+    () => withCachedIdentity(() => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=20',
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), AUTHENTICATED_ENV)),
+  );
+
+  assert.equal(response.status, 429);
+  const body = await response.json();
+  assert.equal(body.code, 'UPSTREAM_RATE_LIMITED');
+  assert.equal(body.upstreamStatus, 429);
+  // Semantic Scholar names no wait and its window is one second: a minute here
+  // is fifty-nine seconds of a reader waiting for a slot that opened long ago.
+  assert.equal(response.headers.get('retry-after'), '2');
+});
+
+test('/related names a stalled Semantic Scholar instead of dressing it as a generic failure', async () => {
+  const response = await withWorkerFetchMock(
+    async () => { throw new DOMException('aborted due to timeout', 'TimeoutError'); },
+    () => withCachedIdentity(() => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=20',
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), AUTHENTICATED_ENV)),
+  );
+
+  assert.equal(response.status, 502);
+  const body = await response.json();
+  assert.equal(body.error, 'Related papers unavailable');
+  assert.equal(body.code, 'UPSTREAM_TIMEOUT');
+});
+
+test('tells a client refused by Semantic Scholar search to wait a second, not a minute', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response('{}', { status: 429, headers: { 'content-type': 'application/json' } }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/s2?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), OPEN_ROUTE_ENV),
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('retry-after'), '2');
+});
+
 test('keeps two different PubMed queries in two different cache entries', async () => {
   const stored = new Map();
   let upstreamCalls = 0;
