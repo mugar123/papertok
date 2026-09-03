@@ -390,7 +390,11 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   const [hiddenLocally, setHiddenLocally] = useState(() => locallyHiddenCommentIds());
   const [paging, setPaging] = useState(false);
   const [busy, setBusy] = useState(false);
-  // { tone: 'status' | 'error', text }. Rendered persistently below (empty by
+  // { tone: 'status' | 'success' | 'error', text }. The render below only
+  // branches on `tone === 'error'` (role="alert") vs. everything else
+  // (role="status") -- 'status' and 'success' render identically, the
+  // distinction is for readability at each call site (an empty/idle clear
+  // vs. an actual confirmation). Rendered persistently below (empty by
   // default) so the region exists before an action runs, not only once it has
   // something to say — a live region announces changes to its content, and a
   // node created at the same moment as its message is frequently missed.
