@@ -200,3 +200,24 @@ informa `POP` en la primera entrada del historial y la regla
 en toda vuelta. La primera entrada (`history.state.idx` 0) no es una vuelta:
 `directionForNavigationType` la distingue y devuelve 0, así que la tarjeta
 compone bajo el velo que se retira, que es el relevo que se quería.
+
+## Cuarta tanda: pulsar «Permitir analítica»
+
+La persistencia del consentimiento es síncrona en la práctica (localStorage),
+así que «Activando…» duraba un frame: el botón cambiaba de texto dos veces en
+treinta milisegundos y saltaba de anchura entre «Permitir analítica»,
+«Activando…» y «Analítica activada»; la marca de hecho aparecía sin más y la
+alerta se iba a los 620 ms en 0,22 s.
+
+Ahora el botón lleva sus tres caras apiladas en una celda de rejilla
+(`.analytics-consent-accept-face`, `grid-area: 1 / 1`), así que mide lo que
+su etiqueta más ancha desde el primer frame y no cambia de tamaño; cada paso
+sube a su sitio desde 6 px abajo mientras el anterior se eleva 6 px, como un
+contador. Solo se anuncia una etiqueta (`aria-live` en un span oculto); las
+caras son decorativas. «Activando…» dura al menos 320 ms
+(`Promise.all` con un temporizador), la marca de hecho brota con un pequeño
+rebote (`analyticsConsentCheckIn`, 0,42 s con sobreimpulso), el icono de la
+alerta se pone en verde con el marco, la confirmación se queda 800 ms y la
+alerta se despide en 0,3 s. Con movimiento reducido no hay instante mínimo ni
+transiciones. Pruebas en `analyticsConsentStyles.test.js`; la sonda gana el
+modo `consent`.

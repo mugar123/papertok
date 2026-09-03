@@ -201,6 +201,21 @@ try {
     console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
   }
 
+  if (mode === 'consent') {
+    // The analytics banner in the guest feed: press "Allow analytics" and
+    // sample the button's faces, the check, the button's width and the
+    // banner itself every frame until the banner has gone.
+    await cdp.send('Page.navigate', { url });
+    const shown = await pollUntil(cdp, "!!document.querySelector('.analytics-consent-accept')", 60000, 250);
+    console.log('banner shown:', shown);
+    await sleep(600);
+    const clicked = await cdp.eval(`(() => { window.__cn = []; const face = (name) => { const f = document.querySelector('.analytics-consent-accept-face[data-face="' + name + '"]'); if (!f) return null; const cs = getComputedStyle(f); return Number(cs.opacity).toFixed(2) + '@' + (cs.transform === 'none' ? '0' : cs.transform.split(',').pop().trim().replace(')', '')); }; const tick = () => { const b = document.querySelector('.analytics-consent'); const btn = document.querySelector('.analytics-consent-accept'); const check = document.querySelector('.analytics-consent-accept-face[data-face="success"] svg'); window.__cn.push({ t: Math.round(performance.now()), banner: b ? Number(getComputedStyle(b).opacity).toFixed(2) : null, width: btn ? Math.round(btn.getBoundingClientRect().width) : null, state: btn ? btn.className.replace('analytics-consent-accept ', '') : null, idle: face('idle'), loading: face('loading'), success: face('success'), check: check ? getComputedStyle(check).transform.slice(0, 22) : null, icon: b ? getComputedStyle(b.querySelector('.analytics-consent-icon')).color : null }); if (window.__cn.length < 400) requestAnimationFrame(tick); }; requestAnimationFrame(tick); const button = document.querySelector('.analytics-consent-accept'); button.click(); return button.textContent.trim(); })()`);
+    console.log('clicked:', clicked);
+    await sleep(2600);
+    const report = await cdp.eval(`(() => { const p = window.__cn; const changes = []; let last = ''; for (const x of p) { const k = JSON.stringify([x.banner, x.width, x.state, x.idle, x.loading, x.success, x.check, x.icon]); if (k !== last) { last = k; changes.push(x); } } return { frames: p.length, widths: [...new Set(p.map(x => x.width))], changes: changes.slice(0, 80) }; })()`);
+    console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
+  }
+
   if (mode === 'paint') {
     await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
     const held = [];

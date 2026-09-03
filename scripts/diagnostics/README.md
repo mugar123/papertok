@@ -72,3 +72,12 @@ request held for 3.5 s — the guest feed answers in half a second, under the
 1.5 s the atom waits before showing — then releases them and samples the atom
 veil (presence, opacity, the atom's transform) against the first card's sheet
 and title every frame through the handover.
+
+```bash
+node scripts/diagnostics/explorer-loading-probe.mjs consent '#/'
+```
+
+`consent` waits for the analytics banner in the guest feed, presses "Allow
+analytics" and samples the button's three faces, the check's transform, the
+button's width, the banner's opacity and the mark's colour every frame until
+the banner has left.
