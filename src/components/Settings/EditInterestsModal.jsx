@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { X, Check } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { CATEGORIES } from '../../data/categories';
 import './EditInterestsModal.css';
 
@@ -11,6 +12,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
   const [selected, setSelected] = useState(new Set());
   const [isClosing, setIsClosing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [formError, setFormError] = useState('');
 
   // Initialize selection when modal opens
   useEffect(() => {
@@ -18,6 +20,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
       setTimeout(() => {
         setSelected(new Set(userPreferences));
         setIsClosing(false);
+        setFormError('');
       }, 0);
     }
   }, [isOpen, userPreferences]);
@@ -29,6 +32,12 @@ export default function EditInterestsModal({ isOpen, onClose }) {
       setIsClosing(false);
     }, 300); // match animation duration
   };
+
+  // The overlay stays mounted through the 300ms close animation above, so the
+  // trap must too — it releases (and returns focus) only once the component
+  // is about to render null. Escape now closes through the same handleClose
+  // as the button, instead of skipping the animation.
+  const dialogRef = useDialogFocus(isOpen || isClosing, handleClose);
 
   const toggleSubcategory = (subKey) => {
     setSelected((prev) => {
@@ -58,13 +67,22 @@ export default function EditInterestsModal({ isOpen, onClose }) {
   };
 
   const handleSave = async () => {
-    if (selected.size === 0) return;
+    if (selected.size === 0) {
+      setFormError(isEnglish
+        ? 'Select at least one research area.'
+        : 'Selecciona al menos un área de investigación.');
+      return;
+    }
+    setFormError('');
     setIsSaving(true);
     try {
       await updatePreferences(Array.from(selected));
       handleClose();
     } catch (error) {
       console.error('Error saving preferences:', error);
+      setFormError(isEnglish
+        ? 'We could not save your changes. Try again.'
+        : 'No se pudieron guardar los cambios. Inténtalo de nuevo.');
     } finally {
       setIsSaving(false);
     }
@@ -74,15 +92,28 @@ export default function EditInterestsModal({ isOpen, onClose }) {
 
   return (
     <div className={`eim-overlay ${isClosing ? 'eim-overlay--closing' : ''}`}>
-      <div className="eim-modal" onClick={(e) => e.stopPropagation()}>
+      <div
+        ref={dialogRef}
+        className="eim-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="eim-title"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="eim-header">
           <div className="eim-header-text">
-            <h2>{isEnglish ? 'Configure your algorithm' : 'Configura tu algoritmo'}</h2>
+            <h2 id="eim-title">{isEnglish ? 'Configure your algorithm' : 'Configura tu algoritmo'}</h2>
             <p>{isEnglish
               ? 'Select the research areas you want to see in your feed'
               : 'Selecciona las áreas de investigación que quieres ver en tu feed'}</p>
           </div>
-          <button className="eim-close-btn" onClick={handleClose}>
+          <button
+            className="eim-close-btn"
+            onClick={handleClose}
+            data-dialog-initial-focus
+            aria-label={isEnglish ? 'Close' : 'Cerrar'}
+          >
             <X size={20} />
           </button>
         </div>
@@ -132,18 +163,26 @@ export default function EditInterestsModal({ isOpen, onClose }) {
           })}
         </div>
 
+        {formError && (
+          <p className="eim-form-error" role="alert">{formError}</p>
+        )}
+
         <div className="eim-footer">
           <span className="eim-selected-count">
             {isEnglish
               ? `${selected.size} selected ${selected.size === 1 ? 'interest' : 'interests'}`
               : `${selected.size} interese${selected.size !== 1 ? 's' : ''} seleccionado${selected.size !== 1 ? 's' : ''}`}
           </span>
-          <button 
-            className="eim-save-btn" 
-            onClick={handleSave} 
-            disabled={selected.size === 0 || isSaving}
+          <button
+            className="eim-save-btn"
+            onClick={handleSave}
+            disabled={isSaving}
           >
-            {isSaving ? <div className="eim-spinner" /> : (isEnglish ? 'Save changes' : 'Guardar cambios')}
+            {/* The spinner is decorative; the label stays put beside it so the
+                button keeps an accessible name — "Saving..." rather than
+                nothing — for the whole time it is busy. */}
+            {isSaving && <div className="eim-spinner" aria-hidden="true" />}
+            {isSaving ? (isEnglish ? 'Saving...' : 'Guardando...') : (isEnglish ? 'Save changes' : 'Guardar cambios')}
           </button>
         </div>
       </div>
