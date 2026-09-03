@@ -165,26 +165,31 @@ S3 cae solo. Si no, extraer `withPubmedRetry` a `withUpstreamRetry` y aplicarlo
 a las dos rutas de S2 con la misma política: un reintento, no más; si el
 proveedor nombra un `retry-after` mayor que el presupuesto, relayar.
 
-### S4 — La hoja pide dos veces para cada paper sin DOI *(media)*
+### S4 — Nada deduplica una petición en vuelo *(media)*
 
-`RelatedPapersSheet.jsx:91` arranca en `mode = 'similar'` cuando no hay DOI, y
-entonces **los dos** efectos se cumplen a la vez: el de `mode === 'similar'`
-(`:249`) y el de `!hasGraphIdentifier` (`:266`). Ambos llaman
-`getRelatedPapers(paper)` en el mismo tick; `relatedPapersService` solo escribe
-su caché **después** de resolver y no deduplica peticiones en vuelo, así que
-salen dos `/related` iguales, la caché de borde falla en las dos (son
-concurrentes) y S2 recibe dos peticiones en el mismo segundo: **una se rechaza
-por construcción.** Como cada efecto fija `relatedStatus` por su cuenta, si la
-que falla resuelve después de la que acierta, la hoja pasa de `ready` a
-`error` con la lista ya pintada.
+**Corregido el 03-09 tras leer el código con más cuidado: la hoja NO pide dos
+veces.** `RelatedPapersSheet.jsx:119` inicializa
+`relatedRequestedRef = useRef(!hasGraphIdentifier)`, así que en un paper sin
+DOI el primer efecto (`mode === 'similar'`) sale por el guardia y solo dispara
+el segundo (`!hasGraphIdentifier`). Los dos efectos son mutuamente excluyentes
+por construcción. La versión anterior de esta entrada afirmaba lo contrario y
+proponía fusionarlos, que además habría roto la hoja: el efecto fusionado
+consultaría ese mismo ref pre-armado y no pediría nunca.
 
-Los papers sin DOI son los de arXiv, que es la mayoría del feed.
+Lo que sí falta es deduplicación de peticiones **en vuelo**.
+`relatedPapersService` escribe su caché solo **después** de resolver, así que
+dos llamadas concurrentes por el mismo paper son dos peticiones al Worker y dos
+al proveedor en el mismo segundo — y a 1 RPS la segunda se rechaza por
+construcción. Ocurre de verdad en dos sitios:
+
+- el feed llama `traverseAndExpandNetwork` al marcar, guardar, abrir el PDF o a
+  los 10 s de lectura, y la hoja puede abrirse en ese mismo segundo;
+- StrictMode monta la hoja dos veces en desarrollo, y el segundo efecto no
+  consulta ningún ref.
 
 **Arreglo.** Un mapa de peticiones en vuelo en `relatedPapersService`, con el
 mismo patrón que `openAlexEnrichmentRequests` en `FeedContext.jsx:586`, para
-que dos llamadas concurrentes compartan una promesa. Y en la hoja, que el
-segundo efecto no dispare cuando el primero ya lo ha hecho (o fusionarlos: la
-condición real es «pestaña similares o sin grafo»).
+que dos llamadas concurrentes compartan una promesa. La hoja no se toca.
 
 ### S5 — El mismo paper cuesta dos llamadas: `limit=20` y `limit=8` *(media)*
 

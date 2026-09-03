@@ -500,9 +500,10 @@ const SHARED_MINUTE_CEILINGS = Object.freeze({
 Justo después de `reserveSharedMinuteQuota` (~línea 400):
 
 ```js
-// The beat under the ceiling, for the providers that count per second. The
-// minute reservation comes first because it is the cheap refusal: a caller the
-// minute already turned away must not also take a second from somebody else.
+// The beat under the ceiling, for the providers that count per second. It runs
+// last of the three gates because it is the only one that costs wall-clock: a
+// caller the minute ceiling or the identity quota is about to turn away must not
+// first take a second away from somebody who would have used it.
 async function awaitSharedPace(request, env, origin) {
   const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
   if (!ceiling?.paced) return null;
@@ -524,14 +525,18 @@ async function awaitSharedPace(request, env, origin) {
 }
 ```
 
-En `cacheResponse`, entre la reserva de minuto y la de identidad:
+En `cacheResponse`, **después** de las dos reservas: el compás es la única
+puerta que cuesta tiempo de reloj, así que todo rechazo barato va delante. Tomar
+un segundo para una petición que la cuota de identidad va a rechazar gasta el
+recurso más escaso del sistema para nada.
 
 ```js
   const sharedQuotaError = await reserveSharedMinuteQuota(request, env, origin);
   if (sharedQuotaError) return sharedQuotaError;
+  const quotaError = await reserveProtectedProviderQuota(options.identity || null, env, origin);
+  if (quotaError) return quotaError;
   const paceError = await awaitSharedPace(request, env, origin);
   if (paceError) return paceError;
-  const quotaError = await reserveProtectedProviderQuota(options.identity || null, env, origin);
 ```
 
 - [ ] **Step 8: Todo en verde, en los dos ficheros**
@@ -789,7 +794,7 @@ Expected: sin errores.
 
 - [ ] **Step 9: Mutación**
 
-En el Worker: volver a poner `limit: String(limit)` en `canonicalParams` (con `const limit = 20`) → el test `serves the sheet and the feed…` sigue en verde (misma clave) pero **`stored.size` deja de ser el discriminante**; por eso el test anterior (`limit=8` → `limit=20`) es el que muere si se restaura `getSafeLimit`. Comprobar ese. En el navegador: volver a `CACHE.get(\`${paperId}:${limit}\`)` → `asked.length` = `2`, rojo. Restaurar los dos.
+En el Worker: restaurar `const limit = getSafeLimit(requestUrl.searchParams.get('limit'), 8, 20);`, usarlo en la URL upstream y devolver `limit: String(limit)` a `canonicalParams`. **Los dos tests nuevos tienen que morir**: el primero porque la URL upstream lleva `limit=8`, y el segundo porque `ask(20)` y `ask(8)` vuelven a ser dos entradas y dos llamadas. Restaurar. En el navegador: volver a `CACHE.get(\`${paperId}:${limit}\`)` → `asked.length` = `2`, rojo. Restaurar.
 
 - [ ] **Step 10: Commit**
 
@@ -802,12 +807,19 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 ---
 
-### Task 4: Dos peticiones concurrentes por el mismo paper son una (S4)
+### Task 4: Dos llamadas concurrentes por el mismo paper comparten una petición (S4)
 
 **Files:**
 - Modify: `src/services/relatedPapersService.js` (el `getRelatedPapers` de Task 3)
-- Modify: `src/components/Feed/RelatedPapersSheet.jsx:249-280`
 - Test: `src/services/relatedPapersService.test.js`
+
+**No tocar `RelatedPapersSheet.jsx`.** La versión anterior de esta tarea fusionaba
+sus dos efectos; se retiró tras leer el componente. `RelatedPapersSheet.jsx:119`
+inicializa `relatedRequestedRef = useRef(!hasGraphIdentifier)`, así que en un paper
+sin DOI el primer efecto sale por el guardia y solo dispara el segundo: son
+mutuamente excluyentes por construcción y no hay petición doble. El efecto
+fusionado habría consultado ese mismo ref pre-armado y **no habría pedido nunca**.
+Lo que falta es la deduplicación en vuelo, y esa vive en el servicio.
 
 **Interfaces:**
 - Consumes: `getRelatedPapers(paper, limit, { fetchWorker, apiBase })` y `clearRelatedPapersCache()` de Task 3.
@@ -824,10 +836,11 @@ test('shares one request between two callers that ask for the same paper at once
   const fetchWorker = async () => { calls += 1; return twentyRecommendations(); };
   const paper = { id: 'arxiv:2607.12345', arxivId: '2607.12345' };
 
-  // The sheet used to fire this twice on one mount for a paper without a DOI --
-  // once from the "similar" tab, once from "no graph to draw" -- and the second
-  // landed in the same second as the first. At one request a second that is a
-  // refusal by construction, and the refusal could overwrite the answer.
+  // The cache only fills once the answer is in, so two callers in the same tick
+  // were two Worker calls and two provider calls in the same second -- at one
+  // request a second, the second is a refusal by construction. It happens: the
+  // feed asks on like, save, PDF-open and ten seconds of dwell, the sheet can
+  // open in that same second, and StrictMode mounts the sheet twice in dev.
   const [forSheet, forSheetAgain] = await Promise.all([
     getRelatedPapers(paper, 8, { fetchWorker, apiBase: WORKER }),
     getRelatedPapers(paper, 8, { fetchWorker, apiBase: WORKER }),
@@ -908,55 +921,20 @@ export function clearRelatedPapersCache() {
 Run: `node --test src/services/relatedPapersService.test.js 2>&1 | grep -E "^ℹ (pass|fail)"`
 Expected: `pass 4`, `fail 0`.
 
-- [ ] **Step 5: La hoja pide una vez**
-
-En `src/components/Feed/RelatedPapersSheet.jsx`, sustituir los dos `useEffect` de `getRelatedPapers` (líneas 249-280, el que empieza `if (mode !== 'similar' || relatedRequestedRef.current)` y el que empieza `if (hasGraphIdentifier) return undefined;`) por uno:
-
-```jsx
-  /**
-   * Two effects used to ask for the related papers -- one for the "similar"
-   * tab, one for a paper with no graph to draw -- and a paper without a DOI
-   * starts on "similar" precisely because it has no graph, so both fired on
-   * the same mount. The service now shares one request between them, but the
-   * condition is one condition, and it reads better as one.
-   */
-  useEffect(() => {
-    const wanted = mode === 'similar' || !hasGraphIdentifier;
-    if (!wanted || relatedRequestedRef.current) return undefined;
-    relatedRequestedRef.current = true;
-    let cancelled = false;
-    setRelatedStatus('loading');
-    getRelatedPapers(paper).then(results => {
-      if (cancelled) return;
-      setPapers(results);
-      setRelatedStatus(results.length ? 'ready' : 'empty');
-    }).catch(error => {
-      if (cancelled) return;
-      console.error('No se pudieron cargar papers relacionados', error);
-      setRelatedStatus('error');
-    });
-    return () => { cancelled = true; };
-  }, [mode, hasGraphIdentifier, paper]);
-```
-
-Comprobar que `relatedRequestedRef` sigue declarado más arriba en el componente (lo usaba el primer efecto) y que ningún otro sitio dependía del segundo efecto para fijar `relatedStatus` en `'loading'`: el segundo no lo hacía, así que un paper sin DOI ahora pasa por `'loading'` antes de `'ready'`, que es lo que la vista ya espera para la pestaña «similares».
-
-- [ ] **Step 6: Lint y verificación en el navegador**
+- [ ] **Step 5: Lint**
 
 Run: `npm run lint`
 Expected: sin errores.
 
-Arrancar el dev server con `preview_start` (`.claude/launch.json`), iniciar sesión el propio usuario (la sesión es suya; nunca pedir credenciales), abrir un paper del feed **sin DOI** (uno de arXiv) y su hoja de relacionados. Con `read_network_requests` filtrando `urlPattern: "/related"`: **una** petición, no dos. Repetir con un paper con DOI y pestaña «similares»: una.
-
-- [ ] **Step 7: Mutación**
+- [ ] **Step 6: Mutación**
 
 Quitar el `IN_FLIGHT.get` (crear siempre la promesa) → el test `shares one request…` en rojo con `calls` = `2`. Restaurar.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-git add src/services/relatedPapersService.js src/services/relatedPapersService.test.js src/components/Feed/RelatedPapersSheet.jsx
-git commit -m "fix(related): the sheet asks once per paper, and two callers at once share the request
+git add src/services/relatedPapersService.js src/services/relatedPapersService.test.js
+git commit -m "fix(related): two callers asking for one paper at once share the request
 
 Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 ```
@@ -1285,7 +1263,7 @@ Añadir a la entrada de `STATE.md` del Step 3 una línea con los dos números me
 
 ## Auto-revisión
 
-**Cobertura del spec.** S1 → Task 2. S2 → Task 1. S3 → Task 2 (el compás espera en vez de rechazar; no hace falta `withUpstreamRetry`). S4 → Task 4. S5 → Task 3. S6 → fuera, declarado en Global Constraints. S7 → Task 1. S8 → Task 5. S9 → Task 6. S10 → los tests de `/related` fallando están en Task 1. La solicitud de límite → Global Constraints y Task 7.
+**Cobertura del spec.** S1 → Task 2. S2 → Task 1. S3 → Task 2 (el compás espera en vez de rechazar; no hace falta `withUpstreamRetry`). S4 → Task 4 (la deduplicación en vuelo; la premisa de «la hoja pide dos veces» era falsa y se corrigió en el spec el 03-09). S5 → Task 3. S6 → fuera, declarado en Global Constraints. S7 → Task 1. S8 → Task 5. S9 → Task 6. S10 → los tests de `/related` fallando están en Task 1. La solicitud de límite → Global Constraints y Task 7.
 
 **Consistencia de nombres.** `awaitUpstreamSlot` (Task 2, fichero y hook), `awaitSharedPace` (solo en `report-api.js`), `upstreamFailureResponse` y `upstreamRetryAfter` (Task 1, usados en el router), `RELATED_UPSTREAM_LIMIT` (Task 3, en el Worker y en el cliente con el mismo nombre y valor), `getRelatedPapers(paper, limit, { fetchWorker, apiBase })` (Task 3, consumido por Task 4 y Task 6), `clearRelatedPapersCache` (Task 3, ampliado en Task 4), `getPaperRecommendations(paper, { fetchRelated })` (Task 6, consumido por `FeedContext`).
 
