@@ -22,7 +22,7 @@ import {
   parsePaperKey,
 } from '../../utils/publicNavigation.js';
 import { paperLegacyAdapter } from '../../models/Paper.js';
-import { seedPaintsWhole } from '../../utils/paperSeed.js';
+import { hydrateSeededPaper, seedPaintsWhole } from '../../utils/paperSeed.js';
 import PaperCard from '../Feed/PaperCard.jsx';
 import SkeletonCard from '../Feed/SkeletonCard.jsx';
 import { Button } from '../ui/button.jsx';
@@ -245,7 +245,12 @@ export default function PublicPaperPage({
           setResult({ requestKey, paper: seededPaper, status: seededPaper ? 'ready' : 'not-found' });
           return;
         }
-        setResult({ requestKey, paper: loadedPaper, status: 'ready' });
+        // The provider's paper, with the copy the link handed over laid on
+        // top where it speaks: the id the reader's marks are keyed by, the
+        // branch the feed filed it under, the authors and abstract as the
+        // reader saw them. Without this the page showed another provider's
+        // account of the same paper, unread and unliked.
+        setResult({ requestKey, paper: hydrateSeededPaper(seededPaper, loadedPaper), status: 'ready' });
       })
       .catch((error) => {
         if (requestId !== requestIdRef.current) return;

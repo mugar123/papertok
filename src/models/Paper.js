@@ -108,8 +108,15 @@ export function paperLegacyAdapter(legacyPaper) {
   const landingPageUrl = legacyPaper.landingPageUrl
     || (arxivId ? `https://arxiv.org/abs/${arxivId.split('/').pop()}` : (doi ? `https://doi.org/${doi}` : ''));
 
-  // Extract pure ID for canonical identification
-  let canonicalId = doi || (arxivId ? `arxiv:${arxivId.split('/').pop()}` : String(legacyPaper.id || Date.now()));
+  // The id a copy was stored under is the key its interactions live under —
+  // the like, the read mark, the list it sits in — so it is kept as it is. A
+  // copy used to be re-keyed by its DOI (or `arxiv:…`) here, and the paper
+  // page opened from a list then looked for the read mark under the DOI
+  // while it sat under `openalex:W…`: the paper the reader had just marked
+  // read came up unread. The DOI and the arXiv id keep their own fields and
+  // still drive the public key; only a copy with no id at all is keyed by them.
+  const storedId = legacyPaper.id === undefined || legacyPaper.id === null ? '' : String(legacyPaper.id).trim();
+  const canonicalId = storedId || doi || (arxivId ? `arxiv:${arxivId.split('/').pop()}` : String(Date.now()));
 
   return {
     id: canonicalId,
@@ -132,6 +139,14 @@ export function paperLegacyAdapter(legacyPaper) {
     landingPageUrl,
     citationCount: legacyPaper.citationCount || openAlexData.cited_by_count || 0,
     concepts: legacyPaper.concepts || openAlexData.concepts || [],
-    categories: legacyPaper.allCategories || [legacyPaper.primaryCategory].filter(Boolean)
+    // The branch the feed filed the paper under, and every category it
+    // carried, survive the round trip: a stored copy keeps `categories` as a
+    // list, and it used to be dropped for the primary alone.
+    primaryCategory: legacyPaper.primaryCategory || undefined,
+    categories: legacyPaper.allCategories
+      || (Array.isArray(legacyPaper.categories) && legacyPaper.categories.length > 0
+        ? legacyPaper.categories
+        : [legacyPaper.primaryCategory].filter(Boolean)),
+    published: legacyPaper.published || undefined,
   };
 }

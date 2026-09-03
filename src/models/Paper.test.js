@@ -36,25 +36,48 @@ test('a stored OpenAlex paper keeps its id and gets no arXiv links', () => {
   assert.equal(paper.sources.primary, 'stored');
 });
 
-test('a stored PubMed paper with a DOI is keyed by the DOI and lands on the resolver', () => {
+test('a stored PubMed paper with a DOI keeps the id it was stored under and lands on the resolver', () => {
   const paper = paperLegacyAdapter({ id: 'pmid:31234567', title: 'T', doi: 'https://doi.org/10.1000/abc' });
-  assert.equal(paper.id, '10.1000/abc');
+  assert.equal(paper.id, 'pmid:31234567',
+    'the stored id is the key its like and read mark live under; re-keying by the DOI lost them');
   assert.equal(paper.doi, '10.1000/abc');
   assert.equal(paper.arxivId, undefined);
   assert.equal(paper.landingPageUrl, 'https://doi.org/10.1000/abc');
 });
 
-test('an arXiv paper still derives its links and canonical id as before', () => {
+test('an arXiv paper still derives its links, and keeps the id it was stored under', () => {
   const paper = paperLegacyAdapter({ id: '2401.12345', title: 'T' });
-  assert.equal(paper.id, 'arxiv:2401.12345');
+  assert.equal(paper.id, '2401.12345', 'a copy stored under the bare arXiv id stays keyed by it');
   assert.equal(paper.arxivId, '2401.12345');
   assert.equal(paper.pdfUrl, 'https://arxiv.org/pdf/2401.12345.pdf');
   assert.equal(paper.landingPageUrl, 'https://arxiv.org/abs/2401.12345');
   assert.equal(paper.sources.primary, 'arxiv');
 
   const legacy = paperLegacyAdapter({ id: 'hep-th/0603001', title: 'T' });
-  assert.equal(legacy.id, 'arxiv:0603001', 'the canonical id keeps its historical shape');
+  assert.equal(legacy.id, 'hep-th/0603001');
   assert.equal(legacy.arxivId, 'hep-th/0603001');
+});
+
+test('only a copy with no id at all is keyed by its DOI or arXiv id', () => {
+  assert.equal(paperLegacyAdapter({ title: 'T', doi: '10.1000/abc' }).id, '10.1000/abc');
+  assert.equal(paperLegacyAdapter({ title: 'T', arxivId: '2401.12345' }).id, 'arxiv:2401.12345');
+  assert.equal(paperLegacyAdapter({ id: '  ', title: 'T', doi: '10.1000/abc' }).id, '10.1000/abc', 'blank counts as none');
+});
+
+test('a stored copy keeps the branch the feed filed it under, every category, and its date', () => {
+  const paper = paperLegacyAdapter({
+    id: 'openalex:W77',
+    title: 'T',
+    primaryCategory: 'cond-mat.str-el',
+    categories: ['cond-mat.str-el', 'cs.ET', 'q-bio.NC'],
+    published: '2014-12-01',
+  });
+  assert.equal(paper.primaryCategory, 'cond-mat.str-el');
+  assert.deepEqual(paper.categories, ['cond-mat.str-el', 'cs.ET', 'q-bio.NC'], 'the list used to collapse to the primary alone');
+  assert.equal(paper.published, '2014-12-01');
+  assert.equal(paper.year, 2014);
+  assert.deepEqual(paperLegacyAdapter({ id: 'x', title: 'T', primaryCategory: 'hep-th' }).categories, ['hep-th'],
+    'a copy with only a primary still gets its one-item list');
 });
 
 test('a paper that already has the new shape passes through untouched', () => {

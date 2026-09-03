@@ -3,16 +3,29 @@ function authorName(author) {
   return author?.name?.trim() || '';
 }
 
+/**
+ * How much of a paper a stored copy keeps. The summary used to be cut at
+ * 1,000 characters, short of most abstracts, so the paper page could never
+ * show the text the reader had seen in the feed from the copy alone and took
+ * the provider's — a different text, when the provider was a different one.
+ * The copy lives in the interaction document's `paper` map, which Firestore
+ * bounds only as a map, so a whole abstract costs nothing to keep. The old
+ * cap is remembered so a copy written under it can be told from a whole one.
+ */
+export const STORED_SUMMARY_CAP = 4000;
+export const LEGACY_STORED_SUMMARY_CAP = 1000;
+export const STORED_AUTHOR_CAP = 20;
+
 export function serializeLibraryPaper(paper = {}) {
   return {
     id: paper.id || paper.arxivId || paper.doi || '',
     title: typeof paper.title === 'string' ? paper.title : '',
-    authors: (paper.authors || []).slice(0, 20),
+    authors: (paper.authors || []).slice(0, STORED_AUTHOR_CAP),
     primaryCategory: paper.primaryCategory || paper.categories?.[0] || '',
     categories: paper.categories || (paper.primaryCategory ? [paper.primaryCategory] : []),
     published: paper.published || paper.publicationDate || '',
     year: paper.year || (paper.published ? new Date(paper.published).getFullYear() : null),
-    summary: paper.summary?.substring(0, 1000) || '',
+    summary: paper.summary?.substring(0, STORED_SUMMARY_CAP) || '',
     arxivId: paper.arxivId || '',
     doi: paper.doi || '',
     journal: paper.journal || paper.venue || '',
