@@ -154,10 +154,13 @@ export default function PublicPaperPage({
   }, [location.state, paperKey]);
 
   // A copy that carries its abstract is the page until the network upgrades
-  // it. A copy without one — a list entry, a profile row — is kept for the
-  // failure paths below but not painted: it showed "Abstract unavailable." for
-  // a beat before the real text popped in. The skeleton covers that beat.
-  const seedPainted = seedPaintsWhole(seededPaper);
+  // it — when it is the paper itself, as the search palette hands over. A
+  // copy a list or a profile row stored (`state.stored`) is not painted even
+  // with an abstract in it: it is a truncated summary and a handful of fields,
+  // and painting it meant the card filling in piece by piece as the providers
+  // answered. Those open on the skeleton, the way Liked rows always did, and
+  // keep the copy only for the failure paths below.
+  const seedPainted = seedPaintsWhole(seededPaper) && !location.state?.stored;
   const requestKey = `${paperKey}:${attempt}`;
   const hasCurrentResult = result.requestKey === requestKey;
   const paper = hasCurrentResult ? result.paper : (seedPainted ? seededPaper : null);

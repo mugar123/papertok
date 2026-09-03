@@ -885,7 +885,10 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         state: { openListId: expandedList, fromRoute: openedFromRoute },
       });
     }
-    navigate(path, { state: { paper } });
+    // `stored`: this copy is what the list saved, not the paper — the page
+    // shows its skeleton until the providers answer and keeps the copy only
+    // as the fallback (PublicPaperPage).
+    navigate(path, { state: { paper, stored: true } });
   };
 
   useEffect(() => () => clearTimeout(metadataBudgetTimer.current), []);

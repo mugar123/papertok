@@ -284,7 +284,6 @@ const PaperCard = memo(function PaperCard({
     () => Boolean(onOpenComments && canonicalPaperIdentity(paper)),
     [onOpenComments, paper],
   );
-  const [isMarkingRead, setIsMarkingRead] = useState(false);
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
   const [showReader, setShowReader] = useState(false);
@@ -673,7 +672,7 @@ const PaperCard = memo(function PaperCard({
     }
   };
 
-  const isReadActive = isRead || isMarkingRead;
+  const isReadActive = isRead;
   const activeRelatedPaper = selectedRelatedPaper || pendingRelatedPaper;
   const selectedRelatedState = activeRelatedPaper
     ? getInteractionState(activeRelatedPaper) || {}
@@ -772,16 +771,18 @@ const PaperCard = memo(function PaperCard({
     onAuthRequired?.(action);
   }, [onAuthRequired]);
 
+  // Marking a paper read used to fade the whole card out and, 1.5 s later,
+  // pull it from the feed — the paper the reader had just finished with
+  // vanished under their thumb. It stays now: the eye turns into a tick and
+  // the label says so, and the feed drops it on the next load, not this one.
   const handleMarkAsRead = (e) => {
     e.stopPropagation();
     if (publicMode) {
       requireAuthentication('mark_read');
       return;
     }
-    setIsMarkingRead(true);
-    setTimeout(() => {
-      onMarkAsRead(paper);
-    }, prefersReducedMotion ? 0 : 1500); // give time for animation before unmounting
+    if (isRead) return;
+    onMarkAsRead(paper);
   };
 
   // Get area info for the gradient background
@@ -1005,7 +1006,7 @@ const PaperCard = memo(function PaperCard({
           ? (isEnglish ? 'Open source' : 'Abrir fuente')
           : (isEnglish ? 'Read article' : 'Leer artículo');
   return (
-    <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''} ${isMarkingRead ? 'pc--fade-out' : ''}`} onClick={handleDoubleTap}>
+    <div ref={cardRef} className={`pc ${isCardVisible ? 'pc--visible' : ''}`} onClick={handleDoubleTap}>
       {/* DEBUG PANEL */}
       {SHOW_RANKING_DEBUG && paper._debugScore && (
         <div className="pc-debug-panel">
@@ -1642,18 +1643,25 @@ const PaperCard = memo(function PaperCard({
         <button
           className={`pc-side-btn pc-side-btn--seen ${isReadActive ? 'pc-side-btn--read' : ''}`}
           onClick={handleMarkAsRead}
+          aria-pressed={isReadActive}
         >
-          <span className="pc-side-icon">
-            {isReadActive ? <CheckCircle2 size={20} /> : <Eye size={20} />}
+          {/* Both glyphs are always in the slot, one over the other, so the
+              eye can shrink away while the tick springs in (PaperCard.css)
+              instead of one icon being swapped for the other between frames. */}
+          <span className="pc-side-icon pc-side-icon--morph">
+            <Eye size={20} className="pc-icon-eye" aria-hidden="true" />
+            <CheckCircle2 size={20} className="pc-icon-check" aria-hidden="true" />
           </span>
           <span className="pc-side-label">
-            {resolvedOpenCopy || paper.openAccessPdfUrl
-              ? (isEnglish ? 'Open version' : 'Versión abierta')
-              : paper.pdfUrl
-                ? (isEnglish ? 'Read article' : 'Leer artículo')
-                : (paper.landingPageUrl || paper.doi
-                  ? (isEnglish ? 'Open source' : 'Abrir fuente')
-                  : (isEnglish ? 'Read' : 'Leer'))}
+            {isReadActive
+              ? (isEnglish ? 'Read' : 'Leído')
+              : resolvedOpenCopy || paper.openAccessPdfUrl
+                ? (isEnglish ? 'Open version' : 'Versión abierta')
+                : paper.pdfUrl
+                  ? (isEnglish ? 'Read article' : 'Leer artículo')
+                  : (paper.landingPageUrl || paper.doi
+                    ? (isEnglish ? 'Open source' : 'Abrir fuente')
+                    : (isEnglish ? 'Read' : 'Leer'))}
           </span>
         </button>
 

@@ -23,7 +23,8 @@ test('a handed-over copy paints only when it carries a title and a real abstract
  */
 test('SOURCE: the paper page paints an incomplete copy as a skeleton, not as "Abstract unavailable"', async () => {
   const code = stripComments(await read('../components/Public/PublicPaperPage.jsx'));
-  assert.match(code, /const seedPainted = seedPaintsWhole\(seededPaper\)/);
+  assert.match(code, /const seedPainted = seedPaintsWhole\(seededPaper\) && !location\.state\?\.stored/,
+    'a stored copy from a list or a profile row opens on the skeleton, whole or not');
   assert.match(code, /const paper = hasCurrentResult \? result\.paper : \(seedPainted \? seededPaper : null\)/,
     'nothing is painted from a copy that lacks its abstract');
   assert.match(code, /: \(seedPainted \? 'ready' : \(identity \? 'loading' : 'not-found'\)\)/,

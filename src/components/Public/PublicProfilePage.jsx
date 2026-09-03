@@ -190,7 +190,7 @@ function PaperRow({ row, index = 0, isEnglish, libraryReady }) {
         className="profile-row"
         style={style}
         to={row.path}
-        state={row.seed ? { paper: row.seed } : undefined}
+        state={row.seed ? { paper: row.seed, stored: true } : undefined}
       >
         {body}
       </Link>

@@ -23,11 +23,6 @@
   transition: opacity 0.9s ease;
 }
 
-.pc--fade-out {
-  opacity: 0;
-  pointer-events: none;
-}
-
 /* ── The page ──
    No card, no border, no shadow: the paper is set directly on the background,
    bottom-left, and the type does the work a container used to do. */
@@ -1059,6 +1054,44 @@ a.pc-citations {
   animation: likePopIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 .pc-side-btn--read .pc-side-label { color: var(--accent-teal); }
+
+/* The eye becomes the tick. Both glyphs sit in the slot; at rest the tick is
+   folded away (scaled down, invisible) under the eye. Marking the paper read
+   shrinks the eye out with a small turn and lets the tick spring past its
+   size and settle — a transformation the reader can follow, where a swap
+   between two frames was a blink. The slot's own pop and teal fill run at
+   the same time, so the three read as one gesture. */
+.pc-side-icon--morph {
+  position: relative;
+}
+
+.pc-side-icon--morph .pc-icon-eye,
+.pc-side-icon--morph .pc-icon-check {
+  transition:
+    opacity 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.36s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.pc-side-icon--morph .pc-icon-check {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transform: scale(0.4) rotate(-30deg);
+}
+
+.pc-side-btn--read .pc-side-icon--morph .pc-icon-eye {
+  opacity: 0;
+  transform: scale(0.5) rotate(20deg);
+  transition-timing-function: cubic-bezier(0.4, 0, 1, 1), cubic-bezier(0.4, 0, 1, 1);
+  transition-duration: 0.18s, 0.22s;
+}
+
+.pc-side-btn--read .pc-side-icon--morph .pc-icon-check {
+  opacity: 1;
+  transform: none;
+  transition-delay: 0.06s;
+}
 
 
 
@@ -2554,6 +2587,11 @@ a.pc-citations {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .pc-side-icon--morph .pc-icon-eye,
+  .pc-side-icon--morph .pc-icon-check {
+    transition: none;
+  }
+
   .pc,
   .pc-sheet,
   .pc-figure,
@@ -2595,10 +2633,6 @@ a.pc-citations {
      are how the map answers a touch, and a map that cannot answer is mute. */
   .graph-node.is-entering,
   .graph-node.is-fading { opacity: 1; }
-
-  .pc--fade-out {
-    opacity: 1;
-  }
 
   .related-item {
     opacity: 1;

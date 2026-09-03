@@ -41,7 +41,7 @@ test('SOURCE: the lists page opens a paper with no address as a card from the st
   assert.match(body, /const path = getPublicPaperPath\(paper\) \|\| getPublicPaperPath\(paper\.id\)/);
   assert.match(body, /if \(!path\) \{\s*setOverlayPaper\(paper\);\s*return;\s*\}/,
     'no address: the card opens in the overlay, painted from what was saved');
-  assert.match(body, /navigate\(path, \{ state: \{ paper \} \}\)/, 'an address: the paper page, copy riding along');
+  assert.match(body, /navigate\(path, \{ state: \{ paper, stored: true \} \}\)/, 'an address: the paper page, the stored copy riding along as the fallback');
   assert.doesNotMatch(body, /arxivId: paper\.arxivId \|\| paper\.id/,
     'the raw id is never dressed up as an arXiv id for the PDF viewer again');
   assert.match(code, /<PaperOverlay[\s\S]*?<PaperCard[\s\S]*?paper=\{overlayPaper\}/,

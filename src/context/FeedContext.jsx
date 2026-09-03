@@ -1768,9 +1768,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
       return next;
     });
-    
-    // Instantly remove it from the visual feed
-    setPapers((prev) => prev.filter((p) => p.id !== paper.id));
+
+    // The card stays where it is: the reader marked it read, they did not ask
+    // for it to vanish. `readPaperIdsRef` keeps it out of the next load.
 
     if (IS_DEMO) {
       demoSet('readPaperIds', Array.from(newRead));
