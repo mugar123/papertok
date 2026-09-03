@@ -9,6 +9,7 @@ import { getPapersByProject, getProjectDetails } from '../../services/openAireSe
 import { PaperBuilder } from '../../services/PaperBuilder';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService';
 import {
+  entityPapersRequestKey,
   filterAndSortEntityPapers,
   getPaperCitationCount,
   hasKnownPaperCitationCount,
@@ -136,7 +137,11 @@ export default function EntityExplorer({
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState([]);
   const [isLoadingEntity, setIsLoadingEntity] = useState(true);
-  const [isLoadingPapers, setIsLoadingPapers] = useState(false);
+  // True from the start, and re-armed by every entity load: the live page's
+  // first frame comes before the effect that requests the papers, and with
+  // this false that frame showed the empty-state copy — "no results matched"
+  // — between the hero landing and the rows' shapes taking over.
+  const [isLoadingPapers, setIsLoadingPapers] = useState(true);
   const [papersError, setPapersError] = useState(null);
   const [papersReloadKey, setPapersReloadKey] = useState(0);
   const [sortBy, setSortBy] = useState('cited_by_count:desc');
@@ -157,8 +162,14 @@ export default function EntityExplorer({
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const observerRef = useRef(null);
+  const papersRequestRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState('papers');
+  // Whether the Authors tab has been opened on this entity. The list is
+  // requested then and kept from then on; `activeTab` no longer drives the
+  // fetch, so leaving the tab does not cancel it and coming back does not
+  // repeat it.
+  const [authorsOpened, setAuthorsOpened] = useState(false);
   // Open by default: the experience is the answer to "who is this person", which
   // is what the page is for. Hiding it behind the briefcase made the page open
   // on numbers alone and left the one human fact a click away. The toggle stays,
@@ -275,6 +286,18 @@ export default function EntityExplorer({
     if (Number.isInteger(historyIndex) && historyIndex > 0) navigate(-1);
     else navigate('/');
   }, [navigate]);
+  // The first visit to Authors requests the list and keeps it from then on, so
+  // a return to the tab finds the rows rather than a second skeleton. The
+  // loading flag goes up here, with the tab, rather than in the effect that
+  // fetches: the frame the tab opens on then already shows the rows' shapes
+  // and never the empty-state copy.
+  const openTab = useCallback((tab) => {
+    setActiveTab(tab);
+    if (tab === 'authors' && !authorsOpened) {
+      setAuthorsOpened(true);
+      setIsLoadingAuthors(true);
+    }
+  }, [authorsOpened]);
   const authorInstitution = type === 'author'
     ? entity?.institutionData || entity?.last_known_institutions?.[0] || (entity?.institution ? { display_name: entity.institution } : null)
     : null;
@@ -404,6 +427,7 @@ export default function EntityExplorer({
       setPdfPaperToView(null);
       setOrcidInfo(null);
       setActiveTab('papers');
+      setAuthorsOpened(false);
       setIsExperienceOpen(true);
       setExpandedSummary(false);
       setParticipantsExpanded(false);
@@ -434,6 +458,7 @@ export default function EntityExplorer({
       setEntityError(null);
       setEntity(null);
       setPapers([]);
+      setIsLoadingPapers(true);
       setEntityAuthors([]);
       setSearchQuery('');
       setWikiInfo(null);
@@ -538,9 +563,22 @@ export default function EntityExplorer({
       setEntity(data);
       setIsLoadingEntity(false);
 
-      if (['institution', 'author'].includes(type) && data) {
+      // Both follow-up requests declare themselves before either starts, in
+      // the same batch as the entity, so the live hero mounts with the ORCID
+      // card's skeleton and the impact stat's "calculating" already in place.
+      // They used to run one after the other, with the ORCID flag raised only
+      // once the impact score had answered: the card's reserved space
+      // collapsed the frame the hero landed, reopened seconds later, and
+      // filled after that — two jumps for the list under it, on every author.
+      const wantsRecentImpact = ['institution', 'author'].includes(type) && Boolean(data);
+      const wantsOrcid = Boolean(data?.display_name) && type === 'author' && Boolean(data.orcid);
+      if (wantsRecentImpact) {
         setIsLoadingRecentImpact(true);
         setRecentImpactError(null);
+      }
+      if (wantsOrcid) setIsLoadingOrcid(true);
+
+      const loadRecentImpact = async () => {
         try {
           const impact = await getEntityRecentImpact(type, data);
           if (!isCancelled) setRecentImpact(impact);
@@ -560,22 +598,21 @@ export default function EntityExplorer({
         } finally {
           if (!isCancelled) setIsLoadingRecentImpact(false);
         }
-      }
-
-      if (data && data.display_name) {
-        if (type === 'author' && data.orcid) {
-          setIsLoadingOrcid(true);
-          try {
-            const record = prefetchedOrcid || await getOrcidRecord(data.orcid);
-            if (!isCancelled) setOrcidInfo(record);
-          } catch (e) {
-            if (!isCancelled) console.error("Error loading ORCID", e);
-          } finally {
-            if (!isCancelled) setIsLoadingOrcid(false);
-          }
+      };
+      const loadOrcid = async () => {
+        try {
+          const record = prefetchedOrcid || await getOrcidRecord(data.orcid);
+          if (!isCancelled) setOrcidInfo(record);
+        } catch (e) {
+          if (!isCancelled) console.error("Error loading ORCID", e);
+        } finally {
+          if (!isCancelled) setIsLoadingOrcid(false);
         }
-
-      }
+      };
+      await Promise.all([
+        wantsRecentImpact ? loadRecentImpact() : null,
+        wantsOrcid ? loadOrcid() : null,
+      ]);
     }
     loadEntity().catch(error => {
       if (isCancelled) return;
@@ -635,9 +672,32 @@ export default function EntityExplorer({
   ]);
 
   useEffect(() => {
-    let isCancelled = false;
+    if (!entity) return;
+    // What this request depends on, so a re-render can be told from a new
+    // request. A tab switch used to unmount the list and start the fetch
+    // over — `activeTab` was a dependency, and the cleanup cancelled whatever
+    // was in flight — so coming back to Papers meant a second skeleton and a
+    // second round trip for rows that had already been read. A project paid
+    // it once more on its own: its optimistic entity started the request and
+    // its details, landing on the same grant code, cancelled and repeated it.
+    const requestKey = entityPapersRequestKey({
+      type,
+      id,
+      entity,
+      entityDisplayName,
+      sortBy,
+      page,
+      searchQuery: debouncedSearch,
+      filters,
+      searchParams: searchParams.toString(),
+      reloadKey: papersReloadKey,
+      entityReloadKey,
+    });
+    if (papersRequestRef.current?.key === requestKey && !papersRequestRef.current.cancelled) return;
+    if (papersRequestRef.current) papersRequestRef.current.cancelled = true;
+    const request = { key: requestKey, cancelled: false };
+    papersRequestRef.current = request;
     async function loadPapers() {
-      if (!entity || activeTab !== 'papers') return;
       if (page === 1) {
         setIsLoadingPapers(true);
         setPapersError(null);
@@ -798,7 +858,7 @@ export default function EntityExplorer({
           fetchedPapers = pinSourcePaper(fetchedPapers, searchParams.get('arxivId'));
         }
 
-        if (isCancelled) return;
+        if (request.cancelled) return;
 
         if (topicProviderFailure && fetchedPapers.length > 0) {
           setPapersError('PARTIAL_PUBLICATIONS_LOAD_FAILED');
@@ -817,23 +877,28 @@ export default function EntityExplorer({
         setHasMore(page * 30 < total);
       } catch (err) {
         console.error("Failed to load papers for entity", err);
-        if (isCancelled) return;
+        if (request.cancelled) return;
         if (page === 1) setPapers([]);
         setPapersError('PUBLICATIONS_LOAD_FAILED');
         setHasMore(false); // Stop infinite looping on errors
       }
-      if (isCancelled) return;
+      if (request.cancelled) return;
       setIsLoadingPapers(false);
       setIsFetchingMore(false);
     }
     loadPapers();
-    return () => { isCancelled = true; };
-  }, [type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, activeTab, searchParams, papersReloadKey]);
+    // No cleanup: a request is superseded by key, above, and cancelled on
+    // unmount, below — not by the next render of the same request.
+  }, [type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey]);
+
+  useEffect(() => () => {
+    if (papersRequestRef.current) papersRequestRef.current.cancelled = true;
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
     async function loadAuthors() {
-      if (!entity || type === 'author' || entity._localTopic || entity._queryTopic || activeTab !== 'authors') return;
+      if (!entity || type === 'author' || entity._localTopic || entity._queryTopic || !authorsOpened) return;
       if (authorsPage === 1) {
         setIsLoadingAuthors(true);
         setAuthorsError(null);
@@ -874,7 +939,7 @@ export default function EntityExplorer({
     }
     loadAuthors();
     return () => { isCancelled = true; };
-  }, [type, id, entity, authorsPage, debouncedSearch, activeTab, authorsReloadKey]);
+  }, [type, id, entity, authorsPage, debouncedSearch, authorsOpened, authorsReloadKey]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -1155,7 +1220,7 @@ export default function EntityExplorer({
             when the words arrive. */}
         <div className="explorer-content" aria-hidden="true">
           <div className="explorer-grid">
-            {[1, 2, 3, 4].map(i => (
+            {[1, 2, 3, 4, 5].map(i => (
               <div key={i} className="explorer-list-item ex-skel-row">
                 <div className="ex-skel-row-head">
                   <div className="ex-skel ex-skel-kicker"></div>
@@ -1512,7 +1577,11 @@ export default function EntityExplorer({
 
           {/* Professional experience — a disclosure opened from the chevron by the name */}
           {type === 'author' && orcidInfo?.employments?.length > 0 && (
-            <AnimatePresence initial={false}>
+            // No `initial={false}`: the presence mounts with the panel, when
+            // the record lands on a hero that is already live, so the panel
+            // arriving is the one entrance this animation exists for. Off, it
+            // popped in at full height and shoved the card and the list.
+            <AnimatePresence>
               {isExperienceOpen && (
                 <motion.div
                   id="ehc-experience-panel"
@@ -1701,9 +1770,15 @@ export default function EntityExplorer({
             </div>
           )}
           
-          {/* Wikipedia or external info */}
+          {/* Wikipedia or external info. An institution stays in the list
+              with the topics: its skeleton reserved this block for the whole
+              wait, and an institution without a homepage on record used to
+              lose it the frame the hero landed — the list rose by its height,
+              then dropped again when the paragraph came. Held open, the
+              paragraph replaces the shapes in place, and one that never comes
+              folds the block away instead of cutting it. */}
           <AnimatePresence initial={false}>
-            {(wikiDescription || entity?.homepage_url || (isWikiRequestPending && ['concept', 'topic'].includes(type))) && (
+            {(wikiDescription || entity?.homepage_url || (isWikiRequestPending && ['concept', 'topic', 'institution'].includes(type))) && (
               <motion.div 
                 layout
                 className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''} ${isWikiRequestPending && !wikiDescription ? 'is-loading' : ''}`}
@@ -1864,11 +1939,11 @@ export default function EntityExplorer({
         </div>
         
         <div className="ee-tabs">
-          <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => setActiveTab('papers')}>
+          <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => openTab('papers')}>
              {isEnglish ? 'Papers' : 'Artículos'}
           </button>
           {hasAuthorsTab(type, entity) && (
-             <button className={`ee-tab ${activeTab === 'authors' ? 'active' : ''}`} onClick={() => setActiveTab('authors')}>
+             <button className={`ee-tab ${activeTab === 'authors' ? 'active' : ''}`} onClick={() => openTab('authors')}>
                {isEnglish ? 'Authors' : 'Autores'}
              </button>
           )}

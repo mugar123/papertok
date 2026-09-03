@@ -86,7 +86,11 @@ export default function RecentImpactStat({ impact, isLoading, error, isEnglish }
           : `Impacto reciente ${impact.score} sobre 10, ${localizedLevel}`)
         : (isEnglish ? 'Recent impact unavailable' : 'Impacto reciente no disponible')}
     >
-      <span className="ehc-stat-value">
+      {/* `is-settled` once the score, or its absence, is known: the value then
+          resolves in place from part-way visible (EntityExplorer.css) instead
+          of the ellipsis being swapped for a number between two frames. Never
+          at mount, where the hero's own crossfade is already running. */}
+      <span className={`ehc-stat-value${!isLoading && (impact || error) ? ' is-settled' : ''}`}>
         {isLoading ? '…' : impact?.available ? impact.score.toFixed(1) : '—'}
         <span className="ehc-stat-scale">/ 10</span>
       </span>

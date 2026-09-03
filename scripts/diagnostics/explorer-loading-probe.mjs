@@ -1,0 +1,180 @@
+// Explorer loading probe over CDP against a headless Chrome. No dependencies.
+// usage: node probe.mjs timeline '#/explorer/author/A…' [seconds]
+//        node probe.mjs tabs '#/explorer/institution/I…'
+//        node probe.mjs paint '#/explorer/author/A…' new|old
+import { spawn } from 'node:child_process';
+import { mkdirSync, rmSync } from 'node:fs';
+
+const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const PORT = Number(process.env.PORT || 9224);
+const ORIGIN = 'http://localhost:5173';
+const PROFILE = new URL(`./chrome-profile-${process.pid}`, import.meta.url).pathname;
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+function launch() {
+  mkdirSync(PROFILE, { recursive: true });
+  return spawn(CHROME, [
+    '--headless=new', `--remote-debugging-port=${PORT}`, `--user-data-dir=${PROFILE}`,
+    '--no-first-run', '--no-default-browser-check', '--window-size=1280,900', '--hide-scrollbars', 'about:blank',
+  ], { stdio: 'ignore' });
+}
+
+async function pageTarget() {
+  for (let i = 0; i < 150; i++) {
+    try {
+      const list = await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json();
+      const page = list.find((t) => t.type === 'page');
+      if (page) return page.webSocketDebuggerUrl;
+    } catch { /* not up yet */ }
+    await sleep(100);
+  }
+  throw new Error('no page target');
+}
+
+class CDP {
+  constructor(ws) {
+    this.ws = ws; this.id = 0; this.pending = new Map(); this.listeners = new Map();
+    ws.addEventListener('message', (e) => {
+      const m = JSON.parse(e.data);
+      if (m.id) {
+        const p = this.pending.get(m.id); this.pending.delete(m.id);
+        if (m.error) p.reject(new Error(JSON.stringify(m.error))); else p.resolve(m.result);
+      } else (this.listeners.get(m.method) || []).forEach((fn) => fn(m.params));
+    });
+  }
+  send(method, params = {}) {
+    const id = ++this.id;
+    return new Promise((resolve, reject) => { this.pending.set(id, { resolve, reject }); this.ws.send(JSON.stringify({ id, method, params })); });
+  }
+  on(method, fn) { if (!this.listeners.has(method)) this.listeners.set(method, []); this.listeners.get(method).push(fn); }
+  async eval(expression) {
+    const r = await this.send('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true });
+    if (r.exceptionDetails) throw new Error(`${r.exceptionDetails.text} ${r.exceptionDetails.exception?.description || ''}`);
+    return r.result.value;
+  }
+}
+
+const RECORDER = `(() => {
+  // The default buffer holds 250 entries and the explorer's chunks fill it
+  // before the page's own requests are counted.
+  performance.setResourceTimingBufferSize(4000);
+  const t0 = performance.now();
+  window.__tl = [];
+  const q = (s) => document.querySelector(s);
+  const snap = () => ({
+    t: Math.round(performance.now() - t0),
+    skeleton: !!q('.explorer-skeleton'),
+    live: !!q('.explorer-hero-content:not(.is-skeleton)'),
+    skelRows: document.querySelectorAll('.explorer-list-item.ex-skel-row').length,
+    rows: document.querySelectorAll('.explorer-list-item:not(.ex-skel-row)').length,
+    empty: !!q('.explorer-empty'),
+    orcidSkel: !!q('.orcid-skeleton'),
+    orcidCard: !!q('.orcid-career-section'),
+    exp: !!q('#ehc-experience-panel'),
+    wiki: q('.ehc-wiki') ? (q('.ehc-wiki').classList.contains('is-loading') ? 'loading' : 'live') : 'none',
+    impact: q('.ehc-stat-box--impact .ehc-stat-value')?.textContent?.trim() || null,
+    settled: !!q('.ehc-stat-value.is-settled'),
+    authors: document.querySelectorAll('.ee-author-card:not(.ex-skel-row)').length,
+    skelAuthors: document.querySelectorAll('.ee-author-card.ex-skel-row').length,
+    tab: q('.ee-tab.active')?.textContent?.trim() || null,
+  });
+  let last = '';
+  const push = () => { const s = snap(); const k = JSON.stringify({ ...s, t: 0 }); if (k !== last) { last = k; window.__tl.push(s); } };
+  new MutationObserver(push).observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['class'] });
+})();`;
+
+async function pollUntil(cdp, expression, timeoutMs, every = 250) {
+  const started = Date.now();
+  while (Date.now() - started < timeoutMs) {
+    if (await cdp.eval(expression)) return true;
+    await sleep(every);
+  }
+  return false;
+}
+
+const [, , mode, route, extra] = process.argv;
+const chrome = launch();
+try {
+  const ws = new WebSocket(await pageTarget());
+  await new Promise((r) => ws.addEventListener('open', r));
+  const cdp = new CDP(ws);
+  await cdp.send('Page.enable');
+  await cdp.send('Runtime.enable');
+  await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: RECORDER });
+  const url = `${ORIGIN}/?probe=${Date.now()}${route}`;
+
+  if (mode === 'timeline') {
+    await cdp.send('Page.navigate', { url });
+    await sleep(Number(extra || 12) * 1000);
+    const tl = await cdp.eval('window.__tl');
+    console.log(JSON.stringify(tl, null, 0).replace(/\},\{/g, '},\n{'));
+    const res = await cdp.eval(`(() => { const names = performance.getEntriesByType('resource').map(e => e.name); const count = (re) => names.filter(n => re.test(n)).length; return { publications: count(/openaire\\.eu\\/search\\/publications/), projects: count(/openaire\\.eu\\/search\\/projects/), arxiv: count(/arxiv/), works: count(/works/), total: names.length }; })()`);
+    console.log('resources:', JSON.stringify(res));
+  }
+
+  if (mode === 'tabs') {
+    await cdp.send('Page.navigate', { url });
+    const ready = await pollUntil(cdp, "document.querySelectorAll('.explorer-list-item:not(.ex-skel-row)').length > 0", 45000);
+    console.log('rows ready:', ready);
+    const countWorks = "performance.getEntriesByType('resource').filter(e => /works/.test(e.name)).length";
+    const worksBefore = await cdp.eval(countWorks);
+    const rowsBefore = await cdp.eval("document.querySelectorAll('.explorer-list-item:not(.ex-skel-row)').length");
+    const tlMark = await cdp.eval('window.__tl.length');
+    await cdp.eval("document.querySelectorAll('.ee-tab')[1].click(); 'clicked'");
+    const authorsReady = await pollUntil(cdp, "document.querySelectorAll('.ee-author-card:not(.ex-skel-row)').length > 0", 45000);
+    console.log('authors ready:', authorsReady);
+    const authorsCount = await cdp.eval("document.querySelectorAll('.ee-author-card:not(.ex-skel-row)').length");
+    const back = await cdp.eval(`(() => { document.querySelectorAll('.ee-tab')[0].click(); return { rows: document.querySelectorAll('.explorer-list-item:not(.ex-skel-row)').length, skelRows: document.querySelectorAll('.explorer-list-item.ex-skel-row').length, empty: !!document.querySelector('.explorer-empty') }; })()`);
+    await sleep(600);
+    const after = await cdp.eval(`({ rows: document.querySelectorAll('.explorer-list-item:not(.ex-skel-row)').length, skelRows: document.querySelectorAll('.explorer-list-item.ex-skel-row').length, works: ${countWorks} })`);
+    await cdp.eval("document.querySelectorAll('.ee-tab')[1].click(); 'clicked'");
+    const again = await cdp.eval(`({ authors: document.querySelectorAll('.ee-author-card:not(.ex-skel-row)').length, skelAuthors: document.querySelectorAll('.ee-author-card.ex-skel-row').length, empty: !!document.querySelector('.explorer-empty') })`);
+    const tl = await cdp.eval(`window.__tl.slice(${tlMark})`);
+    console.log(JSON.stringify({ worksBefore, rowsBefore, authorsCount, backSameFrame: back, backAfter600ms: after, authorsAgain: again }, null, 1));
+    console.log('timeline since the first tab click:');
+    console.log(JSON.stringify(tl, null, 0).replace(/\},\{/g, '},\n{'));
+  }
+
+  if (mode === 'paint') {
+    await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
+    const held = [];
+    cdp.on('Fetch.requestPaused', ({ requestId, request }) => {
+      if (/openalex/.test(request.url) && /\/(authors|institutions)\/[AI]\d+/.test(request.url)) { held.push(request.url); return; }
+      cdp.send('Fetch.continueRequest', { requestId }).catch(() => {});
+    });
+    await cdp.send('Page.navigate', { url });
+    const skeleton = await pollUntil(cdp, "!!document.querySelector('.explorer-skeleton')", 20000);
+    await sleep(1500);
+    if (extra === 'old') {
+      await cdp.eval(`(() => { const s = document.createElement('style'); s.textContent = \`
+        .ex-skel { animation: shimmer 1.5s ease-in-out infinite; background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--border-subtle) 50%, var(--bg-secondary) 75%); background-size: 200% 100%; overflow: visible; }
+        .ex-skel::after { content: none; animation: none; }\`; document.head.appendChild(s); return 'old shimmer restored'; })()`);
+      await sleep(500);
+    }
+    const anims = await cdp.eval(`(() => { const a = document.getAnimations(); const byKind = {}; for (const an of a) { const k = (an.effect?.pseudoElement || 'element') + ':' + (an.animationName || an.constructor.name); byKind[k] = (byKind[k] || 0) + 1; } return { total: a.length, byKind, shapes: document.querySelectorAll('.ex-skel').length, elementAnim: getComputedStyle(document.querySelector('.ex-skel')).animationName, afterAnim: getComputedStyle(document.querySelector('.ex-skel'), '::after').animationName, held: ${JSON.stringify(held)} }; })()`);
+    console.log('skeleton:', skeleton, JSON.stringify(anims));
+    const events = [];
+    cdp.on('Tracing.dataCollected', ({ value }) => events.push(...value));
+    const complete = new Promise((r) => cdp.on('Tracing.tracingComplete', r));
+    await cdp.send('Tracing.start', { categories: '-*,devtools.timeline,disabled-by-default-devtools.timeline,disabled-by-default-devtools.timeline.frame', transferMode: 'ReportEvents' });
+    await sleep(3000);
+    await cdp.send('Tracing.end');
+    await complete;
+    const agg = {};
+    for (const e of events) {
+      if (e.ph !== 'X' || typeof e.dur !== 'number') continue;
+      const a = agg[e.name] || (agg[e.name] = { count: 0, ms: 0 });
+      a.count += 1; a.ms += e.dur / 1000;
+    }
+    const frames = events.filter((e) => e.name === 'DrawFrame').length;
+    const rows = Object.entries(agg).sort((x, y) => y[1].ms - x[1].ms).slice(0, 14)
+      .map(([name, v]) => `${name.padEnd(28)} ${String(v.count).padStart(6)}  ${v.ms.toFixed(1).padStart(8)} ms`);
+    const pick = ['Paint', 'PaintImage', 'RasterTask', 'GPUTask', 'UpdateLayoutTree', 'PrePaint', 'Layerize', 'UpdateLayer', 'Commit', 'RunTask']
+      .map((name) => `${name}=${agg[name]?.count || 0}/${(agg[name]?.ms || 0).toFixed(1)}ms`).join('  ');
+    console.log(`variant=${extra || 'new'} events=${events.length} drawFrames=${frames}\n${pick}\n${rows.join('\n')}`);
+  }
+} finally {
+  chrome.kill();
+  await sleep(300);
+  rmSync(PROFILE, { recursive: true, force: true });
+}
