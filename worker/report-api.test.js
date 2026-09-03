@@ -1991,6 +1991,7 @@ test('/related names a stalled Semantic Scholar instead of dressing it as a gene
   const body = await response.json();
   assert.equal(body.error, 'Related papers unavailable');
   assert.equal(body.code, 'UPSTREAM_TIMEOUT');
+  assert.equal(body.upstreamStatus, undefined, 'a stall has no status to relay');
 });
 
 test('tells a client refused by Semantic Scholar search to wait a second, not a minute', async () => {
