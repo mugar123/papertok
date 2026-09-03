@@ -1,5 +1,25 @@
 # Estado / pendientes
 
+## La entrada del feed en móvil deja de dar un salto (2026-09-03)
+
+**`pc-abstract-toggle` («Leer el abstract completo», 25 px) se montaba dos
+frames después de la tarjeta —el veredicto que lo enciende es una medida y el
+panel no tiene altura en el commit que lo monta— y bajo 900 px la columna de
+la hoja está anclada abajo, así que no aparecía debajo del abstract: empujaba
+25 px hacia arriba el abstract, los autores, el título y el antetítulo, en un
+solo frame, con las piezas a media opacidad.** Medido sobre el build de
+producción: el título recorría 40 px en móvil con un salto de 28 px en un
+frame, frente a 14–16 px suaves en escritorio, donde la columna más ancha deja
+el abstract sin recortar y el botón no llega a existir. Ahora el botón reserva
+su caja siempre y el veredicto solo enciende su etiqueta
+(`pc-abstract-toggle--reserved`, fundido de 0,2 s): móvil 17 px de recorrido y
+5 px de salto máximo, igual que escritorio (18–19 px / 5 px), en los dos
+sentidos de la barra. Se descartó medir antes de pintar
+(`useLayoutEffect`): quitaba el salto pero forzaba un layout síncrono por
+tarjeta montada, tres tareas de 50–56 ms con CPU ×4 al volver a Para ti.
+Detalle y tablas en `docs/superpowers/plans/2026-09-03-feed-entrada-movil.md`.
+
+
 ## La dirección de las páginas sale del índice del historial (2026-09-03)
 
 **React Router 7.18 con `HashRouter` informa `POP` en todas las navegaciones

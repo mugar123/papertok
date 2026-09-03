@@ -1448,13 +1448,19 @@ const PaperCard = memo(function PaperCard({
           </AnimatePresence>
         </div>
 
-        {/* Only where there is something to reveal. `expanded` keeps it on
-            screen once opened, since an open panel clips nothing and would
-            otherwise take away the control that closes it. */}
-        {abstractText && (abstractClipped === true || expanded) && (
+        {/* Its box is on the card from the first frame; the verdict only
+            decides whether the label is on. Shown when the panel is hiding
+            words, and kept on once opened, since an open panel clips nothing
+            and would otherwise take away the control that closes it. It used
+            to be mounted by that verdict, which is a measurement and cannot
+            be taken before the panel has a height: on a phone, where the
+            column is bottom-anchored, the button joining the layout two
+            frames in pushed the abstract, the authors and the title 25 px up
+            in one frame, in the middle of their arrival. */}
+        {abstractText && (
         <button
           type="button"
-          className="pc-abstract-toggle"
+          className={`pc-abstract-toggle${abstractClipped === true || expanded ? '' : ' pc-abstract-toggle--reserved'}`}
           aria-expanded={expanded}
           aria-controls={abstractId}
           onClick={(e) => toggleExpanded(e, !expanded)}
