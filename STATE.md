@@ -15,17 +15,23 @@ colgar la suite** si alguien alarga los 11 s; el recomendador tiene que
 reenviar *el* paper (un mutante que reconstruía sus identificadores pasaba toda
 la suite y rompía el autofiltrado); el feed a 20 y la hoja a 8 comparten
 petición en el mismo tick; y el cuelgue de `/related` no relaya un estado que
-no tiene. Sigue abierto: **S6** (la caché partida por origen); tres fugas
-hermanas del mismo asiento de minuto, previas a este trabajo, observadas y no
-arregladas — la cuota de identidad (`reserveProtectedProviderQuota`) puede
-rechazar después de reservado el asiento y no lo devuelve, un `throw` de
-`awaitUpstreamSlot` o del fetcher lo pierde igual, y la rama 503
-`PROVIDER_QUOTA_NOT_CONFIGURED` de `awaitSharedPace` tampoco lo devuelve
-(alcanzable solo como `QUOTA_LEDGER_UNAVAILABLE`, porque `s2:pace` es un
-Durable Object distinto de `s2:<minuto>` y puede fallar con el asiento ya
-reservado); el arreglo de esta última — subir la devolución por encima de esa
-rama — queda para una tarea propia, con su propio test. Y sigue pendiente de
-@mugar la solicitud a Semantic Scholar de un límite mayor que 1 RPS.
+no tiene. Sigue abierto: **S6** (la caché partida por origen); cuatro fugas
+de la misma familia — un asiento ya gastado que una puerta posterior rechaza
+sin devolver —, previas a este trabajo, observadas y no arregladas. Tres son
+del asiento de minuto compartido: la cuota de identidad
+(`reserveProtectedProviderQuota`) puede rechazar después de reservado el
+asiento y no lo devuelve, un `throw` de `awaitUpstreamSlot` o del fetcher lo
+pierde igual, y la rama 503 `PROVIDER_QUOTA_NOT_CONFIGURED` de
+`awaitSharedPace` tampoco lo devuelve (alcanzable solo como
+`QUOTA_LEDGER_UNAVAILABLE`, porque `s2:pace` es un Durable Object distinto de
+`s2:<minuto>` y puede fallar con el asiento ya reservado); el arreglo de esta
+última — subir la devolución por encima de esa rama — queda para una tarea
+propia, con su propio test. La cuarta va al revés: el asiento de identidad,
+el que `reserveProtectedProviderQuota` reserva por usuario y gasta *antes* de
+que corra el compás, se pierde cuando es el compás quien rechaza *después* —
+`awaitSharedPace` solo sabe devolver `minuteReservation`, y no tiene forma de
+saber que el otro asiento existe. Y sigue pendiente de @mugar la solicitud a
+Semantic Scholar de un límite mayor que 1 RPS.
 
 **Implementado, probado (suite entera 1.969/1.969, cero `cancelled`) y
 revisado. No desplegado.** Si se despliega, el Worker antes que el frontend —
