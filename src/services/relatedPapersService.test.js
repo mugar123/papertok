@@ -1,14 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { getSemanticScholarPaperId } from './relatedPapersService.js';
+import { clearRelatedPapersCache, getRelatedPapers, getSemanticScholarPaperId } from './relatedPapersService.js';
 
 test('prefers DOI and normalizes provider prefixes for related papers', () => {
   assert.equal(getSemanticScholarPaperId({ doi: 'https://doi.org/10.1000/TEST', arxivId: '1234.5' }), 'DOI:10.1000/TEST');
   assert.equal(getSemanticScholarPaperId({ arxivId: '2607.12345v2' }), 'ARXIV:2607.12345');
   assert.equal(getSemanticScholarPaperId({}), null);
 });
-
-import { clearRelatedPapersCache, getRelatedPapers } from './relatedPapersService.js';
 
 const WORKER = 'https://papertok-report-api.example';
 
@@ -59,6 +57,25 @@ test('shares one request between two callers that ask for the same paper at once
 
   assert.equal(calls, 1);
   assert.deepEqual(forSheetAgain, forSheet);
+});
+
+test('shares one request between the feed asking for twenty and the sheet asking for eight, in the same tick', async () => {
+  clearRelatedPapersCache();
+  let calls = 0;
+  const fetchWorker = async () => { calls += 1; return twentyRecommendations(); };
+  const paper = { id: 'arxiv:2607.12345', arxivId: '2607.12345' };
+
+  // The pairing the in-flight map exists for: `traverseAndExpandNetwork` seeds
+  // from twenty on a like, and the sheet opens on eight in the same second.
+  const [forFeed, forSheet] = await Promise.all([
+    getRelatedPapers(paper, 20, { fetchWorker, apiBase: WORKER }),
+    getRelatedPapers(paper, 8, { fetchWorker, apiBase: WORKER }),
+  ]);
+
+  assert.equal(calls, 1);
+  assert.equal(forFeed.length, 20);
+  assert.equal(forSheet.length, 8);
+  assert.deepEqual(forSheet, forFeed.slice(0, 8), 'each caller trims its own view of one shared answer');
 });
 
 test('does not remember a failed request as the paper\'s answer', async () => {
