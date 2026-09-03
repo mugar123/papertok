@@ -155,3 +155,19 @@ test('keeps exact category results ahead of metadata-query supplements', async (
   assert.equal(result.plan.query, 'chaotic dynamics');
   assert.deepEqual(result.papers.map(paper => paper.id), ['exact', 'generic']);
 });
+
+test('excluded providers are not asked, and the exact category request still is', async () => {
+  const topic = { canonicalId: 'cs.NI', displayName: 'Networking and Internet Architecture', metadata: { categoryIds: ['cs.NI'] } };
+  const calls = [];
+  const providers = {
+    fetchArxivCategories: async () => { calls.push('cat'); return [{ id: 'exact', title: 'An exact category paper', authors: [{ name: 'Exact Author' }] }]; },
+    fetchDomainCategories: async () => { calls.push('domain'); return []; },
+    searchArxiv: async () => { calls.push('arxiv-query'); return []; },
+    searchOpenAlex: async () => { calls.push('openalex-query'); return { papers: [] }; },
+    searchPubmed: async () => { calls.push('pubmed-query'); return { papers: [] }; },
+  };
+  const result = await fetchTopicPapers(topic, { providers, pageSize: 5, excludeProviders: ['searchArxiv', 'searchPubmed'] });
+  assert.deepEqual([...calls].sort(), ['cat', 'domain', 'openalex-query']);
+  assert.deepEqual(result.papers.map(paper => paper.id), ['exact']);
+  assert.deepEqual(result.failedProviders, []);
+});

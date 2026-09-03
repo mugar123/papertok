@@ -108,6 +108,25 @@ export function FollowingUpdatesProvider({ children }) {
     };
   }, [followedEntities.length, signature, userId]);
 
+  // A delivery from the service, as each follow answers (see
+  // fetchFollowingUpdates): the items the page ranks are replaced by the
+  // papers merged so far, and the page keeps the cards already on screen in
+  // place (`mergeOrderedPapers`) and appends what is new. Measured with
+  // fourteen follows on a cold cache, the feed used to show its discovery
+  // screen for 6.5 s and then every card at once; the first follow answers
+  // in ~300 ms. `loading` stays up until the last delivery, which is also the
+  // one that writes the cache and sets `lastUpdatedAt`.
+  const applyProgress = useCallback((partial) => {
+    if (activeUserIdRef.current !== userId) return;
+    if (!partial?.papers?.length) return;
+    setItems(partial.papers);
+    setMeta({
+      checkedEntities: partial.checkedEntities,
+      totalEntities: partial.totalEntities,
+      failedEntities: partial.failedEntities,
+    });
+  }, [userId]);
+
   const refresh = useCallback(async ({ silent = false } = {}) => {
     if (!userId || followsLoading) return;
     if (!followedEntities.length) {
@@ -120,7 +139,9 @@ export function FollowingUpdatesProvider({ children }) {
     const requestKey = `${userId}:${signature}`;
     let request = requestsInFlight.get(requestKey);
     if (!request) {
-      request = fetchFollowingUpdates(followedEntities).finally(() => requestsInFlight.delete(requestKey));
+      request = fetchFollowingUpdates(followedEntities, {
+        onProgress: applyProgress,
+      }).finally(() => requestsInFlight.delete(requestKey));
       requestsInFlight.set(requestKey, request);
     }
 
@@ -161,7 +182,7 @@ export function FollowingUpdatesProvider({ children }) {
         setRefreshing(false);
       }
     }
-  }, [followedEntities, followsLoading, signature, userId]);
+  }, [applyProgress, followedEntities, followsLoading, signature, userId]);
 
   useEffect(() => {
     if (!userId || followsLoading) return undefined;

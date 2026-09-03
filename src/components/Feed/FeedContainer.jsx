@@ -15,17 +15,17 @@ import {
 } from '../../utils/feedMountWindow.js';
 import AnimatedAtom from './AnimatedAtom';
 import { FEED_DISPLAY_STATES, getFeedDisplayState } from '../../utils/feedLoadingState';
+import { createFeedResumeMemory } from '../../utils/feedResumeMemory.js';
 import './FeedContainer.css';
 
-// Per-surface scroll memory: the Siguiendo feed shares this container with
-// For You and must not clobber its saved position.
-const savedScrollByKey = {};
-// The card each feed was left on — its index, and the paper's id, which is
-// what the restore actually follows (utils/feedMountWindow.js): the index is
-// only as good as the order it was taken from, and Following's order can
-// move between two visits.
-const savedIndexByKey = {};
-const savedPaperIdByKey = {};
+// Per-surface memory of the card each feed was left on: the Siguiendo feed
+// shares this container with For You and must not clobber its place. The
+// paper's id is what the restore actually follows (utils/feedMountWindow.js):
+// the index is only as good as the order it was taken from, and Following's
+// order can move between two visits. The memory writes through to
+// sessionStorage once the scroll settles, so it outlives the reload the tab
+// gives itself after a deploy (utils/feedResumeMemory.js).
+const resumeMemory = createFeedResumeMemory();
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
@@ -106,24 +106,27 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const papersRef = useRef(papers);
   useEffect(() => { papersRef.current = papers; }, [papers]);
   const [mountWindow, setMountWindow] = useState(
-    () => initialMountWindow({
-      total: papers.length,
-      anchorIndex: resumeIndex({ papers, savedPaperId: savedPaperIdByKey[scrollKey], savedIndex: savedIndexByKey[scrollKey] }),
-    }),
+    () => {
+      const saved = resumeMemory.get(scrollKey);
+      return initialMountWindow({
+        total: papers.length,
+        anchorIndex: resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index }),
+      });
+    },
   );
   // Papers that arrive after the first render (a first load, a source that
   // answers late) find an empty window: derive one anchored on the resumed
   // card, or it would grow from the top and leave that card a blank slot
   // until it got there. Derived, not set in an effect, so the first paint
   // with papers already has the right cards in it.
-  const anchoredWindow = useMemo(() => (
-    mountWindow.hi === 0 && papers.length > 0
-      ? initialMountWindow({
-        total: papers.length,
-        anchorIndex: resumeIndex({ papers, savedPaperId: savedPaperIdByKey[scrollKey], savedIndex: savedIndexByKey[scrollKey] }),
-      })
-      : mountWindow
-  ), [mountWindow, papers, scrollKey]);
+  const anchoredWindow = useMemo(() => {
+    if (mountWindow.hi !== 0 || papers.length === 0) return mountWindow;
+    const saved = resumeMemory.get(scrollKey);
+    return initialMountWindow({
+      total: papers.length,
+      anchorIndex: resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index }),
+    });
+  }, [mountWindow, papers, scrollKey]);
   useEffect(() => {
     if (mountWindowCovers(anchoredWindow, papers.length)) return undefined;
     // `requestIdleCallback` where it exists, so a chunk never lands inside a
@@ -183,15 +186,18 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   useLayoutEffect(() => {
     if (restoreAttemptedRef.current || papers.length === 0) return;
     restoreAttemptedRef.current = true;
-    if (feedRef.current && (savedScrollByKey[scrollKey] || 0) > 0) {
+    const saved = resumeMemory.get(scrollKey);
+    // A place restored from storage after a reload has an index and no pixel
+    // offset; either says there is somewhere to go back to.
+    if (feedRef.current && (saved.scrollTop > 0 || saved.index > 0)) {
       const el = feedRef.current;
       const prevBehavior = el.style.scrollBehavior;
       el.style.scrollBehavior = 'auto'; // Force instant jump
       // The paper the reader was on, wherever it is in this order; each
       // snap item is one container height tall, so the card's index is its
       // offset. The raw offset only stands in when the height is unknown.
-      const index = resumeIndex({ papers, savedPaperId: savedPaperIdByKey[scrollKey], savedIndex: savedIndexByKey[scrollKey] });
-      el.scrollTop = el.clientHeight > 0 ? index * el.clientHeight : savedScrollByKey[scrollKey];
+      const index = resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index });
+      el.scrollTop = el.clientHeight > 0 ? index * el.clientHeight : saved.scrollTop;
 
       requestAnimationFrame(() => {
         el.style.scrollBehavior = prevBehavior;
@@ -223,10 +229,15 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     }
   }, [isRefreshing, prefersReducedMotion]);
 
-  useEffect(() => () => {
-    if (scrollIdleTimerRef.current) clearTimeout(scrollIdleTimerRef.current);
-    if (skipFlushTimerRef.current) clearTimeout(skipFlushTimerRef.current);
-  }, []);
+  useEffect(() => {
+    return () => {
+      if (scrollIdleTimerRef.current) clearTimeout(scrollIdleTimerRef.current);
+      if (skipFlushTimerRef.current) clearTimeout(skipFlushTimerRef.current);
+      // Leaving mid-settle (a tab switch right after a fling) must not lose
+      // the place the settle timer was about to write.
+      resumeMemory.persist(scrollKey);
+    };
+  }, [scrollKey]);
 
   // Infinite scroll: observe sentinel element
   useEffect(() => {
@@ -321,11 +332,14 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
 
   const handleScroll = useCallback((event) => {
     const container = event.currentTarget;
-    savedScrollByKey[scrollKey] = container.scrollTop;
-    savedIndexByKey[scrollKey] = container.clientHeight > 0
+    const index = container.clientHeight > 0
       ? Math.round(container.scrollTop / container.clientHeight)
       : 0;
-    savedPaperIdByKey[scrollKey] = papersRef.current[savedIndexByKey[scrollKey]]?.id || savedPaperIdByKey[scrollKey];
+    resumeMemory.remember(scrollKey, {
+      scrollTop: container.scrollTop,
+      index,
+      paperId: papersRef.current[index]?.id || resumeMemory.get(scrollKey).paperId,
+    });
     if (!container.classList.contains('feed-container--scrolling')) {
       container.classList.add('feed-container--scrolling');
     }
@@ -333,6 +347,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     if (scrollIdleTimerRef.current) clearTimeout(scrollIdleTimerRef.current);
     scrollIdleTimerRef.current = setTimeout(() => {
       container.classList.remove('feed-container--scrolling');
+      // One storage write per settled scroll, not one per scroll event.
+      resumeMemory.persist(scrollKey);
     }, SCROLL_IDLE_DELAY_MS);
 
     if (pendingSkippedPapersRef.current.size > 0) {

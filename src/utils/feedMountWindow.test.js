@@ -39,7 +39,7 @@ test('membership and coverage are half-open on the high side', () => {
 
 test('SOURCE: the container mounts a window and grows it off the critical path', async () => {
   const code = await readFile(new URL('../components/Feed/FeedContainer.jsx', import.meta.url), 'utf8');
-  assert.match(code, /initialMountWindow\(\{\s*total: papers\.length,\s*anchorIndex: resumeIndex\(\{ papers, savedPaperId: savedPaperIdByKey\[scrollKey\], savedIndex: savedIndexByKey\[scrollKey\] \}\),/,
+  assert.match(code, /initialMountWindow\(\{\s*total: papers\.length,\s*anchorIndex: resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\),/,
     'the first window is around the paper the feed was left on');
   assert.match(code, /growMountWindow\(anchoredWindow, papers\.length\)/, 'and grows in idle chunks');
   assert.match(code, /inMountWindow\(anchoredWindow, index\)[\s\S]*?feed-snap-item--pending/, 'cards outside it are full-height placeholders');
@@ -59,7 +59,10 @@ test('a feed resumes on the paper it was on, wherever that paper is now', async 
 
 test('SOURCE: the container saves the paper it is on and restores by that paper', async () => {
   const code = await readFile(new URL('../components/Feed/FeedContainer.jsx', import.meta.url), 'utf8');
-  assert.match(code, /savedPaperIdByKey\[scrollKey\] = papersRef\.current\[savedIndexByKey\[scrollKey\]\]\?\.id/);
-  assert.match(code, /const index = resumeIndex\(\{ papers, savedPaperId: savedPaperIdByKey\[scrollKey\], savedIndex: savedIndexByKey\[scrollKey\] \}\)/);
+  // The place lives in utils/feedResumeMemory.js now (it survives the reload
+  // the tab gives itself after a deploy); what is remembered is still the
+  // paper's id, and what restores is still that paper.
+  assert.match(code, /paperId: papersRef\.current\[index\]\?\.id \|\| resumeMemory\.get\(scrollKey\)\.paperId/);
+  assert.match(code, /const index = resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\)/);
   assert.match(code, /el\.scrollTop = el\.clientHeight > 0 \? index \* el\.clientHeight/, 'restored to the card, not to a pixel offset from another order');
 });

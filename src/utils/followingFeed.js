@@ -223,5 +223,31 @@ export function followingFirstLoadPending({ items = [], loading = false, lastUpd
  */
 export function resumeOrderedPapers(previous, items = [], seenIds = new Set()) {
   if (previous?.items === items && Array.isArray(previous?.ordered)) return previous.ordered;
-  return mergeOrderedPapers(previous?.ordered || [], orderFollowingFeedPapers(items, seenIds));
+  // The order still in memory wins; after a reload of the tab there is none,
+  // and the keys the page stored on its way out rebuild it over the items
+  // that came back (`orderFromKeys`).
+  const kept = previous?.ordered?.length ? previous.ordered : orderFromKeys(items, previous?.orderKeys);
+  return mergeOrderedPapers(kept, orderFollowingFeedPapers(items, seenIds));
+}
+
+/** The keys of an order, in order — what the page stores so a reload can resume it. */
+export function orderKeysOf(ordered = []) {
+  return (ordered || []).filter(Boolean).map(getFollowingUpdatePaperKey);
+}
+
+/**
+ * The items named by a stored key order, in that order; keys the items no
+ * longer carry are skipped. A reload of the tab loses the module-scope
+ * order but not the items (localStorage) nor these keys (sessionStorage).
+ */
+export function orderFromKeys(items = [], keys = []) {
+  if (!Array.isArray(keys) || keys.length === 0) return [];
+  const byKey = new Map((items || []).filter(Boolean).map(paper => [getFollowingUpdatePaperKey(paper), paper]));
+  const taken = new Set();
+  return keys.flatMap((key) => {
+    const paper = byKey.get(key);
+    if (!paper || taken.has(key)) return [];
+    taken.add(key);
+    return [paper];
+  });
 }

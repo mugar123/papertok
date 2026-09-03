@@ -153,6 +153,13 @@ function AppContent() {
       SaveToListModal.preload().catch(() => {})
       ScientificReport.preload().catch(() => {})
       FollowingFeedPage.preload().catch(() => {})
+      // The avatar and the gear are one tap from every screen. Fetched on
+      // first visit instead, the profile and settings chunks were what a
+      // deploy most often took away from an open tab: a 404 on the chunk,
+      // the forced reload in main.jsx, and the feed coming back from the top
+      // — which read as the whole feed reloading.
+      PublicProfilePage.preload().catch(() => {})
+      SettingsPage.preload().catch(() => {})
       // Every card links to authors, topics and projects; the first of those
       // opened in a session used to pay the chunk and the fallback throttle.
       EntityExplorer.preload().catch(() => {})
