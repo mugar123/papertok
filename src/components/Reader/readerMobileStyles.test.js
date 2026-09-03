@@ -383,8 +383,12 @@ test('la isla no puede volver a solapar: niveles flexibles, descarga rígida, si
 
   const barJsx = await readFile(READER_BAR_JSX, 'utf8');
   // El indicador de streaming no lleva palabra visible: tres etiquetas de
-  // nivel en español ya reclaman casi todo el ancho de un teléfono.
-  assert.match(barJsx, /role="status" aria-label=\{copy\.writing\}/);
+  // nivel en español ya reclaman casi todo el ancho de un teléfono. La
+  // palabra vive como texto oculto real dentro de la región `role="status"`
+  // -- un `aria-label` sin más contenido no se anuncia nunca como cambio de
+  // estado (fase 3, WCAG 4.1.3) -- nunca pintada junto a los puntos.
+  assert.match(barJsx, /className="rd-bar-streaming" role="status"/);
+  assert.match(barJsx, /<span className="visually-hidden">\{copy\.writing\}<\/span>/);
   assert.doesNotMatch(barJsx, /<ThinkingDots \/>\s*\{copy\.writing\}/);
 
   // Y la isla espera a la primera sección: sobre el esqueleto no pinta nada.

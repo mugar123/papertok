@@ -38,11 +38,16 @@ export default function ReaderBar({ copy, levelSlot, exportSlot, streaming, visi
         {/* Dots only, the words to assistive tech: three Spanish level labels
             already claim most of a phone's width, and the full "Reescribiendo"
             printed itself across the third button on a real iPhone
-            (2026-08-29). The disabled levels plus the dots carry the meaning;
-            `role="status"` announces the label without painting it. */}
+            (2026-08-29). The disabled levels plus the dots carry the meaning
+            on screen; a screen reader gets the same word as real (hidden)
+            text inside the region instead — an `aria-label` here names the
+            node but is never spoken as a status announcement, since nothing
+            about its content actually changed. `title` stays for a mouse
+            hover. */}
         {streaming && (
-          <span className="rd-bar-streaming" role="status" aria-label={copy.writing} title={copy.writing}>
+          <span className="rd-bar-streaming" role="status" title={copy.writing}>
             <ThinkingDots />
+            <span className="visually-hidden">{copy.writing}</span>
           </span>
         )}
 
