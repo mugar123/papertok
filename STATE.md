@@ -17,13 +17,27 @@ adaptador ya no mutila «CORD-19». Plan en
 hallazgos en `docs/AUDITORIA-SEMANTIC-SCHOLAR-2026-09-03.md` (S6, la caché
 partida por origen, sigue abierta a propósito).
 
-**Implementado, probado (suite entera 1.931/1.931, cero `cancelled`) y
-revisado — no desplegado todavía.** Cuando se despliegue, el Worker tiene que
-salir primero y el frontend después: éste se despliega solo al fusionar
-(Vercel) mientras que el Worker sigue siendo manual, y un bundle nuevo contra
-el Worker viejo pide `/related` sin `limit` (ya no lo necesita), que el
-`getSafeLimit(null, 8, 20)` todavía desplegado traduce en ocho candidatos en
-vez de veinte para sembrar el feed — sin ningún error visible que lo delate.
+**Implementado, probado (suite entera 1.931/1.931 en la rama, 1.962/1.962 tras
+fusionar, cero `cancelled`), revisado y DESPLEGADO el 03-09.** El Worker salió
+primero (versión `f7dc994a`, `/health` ya publica `semanticScholarKeyConfigured:
+true`) y el frontend después, con el push de `main` que dispara Vercel; el
+bundle servido lleva `{paper_id}` sin `limit` y el presupuesto de 11 s. Ese
+orden no era opcional: un bundle nuevo contra el Worker viejo pide `/related`
+sin `limit` (ya no lo necesita), y el `getSafeLimit(null, 8, 20)` de la versión
+anterior lo traduce en ocho candidatos en vez de veinte para sembrar el feed
+— sin ningún error visible que lo delate. Quien vuelva a desplegar las dos
+piezas tiene que respetar el mismo orden.
+
+Verificado en vivo tras desplegar, y con una salvedad honesta: `/health`
+confirma el código nuevo, y una petición espaciada devuelve 200. Pero la
+comprobación en ráfaga cayó dentro del propio régimen de cuelgue que describe
+la auditoría — de tres en paralelo, una 429 y dos `UPSTREAM_TIMEOUT` a los
+6,6 s— y las sondas de esta misma sesión contribuyeron a provocarlo. Los
+tiempos escalonados (2,7 s / 6,6 s / 7,3 s) demuestran que el compás corre, y
+los códigos diferenciados (`UPSTREAM_RATE_LIMITED` frente a `UPSTREAM_TIMEOUT`,
+en vez de un 502 pelado) demuestran que el relay funciona; lo que **no** se
+pudo demostrar es «tres de tres en verde», y forzarlo habría empeorado la
+fuente. Queda por medir en frío, sin sondas encima.
 
 Lo que motiva el compás ya estaba medido esta mañana contra producción,
 antes de este cambio: cinco peticiones en
