@@ -65,7 +65,8 @@
      layout too -- that is the "soft button" feel, and a state flip should
      only move colour. */
   transition: background var(--transition-fast), border-color var(--transition-fast),
-    color var(--transition-fast), opacity var(--transition-fast);
+    color var(--transition-fast), opacity var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .profile-form {
@@ -73,6 +74,12 @@
   flex-direction: column;
   gap: var(--space-5);
   margin-top: var(--space-2);
+}
+
+/* After an unpublish the create-a-profile form takes the place of the
+   sections that just went; remounted, it rises the way the page did. */
+.profile-form.is-reborn {
+  animation: profile-rise 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .profile-form > .profile-section:first-of-type {
@@ -217,13 +224,75 @@
 }
 
 /* The soft yellow flips with the theme (#fff4c9 -> #35290b), so what sits
-   on it takes the ink that flips too. `--text-on-brand` is for the FULL
+   on it takes `--text-on-brand-soft`, which flips with it: ink on paper,
+   the brand yellow on the dark wash. `--text-on-brand` is for the FULL
    yellow, which does not flip; on the dark soft surface it measured 1.30:1
-   and the pinned label was invisible (2026-09-03). */
+   and the pinned label was invisible (2026-09-03). Plain white text on the
+   dark wash read as brown mud, and an ink border framed it in white. */
 .profile-pin-toggle.is-pinned {
-  border-color: var(--border-ink);
+  border-color: var(--tint-amber-line);
   background: var(--brand-yellow-soft);
-  color: var(--text-primary);
+  color: var(--text-on-brand-soft);
+}
+
+/* The toggles answer the pointer (user feedback, 2026-09-03: nothing on this
+   screen moved until it had already changed). An unmarked one firms its line;
+   a marked one goes to the full yellow with the fixed ink, the pair the brand
+   button already uses, so "hover" and "on" read as two steps of one mark. */
+.profile-pin-toggle:hover:not(:disabled),
+.profile-pin-toggle:focus-visible:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.profile-pin-toggle.is-pinned:hover:not(:disabled),
+.profile-pin-toggle.is-pinned:focus-visible:not(:disabled) {
+  border-color: var(--brand-orange);
+  background: var(--brand-yellow);
+  color: var(--text-on-brand);
+}
+
+.profile-pin-toggle:active:not(:disabled),
+.profile-primary:active:not(:disabled),
+.profile-danger-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* A state that just flipped says so: the toggle pops once and settles. The
+   class comes from the component, set after the change is on screen and
+   cleared when the row's flash ends, so an already-pinned list does not pop
+   every time the page opens. */
+@keyframes profile-pin-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+.profile-pin-toggle.is-settling {
+  animation: profile-pin-pop 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* The row lifts to the soft yellow and back, the mark the preview uses for a
+   committed save, so a pin and a saved field are the same kind of event. */
+@keyframes profile-row-flash {
+  0% { background: var(--bg-card); }
+  35% { background: var(--brand-yellow-soft); }
+  100% { background: var(--bg-card); }
+}
+
+.profile-pin-list li.is-flashing {
+  animation: profile-row-flash 920ms ease;
+}
+
+/* The pin button only exists while the list is on the profile; it arrives
+   with the attribution rather than flicking into the row. */
+@keyframes profile-pin-appear {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.profile-pin-actions > button + button {
+  animation: profile-pin-appear 180ms ease-out both;
 }
 
 /* --- Sections -------------------------------------------------------------- */
@@ -405,6 +474,16 @@
   color: var(--text-inverse);
   font-weight: var(--fw-semibold);
   box-shadow: inset 0 -3px 0 var(--brand-yellow);
+  transition: background var(--transition-fast), box-shadow var(--transition-fast),
+    opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+/* The yellow rule under the label thickens under the pointer, the way a
+   highlighter presses harder. */
+.profile-primary:hover:not(:disabled),
+.profile-primary:focus-visible:not(:disabled) {
+  background: var(--accent-primary-hover);
+  box-shadow: inset 0 -4px 0 var(--brand-yellow);
 }
 
 .profile-primary:disabled,
@@ -473,7 +552,8 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .profile-danger-button:hover:not(:disabled),
@@ -1271,7 +1351,11 @@
 @media (prefers-reduced-motion: reduce) {
   .profile-preview .is-flashing,
   .profile-layout > *,
-  .profile-feedback {
+  .profile-feedback,
+  .profile-pin-toggle.is-settling,
+  .profile-pin-list li.is-flashing,
+  .profile-pin-actions > button + button,
+  .profile-form.is-reborn {
     animation: none;
   }
 

@@ -10,7 +10,9 @@ export const buttonVariants = cva(
         outline: 'border border-border bg-card text-foreground hover:bg-secondary hover:border-[var(--border-strong)]',
         ghost: 'text-muted-foreground hover:bg-secondary hover:text-foreground',
         // The brand yellow is a highlighter, so it marks the AI reading action.
-        brand: 'bg-brand-soft text-foreground border border-[var(--tint-amber-line)] hover:bg-brand hover:border-[var(--brand-orange)]',
+        // The soft wash flips with the theme and the full yellow does not, so
+        // each surface takes its own ink: on hover it is ink on both sides.
+        brand: 'bg-brand-soft text-[var(--text-on-brand-soft)] border border-[var(--tint-amber-line)] hover:bg-brand hover:text-[var(--text-on-brand)] hover:border-[var(--brand-orange)]',
         // Tinted variants: a coloured surface that still reads as a control,
         // for actions that carry a meaning of their own rather than rank.
         violet: 'bg-[var(--accent-violet-soft)] text-[var(--accent-violet)] border border-[var(--accent-violet-line)] hover:bg-[var(--accent-violet)] hover:text-white hover:border-[var(--accent-violet)]',

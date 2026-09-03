@@ -159,15 +159,95 @@ test('the editor keeps a table of contents and a live preview beside the form', 
   assert.doesNotMatch(jsx, /className="profile-public-link"/);
 });
 
-test('in the dark theme, what sits on the soft yellow is the flipping ink, not the fixed one', async () => {
+test('in the dark theme, what sits on the soft yellow is the ink that flips with it, not the fixed one', async () => {
   const css = rules(await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8'));
   // `--text-on-brand` is ink in both themes because the full yellow does not
   // flip; the SOFT yellow does (#fff4c9 -> #35290b), so ink on it measured
-  // 1.30:1 in the dark theme -- the pinned state's label was invisible.
+  // 1.30:1 in the dark theme -- the pinned state's label was invisible. Plain
+  // `--text-primary` was legible but read as white on brown mud, and the ink
+  // border framed the wash in white; `--text-on-brand-soft` is the brand
+  // yellow on that side, and the line is the amber one (user feedback,
+  // 2026-09-03).
   const pinned = css.match(/\.profile-pin-toggle\.is-pinned\s*\{[^}]*\}/);
   assert.ok(pinned, 'ProfilePage.css lost .profile-pin-toggle.is-pinned');
-  assert.match(pinned[0], /color:\s*var\(--text-primary\)/);
-  assert.doesNotMatch(pinned[0], /--text-on-brand/);
+  assert.match(pinned[0], /color:\s*var\(--text-on-brand-soft\)/);
+  assert.match(pinned[0], /border-color:\s*var\(--tint-amber-line\)/);
+  assert.doesNotMatch(pinned[0], /--text-on-brand\)/);
+  assert.doesNotMatch(pinned[0], /--text-primary/);
+});
+
+test('the list toggles answer the pointer: a hover, a press, and a pop when their state flips', async () => {
+  const css = rules(await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8'));
+  // Hover: an unmarked toggle firms its line; a marked one goes to the full
+  // yellow with the fixed ink, the same pair the brand button uses.
+  assert.match(css, /\.profile-pin-toggle:hover:not\(:disabled\)[^{]*\{[^}]*border-color:\s*var\(--border-strong\)/);
+  const pinnedHover = css.match(/\.profile-pin-toggle\.is-pinned:hover:not\(:disabled\)[^{]*\{[^}]*\}/);
+  assert.ok(pinnedHover, 'the marked toggle has no hover');
+  assert.match(pinnedHover[0], /background:\s*var\(--brand-yellow\)/);
+  assert.match(pinnedHover[0], /color:\s*var\(--text-on-brand\)/);
+  // Press: the button gives under the pointer, and the shared rule names
+  // `transform` so that give is eased rather than snapped.
+  assert.match(css, /\.profile-pin-toggle:active:not\(:disabled\)[^{]*\{[^}]*transform:\s*scale\(0\.97\)/);
+  const buttons = css.match(/\.profile-secondary,\s*\.profile-pin-toggle,\s*\.profile-primary\s*\{[^}]*\}/);
+  assert.ok(buttons, 'ProfilePage.css lost the shared button rule');
+  assert.match(buttons[0], /transform var\(--transition-fast\)/);
+  // State flip: the toggle that just changed pops, the row it sits in flashes
+  // with the same soft yellow the preview uses for a committed save, and the
+  // pin button that appears when a list goes on the profile fades in.
+  assert.match(css, /@keyframes profile-pin-pop/);
+  assert.match(css, /\.profile-pin-toggle\.is-settling\s*\{[^}]*animation:\s*profile-pin-pop/);
+  assert.match(css, /@keyframes profile-row-flash\s*\{[^}]*0%\s*\{\s*background:\s*var\(--bg-card\)/);
+  assert.match(css, /\.profile-pin-list li\.is-flashing\s*\{[^}]*animation:\s*profile-row-flash/);
+  assert.match(css, /@keyframes profile-pin-appear/);
+  assert.match(css, /\.profile-pin-actions > button \+ button\s*\{[^}]*animation:\s*profile-pin-appear/);
+  // And none of it moves for a reader who asked for less motion.
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[^{}]*\.profile-pin-toggle\.is-settling[^{}]*\{[^}]*animation:\s*none/);
+  assert.ok(reduced, 'the pop has no prefers-reduced-motion guard');
+  assert.match(reduced[0], /\.profile-pin-list li\.is-flashing/);
+  assert.match(reduced[0], /\.profile-pin-actions > button \+ button/);
+});
+
+test('the pop marks the toggle the owner just changed, not every marked toggle on load', async () => {
+  const jsx = await readFile(new URL('./ProfilePage.jsx', import.meta.url), 'utf8');
+  // A keyframe on `.is-pinned` would fire for every already-pinned list when
+  // the page opens. The class comes from state set by the two handlers once
+  // their change is on screen, and leaves when the animation ends.
+  assert.match(jsx, /const \[settling, setSettling\] = useState\(null\)/);
+  assert.match(jsx, /setSettling\(\{ shareId: list\.shareId, kind: 'attribution' \}\)/);
+  assert.match(jsx, /setSettling\(\{ shareId, kind: 'pin' \}\)/);
+  assert.match(jsx, /onAnimationEnd=\{settleDone\}/);
+  assert.match(jsx, /is-settling/);
+  assert.match(jsx, /is-flashing/);
+  // A failed pin rolls its state back, and must not pop as if it had landed.
+  const pin = jsx.slice(jsx.indexOf('const togglePin'), jsx.indexOf('const unpublishProfile'));
+  assert.ok(pin.indexOf('await savePinnedShareIds') < pin.indexOf("kind: 'pin'"), 'the pin pops before the save lands');
+});
+
+test('the primary and the danger buttons answer the pointer too', async () => {
+  const css = rules(await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8'));
+  const primary = css.match(/\.profile-primary:hover:not\(:disabled\)[^{]*\{[^}]*\}/);
+  assert.ok(primary, 'the primary button has no hover');
+  assert.match(primary[0], /background:\s*var\(--accent-primary-hover\)/);
+  assert.match(primary[0], /box-shadow:\s*inset 0 -4px 0 var\(--brand-yellow\)/);
+  assert.match(css, /\.profile-primary:active:not\(:disabled\)[^{]*\{[^}]*transform:\s*scale\(0\.97\)/);
+  assert.match(css, /\.profile-danger-button:active:not\(:disabled\)\s*\{[^}]*transform:\s*scale\(0\.97\)/);
+  assert.match(css, /\.profile-danger-button\s*\{[^}]*transition:[^;]*transform var\(--transition-fast\)/);
+});
+
+test('unpublishing rebuilds the form, and the rebuilt form rises the way the page did', async () => {
+  const css = rules(await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8'));
+  const jsx = await readFile(new URL('./ProfilePage.jsx', import.meta.url), 'utf8');
+  // The sections that vanish when the profile goes are replaced by the
+  // create-a-profile form; keyed on the rebirth it remounts and enters with
+  // the page's own rise instead of flicking into place.
+  assert.match(jsx, /const \[reborn, setReborn\] = useState\(false\)/);
+  assert.match(jsx, /key=\{reborn \? 'form-reborn' : 'form'\}/);
+  assert.match(jsx, /className=\{`profile-form\$\{reborn \? ' is-reborn' : ''\}`\}/);
+  const unpublish = jsx.slice(jsx.indexOf('const unpublishProfile'), jsx.indexOf('if (!user) return null'));
+  assert.match(unpublish, /setReborn\(true\)/);
+  assert.match(css, /\.profile-form\.is-reborn\s*\{[^}]*animation:\s*profile-rise/);
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\)\s*\{[^{}]*\.profile-form\.is-reborn[^{}]*\{[^}]*animation:\s*none/);
+  assert.ok(reduced, 'the rebuilt form has no prefers-reduced-motion guard');
 });
 
 test('the editor names its transitions and guards its entrance for reduced motion', async () => {

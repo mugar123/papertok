@@ -38,6 +38,8 @@ const TEXT_PAIRS = [
   ['--text-tertiary', '--bg-primary'],
   ['--text-tertiary', '--bg-secondary'],
   ['--text-on-brand', '--brand-yellow'],
+  // The soft yellow flips with the theme, so its ink is its own token.
+  ['--text-on-brand-soft', '--brand-yellow-soft'],
 ]
 
 for (const theme of ['light', 'dark']) {

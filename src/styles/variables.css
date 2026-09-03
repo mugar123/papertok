@@ -56,6 +56,10 @@
      it cannot take `--text-primary`, which does flip. Same for the orange
      focus ring and for the user's highlight in the reader. */
   --text-on-brand: #111318;
+  /* Ink for the SOFT yellow, which does flip: on paper it is ink like the
+     mark's, on the dark wash it becomes the brand yellow itself, so the
+     control still says "yellow" where the surface alone reads as brown. */
+  --text-on-brand-soft: #111318;
 
   /* Action accents. Each pairs a legible foreground with a surface tint, so a
      control can be coloured without inventing a one-off value at the callsite. */
@@ -337,6 +341,9 @@
      are the same mark on both sides. The soft yellow is a surface, though, so
      it becomes the darkest amber that still reads as the same wash. */
   --brand-yellow-soft: #35290b;
+  /* The brand yellow, as a literal so contrast.test.js can measure it:
+     9.8:1 on the dark soft wash. */
+  --text-on-brand-soft: #ffd21e;
   /* Paper-on-ink, mirroring the light side's ink-on-paper: the orange ring is
      gone everywhere for the same reason (see the light definition). */
   --focus-ring: #f2f3f5;

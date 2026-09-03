@@ -157,6 +157,17 @@ export default function ProfilePage() {
   const [visibilityDraft, setVisibilityDraft] = useState(null);
   const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [pinsBusy, setPinsBusy] = useState(false);
+  // Which list's toggle just changed, so it pops and its row flashes once.
+  // State rather than a keyframe on `.is-pinned`: that would fire for every
+  // already-pinned list each time the page opens. Cleared when the row's own
+  // animation ends (the button's pop bubbles up first and is ignored).
+  const [settling, setSettling] = useState(null);
+  const settleDone = (event) => {
+    if (event.target === event.currentTarget) setSettling(null);
+  };
+  // Set once by an unpublish: the create-a-profile form that replaces the
+  // sections just deleted remounts and rises instead of flicking into place.
+  const [reborn, setReborn] = useState(false);
   const [promptDismissed, setPromptDismissed] = useState(false);
   const [reloadToken, setReloadToken] = useState(0);
   // Bumped on every successful save. It is the `key` of the preview's flashing
@@ -706,6 +717,7 @@ export default function ProfilePage() {
         if (user?.uid) pinnableListsCache.set(user.uid, updated);
         return updated;
       });
+      setSettling({ shareId: list.shareId, kind: 'attribution' });
       if (!next && pinnedShareIds.includes(list.shareId)) {
         const remaining = pinnedShareIds.filter(id => id !== list.shareId);
         await savePinnedShareIds(remaining);
@@ -740,6 +752,8 @@ export default function ProfilePage() {
     setProfile(current => ({ ...current, pinnedShareIds: next }));
     try {
       await savePinnedShareIds(next);
+      // After the save lands: a pin that rolls back must not pop as if it had.
+      setSettling({ shareId, kind: 'pin' });
     } catch (error) {
       setProfile(current => ({ ...current, pinnedShareIds: previous }));
       reportError(error);
@@ -763,6 +777,7 @@ export default function ProfilePage() {
       clearStoredProfile(user.uid);
       setProfile(null);
       setStatus('new');
+      setReborn(true);
       setShowPhoto(true);
       // Creating a profile again is creating a profile: the choice is asked
       // from scratch rather than inherited from the one just deleted.
@@ -878,7 +893,11 @@ export default function ProfilePage() {
               <p className="profile-hint" role="alert">{copy.migrationFailed}</p>
             )}
 
-            <form className="profile-form" onSubmit={onSubmit}>
+            <form
+              key={reborn ? 'form-reborn' : 'form'}
+              className={`profile-form${reborn ? ' is-reborn' : ''}`}
+              onSubmit={onSubmit}
+            >
               <section
                 id="profile-identity"
                 tabIndex={-1}
@@ -1140,8 +1159,13 @@ export default function ProfilePage() {
                           && pinnedShareIds.length >= USER_PROFILE_LIMITS.pinnedShareIds;
                         // `emoji` holds a lucide icon name, not a literal emoji.
                         const Icon = getIcon(list.emoji);
+                        const settlingHere = settling?.shareId === list.shareId ? settling.kind : null;
                         return (
-                          <li key={list.shareId}>
+                          <li
+                            key={list.shareId}
+                            className={settlingHere ? 'is-flashing' : undefined}
+                            onAnimationEnd={settleDone}
+                          >
                             <span className="profile-pin-emoji" aria-hidden="true"><Icon size={20} /></span>
                             <span className="profile-pin-copy">
                               <span className="profile-pin-title">{list.title}</span>
@@ -1150,7 +1174,7 @@ export default function ProfilePage() {
                             <span className="profile-pin-actions">
                               <button
                                 type="button"
-                                className={`profile-pin-toggle${attributed ? ' is-pinned' : ''}`}
+                                className={`profile-pin-toggle${attributed ? ' is-pinned' : ''}${settlingHere === 'attribution' ? ' is-settling' : ''}`}
                                 onClick={() => toggleAttribution(list)}
                                 disabled={pinsBusy || migration === 'running'}
                                 aria-pressed={attributed}
@@ -1161,7 +1185,7 @@ export default function ProfilePage() {
                               {attributed && (
                                 <button
                                   type="button"
-                                  className={`profile-pin-toggle${isPinned ? ' is-pinned' : ''}`}
+                                  className={`profile-pin-toggle${isPinned ? ' is-pinned' : ''}${settlingHere === 'pin' ? ' is-settling' : ''}`}
                                   onClick={() => togglePin(list.shareId)}
                                   disabled={pinsBusy || migration === 'running' || pinsFull}
                                   aria-pressed={isPinned}
