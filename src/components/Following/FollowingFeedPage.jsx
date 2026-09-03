@@ -5,7 +5,12 @@ import FeedContainer from '../Feed/FeedContainer';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFollowingUpdates } from '../../context/FollowingUpdatesContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { followingFirstLoadPending, mergeOrderedPapers, orderFollowingFeedPapers } from '../../utils/followingFeed';
+import {
+  followingFirstLoadPending,
+  mergeOrderedPapers,
+  orderFollowingFeedPapers,
+  resumeOrderedPapers,
+} from '../../utils/followingFeed';
 import './FollowingFeedPage.css';
 
 /**
@@ -16,6 +21,11 @@ import './FollowingFeedPage.css';
  * page applies one relevance-and-diversity ranking across every follow and
  * hands it to the shared container, so no feed mechanics are duplicated.
  */
+// The order the page left with, for the next mount to resume — module scope,
+// because the page is remounted on every visit and the feed the reader left
+// must be the feed they come back to (`resumeOrderedPapers`).
+const lastOrder = { items: null, ordered: [] };
+
 export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComments = null }) {
   const navigate = useNavigate();
   const { isEnglish } = useLanguage();
@@ -27,18 +37,24 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
   // "nothing new from what you follow" state for a frame, and the cards then
   // replaced it — the first of the pops the reader saw on entering.
   //
-  // Ranking captures the seen-set only when the item list itself changes:
-  // marking cards as seen mid-scroll must never reshuffle under the thumb.
-  // And a refresh that lands while the cards are on screen keeps their order
-  // (`mergeOrderedPapers`): the fresh ranking is applied in full on the next
-  // visit, when nobody is reading it.
-  const [orderedPapers, setOrderedPapers] = useState(() => orderFollowingFeedPapers(items, seenIds));
+  // And resumed, not re-ranked: the order the reader left is the order they
+  // come back to (`resumeOrderedPapers`), so the card they were on is still
+  // where they left it and the container can scroll back to it. Ranking
+  // captures the seen-set only when the item list itself changes: marking
+  // cards as seen mid-scroll must never reshuffle under the thumb. A refresh
+  // that lands while the cards are on screen keeps their order
+  // (`mergeOrderedPapers`) and appends what is new.
+  const [orderedPapers, setOrderedPapers] = useState(() => resumeOrderedPapers(lastOrder, items, seenIds));
   const lastItemsRef = useRef(items);
   useEffect(() => {
     if (lastItemsRef.current === items) return;
     lastItemsRef.current = items;
     setOrderedPapers(current => mergeOrderedPapers(current, orderFollowingFeedPapers(items, seenIds)));
   }, [items, seenIds]);
+  useEffect(() => {
+    lastOrder.items = items;
+    lastOrder.ordered = orderedPapers;
+  }, [items, orderedPapers]);
 
   const hasFollows = followedEntities.length > 0;
 

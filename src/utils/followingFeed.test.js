@@ -192,7 +192,7 @@ test('a refresh keeps the cards on screen where they are and appends what is new
 
 test('SOURCE: the Following page ranks on its first render and merges refreshes', async () => {
   const code = await readSource('../components/Following/FollowingFeedPage.jsx');
-  assert.match(code, /useState\(\(\) => orderFollowingFeedPapers\(items, seenIds\)\)/,
+  assert.match(code, /useState\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/,
     'an empty initial state painted the empty state for a frame before the cards');
   assert.match(code, /setOrderedPapers\(current => mergeOrderedPapers\(current, orderFollowingFeedPapers\(items, seenIds\)\)\)/);
 });
@@ -226,4 +226,28 @@ test('SOURCE: the container honours a source\'s own first-load flag, and Followi
   assert.match(container, /initialLoadPending: \(source \? Boolean\(source\.initialLoadPending\) : !initialFeedReady\) && !error/);
   const page = await readSource('../components/Following/FollowingFeedPage.jsx');
   assert.match(page, /initialLoadPending: followingFirstLoadPending\(\{ items, loading, lastUpdatedAt, error \}\)/);
+});
+
+/**
+ * Coming back to Following found the cards shuffled: every mount ranked from
+ * scratch with a seen-set that had just grown by the cards scrolled past.
+ * The feed the reader left is the feed they come back to.
+ */
+test('the Following feed resumes the order it left with, and merges a refresh into it', async () => {
+  const { resumeOrderedPapers } = await import('./followingFeed.js');
+  const items = [{ id: 'a', title: 'A', citationCount: 1 }, { id: 'b', title: 'B', citationCount: 9 }];
+  const first = resumeOrderedPapers({ items: null, ordered: [] }, items, new Set());
+  assert.deepEqual(first.map(paper => paper.id), ['b', 'a'], 'the first visit ranks');
+  const resumed = resumeOrderedPapers({ items, ordered: first }, items, new Set(['doi:x', 'id:b']));
+  assert.equal(resumed, first, 'the same items resume in the same order, whatever was marked seen meanwhile');
+  const fresh = [{ id: 'c', title: 'C', citationCount: 99 }, { id: 'a', title: 'A', citationCount: 1 }];
+  const merged = resumeOrderedPapers({ items, ordered: first }, fresh, new Set());
+  assert.deepEqual(merged.map(paper => paper.id), ['a', 'c'], 'a refresh keeps the places it can and appends the rest');
+});
+
+test('SOURCE: the Following page resumes from the order it left, kept at module scope', async () => {
+  const code = await readSource('../components/Following/FollowingFeedPage.jsx');
+  assert.match(code, /const lastOrder = \{ items: null, ordered: \[\] \};/);
+  assert.match(code, /useState\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/);
+  assert.match(code, /lastOrder\.items = items;\s*lastOrder\.ordered = orderedPapers;/);
 });

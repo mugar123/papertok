@@ -39,8 +39,27 @@ test('membership and coverage are half-open on the high side', () => {
 
 test('SOURCE: the container mounts a window and grows it off the critical path', async () => {
   const code = await readFile(new URL('../components/Feed/FeedContainer.jsx', import.meta.url), 'utf8');
-  assert.match(code, /initialMountWindow\(\{ total: papers\.length, anchorIndex: savedIndexByKey\[scrollKey\] \|\| 0 \}\)/,
-    'the first window is around the card the feed was left on');
-  assert.match(code, /growMountWindow\(current, papers\.length\)/, 'and grows in idle chunks');
-  assert.match(code, /inMountWindow\(mountWindow, index\)[\s\S]*?feed-snap-item--pending/, 'cards outside it are full-height placeholders');
+  assert.match(code, /initialMountWindow\(\{\s*total: papers\.length,\s*anchorIndex: resumeIndex\(\{ papers, savedPaperId: savedPaperIdByKey\[scrollKey\], savedIndex: savedIndexByKey\[scrollKey\] \}\),/,
+    'the first window is around the paper the feed was left on');
+  assert.match(code, /growMountWindow\(anchoredWindow, papers\.length\)/, 'and grows in idle chunks');
+  assert.match(code, /inMountWindow\(anchoredWindow, index\)[\s\S]*?feed-snap-item--pending/, 'cards outside it are full-height placeholders');
+});
+
+test('a feed resumes on the paper it was on, wherever that paper is now', async () => {
+  const { resumeIndex } = await import('./feedMountWindow.js');
+  const papers = [{ id: 'a' }, { id: 'b' }, { id: 'c' }, { id: 'd' }];
+  assert.equal(resumeIndex({ papers, savedPaperId: 'c', savedIndex: 2 }), 2);
+  assert.equal(resumeIndex({ papers, savedPaperId: 'c', savedIndex: 0 }), 2, 'the id wins over a stale index');
+  assert.equal(resumeIndex({ papers: [{ id: 'x' }, { id: 'c' }, { id: 'a' }], savedPaperId: 'c', savedIndex: 2 }), 1, 'the paper moved: follow it');
+  assert.equal(resumeIndex({ papers, savedPaperId: 'gone', savedIndex: 3 }), 3, 'a paper the feed no longer has: the saved index');
+  assert.equal(resumeIndex({ papers, savedPaperId: 'gone', savedIndex: 9 }), 3, 'clamped to the last card');
+  assert.equal(resumeIndex({ papers, savedPaperId: null, savedIndex: 1 }), 1);
+  assert.equal(resumeIndex({ papers: [], savedPaperId: 'a', savedIndex: 1 }), 0);
+});
+
+test('SOURCE: the container saves the paper it is on and restores by that paper', async () => {
+  const code = await readFile(new URL('../components/Feed/FeedContainer.jsx', import.meta.url), 'utf8');
+  assert.match(code, /savedPaperIdByKey\[scrollKey\] = papersRef\.current\[savedIndexByKey\[scrollKey\]\]\?\.id/);
+  assert.match(code, /const index = resumeIndex\(\{ papers, savedPaperId: savedPaperIdByKey\[scrollKey\], savedIndex: savedIndexByKey\[scrollKey\] \}\)/);
+  assert.match(code, /el\.scrollTop = el\.clientHeight > 0 \? index \* el\.clientHeight/, 'restored to the card, not to a pixel offset from another order');
 });

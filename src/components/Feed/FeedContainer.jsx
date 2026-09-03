@@ -11,6 +11,7 @@ import {
   inMountWindow,
   initialMountWindow,
   mountWindowCovers,
+  resumeIndex,
 } from '../../utils/feedMountWindow.js';
 import AnimatedAtom from './AnimatedAtom';
 import { FEED_DISPLAY_STATES, getFeedDisplayState } from '../../utils/feedLoadingState';
@@ -19,9 +20,12 @@ import './FeedContainer.css';
 // Per-surface scroll memory: the Siguiendo feed shares this container with
 // For You and must not clobber its saved position.
 const savedScrollByKey = {};
-// The card each feed was left on, so a remount can open its mount window
-// there instead of at the top (utils/feedMountWindow.js).
+// The card each feed was left on — its index, and the paper's id, which is
+// what the restore actually follows (utils/feedMountWindow.js): the index is
+// only as good as the order it was taken from, and Following's order can
+// move between two visits.
 const savedIndexByKey = {};
+const savedPaperIdByKey = {};
 const SCROLL_IDLE_DELAY_MS = 120;
 const SCROLL_INTERACTION_SETTLE_MS = 220;
 
@@ -97,11 +101,31 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   // on, grown outwards in idle chunks until it covers every paper. Mounting
   // the whole feed in the same commit as the tab switch was what blocked the
   // main thread for ~200 ms at a time and froze the transition.
+  // Read by the scroll handler, which must not be re-created on every
+  // papers change; refreshed after each commit, which is before any scroll.
+  const papersRef = useRef(papers);
+  useEffect(() => { papersRef.current = papers; }, [papers]);
   const [mountWindow, setMountWindow] = useState(
-    () => initialMountWindow({ total: papers.length, anchorIndex: savedIndexByKey[scrollKey] || 0 }),
+    () => initialMountWindow({
+      total: papers.length,
+      anchorIndex: resumeIndex({ papers, savedPaperId: savedPaperIdByKey[scrollKey], savedIndex: savedIndexByKey[scrollKey] }),
+    }),
   );
+  // Papers that arrive after the first render (a first load, a source that
+  // answers late) find an empty window: derive one anchored on the resumed
+  // card, or it would grow from the top and leave that card a blank slot
+  // until it got there. Derived, not set in an effect, so the first paint
+  // with papers already has the right cards in it.
+  const anchoredWindow = useMemo(() => (
+    mountWindow.hi === 0 && papers.length > 0
+      ? initialMountWindow({
+        total: papers.length,
+        anchorIndex: resumeIndex({ papers, savedPaperId: savedPaperIdByKey[scrollKey], savedIndex: savedIndexByKey[scrollKey] }),
+      })
+      : mountWindow
+  ), [mountWindow, papers, scrollKey]);
   useEffect(() => {
-    if (mountWindowCovers(mountWindow, papers.length)) return undefined;
+    if (mountWindowCovers(anchoredWindow, papers.length)) return undefined;
     // `requestIdleCallback` where it exists, so a chunk never lands inside a
     // frame the transition or a scroll needs; a short timeout elsewhere.
     const schedule = typeof window.requestIdleCallback === 'function'
@@ -110,9 +134,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     const cancel = typeof window.cancelIdleCallback === 'function'
       ? (id) => window.cancelIdleCallback(id)
       : (id) => clearTimeout(id);
-    const handle = schedule(() => setMountWindow(current => growMountWindow(current, papers.length)));
+    const handle = schedule(() => setMountWindow(growMountWindow(anchoredWindow, papers.length)));
     return () => cancel(handle);
-  }, [mountWindow, papers.length]);
+  }, [anchoredWindow, papers.length]);
   const initialLoadStartedRef = useRef(false);
   const scrollIdleTimerRef = useRef(null);
   const skipFlushTimerRef = useRef(null);
@@ -163,13 +187,17 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
       const el = feedRef.current;
       const prevBehavior = el.style.scrollBehavior;
       el.style.scrollBehavior = 'auto'; // Force instant jump
-      el.scrollTop = savedScrollByKey[scrollKey];
+      // The paper the reader was on, wherever it is in this order; each
+      // snap item is one container height tall, so the card's index is its
+      // offset. The raw offset only stands in when the height is unknown.
+      const index = resumeIndex({ papers, savedPaperId: savedPaperIdByKey[scrollKey], savedIndex: savedIndexByKey[scrollKey] });
+      el.scrollTop = el.clientHeight > 0 ? index * el.clientHeight : savedScrollByKey[scrollKey];
 
       requestAnimationFrame(() => {
         el.style.scrollBehavior = prevBehavior;
       });
     }
-  }, [papers.length, scrollKey]);
+  }, [papers, scrollKey]);
 
   useEffect(() => {
     if (loading) initialLoadStartedRef.current = true;
@@ -297,6 +325,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     savedIndexByKey[scrollKey] = container.clientHeight > 0
       ? Math.round(container.scrollTop / container.clientHeight)
       : 0;
+    savedPaperIdByKey[scrollKey] = papersRef.current[savedIndexByKey[scrollKey]]?.id || savedPaperIdByKey[scrollKey];
     if (!container.classList.contains('feed-container--scrolling')) {
       container.classList.add('feed-container--scrolling');
     }
@@ -405,7 +434,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     <FeedLandmark landmark={landmark}>
       <div className="feed-container" ref={feedRef} onScroll={handleScroll}>
         {papers.map((paper, index) => (
-          !inMountWindow(mountWindow, index) ? (
+          !inMountWindow(anchoredWindow, index) ? (
             // Outside the mount window: a full-height slot, so the scroll
             // extent and the snap points are already those of the finished
             // feed. It becomes a card when the window reaches it.

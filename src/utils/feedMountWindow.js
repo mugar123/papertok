@@ -42,3 +42,24 @@ export function mountWindowCovers(window, total) {
 export function inMountWindow(window, index) {
   return index >= (window?.lo ?? 0) && index < (window?.hi ?? 0);
 }
+
+/**
+ * Where a feed resumes: the index of the paper the reader was on, looked up
+ * by identity in the papers it has now, and only then the index it saved.
+ *
+ * The restore used to be a pixel offset alone, which is an index in disguise
+ * — and an index is only as good as the order it was taken from. Come back
+ * to Following after a while and the order may have moved (papers marked seen
+ * on the way out re-rank, a refresh appends), so the same offset landed on a
+ * different paper, or on the first one. The paper's own id survives all of
+ * that; the saved index is the fallback for a paper the feed no longer has.
+ */
+export function resumeIndex({ papers = [], savedPaperId = null, savedIndex = 0 } = {}) {
+  const total = papers.length;
+  if (total === 0) return 0;
+  if (savedPaperId) {
+    const found = papers.findIndex(paper => paper?.id === savedPaperId);
+    if (found >= 0) return found;
+  }
+  return Math.min(Math.max(0, Math.trunc(savedIndex) || 0), total - 1);
+}

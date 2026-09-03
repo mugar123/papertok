@@ -207,3 +207,21 @@ export function followingFirstLoadPending({ items = [], loading = false, lastUpd
   if ((items || []).length > 0) return false;
   return Boolean(loading) || !lastUpdatedAt;
 }
+
+/**
+ * The order the Following feed resumes with.
+ *
+ * Each visit used to rank from scratch, and each visit had a different
+ * seen-set — the cards the reader had just scrolled past — so coming back
+ * found the cards shuffled and the place the reader had kept in their head
+ * gone. The feed the reader left is the feed they come back to: the same
+ * items resume in the same order; items a refresh replaced meanwhile keep the
+ * places they had (`mergeOrderedPapers`), with what is new appended. A fresh
+ * ranking happens once, the first time in a session there is anything to rank.
+ *
+ * @param {{ items: Array|null, ordered: Array }} previous  what the page left last time
+ */
+export function resumeOrderedPapers(previous, items = [], seenIds = new Set()) {
+  if (previous?.items === items && Array.isArray(previous?.ordered)) return previous.ordered;
+  return mergeOrderedPapers(previous?.ordered || [], orderFollowingFeedPapers(items, seenIds));
+}
