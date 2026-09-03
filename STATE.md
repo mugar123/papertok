@@ -17,7 +17,7 @@ adaptador ya no mutila «CORD-19». Plan en
 hallazgos en `docs/AUDITORIA-SEMANTIC-SCHOLAR-2026-09-03.md` (S6, la caché
 partida por origen, sigue abierta a propósito).
 
-**Implementado, probado (suite entera 1.929/1.929, cero `cancelled`) y
+**Implementado, probado (suite entera 1.931/1.931, cero `cancelled`) y
 revisado — no desplegado todavía.** Cuando se despliegue, el Worker tiene que
 salir primero y el frontend después: éste se despliega solo al fusionar
 (Vercel) mientras que el Worker sigue siendo manual, y un bundle nuevo contra
