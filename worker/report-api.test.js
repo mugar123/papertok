@@ -1899,7 +1899,7 @@ test('charges /related and /sources/s2 to the same Semantic Scholar ceiling', as
   assert.equal(paceKeys.length, 2, 'both routes have to keep the same beat');
 });
 
-test('lets /related ask for the twenty recommendations the feed seeds from', async () => {
+test('asks Semantic Scholar for twenty whatever the client asked, so one paper is one entry', async () => {
   let upstreamUrl = '';
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async url => {
@@ -1908,14 +1908,53 @@ test('lets /related ask for the twenty recommendations the feed seeds from', asy
   };
   try {
     await withCachedIdentity(() => reportApi.fetch(new Request(
-      'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=20',
+      'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=8',
       { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
     ), AUTHENTICATED_ENV));
   } finally {
     globalThis.fetch = originalFetch;
   }
 
+  // The feed seeds from twenty and the sheet shows eight. With `limit` in the key
+  // those were two misses and two provider calls for one list of which the
+  // second is a prefix of the first -- at one request a second, a refusal.
   assert.match(upstreamUrl, /limit=20/);
+});
+
+test('serves the sheet and the feed the same /related entry for one paper', async () => {
+  const stored = new Map();
+  let upstreamCalls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.fetch = async () => {
+    upstreamCalls += 1;
+    return new Response(JSON.stringify({ recommendedPapers: [] }), { headers: { 'content-type': 'application/json' } });
+  };
+  globalThis.caches = {
+    default: {
+      match: async request => (String(request.url).includes('/auth/')
+        ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
+        : stored.get(request.url)?.clone() || null),
+      put: async (request, response) => stored.set(request.url, response.clone()),
+    },
+  };
+  try {
+    const ask = limit => reportApi.fetch(new Request(
+      `https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=${limit}`,
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), AUTHENTICATED_ENV);
+
+    await ask(20);
+    await ask(8);
+    await ask(20);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+
+  assert.equal(upstreamCalls, 1);
+  assert.equal(stored.size, 1);
 });
 
 // Semantic Scholar's 429 reached the browser from `/sources/s2` as a 429 with a

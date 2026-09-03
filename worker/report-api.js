@@ -76,6 +76,7 @@ const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
 
 const CACHE_SECONDS = 6 * 60 * 60;
 const RELATED_CACHE_SECONDS = 24 * 60 * 60;
+const RELATED_UPSTREAM_LIMIT = 20;
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const ARXIV_CACHE_SECONDS = 10 * 60;
@@ -518,20 +519,21 @@ async function handleRelated(request, env, identity) {
   if (!/^(?:DOI:10\.|ARXIV:|[a-f0-9]{40}$)/i.test(paperId) || paperId.length > 300) {
     return json({ error: 'Invalid paper id' }, 400, corsHeaders(origin, env));
   }
-  // Twenty, not the eight-of-ten the other routes use: the feed's recommendation
-  // seeding asked Semantic Scholar for twenty directly, and this route is what it
-  // now goes through.
-  const limit = getSafeLimit(requestUrl.searchParams.get('limit'), 8, 20);
+  // Twenty, always. The feed seeds from twenty and the sheet shows eight; when
+  // `limit` was part of the cache key those were two misses and two provider
+  // calls for one list of which the second is a prefix of the first. The client
+  // trims what it shows. `limit` is still accepted so an older bundle keeps
+  // working; it just no longer changes the question.
   return cacheResponse(request, origin, env, RELATED_CACHE_SECONDS, async () => {
     const fields = 'paperId,title,abstract,authors,year,externalIds,url,venue,publicationDate,citationCount,isOpenAccess,openAccessPdf,publicationTypes';
-    const url = `https://api.semanticscholar.org/recommendations/v1/papers/forpaper/${encodeURIComponent(paperId)}?fields=${encodeURIComponent(fields)}&limit=${limit}`;
+    const url = `https://api.semanticscholar.org/recommendations/v1/papers/forpaper/${encodeURIComponent(paperId)}?fields=${encodeURIComponent(fields)}&limit=${RELATED_UPSTREAM_LIMIT}`;
     // Through the source helper, not a bare `fetchWithDeadline`: this used to
     // throw a plain Error with the status in its message and nothing on the
     // error itself, which is why the router could only ever answer 502. Six
     // seconds rather than eight, too -- the browser gives this route eight, and
     // an answer that lands as the client leaves is cached for nobody.
     return fetchJsonUpstream(url, env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {});
-  }, { identity, canonicalParams: { paper_id: paperId, limit: String(limit) } });
+  }, { identity, canonicalParams: { paper_id: paperId } });
 }
 
 // Every upstream call in this file goes through here, and the deadline covers
