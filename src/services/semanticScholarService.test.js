@@ -31,7 +31,7 @@ test('turns the related papers from the Worker into arXiv identifiers, once per 
   assert.equal(asked[0].limit, 20);
 });
 
-test('asks for a paper that has a DOI and no arXiv id, instead of skipping it', async () => {
+test('asks for a paper that has a DOI and no arXiv id, and hands over the paper itself', async () => {
   clearRecommendationCache();
   const asked = [];
   const fetchRelated = async paper => { asked.push(paper); return [{ arxivId: '2601.00001' }]; };
@@ -39,10 +39,15 @@ test('asks for a paper that has a DOI and no arXiv id, instead of skipping it', 
   // A PubMed or OpenAlex paper used to be `getPaperRecommendations(undefined)`:
   // no recommendation, no log, and nobody knew the feed only expanded from
   // arXiv. `/related` takes a DOI and so does this.
-  const ids = await getPaperRecommendations({ doi: '10.1000/xyz' }, { fetchRelated });
+  const paper = { id: 'pubmed:31000001', doi: '10.1000/xyz', title: 'One' };
+  const ids = await getPaperRecommendations(paper, { fetchRelated });
 
   assert.deepEqual(ids, ['2601.00001']);
-  assert.deepEqual(asked, [{ doi: '10.1000/xyz' }]);
+  // By reference, not by shape: `fetchRelatedFromWorker` filters the paper out
+  // of its own related list by `paper.id`, so a forwarded copy that carried only
+  // the identifiers would pass a `deepEqual` on `{ doi }` and still lose the id.
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0], paper, 'the paper must be forwarded as-is, not rebuilt from its identifiers');
 });
 
 test('has nothing to ask for a paper with neither DOI nor arXiv id', async () => {
