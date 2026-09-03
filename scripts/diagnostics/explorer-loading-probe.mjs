@@ -104,6 +104,9 @@ try {
   const cdp = new CDP(ws);
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
+  // Page errors, for when a probe sees nothing at all.
+  cdp.on('Runtime.exceptionThrown', ({ exceptionDetails }) => console.error('[page exception]', exceptionDetails.text, exceptionDetails.exception?.description?.split('\n')[0] || ''));
+  cdp.on('Runtime.consoleAPICalled', ({ type, args }) => { if (type === 'error') console.error('[console.error]', args.map((a) => a.value || a.description || '').join(' ').slice(0, 300)); });
   await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: RECORDER });
   const url = `${ORIGIN}/?probe=${Date.now()}${route}`;
 
@@ -163,6 +166,38 @@ try {
     await cdp.eval(`(() => { window.__cs = []; const tick = () => { const l = document.querySelector('.comments-sheet-loading'); const e = document.querySelector('.comments-sheet-state'); window.__cs.push({ t: Math.round(performance.now()), skel: l ? Number(getComputedStyle(l).opacity).toFixed(2) : null, skelPos: l ? getComputedStyle(l).position : null, empty: e ? Number(getComputedStyle(e).opacity).toFixed(2) : null, emptyY: e ? getComputedStyle(e).transform : null }); if (window.__cs.length < 900) requestAnimationFrame(tick); }; requestAnimationFrame(tick); const b = [...document.querySelectorAll('.pc-side-btn')].find(x => /coment|comment/i.test(x.textContent)); b.click(); return b.textContent.trim(); })()`).then((c) => console.log('clicked:', c));
     await sleep(6000);
     const report = await cdp.eval(`(() => { const p = window.__cs; const changes = []; let last = ''; for (const x of p) { const k = JSON.stringify([x.skel, x.skelPos, x.empty, x.emptyY]); if (k !== last) { last = k; changes.push(x); } } return { frames: p.length, changes: changes.slice(0, 60) }; })()`);
+    console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
+  }
+
+  if (mode === 'feedload') {
+    // The guest feed from cold: every frame, the atom veil (presence, opacity,
+    // the atom's transform) against the first card's sheet, through the
+    // handover from one to the other.
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { window.__fl = []; const tick = () => { const v = document.querySelector('.feed-empty--veil'); const a = document.querySelector('.feed-empty--veil .atom-loader'); const c = document.querySelector('.pc-sheet'); const t = document.querySelector('.pc-title'); window.__fl.push({ t: Math.round(performance.now()), gate: !!document.querySelector('.feed-empty--initial-loading'), sk: document.querySelectorAll('.sk').length, veil: v ? Number(getComputedStyle(v).opacity).toFixed(2) : null, atom: a ? getComputedStyle(a).transform : null, cards: document.querySelectorAll('.feed-snap-item').length, sheet: c ? Number(getComputedStyle(c).opacity).toFixed(2) : null, title: t ? Number(getComputedStyle(t).opacity).toFixed(2) : null }); if (window.__fl.length < 6000) requestAnimationFrame(tick); }; requestAnimationFrame(tick); })();` });
+    // The guest feed answers in half a second, under the 1.5 s the atom waits
+    // before showing; hold the source requests for a while so the wait is
+    // long enough for the veil, then let them through and watch it leave.
+    await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
+    const held = [];
+    let holding = true;
+    cdp.on('Fetch.requestPaused', ({ requestId, request }) => {
+      // Other origins only: the app's own modules come from the dev server,
+      // and holding one of those (a service named after a provider, say)
+      // freezes the whole page instead of its feed.
+      const source = !request.url.startsWith(ORIGIN) && /workers\.dev|api\.openalex|arxiv\.org|semanticscholar|ncbi\.nlm|europepmc|openaire|crossref/.test(request.url);
+      if (holding && source) { held.push(requestId); console.log('holding', request.url.slice(0, 120)); return; }
+      cdp.send('Fetch.continueRequest', { requestId }).catch(() => {});
+    });
+    setTimeout(() => {
+      holding = false;
+      console.log(`releasing ${held.length} held requests`);
+      for (const requestId of held) cdp.send('Fetch.continueRequest', { requestId }).catch(() => {});
+    }, 3500);
+    await cdp.send('Page.navigate', { url });
+    const sheet = await pollUntil(cdp, "document.querySelectorAll('.pc-sheet').length > 0", 40000, 200);
+    console.log('first sheet:', sheet);
+    await sleep(1500);
+    const report = await cdp.eval(`(() => { const p = window.__fl; const changes = []; let last = ''; for (const x of p) { const k = JSON.stringify([x.gate, x.sk, x.veil, x.atom, x.cards > 0, x.sheet, x.title]); if (k !== last) { last = k; changes.push(x); } } const blank = p.filter(x => x.veil === null && x.cards === 0).length; return { frames: p.length, framesWithNeitherVeilNorCards: blank, where: { hash: location.hash, gate: !!document.querySelector('.feed-empty--initial-loading'), atomLoaders: document.querySelectorAll('.atom-loader').length, text: document.body.innerText.replace(/\\s+/g, ' ').slice(0, 160) }, changes: changes.slice(0, 70) }; })()`);
     console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
   }
 

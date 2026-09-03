@@ -62,3 +62,13 @@ single-frame move — a fold that ends in a jump shows up as one frame carrying
 tens of pixels. `comments` opens the first card's thread in the guest feed and
 samples the skeleton's and the empty state's computed opacity every frame
 through the handover.
+
+```bash
+node scripts/diagnostics/explorer-loading-probe.mjs feedload '#/'
+```
+
+`feedload` opens the guest feed from cold with every cross-origin source
+request held for 3.5 s — the guest feed answers in half a second, under the
+1.5 s the atom waits before showing — then releases them and samples the atom
+veil (presence, opacity, the atom's transform) against the first card's sheet
+and title every frame through the handover.

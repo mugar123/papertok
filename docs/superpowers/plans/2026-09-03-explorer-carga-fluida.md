@@ -161,3 +161,42 @@ Clase doblada porque la regla compartida es una variante `data-state` de
 Tailwind con la misma especificidad. Pruebas: `paletteMotion.test.js`,
 `saveModalMotion.test.js` (tiempos nuevos), `commentsSheetStates.test.js` y
 el plegador en `explorerLoading.test.js`.
+
+## Tercera tanda: del átomo a los papers en el feed principal
+
+La pantalla de carga del feed (el átomo con «Buscando descubrimientos…») y
+el feed eran dos ramas de retorno de `FeedContainer`, así que React cambiaba
+una por otra en un frame: átomo, y al siguiente una tarjeta componiéndose.
+Ahora la pantalla es un **velo** (`.feed-empty--veil`) sobre el mismo
+contenedor en el que montan las tarjetas, dentro de un `AnimatePresence`, y se
+retira cuando llegan: el fondo se funde en 0,42 s con la curva expo mientras
+el átomo encoge a 0,62 y sube 16 px (0,36 s) y el texto se asienta 6 px hacia
+abajo (0,24 s); debajo, la primera tarjeta compone con su coreografía de
+siempre (título, kicker, autores…, 45 ms entre piezas). Etiquetas de variante
+en los hijos, no objetos, para que el `gone` del átomo suene con el del velo.
+Con `prefers-reduced-motion`, solo opacidad en 0,12 s.
+
+El velo cubre dos esperas, decididas por `feedAtomVeilCopy`
+(`utils/feedLoadingState.js`): la primera carga (`INITIAL_DISCOVERY`,
+«Buscando descubrimientos…») y un feed vaciado que sigue cargando o se está
+refrescando (`EMPTY` con `loading`/`isRefreshing`, «Sintetizando papers…»).
+Un feed vacío que dejó de cargar sigue siendo un veredicto con botón, sin
+velo. La puerta de sesión (`ProtectedRoute`) conserva su átomo tal cual.
+
+Pruebas: `feedAtomVeil.test.js` (fuente) y `feedLoadingState.test.js`
+(helper). La sonda gana el modo `feedload`, que retiene las peticiones de
+fuentes de otros orígenes 3,5 s para que el feed de invitado —que contesta en
+medio segundo, por debajo del 1,5 s que espera el átomo— llegue a enseñar el
+velo, y muestrea cada frame el velo, el átomo y la primera hoja. Medido: el
+esqueleto a 240 ms, el velo sobre él a 1750 ms, las 13 tarjetas montan a
+3745 ms con el velo todavía a 1,00, el velo baja a 0 entre 3759 y 4124 ms
+mientras el átomo pasa de 1 a 0,62 y sube 16 px, y se desmonta a 4190 ms; en
+ningún frame del relevo faltan las dos cosas.
+
+Lo que la medición destapó: en la carga inicial la tarjeta aparecía ya
+compuesta (título a opacidad 1 en su primer frame), porque el enrutador
+informa `POP` en la primera entrada del historial y la regla
+`[data-nav-direction="-1"]` del commit anterior deja las tarjetas en reposo
+en toda vuelta. La primera entrada (`history.state.idx` 0) no es una vuelta:
+`directionForNavigationType` la distingue y devuelve 0, así que la tarjeta
+compone bajo el velo que se retira, que es el relevo que se quería.

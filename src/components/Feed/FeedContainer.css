@@ -81,6 +81,19 @@
   animation: none;
 }
 
+/* The same screen as a veil over the feed (FeedContainer.jsx): it sits on the
+   container the cards mount into and leaves over them, so it is absolute in
+   the wrapper rather than a block of its own, and framer owns its opacity —
+   no CSS fade of its own to fight the exit. */
+.feed-empty--veil {
+  position: absolute;
+  inset: 0;
+  margin-top: 0;
+  min-height: 0;
+  z-index: 2;
+  animation: none;
+}
+
 .feed-empty-icon {
   font-size: 2rem;
   margin-bottom: var(--space-4);

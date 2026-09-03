@@ -1,5 +1,5 @@
 import { useRef, useEffect, useLayoutEffect, useCallback, useMemo, useState } from 'react';
-import { useReducedMotion } from 'framer-motion';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getUiErrorMessage } from '../../utils/errorMessages';
@@ -14,7 +14,7 @@ import {
   resumeIndex,
 } from '../../utils/feedMountWindow.js';
 import AnimatedAtom from './AnimatedAtom';
-import { FEED_DISPLAY_STATES, getFeedDisplayState } from '../../utils/feedLoadingState';
+import { FEED_DISPLAY_STATES, feedAtomVeilCopy, getFeedDisplayState } from '../../utils/feedLoadingState';
 import { createFeedResumeMemory } from '../../utils/feedResumeMemory.js';
 import './FeedContainer.css';
 
@@ -36,6 +36,36 @@ const SCROLL_INTERACTION_SETTLE_MS = 220;
 // (App.jsx's `/`) passes `landmark`. The skeleton and main-feed branches are
 // the only two states with real content worth landmark-and-heading, and they
 // share this wrapper instead of duplicating the conditional.
+/**
+ * How the atom gives way to the paper.
+ *
+ * The atom screen and the feed were two return branches of this component,
+ * so React swapped one for the other in a single frame: the atom, then a
+ * paper composing in, with nothing between. The screen is now a veil laid
+ * over the same container the cards mount into, and it leaves as the first
+ * card composes: the ground fades over 0.42 s while the atom shrinks and
+ * rises out of the way and the copy settles, on the curve everything on the
+ * card arrives with. Labels rather than objects on the children: inside a
+ * variant tree a child animates on the parent's label, not on an object of
+ * its own, so the atom's `gone` plays the frame the veil's does.
+ */
+const ATOM_VEIL_VARIANTS = {
+  shown: { opacity: 1 },
+  gone: { opacity: 0, transition: { duration: 0.42, ease: [0.16, 1, 0.3, 1] } },
+};
+const ATOM_VARIANTS = {
+  shown: { opacity: 1, scale: 1, y: 0 },
+  gone: { opacity: 0, scale: 0.62, y: -16, transition: { duration: 0.36, ease: [0.16, 1, 0.3, 1] } },
+};
+const ATOM_COPY_VARIANTS = {
+  shown: { opacity: 1, y: 0 },
+  gone: { opacity: 0, y: 6, transition: { duration: 0.24, ease: [0.4, 0, 1, 1] } },
+};
+const ATOM_VEIL_REDUCED_VARIANTS = {
+  shown: { opacity: 1 },
+  gone: { opacity: 0, transition: { duration: 0.12 } },
+};
+
 function FeedLandmark({ landmark, children }) {
   if (!landmark) {
     return <div className="feed-wrapper">{children}</div>;
@@ -367,6 +397,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     initialLoadPending: (source ? Boolean(source.initialLoadPending) : !initialFeedReady) && !error,
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
+  const atomVeil = feedAtomVeilCopy({ displayState, loading, isRefreshing });
 
   if (displayState === FEED_DISPLAY_STATES.ERROR) {
     return (
@@ -381,22 +412,6 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     );
   }
 
-  if (displayState === FEED_DISPLAY_STATES.INITIAL_DISCOVERY) {
-    return (
-      <div className="feed-empty feed-empty--initial-loading" role="status" aria-live="polite" aria-busy="true">
-        <div className="atom-loader" aria-hidden="true">
-          <AnimatedAtom size={80} strokeWidth={1} className="atom-loader-icon" />
-        </div>
-        <h2>{isEnglish ? 'Searching for discoveries...' : 'Buscando descubrimientos...'}</h2>
-        <p>
-          {isEnglish
-            ? 'Connecting to scientific sources to bring you the latest research'
-            : 'Conectando con las fuentes para traer lo último en ciencia'}
-        </p>
-      </div>
-    );
-  }
-
   if (displayState === FEED_DISPLAY_STATES.SKELETON) {
     return (
       <FeedLandmark landmark={landmark}>
@@ -407,45 +422,32 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     );
   }
 
-  if (displayState !== FEED_DISPLAY_STATES.FEED) {
+  if (displayState === FEED_DISPLAY_STATES.SOURCE_EMPTY) {
     // Alternative sources bring their own empty state; Siguiendo must never
     // fall back to the generic For You copy that asks users to broaden their interests.
-    if (displayState === FEED_DISPLAY_STATES.SOURCE_EMPTY) {
-      return <div className="feed-empty">{source.emptyState}</div>;
-    }
+    return <div className="feed-empty">{source.emptyState}</div>;
+  }
+
+  if (displayState === FEED_DISPLAY_STATES.EMPTY && !atomVeil) {
     return (
-      <div
-        className="feed-empty"
-        role={loading || isRefreshing ? 'status' : undefined}
-        aria-live={loading || isRefreshing ? 'polite' : undefined}
-        aria-busy={loading || isRefreshing ? 'true' : undefined}
-      >
+      <div className="feed-empty">
         <div className="atom-loader">
           <AnimatedAtom size={80} strokeWidth={1} className="atom-loader-icon" />
         </div>
-        <h2>
-          {loading || isRefreshing
-            ? (isEnglish ? 'Gathering papers...' : 'Sintetizando papers...')
-            : (isEnglish ? 'Searching for discoveries...' : 'Buscando descubrimientos...')}
-        </h2>
+        <h2>{isEnglish ? 'Searching for discoveries...' : 'Buscando descubrimientos...'}</h2>
         <p>
-          {loading || isRefreshing
-            ? (isEnglish
-              ? 'Connecting to scientific sources to bring you the latest research'
-              : 'Conectando con las fuentes para traer lo último en ciencia')
-            : (isEnglish
-              ? 'There are no papers in your categories yet. Try broadening your interests.'
-              : 'Aún no hay papers en tus categorías. Prueba a ampliar tus intereses.')}
+          {isEnglish
+            ? 'There are no papers in your categories yet. Try broadening your interests.'
+            : 'Aún no hay papers en tus categorías. Prueba a ampliar tus intereses.'}
         </p>
-        {!loading && (
-          <button className="feed-retry-btn" onClick={handleRefresh}>
-            {isEnglish ? 'Explore again' : 'Explorar de nuevo'}
-          </button>
-        )}
+        <button className="feed-retry-btn" onClick={handleRefresh}>
+          {isEnglish ? 'Explore again' : 'Explorar de nuevo'}
+        </button>
       </div>
     );
   }
 
+  if (displayState === FEED_DISPLAY_STATES.FEED || atomVeil) {
   return (
     <FeedLandmark landmark={landmark}>
       <div className="feed-container" ref={feedRef} onScroll={handleScroll}>
@@ -503,6 +505,44 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
         {/* Sentinel for infinite scroll */}
         {hasMore && <div ref={sentinelRef} className="feed-sentinel" />}
       </div>
+
+      {/* The wait, over the container rather than instead of it. While the
+          papers are on their way this is the whole screen; the frame they
+          land, the cards mount underneath and this recedes over them. */}
+      <AnimatePresence>
+        {atomVeil && (
+          <motion.div
+            key="atom-veil"
+            className="feed-empty feed-empty--veil"
+            role="status"
+            aria-live="polite"
+            aria-busy="true"
+            variants={prefersReducedMotion ? ATOM_VEIL_REDUCED_VARIANTS : ATOM_VEIL_VARIANTS}
+            initial={false}
+            animate="shown"
+            exit="gone"
+          >
+            <motion.div className="atom-loader" aria-hidden="true" variants={prefersReducedMotion ? undefined : ATOM_VARIANTS}>
+              <AnimatedAtom size={80} strokeWidth={1} className="atom-loader-icon" />
+            </motion.div>
+            <motion.div className="feed-empty-copy" variants={prefersReducedMotion ? undefined : ATOM_COPY_VARIANTS}>
+              <h2>
+                {atomVeil === 'gathering'
+                  ? (isEnglish ? 'Gathering papers...' : 'Sintetizando papers...')
+                  : (isEnglish ? 'Searching for discoveries...' : 'Buscando descubrimientos...')}
+              </h2>
+              <p>
+                {isEnglish
+                  ? 'Connecting to scientific sources to bring you the latest research'
+                  : 'Conectando con las fuentes para traer lo último en ciencia'}
+              </p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </FeedLandmark>
   );
+  }
+
+  return null;
 }
