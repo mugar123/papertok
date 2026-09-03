@@ -449,7 +449,11 @@ export default function SearchCommand({ open, onOpenChange }) {
             a sheet that fills from nothing shifts everything under the cursor
             when it does. */}
         {searchPending && (
-          <div className="sc-skeleton" role="status" aria-label={copy.searching}>
+          <div className="sc-skeleton" role="status">
+            {/* Real text, not just an aria-label: the skeleton rows below are
+                plain decorative placeholders, so an aria-label alone here
+                would never be announced as a status change. */}
+            <span className="visually-hidden">{copy.searching}</span>
             {[0, 1, 2, 3, 4].map(index => (
               <div className="sc-skeleton-row" key={index}>
                 <span className="sc-skeleton-icon" />
