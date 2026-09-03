@@ -39,3 +39,15 @@ test('el contenido del diálogo anima entrada y salida, no solo el velo', async 
     assert.doesNotMatch(frames[0], /transform|translate/);
   }
 });
+
+test('el filete de foco del campo no toca la primera letra', async () => {
+  const command = await readFile(COMMAND_JSX, 'utf8');
+  const input = command.match(/CommandPrimitive\.Input[\s\S]*?\{\.\.\.props\}/);
+  assert.ok(input, 'command.jsx ya no renderiza CommandPrimitive.Input');
+  // global.css dibuja el indicador de foco de los campos de texto como
+  // `inset 0 0 0 1px`: un filete justo por dentro de la caja. Con `px-0` el
+  // borde de la caja es el borde de la primera letra, y el anillo se leía como
+  // superpuesto a la «S» del placeholder (usuario, 2026-09-03).
+  assert.doesNotMatch(input[0], /\bpx-0\b/, 'el campo vuelve a pegar el filete al texto');
+  assert.match(input[0], /\bpx-(?:[2-9]|\d{2}|\d+\.5)\b/, 'el campo necesita padding horizontal');
+});

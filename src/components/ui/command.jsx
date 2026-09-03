@@ -57,9 +57,15 @@ function CommandDialog({ children, className, title = 'Search', ...props }) {
  * plus `--shadow-glow-primary` — so this field, which opens `autoFocus`ed,
  * painted a heavy black rectangle around itself the instant the palette
  * appeared, and read as "your text got selected". The sheet already has a
- * border and a rule under this row; a second box inside it is noise. `px-0`
- * likewise drops the reset's `--space-4` inset, so the placeholder sits next to
- * the magnifier rather than 24px away from it.
+ * border and a rule under this row; a second box inside it is noise. `px-2`
+ * likewise drops the reset's `--space-4` inset, so the placeholder sits near
+ * the magnifier rather than 24px away from it — but not `px-0`: the focus
+ * indicator `global.css` gives every text field is a hairline `inset 0 0 0
+ * 1px`, drawn just inside the box, and with no horizontal padding the box's
+ * edge IS the first glyph's edge. The hairline read as overlapping the "S" of
+ * the placeholder (user, 2026-09-03). 8px is what puts air between the two;
+ * the row's `gap-1.5` gives back part of the shift so the text still starts
+ * close to the magnifier.
  *
  * Overriding it needs no `!important`: `global.css` declares
  * `@layer theme, base, components, utilities`, so any utility beats the base
@@ -79,7 +85,7 @@ function CommandDialog({ children, className, title = 'Search', ...props }) {
 function CommandInput({ className, wrapperClassName, wrapperStyle, ...props }) {
   return (
     <div
-      className={cn('flex items-center gap-2 border-b border-border px-4 py-2', wrapperClassName)}
+      className={cn('flex items-center gap-1.5 border-b border-border px-4 py-2', wrapperClassName)}
       style={wrapperStyle}
     >
       <Search size={16} className="shrink-0 text-muted-foreground" />
@@ -89,7 +95,7 @@ function CommandInput({ className, wrapperClassName, wrapperStyle, ...props }) {
           // field's font is under 16px, and this field opens autoFocused —
           // the palette zoomed the whole app on every open (a real iPhone,
           // 2026-08-29). Same rule as the reader's note textarea.
-          'flex h-12 w-full border-0 bg-transparent px-0 py-3 text-[1rem] shadow-none outline-none',
+          'flex h-12 w-full border-0 bg-transparent px-2 py-3 text-[1rem] shadow-none outline-none',
           'placeholder:text-[var(--text-tertiary)]',
           className,
         )}

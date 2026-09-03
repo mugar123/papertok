@@ -1,4 +1,4 @@
-import { Children, cloneElement, useCallback, useEffect, useMemo, useState } from 'react';
+import { Children, cloneElement, useCallback, useLayoutEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   AlertCircle,
@@ -151,8 +151,14 @@ export default function SearchCommand({ open, onOpenChange }) {
   // — see the skeleton and the section gate below.
   const searchPending = isSearching || peoplePending;
 
-  useEffect(() => {
-    if (!open) reset();
+  // Cleared on the way in, never on the way out. The palette stays mounted
+  // between opens (App.jsx), so `open` turning false is the START of the exit,
+  // not the end of the palette: a reset there repainted the sheet with the
+  // empty-query view — results gone, suggestions cascading in — inside the
+  // 140 ms it was fading out. A layout effect on open runs before that opening
+  // is painted, so the previous answer is never on screen either way.
+  useLayoutEffect(() => {
+    if (open) reset();
   }, [open, reset]);
 
   const go = useCallback((path, state = null) => {
