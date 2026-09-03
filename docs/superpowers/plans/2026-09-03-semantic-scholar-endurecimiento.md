@@ -234,7 +234,7 @@ Revertir solo el `catch` de `/related` a `return json({ error: 'Related papers u
 git add worker/report-api.js worker/report-api.test.js
 git commit -m "fix(worker): /related relays a refusal the way the sources do, and a Semantic Scholar wait is a second
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -556,7 +556,7 @@ Quitar `paced: true` de las dos entradas, correr `report-api.test.js`: el test c
 git add worker/upstream-pace.js worker/upstream-pace.test.js worker/report-api.js worker/report-api.test.js
 git commit -m "feat(worker): Semantic Scholar keeps a one-a-second beat under its minute ceiling
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -802,7 +802,7 @@ En el Worker: restaurar `const limit = getSafeLimit(requestUrl.searchParams.get(
 git add worker/report-api.js worker/report-api.test.js src/services/relatedPapersService.js src/services/relatedPapersService.test.js
 git commit -m "perf(related): one paper is one cache entry, on the edge and in the browser
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -936,7 +936,7 @@ Quitar el `IN_FLIGHT.get` (crear siempre la promesa) → el test `shares one req
 git add src/services/relatedPapersService.js src/services/relatedPapersService.test.js
 git commit -m "fix(related): two callers asking for one paper at once share the request
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -1006,7 +1006,7 @@ Expected: `pass 4`, `fail 0`.
 git add src/services/adapters/SemanticScholarAdapter.js src/services/SemanticScholarAdapter.test.js
 git commit -m "fix(s2-adapter): boolean operators are stripped as words, not as letters
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -1152,7 +1152,7 @@ Volver a `if (!paper?.arxivId) return [];` al principio → el test del DOI en r
 git add src/services/semanticScholarService.js src/services/semanticScholarService.test.js src/context/FeedContext.jsx
 git commit -m "feat(feed): a paper with a DOI and no arXiv id gets recommendations too
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 ---
@@ -1228,7 +1228,7 @@ En `docs/AUDITORIA-SEMANTIC-SCHOLAR-2026-09-03.md`, justo debajo del título, a�
 git add worker/README.md STATE.md docs/AUDITORIA-SEMANTIC-SCHOLAR-2026-09-03.md
 git commit -m "docs(s2): the beat, the relay and the single cache entry, recorded
 
-Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>"
 ```
 
 - [ ] **Step 6: Desplegar y verificar en vivo (solo con el árbol rebasado)**
