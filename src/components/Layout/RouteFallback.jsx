@@ -6,5 +6,11 @@ import './RouteFallback.css'
 // took. The CSS keeps it invisible for the first 320 ms, so the fast case
 // still shows nothing at all.
 export default function RouteFallback() {
-  return <div className="route-fallback" role="status" aria-label="Cargando" />
+  // Purely decorative: `role="status"` with only an `aria-label` and no real
+  // text content never gets announced (a live region speaks content changes,
+  // not its own label), and it would be redundant here regardless —
+  // RouteAnnouncer is mounted outside this Suspense boundary in App.jsx and
+  // already announces the route change the moment navigation starts, before
+  // this chunk even begins downloading.
+  return <div className="route-fallback" aria-hidden="true" />
 }
