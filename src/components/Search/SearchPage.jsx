@@ -607,10 +607,16 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
    * showing, or that it found none. Derived fresh on every render — not
    * stored in state — so it reads '' for the entire time a search is
    * pending (`searchPending`) and only becomes real text once one lands.
+   *
    * That '' in between is what lets two searches that land on the exact same
-   * count still both be heard: rendering the same text twice in a row with
-   * nothing in between would be a no-op paint, and a live region only speaks
-   * when its content actually changes.
+   * count still both be heard. It only works because `searchPending` flips
+   * true and back to false around real network I/O (`performSearch`'s
+   * `await Promise.all(tasks)`): that is a genuine elapsed period, so React
+   * commits (and paints) the '' on its own before the eventual count ever
+   * gets computed, rather than the two collapsing into one batched update.
+   * Clearing and setting in the very same tick would not be enough on its
+   * own — confirmed the hard way elsewhere in this delivery, in
+   * EditInterestsModal.jsx.
    *
    * The Users pill — and the "PaperTok users" section under "all" — already
    * narrates every one of its own states for real (see the `search-users-note`
