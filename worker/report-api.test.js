@@ -1535,8 +1535,9 @@ function countingQuotaLedger(state, accepted = true) {
       return `quota-${name}`;
     },
     get: () => ({
-      fetch: async () => {
+      fetch: async (url) => {
         state.reservations += 1;
+        if (String(url).endsWith('/release')) state.releases = (state.releases ?? 0) + 1;
         return new Response(JSON.stringify(accepted ? { accepted: true } : { accepted: false, scope: 'global' }));
       },
     }),
@@ -1898,6 +1899,9 @@ test('charges /related and /sources/s2 to the same Semantic Scholar ceiling', as
   assert.equal(minuteKeys.length, 2, `expected both routes on the s2 ceiling, saw ${JSON.stringify(state.periodKeys)}`);
   const paceKeys = state.periodKeys.filter(key => key === 's2:pace');
   assert.equal(paceKeys.length, 2, 'both routes have to keep the same beat');
+  // Both requests went through: nothing was refused, so nothing is given back.
+  // A release on the accepted path would mint a minute unit out of nothing.
+  assert.equal(state.releases ?? 0, 0);
 });
 
 test('asks Semantic Scholar for twenty whatever the client asked, so one paper is one entry', async () => {
@@ -2044,6 +2048,52 @@ test('refuses a Semantic Scholar search itself when no second is free, without s
   assert.equal(response.headers.get('retry-after'), PACE_RETRY_AFTER_SECONDS);
   assert.equal(upstreamCalls, 0, 'a request the beat refused must not reach Semantic Scholar');
   assert.ok(state.periodKeys.includes('s2:pace'), `the beat was never consulted: ${JSON.stringify(state.periodKeys)}`);
+});
+
+// Like `paceRefusingLedger`, but it also remembers every action with the period
+// key it was aimed at, so a test can see a release land on exactly the minute
+// the reserve took -- and not on a minute recomputed later.
+function actionRecordingLedger(state) {
+  let lastName = '';
+  return {
+    idFromName: name => {
+      lastName = String(name);
+      return `quota-${lastName}`;
+    },
+    get: () => ({
+      fetch: async (url, options) => {
+        const action = String(url).split('/').pop();
+        const body = JSON.parse(options.body);
+        state.actions.push({ action, periodKey: lastName, subjectKey: body.subjectKey });
+        if (action === 'release') return new Response(JSON.stringify({ released: true }));
+        return new Response(JSON.stringify(
+          lastName.endsWith(':pace') ? { accepted: false, scope: 'user' } : { accepted: true },
+        ));
+      },
+    }),
+  };
+}
+
+test('gives the minute back when the beat refuses, to the same minute it was taken from', async () => {
+  const state = { actions: [] };
+  const response = await withWorkerFetchMock(
+    async () => new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/s2?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { REQUEST_QUOTA_LEDGER: actionRecordingLedger(state) }),
+  );
+
+  assert.equal(response.status, 429);
+  const minuteReserve = state.actions.find(a => a.action === 'reserve' && !a.periodKey.endsWith(':pace'));
+  const releases = state.actions.filter(a => a.action === 'release');
+  assert.ok(minuteReserve, `no minute reservation seen: ${JSON.stringify(state.actions)}`);
+  assert.equal(releases.length, 1, `expected exactly one release, saw ${JSON.stringify(releases)}`);
+  // The refund has to name the minute the reserve named, and the same subject:
+  // a minute recomputed at release time credits the next one when the request
+  // straddled the boundary, and a different subject credits somebody else.
+  assert.equal(releases[0].periodKey, minuteReserve.periodKey);
+  assert.equal(releases[0].subjectKey, minuteReserve.subjectKey);
 });
 
 test('does not put PubMed on the Semantic Scholar beat', async () => {
