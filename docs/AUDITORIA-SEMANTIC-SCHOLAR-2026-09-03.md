@@ -1,5 +1,9 @@
 # Auditoría de la integración con Semantic Scholar — 2026-09-03
 
+> **Estado (2026-09-03):** S1–S5 y S7–S10 implementados según
+> `docs/superpowers/plans/2026-09-03-semantic-scholar-endurecimiento.md`.
+> S6 sigue abierta. La solicitud de límite ampliado está pendiente de @mugar.
+
 Alcance: las dos rutas del Worker que hablan con `api.semanticscholar.org`
 (`/sources/s2` y `/related`), los tres puntos del navegador que las llaman, el
 ledger de cuota que las acota, la caché de borde y los tests que las cubren.

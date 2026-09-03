@@ -1,5 +1,33 @@
 # Estado / pendientes
 
+## Semantic Scholar sobrevive a su segundo (2026-09-03)
+
+**Las dos rutas de S2 llevan ahora un compás de una petición por segundo
+debajo del techo por minuto (`worker/upstream-pace.js`: una reserva por
+segundo en el ledger de siempre, esperar al siguiente hasta 2,5 s, y rechazar
+aquí con `retry-after: 2` antes que arriba), `/related` relaya los fallos del
+proveedor con el mismo mapeo que `/sources/*` (429 con `code`, `upstreamStatus`
+y `retry-after`; `UPSTREAM_TIMEOUT` en el cuelgue), y el navegador pide una
+vez por paper: una clave de caché sin `limit` en el borde y en el cliente, y
+deduplicación de peticiones en vuelo en `relatedPapersService`.** De regalo:
+el feed pide recomendaciones también para papers con DOI y sin arXiv, y el
+adaptador ya no mutila «CORD-19». Plan en
+`docs/superpowers/plans/2026-09-03-semantic-scholar-endurecimiento.md`;
+hallazgos en `docs/AUDITORIA-SEMANTIC-SCHOLAR-2026-09-03.md` (S6, la caché
+partida por origen, sigue abierta a propósito).
+
+**Implementado, probado (suite entera 1.929/1.929, cero `cancelled`) y
+revisado — no desplegado todavía.** Lo que motiva el compás ya estaba medido
+esta mañana contra producción, antes de este cambio: cinco peticiones en
+paralelo dieron un 200 y cuatro 429, y bajo presión sostenida el proveedor
+dejó de rechazar y colgó la conexión dos veces (`UPSTREAM_TIMEOUT`) — ver
+`docs/AUDITORIA-SEMANTIC-SCHOLAR-2026-09-03.md`, §2.2. Que el compás lo
+convierta en seis de seis es lo que predice el diseño, no algo que se haya
+visto todavía contra `api.papertok.app` real: la verificación en vivo (los
+seis espaciados y la ráfaga de tres del plan) queda pendiente del despliegue.
+Pendiente también, y sin relación con este código: la solicitud a Semantic
+Scholar de un límite mayor que 1 RPS.
+
 ## Semantic Scholar vuelve a responder: la clave está puesta (2026-09-03)
 
 **`SEMANTIC_SCHOLAR_API_KEY` quedó configurada el 02-09 a las 22:41 UTC

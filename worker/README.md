@@ -79,12 +79,15 @@ this one costs the source. A refusal is relayed as a 429 with the provider's own
 flattened into a 502, so a client can tell a rate limit from an outage; every `/sources/*` route
 does this now, not only Scopus.
 
-The key's introductory rate limit is **1 RPS**, and `S2_GLOBAL_MINUTE_LIMIT` (60, shared by
-`/sources/s2` and `/related`) is a *per-minute* ceiling: it permits sixty calls inside the same
-second, which Semantic Scholar would refuse. Measured on 2026-09-03, four unspaced requests drew
-three 429s while the same six spaced three seconds apart drew one. If bursts ever show up as an
-intermittently dead source, the fix is to space the calls, not to raise the ceiling.
-
+The key's introductory rate limit is **1 RPS**, and Semantic Scholar applies it per second: of
+five requests in one second, one is answered and four refused at once, with no `retry-after`
+(measured 2026-09-03). `S2_GLOBAL_MINUTE_LIMIT` (60, shared by `/sources/s2` and `/related`) is
+the same average and no say over which second, so under it both routes keep a one-a-second beat
+(`worker/upstream-pace.js`): a caller takes the first free second in the shared ledger, waits for
+it (at most 2.5 s), and is refused here with `retry-after: 2` rather than upstream when none is
+free. A refusal Semantic Scholar does send is relayed with the same short wait from both routes;
+`/related` used to flatten every failure into a bare 502. Raising the ceiling does not help at
+1 RPS — asking Semantic Scholar for a higher limit is what does.
 
 `/openalex/*` exists because OpenAlex changed underneath the app. Since February 2026 it requires
 an API key and bills each call against a daily budget — $0.10/day anonymous, $1/day on a free key —
