@@ -13,7 +13,10 @@ test('the explorer paints the name a link handed over before the entity answers'
   assert.match(jsx, /seedName\s*\?\s*<h1 className="ehc-name"[^>]*>\{seedName\}<\/h1>\s*:\s*<div className="ex-skel ex-skel-name"><\/div>/);
   const css = await read('./EntityExplorer.css');
   assert.match(css, /\.explorer-hero-content\.is-skeleton \{\s*animation: none;\s*\}/, 'the skeleton does not fade on top of the page transition');
-  assert.match(jsx, /<div className="explorer-hero-content is-skeleton">/);
+  // `aria-hidden` moved here from the `.explorer-hero` container that wraps
+  // this block, so the real Back button beside it stays announced while this
+  // decorative content does not (axe's `aria-hidden-focus`).
+  assert.match(jsx, /<div className="explorer-hero-content is-skeleton" aria-hidden="true">/);
 });
 
 test('the explorer chunk is preloaded with the other screens a session reaches', async () => {

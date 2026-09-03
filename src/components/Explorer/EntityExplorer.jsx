@@ -1108,22 +1108,28 @@ export default function EntityExplorer({
         aria-busy="true"
         aria-label={isEnglish ? 'Loading' : 'Cargando'}
       >
-        <div className="explorer-hero" aria-hidden="true">
+        {/* Not `aria-hidden` on the whole hero: the real, working Back button
+            lives inside it, and hiding its container would hide a focusable
+            control from assistive technology while leaving it reachable by
+            Tab (axe's `aria-hidden-focus`). Each decorative placeholder is
+            hidden on its own instead, so the Back button is the one thing in
+            here a screen reader still announces. */}
+        <div className="explorer-hero">
           <div className="explorer-hero-top">
             <div className="eht-left">
               <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
                 <ArrowLeft size={20} />
               </Button>
-              <div className="ex-skel ex-skel-type"></div>
+              <div className="ex-skel ex-skel-type" aria-hidden="true"></div>
             </div>
-            <div className="ex-skel ex-skel-action"></div>
+            <div className="ex-skel ex-skel-action" aria-hidden="true"></div>
           </div>
 
           {/* The live hero's own nesting, copied rather than approximated:
               header wraps main and aside, and the stats sit inside the aside.
               Flattening it let `.ehc-main` stretch down the whole hero and
               pushed the stats to the floor, with a screen of nothing between. */}
-          <div className="explorer-hero-content is-skeleton">
+          <div className="explorer-hero-content is-skeleton" aria-hidden="true">
             <div className="ehc-header">
               <div className="ehc-main">
                 <div className="ehc-visual-slot">
@@ -1206,7 +1212,7 @@ export default function EntityExplorer({
           {/* One tab or two, from the same helper the live strip answers with.
               A page that will only ever show Papers no longer advertises an
               Authors tab it is about to take away. */}
-          <div className="ee-tabs">
+          <div className="ee-tabs" aria-hidden="true">
             {Array.from({ length: shape.tabs }, (_, i) => (
               <div key={i} className="ex-skel ex-skel-tab"></div>
             ))}
