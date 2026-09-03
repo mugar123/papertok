@@ -50,6 +50,7 @@ import {
 } from './thread-anchor.js';
 import { isServiceAccountConfigured } from './firestore-admin.js';
 import { reserveRequestQuota } from './request-quota-ledger.js';
+import { awaitUpstreamSlot } from './upstream-pace.js';
 
 export { KimiBudgetLedger } from './kimi-budget-ledger.js';
 export { EmailDeliveryLedger } from './email-delivery-ledger.js';
@@ -187,6 +188,12 @@ const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
 // the same Semantic Scholar allowance, and a ceiling that only covered one of
 // them would leave alive exactly the failure this replaces -- a limiter that
 // counts per caller instead of per provider.
+//
+// `paced` puts a route on the one-a-second beat of `upstream-pace.js` under its
+// minute ceiling. Semantic Scholar is the provider that needs it: it admits one
+// request per second per key, and a per-minute ceiling of sixty is the same
+// average with no say over which second. PubMed is not paced: the key buys ten
+// a second and `withPubmedRetry` absorbs the burst.
 const DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT = 60;
 const DEFAULT_S2_GLOBAL_MINUTE_LIMIT = 60;
 const SHARED_MINUTE_CEILINGS = Object.freeze({
@@ -198,8 +205,8 @@ const SHARED_MINUTE_CEILINGS = Object.freeze({
   // the anonymous 3 req/s it once mirrored, and it has never been the binding
   // limit (151/151 reservations accepted, 2026-09-01).
   '/sources/pubmed': { namespace: 'pubmed', variable: 'PUBMED_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT },
-  '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT },
-  '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT },
+  '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
+  '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
 });
 
 // What the router tells a client to wait when the upstream refused without
@@ -443,6 +450,30 @@ async function reserveSharedMinuteQuota(request, env, origin) {
   return null;
 }
 
+// The beat under the ceiling, for the providers that count per second. It runs
+// last of the three gates because it is the only one that costs wall-clock: a
+// caller the minute ceiling or the identity quota is about to turn away must not
+// first take a second away from somebody who would have used it.
+async function awaitSharedPace(request, env, origin) {
+  const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
+  if (!ceiling?.paced) return null;
+  const slot = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, { namespace: ceiling.namespace });
+  if (slot.accepted) return null;
+  if (slot.code) {
+    return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+    });
+  }
+  // Two seconds, not a minute: the next free second is at most 2.5 s away and
+  // the caller is being told to come back, not to give up.
+  return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+    ...corsHeaders(origin, env),
+    'cache-control': 'no-store',
+    'retry-after': '2',
+  });
+}
+
 // `ttl` may be a function of the payload, because whether an answer deserves its
 // full TTL is something only the fetcher's result can say: a 200 assembled from a
 // fallback after the real provider refused is not worth six hours.
@@ -454,6 +485,8 @@ async function cacheResponse(request, origin, env, ttl, fetcher, options = {}) {
   if (sharedQuotaError) return sharedQuotaError;
   const quotaError = await reserveProtectedProviderQuota(options.identity || null, env, origin);
   if (quotaError) return quotaError;
+  const paceError = await awaitSharedPace(request, env, origin);
+  if (paceError) return paceError;
   if (options.openAlexCalls) {
     const budgetError = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
     if (budgetError) return budgetError;

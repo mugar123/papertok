@@ -1892,8 +1892,11 @@ test('charges /related and /sources/s2 to the same Semantic Scholar ceiling', as
 
   // One namespace, because both spend the same provider allowance. A limiter with
   // one counter per route is the per-tab limiter this replaced, wearing a hat.
-  const s2Keys = state.periodKeys.filter(key => key.startsWith('s2:'));
-  assert.equal(s2Keys.length, 2, `expected both routes on the s2 ceiling, saw ${JSON.stringify(state.periodKeys)}`);
+  // The pace keys are the same namespace's beat, counted separately below.
+  const minuteKeys = state.periodKeys.filter(key => key.startsWith('s2:') && !key.endsWith(':pace'));
+  assert.equal(minuteKeys.length, 2, `expected both routes on the s2 ceiling, saw ${JSON.stringify(state.periodKeys)}`);
+  const paceKeys = state.periodKeys.filter(key => key === 's2:pace');
+  assert.equal(paceKeys.length, 2, 'both routes have to keep the same beat');
 });
 
 test('lets /related ask for the twenty recommendations the feed seeds from', async () => {
@@ -1962,6 +1965,55 @@ test('tells a client refused by Semantic Scholar search to wait a second, not a 
 
   assert.equal(response.status, 429);
   assert.equal(response.headers.get('retry-after'), '2');
+});
+
+// The ledger accepts the minute and refuses every second: what the route must do
+// then is answer 429 itself, with the short wait, and never call the provider.
+function paceRefusingLedger(state) {
+  let lastName = '';
+  return {
+    idFromName: name => {
+      lastName = String(name);
+      state.periodKeys.push(lastName);
+      return `quota-${lastName}`;
+    },
+    get: () => ({
+      fetch: async () => new Response(JSON.stringify(
+        lastName.endsWith(':pace') ? { accepted: false, scope: 'user' } : { accepted: true },
+      )),
+    }),
+  };
+}
+
+test('refuses a Semantic Scholar search itself when no second is free, without spending the provider', async () => {
+  const state = { periodKeys: [] };
+  let upstreamCalls = 0;
+  const response = await withWorkerFetchMock(
+    async () => { upstreamCalls += 1; return new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } }); },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/s2?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { REQUEST_QUOTA_LEDGER: paceRefusingLedger(state) }),
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+  assert.equal(response.headers.get('retry-after'), '2');
+  assert.equal(upstreamCalls, 0, 'a request the beat refused must not reach Semantic Scholar');
+  assert.ok(state.periodKeys.includes('s2:pace'), `the beat was never consulted: ${JSON.stringify(state.periodKeys)}`);
+});
+
+test('does not put PubMed on the Semantic Scholar beat', async () => {
+  const state = { periodKeys: [], reservations: 0 };
+  await withWorkerFetchMock(
+    async () => new Response(JSON.stringify({ esearchresult: { count: '0', idlist: [] } }), { headers: { 'content-type': 'application/json' } }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/pubmed?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) }),
+  );
+
+  assert.deepEqual(state.periodKeys.filter(key => key.endsWith(':pace')), [], 'NCBI counts ten a second and has its own retry; it needs no beat');
 });
 
 test('keeps two different PubMed queries in two different cache entries', async () => {
