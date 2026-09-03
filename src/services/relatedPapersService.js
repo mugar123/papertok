@@ -3,6 +3,10 @@ import { authenticatedWorkerFetch, workerSourceUrl } from './workerApiClient.js'
 
 const CACHE = new Map();
 const CACHE_TTL = 24 * 60 * 60 * 1000;
+// One promise per paper while it is being asked: the cache only fills once the
+// answer is in, and two callers in the same tick used to be two Worker calls
+// and two provider calls in the same second.
+const IN_FLIGHT = new Map();
 // The Worker always answers twenty (`RELATED_UPSTREAM_LIMIT` there); every
 // caller trims from that one list rather than asking for its own size.
 const RELATED_UPSTREAM_LIMIT = 20;
@@ -70,8 +74,19 @@ export async function getRelatedPapers(paper, limit = 8, { fetchWorker = authent
   const cached = CACHE.get(paperId);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) return cached.data.slice(0, limit);
 
-  const related = await fetchRelatedFromWorker(paperId, paper, { fetchWorker, apiBase });
-  CACHE.set(paperId, { data: related, timestamp: Date.now() });
+  let request = IN_FLIGHT.get(paperId);
+  if (!request) {
+    request = fetchRelatedFromWorker(paperId, paper, { fetchWorker, apiBase })
+      .then(related => {
+        CACHE.set(paperId, { data: related, timestamp: Date.now() });
+        return related;
+      })
+      .finally(() => {
+        if (IN_FLIGHT.get(paperId) === request) IN_FLIGHT.delete(paperId);
+      });
+    IN_FLIGHT.set(paperId, request);
+  }
+  const related = await request;
   return related.slice(0, limit);
 }
 
@@ -79,4 +94,5 @@ export async function getRelatedPapers(paper, limit = 8, { fetchWorker = authent
 // survives between tests makes the second one lie about what the first proved.
 export function clearRelatedPapersCache() {
   CACHE.clear();
+  IN_FLIGHT.clear();
 }

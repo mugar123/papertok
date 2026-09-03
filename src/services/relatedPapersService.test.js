@@ -40,3 +40,40 @@ test('asks the Worker once per paper and trims locally whatever limit each calle
   assert.equal(forSheet.length, 8);
   assert.deepEqual(forSheet, forFeed.slice(0, 8));
 });
+
+test('shares one request between two callers that ask for the same paper at once', async () => {
+  clearRelatedPapersCache();
+  let calls = 0;
+  const fetchWorker = async () => { calls += 1; return twentyRecommendations(); };
+  const paper = { id: 'arxiv:2607.12345', arxivId: '2607.12345' };
+
+  // The cache only fills once the answer is in, so two callers in the same tick
+  // were two Worker calls and two provider calls in the same second -- at one
+  // request a second, the second is a refusal by construction. It happens: the
+  // feed asks on like, save, PDF-open and ten seconds of dwell, the sheet can
+  // open in that same second, and StrictMode mounts the sheet twice in dev.
+  const [forSheet, forSheetAgain] = await Promise.all([
+    getRelatedPapers(paper, 8, { fetchWorker, apiBase: WORKER }),
+    getRelatedPapers(paper, 8, { fetchWorker, apiBase: WORKER }),
+  ]);
+
+  assert.equal(calls, 1);
+  assert.deepEqual(forSheetAgain, forSheet);
+});
+
+test('does not remember a failed request as the paper\'s answer', async () => {
+  clearRelatedPapersCache();
+  let calls = 0;
+  const fetchWorker = async () => {
+    calls += 1;
+    if (calls === 1) return new Response('{}', { status: 429 });
+    return twentyRecommendations();
+  };
+  const paper = { id: 'arxiv:2607.12345', arxivId: '2607.12345' };
+
+  await assert.rejects(() => getRelatedPapers(paper, 8, { fetchWorker, apiBase: WORKER }), /429/);
+  const related = await getRelatedPapers(paper, 8, { fetchWorker, apiBase: WORKER });
+
+  assert.equal(calls, 2, 'the failure must not stay in flight, or in the cache');
+  assert.equal(related.length, 8);
+});
