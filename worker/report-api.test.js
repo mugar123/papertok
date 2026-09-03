@@ -2085,6 +2085,7 @@ test('gives the minute back when the beat refuses, to the same minute it was tak
   );
 
   assert.equal(response.status, 429);
+  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
   const minuteReserve = state.actions.find(a => a.action === 'reserve' && !a.periodKey.endsWith(':pace'));
   const releases = state.actions.filter(a => a.action === 'release');
   assert.ok(minuteReserve, `no minute reservation seen: ${JSON.stringify(state.actions)}`);

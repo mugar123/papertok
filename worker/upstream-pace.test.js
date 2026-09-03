@@ -144,4 +144,9 @@ test('tells a refused caller to come back no sooner than the wait budget it just
   assert.match(PACE_RETRY_AFTER_SECONDS, /^\d+$/, 'retry-after is whole seconds');
   assert.ok(Number(PACE_RETRY_AFTER_SECONDS) * 1000 >= DEFAULT_MAX_WAIT_MS,
     `${PACE_RETRY_AFTER_SECONDS}s does not cover a ${DEFAULT_MAX_WAIT_MS}ms window`);
+  // Not just a floor: a constant that rounds the window up by whole minutes
+  // would still clear the assertion above and leave a refused caller waiting
+  // far longer than the beat itself ever does.
+  assert.ok(Number(PACE_RETRY_AFTER_SECONDS) * 1000 < DEFAULT_MAX_WAIT_MS + 1000,
+    `${PACE_RETRY_AFTER_SECONDS}s overshoots the ${DEFAULT_MAX_WAIT_MS}ms window by more than a second`);
 });
