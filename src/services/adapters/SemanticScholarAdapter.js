@@ -14,7 +14,8 @@ export class SemanticScholarAdapter extends BaseAdapter {
 
   async search(query, page = 1, filters = {}) {
     // Clean query
-    let safeQuery = query.replace(/OR|AND/g, ' ').replace(/"/g, '').replace(/[()]/g, '');
+    // Word boundaries, or CORD-19 becomes "C D-19": the operators are words.
+    let safeQuery = query.replace(/\b(?:OR|AND)\b/g, ' ').replace(/"/g, '').replace(/[()]/g, '');
     if (filters && filters.type === 'author') {
        safeQuery = query;
     }

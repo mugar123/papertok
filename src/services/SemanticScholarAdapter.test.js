@@ -106,3 +106,27 @@ test('keeps the DOI and the arXiv id Semantic Scholar reports, and nothing inven
   const absent = adapter.mapToStandard({ paperId: 'abc', title: 'One' });
   assert.equal(absent.doi, null);
 });
+
+test('strips boolean operators as words, not as letters inside words', async () => {
+  const escaped = [];
+  const restore = silencedGlobalFetch(escaped);
+  let asked = '';
+  try {
+    const adapter = new SemanticScholarAdapter({
+      apiBase: 'https://papertok-report-api.example',
+      fetchImpl: async url => {
+        asked = new URL(String(url)).searchParams.get('q');
+        return new Response(JSON.stringify({ total: 0, data: [] }), { headers: { 'content-type': 'application/json' } });
+      },
+    });
+
+    await adapter.search('CORD-19 NAND ANDROID OR bandwidth', 1);
+  } finally {
+    restore();
+  }
+
+  // `replace(/OR|AND/g, ' ')` turned CORD-19 into "C D-19" and ANDROID into
+  // " ROID". Nobody saw it because the adapter is only reached with
+  // `type: 'author'`, which skips the line -- until the day it is not.
+  assert.match(asked, /^CORD-19 NAND ANDROID\s+bandwidth$/);
+});
