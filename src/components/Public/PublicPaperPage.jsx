@@ -342,12 +342,14 @@ export default function PublicPaperPage({
             className="public-paper-skeleton"
             role="status"
             aria-busy="true"
-            aria-label={text(COPY.loading)}
             initial={{ opacity: 1 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: prefersReducedMotion ? 0.1 : 0.3, ease: 'easeOut' }}
           >
+            {/* Real text, not just an aria-label: an empty region whose only
+                text is its own label is never announced as a status change. */}
+            <span className="visually-hidden">{text(COPY.loading)}</span>
             <SkeletonCard />
           </motion.div>
         )}
