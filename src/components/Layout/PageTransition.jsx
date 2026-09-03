@@ -88,7 +88,11 @@ export default function PageTransition({ children }) {
   // remember the previous route even if it tried. `handleBack` in the Explorer
   // calls `navigate(-1)` whenever there is history behind it, which is exactly
   // what makes this report POP.
-  const direction = directionForNavigationType(useNavigationType());
+  // The index is what tells the first entry (0, an arrival) from a pop back
+  // through history: both report POP.
+  const direction = directionForNavigationType(useNavigationType(), {
+    historyIndex: typeof window !== 'undefined' ? window.history.state?.idx : null,
+  });
   const prefersReducedMotion = useReducedMotion();
 
   const isProject = location.pathname.startsWith('/explorer/project/');

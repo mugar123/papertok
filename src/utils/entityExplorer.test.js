@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  entityPapersRequestKey,
   filterAndSortEntityPapers,
   getPaperCitationCount,
   hasKnownPaperCitationCount,
@@ -73,4 +74,59 @@ test('sorts and displays citations from every supported metadata shape', () => {
 test('keeps the source paper first after project sorting and pagination', () => {
   const ordered = pinSourcePaper(papers, 'arxiv:recent-cs');
   assert.deepEqual(ordered.map(p => p.id), ['recent-cs', 'older-physics']);
+});
+
+/**
+ * The papers request is keyed by what the request depends on, so the effect
+ * that issues it can tell a re-render from a new request.
+ */
+const authorRequest = {
+  type: 'author',
+  id: 'A123',
+  entity: { id: 'A123', display_name: 'Ada Researcher' },
+  entityDisplayName: 'Ada Researcher',
+  sortBy: 'cited_by_count:desc',
+  page: 1,
+  searchQuery: '',
+  filters: { category: '', peerReviewed: false, dateRange: '' },
+  searchParams: '',
+  reloadKey: 0,
+  entityReloadKey: 0,
+};
+
+test('a project keeps the same papers key when its details land on the optimistic entity', () => {
+  const optimistic = entityPapersRequestKey({
+    ...authorRequest,
+    type: 'project',
+    id: '101017733',
+    entity: { display_name: 'CLIMATE-X', type: 'project', funder: 'EC' },
+    entityDisplayName: 'CLIMATE-X',
+  });
+  const detailed = entityPapersRequestKey({
+    ...authorRequest,
+    type: 'project',
+    id: '101017733',
+    entity: { id: '101017733', display_name: 'CLIMATE-X: Climate extremes', type: 'project', summary: '…' },
+    entityDisplayName: 'CLIMATE-X: Climate extremes',
+  });
+  assert.equal(optimistic, detailed);
+});
+
+test('every input the papers request reads changes its key', () => {
+  const base = entityPapersRequestKey(authorRequest);
+  const variants = [
+    { page: 2 },
+    { sortBy: 'publication_date:desc' },
+    { searchQuery: 'quantum' },
+    { filters: { ...authorRequest.filters, peerReviewed: true } },
+    { searchParams: 'arxivId=2401.00001' },
+    { reloadKey: 1 },
+    { entityReloadKey: 1 },
+    { entity: { id: 'stub-0000-0001', display_name: 'Ada Researcher' } },
+    { entity: { id: 'A123', display_name: 'Ada B. Researcher' } },
+  ];
+  for (const variant of variants) {
+    assert.notEqual(entityPapersRequestKey({ ...authorRequest, ...variant }), base, JSON.stringify(variant));
+  }
+  assert.equal(entityPapersRequestKey({ ...authorRequest, entity: { ...authorRequest.entity } }), base);
 });

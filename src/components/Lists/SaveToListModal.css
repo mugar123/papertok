@@ -39,7 +39,7 @@
   /* The scrim used to finish 60ms before the window it is behind, so the
      backdrop settled while the card was still arriving. Same length, same
      curve, one movement. */
-  animation: fadeIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: fadeIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .save-modal {
@@ -59,7 +59,7 @@
      hard cut. 16px of travel and 4% of scale, on the same spring the
      comments sheet uses on desktop, is what makes the window drop into
      place. */
-  animation: saveModalIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: saveModalIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes saveModalIn {
@@ -77,7 +77,12 @@
    240ms was then trimmed to 200: a dismissal is read in its first frames, and
    the last 40ms were the reader waiting on a window already gone in their
    head. `DIALOG_EXIT_MS` in the component matches this to the millisecond,
-   and `saveModalMotion.test.js` fails if they ever drift. */
+   and `saveModalMotion.test.js` fails if they ever drift.
+
+   Then up again, to 300 (and the entrance to 360, the scrim on both clocks):
+   asked for on 2026-09-03 — both read as too quick in use, the window there
+   and gone before it had registered as a window. Same curves, same distance,
+   half as long again. */
 @keyframes saveModalOut {
   from { opacity: 1; transform: none; }
   to { opacity: 0; transform: translateY(16px) scale(0.96); }
@@ -86,11 +91,11 @@
 /* `forwards` matters: the window stays mounted for the length of this, and
    without it the card would snap back to full opacity for the last frame. */
 .save-modal.is-closing {
-  animation: saveModalOut 0.2s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: saveModalOut 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 .save-modal-dialog.is-closing::backdrop {
-  animation: fadeOut 0.22s cubic-bezier(0.4, 0, 1, 1) forwards;
+  animation: fadeOut 0.32s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 .save-modal-dialog.is-closing {

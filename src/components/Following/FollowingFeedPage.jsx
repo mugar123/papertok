@@ -9,9 +9,35 @@ import {
   followingFirstLoadPending,
   mergeOrderedPapers,
   orderFollowingFeedPapers,
+  orderKeysOf,
   resumeOrderedPapers,
 } from '../../utils/followingFeed';
 import './FollowingFeedPage.css';
+
+// The order the page left with, as keys, in the tab's own storage: a reload
+// of the tab (which it gives itself after a deploy, see main.jsx) keeps the
+// items in localStorage but loses `lastOrder` below with the module, and a
+// fresh ranking then moved the card the reader was on. sessionStorage, so a
+// new tab still ranks afresh.
+const ORDER_STORAGE_KEY = 'papertok_following_order';
+
+function readStoredOrderKeys() {
+  try {
+    const keys = JSON.parse(sessionStorage.getItem(ORDER_STORAGE_KEY) || 'null');
+    return Array.isArray(keys) ? keys.filter(key => typeof key === 'string') : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeStoredOrderKeys(keys) {
+  try {
+    if (keys.length) sessionStorage.setItem(ORDER_STORAGE_KEY, JSON.stringify(keys));
+    else sessionStorage.removeItem(ORDER_STORAGE_KEY);
+  } catch {
+    // A full or locked storage means the order lives only until the reload.
+  }
+}
 
 /**
  * The Following feed: the same experience as For You (vertical cards, gestures,
@@ -25,6 +51,7 @@ import './FollowingFeedPage.css';
 // because the page is remounted on every visit and the feed the reader left
 // must be the feed they come back to (`resumeOrderedPapers`).
 const lastOrder = { items: null, ordered: [] };
+lastOrder.orderKeys = readStoredOrderKeys();
 
 export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComments = null }) {
   const navigate = useNavigate();
@@ -54,6 +81,7 @@ export default function FollowingFeedPage({ onOpenPdf, onSaveToList, onOpenComme
   useEffect(() => {
     lastOrder.items = items;
     lastOrder.ordered = orderedPapers;
+    writeStoredOrderKeys(orderKeysOf(orderedPapers));
   }, [items, orderedPapers]);
 
   const hasFollows = followedEntities.length > 0;

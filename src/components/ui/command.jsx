@@ -33,11 +33,12 @@ function Command({ className, ...props }) {
  * elsewhere in this codebase (`FollowSheet.css:190`) and has near-universal
  * support, so going bare here matches that precedent.
  */
-function CommandDialog({ children, className, title = 'Search', ...props }) {
+function CommandDialog({ children, className, overlayClassName, title = 'Search', ...props }) {
   return (
     <Dialog {...props}>
       <DialogContent
         showClose={false}
+        overlayClassName={overlayClassName}
         className={cn('top-[8dvh] max-w-2xl translate-y-0 overflow-hidden p-0', className)}
       >
         <DialogTitle className="sr-only">{title}</DialogTitle>

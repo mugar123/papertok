@@ -30,6 +30,24 @@ const COPY = {
   },
 };
 
+// The persist is synchronous in effect, so "Enabling…" used to last a frame:
+// the button changed its text twice inside thirty milliseconds. A beat long
+// enough to read makes the three steps — pressed, working, done — legible.
+const ACCEPT_BEAT_MS = 320;
+// How long the confirmation stays on screen before the banner takes its leave.
+const CONFIRMED_HOLD_MS = 800;
+
+const ACCEPT_FACES = ['idle', 'loading', 'success'];
+
+// Where a face of the button sits relative to the current step: the ones
+// already passed have gone up, the ones still to come wait below. An error
+// shows the idle face again — the label is the invitation to try again.
+function facePosition(face, state) {
+  const current = state === 'error' ? 'idle' : state;
+  const order = ACCEPT_FACES.indexOf(face) - ACCEPT_FACES.indexOf(current);
+  return order === 0 ? 'is-current' : order < 0 ? 'is-past' : 'is-next';
+}
+
 export default function AnalyticsConsentBanner({ guestFeedReady = false }) {
   const location = useLocation();
   const { language } = useLanguage();
@@ -47,6 +65,11 @@ export default function AnalyticsConsentBanner({ guestFeedReady = false }) {
       || (!user && guestFeedReady));
 
   const copy = COPY[language];
+  const currentLabel = acceptanceState === 'loading'
+    ? copy.activating
+    : acceptanceState === 'success'
+      ? copy.activated
+      : copy.accept;
   const isAccepting = acceptanceState === 'loading' || acceptanceState === 'success';
   const decisionInProgress = isAccepting || declinePending;
   const shouldShow = feedIsVisible
@@ -60,7 +83,10 @@ export default function AnalyticsConsentBanner({ guestFeedReady = false }) {
   const handleAccept = async () => {
     if (decisionInProgress) return;
     setAcceptanceState('loading');
-    const persisted = await updateConsent(ANALYTICS_CONSENT.GRANTED);
+    const [persisted] = await Promise.all([
+      updateConsent(ANALYTICS_CONSENT.GRANTED),
+      new Promise(resolve => window.setTimeout(resolve, prefersReducedMotion ? 0 : ACCEPT_BEAT_MS)),
+    ]);
     if (!persisted) {
       setAcceptanceState('error');
       return;
@@ -69,7 +95,7 @@ export default function AnalyticsConsentBanner({ guestFeedReady = false }) {
     setAcceptanceState('success');
     dismissalTimerRef.current = window.setTimeout(
       () => setDismissed(true),
-      prefersReducedMotion ? 0 : 620,
+      prefersReducedMotion ? 0 : CONFIRMED_HOLD_MS,
     );
   };
 
@@ -93,7 +119,7 @@ export default function AnalyticsConsentBanner({ guestFeedReady = false }) {
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={prefersReducedMotion
             ? { opacity: 0 }
-            : { opacity: 0, y: 16, scale: 0.975, transition: { duration: 0.22, ease: [0.4, 0, 1, 1] } }}
+            : { opacity: 0, y: 20, scale: 0.97, transition: { duration: 0.3, ease: [0.4, 0, 1, 1] } }}
           transition={prefersReducedMotion
             ? { duration: 0 }
             : { duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
@@ -108,15 +134,27 @@ export default function AnalyticsConsentBanner({ guestFeedReady = false }) {
               type="button"
               className={`analytics-consent-accept is-${acceptanceState}`}
               disabled={decisionInProgress}
-              aria-live="polite"
               onClick={handleAccept}
             >
-              {acceptanceState === 'loading' && <LoaderCircle size={14} aria-hidden="true" />}
-              {acceptanceState === 'success' && <Check size={15} aria-hidden="true" />}
-              {acceptanceState === 'idle' && copy.accept}
-              {acceptanceState === 'loading' && copy.activating}
-              {acceptanceState === 'success' && copy.activated}
-              {acceptanceState === 'error' && copy.accept}
+              {/* One label is announced; the three faces below are what is
+                  seen. They are all in the DOM, stacked in one cell, so the
+                  button is as wide as its widest label from the start and
+                  never changes size between steps — each step rises into
+                  place while the last one lifts away. */}
+              <span className="visually-hidden" aria-live="polite">{currentLabel}</span>
+              <span className="analytics-consent-accept-faces" aria-hidden="true">
+                <span className={`analytics-consent-accept-face ${facePosition('idle', acceptanceState)}`} data-face="idle">
+                  {copy.accept}
+                </span>
+                <span className={`analytics-consent-accept-face ${facePosition('loading', acceptanceState)}`} data-face="loading">
+                  <LoaderCircle size={14} />
+                  {copy.activating}
+                </span>
+                <span className={`analytics-consent-accept-face ${facePosition('success', acceptanceState)}`} data-face="success">
+                  <Check size={15} />
+                  {copy.activated}
+                </span>
+              </span>
             </button>
           </div>
           <button

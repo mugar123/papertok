@@ -24,3 +24,15 @@ test('anything the router does not name is treated as no direction', () => {
   assert.equal(directionForNavigationType(null), 0);
   assert.equal(directionForNavigationType('SOMETHING_NEW'), 0);
 });
+
+test('the first entry in history is an arrival, not a return', () => {
+  // The router reports POP for the very first render too — there was no push
+  // — and a feed that treated that as a return sat its cards at rest under the
+  // atom veil, so the first paper appeared already composed. `history.state.idx`
+  // is 0 on that entry and only ever greater after a push.
+  assert.equal(directionForNavigationType('POP', { historyIndex: 0 }), 0);
+  assert.equal(directionForNavigationType('POP', { historyIndex: 2 }), -1);
+  // Without an index to read, a pop is still a pop.
+  assert.equal(directionForNavigationType('POP', { historyIndex: null }), -1);
+  assert.equal(directionForNavigationType('POP', {}), -1);
+});

@@ -499,7 +499,7 @@ test('the palette stays mounted after its first open, so its exit can play', () 
 test('the palette clears its state on the way in, never on the way out', () => {
   // Mounted across closes (above), a reset on `!open` repaints the sheet with
   // the empty-query view while it is still fading out: the results vanish and
-  // the suggestions cascade in, inside the 140 ms exit. Clearing on open, in a
+  // the suggestions cascade in, inside the 220 ms exit. Clearing on open, in a
   // layout effect, happens before the first paint of the next opening instead.
   assert.doesNotMatch(palette, /if \(!open\) reset\(\)/, 'the palette resets while its exit is still playing');
   assert.match(palette, /useLayoutEffect\(\(\) => \{\s*if \(open\) reset\(\);/, 'the palette clears on open, before paint');

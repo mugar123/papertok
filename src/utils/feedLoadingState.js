@@ -23,3 +23,18 @@ export function getFeedDisplayState({
   if (hasSourceEmptyState && !loading && !isRefreshing) return FEED_DISPLAY_STATES.SOURCE_EMPTY;
   return FEED_DISPLAY_STATES.EMPTY;
 }
+
+/**
+ * The copy the atom veil carries, or null when there is no veil.
+ *
+ * The veil is the loading screen kept over the feed's own container, so the
+ * papers can compose under it while it recedes (FeedContainer). Two waits
+ * show it: the first load, and an emptied feed that is still loading or being
+ * refreshed. An empty feed that has stopped loading is a verdict with a retry,
+ * not a wait, and gets no veil.
+ */
+export function feedAtomVeilCopy({ displayState, loading, isRefreshing }) {
+  if (displayState === FEED_DISPLAY_STATES.INITIAL_DISCOVERY) return 'discovery';
+  if (displayState === FEED_DISPLAY_STATES.EMPTY && (loading || isRefreshing)) return 'gathering';
+  return null;
+}

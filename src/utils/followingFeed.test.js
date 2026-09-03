@@ -251,3 +251,27 @@ test('SOURCE: the Following page resumes from the order it left, kept at module 
   assert.match(code, /useState\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/);
   assert.match(code, /lastOrder\.items = items;\s*lastOrder\.ordered = orderedPapers;/);
 });
+
+import { orderFromKeys, orderKeysOf, resumeOrderedPapers as resumeFromKeys } from './followingFeed.js';
+import { getFollowingUpdatePaperKey } from './followingUpdates.js';
+
+test('after a reload the order the reader left is rebuilt from its keys over the items that came back', () => {
+  const a = followedPaper('a', 'x', { published: '2026-07-01' });
+  const b = followedPaper('b', 'y', { published: '2026-07-27' });
+  const c = followedPaper('c', 'z', { published: '2026-07-10' });
+  const d = followedPaper('d', 'w', { published: '2026-07-26' });
+  const items = [a, b, c, d];
+  const keys = [getFollowingUpdatePaperKey(c), getFollowingUpdatePaperKey(a), 'id:gone'];
+
+  assert.deepEqual(orderFromKeys(items, keys).map(paper => paper.id), ['c', 'a'], 'the stored keys pick the items, in the stored order, and skip what is gone');
+  assert.deepEqual(orderFromKeys(items, []), []);
+  assert.deepEqual(orderFromKeys(items, null), []);
+
+  const resumed = resumeFromKeys({ items: null, ordered: [], orderKeys: keys }, items, new Set());
+  assert.deepEqual(resumed.slice(0, 2).map(paper => paper.id), ['c', 'a'], 'the feed resumes in the order it left');
+  assert.deepEqual([...resumed.map(paper => paper.id)].sort(), ['a', 'b', 'c', 'd'], 'and the rest is appended');
+  assert.deepEqual(orderKeysOf(resumed).slice(0, 2), keys.slice(0, 2));
+
+  const inMemory = resumeFromKeys({ items: null, ordered: [b, a], orderKeys: keys }, items, new Set());
+  assert.deepEqual(inMemory.slice(0, 2).map(paper => paper.id), ['b', 'a'], 'the order still in memory wins over the stored keys');
+});

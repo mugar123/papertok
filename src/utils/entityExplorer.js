@@ -84,3 +84,54 @@ export function pinSourcePaper(papers, sourcePaperId) {
   if (sourceIndex <= 0) return papers;
   return [papers[sourceIndex], ...papers.slice(0, sourceIndex), ...papers.slice(sourceIndex + 1)];
 }
+
+/**
+ * What a request for an entity's papers depends on, as one string.
+ *
+ * The Explorer issues that request from an effect, and an effect cannot tell a
+ * re-render from a new request on its own: it re-ran — and its cleanup
+ * cancelled whatever was in flight — whenever any dependency changed identity,
+ * including the active tab and, for a project, the entity object itself,
+ * which is set twice (optimistically from the link, then from its details).
+ * Keying the request by the inputs it actually reads lets the effect leave a
+ * matching request alone, in flight or already answered.
+ *
+ * Only the name the request actually reads is part of the key. A project's
+ * papers come from OpenAIRE by grant code alone, so no name — the one field
+ * that changes between the optimistic entity and the detailed one. A topic's
+ * providers are asked with the localized name; every other type passes the
+ * entity's own, as the author search phrase or `getWorksByEntity`'s fallback.
+ */
+export function entityPapersRequestKey({
+  type,
+  id,
+  entity,
+  entityDisplayName,
+  sortBy,
+  page,
+  searchQuery,
+  filters,
+  searchParams,
+  reloadKey,
+  entityReloadKey,
+}) {
+  return JSON.stringify([
+    type,
+    id,
+    entity?.id || id,
+    type === 'project'
+      ? ''
+      : ['concept', 'topic'].includes(type)
+        ? entityDisplayName || ''
+        : entity?.display_name || '',
+    Boolean(entity?._localTopic),
+    Boolean(entity?._queryTopic),
+    sortBy,
+    page,
+    searchQuery,
+    filters,
+    searchParams,
+    reloadKey,
+    entityReloadKey,
+  ]);
+}

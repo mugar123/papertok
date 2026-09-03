@@ -103,3 +103,13 @@ test('the guest save prompt traps focus and closes on Escape', async () => {
   assert.match(source, /data-dialog-initial-focus/, 'nothing inside the prompt is marked as the initial focus');
   assert.match(source, /scale:\s*0\.96/, 'the prompt enter is too small to read as an arrival');
 });
+
+test('the window takes its time on the way in and out', async () => {
+  // Asked for on 2026-09-03: the arrival and the dismissal read as too quick.
+  // 1.5× on both, the scrim on the same clocks so neither outlives the other.
+  const css = await readFile(CSS, 'utf8');
+  assert.match(css, /\.save-modal-dialog::backdrop \{[^}]*animation: fadeIn 0\.36s cubic-bezier\(0\.16, 1, 0\.3, 1\);/);
+  assert.match(css, /\.save-modal \{[^}]*animation: saveModalIn 0\.36s cubic-bezier\(0\.16, 1, 0\.3, 1\);/);
+  assert.match(css, /\.save-modal\.is-closing \{\s*animation: saveModalOut 0\.3s cubic-bezier\(0\.4, 0, 1, 1\) forwards;/);
+  assert.match(css, /\.save-modal-dialog\.is-closing::backdrop \{\s*animation: fadeOut 0\.32s cubic-bezier\(0\.4, 0, 1, 1\) forwards;/);
+});

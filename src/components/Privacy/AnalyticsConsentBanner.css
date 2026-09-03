@@ -34,6 +34,14 @@
   border-radius: var(--radius-lg);
   color: var(--gradient-physics);
   background: var(--bg-secondary);
+  transition: color 0.28s ease, border-color 0.28s ease, background 0.28s ease;
+}
+
+/* The mark takes the confirmation too, on the same clock as the frame. */
+.analytics-consent.is-success .analytics-consent-icon {
+  color: var(--tint-green-fg);
+  border-color: var(--tint-green-line);
+  background: var(--tint-green-bg);
 }
 
 .analytics-consent-copy h2 {
@@ -84,8 +92,53 @@
   background: var(--accent-primary);
 }
 
-.analytics-consent-actions .analytics-consent-accept.is-loading svg {
+/* The three faces of the button — the invitation, the wait, the
+   confirmation — stacked in one grid cell, so the button is as wide as its
+   widest label from the first frame and never changes size between them.
+   The label used to be swapped in place: the persist is synchronous in
+   effect, so "Enabling…" lasted a frame and the button jumped to a new width
+   twice inside thirty milliseconds. Each step now rises into place from
+   6px below while the last one lifts 6px away, the way a counter ticks. */
+.analytics-consent-accept-faces {
+  display: grid;
+  align-items: center;
+  justify-items: center;
+}
+
+.analytics-consent-accept-face {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.analytics-consent-accept-face.is-next {
+  transform: translateY(6px);
+}
+
+.analytics-consent-accept-face.is-past {
+  transform: translateY(-6px);
+}
+
+.analytics-consent-accept-face.is-current {
+  opacity: 1;
+  transform: none;
+}
+
+/* Only the face on show spins; an infinite animation on a hidden one would
+   still be ticking underneath. */
+.analytics-consent-accept-face.is-current[data-face="loading"] svg {
   animation: analyticsConsentSpin 0.8s linear infinite;
+}
+
+/* The check does not merely appear: it springs in, a little over and back,
+   the moment the confirmation face lands. */
+.analytics-consent-accept-face.is-current[data-face="success"] svg {
+  animation: analyticsConsentCheckIn 0.42s cubic-bezier(0.34, 1.4, 0.64, 1) both;
 }
 
 .analytics-consent-actions .analytics-consent-accept.is-success {
@@ -143,8 +196,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .analytics-consent,
+  .analytics-consent-icon,
   .analytics-consent-accept.is-success,
-  .analytics-consent-accept.is-loading svg,
+  .analytics-consent-accept-face,
+  .analytics-consent-accept-face svg,
   .analytics-consent-actions button,
   .analytics-consent-dismiss {
     animation: none;
@@ -159,4 +214,9 @@
 @keyframes analyticsConsentConfirmed {
   0% { transform: scale(0.97); }
   100% { transform: scale(1); }
+}
+
+@keyframes analyticsConsentCheckIn {
+  from { transform: scale(0.4) rotate(-12deg); opacity: 0; }
+  to { transform: none; opacity: 1; }
 }

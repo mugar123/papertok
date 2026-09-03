@@ -43,10 +43,13 @@ function DialogOverlay({ className, ...props }) {
   );
 }
 
-function DialogContent({ className, children, showClose = true, ...props }) {
+// `overlayClassName` lets a dialog time its own scrim: the palette leaves
+// more slowly than the 150ms above, and a ground that clears before the sheet
+// is the "vanished" look this fade exists to prevent.
+function DialogContent({ className, children, showClose = true, overlayClassName, ...props }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Content
         className={cn(
           'fixed left-1/2 top-1/2 z-[12051] w-full max-w-lg -translate-x-1/2 -translate-y-1/2',
