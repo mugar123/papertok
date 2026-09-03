@@ -2,6 +2,7 @@
 // usage: node probe.mjs timeline '#/explorer/author/A…' [seconds]
 //        node probe.mjs tabs '#/explorer/institution/I…'
 //        node probe.mjs paint '#/explorer/author/A…' new|old
+//        node probe.mjs bootload '#/' [demo,mobile,hold]   (PROFILE_DIR=<profile> to reuse one)
 import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -9,10 +10,14 @@ import { join } from 'node:path';
 
 const CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = Number(process.env.PORT || 9224);
-const ORIGIN = 'http://localhost:5173';
+const ORIGIN = process.env.ORIGIN || 'http://localhost:5173';
 // Under the OS temp dir, never beside this script: a run that dies leaves
 // its profile behind, and inside the repo that is an untracked directory.
-const PROFILE = join(tmpdir(), `papertok-probe-${process.pid}`);
+// `PROFILE_DIR` names a profile to reuse instead — one the user has signed in
+// to, for the routes behind the auth gate. It is used as-is, so a session's
+// storage survives between runs, and it is never deleted.
+const OWN_PROFILE = !process.env.PROFILE_DIR;
+const PROFILE = process.env.PROFILE_DIR || join(tmpdir(), `papertok-probe-${process.pid}`);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function launch() {
@@ -201,6 +206,61 @@ try {
     console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
   }
 
+  if (mode === 'bootload') {
+    // The signed-in feed from cold, through every handover: the auth gate's
+    // atom, the navbar mounting, the route entering, the veil leaving, the
+    // first card composing. `extra` is a comma list of `mobile` (390×844,
+    // touch) and `hold` (cross-origin source requests held 3.5 s, so the
+    // wait is long enough for the feed's own veil to show).
+    const flags = new Set((extra || '').split(',').filter(Boolean));
+    if (flags.has('demo')) {
+      // A signed-in tree without a session: the app's demo mode (IS_DEMO in
+      // services/firebase.js, flipped locally) reads its account from
+      // localStorage, seeded here before any app script runs.
+      await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { try { localStorage.setItem('papertok_user', JSON.stringify({ uid: 'probe-demo', email: 'probe@example.com', displayName: 'Probe' })); localStorage.setItem('papertok_onboardingComplete', 'true'); localStorage.setItem('papertok_selectedCategories', JSON.stringify(['quant-ph', 'cond-mat.mtrl-sci', 'cs.AI'])); } catch {} })();` });
+    }
+    if (flags.has('mobile')) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    }
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { window.__bl = []; const op = (el) => el ? Number(getComputedStyle(el).opacity).toFixed(2) : null; const tick = () => { const gate = document.querySelector('.feed-empty--initial-loading'); const gateAtom = gate && gate.querySelector('.atom-loader'); const page = document.querySelector('#main-content > div'); const v = document.querySelector('.feed-empty--veil'); const a = v && v.querySelector('.atom-loader'); const c = document.querySelector('.pc-sheet'); const t = document.querySelector('.pc-title'); const r = (gateAtom || a); const rect = r ? r.getBoundingClientRect() : null; window.__bl.push({ t: Math.round(performance.now()), gate: !!gate, nav: !!document.querySelector('.navbar'), navOp: op(document.querySelector('.navbar')), page: op(page), pageTf: page ? getComputedStyle(page).transform : null, veil: op(v), atom: a ? getComputedStyle(a).transform : null, atomOp: op(r), atomY: rect ? Math.round(rect.top + rect.height / 2) : null, sk: document.querySelectorAll('.sk').length, cards: document.querySelectorAll('.feed-snap-item').length, sheet: op(c), title: op(t) }); if (window.__bl.length < 6000) requestAnimationFrame(tick); }; requestAnimationFrame(tick); })();` });
+    if (flags.has('hold')) {
+      await cdp.send('Fetch.enable', { patterns: [{ urlPattern: '*', requestStage: 'Request' }] });
+      const held = [];
+      let holding = true;
+      cdp.on('Fetch.requestPaused', ({ requestId, request }) => {
+        const source = !request.url.startsWith(ORIGIN) && /workers\.dev|api\.papertok|api\.openalex|arxiv\.org|semanticscholar|ncbi\.nlm|europepmc|openaire|crossref/.test(request.url);
+        if (holding && source) { held.push(requestId); return; }
+        cdp.send('Fetch.continueRequest', { requestId }).catch(() => {});
+      });
+      setTimeout(() => {
+        holding = false;
+        console.log(`releasing ${held.length} held requests`);
+        for (const requestId of held) cdp.send('Fetch.continueRequest', { requestId }).catch(() => {});
+      }, 3500);
+    }
+    // `shots`: three PNGs into SHOTS_DIR — the veil at boot, the handover
+    // (captured the frame the first sheet is found, ~80 ms into the exit),
+    // and the settled feed.
+    const shots = flags.has('shots') ? (process.env.SHOTS_DIR || '.') : null;
+    const shot = async (name) => {
+      if (!shots) return;
+      const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' });
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(join(shots, `${name}.png`), Buffer.from(data, 'base64'));
+    };
+    const tag = flags.has('mobile') ? 'mobile' : 'desktop';
+    await cdp.send('Page.navigate', { url });
+    if (shots) { await pollUntil(cdp, "!!document.querySelector('.feed-empty--veil')", 20000, 30); await sleep(400); await shot(`${tag}-1-boot`); }
+    const sheet = await pollUntil(cdp, "document.querySelectorAll('.pc-sheet').length > 0", 40000, shots ? 16 : 100);
+    console.log('first sheet:', sheet);
+    await shot(`${tag}-2-handover`);
+    await sleep(1200);
+    await shot(`${tag}-3-settled`);
+    const report = await cdp.eval(`(() => { const p = window.__bl; const changes = []; let last = ''; for (const x of p) { const k = JSON.stringify([x.gate, x.nav, x.navOp, x.page, x.veil, x.atom, x.atomOp, x.atomY, x.sk, x.cards > 0, x.sheet, x.title]); if (k !== last) { last = k; changes.push(x); } } const blank = p.filter(x => !x.gate && x.veil === null && x.cards === 0).length; return { frames: p.length, framesWithNothing: blank, changes }; })()`);
+    console.log(JSON.stringify(report, null, 0).replace(/\},\{/g, '},\n{'));
+  }
+
   if (mode === 'consent') {
     // The analytics banner in the guest feed: press "Allow analytics" and
     // sample the button's faces, the check, the button's width and the
@@ -257,5 +317,5 @@ try {
 } finally {
   chrome.kill();
   await sleep(300);
-  rmSync(PROFILE, { recursive: true, force: true });
+  if (OWN_PROFILE) rmSync(PROFILE, { recursive: true, force: true });
 }

@@ -1,5 +1,26 @@
 # Estado / pendientes
 
+## Un solo átomo del arranque a la primera tarjeta (2026-09-03)
+
+**La puerta de auth ya no pinta un átomo propio sobre `/`: mientras carga la
+sesión entrega el árbol del feed, cuyo veil (`.feed-empty--veil`) es la
+pantalla de arranque desde el primer pintado y recede sobre la primera
+tarjeta como ya hacía. La barra se funde en 0,24 s en su primer montaje de la
+sesión (`navbar--arriving`).** Lo que había: dos SVG distintos sustituidos en
+un frame (electrones reiniciados, otro texto, otra altura), sin nada que lo
+tapara porque `AnimatePresence initial={false}` anula la entrada de
+`PageTransition` en el primer render, y con snapshot un veil de un frame que
+salía en 0,42 s: un átomo fantasma tras el sólido. Medido antes y después con
+`explorer-loading-probe.mjs bootload` (nuevo modo; flags `demo`, `mobile`,
+`hold`, `shots`, y `PROFILE_DIR`/`ORIGIN` por entorno) en escritorio y móvil:
+cero frames sin veil ni tarjeta en los cuatro casos. Plan y tabla en
+`docs/superpowers/plans/2026-09-03-feed-arranque-un-atomo.md`.
+
+Salvedad honesta: la medición con sesión se hizo en modo demo (la única
+sesión disponible sin pedir credenciales); en la app real la puerta dura lo
+que tarde Firebase (90 ms de invitado en producción; más con perfil), y ese
+tramo lo cubre el mismo veil por construcción, no por medida.
+
 ## Semantic Scholar sobrevive a su segundo (2026-09-03)
 
 **Las dos rutas de S2 llevan ahora un compás de una petición por segundo

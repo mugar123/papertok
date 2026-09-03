@@ -52,8 +52,28 @@ function useActiveTabRule(rowRef, activeKey) {
   return rule;
 }
 
+/**
+ * Whether the bar has already arrived once this session.
+ *
+ * The bar is mounted the frame the auth gate lifts, above the atom veil
+ * that is still covering the feed — and it used to pop in whole while
+ * nothing else on screen moved. Its first mount fades in. Later mounts (back
+ * from a route that draws no bar) come in with the page that brings them, so
+ * the arrival is handed out once, module-wide: a remount must not replay it.
+ */
+let navbarHasArrived = false;
+
 export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) {
   const { user, profilePhoto } = useAuth();
+  const [arriving, setArriving] = useState(() => !navbarHasArrived);
+  const handleArrived = (event) => {
+    // Children animate too (the preferences sheet, the search state); only
+    // the bar's own animationend retires the class, and mid-arrival a
+    // child's would otherwise cut it short.
+    if (event.target !== event.currentTarget) return;
+    navbarHasArrived = true;
+    setArriving(false);
+  };
   const { feedMode, setFeedMode } = useFeed();
   const { isEnglish } = useLanguage();
   const navigate = useNavigate();
@@ -83,7 +103,11 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   const rule = useActiveTabRule(linksRef, `${activeTab}:${isEnglish}`);
 
   return (
-    <nav className="navbar" aria-label={isEnglish ? 'Main navigation' : 'Navegación principal'}>
+    <nav
+      className={arriving ? 'navbar navbar--arriving' : 'navbar'}
+      onAnimationEnd={handleArrived}
+      aria-label={isEnglish ? 'Main navigation' : 'Navegación principal'}
+    >
       <div className="navbar-inner">
         <button
           type="button"

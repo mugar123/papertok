@@ -77,10 +77,6 @@
 /* No .feed-empty override at 768px, for the same reason as .feed-wrapper
    above: --nav-total is already breakpoint-aware. */
 
-.feed-empty--initial-loading {
-  animation: none;
-}
-
 /* The same screen as a veil over the feed (FeedContainer.jsx): it sits on the
    container the cards mount into and leaves over them, so it is absolute in
    the wrapper rather than a block of its own, and framer owns its opacity —
