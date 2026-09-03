@@ -100,15 +100,21 @@ test('gives the Worker eleven seconds before giving up, not eight', async t => {
   // this file's lint config allows).
   const flush = async () => { for (let i = 0; i < 20; i += 1) await Promise.resolve(); };
 
-  let settled = false;
+  // Observed through a flag and a microtask drain, never awaited directly: a
+  // budget longer than the ticks below would leave `pending` unsettled for
+  // ever, and `await assert.rejects(pending)` would then hang the whole suite
+  // under `node --test`'s default of no timeout, rather than fail this test.
+  let outcome = null;
   const pending = getRelatedPapers(paper, 8, { fetchWorker, apiBase: WORKER });
-  pending.then(() => { settled = true; }, () => { settled = true; });
+  pending.then(value => { outcome = { value }; }, error => { outcome = { error }; });
 
   await flush();
   t.mock.timers.tick(10_999);
   await flush();
-  assert.equal(settled, false, 'must still be waiting just under eleven seconds in');
+  assert.equal(outcome, null, 'must still be waiting just under eleven seconds in');
 
   t.mock.timers.tick(1);
-  await assert.rejects(() => pending, /aborted/, 'must abort once eleven seconds are up');
+  await flush();
+  assert.ok(outcome, 'must have settled once eleven seconds are up -- a longer budget would leave this null');
+  assert.match(String(outcome.error), /aborted/, 'must abort, not resolve');
 });
