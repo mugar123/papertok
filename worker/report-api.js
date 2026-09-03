@@ -50,6 +50,7 @@ import {
 } from './thread-anchor.js';
 import { isServiceAccountConfigured } from './firestore-admin.js';
 import { reserveRequestQuota } from './request-quota-ledger.js';
+import { awaitUpstreamSlot } from './upstream-pace.js';
 
 export { KimiBudgetLedger } from './kimi-budget-ledger.js';
 export { EmailDeliveryLedger } from './email-delivery-ledger.js';
@@ -75,6 +76,7 @@ const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
 
 const CACHE_SECONDS = 6 * 60 * 60;
 const RELATED_CACHE_SECONDS = 24 * 60 * 60;
+const RELATED_UPSTREAM_LIMIT = 20;
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const ARXIV_CACHE_SECONDS = 10 * 60;
@@ -187,6 +189,12 @@ const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
 // the same Semantic Scholar allowance, and a ceiling that only covered one of
 // them would leave alive exactly the failure this replaces -- a limiter that
 // counts per caller instead of per provider.
+//
+// `paced` puts a route on the one-a-second beat of `upstream-pace.js` under its
+// minute ceiling. Semantic Scholar is the provider that needs it: it admits one
+// request per second per key, and a per-minute ceiling of sixty is the same
+// average with no say over which second. PubMed is not paced: the key buys ten
+// a second and `withPubmedRetry` absorbs the burst.
 const DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT = 60;
 const DEFAULT_S2_GLOBAL_MINUTE_LIMIT = 60;
 const SHARED_MINUTE_CEILINGS = Object.freeze({
@@ -198,9 +206,55 @@ const SHARED_MINUTE_CEILINGS = Object.freeze({
   // the anonymous 3 req/s it once mirrored, and it has never been the binding
   // limit (151/151 reservations accepted, 2026-09-01).
   '/sources/pubmed': { namespace: 'pubmed', variable: 'PUBMED_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT },
-  '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT },
-  '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT },
+  '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
+  '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
 });
+
+// What the router tells a client to wait when the upstream refused without
+// saying for how long. Semantic Scholar's 429 carries no `retry-after` (measured
+// 2026-09-03) and its window is one second: the introductory key admits one
+// request per second and refuses the rest of that second at once, so a minute
+// is fifty-nine seconds of a reader waiting for a slot that opened long ago. A
+// minute stays the answer everywhere else, where the window really is a minute.
+const UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS = Object.freeze({
+  '/sources/s2': '2',
+  '/related': '2',
+});
+const DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS = '60';
+
+function upstreamRetryAfter(pathname, error) {
+  return error?.retryAfter
+    || UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS[pathname]
+    || DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS;
+}
+
+// One mapping for every route that spends a provider. `/sources/*` had it and
+// `/related` did not, so the same Semantic Scholar 429 reached the browser from
+// one route as `429 UPSTREAM_RATE_LIMITED retry-after` and from the other as
+// `502 Related papers unavailable` -- the one shape a client retries at once,
+// which is the one thing that makes a rate limit worse.
+function upstreamFailureResponse(pathname, error, origin, env, label) {
+  const isScopus = pathname === '/sources/scopus';
+  const rateLimited = error?.status === 429;
+  // `AbortSignal.timeout` rejects with a `TimeoutError`, and a stall has no
+  // status to relay -- so it gets a name instead of the generic 502 body.
+  const timedOut = error?.name === 'TimeoutError';
+  const status = rateLimited ? 429 : 502;
+  return json({
+    error: label,
+    ...(rateLimited ? { code: 'UPSTREAM_RATE_LIMITED' } : {}),
+    ...(timedOut ? { code: 'UPSTREAM_TIMEOUT' } : {}),
+    // For every route, not only Scopus: a 400 we caused and an outage they had
+    // both used to leave here as the same 502, and the number that told them
+    // apart stayed in `wrangler tail` -- which is how the OpenReview `tcdate`
+    // bug went unseen for weeks.
+    ...(error?.status ? { upstreamStatus: error.status } : {}),
+    ...(isScopus && error?.resetAt ? { resetAt: error.resetAt } : {}),
+  }, status, {
+    ...corsHeaders(origin, env),
+    ...(rateLimited ? { 'retry-after': upstreamRetryAfter(pathname, error) } : {}),
+  });
+}
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -397,6 +451,30 @@ async function reserveSharedMinuteQuota(request, env, origin) {
   return null;
 }
 
+// The beat under the ceiling, for the providers that count per second. It runs
+// last of the three gates because it is the only one that costs wall-clock: a
+// caller the minute ceiling or the identity quota is about to turn away must not
+// first take a second away from somebody who would have used it.
+async function awaitSharedPace(request, env, origin) {
+  const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
+  if (!ceiling?.paced) return null;
+  const slot = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, { namespace: ceiling.namespace });
+  if (slot.accepted) return null;
+  if (slot.code) {
+    return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+    });
+  }
+  // Two seconds, not a minute: the next free second is at most 2.5 s away and
+  // the caller is being told to come back, not to give up.
+  return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+    ...corsHeaders(origin, env),
+    'cache-control': 'no-store',
+    'retry-after': '2',
+  });
+}
+
 // `ttl` may be a function of the payload, because whether an answer deserves its
 // full TTL is something only the fetcher's result can say: a 200 assembled from a
 // fallback after the real provider refused is not worth six hours.
@@ -408,6 +486,8 @@ async function cacheResponse(request, origin, env, ttl, fetcher, options = {}) {
   if (sharedQuotaError) return sharedQuotaError;
   const quotaError = await reserveProtectedProviderQuota(options.identity || null, env, origin);
   if (quotaError) return quotaError;
+  const paceError = await awaitSharedPace(request, env, origin);
+  if (paceError) return paceError;
   if (options.openAlexCalls) {
     const budgetError = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
     if (budgetError) return budgetError;
@@ -439,19 +519,28 @@ async function handleRelated(request, env, identity) {
   if (!/^(?:DOI:10\.|ARXIV:|[a-f0-9]{40}$)/i.test(paperId) || paperId.length > 300) {
     return json({ error: 'Invalid paper id' }, 400, corsHeaders(origin, env));
   }
-  // Twenty, not the eight-of-ten the other routes use: the feed's recommendation
-  // seeding asked Semantic Scholar for twenty directly, and this route is what it
-  // now goes through.
-  const limit = getSafeLimit(requestUrl.searchParams.get('limit'), 8, 20);
+  // Twenty, always. The feed seeds from twenty and the sheet shows eight; when
+  // `limit` was part of the cache key those were two misses and two provider
+  // calls for one list of which the second is a prefix of the first. The client
+  // trims what it shows. `limit` is still accepted so an older bundle keeps
+  // working; it just no longer changes the question.
   return cacheResponse(request, origin, env, RELATED_CACHE_SECONDS, async () => {
     const fields = 'paperId,title,abstract,authors,year,externalIds,url,venue,publicationDate,citationCount,isOpenAccess,openAccessPdf,publicationTypes';
-    const url = `https://api.semanticscholar.org/recommendations/v1/papers/forpaper/${encodeURIComponent(paperId)}?fields=${encodeURIComponent(fields)}&limit=${limit}`;
-    const headers = { accept: 'application/json' };
-    if (env.SEMANTIC_SCHOLAR_API_KEY) headers['x-api-key'] = env.SEMANTIC_SCHOLAR_API_KEY;
-    const response = await fetchWithDeadline(url, { headers }, SOURCE_UPSTREAM_TIMEOUT_MS);
-    if (!response.ok) throw new Error(`Semantic Scholar error: ${response.status}`);
-    return response.json();
-  }, { identity, canonicalParams: { paper_id: paperId, limit: String(limit) } });
+    const url = `https://api.semanticscholar.org/recommendations/v1/papers/forpaper/${encodeURIComponent(paperId)}?fields=${encodeURIComponent(fields)}&limit=${RELATED_UPSTREAM_LIMIT}`;
+    // Through the source helper, not a bare `fetchWithDeadline`: this used to
+    // throw a plain Error with the status in its message and nothing on the
+    // error itself, which is why the router could only ever answer 502. Six
+    // seconds for this fetch -- but `awaitSharedPace` runs ahead of it in
+    // `cacheResponse` and can itself add up to 2.5 s of sleep plus a couple of
+    // ledger round trips, so the two no longer share a separate margin against
+    // the browser. The client's abort budget for this route
+    // (`relatedPapersService.js`) was raised from 8 s to 11 s to hold both,
+    // rather than shrinking this deadline to carve room out of it: that would
+    // hand a contended request -- one that hit the beat's wait precisely
+    // because Semantic Scholar is already under pressure -- less time to talk
+    // to a provider that is by hypothesis already slow.
+    return fetchJsonUpstream(url, env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {});
+  }, { identity, canonicalParams: { paper_id: paperId } });
 }
 
 // Every upstream call in this file goes through here, and the deadline covers
@@ -2224,6 +2313,12 @@ export default {
         // Absent means PubMed runs on NCBI's anonymous 3 req/s rather than 10, so
         // it belongs in the report even though the route works without it.
         pubmedKeyConfigured: Boolean(env.NCBI_API_KEY),
+        // Not the same kind of flag as PubMed's, despite the shape. Measured on
+        // 2026-08-24, Semantic Scholar's anonymous pool refused 9 of 10 requests
+        // from the Worker and 10 of 10 from a residential address, so absent here
+        // does not mean "slower": it means `/sources/s2` and `/related` are dead.
+        // Present has been the difference between 0/6 and 5/6 since 2026-09-02.
+        semanticScholarKeyConfigured: Boolean(env.SEMANTIC_SCHOLAR_API_KEY),
         emailConfigured: Boolean(
           env.NOTIFICATION_STORE
           && ((env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) || env.RESEND_API_KEY),
@@ -2358,8 +2453,9 @@ export default {
     if (url.pathname === '/related') {
       try {
         return await handleRelated(request, env, protectedIdentity);
-      } catch {
-        return json({ error: 'Related papers unavailable' }, 502, corsHeaders(origin, env));
+      } catch (error) {
+        console.error('Related papers failed', error);
+        return upstreamFailureResponse('/related', error, origin, env, 'Related papers unavailable');
       }
     }
     if (url.pathname === '/citation-graph') {
@@ -2389,30 +2485,8 @@ export default {
         return await DOMAIN_SOURCE_HANDLERS[url.pathname](request, env, protectedIdentity);
       } catch (error) {
         console.error(`Specialist source failed: ${url.pathname}`, error);
-        const isScopus = url.pathname === '/sources/scopus';
-        // A refusal relayed as a 502 reads as "this source is broken", and a
-        // client that believes that retries at once -- which is the one thing
-        // that makes a rate limit worse. Scopus already relayed its own 429;
-        // every source route does now, because every one of them can be refused.
-        const rateLimited = error.status === 429;
-        // `AbortSignal.timeout` rejects with a `TimeoutError`, and a stall has no
-        // status to relay -- so it gets a name instead of the generic 502 body.
-        const timedOut = error?.name === 'TimeoutError';
-        const status = rateLimited ? 429 : 502;
-        return json({
-          error: isScopus ? 'Scopus unavailable' : 'Specialist source unavailable',
-          ...(rateLimited ? { code: 'UPSTREAM_RATE_LIMITED' } : {}),
-          ...(timedOut ? { code: 'UPSTREAM_TIMEOUT' } : {}),
-          // For every source, not only Scopus: a 400 we caused and an outage they
-          // had both left here as the same 502, and the number that told them
-          // apart stayed in `wrangler tail` (`Upstream error: 400`) -- which is
-          // how the OpenReview `tcdate` bug went unseen for weeks.
-          ...(error.status ? { upstreamStatus: error.status } : {}),
-          ...(isScopus && error.resetAt ? { resetAt: error.resetAt } : {}),
-        }, status, {
-          ...corsHeaders(origin, env),
-          ...(rateLimited ? { 'retry-after': error.retryAfter || '60' } : {}),
-        });
+        const label = url.pathname === '/sources/scopus' ? 'Scopus unavailable' : 'Specialist source unavailable';
+        return upstreamFailureResponse(url.pathname, error, origin, env, label);
       }
     }
     return json({ error: 'Not found' }, 404, corsHeaders(origin, env));
