@@ -191,3 +191,19 @@ export function mergeOrderedPapers(previousOrdered = [], freshOrdered = []) {
   const appended = freshOrdered.filter(paper => !keptKeys.has(getFollowingUpdatePaperKey(paper)));
   return [...kept, ...appended];
 }
+
+/**
+ * Whether the Following feed is still waiting to hear about its papers for
+ * the first time — the moment it should show the same discovery screen For
+ * You shows, not a skeleton card.
+ *
+ * Nothing on screen, and either a load in flight or no answer ever recorded
+ * (`lastUpdatedAt` is set by the first refresh and by a restored cache, and
+ * by the no-follows shortcut, so a reader who follows nothing is not left
+ * "discovering" forever). An error is the error screen's to report.
+ */
+export function followingFirstLoadPending({ items = [], loading = false, lastUpdatedAt = null, error = null } = {}) {
+  if (error) return false;
+  if ((items || []).length > 0) return false;
+  return Boolean(loading) || !lastUpdatedAt;
+}

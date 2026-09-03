@@ -161,7 +161,7 @@ test('breaks otherwise equal relevance with citations and tolerates empty input'
 });
 
 import { readFile } from 'node:fs/promises';
-import { mergeOrderedPapers } from './followingFeed.js';
+import { followingFirstLoadPending, mergeOrderedPapers } from './followingFeed.js';
 
 const readSource = (path) => readFile(new URL(path, import.meta.url), 'utf8');
 
@@ -206,4 +206,24 @@ test('SOURCE: the follow-reason pill arrives after the paper it explains, not on
   assert.match(css, /\.pc-follow-reason \{ --arrive: 4; \}/, 'and its label after the abstract, never alone ahead of it');
   assert.match(css, /@keyframes pcArrive \{/);
   assert.match(css, /@keyframes cardSlideUp \{\s*0% \{ transform: translateY\(10px\); \}/, 'the sheet only travels; the pieces carry the fade');
+});
+
+/**
+ * Following showed a skeleton card while it waited for its first papers; For
+ * You shows its discovery screen. Same screen for both: the page tells the
+ * container it is on its first load until something has answered.
+ */
+test('the first wait of the Following feed is a first load until something has answered', () => {
+  assert.equal(followingFirstLoadPending({ items: [], loading: false, lastUpdatedAt: null }), true, 'the tick before the refresh starts');
+  assert.equal(followingFirstLoadPending({ items: [], loading: true, lastUpdatedAt: null }), true, 'the refresh in flight');
+  assert.equal(followingFirstLoadPending({ items: [], loading: false, lastUpdatedAt: '2026-09-03T00:00:00Z' }), false, 'answered with nothing: the empty state');
+  assert.equal(followingFirstLoadPending({ items: [{ id: 'a' }], loading: true, lastUpdatedAt: null }), false, 'cards on screen: the feed');
+  assert.equal(followingFirstLoadPending({ items: [], loading: true, lastUpdatedAt: null, error: new Error('x') }), false, 'an error is the error screen\'s');
+});
+
+test('SOURCE: the container honours a source\'s own first-load flag, and Following sets it', async () => {
+  const container = await readSource('../components/Feed/FeedContainer.jsx');
+  assert.match(container, /initialLoadPending: \(source \? Boolean\(source\.initialLoadPending\) : !initialFeedReady\) && !error/);
+  const page = await readSource('../components/Following/FollowingFeedPage.jsx');
+  assert.match(page, /initialLoadPending: followingFirstLoadPending\(\{ items, loading, lastUpdatedAt, error \}\)/);
 });

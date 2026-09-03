@@ -285,7 +285,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     error,
     isRefreshing,
     showLoader,
-    initialLoadPending: !source && !initialFeedReady && !error,
+    // A source says for itself whether it is still on its first load (the
+    // Following feed does); the main feed derives it from its own history.
+    initialLoadPending: (source ? Boolean(source.initialLoadPending) : !initialFeedReady) && !error,
     hasSourceEmptyState: Boolean(source?.emptyState),
   });
 
