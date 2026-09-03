@@ -203,5 +203,28 @@ test('the dark theme gets stronger lines for fields and rules, the light theme k
   // And the rules that draw structure use them rather than the raw tokens.
   assert.match(css, /\.profile-section\s*\{[^}]*border-top:\s*1px solid var\(--profile-rule\)/);
   assert.match(css, /\.profile-field textarea\s*\{[^}]*border:\s*1px solid var\(--profile-line-field\)/);
-  assert.match(css, /\.profile-handle-input\s*\{[^}]*border:\s*1px solid var\(--profile-line-field\)/);
+});
+
+test('the handle is one box with the @ inside it, not a box within a box', async () => {
+  const css = rules(await readFile(new URL('./ProfilePage.css', import.meta.url), 'utf8'));
+  // The wrapper used to draw a border around the @ and the field while the
+  // input drew its own inside. At rest both were hairlines; on focus the
+  // global text-field rule in styles/global.css -- (0,4,1), which no ordinary
+  // component override outranks -- painted an inset hairline on the inner
+  // input, framing the field without its @.
+  const wrapper = css.match(/\.profile-handle-input\s*\{[^}]*\}/);
+  assert.ok(wrapper, 'ProfilePage.css lost .profile-handle-input');
+  assert.match(wrapper[0], /position:\s*relative/);
+  assert.doesNotMatch(wrapper[0], /border|background/);
+  assert.doesNotMatch(css, /\.profile-handle-input:focus-within/);
+  // The prefix is overlaid inside the field's own box, and must not swallow
+  // the click that focuses it.
+  const prefix = css.match(/\.profile-handle-input > span\s*\{[^}]*\}/);
+  assert.ok(prefix, 'ProfilePage.css lost the @ prefix rule');
+  assert.match(prefix[0], /position:\s*absolute/);
+  assert.match(prefix[0], /pointer-events:\s*none/);
+  assert.match(css, /\.profile-field \.profile-handle-input input\s*\{[^}]*padding-left:\s*calc\(/);
+  // With one box there is nothing left to override, so the field keeps the
+  // app's own focus treatment.
+  assert.doesNotMatch(css, /\.profile-handle-input input:focus/);
 });
