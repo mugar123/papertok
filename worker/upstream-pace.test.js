@@ -3,14 +3,20 @@ import test from 'node:test';
 import { awaitUpstreamSlot } from './upstream-pace.js';
 
 // A ledger that answers each `reserve` from a script, and remembers what it was
-// asked. Subjects reach the real ledger hashed, so the fake records the order
-// of calls rather than their names; the period key is visible as-is.
+// asked: the period key as-is, and the hashed subjectKey plus subjectLimit read
+// from each reservation body. Hashing hides which second a call was for, but
+// not whether two calls asked for the same one -- distinctness is what a
+// per-second subject actually depends on, so that survives the hash and is
+// what the fake records.
 function scriptedLedger(answers, seen) {
   let call = 0;
   return {
     idFromName: name => { seen.periodKeys.push(String(name)); return `quota-${name}`; },
     get: () => ({
-      fetch: async () => {
+      fetch: async (_url, options) => {
+        const body = JSON.parse(options.body);
+        seen.reservations ??= [];
+        seen.reservations.push({ subjectKey: body.subjectKey, subjectLimit: body.subjectLimit });
         const answer = answers[Math.min(call, answers.length - 1)];
         call += 1;
         seen.calls = call;
@@ -47,6 +53,15 @@ test('takes the next second and waits for it when the current one is taken', asy
   assert.deepEqual(slot, { accepted: true, second: 11, waitedMs: 1000 });
   assert.deepEqual(slept, [1000]);
   assert.equal(seen.calls, 2);
+  // The hash itself proves nothing, but the two calls must not collide on one
+  // subject -- a constant subject would let the first request ever asked lock
+  // out every later one until the ledger's own retention alarm clears it days
+  // later. And the limit has to be one: a subject that admits sixty is the
+  // defect this module exists to remove, reinstated one call away.
+  const [first, second] = seen.reservations;
+  assert.notEqual(first.subjectKey, second.subjectKey, 'each second must reserve a different subject');
+  assert.equal(first.subjectLimit, 1);
+  assert.equal(second.subjectLimit, 1);
 });
 
 test('gives up within the wait budget instead of queueing forever', async () => {

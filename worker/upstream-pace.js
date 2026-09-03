@@ -11,10 +11,11 @@ import { reserveRequestQuota } from './request-quota-ledger.js';
 // the slot: the first caller to take second N sends in second N, the next one
 // takes N+1 and waits for it, and a caller that finds nothing free within
 // `maxWaitMs` is refused here rather than upstream -- same 429, no provider
-// call spent, no minute reservation wasted on a request the provider would
-// have refused anyway. The retention alarm of the ledger clears the used
-// seconds every three days; at one a second that is under 260k entries, well
-// inside the object's global counter.
+// call spent. The minute reservation is a different story: this gate runs
+// after it on purpose, so that unit is already spent by the time a caller
+// reaches here, and refusing the second does not give it back. The retention
+// alarm of the ledger clears the used seconds every three days; at one a
+// second that is under 260k entries, well inside the object's global counter.
 const DEFAULT_MAX_WAIT_MS = 2_500;
 const PACE_GLOBAL_LIMIT = 1_000_000;
 
