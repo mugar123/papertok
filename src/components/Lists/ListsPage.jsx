@@ -159,6 +159,7 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   const { language, isEnglish } = useLanguage();
   const {
     unmarkAsRead,
+    interactionIdFor,
     toggleLike,
     markNotInterested,
     markAsRead,
@@ -1863,9 +1864,9 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         {overlayPaper && (
           <PaperCard
             paper={overlayPaper}
-            isLiked={likedPaperIds.has(overlayPaper.id)}
-            isSaved={savedPaperIds.has(overlayPaper.id)}
-            isRead={readPaperIds.has(overlayPaper.id)}
+            isLiked={likedPaperIds.has(interactionIdFor(overlayPaper))}
+            isSaved={savedPaperIds.has(interactionIdFor(overlayPaper))}
+            isRead={readPaperIds.has(interactionIdFor(overlayPaper))}
             onLike={toggleLike}
             onNotInterested={(paper) => { markNotInterested(paper); closeOverlayPaper(); }}
             onMarkAsRead={markAsRead}

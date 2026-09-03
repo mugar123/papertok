@@ -127,6 +127,9 @@ export default function PublicPaperPage({
     markNotInterested,
     markAsRead,
     unmarkAsRead,
+    interactionIdFor,
+    libraryCopyFor,
+    ensurePersonalLibrary,
     trackViewTime,
     trackSkip,
     trackPdfOpened,
@@ -164,7 +167,26 @@ export default function PublicPaperPage({
   const seedPainted = seedPaintsWhole(seededPaper) && !location.state?.stored;
   const requestKey = `${paperKey}:${attempt}`;
   const hasCurrentResult = result.requestKey === requestKey;
-  const paper = hasCurrentResult ? result.paper : (seedPainted ? seededPaper : null);
+  const loadedPaper = hasCurrentResult ? result.paper : (seedPainted ? seededPaper : null);
+  // A link that brought no copy of its own — a shared link, a bookmark — is
+  // answered by the provider under the provider's id, and the reader's own
+  // marks are keyed by the id the feed gave the paper. If the reader's
+  // library holds a copy of it under any id, that copy is laid over the
+  // answer exactly as a list's copy would be: their marks apply, and the
+  // paper reads as it did in the feed. With no copy, the id alone is
+  // resolved, so a like made here lands on the mark that already exists.
+  const paper = useMemo(() => {
+    if (!loadedPaper || seededPaper) return loadedPaper;
+    const copy = libraryCopyFor(loadedPaper);
+    if (copy) return hydrateSeededPaper(paperLegacyAdapter({ ...copy.paper, id: copy.id }), loadedPaper);
+    const id = interactionIdFor(loadedPaper);
+    return id === loadedPaper.id ? loadedPaper : { ...loadedPaper, id };
+  }, [loadedPaper, seededPaper, libraryCopyFor, interactionIdFor]);
+  // The library is what the alias table is built from; a signed-in reader
+  // arriving by link has not opened a list yet, so it is asked for here.
+  useEffect(() => {
+    if (isAuthenticated) void ensurePersonalLibrary?.();
+  }, [isAuthenticated, ensurePersonalLibrary]);
   const status = hasCurrentResult
     ? result.status
     : (seedPainted ? 'ready' : (identity ? 'loading' : 'not-found'));

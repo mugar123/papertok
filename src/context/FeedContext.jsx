@@ -29,6 +29,7 @@ import {
   saveSeenPaperIds,
 } from '../utils/userScopedStorage';
 import { serializeLibraryPaper } from '../utils/readingLibrary';
+import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interactionAliases.js';
 import { isPlaceholderPaperTitle } from '../utils/paperDisplayTitle.js';
 import {
   createEmptyInteractionProfile,
@@ -371,6 +372,37 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   // came out of the same full scan. It holds a serialised paper per record, so
   // it is now fetched only by the screens that render it, from the ids the
   // aggregate already knows, in bounded `in` batches.
+  // The id a reader's marks for a paper live under. A mark is keyed by the
+  // id the feed gave the paper the day it was made — `openalex:W…`, `arxiv:…`,
+  // a Semantic Scholar hash — and the same paper comes back under another of
+  // those from a shared link hydrated by DOI, or from the feed served by
+  // another source. The stored copies the library loads carry the DOI and
+  // arXiv id beside the id the mark lives under, so they are the alias table
+  // (utils/interactionAliases.js). Every mark written from here goes under
+  // the resolved id, so a paper never ends up half-liked under two ids.
+  const interactionAliasIndex = useMemo(() => buildInteractionAliasIndex([
+    ...Object.entries(libraryPapers),
+    ...Object.entries(personalLibrary).map(([id, entry]) => [id, entry?.paper]),
+  ]), [libraryPapers, personalLibrary]);
+  const interactionIdFor = useCallback((paper) => resolveInteractionId(
+    paper,
+    interactionAliasIndex,
+    (id) => likedPaperIds.has(id) || savedPaperIds.has(id) || readPaperIds.has(id)
+      || Boolean(personalLibrary[id]) || Boolean(libraryPapers[id]),
+  ), [interactionAliasIndex, likedPaperIds, savedPaperIds, readPaperIds, personalLibrary, libraryPapers]);
+  const withInteractionId = useCallback((paper) => {
+    if (!paper || typeof paper !== 'object') return paper;
+    const id = interactionIdFor(paper);
+    return id === paper.id ? paper : { ...paper, id };
+  }, [interactionIdFor]);
+  // The copy the library holds for this paper, under whichever id, with that id.
+  const libraryCopyFor = useCallback((paper) => {
+    const id = interactionIdFor(paper);
+    if (!id) return null;
+    const copy = libraryPapers[id] || personalLibrary[id]?.paper;
+    return copy ? { id, paper: copy } : null;
+  }, [interactionIdFor, libraryPapers, personalLibrary]);
+
   const ensurePersonalLibrary = useCallback(async () => {
     const userId = user?.uid;
     if (!userId || IS_DEMO) return;
@@ -1649,7 +1681,8 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     }
   }, []);
 
-  const toggleLike = useCallback(async (paper) => {
+  const toggleLike = useCallback(async (paperInput) => {
+    const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     const isCurrentlyLiked = likedPaperIds.has(paper.id);
     const newLiked = new Set(likedPaperIds);
@@ -1712,9 +1745,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         setLikedPaperIds(likedPaperIds);
       }
     }
-  }, [recordProfileEvent, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
+  }, [withInteractionId, recordProfileEvent, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
 
-  const markNotInterested = useCallback(async (paper) => {
+  const markNotInterested = useCallback(async (paperInput) => {
+    const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     if (!userId) return;
     const newNotInterested = new Set(notInterestedIdsRef.current);
@@ -1750,9 +1784,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error saving not interested:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid]);
 
-  const markAsRead = useCallback(async (paper) => {
+  const markAsRead = useCallback(async (paperInput) => {
+    const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     if (!userId) return;
     const newRead = new Set(readPaperIdsRef.current);
@@ -1805,7 +1840,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error saving read status:', err);
       }
     }
-  }, [recordProfileEvent, user?.uid]);
+  }, [withInteractionId, recordProfileEvent, user?.uid]);
 
   const trackViewTime = useCallback(async (paper, timeInSeconds) => {
     const userId = user?.uid;
@@ -1961,7 +1996,8 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     }
   }, [reRankFeed, recordProfileEvent, user?.uid]);
 
-  const markSaved = useCallback(async (paperOrId) => {
+  const markSaved = useCallback(async (paperOrIdInput) => {
+    const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
     const userId = user?.uid;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || savedPaperIdsRef.current.has(paperId)) return;
@@ -2019,7 +2055,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error saving recommendation interaction:', err);
       }
     }
-  }, [papers, reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
+  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
 
   const unmarkAsRead = useCallback(async (paperId) => {
     const userId = user?.uid;
@@ -2050,7 +2086,8 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     }
   }, [recordProfileEvent, user?.uid]);
 
-  const toggleReadLater = useCallback(async (paper) => {
+  const toggleReadLater = useCallback(async (paperInput) => {
+    const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     if (!userId || !paper?.id) return false;
     const nextValue = !personalLibrary[paper.id]?.readLater;
@@ -2094,9 +2131,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       }
     }
     return nextValue;
-  }, [personalLibrary, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid]);
 
-  const saveReadingMetadata = useCallback(async (paper, { note = '', tags = [] }) => {
+  const saveReadingMetadata = useCallback(async (paperInput, { note = '', tags = [] }) => {
+    const paper = withInteractionId(paperInput);
     const userId = user?.uid;
     if (!userId || !paper?.id) return;
     const normalizedTags = [...new Set(tags.map(tag => tag.trim()).filter(Boolean))].slice(0, 12);
@@ -2140,7 +2178,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error saving reading metadata:', err);
       }
     }
-  }, [recordProfileEvent, user?.uid]);
+  }, [withInteractionId, recordProfileEvent, user?.uid]);
 
   // The curated interaction ids, most recent first, exactly as the aggregate
   // holds them. `likedPaperIds` and friends are the same ids re-sorted for the
@@ -2194,6 +2232,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers,
     ensurePersonalLibrary, getCuratedInteractionIds,
+    interactionIdFor, libraryCopyFor,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
@@ -2205,6 +2244,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
     libraryPapers,
     ensurePersonalLibrary, getCuratedInteractionIds,
+    interactionIdFor, libraryCopyFor,
     feedMode, handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,

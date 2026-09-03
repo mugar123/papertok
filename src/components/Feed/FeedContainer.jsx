@@ -96,7 +96,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const analyticsSurface = source?.surface || (scrollKey === 'following' ? 'following' : 'feed');
   const {
     trackPdfOpened,
-    likedPaperIds, savedPaperIds, readPaperIds, toggleLike, markNotInterested, markAsRead, unmarkAsRead,
+    likedPaperIds, savedPaperIds, readPaperIds, interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead,
     trackViewTime, trackSkip, trackSkips: trackSkippedPapers,
   } = feed;
   const papers = source ? source.papers : feed.papers;
@@ -175,10 +175,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
   const skipFlushTimerRef = useRef(null);
   const pendingSkippedPapersRef = useRef(new Map());
   const getInteractionState = useCallback((paper) => publicMode ? {} : ({
-    isLiked: likedPaperIds.has(paper.id),
-    isSaved: savedPaperIds.has(paper.id),
-    isRead: readPaperIds?.has(paper.id),
-  }), [likedPaperIds, publicMode, readPaperIds, savedPaperIds]);
+    isLiked: likedPaperIds.has(interactionIdFor(paper)),
+    isSaved: savedPaperIds.has(interactionIdFor(paper)),
+    isRead: readPaperIds?.has(interactionIdFor(paper)),
+  }), [interactionIdFor, likedPaperIds, publicMode, readPaperIds, savedPaperIds]);
 
   const flushPendingSkips = useCallback(() => {
     if (publicMode) {
@@ -461,9 +461,9 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
           <div key={paper.id} className="feed-snap-item">
             <PaperCard
               paper={paper}
-              isLiked={!publicMode && likedPaperIds.has(paper.id)}
-              isSaved={!publicMode && savedPaperIds.has(paper.id)}
-              isRead={!publicMode && readPaperIds?.has(paper.id)}
+              isLiked={!publicMode && likedPaperIds.has(interactionIdFor(paper))}
+              isSaved={!publicMode && savedPaperIds.has(interactionIdFor(paper))}
+              isRead={!publicMode && readPaperIds?.has(interactionIdFor(paper))}
               onLike={toggleLike}
               onNotInterested={markNotInterested}
               onMarkAsRead={markAsRead}

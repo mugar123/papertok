@@ -134,7 +134,7 @@ export default function EntityExplorer({
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
-    toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
+    interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
 
   const [entity, setEntity] = useState(null);
@@ -2293,9 +2293,9 @@ export default function EntityExplorer({
         {selectedPaper && (
           <PaperCard
             paper={selectedPaper}
-            isLiked={likedPaperIds.has(selectedPaper.id)}
-            isSaved={savedPaperIds.has(selectedPaper.id)}
-            isRead={readPaperIds.has(selectedPaper.id)}
+            isLiked={likedPaperIds.has(interactionIdFor(selectedPaper))}
+            isSaved={savedPaperIds.has(interactionIdFor(selectedPaper))}
+            isRead={readPaperIds.has(interactionIdFor(selectedPaper))}
             onLike={toggleLike}
             onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
             onMarkAsRead={markAsRead}
