@@ -826,6 +826,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
               type="search"
               className="search-input"
               placeholder={isEnglish ? 'Search PaperTok...' : 'Buscar en PaperTok...'}
+              aria-label={isEnglish ? 'Search PaperTok' : 'Buscar en PaperTok'}
               value={query}
               onChange={(event) => updateQuery(event.target.value)}
               onKeyDown={(event) => {

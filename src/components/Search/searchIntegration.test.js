@@ -589,3 +589,30 @@ test('the palette clears its state on the way in, never on the way out', () => {
   assert.doesNotMatch(palette, /if \(!open\) reset\(\)/, 'the palette resets while its exit is still playing');
   assert.match(palette, /useLayoutEffect\(\(\) => \{\s*if \(open\) reset\(\);/, 'the palette clears on open, before paint');
 });
+
+/**
+ * The full-page search box's name (WCAG 3.3.2).
+ *
+ * Its only name used to be `placeholder`, which disappears from the
+ * accessibility tree the instant anyone types into the field -- there was no
+ * `<label>`, `aria-label` or `aria-labelledby` anywhere near it.
+ */
+test('the search page input is named by more than its placeholder', () => {
+  const input = page.match(/<input\s+type="search"[\s\S]*?\/>/);
+  assert.ok(input, 'the search page input changed shape; update this test alongside it');
+  assert.match(
+    input[0],
+    /className="search-input"/,
+    'the matched <input> is no longer the main search field; update this test alongside it',
+  );
+  assert.match(
+    input[0],
+    /placeholder=\{isEnglish \? 'Search PaperTok\.\.\.' : 'Buscar en PaperTok\.\.\.'\}/,
+    'the search input lost its placeholder; update this test alongside it',
+  );
+  assert.match(
+    input[0],
+    /aria-label=\{isEnglish \? '[^']+' : '[^']+'\}/,
+    'the search input lost its aria-label and is named only by a placeholder again.',
+  );
+});
