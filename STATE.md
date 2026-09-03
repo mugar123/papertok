@@ -1,5 +1,43 @@
 # Estado / pendientes
 
+## Semantic Scholar vuelve a responder: la clave está puesta (2026-09-03)
+
+**`SEMANTIC_SCHOLAR_API_KEY` quedó configurada el 02-09 a las 22:41 UTC
+(`wrangler secret list` la muestra, y el despliegue `Secret Change` que la
+introdujo sirve el 100 % del tráfico). Con eso `/sources/s2` está vivo por
+primera vez y `/related` deja de depender del pool anónimo.** El pendiente de
+@mugar que arrastraba la entrada de G8 desde el 24-08 queda cerrado; el otro
+(`NCBI_API_KEY`) ya se había hecho el 01-09.
+
+Medido en vivo el 03-09, seis consultas distintas espaciadas 3 s:
+
+| Camino | 200 de 6 |
+|---|---|
+| Por el Worker, con clave | **5 / 6** |
+| Directo a `api.semanticscholar.org` sin clave, en los mismos minutos | **0 / 6** |
+
+El control importa tanto como la medida: el pool anónimo sigue exactamente
+igual de agotado que el 24-08 (0/10 entonces desde IP residencial), así que la
+diferencia es la clave y no una ventana de tráfico bajo. `/related` no se pudo
+comprobar desde fuera —exige identidad Firebase y devuelve `401 AUTH_REQUIRED`
+a un cliente anónimo, que es su comportamiento correcto—, pero comparte clave y
+línea de código con `/sources/s2` (`report-api.js:450`), así que hereda el
+arreglo; la llamada autenticada real queda por verificar desde la app logueada.
+
+`/health` gana `semanticScholarKeyConfigured`, con test que muere por mutación:
+hasta ahora informaba de `pubmedKeyConfigured` pero no de esta, y no son el
+mismo tipo de bandera. La de NCBI ausente significa «PubMed va a 3 req/s en vez
+de 10»; la de S2 ausente significa «la fuente no existe».
+
+**Lo que queda abierto, y no es cosmético:** el límite introductorio de S2 es
+**1 RPS**, y nuestro techo es *por minuto* (`S2_GLOBAL_MINUTE_LIMIT = 60`,
+`report-api.js:191`). Sesenta peticiones caben legalmente dentro del mismo
+segundo, y S2 rechazaría casi todas. Se vio en la propia medición: una ráfaga
+de cuatro peticiones sin espaciar cobró tres 429, y con 3 s de separación no
+falló ninguna. El techo protege el minuto pero no reparte dentro de él. Si el
+feed llega a dispararlas en bloque se manifestará como fuente muerta
+intermitente, y el arreglo es espaciar las salidas, **no subir el número**.
+
 ## El resumen anotado se descarga también en PDF (2026-08-29)
 
 **La tarjeta de exportación del lector gana un selector de formato: PDF
@@ -141,6 +179,8 @@ cuando la petición con clave falla, así que una credencial caducada se
 manifiesta como funcionamiento normal contra el pool público, sin un solo log.
 
 `SEMANTIC_SCHOLAR_API_KEY` sigue sin configurar, como decía la entrada de G8.
+*(Configurada el 02-09-2026 y verificada en vivo el 03-09 — ver la entrada de
+cabecera; lo de abajo describe lo que era cierto el 24-08.)*
 
 ### Estado del trabajo
 
@@ -229,10 +269,11 @@ antes —`/related` incluido— y migrarlo **no es una regresión**; pero sin la
 PubMed de 3 a 10 req/s y la ruta responde sin ella (`/health` lo dice ahora con
 `pubmedKeyConfigured`).
 
-**Pendiente de @mugar:**
+**Pendiente de @mugar:** *(ambos hechos ya — ver la entrada de cabecera del
+03-09; se conserva el bloque porque explica por qué hacía falta.)*
 
 ```bash
-npx wrangler secret put SEMANTIC_SCHOLAR_API_KEY   # https://www.semanticscholar.org/product/api#api-key-form
+# npx wrangler secret put SEMANTIC_SCHOLAR_API_KEY # hecho 02-09, verificado 03-09
 # npx wrangler secret put NCBI_API_KEY             # hecho 01-09 (B2)
 ```
 

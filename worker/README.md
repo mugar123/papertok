@@ -4,7 +4,7 @@ This Cloudflare Worker protects provider keys and caches trend, related-paper an
 
 ```bash
 npx wrangler secret put OPENALEX_API_KEY # required since Feb 2026; without it OpenAlex runs on the $0.10/day anonymous budget
-npx wrangler secret put SEMANTIC_SCHOLAR_API_KEY
+npx wrangler secret put SEMANTIC_SCHOLAR_API_KEY # required in practice, not optional -- see below; set 2026-09-02
 npx wrangler secret put OPENCITATIONS_ACCESS_TOKEN # optional, recommended for production traffic
 npx wrangler secret put UNPAYWALL_EMAIL
 npx wrangler secret put GEMINI_API_KEY
@@ -71,11 +71,19 @@ REST misses only (`THREAD_ANCHOR_GLOBAL_MINUTE_LIMIT`, default 120). A hit costs
 `SEMANTIC_SCHOLAR_API_KEY` is listed above as if it were optional. It is not, in practice.
 Measured on 2026-08-24, Semantic Scholar's anonymous pool refused **10 of 10** requests from a
 residential address and **9 of 10** from the Worker: without a key, `/sources/s2` and `/related`
-are both effectively unavailable, and were before either route existed. The secret has never been
-set on this deployment — `wrangler secret list` does not show it — so setting it is what turns
-Semantic Scholar back on. A refusal is relayed as a 429 with the provider's own `retry-after`, not
+are both effectively unavailable, and were before either route existed. The secret was set on
+**2026-09-02** and the difference was measured the next day — 5 of 6 through the Worker against
+0 of 6 anonymous in the same minutes — so `/health` now reports `semanticScholarKeyConfigured`
+alongside `pubmedKeyConfigured`. They are not the same kind of flag: NCBI's absence costs speed,
+this one costs the source. A refusal is relayed as a 429 with the provider's own `retry-after`, not
 flattened into a 502, so a client can tell a rate limit from an outage; every `/sources/*` route
 does this now, not only Scopus.
+
+The key's introductory rate limit is **1 RPS**, and `S2_GLOBAL_MINUTE_LIMIT` (60, shared by
+`/sources/s2` and `/related`) is a *per-minute* ceiling: it permits sixty calls inside the same
+second, which Semantic Scholar would refuse. Measured on 2026-09-03, four unspaced requests drew
+three 429s while the same six spaced three seconds apart drew one. If bursts ever show up as an
+intermittently dead source, the fix is to space the calls, not to raise the ceiling.
 
 
 `/openalex/*` exists because OpenAlex changed underneath the app. Since February 2026 it requires

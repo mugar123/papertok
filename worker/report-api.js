@@ -2224,6 +2224,12 @@ export default {
         // Absent means PubMed runs on NCBI's anonymous 3 req/s rather than 10, so
         // it belongs in the report even though the route works without it.
         pubmedKeyConfigured: Boolean(env.NCBI_API_KEY),
+        // Not the same kind of flag as PubMed's, despite the shape. Measured on
+        // 2026-08-24, Semantic Scholar's anonymous pool refused 9 of 10 requests
+        // from the Worker and 10 of 10 from a residential address, so absent here
+        // does not mean "slower": it means `/sources/s2` and `/related` are dead.
+        // Present has been the difference between 0/6 and 5/6 since 2026-09-02.
+        semanticScholarKeyConfigured: Boolean(env.SEMANTIC_SCHOLAR_API_KEY),
         emailConfigured: Boolean(
           env.NOTIFICATION_STORE
           && ((env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) || env.RESEND_API_KEY),

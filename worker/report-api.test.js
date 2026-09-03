@@ -817,6 +817,21 @@ test('duplicate cache parameters cannot create cache variants for one upstream r
   }
 });
 
+// `/health` is where an operator learns a key is missing, and for Semantic Scholar
+// that is not a footnote: without the key both `/sources/s2` and `/related` are
+// refused by the anonymous pool, so a flag that reported "configured" regardless
+// of the environment would hide a dead source behind a green check.
+test('/health reports whether the Semantic Scholar key is configured', async () => {
+  const read = async env => (await (await reportApi.fetch(
+    new Request('https://papertok-report-api.example/health'),
+    env,
+  )).json()).semanticScholarKeyConfigured;
+
+  assert.equal(await read({ SEMANTIC_SCHOLAR_API_KEY: 's2-test-key' }), true);
+  assert.equal(await read({ SEMANTIC_SCHOLAR_API_KEY: '' }), false);
+  assert.equal(await read({}), false);
+});
+
 test('adds baseline browser hardening headers to JSON responses', async () => {
   const response = await reportApi.fetch(new Request('https://papertok-report-api.example/health'), {});
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
