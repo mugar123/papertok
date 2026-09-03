@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { awaitUpstreamSlot } from './upstream-pace.js';
+import { awaitUpstreamSlot, DEFAULT_MAX_WAIT_MS, PACE_RETRY_AFTER_SECONDS } from './upstream-pace.js';
 
 // A ledger that answers each `reserve` from a script, and remembers what it was
 // asked: the period key as-is, and the hashed subjectKey plus subjectLimit read
@@ -135,4 +135,13 @@ test('a reservation confirmed after its second has closed is not spent -- the ca
   assert.deepEqual(slot, { accepted: true, second: 12, waitedMs: 0 });
   assert.equal(seen.calls, 3, 'the stale accept of second 11 must cost a retry, not be spent as a send');
   assert.deepEqual(slept, [], 'the clock had already passed both seconds it tried by the time each was confirmed');
+});
+
+// The header a refused caller receives has to cover the whole window the beat
+// just searched: telling it to come back sooner than that is telling it to
+// come back before the search that just failed would even have finished.
+test('tells a refused caller to come back no sooner than the wait budget it just exhausted', () => {
+  assert.match(PACE_RETRY_AFTER_SECONDS, /^\d+$/, 'retry-after is whole seconds');
+  assert.ok(Number(PACE_RETRY_AFTER_SECONDS) * 1000 >= DEFAULT_MAX_WAIT_MS,
+    `${PACE_RETRY_AFTER_SECONDS}s does not cover a ${DEFAULT_MAX_WAIT_MS}ms window`);
 });

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import reportApi, { fetchWithDeadline } from './report-api.js';
+import { PACE_RETRY_AFTER_SECONDS } from './upstream-pace.js';
 import { dribblingFetch, settleWithin, withStubbedFetch } from '../src/test-support/deadlineHarness.js';
 import { fakeIdToken } from '../src/test-support/firebaseIdToken.js';
 
@@ -2038,7 +2039,9 @@ test('refuses a Semantic Scholar search itself when no second is free, without s
 
   assert.equal(response.status, 429);
   assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
-  assert.equal(response.headers.get('retry-after'), '2');
+  // Not a literal: the same constant the beat derives from its own wait budget,
+  // so raising the budget cannot leave this header quietly lying.
+  assert.equal(response.headers.get('retry-after'), PACE_RETRY_AFTER_SECONDS);
   assert.equal(upstreamCalls, 0, 'a request the beat refused must not reach Semantic Scholar');
   assert.ok(state.periodKeys.includes('s2:pace'), `the beat was never consulted: ${JSON.stringify(state.periodKeys)}`);
 });

@@ -16,7 +16,13 @@ import { reserveRequestQuota } from './request-quota-ledger.js';
 // reaches here, and refusing the second does not give it back. The retention
 // alarm of the ledger clears the used seconds every three days; at one a
 // second that is under 260k entries, well inside the object's global counter.
-const DEFAULT_MAX_WAIT_MS = 2_500;
+export const DEFAULT_MAX_WAIT_MS = 2_500;
+// What a caller refused here is told to wait, in whole seconds, derived from the
+// window above rather than written next to it: the beat gave up because no
+// second was free inside that window, so "come back" means "after it". Not the
+// same number as the router's fallback for a *provider* refusal, which speaks
+// for Semantic Scholar's own one-second window.
+export const PACE_RETRY_AFTER_SECONDS = String(Math.ceil(DEFAULT_MAX_WAIT_MS / 1000));
 // Sits exactly on `request-quota-ledger.js`'s own `MAX_LIMIT`. One increment
 // past this and that module's `positiveInteger` returns 0 for any
 // `globalLimit`, which turns every reservation `INVALID_REQUEST` -> 400 ->

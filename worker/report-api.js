@@ -50,7 +50,7 @@ import {
 } from './thread-anchor.js';
 import { isServiceAccountConfigured } from './firestore-admin.js';
 import { reserveRequestQuota } from './request-quota-ledger.js';
-import { awaitUpstreamSlot } from './upstream-pace.js';
+import { awaitUpstreamSlot, PACE_RETRY_AFTER_SECONDS } from './upstream-pace.js';
 
 export { KimiBudgetLedger } from './kimi-budget-ledger.js';
 export { EmailDeliveryLedger } from './email-delivery-ledger.js';
@@ -466,12 +466,11 @@ async function awaitSharedPace(request, env, origin) {
       'cache-control': 'no-store',
     });
   }
-  // Two seconds, not a minute: the next free second is at most 2.5 s away and
-  // the caller is being told to come back, not to give up.
+  // The beat's own window, not a literal next to a comment that promised it.
   return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
     ...corsHeaders(origin, env),
     'cache-control': 'no-store',
-    'retry-after': '2',
+    'retry-after': PACE_RETRY_AFTER_SECONDS,
   });
 }
 
