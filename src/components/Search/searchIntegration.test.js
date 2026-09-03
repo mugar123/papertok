@@ -394,6 +394,91 @@ test('the outage description speaks only for the external sources', () => {
 });
 
 /**
+ * `visibleResultCount` exists only so the hidden live region announcing a
+ * search's outcome can never disagree with what `hasVisibleResults` decides
+ * to paint. The one place that guarantee depends on more than a matching
+ * `.length` is a direct ORCID hit: `hasVisibleResults` counts it under "all"
+ * (through `hasResults`, defined two lines above the ternary) and under
+ * "authors" (`|| !!cleanOrcid`), nowhere else. `visibleResultCount`'s "all"
+ * branch once forgot its own `(cleanOrcid ? 1 : 0)` — search a bare, valid
+ * ORCID that matches nothing else with "All" selected, and the Direct ORCID
+ * card would render while the live region announced "no results found" for
+ * that exact search. This walks every branch both ternaries share, in the
+ * same fixed order, and asserts they agree about which ones count an ORCID
+ * hit at all.
+ */
+test('visibleResultCount agrees with hasVisibleResults about a direct ORCID hit, branch by branch', () => {
+  const hasVisibleBlock = page.match(
+    /const hasVisibleResults = activeSearchFilter === 'all'[\s\S]*?conceptResults\.length > 0;/,
+  )?.[0];
+  assert.ok(hasVisibleBlock, 'could not find the hasVisibleResults ternary to check -- update this test alongside it');
+
+  const countBlock = page.match(
+    /const visibleResultCount = activeSearchFilter === 'all'[\s\S]*?conceptResults\.length;/,
+  )?.[0];
+  assert.ok(countBlock, 'could not find the visibleResultCount ternary to check -- update this test alongside it');
+
+  /** The single-line value of one `? ...` branch, found by the filter name that guards it. */
+  function branch(block, filterName) {
+    const match = block.match(new RegExp(`activeSearchFilter === '${filterName}'\\s*\\n\\s*\\?\\s*([^\\n]+)`));
+    return match ? match[1].trim() : null;
+  }
+
+  // "all": hasVisibleResults reads through `hasResults` (defined just above
+  // the ternary) rather than naming cleanOrcid inline, so that indirection is
+  // resolved by hand instead of by the generic loop below.
+  assert.equal(
+    branch(hasVisibleBlock, 'all'),
+    'hasResults || userResults.length > 0',
+    'hasVisibleResults\' "all" branch changed shape; update this test alongside it',
+  );
+  assert.match(
+    page,
+    /const hasResults = hasSearchSectionResults \|\| !!cleanOrcid;/,
+    'hasResults no longer folds in a direct ORCID hit -- "all" would silently stop counting one',
+  );
+  const countAllBranch = countBlock.match(
+    /activeSearchFilter === 'all'\s*\n\s*\?\s*([\s\S]*?)\n\s*: activeSearchFilter === 'users'/,
+  )?.[1];
+  assert.ok(countAllBranch, 'visibleResultCount\'s "all" branch changed shape; update this test alongside it');
+  assert.match(
+    countAllBranch,
+    /\(cleanOrcid \? 1 : 0\)/,
+    'visibleResultCount\'s "all" branch no longer adds a direct ORCID hit to the total. Search a bare, valid '
+    + 'ORCID that matches nothing else with "All" selected: the Direct ORCID card renders (hasVisibleResults '
+    + 'counts it there, through hasResults), but the hidden live region would announce "no results found" for '
+    + 'that same search -- exactly the contradiction this variable exists to make impossible.',
+  );
+
+  // Every other branch, generically: whichever of the two counts an ORCID
+  // hit here, the other must too, whatever that answer is. Only "authors"
+  // is expected to answer "yes" today; the rest exist to prove the two stay
+  // symmetric even where neither currently mentions cleanOrcid at all.
+  for (const filterName of ['users', 'papers', 'institutions', 'authors', 'projects']) {
+    const hasVisibleBranch = branch(hasVisibleBlock, filterName);
+    const countBranch = branch(countBlock, filterName);
+    assert.ok(hasVisibleBranch, `hasVisibleResults' "${filterName}" branch changed shape; update this test alongside it`);
+    assert.ok(countBranch, `visibleResultCount's "${filterName}" branch changed shape; update this test alongside it`);
+
+    const hasVisibleCounts = /cleanOrcid/.test(hasVisibleBranch);
+    const countCounts = /cleanOrcid/.test(countBranch);
+    assert.equal(
+      countCounts,
+      hasVisibleCounts,
+      `"${filterName}": hasVisibleResults ${hasVisibleCounts ? 'counts' : 'does not count'} a direct ORCID hit `
+      + `here, but visibleResultCount ${countCounts ? 'counts' : 'does not'} -- search a bare, valid ORCID that `
+      + 'matches nothing else under this filter and the card and the live region would disagree about whether '
+      + 'anything was found for the same search.',
+    );
+  }
+
+  // The final, un-guarded "else" (topics) is implied by both block anchors
+  // above already requiring the literal text `conceptResults.length[ > 0];`
+  // as their closing branch -- a fixed expression with no room for
+  // cleanOrcid in either ternary, so there is nothing further to compare.
+});
+
+/**
  * Every destination a search result offers has to be a route the app declares.
  *
  * This is the rule the palette broke: papers were pointed at
