@@ -640,7 +640,11 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
               )}
             </div>
             {trends.loading ? (
-              <div className="sr-trend-list sr-trend-list--loading" role="status" aria-label={isEnglish ? 'Calculating trends' : 'Calculando tendencias'}>
+              <div className="sr-trend-list sr-trend-list--loading" role="status">
+                {/* Real text, not just an aria-label: the skeleton spans below
+                    carry no text of their own, so an aria-label alone here
+                    would never be announced as a status change. */}
+                <span className="visually-hidden">{isEnglish ? 'Calculating trends' : 'Calculando tendencias'}</span>
                 {[0, 1, 2, 3, 4].map(index => (
                   <span key={index} className="sr-trend-skeleton" />
                 ))}
