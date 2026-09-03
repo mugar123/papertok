@@ -91,6 +91,19 @@ function AppContent() {
   const [guestFeedReady, setGuestFeedReady] = useState(false)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
+  // The palette mounts on its first open and then stays mounted, closed or
+  // not. Its exit is `@radix-ui/react-presence` keeping the sheet on screen
+  // while `scSheetOut` runs (SearchCommand.css), and Presence can only do that
+  // inside a component that still exists: mounted behind `searchOpen &&`, a
+  // close removed the whole tree in the same commit — gone from the DOM 2 ms
+  // after the click, `data-state="closed"` never observed — and the exit had
+  // never played once. The lazy chunk still waits for the first open, which is
+  // what the conditional mount was for; a closed palette costs one idle hook.
+  const [searchMounted, setSearchMounted] = useState(false)
+  const openSearch = useCallback(() => {
+    setSearchMounted(true)
+    setSearchOpen(true)
+  }, [])
   const location = useLocation()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const { isEnglish } = useLanguage()
@@ -169,7 +182,7 @@ function AppContent() {
         {isEnglish ? 'Skip to content' : 'Saltar al contenido'}
       </a>
       <RouteAnnouncer />
-      {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={() => setSearchOpen(true)} />}
+      {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={openSearch} />}
       {/* Focus target for the skip link and for route changes (RouteAnnouncer).
           A div, not <main>: several routes render their own <main> inside. */}
       <div id="main-content" tabIndex={-1}>
@@ -400,7 +413,7 @@ function AppContent() {
       </Suspense>
       </div>
 
-      {user && searchOpen && (
+      {user && searchMounted && (
         <Suspense fallback={null}>
           <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} />
         </Suspense>

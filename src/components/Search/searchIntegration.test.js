@@ -474,3 +474,33 @@ test('the explorer is only ever asked for a type it can resolve', () => {
     }
   }
 });
+
+/**
+ * The palette's exit is `@radix-ui/react-presence` holding the sheet on screen
+ * while `scSheetOut` runs — which it can only do while the component is still
+ * mounted. `App.jsx` used to mount `SearchCommand` behind `searchOpen &&`, so
+ * closing removed the whole tree in the same commit (measured in the browser:
+ * gone from the DOM 2 ms after close, `data-state="closed"` never observed),
+ * and the exit `SearchCommand.css` describes had never played once. The lazy
+ * chunk still waits for the first open; what must not happen is a second
+ * unmount on every close.
+ */
+test('the palette stays mounted after its first open, so its exit can play', () => {
+  const mount = app.match(/\{user && (\w+) && \(\s*<Suspense[\s\S]*?<SearchCommand[\s\S]*?\/>/);
+  assert.ok(mount, 'App.jsx no longer mounts SearchCommand behind a `user && <flag>` guard');
+  assert.notEqual(
+    mount[1],
+    'searchOpen',
+    'mounting the palette on the open flag unmounts it on close, before its exit',
+  );
+  assert.match(mount[0], /open=\{searchOpen\}/, 'the open flag still reaches the dialog');
+});
+
+test('the palette clears its state on the way in, never on the way out', () => {
+  // Mounted across closes (above), a reset on `!open` repaints the sheet with
+  // the empty-query view while it is still fading out: the results vanish and
+  // the suggestions cascade in, inside the 140 ms exit. Clearing on open, in a
+  // layout effect, happens before the first paint of the next opening instead.
+  assert.doesNotMatch(palette, /if \(!open\) reset\(\)/, 'the palette resets while its exit is still playing');
+  assert.match(palette, /useLayoutEffect\(\(\) => \{\s*if \(open\) reset\(\);/, 'the palette clears on open, before paint');
+});

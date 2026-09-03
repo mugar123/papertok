@@ -273,7 +273,7 @@
    it again. It is anchored near the top of the window and its results grow
    downwards, so it arrives from above and leaves back the way it came.
 
-   Two things this depends on, both verified rather than assumed:
+   Three things this depends on, all verified rather than assumed:
 
    1. Tailwind v4 centres the sheet with the `translate` PROPERTY
       (`translate: -50%` from `-translate-x-1/2`), not with `transform`. The two
@@ -287,6 +287,12 @@
       last frame so the sheet cannot flash back before it goes. This is the same
       rule the overlay in `dialog.jsx` follows, and the trap `design.md`
       documents.
+   3. The component has to still be mounted when `open` turns false. Presence
+      defers the unmount of the sheet, not of the palette: mounted behind
+      `searchOpen &&` in `App.jsx`, the whole tree went in the same commit as
+      the close (measured: out of the DOM 2 ms later, `data-state='closed'`
+      never seen) and this exit, `both` and all, had never played once.
+      `App.jsx` now latches the mount on the first open.
 
    The exit is shorter than the entrance (140ms against 260ms): getting out of
    the way should never make anybody wait. It also finishes just inside the
