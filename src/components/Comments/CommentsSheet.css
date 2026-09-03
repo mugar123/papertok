@@ -408,7 +408,16 @@
   margin: var(--space-4) 0;
 }
 
+/* Rendered persistently (see CommentsSheet.jsx) so it exists before an
+   action runs, not only once it has something to announce. Empty, it must
+   take up no visible room — `line-height: 0` collapses it to nothing; the
+   chip's chrome only switches on with `.has-text`, once there is a real
+   confirmation or error to show. */
 .comments-sheet-notice {
+  line-height: 0;
+}
+
+.comments-sheet-notice.has-text {
   margin: var(--space-3) 0 var(--space-4);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--tint-neutral-line);

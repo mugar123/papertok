@@ -95,6 +95,9 @@ const COPY = {
   deleteConfirm: { es: '¿Borrar? Sus respuestas se borran también.', en: 'Delete? Its replies go too.' },
   deleteReplyConfirm: { es: '¿Borrar esta respuesta?', en: 'Delete this reply?' },
   confirm: { es: 'Sí, borrar', en: 'Yes, delete' },
+  posted: { es: 'Comentario publicado.', en: 'Comment posted.' },
+  saved: { es: 'Cambios guardados.', en: 'Changes saved.' },
+  deleted: { es: 'Comentario borrado.', en: 'Comment deleted.' },
   report: { es: 'Reportar', en: 'Report' },
   reportWhy: { es: 'Motivo del reporte', en: 'Reason' },
   reportSpam: { es: 'Spam', en: 'Spam' },
@@ -387,7 +390,11 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   const [hiddenLocally, setHiddenLocally] = useState(() => locallyHiddenCommentIds());
   const [paging, setPaging] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState(null);
+  // { tone: 'status' | 'error', text }. Rendered persistently below (empty by
+  // default) so the region exists before an action runs, not only once it has
+  // something to say — a live region announces changes to its content, and a
+  // node created at the same moment as its message is frequently missed.
+  const [notice, setNotice] = useState({ tone: 'status', text: '' });
   const [composerError, setComposerError] = useState(null);
   const [draft, setDraft] = useState('');
   const [replyTarget, setReplyTarget] = useState(null);
@@ -634,7 +641,11 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     if (busy || !anchor || !draft.trim()) return;
     setBusy(true);
     setComposerError(null);
-    setNotice(null);
+    // Cleared, not left at whatever it last said: an identical confirmation
+    // twice in a row (post, then edit that same comment straight back to
+    // wording that also says "Comment posted.") would otherwise set the same
+    // string twice, and React skips a state update that does not change.
+    setNotice({ tone: 'status', text: '' });
     try {
       if (editTarget) {
         const trimmed = draft.trim();
@@ -643,6 +654,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
           row.id === editTarget.id ? { ...row, text: trimmed, editedAt: new Date() } : row
         )));
         void invalidateThreadAnchor([editTarget.paperKey ?? anchor.key]);
+        setNotice({ tone: 'success', text: text(COPY.saved) });
       } else {
         const result = await createComment({
           anchor,
@@ -657,6 +669,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         setCount(previous => (previous ? { ...previous, count: previous.count + 1 } : previous));
         if (!anchor.stubExists) setAnchor(previous => ({ ...previous, stubExists: true }));
         void invalidateThreadAnchor([anchor.key, ...localThreadKeys(paper)]);
+        setNotice({ tone: 'success', text: text(COPY.posted) });
       }
       resetComposer();
     } catch (error) {
@@ -668,7 +681,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
 
   const remove = async (comment) => {
     setBusy(true);
-    setNotice(null);
+    setNotice({ tone: 'status', text: '' });
     try {
       await deleteComment({
         paperKey: comment.paperKey ?? anchor.key,
@@ -686,9 +699,10 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         ? { ...previous, count: Math.max(0, previous.count - droppedIds.size) }
         : previous));
       void invalidateThreadAnchor([comment.paperKey ?? anchor.key, anchor.key]);
+      setNotice({ tone: 'success', text: text(COPY.deleted) });
     } catch (error) {
       console.error('The comment could not be deleted', error);
-      setNotice(text(COPY.deleteError));
+      setNotice({ tone: 'error', text: text(COPY.deleteError) });
     } finally {
       setBusy(false);
     }
@@ -696,7 +710,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
 
   const report = async (comment, reason) => {
     setBusy(true);
-    setNotice(null);
+    setNotice({ tone: 'status', text: '' });
     try {
       await submitReport({
         targetPath: commentTargetPath(comment.paperKey ?? anchor.key, comment.id),
@@ -705,9 +719,15 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       });
       hideCommentLocally(comment.id);
       setHiddenLocally(locallyHiddenCommentIds());
-      setNotice(text(COPY.reported));
+      setNotice({ tone: 'success', text: text(COPY.reported) });
     } catch (error) {
-      setNotice(error?.code === 'permission-denied' ? text(COPY.reportThrottled) : text(COPY.writeError));
+      // A real failure (an error thrown by the write itself) is the only
+      // thing that becomes `role="alert"` below; both of these are genuine
+      // refusals, never a success dressed up as one.
+      setNotice({
+        tone: 'error',
+        text: error?.code === 'permission-denied' ? text(COPY.reportThrottled) : text(COPY.writeError),
+      });
     } finally {
       setBusy(false);
     }
@@ -982,7 +1002,19 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               {paging ? text(COPY.loading) : text(COPY.more)}
             </Button>
           )}
-          {notice && <p className="comments-sheet-notice" role="status">{notice}</p>}
+          {/* Persistent rather than mounted only when there is something to
+              say: the node has to exist before an action runs for its later
+              text to be announced at all. `has-text` (CSS) is what keeps the
+              chip's border/background from showing up empty; the role is
+              `alert` only for a genuine failure, `status` (polite) for a
+              success confirmation or the wait it is standing in for. */}
+          <p
+            className={`comments-sheet-notice ${notice.text ? 'has-text' : ''}`}
+            role={notice.tone === 'error' ? 'alert' : 'status'}
+            aria-live={notice.tone === 'error' ? 'assertive' : 'polite'}
+          >
+            {notice.text}
+          </p>
         </div>
 
         <footer className="comments-sheet-footer">
