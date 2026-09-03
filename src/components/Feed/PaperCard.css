@@ -283,6 +283,23 @@
   animation-name: pcArriveAside;
 }
 
+/* Coming back is not arriving. A feed reached by the back arrow — from an
+   author, a paper, a list — is the feed the reader left, resumed on the card
+   they were on (FeedContainer); replaying the arrival on top of that read as
+   the feed reloading. Under a page that slides back in, the cards sit at rest. */
+[data-nav-direction="-1"] .pc-sheet,
+[data-nav-direction="-1"] .pc-follow-reason,
+[data-nav-direction="-1"] .pc-meta,
+[data-nav-direction="-1"] .pc-chips,
+[data-nav-direction="-1"] .pc-topics,
+[data-nav-direction="-1"] .pc-title,
+[data-nav-direction="-1"] .pc-authors,
+[data-nav-direction="-1"] .pc-abstract,
+[data-nav-direction="-1"] .pc-action-bar,
+[data-nav-direction="-1"] .pc-side-actions {
+  animation: none;
+}
+
 @keyframes pcArrive {
   0% { opacity: 0; transform: translateY(8px); }
   100% { opacity: 1; transform: none; }

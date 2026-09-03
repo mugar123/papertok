@@ -14,6 +14,7 @@ import { Button } from '../ui/button.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getProjectForPaper } from '../../services/openAireService';
+import { authorExplorerPath } from '../../utils/explorerPaths.js';
 import { useNavigate, Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import './PaperCard.css';
@@ -1337,10 +1338,9 @@ const PaperCard = memo(function PaperCard({
                // be known at render time — a <Link> can't compute where it
                // goes lazily inside its own onClick the way the old <button>
                // did.
-               const pId = paper.id.startsWith('arxiv:') ? paper.id.split(':')[1] : paper.id;
-               const path = publicMode
-                 ? getPublicEntityPath('author', author.id || authorName)
-                 : `/explorer/author/${encodeURIComponent(authorName)}?arxivId=${pId}`;
+               // By OpenAlex id when the author carries one (one request on the
+               // other side), by name with the arXiv id otherwise.
+               const path = authorExplorerPath(author, paper.arxivId || paper.id, { publicMode });
                return (
                  <Fragment key={index}>
                    {path ? (
@@ -1727,10 +1727,7 @@ const PaperCard = memo(function PaperCard({
                     className="pc-authors-modal-item"
                     onClick={() => {
                       setShowAuthorsModal(false);
-                      const authorStr = typeof author === 'string' ? author : author.name;
-                      const path = publicMode
-                        ? getPublicEntityPath('author', author.id || authorStr)
-                        : `/explorer/author/${encodeURIComponent(authorStr)}?arxivId=${paper.arxivId || ''}`;
+                      const path = authorExplorerPath(author, paper.arxivId || paper.id, { publicMode });
                       trackEvent('select_content', {
                         content_type: 'author',
                         surface: analyticsSurface,

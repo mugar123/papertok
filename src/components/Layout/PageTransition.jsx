@@ -95,6 +95,10 @@ export default function PageTransition({ children }) {
 
   return (
     <motion.div
+      // The direction, for the page's own content: coming back (-1) is a
+      // return to something that was there, so the feed's cards resume at
+      // rest instead of arriving again (PaperCard.css reads this).
+      data-nav-direction={direction}
       custom={{ direction, isProject }}
       initial="initial"
       animate="enter"

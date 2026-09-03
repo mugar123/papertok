@@ -105,6 +105,14 @@
   animation: slideUpFade 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* The skeleton is the page's first paint, and the page transition already
+   brings it in; a second fade on top of that (0.35 → 1 over 420 ms while the
+   page itself went 0 → 1 over 300 ms) was content arriving after its frame.
+   The live hero keeps its fade: that one is the handover from these shapes. */
+.explorer-hero-content.is-skeleton {
+  animation: none;
+}
+
 /* The header pairs the identity (icon + name) on the left with a right-hand
    aside holding the compact stats and the follow action. */
 .ehc-header {

@@ -259,6 +259,17 @@ export default function EntityExplorer({
     }
     navigate(`/explorer/${nextType}/${encodeURIComponent(nextId)}`);
   }, [navigate, publicMode]);
+  // What the masthead can say before the entity answers: the `?name=` a link
+  // hands over (an author opened by OpenAlex id, a project), or the name the
+  // route is keyed by when an author is opened by name.
+  const seedName = useMemo(() => {
+    const handed = (searchParams.get('name') || '').trim();
+    if (handed) return handed;
+    if (type === 'author' && !/^A\d+$/i.test(id) && !/openalex\.org\/A\d+/i.test(id) && !extractOrcid(id)) {
+      return String(id || '').trim();
+    }
+    return '';
+  }, [id, searchParams, type]);
   const handleBack = useCallback(() => {
     const historyIndex = typeof window !== 'undefined' ? window.history.state?.idx : null;
     if (Number.isInteger(historyIndex) && historyIndex > 0) navigate(-1);
@@ -1042,14 +1053,21 @@ export default function EntityExplorer({
               header wraps main and aside, and the stats sit inside the aside.
               Flattening it let `.ehc-main` stretch down the whole hero and
               pushed the stats to the floor, with a screen of nothing between. */}
-          <div className="explorer-hero-content">
+          <div className="explorer-hero-content is-skeleton">
             <div className="ehc-header">
               <div className="ehc-main">
                 <div className="ehc-visual-slot">
                   <div className="ehc-icon ex-skel"></div>
                 </div>
                 <div className="ehc-info">
-                  <div className="ex-skel ex-skel-name"></div>
+                  {/* The name the link already knew — an author's, a project's —
+                      is painted the moment the page opens, in the live hero's
+                      own element, so the masthead reads while the profile is
+                      on its way. Only a page that opens on nothing but an id
+                      shows the bar. */}
+                  {seedName
+                    ? <h1 className="ehc-name" style={{ margin: 0 }}>{seedName}</h1>
+                    : <div className="ex-skel ex-skel-name"></div>}
                   {/* The metadata line every type puts under the name: an
                       author's institution, an institution's city, a project's
                       funder. It lives inside `.ehc-info` on the live page, and
