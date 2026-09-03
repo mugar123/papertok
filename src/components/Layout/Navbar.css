@@ -22,6 +22,25 @@
   border-bottom: 1px solid var(--border-default);
 }
 
+/* The first mount of the session (Navbar.jsx): the bar fades in over the
+   atom veil the auth gate just lifted, instead of popping in whole above it.
+   `both` holds opacity 0 until the animation starts, so a bar mounted in a
+   frame the main thread is busy in does not flash before its fade. */
+.navbar--arriving {
+  animation: navbarArrive 0.24s ease-out both;
+}
+
+@keyframes navbarArrive {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navbar--arriving {
+    animation: none;
+  }
+}
+
 .navbar-inner {
   height: 100%;
   max-width: 1600px;
