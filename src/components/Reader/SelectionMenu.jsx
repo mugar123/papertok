@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Highlighter, Loader2, PenLine, Sparkles } from 'lucide-react';
 import { MAX_NOTE_LENGTH } from '../../services/userHighlightService.js';
@@ -31,6 +31,7 @@ export default function SelectionMenu({
   onClose,
 }) {
   const prefersReducedMotion = useReducedMotion();
+  const noteFieldId = useId();
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState('');
   const rootRef = useRef(null);
@@ -92,11 +93,12 @@ export default function SelectionMenu({
           child, and without it the words stretch for the length of the morph. */}
       {composing ? (
         <motion.form layout={prefersReducedMotion ? false : 'position'} className="rd-menu-compose" onSubmit={submit}>
-          <span className="rd-menu-label">
+          <label className="rd-menu-label" htmlFor={noteFieldId}>
             <i className="rd-menu-pen" aria-hidden="true" />
             {copy.yourNote}
-          </span>
+          </label>
           <textarea
+            id={noteFieldId}
             ref={textareaRef}
             className="rd-menu-input"
             value={draft}
