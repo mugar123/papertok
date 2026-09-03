@@ -151,6 +151,15 @@
   align-items: center;
   gap: 6px;
   padding: 6px var(--nav-rule-inset);
+  /* Set here, not inherited: "For you" is a <button> and the other two are
+     <a>. A button's line-height is the UA's `normal`, an anchor's is the
+     body's 1.5, so at 14px the button stood 28px tall against the anchors'
+     33 — and the rule, anchored to each link's bottom edge, sat 2.5px higher
+     under "For you" than under Research or Following. Every trip from the
+     first tab to either of the others travelled that 2.5px diagonally, which
+     is the small glitch the reader saw in the slide. One line-height for the
+     three, and the rule runs level. */
+  line-height: var(--lh-normal);
   border: none;
   border-radius: var(--radius-md);
   background: none;
