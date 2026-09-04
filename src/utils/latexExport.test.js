@@ -167,6 +167,32 @@ test('a paragraph with nothing marked is just escaped prose', () => {
   assert.match(out, /\$x\^2\$/);
 });
 
+test('la marca del lector es lavado y la de la IA, punteado', () => {
+  const text = 'Los autores calculan el tiempo propio de la particula.';
+  const mine = { id: 'm', kind: 'user', quote: 'Los autores calculan' };
+  const ai = { id: 'a', kind: 'ai', quote: 'el tiempo propio' };
+  const out = renderParagraph(text, [mine, ai], LABELS);
+  assert.match(out, /\\hl\{Los autores calculan\}/);
+  assert.match(out, /\\dotuline\{el tiempo propio\}/);
+});
+
+test('una marca de la IA que cruza una fórmula sigue siendo un solo comando', () => {
+  // El mismo motivo que ya tenía \hl: dos comandos seguidos dejan una costura
+  // visible a mitad de la marca. \dotuline admite matemáticas dentro y parte
+  // entre líneas — compilado y mirado.
+  const text = 'La anchura $\\tau$ crece con la energia.';
+  const ai = { id: 'a', kind: 'ai', quote: 'La anchura $\\tau$ crece' };
+  const out = renderParagraph(text, [ai], LABELS);
+  assert.equal(out.match(/\\dotuline\{/g).length, 1);
+});
+
+test('la nota va detrás de la marca, sea del tipo que sea', () => {
+  const text = 'Los autores calculan el tiempo propio.';
+  const ai = { id: 'a', kind: 'ai', quote: 'Los autores calculan', note: 'Ojo.' };
+  const out = renderParagraph(text, [ai], LABELS);
+  assert.match(out, /\\dotuline\{Los autores calculan\}\\footnote\{\\ptkind\{IA\}/);
+});
+
 // ---------------------------------------------------------------------------
 // The document
 // ---------------------------------------------------------------------------
@@ -259,6 +285,19 @@ test('soul is only pulled in when something is actually highlighted', () => {
     annotations: [{ id: 'm', sectionId: 's1', paragraphIndex: 0, kind: 'user', quote: 'Los autores calculan' }],
   });
   assert.match(withMark.source, /\\usepackage\{soul\}/);
+});
+
+test('un documento con marcas de la IA nada más no carga soul', () => {
+  // `ulem` se carga siempre (Task 3); `soul` solo hace falta para `\hl`, y un
+  // documento con marcas de la IA pero ninguna del lector no usa `\hl`. Emitir
+  // `\sethlcolor` sin `soul` cargado no compila, así que esto es lo único que
+  // `hasHighlights` tenía que afinar.
+  const { source } = build({
+    annotations: [{ id: 'a', sectionId: 's1', paragraphIndex: 0, kind: 'ai', quote: 'Los autores calculan' }],
+  });
+  assert.doesNotMatch(source, /\\usepackage\{soul\}/);
+  assert.doesNotMatch(source, /\\sethlcolor/);
+  assert.match(source, /\\dotuline\{Los autores calculan\}/);
 });
 
 test('the document is closed exactly once', () => {

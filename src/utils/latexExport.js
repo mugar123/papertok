@@ -145,9 +145,10 @@ function emitMath(item) {
  *
  * `buildHighlightPlan` splits a range at every maths boundary, because the
  * reader's HTML cannot put a `<mark>` around KaTeX's internals. LaTeX has no
- * such problem, so consecutive marked items are merged back into one `\hl`
- * before being emitted — otherwise a highlight that crossed a formula would
- * come out as two swatches with a seam down the middle.
+ * such problem, so consecutive marked items are merged back into one command
+ * — `\hl` for the reader's, `\dotuline` for the AI's — before being emitted,
+ * otherwise a highlight that crossed a formula would come out as two commands
+ * with a seam down the middle.
  */
 export function renderParagraph(text, annotations = [], labels = {}) {
   const plan = buildHighlightPlan(text, annotations);
@@ -158,6 +159,10 @@ export function renderParagraph(text, annotations = [], labels = {}) {
   const flush = () => {
     if (!run) return;
     const body = run.parts.join('');
+    // Dos mecanismos, no dos colores: el lavado amarillo para la del lector,
+    // el punteado para la de la IA. Fotocopiadas en gris, dos fondos claros
+    // eran el mismo gris; un fondo y un punteado no se confunden nunca.
+    const command = run.kind === 'ai' ? '\\dotuline' : '\\hl';
     // A `\footnote` inside `\hl` compiles, but the marker escapes the colour and
     // leaves a gap in it. Placed just after, it reads as one mark with a number.
     // And it is a real `\footnote`, not a marker plus a `\footnotetext` gathered
@@ -167,8 +172,8 @@ export function renderParagraph(text, annotations = [], labels = {}) {
     const note = marked.find(item => item.id === run.id);
     const kind = note && (note.kind === 'ai' ? labels.ai : labels.mine);
     pieces.push(note
-      ? `\\hl{${body}}\\footnote{\\ptkind{${escapeLatexText(kind || '')}}\\quad ${escapeLatexText(note.note)}}`
-      : `\\hl{${body}}`);
+      ? `${command}{${body}}\\footnote{\\ptkind{${escapeLatexText(kind || '')}}\\quad ${escapeLatexText(note.note)}}`
+      : `${command}{${body}}`);
     run = null;
   };
 
@@ -183,7 +188,7 @@ export function renderParagraph(text, annotations = [], labels = {}) {
     if (run && run.id === (item.id || null)) run.parts.push(body);
     else {
       flush();
-      run = { id: item.id || null, parts: [body] };
+      run = { id: item.id || null, kind: item.kind || null, parts: [body] };
     }
   }
   flush();
@@ -338,7 +343,12 @@ export function buildLatexDocument({
     });
 
   const { byParagraph, numbered } = numberAnnotations(sections, kept);
-  const hasHighlights = kept.length > 0;
+  // `ulem` is always loaded (Task 3); `soul` only backs `\hl`, and a document
+  // can now hold AI marks — which render as `\dotuline`, not `\hl` — with no
+  // reader marks at all. Loading `soul` for that document would be harmless,
+  // but emitting `\sethlcolor` without it is a compile error, so this is the
+  // one thing that needed to change: whether there is a reader mark to colour.
+  const hasHighlights = kept.some(item => item.kind !== 'ai');
 
   const meta = documentMeta({
     paper, language, level, originalUrl, generatedAt,
