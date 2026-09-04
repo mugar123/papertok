@@ -247,6 +247,18 @@ function preamble(copy, hasHighlights) {
     // saldría sangrado: el primer párrafo de una sección va a bandera.
     '\\newcommand{\\ptorig}[1]{\\vspace{-5pt}\\par\\noindent'
       + '{\\ptmono\\scriptsize\\color{ptGrey}#1}\\par\\vspace{3pt}\\noindent\\ignorespaces}',
+    // Sin encabezado original no se invoca \ptorig, y nada más apaga esa
+    // misma sangría reactivada por babel — el primer párrafo de una sección
+    // así salía sangrado mientras el de una sección con encabezado no
+    // (compilado con pdflatex y mirada la página). Este macro reproduce el
+    // tramo final de \ptorig un carácter a la vez —cancela el after-sep de
+    // \titlespacing* con el mismo -5pt, lo sustituye por el mismo 3pt— para
+    // que el hueco antes del primer párrafo no cambie entre los dos casos;
+    // solo falta el texto gris de en medio, que aquí no hay. Si se retocan
+    // los números de \ptorig hay que retocar estos a la vez: no hay forma de
+    // que compartan la constante sin tocar \ptorig, que es justo lo que este
+    // arreglo tiene prohibido.
+    '\\newcommand{\\ptnoorig}{\\vspace{-5pt}\\par\\vspace{3pt}\\noindent\\ignorespaces}',
     '\\newcommand{\\ptrule}{\\noindent\\textcolor{ptRule}{\\rule{\\textwidth}{0.4pt}}}',
     '',
     // {0.62em}: con \large\bfseries, 1em deja el número descolgado del título.
@@ -366,7 +378,11 @@ export function buildLatexDocument({
     // (`originalHeading`) y hasta ahora los dos exports lo tiraban: es lo que
     // deja volver al sitio exacto del PDF original.
     const origin = String(section?.originalHeading || '').trim();
+    // Con o sin encabezado, algo tiene que apagar la sangría del primer
+    // párrafo — \ptorig lo hacía como efecto colateral de imprimir el
+    // encabezado; \ptnoorig hace solo eso.
     if (origin) lines.push(`\\ptorig{${escapeLatexText(origin)}}`);
+    else lines.push('\\ptnoorig');
     const paragraphs = Array.isArray(section?.paragraphs) ? section.paragraphs : [];
     paragraphs.forEach((paragraph, index) => {
       const key = `${section?.id}:${index}`;

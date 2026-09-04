@@ -454,3 +454,49 @@ test('el byline es una línea de texto, no una caja centrada', () => {
   assert.equal(authorLine({ authors: [{ name: 'A. Perez' }, { name: 'B. Ruiz' }] }), 'A. Perez, B. Ruiz');
   assert.doesNotMatch(authorLine({ authors: [{ name: 'A' }] }), /parbox/);
 });
+
+// ---------------------------------------------------------------------------
+// La sangría del primer párrafo (con y sin encabezado original)
+// ---------------------------------------------------------------------------
+
+test('una sección sin encabezado original abre a bandera igual que una que sí lo tiene', () => {
+  // `\ptorig` era lo único que apagaba la sangría que babel español reactiva
+  // tras `\titlespacing*{\section}` (su asterisco debería bastar y no basta
+  // con babel de por medio): una sección sin encabezado original no lo
+  // invocaba, y compilado con pdflatex y mirada la página, su primer párrafo
+  // salía sangrado mientras el de una sección con encabezado salía a
+  // bandera — el mismo documento inconsistente consigo mismo. Un documento
+  // con las dos clases de sección es el único caso que distingue los dos
+  // caminos: comprobar solo la sección con encabezado (como hacía el test de
+  // arriba) es justo lo que dejó pasar el fallo.
+  const { source } = buildLatexDocument({
+    paper: PAPER,
+    sections: [
+      { ...SECTIONS[0], id: 's1', heading: 'Con encabezado', originalHeading: '2. Methods & results' },
+      { ...SECTIONS[0], id: 's2', heading: 'Sin encabezado', originalHeading: '' },
+    ],
+    annotations: [],
+  });
+  assert.match(source, /\\section\{Con encabezado\}\n\\ptorig\{2\. Methods \\& results\}\n/);
+  assert.match(source, /\\section\{Sin encabezado\}\n\\ptnoorig\n/);
+});
+
+test('el tramo que apaga la sangría es el mismo con o sin encabezado original', () => {
+  // No basta con apagar la sangría: si el camino sin encabezado deja un
+  // espacio distinto encima del primer párrafo, es un defecto peor que el
+  // que se corrige. `\ptnoorig` tiene que cancelar el mismo after-sep de
+  // `\titlespacing*` (-5pt) y sustituirlo por el mismo hueco (3pt) que usa
+  // el tramo final de `\ptorig`, no un valor reinventado — así que los dos
+  // números se leen de la fuente en vez de repetirlos a mano en el test.
+  const { source } = buildLatexDocument({ paper: PAPER, sections: SECTIONS, annotations: [] });
+  const withOrigin = source.match(
+    /\\newcommand\{\\ptorig\}\[1\]\{\\vspace\{(-?[\d.]+pt)\}\\par\\noindent\{[\s\S]*?\\par\\vspace\{(-?[\d.]+pt)\}\\noindent\\ignorespaces\}/,
+  );
+  const withoutOrigin = source.match(
+    /\\newcommand\{\\ptnoorig\}\{\\vspace\{(-?[\d.]+pt)\}\\par\\vspace\{(-?[\d.]+pt)\}\\noindent\\ignorespaces\}/,
+  );
+  assert.ok(withOrigin, '\\ptorig debe seguir definido con el mismo tramo final');
+  assert.ok(withoutOrigin, '\\ptnoorig debe estar definido');
+  assert.equal(withoutOrigin[1], withOrigin[1], 'el after-sep cancelado debe ser el mismo número');
+  assert.equal(withoutOrigin[2], withOrigin[2], 'el hueco antes del párrafo debe ser el mismo número');
+});
