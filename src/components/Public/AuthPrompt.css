@@ -1,82 +1,160 @@
-.public-auth-prompt-backdrop {
+/* ============================================
+   AuthPrompt — sign-in without leaving the page
+
+   The in-context half of the pair: this modal signs a guest in where they
+   stand, and /login (LoginPage.css) is the same act on a page of its own, for
+   direct links and for guests bounced off a protected route. Both are drawn
+   from the same parts so they cannot drift — a white sheet (here on an ink
+   scrim), the brand mark in yellow, the headline in the edition serif, and two
+   provider buttons from the shared Button component.
+   ============================================ */
+
+.auth-modal-backdrop {
   position: fixed;
-  z-index: 1800;
   inset: 0;
+  z-index: 1800;
   display: grid;
   place-items: center;
-  padding: 20px;
-  background: rgba(4, 4, 9, 0.68);
-  backdrop-filter: blur(10px);
+  padding: var(--space-5);
+  /* No `backdrop-filter`: AuthPrompt.jsx fades this element's own opacity
+     in and out with framer-motion (`initial`/`animate`/`exit`), and a blur
+     under an animated opacity is re-resolved every frame — the worst case
+     for a mobile GPU. The ink veil alone reads as the backdrop; its 4px
+     blur was invisible under it. */
+  background: rgba(17, 19, 24, 0.5);
 }
 
-.public-auth-prompt {
+.auth-modal {
   position: relative;
-  width: min(430px, 100%);
-  padding: 28px;
-  border: 1px solid rgba(167, 139, 250, 0.28);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-elevated) 96%, #24123c);
-  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.5);
-  text-align: left;
+  width: min(400px, 100%);
+  padding: var(--space-8) var(--space-6) var(--space-5);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-xl);
+  text-align: center;
 }
 
-.public-auth-prompt-close {
+.auth-modal-close {
   position: absolute;
-  top: 12px;
-  right: 12px;
+  top: var(--space-3);
+  right: var(--space-3);
+}
+
+/* ── Brand ── */
+.auth-modal-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
+}
+
+.auth-modal-mark {
   display: grid;
-  width: 36px;
-  height: 36px;
   place-items: center;
-  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-yellow);
+  color: var(--text-on-brand);
+  font: 600 0.8125rem/1 var(--font-mono);
+  letter-spacing: 0.02em;
+  box-shadow: 2px 2px 0 var(--text-primary);
+}
+
+.auth-modal-wordmark {
+  font-size: 1.0625rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+/* The yellow only underlines the mark; it never carries the text colour. */
+.auth-modal-wordmark span {
+  box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
+}
+
+/* ── Copy ── */
+.auth-modal-title {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-serif);
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.14;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.auth-modal-lede {
+  margin: 0 auto var(--space-6);
+  max-width: 30ch;
   color: var(--text-secondary);
-}
-
-.public-auth-prompt-icon {
-  display: grid;
-  width: 44px;
-  height: 44px;
-  margin-bottom: 18px;
-  place-items: center;
-  border: 1px solid rgba(167, 139, 250, 0.32);
-  border-radius: 8px;
-  color: #c4b5fd;
-  background: rgba(124, 58, 237, 0.12);
-}
-
-.public-auth-prompt h2 {
-  margin-bottom: 9px;
-  font-size: 24px;
-  letter-spacing: 0;
-}
-
-.public-auth-prompt p {
-  margin-bottom: 22px;
-  color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
 }
 
-.public-auth-prompt-continue {
-  display: inline-flex;
-  min-height: 46px;
-  align-items: center;
-  justify-content: center;
-  gap: 9px;
-  padding: 0 18px;
-  border-radius: 7px;
-  color: #fff;
-  background: var(--accent-primary);
-  font-weight: 750;
+/* ── Provider buttons ── */
+.auth-modal-methods {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .public-auth-prompt-close:hover { background: rgba(255, 255, 255, 0.06); }
-  .public-auth-prompt-continue:hover { filter: brightness(1.08); transform: translateY(-1px); }
+.auth-provider {
+  gap: var(--space-2);
+  font-weight: var(--fw-semibold);
+}
+
+.auth-provider-icon {
+  flex: 0 0 auto;
+}
+
+.auth-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--text-primary);
+  border-radius: var(--radius-full);
+  animation: authSpin 0.7s linear infinite;
+}
+
+.auth-spinner--on-ink {
+  border-color: rgba(255, 255, 255, 0.35);
+  border-top-color: var(--text-inverse);
+}
+
+@keyframes authSpin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── States ── */
+.auth-modal-note {
+  margin: var(--space-4) 0 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-xs);
+  line-height: 1.5;
+  text-align: left;
+}
+
+.auth-modal-note--warn {
+  border: 1px solid var(--tint-amber-line);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-fg);
+}
+
+.auth-modal-note--error {
+  border: 1px solid var(--tint-red-line);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
+}
+
+.auth-modal-note strong {
+  font-weight: var(--fw-semibold);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .public-auth-prompt-close,
-  .public-auth-prompt-continue { transition: none; }
+  .auth-spinner {
+    animation: none;
+  }
 }
-

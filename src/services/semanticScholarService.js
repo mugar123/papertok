@@ -15,31 +15,36 @@
  * speaks to that route, so this module is the thin part: ask it, keep the arXiv
  * identifiers.
  */
-import { getRelatedPapers } from './relatedPapersService.js';
+import { getRelatedPapers, getSemanticScholarPaperId } from './relatedPapersService.js';
 
 const CACHE = new Map();
 const RECOMMENDATION_LIMIT = 20;
 
 /**
- * Get AI-based recommendations for a specific paper.
+ * Get AI-based recommendations for a paper.
+ *
+ * Takes the paper, not its arXiv id: a paper that came from PubMed, OpenAlex or
+ * Scopus has a DOI and no arXiv id, and `/related` takes either. Keyed by the
+ * same version-free identifier the route is asked with, so v2 and v3 of one
+ * preprint are one lookup.
  *
  * `fetchRelated` is injectable for the same reason the adapters take a fetch:
  * `getRelatedPapers` needs a Firebase session and a configured Worker origin,
  * neither of which exists under `node --test`.
  *
- * @param {string} arxivId
+ * @param {object} paper
  * @returns {Promise<string[]>} Array of recommended arXiv IDs
  */
-export async function getPaperRecommendations(arxivId, { fetchRelated = getRelatedPapers } = {}) {
-  if (!arxivId) return [];
-  const cleanId = arxivId.replace(/v\d+$/, '');
-  const cacheKey = `rec_${cleanId}`;
+export async function getPaperRecommendations(paper, { fetchRelated = getRelatedPapers } = {}) {
+  const paperId = getSemanticScholarPaperId(paper);
+  if (!paperId) return [];
+  const cacheKey = `rec_${paperId}`;
 
   if (CACHE.has(cacheKey)) return CACHE.get(cacheKey);
 
   try {
-    const related = await fetchRelated({ arxivId: cleanId }, RECOMMENDATION_LIMIT);
-    const arxivIds = related.map(paper => paper.arxivId).filter(Boolean);
+    const related = await fetchRelated(paper, RECOMMENDATION_LIMIT);
+    const arxivIds = related.map(item => item.arxivId).filter(Boolean);
     CACHE.set(cacheKey, arxivIds);
     return arxivIds;
   } catch (error) {

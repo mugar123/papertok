@@ -4,8 +4,13 @@ import {
   AIExplanationError,
   checkAIProviderHealth,
   handleAIExplanation,
+  isDeepseekConfigured,
   isKimiConfigured,
+  peekAIQuota,
+  verifyFirebaseAccount,
 } from './ai-explanation.js';
+import { handlePaperRewrite } from './ai-rewrite.js';
+import { handlePassageAnnotation } from './ai-annotation.js';
 import {
   checkEmailProviderHealth,
   EmailNotificationError,
@@ -28,14 +33,35 @@ import {
   PUBLIC_LIST_PATHS,
   PublicListApiError,
 } from './public-list-api.js';
+import {
+  ACCOUNT_DELETE_PATH,
+  AccountDeletionError,
+  handleAccountDeletionRequest,
+} from './account-deletion.js';
+import {
+  fetchPaperFigures,
+  FIGURE_CACHE_SECONDS,
+  FIGURE_EMPTY_CACHE_SECONDS,
+  isArxivFigureId,
+} from './paper-figures.js';
+import {
+  handleThreadAnchorRequest,
+  threadAnchorErrorResponse,
+} from './thread-anchor.js';
 import { isServiceAccountConfigured } from './firestore-admin.js';
 import { reserveRequestQuota } from './request-quota-ledger.js';
+import { awaitUpstreamSlot } from './upstream-pace.js';
 
 export { KimiBudgetLedger } from './kimi-budget-ledger.js';
 export { EmailDeliveryLedger } from './email-delivery-ledger.js';
 export { RequestQuotaLedger } from './request-quota-ledger.js';
 
+// `mugar123.github.io` sigue en la lista: GitHub Pages redirige el sitio viejo
+// al dominio nuevo, pero un service worker ya instalado alli puede servir el
+// bundle cacheado una vez mas antes de ver la redireccion.
 const DEFAULT_ALLOWED_ORIGINS = [
+  'https://papertok.app',
+  'https://www.papertok.app',
   'https://mugar123.github.io',
   'http://localhost:5173',
   'http://127.0.0.1:5173',
@@ -50,6 +76,7 @@ const ARXIV_UPSTREAM_TIMEOUT_MS = 5000;
 
 const CACHE_SECONDS = 6 * 60 * 60;
 const RELATED_CACHE_SECONDS = 24 * 60 * 60;
+const RELATED_UPSTREAM_LIMIT = 20;
 const CITATION_GRAPH_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const OA_CACHE_SECONDS = 7 * 24 * 60 * 60;
 const ARXIV_CACHE_SECONDS = 10 * 60;
@@ -162,16 +189,72 @@ const DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT = 2_000;
 // the same Semantic Scholar allowance, and a ceiling that only covered one of
 // them would leave alive exactly the failure this replaces -- a limiter that
 // counts per caller instead of per provider.
+//
+// `paced` puts a route on the one-a-second beat of `upstream-pace.js` under its
+// minute ceiling. Semantic Scholar is the provider that needs it: it admits one
+// request per second per key, and a per-minute ceiling of sixty is the same
+// average with no say over which second. PubMed is not paced: the key buys ten
+// a second and `withPubmedRetry` absorbs the burst.
 const DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT = 60;
 const DEFAULT_S2_GLOBAL_MINUTE_LIMIT = 60;
 const SHARED_MINUTE_CEILINGS = Object.freeze({
-  // 60 route misses a minute are at most 180 E-utilities calls -- three per miss
-  // -- which is the 3 req/s NCBI allows without a key. `NCBI_API_KEY` raises the
-  // upstream allowance to 10 req/s; the variable is what raises this to match.
+  // Each miss spends three E-utilities calls, six if every one is refused once
+  // and retried -- what NCBI actually refuses is per-second bursts, which no
+  // per-minute ceiling can see; `withPubmedRetry` is what absorbs those. So 60
+  // route misses a minute are at most 360 calls, and `NCBI_API_KEY` (10 req/s)
+  // buys 100 misses a minute at that worst case. 60 is a deliberate margin, not
+  // the anonymous 3 req/s it once mirrored, and it has never been the binding
+  // limit (151/151 reservations accepted, 2026-09-01).
   '/sources/pubmed': { namespace: 'pubmed', variable: 'PUBMED_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_PUBMED_GLOBAL_MINUTE_LIMIT },
-  '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT },
-  '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT },
+  '/sources/s2': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
+  '/related': { namespace: 's2', variable: 'S2_GLOBAL_MINUTE_LIMIT', fallback: DEFAULT_S2_GLOBAL_MINUTE_LIMIT, paced: true },
 });
+
+// What the router tells a client to wait when the upstream refused without
+// saying for how long. Semantic Scholar's 429 carries no `retry-after` (measured
+// 2026-09-03) and its window is one second: the introductory key admits one
+// request per second and refuses the rest of that second at once, so a minute
+// is fifty-nine seconds of a reader waiting for a slot that opened long ago. A
+// minute stays the answer everywhere else, where the window really is a minute.
+const UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS = Object.freeze({
+  '/sources/s2': '2',
+  '/related': '2',
+});
+const DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS = '60';
+
+function upstreamRetryAfter(pathname, error) {
+  return error?.retryAfter
+    || UPSTREAM_RETRY_AFTER_FALLBACK_SECONDS[pathname]
+    || DEFAULT_UPSTREAM_RETRY_AFTER_SECONDS;
+}
+
+// One mapping for every route that spends a provider. `/sources/*` had it and
+// `/related` did not, so the same Semantic Scholar 429 reached the browser from
+// one route as `429 UPSTREAM_RATE_LIMITED retry-after` and from the other as
+// `502 Related papers unavailable` -- the one shape a client retries at once,
+// which is the one thing that makes a rate limit worse.
+function upstreamFailureResponse(pathname, error, origin, env, label) {
+  const isScopus = pathname === '/sources/scopus';
+  const rateLimited = error?.status === 429;
+  // `AbortSignal.timeout` rejects with a `TimeoutError`, and a stall has no
+  // status to relay -- so it gets a name instead of the generic 502 body.
+  const timedOut = error?.name === 'TimeoutError';
+  const status = rateLimited ? 429 : 502;
+  return json({
+    error: label,
+    ...(rateLimited ? { code: 'UPSTREAM_RATE_LIMITED' } : {}),
+    ...(timedOut ? { code: 'UPSTREAM_TIMEOUT' } : {}),
+    // For every route, not only Scopus: a 400 we caused and an outage they had
+    // both used to leave here as the same 502, and the number that told them
+    // apart stayed in `wrangler tail` -- which is how the OpenReview `tcdate`
+    // bug went unseen for weeks.
+    ...(error?.status ? { upstreamStatus: error.status } : {}),
+    ...(isScopus && error?.resetAt ? { resetAt: error.resetAt } : {}),
+  }, status, {
+    ...corsHeaders(origin, env),
+    ...(rateLimited ? { 'retry-after': upstreamRetryAfter(pathname, error) } : {}),
+  });
+}
 
 function json(data, status = 200, headers = {}) {
   return new Response(JSON.stringify(data), {
@@ -368,6 +451,30 @@ async function reserveSharedMinuteQuota(request, env, origin) {
   return null;
 }
 
+// The beat under the ceiling, for the providers that count per second. It runs
+// last of the three gates because it is the only one that costs wall-clock: a
+// caller the minute ceiling or the identity quota is about to turn away must not
+// first take a second away from somebody who would have used it.
+async function awaitSharedPace(request, env, origin) {
+  const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
+  if (!ceiling?.paced) return null;
+  const slot = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, { namespace: ceiling.namespace });
+  if (slot.accepted) return null;
+  if (slot.code) {
+    return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+      ...corsHeaders(origin, env),
+      'cache-control': 'no-store',
+    });
+  }
+  // Two seconds, not a minute: the next free second is at most 2.5 s away and
+  // the caller is being told to come back, not to give up.
+  return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+    ...corsHeaders(origin, env),
+    'cache-control': 'no-store',
+    'retry-after': '2',
+  });
+}
+
 // `ttl` may be a function of the payload, because whether an answer deserves its
 // full TTL is something only the fetcher's result can say: a 200 assembled from a
 // fallback after the real provider refused is not worth six hours.
@@ -379,6 +486,8 @@ async function cacheResponse(request, origin, env, ttl, fetcher, options = {}) {
   if (sharedQuotaError) return sharedQuotaError;
   const quotaError = await reserveProtectedProviderQuota(options.identity || null, env, origin);
   if (quotaError) return quotaError;
+  const paceError = await awaitSharedPace(request, env, origin);
+  if (paceError) return paceError;
   if (options.openAlexCalls) {
     const budgetError = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
     if (budgetError) return budgetError;
@@ -410,19 +519,28 @@ async function handleRelated(request, env, identity) {
   if (!/^(?:DOI:10\.|ARXIV:|[a-f0-9]{40}$)/i.test(paperId) || paperId.length > 300) {
     return json({ error: 'Invalid paper id' }, 400, corsHeaders(origin, env));
   }
-  // Twenty, not the eight-of-ten the other routes use: the feed's recommendation
-  // seeding asked Semantic Scholar for twenty directly, and this route is what it
-  // now goes through.
-  const limit = getSafeLimit(requestUrl.searchParams.get('limit'), 8, 20);
+  // Twenty, always. The feed seeds from twenty and the sheet shows eight; when
+  // `limit` was part of the cache key those were two misses and two provider
+  // calls for one list of which the second is a prefix of the first. The client
+  // trims what it shows. `limit` is still accepted so an older bundle keeps
+  // working; it just no longer changes the question.
   return cacheResponse(request, origin, env, RELATED_CACHE_SECONDS, async () => {
     const fields = 'paperId,title,abstract,authors,year,externalIds,url,venue,publicationDate,citationCount,isOpenAccess,openAccessPdf,publicationTypes';
-    const url = `https://api.semanticscholar.org/recommendations/v1/papers/forpaper/${encodeURIComponent(paperId)}?fields=${encodeURIComponent(fields)}&limit=${limit}`;
-    const headers = { accept: 'application/json' };
-    if (env.SEMANTIC_SCHOLAR_API_KEY) headers['x-api-key'] = env.SEMANTIC_SCHOLAR_API_KEY;
-    const response = await fetchWithDeadline(url, { headers }, SOURCE_UPSTREAM_TIMEOUT_MS);
-    if (!response.ok) throw new Error(`Semantic Scholar error: ${response.status}`);
-    return response.json();
-  }, { identity, canonicalParams: { paper_id: paperId, limit: String(limit) } });
+    const url = `https://api.semanticscholar.org/recommendations/v1/papers/forpaper/${encodeURIComponent(paperId)}?fields=${encodeURIComponent(fields)}&limit=${RELATED_UPSTREAM_LIMIT}`;
+    // Through the source helper, not a bare `fetchWithDeadline`: this used to
+    // throw a plain Error with the status in its message and nothing on the
+    // error itself, which is why the router could only ever answer 502. Six
+    // seconds for this fetch -- but `awaitSharedPace` runs ahead of it in
+    // `cacheResponse` and can itself add up to 2.5 s of sleep plus a couple of
+    // ledger round trips, so the two no longer share a separate margin against
+    // the browser. The client's abort budget for this route
+    // (`relatedPapersService.js`) was raised from 8 s to 11 s to hold both,
+    // rather than shrinking this deadline to carve room out of it: that would
+    // hand a contended request -- one that hit the beat's wait precisely
+    // because Semantic Scholar is already under pressure -- less time to talk
+    // to a provider that is by hypothesis already slow.
+    return fetchJsonUpstream(url, env.SEMANTIC_SCHOLAR_API_KEY ? { 'x-api-key': env.SEMANTIC_SCHOLAR_API_KEY } : {});
+  }, { identity, canonicalParams: { paper_id: paperId } });
 }
 
 // Every upstream call in this file goes through here, and the deadline covers
@@ -982,6 +1100,48 @@ function pubmedUrl(endpoint, env, params) {
   return url;
 }
 
+// NCBI counts per second, and a burst of route misses spends the calls in
+// parallel: eight misses are eight esearch calls at once and then sixteen
+// esummary+efetch calls at once, past the 10 req/s the key buys. Measured
+// 2026-09-01 and reproduced 2026-09-02: 8 concurrent misses, 3 refused with a
+// 429. The window is a second, so one retry after a short, jittered wait lands
+// in the next one. One, not more: a second refusal means the key is exhausted,
+// and that is the ledger's problem, not this route's. And when NCBI names a
+// wait longer than the two seconds `PUBMED_RETRY_MAX_MS` allows, the refusal
+// is relayed as it is: each fetch is already budgeted six seconds
+// (`SOURCE_UPSTREAM_TIMEOUT_MS`), and stacking a longer wait on top of that is
+// more than the caller of that fetch is waiting for -- the client already
+// knows what a 429 with `retry-after` means.
+const PUBMED_RETRY_BASE_MS = 300;
+const PUBMED_RETRY_JITTER_MS = 500;
+const PUBMED_RETRY_MAX_MS = 2_000;
+
+function pubmedRetryDelayMs(error) {
+  if (error?.status !== 429) return null;
+  // Trimmed so a whitespace-only value takes the empty branch instead of
+  // coercing to the number 0 and reading as an advertised instant retry.
+  const advertised = String(error.retryAfter ?? '').trim();
+  if (advertised !== '') {
+    const advertisedMs = Number(advertised) * 1000;
+    // A negative number is nonsense from upstream, not a request to retry
+    // instantly -- it must not be more aggressive than a legitimate `0`.
+    if (!Number.isFinite(advertisedMs) || advertisedMs < 0) return null;
+    return advertisedMs <= PUBMED_RETRY_MAX_MS ? advertisedMs : null;
+  }
+  return PUBMED_RETRY_BASE_MS + Math.random() * PUBMED_RETRY_JITTER_MS;
+}
+
+async function withPubmedRetry(attempt) {
+  try {
+    return await attempt();
+  } catch (error) {
+    const delayMs = pubmedRetryDelayMs(error);
+    if (delayMs === null) throw error;
+    await new Promise(resolve => setTimeout(resolve, delayMs));
+    return attempt();
+  }
+}
+
 // E-utilities cannot answer a search in one call: esearch returns identifiers,
 // esummary returns the records, and efetch is the only one that carries the
 // abstract. Run from the browser that was three serial round trips per feed load
@@ -1004,13 +1164,13 @@ async function handlePubmed(request, env) {
     : SOURCE_CACHE_SECONDS.pubmed);
 
   return cacheResponse(request, context.origin, env, ttl, async () => {
-    const search = await fetchJsonUpstream(pubmedUrl('esearch.fcgi', env, {
+    const search = await withPubmedRetry(() => fetchJsonUpstream(pubmedUrl('esearch.fcgi', env, {
       db: 'pubmed',
       term: query,
       retmode: 'json',
       retmax: String(context.limit),
       retstart: String((context.page - 1) * context.limit),
-    }));
+    })));
     const esearchresult = search?.esearchresult || {};
     // Identifiers go straight back into two upstream URLs, so anything that is
     // not a PubMed identifier is dropped rather than forwarded.
@@ -1022,16 +1182,16 @@ async function handlePubmed(request, env) {
     }
 
     const [summary, efetch] = await Promise.all([
-      fetchJsonUpstream(pubmedUrl('esummary.fcgi', env, {
+      withPubmedRetry(() => fetchJsonUpstream(pubmedUrl('esummary.fcgi', env, {
         db: 'pubmed',
         id: pmids.join(','),
         retmode: 'json',
-      })),
+      }))),
       // The abstract half is enrichment: the client already falls back to OpenAlex
       // and Europe PMC when it is missing, so losing efetch must not lose the
       // records esummary did return. The marker is what tells a reader -- and the
       // TTL policy -- that this answer is the degraded one.
-      fetchPubmedArticleXml(pmids, env).catch(() => ''),
+      withPubmedRetry(() => fetchPubmedArticleXml(pmids, env)).catch(() => ''),
     ]);
 
     return {
@@ -1051,14 +1211,23 @@ async function fetchPubmedArticleXml(pmids, env) {
       'user-agent': 'PaperTok/1.0 (mailto:app@papertok.io)',
     },
   }, SOURCE_UPSTREAM_TIMEOUT_MS);
-  if (!response.ok) throw new Error(`PubMed efetch error: ${response.status}`);
+  if (!response.ok) {
+    // Same shape as `fetchJsonWithTimeout`'s error, so the retry can tell a 429
+    // from a 503 and honour the wait NCBI advertised, if it advertised one.
+    const error = new Error(`PubMed efetch error: ${response.status}`);
+    error.status = response.status;
+    error.retryAfter = response.headers.get('retry-after') || '';
+    throw error;
+  }
   // Read under the same deadline that covered the headers: efetch answers the
   // largest body of the three and a document that stops halfway is a stall, not a
   // short answer.
   return response.text();
 }
 
-const S2_SEARCH_FIELDS = 'paperId,title,abstract,authors,year,isOpenAccess,venue,publicationTypes,citationCount,referenceCount,openAccessPdf';
+// `externalIds` carries the DOI and the arXiv id; without them a paper from
+// this source is known only by its S2 hash, which no paper page can load.
+const S2_SEARCH_FIELDS = 'paperId,title,abstract,authors,year,isOpenAccess,venue,publicationTypes,citationCount,referenceCount,openAccessPdf,externalIds';
 const S2_MAX_LIMIT = 25;
 const S2_MAX_OFFSET = 1_000;
 
@@ -1128,6 +1297,13 @@ function isOpenReviewSubmission(note) {
   ].some(prefix => domain.startsWith(prefix));
 }
 
+// The date the card shows. `mapOpenReviewNote` builds `published` from `pdate`,
+// then `cdate`, then `tcdate`; an order that disagrees with the date printed on
+// the card reads as no order at all, so the Worker sorts by the same precedence.
+function openReviewNoteDate(note) {
+  return Number(note?.pdate || note?.cdate || note?.tcdate) || 0;
+}
+
 async function handleOpenReview(request, env) {
   const context = sourceRequestContext(request, env);
   if (context.error) return context.error;
@@ -1140,13 +1316,18 @@ async function handleOpenReview(request, env) {
     url.searchParams.set('source', 'forum');
     url.searchParams.set('limit', String(Math.min(50, context.limit * 3)));
     url.searchParams.set('offset', String((context.page - 1) * context.limit));
-    if (context.sort === 'recent') url.searchParams.set('sort', 'tcdate:desc');
+    // No `sort` on the URL. api2's search accepts `cdate:desc` (and refuses
+    // `tcdate`, `mdate` and `pdate` with a 400) but does not act on it: measured
+    // 2026-09-02, `cdate:asc`, `cdate:desc`, `tmdate:*` and no sort at all
+    // returned the same sequence for three different queries. Recency is
+    // therefore ours to produce, over the relevance pool `limit * 3` fetches.
     const payload = await fetchJsonUpstream(url);
+    const notes = (payload?.notes || []).filter(isOpenReviewSubmission);
+    if (context.sort === 'recent') {
+      notes.sort((a, b) => openReviewNoteDate(b) - openReviewNoteDate(a));
+    }
     return {
-      notes: (payload?.notes || [])
-        .filter(isOpenReviewSubmission)
-        .slice(0, context.limit)
-        .map(compactOpenReviewNote),
+      notes: notes.slice(0, context.limit).map(compactOpenReviewNote),
       count: Number(payload?.count) || 0,
     };
   }, { canonicalParams: sourceCacheParams(context, { q: query, sort: context.sort }) });
@@ -1232,6 +1413,27 @@ async function handleHuggingFaceResources(request, env) {
       })),
     };
   }, { canonicalParams: { arxiv_id: arxivId } });
+}
+
+async function handlePaperFigures(request, env) {
+  const requestUrl = new URL(request.url);
+  const origin = request.headers.get('origin') || '';
+  if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+  const arxivId = String(requestUrl.searchParams.get('arxiv_id') || '').trim().replace(/v\d+$/i, '');
+  if (!isArxivFigureId(arxivId)) {
+    return json({ error: 'Invalid arXiv identifier' }, 400, corsHeaders(origin, env));
+  }
+
+  // A paper that yielded nothing is retried in an hour rather than in a month:
+  // the renderers publish HTML for new papers on their own schedule.
+  return cacheResponse(
+    request,
+    origin,
+    env,
+    (payload) => (payload?.figures?.length ? FIGURE_CACHE_SECONDS : FIGURE_EMPTY_CACHE_SECONDS),
+    () => fetchPaperFigures(arxivId),
+    { canonicalParams: { arxiv_id: arxivId } },
+  );
 }
 
 async function handleCore(request, env, identity) {
@@ -1908,6 +2110,7 @@ const DOMAIN_SOURCE_HANDLERS = {
   '/sources/huggingface': handleHuggingFacePapers,
   '/enrich/icite': handleICite,
   '/resources/huggingface': handleHuggingFaceResources,
+  '/resources/figures': handlePaperFigures,
 };
 
 export default {
@@ -1925,6 +2128,46 @@ export default {
         },
       });
     }
+    // Cloudflare sirve su propio robots.txt gestionado para cualquier host de
+    // una zona, y por defecto dice `Allow: /`. Para una API eso esta al reves:
+    // nada enlaza a estas rutas, pero un rastreador que las encuentre gasta los
+    // presupuestos de OpenAlex, PubMed y Semantic Scholar, que son globales y no
+    // por llamante -- la misma bolsa de la que lee el feed de invitados. Se
+    // contesta antes que nada porque un rastreador no manda `origin`.
+    //
+    // Medido el 2026-09-01: en `api.papertok.app` Cloudflare intercepta
+    // /robots.txt ANTES que el Worker, asi que esta ruta solo se ve hoy en
+    // `papertok-report-api.*.workers.dev`. No esta rota: entra en vigor en el
+    // dominio propio en cuanto se apague el robots.txt gestionado de la zona
+    // (panel de Cloudflare, AI Crawl Control). Antes de tocarla, comprueba cual
+    // de los dos esta contestando.
+    if (url.pathname === '/robots.txt') {
+      return new Response('User-agent: *\nDisallow: /\n', {
+        status: 200,
+        headers: {
+          'content-type': 'text/plain; charset=utf-8',
+          'cache-control': 'public, max-age=86400',
+        },
+      });
+    }
+    if (url.pathname === '/thread-anchor' || url.pathname === '/thread-anchor/invalidate') {
+      // Public comments: a guest can open a thread, so this is origin-gated
+      // rather than session-gated — and `Origin` is required, not optional:
+      // every fetch from the app is cross-origin and carries it, and a request
+      // without one is not a browser of ours. Invalidation still requires a
+      // Firebase identity because it is a write against the shared cache.
+      if (!origin || !allowedOrigins(env).has(origin)) {
+        return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
+      }
+      try {
+        return await handleThreadAnchorRequest(request, env, url, {
+          cors: corsHeaders(origin, env),
+        });
+      } catch (error) {
+        console.error('Thread anchor failed', error);
+        return threadAnchorErrorResponse(error, corsHeaders(origin, env));
+      }
+    }
     if (url.pathname === '/notifications/unsubscribe' && ['GET', 'POST'].includes(request.method)) {
       return handleEmailUnsubscribe(request, env);
     }
@@ -1939,6 +2182,24 @@ export default {
       } catch (error) {
         const knownError = error instanceof EmailNotificationError;
         return json({ code: knownError ? error.code : 'EMAIL_UNAVAILABLE' }, knownError ? error.status : 502, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'no-store',
+        });
+      }
+    }
+    if (url.pathname === ACCOUNT_DELETE_PATH) {
+      if (!origin || !allowedOrigins(env).has(origin)) {
+        return json({ code: 'ORIGIN_NOT_ALLOWED' }, 403, { 'cache-control': 'no-store' });
+      }
+      try {
+        const payload = await handleAccountDeletionRequest(request, env);
+        return json(payload, payload.complete ? 200 : 202, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'private, no-store',
+        });
+      } catch (error) {
+        const known = error instanceof AccountDeletionError || error instanceof WorkerAuthError;
+        return json({ code: known ? error.code : 'ACCOUNT_DELETION_FAILED' }, known ? error.status : 502, {
           ...corsHeaders(origin, env),
           'cache-control': 'no-store',
         });
@@ -1985,6 +2246,54 @@ export default {
         );
       }
     }
+    // One passage, explained in place. Same daily allowance as the other two —
+    // it is the same model doing the same kind of work, just less of it — so it
+    // is deliberately NOT free: a route that spends nothing is a route with no
+    // ceiling.
+    if (url.pathname === '/ai/annotate') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      try {
+        const payload = await handlePassageAnnotation(request, env);
+        return json(payload, 200, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'private, no-store',
+        });
+      } catch (error) {
+        const knownError = error instanceof AIExplanationError;
+        return json(
+          {
+            code: knownError ? error.code : 'AI_UNAVAILABLE',
+            ...(knownError && error.quota ? { quota: error.quota } : {}),
+          },
+          knownError ? error.status : 502,
+          { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+        );
+      }
+    }
+    if (url.pathname === '/ai/rewrite') {
+      if (request.method !== 'POST') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
+      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      try {
+        // The handler answers with the response itself rather than a payload to
+        // wrap: a rewrite is streamed as NDJSON and its first line has to leave
+        // before the last one exists, so there is nothing here to serialize. That
+        // is also why CORS goes in as `extraHeaders` — those headers have to be
+        // on the streaming response when it is created, not added to a body this
+        // function never sees.
+        return await handlePaperRewrite(request, env, corsHeaders(origin, env));
+      } catch (error) {
+        const knownError = error instanceof AIExplanationError;
+        return json(
+          {
+            code: knownError ? error.code : 'AI_UNAVAILABLE',
+            ...(knownError && error.quota ? { quota: error.quota } : {}),
+          },
+          knownError ? error.status : 502,
+          { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+        );
+      }
+    }
     if (request.method !== 'GET') return json({ error: 'Method not allowed' }, 405, corsHeaders(origin, env));
     if (url.pathname === '/locale') {
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
@@ -1997,13 +2306,19 @@ export default {
     if (url.pathname === '/health') {
       return json({
         ok: true,
-        aiConfigured: Boolean(env.GEMINI_API_KEY || isKimiConfigured(env)),
+        aiConfigured: Boolean(env.GEMINI_API_KEY || isDeepseekConfigured(env) || isKimiConfigured(env)),
         openAlexConfigured: Boolean(env.OPENALEX_API_KEY),
         adsConfigured: Boolean(env.NASA_ADS_API_TOKEN),
         scopusConfigured: isScopusEgressConfigured(env),
         // Absent means PubMed runs on NCBI's anonymous 3 req/s rather than 10, so
         // it belongs in the report even though the route works without it.
         pubmedKeyConfigured: Boolean(env.NCBI_API_KEY),
+        // Not the same kind of flag as PubMed's, despite the shape. Measured on
+        // 2026-08-24, Semantic Scholar's anonymous pool refused 9 of 10 requests
+        // from the Worker and 10 of 10 from a residential address, so absent here
+        // does not mean "slower": it means `/sources/s2` and `/related` are dead.
+        // Present has been the difference between 0/6 and 5/6 since 2026-09-02.
+        semanticScholarKeyConfigured: Boolean(env.SEMANTIC_SCHOLAR_API_KEY),
         emailConfigured: Boolean(
           env.NOTIFICATION_STORE
           && ((env.BREVO_API_KEY && env.BREVO_FROM_EMAIL) || env.RESEND_API_KEY),
@@ -2087,6 +2402,27 @@ export default {
       }
       return response;
     }
+    // Read-only, and deliberately its own route rather than a field on
+    // `/health/ai`: this one is per user and needs a session, and health is
+    // public. The reader asks for it when it opens so it can show the remaining
+    // daily uses without spending one to find out.
+    if (url.pathname === '/ai/quota') {
+      if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
+      try {
+        const account = await verifyFirebaseAccount(request, env);
+        return json(await peekAIQuota(env, account.uid, { unlimited: account.unlimitedAI }), 200, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'private, no-store',
+        });
+      } catch (error) {
+        const knownError = error instanceof AIExplanationError;
+        return json(
+          { code: knownError ? error.code : 'AI_UNAVAILABLE' },
+          knownError ? error.status : 502,
+          { ...corsHeaders(origin, env), 'cache-control': 'no-store' },
+        );
+      }
+    }
     if (url.pathname === '/health/ai') {
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
       const health = await checkAIProviderHealth(env);
@@ -2117,8 +2453,9 @@ export default {
     if (url.pathname === '/related') {
       try {
         return await handleRelated(request, env, protectedIdentity);
-      } catch {
-        return json({ error: 'Related papers unavailable' }, 502, corsHeaders(origin, env));
+      } catch (error) {
+        console.error('Related papers failed', error);
+        return upstreamFailureResponse('/related', error, origin, env, 'Related papers unavailable');
       }
     }
     if (url.pathname === '/citation-graph') {
@@ -2148,22 +2485,8 @@ export default {
         return await DOMAIN_SOURCE_HANDLERS[url.pathname](request, env, protectedIdentity);
       } catch (error) {
         console.error(`Specialist source failed: ${url.pathname}`, error);
-        const isScopus = url.pathname === '/sources/scopus';
-        // A refusal relayed as a 502 reads as "this source is broken", and a
-        // client that believes that retries at once -- which is the one thing
-        // that makes a rate limit worse. Scopus already relayed its own 429;
-        // every source route does now, because every one of them can be refused.
-        const rateLimited = error.status === 429;
-        const status = rateLimited ? 429 : 502;
-        return json({
-          error: isScopus ? 'Scopus unavailable' : 'Specialist source unavailable',
-          ...(rateLimited ? { code: 'UPSTREAM_RATE_LIMITED' } : {}),
-          ...(isScopus && error.status ? { upstreamStatus: error.status } : {}),
-          ...(isScopus && error.resetAt ? { resetAt: error.resetAt } : {}),
-        }, status, {
-          ...corsHeaders(origin, env),
-          ...(rateLimited ? { 'retry-after': error.retryAfter || '60' } : {}),
-        });
+        const label = url.pathname === '/sources/scopus' ? 'Scopus unavailable' : 'Specialist source unavailable';
+        return upstreamFailureResponse(url.pathname, error, origin, env, label);
       }
     }
     return json({ error: 'Not found' }, 404, corsHeaders(origin, env));

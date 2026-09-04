@@ -9,6 +9,7 @@ import { getPapersByProject, getProjectDetails } from '../../services/openAireSe
 import { PaperBuilder } from '../../services/PaperBuilder';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService';
 import {
+  entityPapersRequestKey,
   filterAndSortEntityPapers,
   getPaperCitationCount,
   hasKnownPaperCitationCount,
@@ -16,10 +17,14 @@ import {
 } from '../../utils/entityExplorer';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
+import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
+import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.js';
+import { Button } from '../ui/button.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
 import PaperCard from '../Feed/PaperCard';
+import PaperOverlay from '../Feed/PaperOverlay';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
 import RecentImpactStat from './RecentImpactStat';
@@ -33,7 +38,6 @@ import { getEntityWikiInfo } from '../../services/wikiService';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { safeExternalUrl } from '../../utils/externalUrl.js';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { usePublicPageMetadata } from '../../hooks/usePublicPageMetadata.js';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { getPublicEntityPath, getPublicEntityUrl } from '../../utils/publicNavigation.js';
@@ -42,6 +46,56 @@ import './EntityExplorer.css';
 
 const ENTITY_PRIMARY_RENDER_BUDGET_MS = 7000;
 const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
+// The gap `.explorer-hero-content` stacks its blocks with (`--space-4`, 1rem).
+// A block that folds away takes its gap with it, so the fold animates this
+// much negative margin alongside its height: the box reaches nothing before
+// it unmounts, and nothing below it moves at unmount.
+const HERO_STACK_GAP_PX = 16;
+
+
+/**
+ * The ORCID card before it has a name in it.
+ *
+ * Written once and used twice — by the page's own skeleton while the entity is
+ * resolving, and by the ORCID fetch that follows it — because the two run back
+ * to back on an author page and any difference between them is a step the
+ * reader watches happen. It reserves the card's header and nothing else: that
+ * is the part every verified profile has, and the three body lines this used
+ * to show were promising a biography most authors do not have, reserving 148px
+ * against the 96px that arrives.
+ */
+const OrcidCardSkeleton = () => (
+  <div className="orcid-skeleton" aria-hidden="true">
+    <div className="orcid-skeleton-header">
+      <div className="ex-skel ex-skel-avatar" />
+      <div className="ex-skel-stack">
+        <div className="ex-skel ex-skel-sub ex-skel-sub--short" />
+        <div className="ex-skel ex-skel-sub ex-skel-orcid-id" />
+      </div>
+      <div className="ex-skel ex-skel-orcid-action" />
+    </div>
+  </div>
+);
+
+/**
+ * The Wikipedia paragraph before it has been fetched.
+ *
+ * The same five rows the live block uses while its own request is in flight —
+ * three lines of clamped prose, the show-more toggle, the source links — so an
+ * institution's skeleton hands over to the live hero without the description
+ * moving.
+ */
+const WikiBlockSkeleton = () => (
+  <div className="ehc-wiki is-loading ehc-wiki--reserved" aria-hidden="true">
+    <div className="ehc-wiki-skeleton">
+      <span />
+      <span />
+      <span />
+      <span className="ehc-wiki-skeleton-toggle" />
+      <span className="ehc-wiki-skeleton-links" />
+    </div>
+  </div>
+);
 
 const handleActivationKey = (event, action) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
@@ -80,7 +134,7 @@ export default function EntityExplorer({
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
-    toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip,
+    interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
 
   const [entity, setEntity] = useState(null);
@@ -88,7 +142,11 @@ export default function EntityExplorer({
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState([]);
   const [isLoadingEntity, setIsLoadingEntity] = useState(true);
-  const [isLoadingPapers, setIsLoadingPapers] = useState(false);
+  // True from the start, and re-armed by every entity load: the live page's
+  // first frame comes before the effect that requests the papers, and with
+  // this false that frame showed the empty-state copy — "no results matched"
+  // — between the hero landing and the rows' shapes taking over.
+  const [isLoadingPapers, setIsLoadingPapers] = useState(true);
   const [papersError, setPapersError] = useState(null);
   const [papersReloadKey, setPapersReloadKey] = useState(0);
   const [sortBy, setSortBy] = useState('cited_by_count:desc');
@@ -98,7 +156,6 @@ export default function EntityExplorer({
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaperToView, setPdfPaperToView] = useState(null);
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
-  const selectedPaperDialogRef = useDialogFocus(Boolean(selectedPaper && !pdfPaperToView), closeSelectedPaper);
   const [wikiInfo, setWikiInfo] = useState(null);
   const [settledWikiRequestKey, setSettledWikiRequestKey] = useState('');
   const [loadedWikiImageUrl, setLoadedWikiImageUrl] = useState('');
@@ -110,8 +167,19 @@ export default function EntityExplorer({
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const observerRef = useRef(null);
+  const papersRequestRef = useRef(null);
 
   const [activeTab, setActiveTab] = useState('papers');
+  // Whether the Authors tab has been opened on this entity. The list is
+  // requested then and kept from then on; `activeTab` no longer drives the
+  // fetch, so leaving the tab does not cancel it and coming back does not
+  // repeat it.
+  const [authorsOpened, setAuthorsOpened] = useState(false);
+  // Open by default: the experience is the answer to "who is this person", which
+  // is what the page is for. Hiding it behind the briefcase made the page open
+  // on numbers alone and left the one human fact a click away. The toggle stays,
+  // so it can still be folded out of the way.
+  const [isExperienceOpen, setIsExperienceOpen] = useState(true);
   const [expandedSummary, setExpandedSummary] = useState(false);
   const [participantsExpanded, setParticipantsExpanded] = useState(false);
   const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(false);
@@ -159,6 +227,11 @@ export default function EntityExplorer({
     () => entity ? getPublicEntityPath(type, id) : null,
     [entity, id, type],
   );
+  // The entity's research field, resolved to a flat ink colour so the header
+  // rule, type label and tinted marks read as the field rather than chrome.
+  const entityAccent = useMemo(() => getAreaGradient(
+    entity?.categoryIds?.[0] || entity?.categories?.[0] || entity?.primaryCategory || '',
+  ), [entity]);
   const publicEntityUrl = useMemo(
     () => entity ? getPublicEntityUrl(type, id) : null,
     [entity, id, type],
@@ -202,11 +275,34 @@ export default function EntityExplorer({
     }
     navigate(`/explorer/${nextType}/${encodeURIComponent(nextId)}`);
   }, [navigate, publicMode]);
+  // What the masthead can say before the entity answers: the `?name=` a link
+  // hands over (an author opened by OpenAlex id, a project), or the name the
+  // route is keyed by when an author is opened by name.
+  const seedName = useMemo(() => {
+    const handed = (searchParams.get('name') || '').trim();
+    if (handed) return handed;
+    if (type === 'author' && !/^A\d+$/i.test(id) && !/openalex\.org\/A\d+/i.test(id) && !extractOrcid(id)) {
+      return String(id || '').trim();
+    }
+    return '';
+  }, [id, searchParams, type]);
   const handleBack = useCallback(() => {
     const historyIndex = typeof window !== 'undefined' ? window.history.state?.idx : null;
     if (Number.isInteger(historyIndex) && historyIndex > 0) navigate(-1);
     else navigate('/');
   }, [navigate]);
+  // The first visit to Authors requests the list and keeps it from then on, so
+  // a return to the tab finds the rows rather than a second skeleton. The
+  // loading flag goes up here, with the tab, rather than in the effect that
+  // fetches: the frame the tab opens on then already shows the rows' shapes
+  // and never the empty-state copy.
+  const openTab = useCallback((tab) => {
+    setActiveTab(tab);
+    if (tab === 'authors' && !authorsOpened) {
+      setAuthorsOpened(true);
+      setIsLoadingAuthors(true);
+    }
+  }, [authorsOpened]);
   const authorInstitution = type === 'author'
     ? entity?.institutionData || entity?.last_known_institutions?.[0] || (entity?.institution ? { display_name: entity.institution } : null)
     : null;
@@ -258,12 +354,29 @@ export default function EntityExplorer({
 
   useEffect(() => {
     const frame = window.requestAnimationFrame(measureExpandableDescriptions);
-    window.addEventListener('resize', measureExpandableDescriptions);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      window.removeEventListener('resize', measureExpandableDescriptions);
-    };
+    return () => window.cancelAnimationFrame(frame);
   }, [entity?.summary, measureExpandableDescriptions, wikiDescription]);
+
+  // `resize` fires repeatedly on mobile — as the URL bar collapses while
+  // scrolling, and again when the soft keyboard opens — and the unthrottled
+  // handler forced a synchronous layout (getComputedStyle + scrollHeight) on
+  // every single event. Debounced to the trailing edge: each event just
+  // reschedules the timer, so only the resize that actually settles pays for
+  // a measurement, and the read still lands inside a rAF. `measureExpandableDescriptions`
+  // is a stable callback ([] deps), so this effect subscribes once for the
+  // component's life rather than resubscribing on every render.
+  useEffect(() => {
+    let timer = null;
+    const onResize = () => {
+      clearTimeout(timer);
+      timer = setTimeout(() => requestAnimationFrame(measureExpandableDescriptions), 150);
+    };
+    window.addEventListener('resize', onResize);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', onResize);
+    };
+  }, [measureExpandableDescriptions]);
 
   useEffect(() => {
     if (!isProjectLinksMenuOpen) return undefined;
@@ -319,6 +432,8 @@ export default function EntityExplorer({
       setPdfPaperToView(null);
       setOrcidInfo(null);
       setActiveTab('papers');
+      setAuthorsOpened(false);
+      setIsExperienceOpen(true);
       setExpandedSummary(false);
       setParticipantsExpanded(false);
     }, 0);
@@ -348,11 +463,13 @@ export default function EntityExplorer({
       setEntityError(null);
       setEntity(null);
       setPapers([]);
+      setIsLoadingPapers(true);
       setEntityAuthors([]);
       setSearchQuery('');
       setWikiInfo(null);
       setOrcidInfo(null);
       setIsLoadingOrcid(false);
+      setIsExperienceOpen(true);
       setExpandedSummary(false);
       setIsWikiDescriptionExpanded(false);
       setIsProjectLinksMenuOpen(false);
@@ -451,9 +568,22 @@ export default function EntityExplorer({
       setEntity(data);
       setIsLoadingEntity(false);
 
-      if (['institution', 'author'].includes(type) && data) {
+      // Both follow-up requests declare themselves before either starts, in
+      // the same batch as the entity, so the live hero mounts with the ORCID
+      // card's skeleton and the impact stat's "calculating" already in place.
+      // They used to run one after the other, with the ORCID flag raised only
+      // once the impact score had answered: the card's reserved space
+      // collapsed the frame the hero landed, reopened seconds later, and
+      // filled after that — two jumps for the list under it, on every author.
+      const wantsRecentImpact = ['institution', 'author'].includes(type) && Boolean(data);
+      const wantsOrcid = Boolean(data?.display_name) && type === 'author' && Boolean(data.orcid);
+      if (wantsRecentImpact) {
         setIsLoadingRecentImpact(true);
         setRecentImpactError(null);
+      }
+      if (wantsOrcid) setIsLoadingOrcid(true);
+
+      const loadRecentImpact = async () => {
         try {
           const impact = await getEntityRecentImpact(type, data);
           if (!isCancelled) setRecentImpact(impact);
@@ -473,22 +603,21 @@ export default function EntityExplorer({
         } finally {
           if (!isCancelled) setIsLoadingRecentImpact(false);
         }
-      }
-
-      if (data && data.display_name) {
-        if (type === 'author' && data.orcid) {
-          setIsLoadingOrcid(true);
-          try {
-            const record = prefetchedOrcid || await getOrcidRecord(data.orcid);
-            if (!isCancelled) setOrcidInfo(record);
-          } catch (e) {
-            if (!isCancelled) console.error("Error loading ORCID", e);
-          } finally {
-            if (!isCancelled) setIsLoadingOrcid(false);
-          }
+      };
+      const loadOrcid = async () => {
+        try {
+          const record = prefetchedOrcid || await getOrcidRecord(data.orcid);
+          if (!isCancelled) setOrcidInfo(record);
+        } catch (e) {
+          if (!isCancelled) console.error("Error loading ORCID", e);
+        } finally {
+          if (!isCancelled) setIsLoadingOrcid(false);
         }
-
-      }
+      };
+      await Promise.all([
+        wantsRecentImpact ? loadRecentImpact() : null,
+        wantsOrcid ? loadOrcid() : null,
+      ]);
     }
     loadEntity().catch(error => {
       if (isCancelled) return;
@@ -548,9 +677,32 @@ export default function EntityExplorer({
   ]);
 
   useEffect(() => {
-    let isCancelled = false;
+    if (!entity) return;
+    // What this request depends on, so a re-render can be told from a new
+    // request. A tab switch used to unmount the list and start the fetch
+    // over — `activeTab` was a dependency, and the cleanup cancelled whatever
+    // was in flight — so coming back to Papers meant a second skeleton and a
+    // second round trip for rows that had already been read. A project paid
+    // it once more on its own: its optimistic entity started the request and
+    // its details, landing on the same grant code, cancelled and repeated it.
+    const requestKey = entityPapersRequestKey({
+      type,
+      id,
+      entity,
+      entityDisplayName,
+      sortBy,
+      page,
+      searchQuery: debouncedSearch,
+      filters,
+      searchParams: searchParams.toString(),
+      reloadKey: papersReloadKey,
+      entityReloadKey,
+    });
+    if (papersRequestRef.current?.key === requestKey && !papersRequestRef.current.cancelled) return;
+    if (papersRequestRef.current) papersRequestRef.current.cancelled = true;
+    const request = { key: requestKey, cancelled: false };
+    papersRequestRef.current = request;
     async function loadPapers() {
-      if (!entity || activeTab !== 'papers') return;
       if (page === 1) {
         setIsLoadingPapers(true);
         setPapersError(null);
@@ -711,7 +863,7 @@ export default function EntityExplorer({
           fetchedPapers = pinSourcePaper(fetchedPapers, searchParams.get('arxivId'));
         }
 
-        if (isCancelled) return;
+        if (request.cancelled) return;
 
         if (topicProviderFailure && fetchedPapers.length > 0) {
           setPapersError('PARTIAL_PUBLICATIONS_LOAD_FAILED');
@@ -730,23 +882,28 @@ export default function EntityExplorer({
         setHasMore(page * 30 < total);
       } catch (err) {
         console.error("Failed to load papers for entity", err);
-        if (isCancelled) return;
+        if (request.cancelled) return;
         if (page === 1) setPapers([]);
         setPapersError('PUBLICATIONS_LOAD_FAILED');
         setHasMore(false); // Stop infinite looping on errors
       }
-      if (isCancelled) return;
+      if (request.cancelled) return;
       setIsLoadingPapers(false);
       setIsFetchingMore(false);
     }
     loadPapers();
-    return () => { isCancelled = true; };
-  }, [type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, activeTab, searchParams, papersReloadKey]);
+    // No cleanup: a request is superseded by key, above, and cancelled on
+    // unmount, below — not by the next render of the same request.
+  }, [type, id, entity, entityDisplayName, sortBy, page, debouncedSearch, filters, searchParams, papersReloadKey, entityReloadKey]);
+
+  useEffect(() => () => {
+    if (papersRequestRef.current) papersRequestRef.current.cancelled = true;
+  }, []);
 
   useEffect(() => {
     let isCancelled = false;
     async function loadAuthors() {
-      if (!entity || type === 'author' || entity._localTopic || entity._queryTopic || activeTab !== 'authors') return;
+      if (!entity || type === 'author' || entity._localTopic || entity._queryTopic || !authorsOpened) return;
       if (authorsPage === 1) {
         setIsLoadingAuthors(true);
         setAuthorsError(null);
@@ -787,7 +944,7 @@ export default function EntityExplorer({
     }
     loadAuthors();
     return () => { isCancelled = true; };
-  }, [type, id, entity, authorsPage, debouncedSearch, activeTab, authorsReloadKey]);
+  }, [type, id, entity, authorsPage, debouncedSearch, authorsOpened, authorsReloadKey]);
 
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -934,62 +1091,170 @@ export default function EntityExplorer({
     }
   };
 
-  if (isLoadingEntity) return (
-      <div className="explorer-container">
-        <div className="explorer-hero">
+  // The wait was silent to a screen reader: shapes carry nothing, so someone
+  // not looking at them heard an empty page until the data landed.
+  if (isLoadingEntity) {
+    /* Which page is coming is decided by the route, not by the fetch — `type`
+       is in the URL — and the three pages this stands in for are not the same
+       page. One skeleton served all of them: two tabs always, and nothing at
+       all reserved between the stats and the tab strip. On an author that was
+       a second tab the page would never render and a 177px drop when the real
+       header arrived; on an institution, 242px. */
+    const shape = explorerSkeletonShape(type);
+    return (
+      <div
+        className={`explorer-container explorer-skeleton explorer-skeleton--${type || 'entity'}`}
+        role="status"
+        aria-busy="true"
+        aria-label={isEnglish ? 'Loading' : 'Cargando'}
+      >
+        <div className="explorer-hero" aria-hidden="true">
           <div className="explorer-hero-top">
             <div className="eht-left">
-              <button className="explorer-back-btn" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
+              <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
                 <ArrowLeft size={20} />
-              </button>
-              <div className="skeleton-item" style={{ width: '80px', height: '16px', background: 'rgba(255,255,255,0.05)', borderRadius: '4px' }}></div>
+              </Button>
+              <div className="ex-skel ex-skel-type"></div>
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="explorer-action-btn skeleton-item" style={{ border: 'none', background: 'rgba(255,255,255,0.05)' }} aria-hidden="true" tabIndex={-1} disabled></button>
-            </div>
+            <div className="ex-skel ex-skel-action"></div>
           </div>
-          
-          <div className="explorer-hero-content">
-            <div className="ehc-main">
-              <div className="ehc-icon skeleton-item" style={{ background: 'rgba(255,255,255,0.05)', borderColor: 'transparent' }}></div>
-              <div className="ehc-info" style={{ width: '100%' }}>
-                <div className="skeleton-item skeleton-title" style={{ width: '200px', maxWidth: '80%', height: '28px', margin: '0 0 12px 0' }}></div>
-                <div className="skeleton-item skeleton-text medium"></div>
-                <div className="skeleton-item skeleton-text short"></div>
+
+          {/* The live hero's own nesting, copied rather than approximated:
+              header wraps main and aside, and the stats sit inside the aside.
+              Flattening it let `.ehc-main` stretch down the whole hero and
+              pushed the stats to the floor, with a screen of nothing between. */}
+          <div className="explorer-hero-content is-skeleton">
+            <div className="ehc-header">
+              <div className="ehc-main">
+                <div className="ehc-visual-slot">
+                  <div className="ehc-icon ex-skel"></div>
+                </div>
+                <div className="ehc-info">
+                  {/* The name the link already knew — an author's, a project's —
+                      is painted the moment the page opens, in the live hero's
+                      own element, so the masthead reads while the profile is
+                      on its way. Only a page that opens on nothing but an id
+                      shows the bar. */}
+                  {seedName
+                    ? <h1 className="ehc-name" style={{ margin: 0 }}>{seedName}</h1>
+                    : <div className="ex-skel ex-skel-name"></div>}
+                  {/* The metadata line every type puts under the name: an
+                      author's institution, an institution's city, a project's
+                      funder. It lives inside `.ehc-info` on the live page, and
+                      the standalone `.ehc-meta` block that used to stand in for
+                      it down here was counting the same line twice. */}
+                  <div className="ex-skel ex-skel-sub ex-skel-sub--medium"></div>
+
+                  {/* The strip under the name, which is where the two page
+                      shapes first part company: an author is identified by the
+                      subjects they work on, an institution by its credentials
+                      and the organisations inside it. */}
+                  {shape.identity === 'topics' && (
+                    <div className="ehc-tags ex-skel-strip">
+                      {[72, 88, 64, 56].map(width => (
+                        <span key={width} className="ex-skel ex-skel-chip" style={{ width }} />
+                      ))}
+                    </div>
+                  )}
+                  {shape.identity === 'credentials' && (
+                    <>
+                      <div className="ehc-institution-identity ex-skel-strip">
+                        <span className="ex-skel ex-skel-chip" style={{ width: 104 }} />
+                        <span className="ex-skel ex-skel-chip" style={{ width: 72 }} />
+                      </div>
+                      <div className="ehc-ror-relations ex-skel-strip">
+                        {[186, 172, 158].map(width => (
+                          <span key={width} className="ex-skel ex-skel-relation" style={{ width }} />
+                        ))}
+                      </div>
+                    </>
+                  )}
+                  {shape.identity === 'none' && (
+                    <div className="ex-skel ex-skel-sub ex-skel-sub--short"></div>
+                  )}
+                </div>
+              </div>
+
+              <div className="ehc-hero-aside">
+                <div className="ehc-stats-grid">
+                  {[1, 2, 3, 4].map(i => (
+                    <div key={i} className="ehc-stat-box">
+                      <span className="ex-skel ex-skel-stat-value"></span>
+                      <span className="ex-skel ex-skel-stat-label"></span>
+                    </div>
+                  ))}
+                </div>
+                {/* Every entity the Explorer serves can be followed, so the
+                    button belongs to the spine. Leaving it out took 32px out
+                    of the hero on all three. */}
+                {shape.follow && <div className="ex-skel ex-skel-follow"></div>}
               </div>
             </div>
-            
-            <div className="ehc-stats-grid">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="ehc-stat-box skeleton-item" style={{ height: '60px', background: 'rgba(255,255,255,0.03)' }}></div>
-              ))}
-            </div>
+
+            {/* The block beside the header, and the clearest tell of which page
+                is loading: an author's ORCID card, an institution's Wikipedia
+                paragraph. A project carries neither — its summary is optional —
+                so it reserves nothing rather than inventing a block that would
+                then have to collapse. Placed here, inside
+                `.explorer-hero-content`, because that is where the live ones
+                are: hung off `.explorer-hero` instead it missed the container's
+                16px gap and measured against the wrong parent. */}
+            {shape.aside === 'orcid' && <OrcidCardSkeleton />}
+            {shape.aside === 'wiki' && <WikiBlockSkeleton />}
+          </div>
+
+          {/* One tab or two, from the same helper the live strip answers with.
+              A page that will only ever show Papers no longer advertises an
+              Authors tab it is about to take away. */}
+          <div className="ee-tabs">
+            {Array.from({ length: shape.tabs }, (_, i) => (
+              <div key={i} className="ex-skel ex-skel-tab"></div>
+            ))}
           </div>
         </div>
 
-        <div className="explorer-content">
-          <div className="explorer-list">
-            {[1, 2, 3].map(i => (
-             <div key={i} className="explorer-list-item skeleton-item" style={{ height: '160px', marginBottom: '16px', borderRadius: '16px', background: 'rgba(255,255,255,0.02)' }}></div>
+        {/* The search toolbar is not part of the hero, and was missing too. */}
+        <div className="explorer-toolbar-wrapper">
+          <div className="explorer-toolbar">
+            <div className="ex-skel ex-skel-search"></div>
+          </div>
+        </div>
+
+        {/* The real container, not a stand-in for it: the rows that replace
+            these land in the same grid with the same rules, so nothing moves
+            when the words arrive. */}
+        <div className="explorer-content" aria-hidden="true">
+          <div className="explorer-grid">
+            {[1, 2, 3, 4, 5].map(i => (
+              <div key={i} className="explorer-list-item ex-skel-row">
+                <div className="ex-skel-row-head">
+                  <div className="ex-skel ex-skel-kicker"></div>
+                  <div className="ex-skel ex-skel-metrics"></div>
+                </div>
+                <div className="ex-skel ex-skel-title"></div>
+                <div className="ex-skel ex-skel-title"></div>
+                <div className="ex-skel ex-skel-authors"></div>
+              </div>
             ))}
           </div>
         </div>
       </div>
     );
+  }
 
   if (!entity) {
     return (
       <div className="explorer-error">
-        <button className="explorer-back-btn" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
+        <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
           <ArrowLeft size={24} />
-        </button>
+        </Button>
         <h2>{entityError
           ? (isEnglish ? 'The entity could not be loaded' : 'No se pudo cargar la entidad')
           : (isEnglish ? 'Entity not found' : 'Entidad no encontrada')}</h2>
         {entityError && (
           <>
             <p role="alert">{getUiErrorMessage(entityError, language, 'ENTITY_LOAD_FAILED')}</p>
-            <button className="explorer-clear-btn" onClick={retryEntity}>{isEnglish ? 'Try again' : 'Reintentar'}</button>
+            <Button variant="outline" size="sm" onClick={retryEntity}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
           </>
         )}
       </div>
@@ -1016,17 +1281,27 @@ export default function EntityExplorer({
   const topConcepts = entity.x_concepts ? entity.x_concepts.slice(0, 4) : [];
 
   return (
-    <div className="explorer-container">
+    <div className="explorer-container" style={{ '--area-accent': entityAccent }}>
       {/* Immersive Hero */}
       <div className="explorer-hero">
         <AnimatePresence>
           {hasLoadedWikiImage && (
-            <motion.div 
+            <motion.div
               key="bg-blur"
+              // One owner for this opacity, and it is this one.
+              //
+              // The stylesheet ran a `bgPulseFade` keyframe on the same element
+              // fading to 0.1, while this animated the same property to 1 — ten
+              // times stronger than the wash is meant to be. Two animations
+              // racing for one property is why the header looked wrong for a
+              // beat and then corrected itself: whichever won the first frames
+              // decided how much of the photograph you saw. The keyframe is
+              // gone; 0.1 is the intended weight and is now stated once.
               initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ duration: 1.0 }}
-              className="ehc-bg-blur" 
+              animate={{ opacity: 0.1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: prefersReducedMotion ? 0 : 1 }}
+              className="ehc-bg-blur"
               style={{ backgroundImage: `url(${visibleWikiInfo.thumbnail})` }}
             ></motion.div>
           )}
@@ -1034,19 +1309,18 @@ export default function EntityExplorer({
         
         <div className="explorer-hero-top">
           <div className="eht-left">
-            <button className="explorer-back-btn" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
+            <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
               <ArrowLeft size={20} />
-            </button>
+            </Button>
             <span className="ehc-type">{entityTypeLabel}</span>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="explorer-action-btn" onClick={handleShare} aria-label={isEnglish ? 'Share' : 'Compartir'} title={isEnglish ? 'Share' : 'Compartir'}>
-              <Share2 size={18} />
-            </button>
-          </div>
+          <Button variant="ghost" size="icon" onClick={handleShare} aria-label={isEnglish ? 'Share' : 'Compartir'} title={isEnglish ? 'Share' : 'Compartir'}>
+            <Share2 size={18} />
+          </Button>
         </div>
         
         <div className="explorer-hero-content">
+          <div className="ehc-header">
           <div className="ehc-main">
             <div className="ehc-visual-slot">
               <motion.div
@@ -1081,16 +1355,18 @@ export default function EntityExplorer({
             <div className="ehc-info">
               <div className="ehc-title-row">
                 <h1 className="ehc-name" style={{ margin: 0 }}>{entityDisplayName}</h1>
-                {followEntity && (
+                {type === 'author' && orcidInfo?.employments?.length > 0 && (
                   <button
-                    className={`entity-follow-btn ${entityIsFollowing ? 'following' : ''} ${entityFollowPending ? 'is-pending' : ''}`}
-                    onClick={handleFollow}
-                    disabled={entityFollowPending}
-                    aria-pressed={entityIsFollowing}
+                    type="button"
+                    className={`ehc-name-toggle ${isExperienceOpen ? 'is-open' : ''}`}
+                    onClick={() => setIsExperienceOpen(open => !open)}
+                    aria-expanded={isExperienceOpen}
+                    aria-controls="ehc-experience-panel"
+                    aria-label={isEnglish ? 'Professional experience' : 'Experiencia profesional'}
+                    title={isEnglish ? 'Professional experience' : 'Experiencia profesional'}
                   >
-                    {entityIsFollowing
-                        ? <><Check size={14} /> <span>{isEnglish ? 'Following' : 'Siguiendo'}</span></>
-                        : <span>{isEnglish ? 'Follow' : 'Seguir'}</span>}
+                    <Briefcase size={15} aria-hidden="true" />
+                    <ChevronDown size={16} aria-hidden="true" />
                   </button>
                 )}
               </div>
@@ -1223,7 +1499,8 @@ export default function EntityExplorer({
             </div>
           </div>
 
-          {/* Stats Grid */}
+          <div className="ehc-hero-aside">
+          {/* Stats Grid — compact, beside the follow action */}
           <div className="ehc-stats-grid">
             {entity?.works_count != null && (
               <div className="ehc-stat-box">
@@ -1286,7 +1563,93 @@ export default function EntityExplorer({
               </div>
             )}
           </div>
-          
+          {followEntity && (
+            <Button
+              variant={entityIsFollowing ? 'outline' : 'default'}
+              size="sm"
+              className="entity-follow-btn"
+              onClick={handleFollow}
+              disabled={entityFollowPending}
+              aria-pressed={entityIsFollowing}
+            >
+              {entityIsFollowing
+                  ? <><Check size={14} /> <span>{isEnglish ? 'Following' : 'Siguiendo'}</span></>
+                  : <span>{isEnglish ? 'Follow' : 'Seguir'}</span>}
+            </Button>
+          )}
+          </div>
+          </div>
+
+          {/* Professional experience — a disclosure opened from the chevron by the name */}
+          {type === 'author' && orcidInfo?.employments?.length > 0 && (
+            // No `initial={false}`: the presence mounts with the panel, when
+            // the record lands on a hero that is already live, so the panel
+            // arriving is the one entrance this animation exists for. Off, it
+            // popped in at full height and shoved the card and the list.
+            <AnimatePresence>
+              {isExperienceOpen && (
+                <motion.div
+                  id="ehc-experience-panel"
+                  className="ehc-experience-panel"
+                  // No `y` any more. It was there to give the panel somewhere
+                  // to come from back when the height could not reach zero;
+                  // now that it can, a slide on top of the collapse is a
+                  // second motion arguing with the first. Height opens the
+                  // box, opacity fills it, and nothing else moves.
+                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                  transition={prefersReducedMotion
+                    ? { duration: 0 }
+                    : {
+                      // The contents clear a little before the box finishes
+                      // closing, so the last thing seen is an empty fold
+                      // rather than text being guillotined by the clip.
+                      opacity: { duration: 0.2 },
+                      height: { duration: 0.34, ease: [0.16, 1, 0.3, 1] },
+                    }}
+                >
+                  <div className="ehc-experience-inner">
+                  <div className="ehc-experience-title">
+                    <Briefcase size={13} aria-hidden="true" />
+                    {isEnglish ? 'Professional experience' : 'Experiencia profesional'}
+                  </div>
+                  <div className="orcid-timeline">
+                    {orcidInfo.employments.map((emp, i) => (
+                      <div key={i} className="orcid-timeline-item">
+                        <div
+                          className="orcid-item-org orcid-item-org--link"
+                          onClick={async () => {
+                            const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
+                            if (inst) navigateToEntity('institution', inst.id);
+                          }}
+                          onKeyDown={(event) => handleActivationKey(event, async () => {
+                            const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
+                            if (inst) navigateToEntity('institution', inst.id);
+                          })}
+                          role="link"
+                          tabIndex={0}
+                          title={`${isEnglish ? 'Find and view profile for' : 'Buscar y ver perfil de'} ${emp.organization}`}
+                        >
+                          {emp.organization}
+                        </div>
+                        {emp.role && <div className="orcid-item-role">{emp.role}</div>}
+                        {emp.startDate && (
+                          <div className="orcid-item-dates">
+                            {emp.startDate}
+                            <span className="dot-separator">→</span>
+                            {emp.endDate || (isEnglish ? 'Present' : 'Presente')}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          )}
+
           {/* Project metadata chips */}
           {type === 'project' && (entity.callIdentifier || entity.contractType || entity.openAccess || entity.measures?.downloads > 0 || entity.measures?.views > 0) && (
             <div className="project-meta-chips">
@@ -1412,30 +1775,59 @@ export default function EntityExplorer({
             </div>
           )}
           
-          {/* Wikipedia or external info */}
+          {/* Wikipedia or external info. An institution stays in the list
+              with the topics: its skeleton reserved this block for the whole
+              wait, and an institution without a homepage on record used to
+              lose it the frame the hero landed — the list rose by its height,
+              then dropped again when the paragraph came. Held open, the
+              paragraph replaces the shapes in place, and one that never comes
+              folds the block away instead of cutting it. */}
           <AnimatePresence initial={false}>
-            {(wikiDescription || entity?.homepage_url || (isWikiRequestPending && ['concept', 'topic'].includes(type))) && (
-              <motion.div 
+            {(wikiDescription || entity?.homepage_url || (isWikiRequestPending && ['concept', 'topic', 'institution'].includes(type))) && (
+              <motion.div
                 layout
-                className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''} ${isWikiRequestPending && !wikiDescription ? 'is-loading' : ''}`}
-                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -8 }}
-                animate={{ opacity: 1, height: 'auto', y: 0 }}
-                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, y: -6 }}
+                className="ehc-wiki-fold"
+                // The fold is a box of its own around the padded block, so
+                // that `height: 0` means nothing rather than the 26px of
+                // padding and border a border-box clamps at — and it carries
+                // the stack gap out with it. Measured before this: a 400ms
+                // fold that stopped at 26px, then a 42px jump of the list the
+                // frame the block unmounted.
+                initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -8 }}
+                animate={{ opacity: 1, height: 'auto', marginTop: 0, y: 0 }}
+                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6 }}
                 transition={prefersReducedMotion
                   ? { duration: 0 }
                   : {
                     opacity: { duration: 0.3 },
                     height: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
+                    marginTop: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
                     y: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
                     layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
                   }}
-                aria-busy={isWikiRequestPending && !wikiDescription}
               >
+                <div
+                  className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''} ${isWikiRequestPending && !wikiDescription ? 'is-loading' : ''}`}
+                  aria-busy={isWikiRequestPending && !wikiDescription}
+                >
                 {isWikiRequestPending && !wikiDescription ? (
                   <div className="ehc-wiki-skeleton" role="status" aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}>
+                    {/* Three lines because the collapsed paragraph is clamped
+                        to exactly three, then the show-more toggle, then the
+                        source links. Measured against a settled block: these
+                        five rows reserve 146px where 155px arrives — 9px out,
+                        which the `layout` transition absorbs without anything
+                        below appearing to move. Reserving the prose alone came
+                        up 33px short, and the prose plus a `min-height: 92px`
+                        that guessed at the rest came up 63px short. That gap
+                        was the shove: the description lands on a fetch of its
+                        own, after the entity's, so whatever it is short by gets
+                        taken out of the list's position while it is being read. */}
                     <span />
                     <span />
                     <span />
+                    <span className="ehc-wiki-skeleton-toggle" />
+                    <span className="ehc-wiki-skeleton-links" />
                   </div>
                 ) : wikiDescription ? (
                   <p
@@ -1471,25 +1863,13 @@ export default function EntityExplorer({
                     </a>
                   )}
                 </div>
+                </div>
               </motion.div>
             )}
           </AnimatePresence>
 
           {/* ORCID Career Section */}
-          {isLoadingOrcid && (
-            <div className="orcid-skeleton">
-              <div className="orcid-skeleton-header">
-                <div className="skel skel-circle" />
-                <div style={{ flex: 1 }}>
-                  <div className="skel skel-line" style={{ width: '40%', marginBottom: '6px' }} />
-                  <div className="skel skel-line" style={{ width: '25%' }} />
-                </div>
-              </div>
-              <div className="skel skel-line" style={{ width: '60%', marginTop: '16px' }} />
-              <div className="skel skel-line" style={{ width: '80%', marginTop: '8px' }} />
-              <div className="skel skel-line" style={{ width: '70%', marginTop: '8px' }} />
-            </div>
-          )}
+          {isLoadingOrcid && <OrcidCardSkeleton />}
           {orcidInfo && !isLoadingOrcid && (
             <div className="orcid-career-section orcid-career-section--animate">
 
@@ -1528,46 +1908,6 @@ export default function EntityExplorer({
                       </a>
                     ) : null;
                   })}
-                </div>
-              )}
-
-              {/* Work experience timeline */}
-              {orcidInfo.employments?.length > 0 && (
-                <div className="orcid-timeline-block">
-                  <div className="orcid-timeline-title">
-                    <span className="orcid-tl-icon orcid-tl-icon--work"><Briefcase size={12} /></span>
-                    {isEnglish ? 'Professional experience' : 'Experiencia profesional'}
-                  </div>
-                  <div className="orcid-timeline">
-                    {orcidInfo.employments.map((emp, i) => (
-                      <div key={i} className="orcid-timeline-item">
-                        <div
-                          className="orcid-item-org orcid-item-org--link"
-                          onClick={async () => {
-                            const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
-                            if (inst) navigateToEntity('institution', inst.id);
-                          }}
-                          onKeyDown={(event) => handleActivationKey(event, async () => {
-                            const inst = await findInstitution({ rorUrl: emp.ror, name: emp.organization });
-                            if (inst) navigateToEntity('institution', inst.id);
-                          })}
-                          role="link"
-                          tabIndex={0}
-                          title={`${isEnglish ? 'Find and view profile for' : 'Buscar y ver perfil de'} ${emp.organization}`}
-                        >
-                          {emp.organization}
-                        </div>
-                        {emp.role && <div className="orcid-item-role">{emp.role}</div>}
-                        {emp.startDate && (
-                          <div className="orcid-item-dates">
-                            {emp.startDate}
-                            <span className="dot-separator">→</span>
-                            {emp.endDate || (isEnglish ? 'Present' : 'Presente')}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
                 </div>
               )}
 
@@ -1615,11 +1955,11 @@ export default function EntityExplorer({
         </div>
         
         <div className="ee-tabs">
-          <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => setActiveTab('papers')}>
+          <button className={`ee-tab ${activeTab === 'papers' ? 'active' : ''}`} onClick={() => openTab('papers')}>
              {isEnglish ? 'Papers' : 'Artículos'}
           </button>
-          {(type !== 'author' && type !== 'project' && !entity._localTopic && !entity._queryTopic) && (
-             <button className={`ee-tab ${activeTab === 'authors' ? 'active' : ''}`} onClick={() => setActiveTab('authors')}>
+          {hasAuthorsTab(type, entity) && (
+             <button className={`ee-tab ${activeTab === 'authors' ? 'active' : ''}`} onClick={() => openTab('authors')}>
                {isEnglish ? 'Authors' : 'Autores'}
              </button>
           )}
@@ -1643,20 +1983,21 @@ export default function EntityExplorer({
                 : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} en esta entidad`}
             />
             {searchQuery && (
-              <button className="es-clear" onClick={() => setSearchQuery('')} aria-label={isEnglish ? 'Clear search' : 'Limpiar búsqueda'} title={isEnglish ? 'Clear search' : 'Limpiar búsqueda'}>
+              <Button variant="ghost" size="icon-sm" className="es-clear" onClick={() => setSearchQuery('')} aria-label={isEnglish ? 'Clear search' : 'Limpiar búsqueda'} title={isEnglish ? 'Clear search' : 'Limpiar búsqueda'}>
                 <X size={14} />
-              </button>
+              </Button>
             )}
           </div>
           {activeTab === 'papers' && (
-             <button 
-                className={`filter-btn ${filters?.category || filters?.peerReviewed || filters?.dateRange ? 'active' : ''}`} 
+             <Button
+                variant={filters?.category || filters?.peerReviewed || filters?.dateRange ? 'default' : 'outline'}
+                size="icon"
                 onClick={() => setShowFilters(true)}
                 aria-label={isEnglish ? 'Open filters' : 'Abrir filtros'}
                 title={isEnglish ? 'Filters' : 'Filtros'}
               >
                 <Filter size={16} />
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -1676,10 +2017,10 @@ export default function EntityExplorer({
                   role="button"
                   tabIndex={0}
                   aria-label={`${isEnglish ? 'Open publication' : 'Abrir publicación'}: ${normalizeScientificMarkup(paper.title) || (isEnglish ? 'Untitled' : 'Sin título')}`}
-                  style={{ '--i': Math.min(idx, 8) }}
+                  style={{ '--i': Math.min(idx, 8), '--area-accent': areaAccentForPaper(paper) }}
                 >
                   <div className="eli-header">
-                    <span className="eli-cat">{paper.categories && paper.categories.length > 0 ? paper.categories[0] : 'Paper'}</span>
+                    <span className="eli-cat">{areaLabelForPaper(paper, { english: isEnglish }) || (isEnglish ? 'Paper' : 'Artículo')}</span>
                     <div className="eli-metrics">
                       {hasKnownPaperCitationCount(paper) && (
                         paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
@@ -1707,8 +2048,8 @@ export default function EntityExplorer({
                   <h3 className="eli-title">
                     <ScientificText>{paper.title}</ScientificText>
                     {paper.isPeerReviewed && (
-                      <span className="pc-tooltip" data-tooltip={isEnglish ? 'Published in a peer-reviewed journal' : 'Publicado en revista (revisado por pares)'} style={{ display: 'inline-flex', verticalAlign: 'middle', marginLeft: '6px' }}>
-                        <BadgeCheck size={16} style={{ color: '#1da1f2' }} />
+                      <span className="pc-tooltip eli-verified" data-tooltip={isEnglish ? 'Published in a peer-reviewed journal' : 'Publicado en revista (revisado por pares)'}>
+                        <BadgeCheck size={16} />
                       </span>
                     )}
                   </h3>
@@ -1723,18 +2064,17 @@ export default function EntityExplorer({
               
               {isLoadingPapers && !isFetchingMore && [1, 2, 3, 4, 5].map((n) => (
                   <div
-                    key={`skeleton-${n}`} 
-                    className="explorer-list-item skeleton-item"
+                    key={`skeleton-${n}`}
+                    className="explorer-list-item ex-skel-row"
+                    aria-hidden="true"
                   >
-                    <div className="eli-header">
-                      <div className="skeleton-pill"></div>
-                      <div className="skeleton-text short"></div>
+                    <div className="ex-skel-row-head">
+                      <div className="ex-skel ex-skel-kicker"></div>
+                      <div className="ex-skel ex-skel-metrics"></div>
                     </div>
-                    <div className="skeleton-title"></div>
-                    <div className="skeleton-title short"></div>
-                    <div className="skeleton-text"></div>
-                    <div className="skeleton-text long"></div>
-                    <div className="skeleton-text medium"></div>
+                    <div className="ex-skel ex-skel-title"></div>
+                    <div className="ex-skel ex-skel-title"></div>
+                    <div className="ex-skel ex-skel-authors"></div>
                   </div>
                 ))}
 
@@ -1752,7 +2092,7 @@ export default function EntityExplorer({
                 {papersError ? (
                   <>
                     <p role="alert">{getUiErrorMessage(papersError, language, 'PUBLICATIONS_LOAD_FAILED')}</p>
-                    <button className="explorer-clear-btn" onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</button>
+                    <Button variant="outline" size="sm" onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
                   </>
                 ) : (
                   <p>{isEnglish
@@ -1764,7 +2104,7 @@ export default function EntityExplorer({
             {!isLoadingPapers && papersError && filteredPapers.length > 0 && (
               <div className="explorer-inline-error" role="alert">
                 <span>{getUiErrorMessage('PARTIAL_PUBLICATIONS_LOAD_FAILED', language)}</span>
-                <button onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</button>
+                <Button variant="ghost" size="sm" onClick={retryPapers}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
               </div>
             )}
           </>
@@ -1796,13 +2136,14 @@ export default function EntityExplorer({
             
             {isLoadingAuthors && !isFetchingMoreAuthors && [1, 2, 3, 4, 5, 6].map(n => (
                 <div
-                  key={`skel-author-${n}`} 
-                  className="ee-author-card skeleton-item"
+                  key={`skel-author-${n}`}
+                  className="ee-author-card ex-skel-row"
+                  aria-hidden="true"
                 >
-                  <div className="ee-author-icon skel skel-circle" style={{ width: '40px', height: '40px' }}></div>
+                  <div className="ee-author-icon ex-skel ex-skel-avatar"></div>
                   <div className="ee-author-info">
-                    <div className="skel skel-line" style={{ width: '70%', height: '18px', marginBottom: '8px' }}></div>
-                    <div className="skel skel-line" style={{ width: '50%', height: '12px' }}></div>
+                    <div className="ex-skel ex-skel-name-line"></div>
+                    <div className="ex-skel ex-skel-sub ex-skel-sub--short"></div>
                   </div>
                 </div>
               ))}
@@ -1818,7 +2159,7 @@ export default function EntityExplorer({
                 {authorsError ? (
                   <>
                     <p role="alert">{getUiErrorMessage(authorsError, language, 'AUTHORS_LOAD_FAILED')}</p>
-                    <button className="explorer-clear-btn" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</button>
+                    <Button variant="outline" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
                   </>
                 ) : (
                   <p>{isEnglish ? 'No authors matched your search.' : 'No se encontraron autores que coincidan con tu búsqueda.'}</p>
@@ -1828,7 +2169,7 @@ export default function EntityExplorer({
             {!isLoadingAuthors && authorsError && entityAuthors.length > 0 && (
               <div className="explorer-inline-error" role="alert">
                 <span>{getUiErrorMessage('PARTIAL_AUTHORS_LOAD_FAILED', language)}</span>
-                <button onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</button>
+                <Button variant="ghost" size="sm" onClick={retryAuthors}>{isEnglish ? 'Try again' : 'Reintentar'}</Button>
               </div>
             )}
           </div>
@@ -1858,7 +2199,7 @@ export default function EntityExplorer({
             >
               <div className="ee-filter-header">
                 <h3 id="entity-filter-title"><SlidersHorizontal size={18}/> {isEnglish ? 'Advanced filters' : 'Filtros avanzados'}</h3>
-                <button className="close-btn" onClick={() => setShowFilters(false)} aria-label={isEnglish ? 'Close filters' : 'Cerrar filtros'} title={isEnglish ? 'Close' : 'Cerrar'}><X size={20}/></button>
+                <Button variant="ghost" size="icon" onClick={() => setShowFilters(false)} aria-label={isEnglish ? 'Close filters' : 'Cerrar filtros'} title={isEnglish ? 'Close' : 'Cerrar'}><X size={20}/></Button>
               </div>
               <div className="ee-filter-body">
                 <div className="ee-filter-section">
@@ -1929,74 +2270,47 @@ export default function EntityExplorer({
                 </div>
               </div>
               <div className="ee-filter-footer">
-                <button className="ee-filter-reset" onClick={() => { setFilters({category:'', peerReviewed:false, dateRange:''}); setShowFilters(false); }}>
+                <Button variant="outline" className="ee-filter-reset" onClick={() => { setFilters({category:'', peerReviewed:false, dateRange:''}); setShowFilters(false); }}>
                   {isEnglish ? 'Reset' : 'Restablecer'}
-                </button>
-                <button className="ee-filter-apply" onClick={() => setShowFilters(false)}>
+                </Button>
+                <Button className="ee-filter-apply" onClick={() => setShowFilters(false)}>
                   {isEnglish ? 'Apply filters' : 'Aplicar filtros'}
-                </button>
+                </Button>
               </div>
             </motion.div>
           </>
         )}
       </AnimatePresence>
 
-      {/* Paper Card Overlay */}
-      <AnimatePresence initial={false}>
-        {selectedPaper && !pdfPaperToView && (
-          <motion.div 
-            ref={selectedPaperDialogRef}
-            className="explorer-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-label={isEnglish ? 'Publication details' : 'Detalles de la publicación'}
-            tabIndex={-1}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: prefersReducedMotion ? 0.1 : 0.2, ease: 'easeOut' }}
-          >
-            <motion.div
-              className="explorer-overlay-surface"
-              initial={prefersReducedMotion ? false : { opacity: 0, y: 26, scale: 0.985 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.99 }}
-              transition={prefersReducedMotion
-                ? { duration: 0.1 }
-                : { type: 'spring', damping: 30, stiffness: 330, mass: 0.72 }}
-            >
-              <button
-                data-dialog-initial-focus
-                className="explorer-overlay-close"
-                onClick={closeSelectedPaper}
-                aria-label={isEnglish ? 'Close publication' : 'Cerrar publicación'}
-                title={isEnglish ? 'Back' : 'Volver'}
-              >
-                <ArrowLeft size={22} />
-              </button>
-              <div className="explorer-overlay-content hide-scroll-hint">
-                <PaperCard
-                  paper={selectedPaper}
-                  isLiked={likedPaperIds.has(selectedPaper.id)}
-                  isSaved={savedPaperIds.has(selectedPaper.id)}
-                  isRead={readPaperIds.has(selectedPaper.id)}
-                  onLike={toggleLike}
-                  onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
-                  onMarkAsRead={markAsRead}
-                  onOpenPdf={(paper) => setPdfPaperToView(paper)}
-                  onSaveToList={onSaveToList}
-                  getInteractionState={getInteractionState}
-                  trackViewTime={trackViewTime}
-                  trackSkip={trackSkip}
-                  publicMode={publicMode}
-                  onAuthRequired={onAuthRequired}
-                  analyticsSurface="explorer"
-                />
-              </div>
-            </motion.div>
-          </motion.div>
+      {/* Paper Card Overlay — the shared takeover, so the explorer, search and
+          Research all open a paper the same way. */}
+      <PaperOverlay
+        open={Boolean(selectedPaper && !pdfPaperToView)}
+        onClose={closeSelectedPaper}
+        isEnglish={isEnglish}
+        label={isEnglish ? 'Publication details' : 'Detalles de la publicación'}
+      >
+        {selectedPaper && (
+          <PaperCard
+            paper={selectedPaper}
+            isLiked={likedPaperIds.has(interactionIdFor(selectedPaper))}
+            isSaved={savedPaperIds.has(interactionIdFor(selectedPaper))}
+            isRead={readPaperIds.has(interactionIdFor(selectedPaper))}
+            onLike={toggleLike}
+            onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
+            onMarkAsRead={markAsRead}
+            onUnmarkAsRead={unmarkAsRead}
+            onOpenPdf={(paper) => setPdfPaperToView(paper)}
+            onSaveToList={onSaveToList}
+            getInteractionState={getInteractionState}
+            trackViewTime={trackViewTime}
+            trackSkip={trackSkip}
+            publicMode={publicMode}
+            onAuthRequired={onAuthRequired}
+            analyticsSurface="explorer"
+          />
         )}
-      </AnimatePresence>
+      </PaperOverlay>
 
       {pdfPaperToView && (
         <PDFViewer paper={pdfPaperToView} onClose={() => setPdfPaperToView(null)} />

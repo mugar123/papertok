@@ -1,6 +1,7 @@
 import { BaseAdapter } from './BaseAdapter.js';
 import { assignRequestedCategories } from '../arxivService.js';
 import { openAlexFetch } from '../openAlexClient.js';
+import { getArxivIdFromWork } from '../openAlexService.js';
 import { reconstructOpenAlexAbstract } from '../../utils/openAlexAbstract.js';
 
 export class OpenAlexAdapter extends BaseAdapter {
@@ -110,6 +111,7 @@ export class OpenAlexAdapter extends BaseAdapter {
       id: work.id.replace('https://openalex.org/', 'openalex:'),
       sources: { primary: 'openalex', enrichedBy: [] },
       doi,
+      arxivId: getArxivIdFromWork(work) || undefined,
       title: work.title || 'Untitled',
       abstract,
       authors,

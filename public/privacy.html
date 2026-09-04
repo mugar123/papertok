@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Política de privacidad — PaperTok</title>
+    <meta name="description" content="Qué datos recoge PaperTok, para qué, con quién se comparten y cómo ejercer tus derechos." />
+    <link rel="canonical" href="https://papertok.app/privacy.html" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <style>
+      :root {
+        --bg: #ffffff;
+        --fg: #111318;
+        --muted: #5b6270;
+        --rule: #e4e6ea;
+        --accent: #7c5cff;
+        --code-bg: #f4f5f7;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #111318;
+          --fg: #e8eaee;
+          --muted: #9aa1ad;
+          --rule: #262a32;
+          --accent: #a893ff;
+          --code-bg: #1a1d24;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 3rem 1.25rem 6rem;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+        font-size: 1rem;
+        line-height: 1.65;
+        -webkit-font-smoothing: antialiased;
+      }
+      main { max-width: 46rem; margin: 0 auto; }
+      a { color: var(--accent); }
+      .home {
+        display: inline-block;
+        margin-bottom: 2.5rem;
+        font-size: .875rem;
+        font-weight: 600;
+        letter-spacing: .02em;
+        text-decoration: none;
+      }
+      .home:hover { text-decoration: underline; }
+      h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .5rem; letter-spacing: -.02em; }
+      h2 {
+        font-size: 1.1rem;
+        margin: 2.75rem 0 .75rem;
+        padding-top: 1.5rem;
+        border-top: 1px solid var(--rule);
+        letter-spacing: -.01em;
+      }
+      h3 { font-size: .95rem; margin: 1.5rem 0 .4rem; }
+      .updated { color: var(--muted); font-size: .875rem; margin: 0 0 2rem; }
+      .lede { font-size: 1.075rem; color: var(--fg); }
+      ul { padding-left: 1.15rem; }
+      li { margin: .35rem 0; }
+      li > strong { font-weight: 600; }
+      code {
+        background: var(--code-bg);
+        padding: .1em .35em;
+        border-radius: .25rem;
+        font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .875em;
+      }
+      table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .925rem; }
+      th, td { text-align: left; padding: .55rem .6rem; border-bottom: 1px solid var(--rule); vertical-align: top; }
+      th { font-weight: 600; color: var(--muted); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+      .wrap { overflow-x: auto; }
+      footer { margin-top: 3.5rem; padding-top: 1.5rem; border-top: 1px solid var(--rule); color: var(--muted); font-size: .875rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="home" href="/">← PaperTok</a>
+
+      <h1>Política de privacidad</h1>
+      <p class="updated">Última actualización: 1 de septiembre de 2026</p>
+
+      <p class="lede">
+        PaperTok es una aplicación para descubrir y leer investigación científica. Esta
+        página describe qué datos se recogen, por qué, dónde se guardan y con quién se
+        comparten. Está escrita a partir de lo que el código hace realmente, no de una
+        plantilla.
+      </p>
+
+      <h2>Quién es responsable</h2>
+      <p>
+        PaperTok es un proyecto personal, no una empresa. El responsable del tratamiento
+        es su autor, y el contacto para cualquier asunto relacionado con estos datos es
+        <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a>.
+      </p>
+
+      <h2>Puedes usar PaperTok sin cuenta</h2>
+      <p>
+        El feed de artículos, la búsqueda y las páginas públicas funcionan sin iniciar
+        sesión. Sin cuenta no se crea ningún perfil ni se guarda actividad asociada a ti.
+      </p>
+
+      <h2>Qué se recoge si creas una cuenta</h2>
+      <p>
+        El acceso se hace con Google o con GitHub. PaperTok no ve ni almacena tu
+        contraseña en ningún momento: la autenticación la gestiona Firebase Authentication
+        y aquí solo llega el resultado.
+      </p>
+
+      <div class="wrap">
+        <table>
+          <thead>
+            <tr><th>Dato</th><th>De dónde sale</th><th>Para qué</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Identificador de usuario, correo, nombre y foto de perfil</td>
+              <td>Google o GitHub al iniciar sesión</td>
+              <td>Identificarte entre sesiones y mostrar tu perfil</td>
+            </tr>
+            <tr>
+              <td>Nombre público, alias y biografía</td>
+              <td>Los escribes tú</td>
+              <td>Tu perfil público, si decides tenerlo</td>
+            </tr>
+            <tr>
+              <td>Listas, artículos guardados y subrayados</td>
+              <td>Tu uso de la app</td>
+              <td>Que tu biblioteca siga ahí la próxima vez</td>
+            </tr>
+            <tr>
+              <td>Autores, instituciones y temas que sigues</td>
+              <td>Tu uso de la app</td>
+              <td>Construir tu feed y, si lo activas, tu boletín</td>
+            </tr>
+            <tr>
+              <td>Comentarios y denuncias de contenido</td>
+              <td>Los escribes tú</td>
+              <td>Publicar el comentario y moderar la conversación</td>
+            </tr>
+            <tr>
+              <td>Interacciones con artículos (me gusta, saltados, leídos)</td>
+              <td>Tu uso de la app</td>
+              <td>Evitar repetirte artículos y ordenar el feed</td>
+            </tr>
+            <tr>
+              <td>Preferencias de idioma, tema y notificaciones</td>
+              <td>Los eliges tú</td>
+              <td>Que la app se comporte igual en cada dispositivo</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        Estos datos se guardan en <strong>Google Firestore</strong>. La base legal es la
+        ejecución del servicio que pides al crear la cuenta: sin ellos no hay biblioteca,
+        ni feed personalizado, ni perfil.
+      </p>
+
+      <h2>Qué es público y qué no</h2>
+      <p>
+        Por defecto tu actividad es privada. Se vuelve pública solo cuando tú lo decides:
+        al publicar una lista, al escribir un comentario o al activar tu perfil público.
+        Lo que publicas queda accesible para cualquiera que tenga el enlace, incluidos
+        buscadores. Puedes revertirlo en cualquier momento desde los ajustes; a partir de
+        ese momento deja de servirse, aunque un buscador puede tardar en actualizar su
+        copia.
+      </p>
+
+      <h2>Boletín por correo</h2>
+      <p>
+        Si lo activas, PaperTok te envía novedades de lo que sigues. Para ello se guardan
+        tu dirección de correo, tus preferencias de envío y un identificador de baja, en
+        <strong>Cloudflare Workers KV</strong>. El envío lo realiza <strong>Brevo</strong>.
+      </p>
+      <p>
+        La base legal es tu consentimiento, y puedes retirarlo cuando quieras: cada correo
+        lleva un enlace de baja de un solo clic, y también puedes desactivarlo desde los
+        ajustes. Al darte de baja se borra la suscripción.
+      </p>
+
+      <h2>Analítica</h2>
+      <p>
+        PaperTok usa Vercel Web Analytics y <strong>solo empieza a medir si lo aceptas</strong>
+        en el aviso que aparece la primera vez. Si no lo aceptas, la librería ni siquiera
+        se carga. No usa cookies: para distinguir visitas, Vercel deriva un identificador
+        del propio navegador que caduca cada día y no permite seguirte entre un día y otro
+        ni entre sitios distintos.
+      </p>
+      <p>
+        Lo único que se envía son páginas vistas, y con la ruta despojada de
+        identificadores: leer un artículo concreto se registra como <code>/public/paper/:id</code>,
+        y visitar el perfil de un autor como <code>/explorer/author/:id</code>. Nunca viaja
+        cuál. Tampoco se envían tus búsquedas ni nada del contenido de tu cuenta.
+      </p>
+
+      <h2>Fuentes científicas y funciones de IA</h2>
+      <p>
+        Las búsquedas y los artículos vienen de repositorios públicos: OpenAlex, arXiv,
+        PubMed, Europe PMC, bioRxiv, Semantic Scholar, CORE, OSTI, NASA ADS, INSPIRE,
+        OpenReview, Hugging Face, Unpaywall y OpenCitations, entre otros.
+      </p>
+      <p>
+        Esas consultas <strong>no salen desde tu navegador</strong>: pasan por un servidor
+        intermedio en Cloudflare, de modo que esos repositorios no reciben tu dirección IP.
+        Ese servidor registra el volumen de peticiones para respetar los límites de cada
+        fuente, no quién las hace.
+      </p>
+      <p>
+        Las explicaciones y reescrituras de artículos las genera un modelo de lenguaje
+        (Google Gemini, con DeepSeek y Kimi como alternativas). A esos modelos se les envía
+        el texto del artículo y el idioma y nivel que elijas, nunca tu identidad ni tu
+        correo.
+      </p>
+
+      <h2>Con quién se comparten</h2>
+      <p>
+        No se venden datos ni se ceden con fines publicitarios. Intervienen únicamente los
+        proveedores necesarios para que la aplicación funcione:
+      </p>
+      <ul>
+        <li><strong>Google</strong> (Firebase Authentication, Firestore) — cuentas y datos de la app.</li>
+        <li><strong>Vercel</strong> — alojamiento de la web y analítica de páginas vistas.</li>
+        <li><strong>Cloudflare</strong> (Workers, KV) — servidor intermedio y almacenamiento del boletín.</li>
+        <li><strong>Brevo</strong> — envío de los correos.</li>
+      </ul>
+
+      <h2>Cuánto tiempo se conservan</h2>
+      <p>
+        Los datos de tu cuenta se conservan mientras la cuenta exista. Puedes
+        eliminarla desde <strong>Ajustes → Privacidad → Eliminar cuenta</strong>.
+        Eso borra tu perfil, tus listas, tus subrayados, tus seguimientos, tus
+        preferencias, la suscripción al boletín y la cuenta de acceso. Los
+        comentarios que hayas publicado permanecen disociados de tu perfil para
+        no romper hilos de conversación ajenos; escríbenos a
+        <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a> si quieres que
+        se borren también.
+      </p>
+
+      <h2>Tus derechos</h2>
+      <p>
+        Puedes acceder, rectificar y suprimir tus datos, oponerte a su tratamiento,
+        solicitar su limitación y pedir una copia en formato portable. Buena parte se
+        resuelve desde la propia aplicación, en los ajustes de perfil y de cuenta. Para
+        todo lo demás, escribe a
+        <a href="mailto:nicomg60@gmail.com">nicomg60@gmail.com</a>.
+      </p>
+      <p>
+        Si crees que el tratamiento no es correcto, puedes reclamar ante la
+        <a href="https://www.aepd.es/" rel="noopener">Agencia Española de Protección de Datos</a>.
+      </p>
+
+      <h2>Almacenamiento en tu navegador</h2>
+      <p>
+        PaperTok guarda algunas cosas en tu propio navegador que nunca se envían a ningún
+        servidor: el tema claro u oscuro, el idioma, tu decisión sobre la analítica y una
+        caché de la sesión para que la aplicación no se recargue entera al volver. Se
+        borran al limpiar los datos del sitio.
+      </p>
+
+      <h2>Cambios</h2>
+      <p>
+        Si esta política cambia de forma relevante, se actualizará la fecha del principio y
+        el cambio se anunciará en la propia aplicación.
+      </p>
+
+      <footer>
+        PaperTok · <a href="/">papertok.app</a>
+      </footer>
+    </main>
+  </body>
+</html>

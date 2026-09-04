@@ -1,7 +1,16 @@
 /* Save and organize.
-   Two sections with two save models, each labeled: destinations (read later,
-   lists, new list) save on tap; the note and tags wait for their button.
-   Centered card on desktop, bottom sheet on phones. */
+
+   Rewritten with the confirm-on-save modal it belongs to. The previous file
+   was the stylesheet of an older component: nineteen of the classes the JSX
+   rendered — the save bar, the discard confirmation, the inline error, the tag
+   chips, the loading skeleton, the retry button — had no rule at all and
+   shipped bare, while eight rules for a deleted inline create-list form were
+   still being served. `listsStyles.test.js` now fails on that drift.
+
+   Language: design.md. An overlay surface (ink scrim + a white sheet with a
+   hairline border and a short drop), structure from rules rather than shadows,
+   mono for machine data, serif for the paper's own words, and every control
+   from `src/components/ui/button.jsx`. */
 
 .save-modal-dialog {
   border: none;
@@ -9,6 +18,7 @@
   padding: 0;
   max-width: 100vw;
   max-height: 100vh;
+  max-height: 100dvh;
   width: 100%;
   height: 100%;
   display: flex;
@@ -17,486 +27,518 @@
 }
 
 .save-modal-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
-  animation: fadeIn 0.2s ease;
+  /* No `backdrop-filter`: this backdrop fades in with `fadeIn`, and
+     animating opacity over a blurred layer forces the blur to be
+     re-resolved every frame — the worst case for a mobile GPU. The rgba
+     scrim alone reads as the backdrop; its 3px blur was invisible under it.
+     This rule fully owns its `::backdrop` (background, animation, and now
+     the absence of a filter) rather than falling through to `dialog::backdrop`
+     in global.css — that base rule carries no `backdrop-filter` of its own
+     either, so nothing reintroduces one here unopposed. */
+  background: rgba(17, 19, 24, 0.4);
+  /* The scrim used to finish 60ms before the window it is behind, so the
+     backdrop settled while the card was still arriving. Same length, same
+     curve, one movement. */
+  animation: fadeIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .save-modal {
-  width: 90%;
-  max-width: 440px;
-  max-height: 84vh;
-  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  width: min(calc(100vw - var(--space-6)), 440px);
+  /* Rule 7: the clamp is in viewport units, so the sheet keeps growing with
+     the screen instead of cutting the list while the page sits empty. */
+  max-height: min(90vh, 720px);
+  max-height: min(90dvh, 720px);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-2xl);
-  padding: var(--space-6);
-  animation: scaleIn 0.24s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: var(--shadow-xl);
+  /* The previous `scaleIn` was a 2% scale over 200ms — below the threshold
+     at which a 440px sheet reads as arriving, so opening looked like a
+     hard cut. 16px of travel and 4% of scale, on the same spring the
+     comments sheet uses on desktop, is what makes the window drop into
+     place. */
+  animation: saveModalIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
 }
+
+@keyframes saveModalIn {
+  from { opacity: 0; transform: translateY(16px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Leaving used to be an afterthought: 160ms against an entrance of 280, over
+   half the distance (8px and 2% against 16px and 4%), on `ease` — which for a
+   departure spends its first frames barely moving and then drops the window in
+   the last few. Short is not the same as quick, and this was short enough to
+   read as the window being deleted rather than dismissed. It now travels the
+   same distance it arrived from, on the ease-in the page transition and the
+   filter panel already leave by: it holds while it goes, and goes at the end.
+   240ms was then trimmed to 200: a dismissal is read in its first frames, and
+   the last 40ms were the reader waiting on a window already gone in their
+   head. `DIALOG_EXIT_MS` in the component matches this to the millisecond,
+   and `saveModalMotion.test.js` fails if they ever drift.
+
+   Then up again, to 300 (and the entrance to 360, the scrim on both clocks):
+   asked for on 2026-09-03 — both read as too quick in use, the window there
+   and gone before it had registered as a window. Same curves, same distance,
+   half as long again. */
+@keyframes saveModalOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(16px) scale(0.96); }
+}
+
+/* `forwards` matters: the window stays mounted for the length of this, and
+   without it the card would snap back to full opacity for the last frame. */
+.save-modal.is-closing {
+  animation: saveModalOut 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.save-modal-dialog.is-closing::backdrop {
+  animation: fadeOut 0.32s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+.save-modal-dialog.is-closing {
+  pointer-events: none;
+}
+
+/* ── Head ─────────────────────────────────────────────────────────────── */
 
 .save-modal-header {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--space-2);
+  gap: var(--space-3);
+  padding: var(--space-5) var(--space-5) 0;
+}
+
+.save-modal-kicker {
+  margin: 0 0 var(--space-1);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
 }
 
 .save-modal-header h2 {
+  margin: 0;
   font-family: var(--font-heading);
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-semibold);
-}
-
-.save-modal-close {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
   font-size: var(--fs-lg);
-  color: var(--text-secondary);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+  line-height: var(--lh-tight);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-close:hover {
-    background: var(--bg-glass-hover);
-  }
-}
-
+/* The paper's own title is prose, so it is set in the serif — the same voice
+   the card and the reader give it. */
 .save-modal-paper-title {
+  margin: var(--space-3) var(--space-5) 0;
+  padding-bottom: var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  font-family: var(--font-serif);
   font-size: var(--fs-sm);
-  color: var(--text-tertiary);
-  margin-bottom: var(--space-5);
+  line-height: var(--lh-normal);
+  color: var(--text-secondary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
 
-/* --- Section chrome --- */
+/* ── Body ─────────────────────────────────────────────────────────────── */
 
-.save-modal-section-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: var(--space-1) var(--space-3);
-  margin-bottom: var(--space-3);
-}
-
-.save-modal-section-title {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.save-modal-section-hint {
-  margin: 0;
-  color: var(--text-tertiary);
-  font-size: var(--fs-xs);
-}
-
-.save-modal-destinations {
-  padding-bottom: var(--space-5);
-  margin-bottom: var(--space-5);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-/* --- Read later --- */
-
-.save-modal-read-later {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  width: 100%;
-  padding: var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  color: var(--text-primary);
-  text-align: left;
-  transition: background var(--transition-fast), border-color var(--transition-fast), transform var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-read-later:hover { background: var(--bg-glass-hover); }
-}
-.save-modal-read-later:active { transform: scale(0.99); }
-.save-modal-read-later.active {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary-glow);
-  color: var(--accent-secondary);
-}
-
-.save-modal-read-later span { display: flex; flex-direction: column; gap: 2px; }
-.save-modal-read-later strong { font-size: var(--fs-sm); }
-.save-modal-read-later small { color: var(--text-tertiary); font-size: var(--fs-xs); }
-
-/* --- Lists --- */
-
-.save-modal-lists {
+/* Only the middle scrolls: the title stays readable and the save bar stays
+   reachable however long the list of destinations gets. */
+.save-modal-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-1);
-  margin-top: var(--space-2);
+  gap: var(--space-6);
 }
 
-.save-modal-list-skeleton {
-  height: 44px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-glass);
-  animation: save-modal-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes save-modal-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
-
-.save-modal-loading {
-  text-align: center;
-  color: var(--text-tertiary);
-  font-size: var(--fs-sm);
-  padding: var(--space-5) var(--space-4);
-}
-
-/* Selection must be readable at a glance: the whole row carries the state
-   (accent border + tint), and the checkbox is a real box with a real check,
-   not a discreet tick. */
-.save-modal-list-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid transparent;
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-list-item:hover {
-    background: var(--bg-glass-hover);
-  }
-}
-
-.save-modal-list-item.is-selected {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary-glow);
-}
-
-.save-modal-list-item input[type="checkbox"] {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.save-modal-checkbox {
-  width: 22px;
-  height: 22px;
-  border-radius: var(--radius-sm);
-  border: 2px solid var(--border-strong);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: transparent;
-  transition: background var(--transition-fast), border-color var(--transition-fast),
-    color var(--transition-fast);
-}
-
-.save-modal-checkbox svg {
-  transform: scale(0.6);
-  transition: transform var(--transition-fast);
-}
-
-.save-modal-list-item input:checked + .save-modal-checkbox {
-  background: var(--accent-primary);
-  border-color: var(--accent-primary);
-  color: #fff;
-}
-
-.save-modal-list-item input:checked + .save-modal-checkbox svg {
-  transform: scale(1);
-}
-
-.save-modal-list-item input:focus-visible + .save-modal-checkbox {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
-}
-
-.save-modal-list-item.is-selected .save-modal-list-name {
-  color: var(--text-primary);
-  font-weight: var(--fw-semibold);
-}
-
-.save-modal-list-emoji {
-  display: flex;
-  color: var(--text-secondary);
-}
-
-.save-modal-list-name {
-  flex: 1;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-}
-
-.save-modal-list-count {
-  font-size: var(--fs-xs);
-  color: var(--text-tertiary);
-}
-
-.save-modal-empty {
-  color: var(--text-tertiary);
-  font-size: var(--fs-sm);
-  padding: var(--space-2) var(--space-3);
-}
-
-/* --- New list ---------------------------------------------------------------
-   Folded behind its own button under the lists; pressing it unfolds the
-   creation form (icon, name). Lists are born private — publishing is an act
-   on a list with content, over in My lists. */
-
-.save-modal-create-toggle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  width: 100%;
-  min-height: 42px;
-  margin-top: var(--space-3);
-  border: 1px dashed var(--border-default);
-  border-radius: var(--radius-lg);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  transition: border-color var(--transition-fast), color var(--transition-fast),
-    background var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-create-toggle:hover {
-    border-color: var(--accent-primary);
-    background: var(--bg-glass);
-    color: var(--text-primary);
-  }
-}
-
-/* Its own window over the save modal: a small centered card in a nested
-   <dialog>, with a real header, labeled fields and a footer — not a dashed
-   box crammed between the lists and the note. */
-
-/* --- Note and tags --- */
-
+.save-modal-destinations,
 .save-modal-personal {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
 }
 
-.save-modal-personal .save-modal-section-head {
-  margin-bottom: 0;
+.save-modal-section-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
-.save-modal-field { display: flex; flex-direction: column; gap: var(--space-2); }
-.save-modal-field > span { display: flex; align-items: center; gap: var(--space-2); font-size: var(--fs-sm); font-weight: var(--fw-medium); }
+.save-modal-section-title {
+  margin: 0;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.save-modal-section-hint {
+  margin: 0;
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+/* ── Destinations: one family of ruled rows ───────────────────────────── */
+
+.save-modal-rows {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.save-modal-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  width: 100%;
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.save-modal-row + .save-modal-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .save-modal-row:hover { background: var(--bg-secondary); }
+}
+
+.save-modal-row.is-selected { background: var(--bg-sunken); }
+
+/* The input used to be `display: none`, which took the checkbox out of the tab
+   order: the whole destinations list was unreachable by keyboard. It is now
+   merely invisible, still focusable, and the focus ring is drawn on the row. */
+.save-modal-row-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.save-modal-row:has(.save-modal-row-input:focus-visible),
+.save-modal-row:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+.save-modal-tick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  /* The tick is always in the DOM and merely invisible while unselected: an
+     icon that appears from nothing shifts nothing, and there is no second
+     checkmark drawn in CSS to disagree with it — the old rule painted a
+     `::after` glyph in `--text-primary` on an `--accent-primary` background,
+     which is the same ink twice, so the box read as a solid black square. */
+  color: var(--text-inverse);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.save-modal-tick > svg {
+  opacity: 0;
+  transform: scale(0.55);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.save-modal-row.is-selected .save-modal-tick {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+}
+
+.save-modal-row.is-selected .save-modal-tick > svg {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.save-modal-row-icon {
+  flex-shrink: 0;
+  color: var(--text-tertiary);
+}
+
+.save-modal-row.is-selected .save-modal-row-icon { color: var(--text-primary); }
+
+.save-modal-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.save-modal-row-name {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.save-modal-row-hint {
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+/* A count is machine data. */
+.save-modal-count {
+  flex-shrink: 0;
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+}
+
+.save-modal-empty {
+  margin: 0;
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--text-tertiary);
+}
+
+/* ── Waiting, and giving up honestly ──────────────────────────────────── */
+
+.save-modal-skeleton {
+  height: 46px;
+  background: var(--bg-secondary);
+  /* The read answers in well under a second on a healthy connection, and a
+     skeleton that appears and leaves inside a fifth of a second is a flicker
+     announcing a wait that was already over. Deliberately still animated under
+     reduced motion — this is a delay, not decoration. */
+  opacity: 0;
+  animation: save-modal-reveal 140ms ease-out 320ms forwards;
+}
+
+.save-modal-skeleton + .save-modal-skeleton {
+  border-top: 1px solid var(--border-subtle);
+}
+
+@keyframes save-modal-reveal {
+  to { opacity: 1; }
+}
+
+.save-modal-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: var(--space-5) var(--space-4);
+  text-align: center;
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+}
+
+/* Inside the skeleton block it is a caption under the rows, not a panel. */
+.save-modal-rows .save-modal-notice {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: transparent;
+  font-size: var(--fs-xs);
+  color: var(--text-tertiary);
+}
+
+.save-modal-create-toggle { justify-content: flex-start; }
+
+/* ── Note and tags ────────────────────────────────────────────────────── */
+
+.save-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.save-modal-field > span {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  color: var(--text-secondary);
+}
+
 .save-modal-field textarea,
-.save-modal-field input {
+.save-modal-tag-editor {
   width: 100%;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
-  background: var(--bg-glass);
+  background: var(--bg-card);
   color: var(--text-primary);
   padding: var(--space-3);
-  font: inherit;
+  font-family: var(--font-body);
   font-size: var(--fs-sm);
+  transition: border-color var(--transition-fast);
 }
-.save-modal-field textarea { min-height: 86px; resize: vertical; }
-.save-modal-field small { color: var(--text-tertiary); font-size: var(--fs-xs); }
-.save-modal-field textarea:focus,
-.save-modal-field input:focus { outline: none; border-color: var(--accent-primary); }
 
-/* --- Tags as chips ---------------------------------------------------------
-   One bordered field that holds the chips and the input together: typing and
-   Enter grows it, ✕ (or Backspace on an empty input) shrinks it. */
+.save-modal-field textarea {
+  min-height: 84px;
+  resize: vertical;
+  line-height: var(--lh-normal);
+}
+
+.save-modal-field textarea:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+  border-color: var(--border-strong);
+}
 
 .save-modal-tag-editor {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: var(--space-1);
-  min-height: 46px;
-  padding: var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-glass);
+  gap: var(--space-2);
   cursor: text;
 }
 
 .save-modal-tag-editor:focus-within {
-  border-color: var(--accent-primary);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+  border-color: var(--border-strong);
 }
 
 .save-modal-tag-chip {
   display: inline-flex;
   align-items: center;
   gap: var(--space-1);
-  padding: 3px var(--space-1) 3px var(--space-3);
+  padding: 2px var(--space-2);
   border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-glass-strong);
-  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
   font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-  overflow-wrap: anywhere;
+  color: var(--text-secondary);
+  max-width: 100%;
+  overflow: hidden;
+  animation: save-modal-chip-in 160ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes save-modal-chip-in {
+  from { opacity: 0; transform: scale(0.92); }
+  to { opacity: 1; transform: none; }
 }
 
 .save-modal-tag-remove {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
-  border-radius: var(--radius-full);
   color: var(--text-tertiary);
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .save-modal-tag-remove:hover {
-    background: var(--bg-glass-hover);
-    color: var(--text-primary);
-  }
+  .save-modal-tag-remove:hover { color: var(--accent-danger); }
 }
 
-/* Scoped under the editor to outrank the generic `.save-modal-field input`
-   rule: the chip input is borderless — the editor box is the field. */
-.save-modal-tag-editor .save-modal-tag-input {
+.save-modal-tag-input {
   flex: 1;
-  width: auto;
-  min-width: 120px;
-  padding: var(--space-1);
+  min-width: 8ch;
   border: none;
-  background: none;
+  background: transparent;
   color: var(--text-primary);
+  font-family: var(--font-body);
   font-size: var(--fs-sm);
 }
 
-.save-modal-tag-editor .save-modal-tag-input:focus {
-  border: none;
-  box-shadow: none;
+/* Deliberate: `.save-modal-tag-editor:focus-within` already draws the ring
+   for the whole control, so the inner input must not add its own second,
+   outset one on top. */
+.save-modal-tag-input:focus {
   outline: none;
 }
 
-/* --- Footer: export --- */
+/* ── Utility group: rule 6, primary left, utilities right behind a rule ── */
 
 .save-modal-footer {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: var(--space-2);
-  margin-top: var(--space-5);
   padding-top: var(--space-4);
   border-top: 1px solid var(--border-subtle);
 }
 
 .save-modal-footer-label {
+  margin-right: auto;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
   color: var(--text-tertiary);
-  font-size: var(--fs-xs);
 }
 
-.save-modal-export { display: flex; gap: var(--space-2); }
-.save-modal-export button {
-  display: inline-flex;
+.save-modal-export {
+  display: flex;
   align-items: center;
-  gap: 5px;
-  min-height: 30px;
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-medium);
-}
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-export button:hover { background: var(--bg-glass-hover); color: var(--text-primary); }
+  gap: var(--space-1);
 }
 
-/* The retry beside "your lists could not be loaded". A read that did not
-   answer is a retryable state, not an empty account, so it needs a way out
-   that is not reloading the page. */
-.save-modal-retry {
-  display: block;
-  margin: var(--space-3) auto 0;
-  padding: var(--space-2) var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-glass);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-medium);
-  cursor: pointer;
-}
-.save-modal-retry:hover { background: var(--bg-glass-hover); color: var(--text-primary); }
-
-/* --- The save bar -----------------------------------------------------------
-   One button confirms everything. Sticky at the modal's bottom edge (the
-   negative margins re-occupy the modal's padding), so it stays reachable
-   however far the sheet scrolls — which on a phone is the whole point. When
-   closing would lose changes, the bar becomes the discard confirmation. */
+/* ── The one commit ───────────────────────────────────────────────────── */
 
 .save-modal-savebar {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  margin: var(--space-5) calc(-1 * var(--space-6)) calc(-1 * var(--space-6));
-  padding: var(--space-3) var(--space-6) var(--space-4);
-  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-secondary);
   border-radius: 0 0 var(--radius-2xl) var(--radius-2xl);
-  background: var(--bg-elevated);
-}
-
-.save-modal-save-btn {
-  display: block;
-  width: 100%;
-  min-height: 42px;
-  border-radius: var(--radius-full);
-  background: var(--accent-primary);
-  color: #fff;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  transition: background var(--transition-fast), opacity var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-save-btn:not(:disabled):hover {
-    background: var(--accent-primary-hover);
-  }
 }
 
 .save-modal-save-error {
-  margin: 0 0 var(--space-2);
-  color: var(--accent-danger);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--tint-red-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
   font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
 }
 
 .save-modal-discard {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-3);
+  align-items: center;
+  gap: var(--space-3);
+  animation: save-modal-discard-in 180ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes save-modal-discard-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
 }
 
 .save-modal-discard p {
   margin: 0;
-  color: var(--text-primary);
+  margin-right: auto;
   font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
+  font-weight: var(--fw-medium);
+  color: var(--text-primary);
 }
 
 .save-modal-discard-actions {
@@ -505,76 +547,19 @@
   gap: var(--space-2);
 }
 
-.save-modal-discard-btn {
-  min-height: 36px;
-  padding: 0 var(--space-4);
-  border: 1px solid rgba(239, 68, 68, 0.35);
-  border-radius: var(--radius-full);
-  color: var(--accent-danger);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  transition: background var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-discard-btn:hover {
-    background: rgba(239, 68, 68, 0.08);
-  }
-}
-
-.save-modal-keep-btn {
-  min-height: 36px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--bg-glass);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .save-modal-keep-btn:hover {
-    background: var(--bg-glass-hover);
-  }
-}
-
-/* --- Phone: bottom sheet, like the comments sheet --- */
-
-@media (max-width: 600px) {
-  .save-modal-dialog {
-    align-items: flex-end;
-  }
-
-  .save-modal {
-    width: 100%;
-    max-width: none;
-    max-height: 88dvh;
-    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
-    padding-bottom: calc(var(--space-6) + env(safe-area-inset-bottom, 0px));
-    animation: slideInFromBottom 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .save-modal-savebar {
-    margin-bottom: calc(-1 * (var(--space-6) + env(safe-area-inset-bottom, 0px)));
-    padding-bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
-    border-radius: 0;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .save-modal,
-  .save-modal-dialog::backdrop {
+  .save-modal.is-closing,
+  .save-modal-dialog::backdrop,
+  .save-modal-dialog.is-closing::backdrop,
+  .save-modal-tag-chip,
+  .save-modal-discard {
     animation: none;
   }
 
-  .save-modal-list-skeleton {
-    animation: none;
-  }
-
-  .save-modal-read-later:active {
+  .save-modal-tick > svg,
+  .save-modal-row.is-selected .save-modal-tick > svg {
+    transition: none;
     transform: none;
   }
 }
-
-/* fadeIn / scaleIn / slideInFromBottom come from variables.css. */

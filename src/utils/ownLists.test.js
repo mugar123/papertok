@@ -2,8 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   listsHolding,
+  mergeCreatedLists,
   readOwnLists,
   snapshotIsAuthoritative,
+  toProfileListCards,
   withPaperMembership,
 } from './ownLists.js';
 
@@ -157,4 +159,55 @@ test('a list the cache does not know about is left alone', () => {
   const lists = [{ id: 'a', paperIds: [] }];
   const after = withPaperMembership(lists, 'p1', { added: ['ghost'] });
   assert.deepEqual(after, lists, 'no phantom entries invented for an unknown id');
+});
+
+/* --- A list created while the read was in flight ----------------------------
+   The "Create a new list" button is on screen from the first frame, before the
+   lists have landed. The document is written straight away, but the `getDocs`
+   already on the wire was issued BEFORE it existed, so its snapshot cannot
+   contain it. Applying that snapshot wholesale wiped the list the user had
+   just made off the screen AND out of the shared session cache — which
+   `rememberOwnLists` then stamped fresh, so every other screen agreed it did
+   not exist for the next thirty seconds. */
+
+test('THE BUG: a list created during the read survives the snapshot that predates it', () => {
+  const fetched = [{ id: 'list_1', name: 'A', paperIds: [] }];
+  const created = [{ id: 'list_2', name: 'Just made', paperIds: [] }];
+
+  const merged = mergeCreatedLists(fetched, created);
+  assert.deepEqual(merged.map(list => list.id), ['list_1', 'list_2']);
+  assert.equal(merged[1].name, 'Just made');
+});
+
+test('a snapshot that has caught up does not duplicate the created list', () => {
+  const fetched = [
+    { id: 'list_1', name: 'A', paperIds: [] },
+    { id: 'list_2', name: 'Renamed on another device', paperIds: ['p1'] },
+  ];
+  const created = [{ id: 'list_2', name: 'Just made', paperIds: [] }];
+
+  const merged = mergeCreatedLists(fetched, created);
+  assert.deepEqual(merged.map(list => list.id), ['list_1', 'list_2']);
+  assert.equal(merged[1].name, 'Renamed on another device', 'the server wins once it knows');
+  assert.equal(merged, fetched, 'nothing to merge means the very same array');
+});
+
+test('merging nothing returns the fetched lists untouched', () => {
+  const fetched = [{ id: 'list_1', paperIds: [] }];
+  assert.equal(mergeCreatedLists(fetched, []), fetched);
+  assert.equal(mergeCreatedLists(fetched, null), fetched);
+});
+
+test('toProfileListCards maps full documents without inventing titles', () => {
+  const cards = toProfileListCards([
+    { id: 'a', name: 'Notes', paperIds: ['p1', 'p2'], publicShareId: 'share1', color: '#111' },
+    { id: 'b', title: 'Already a card', paperCount: 4, isPublished: true },
+    { id: '', name: 'No id', paperIds: [] },
+    { id: 'c', name: '', paperIds: [] },
+  ]);
+  assert.deepEqual(cards.map(card => [card.id, card.title, card.paperCount, card.isPublished]), [
+    ['a', 'Notes', 2, true],
+    ['b', 'Already a card', 4, true],
+  ]);
+  assert.equal(cards[0].color, '#111');
 });

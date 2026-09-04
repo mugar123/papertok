@@ -12,7 +12,7 @@ flowchart LR
     UI --> S["Browser-safe scientific APIs"]
     UI --> W["Cloudflare Worker"]
     W --> P["Protected scientific providers"]
-    W --> AI["Gemini / Kimi"]
+    W --> AI["Gemini / DeepSeek / Kimi"]
     W --> E["Brevo / Resend"]
     W --> KV["KV + Durable Objects"]
 ```
@@ -63,12 +63,14 @@ diversity.
 - Firestore stores profiles, follows, interactions, preferences, and reading data.
 - Browser storage is used only for bounded caches and must be namespaced by user when it
   contains personalized state.
-- Cloudflare KV stores notification state. Atomic AI and protected-provider request quotas use
+- Cloudflare KV stores notification state and edge-cached comment-thread anchors. Atomic AI and protected-provider request quotas use
   a Durable Object ledger keyed by bounded UTC periods and hashed user identifiers.
 - Scheduled digests query native arXiv categories directly before falling back to OpenAlex,
   avoiding the indexing delay for newly submitted physics and mathematics papers.
 - AI explanations bound PDF acquisition and provider retries within the browser request
   deadline, while provider JSON is normalized before LaTeX-aware rendering.
+- When Gemini exhausts its daily quota, the fallback chain runs in cost order: DeepSeek V4
+  Flash on NVIDIA's free API first, Modal's paid Kimi K3 only when NVIDIA could not answer.
 - The Kimi budget ledger uses a Durable Object for atomic monthly reservations.
 - Provider-backed Worker routes verify Firebase identity and use canonical cache keys before
   spending protected API quota. A canonical key is built from the values the handler is about to
@@ -85,6 +87,8 @@ diversity.
 The Worker entry point is `worker/report-api.js`. Its route groups include:
 
 - health and locale: `/health`, `/health/email`, `/health/ai`, `/locale`
+- comment threads: `/thread-anchor` (KV-cached stub + first page at the edge; HTTP `no-store` so a write's KV delete is the invalidation; `POST /thread-anchor/invalidate` after a create, edit or delete)
+- account deletion: `/account/delete` (Firebase identity, service-account Firestore walk, newsletter KV, Auth last; retryable 202 slices)
 - discovery: `/report/trends`, `/related`, `/citation-graph`, `/arxiv`
 - open access: `/oa`
 - specialist sources: `/sources/*`

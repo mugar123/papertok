@@ -1,321 +1,498 @@
-.cds-minimal-container {
-  width: 100%;
-  max-width: 600px;
-  margin: 0 auto 24px auto;
-  padding: 20px 24px;
-  background: transparent;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  position: relative;
+/* ============================================
+   Custom period
+
+   This panel was the last thing in Research still wearing the old dark theme:
+   the rail was drawn with a violet gradient and glowing white knobs set inline
+   in the JSX, the day step was a lilac pill, and the summary line underneath
+   carried `rgba(255,255,255,0.7)` on a white card — white on white, so the one
+   sentence that told you what you had chosen could not be read.
+
+   It is set in the page's own voice now: flat ink, hairline rules, mono for the
+   machine parts and the serif for the sentence. The two-step model is kept, and
+   step two is shown greyed with its reason rather than removed — a control that
+   simply vanishes teaches nothing about why.
+   ============================================ */
+
+.cds {
+  padding: var(--space-5) 0 var(--space-2);
 }
 
-.cds-minimal-header {
+/* The panel's parts arrive in reading order, on the same cascade the rest of
+   the edition uses. Local rather than borrowed, so the component stands up on
+   its own if it is ever mounted anywhere else. */
+.cds-enter {
+  animation: cds-enter 0.42s cubic-bezier(0.16, 1, 0.3, 1) backwards;
+  animation-delay: calc(var(--enter-order, 0) * 55ms);
+}
+
+@keyframes cds-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── Head ── */
+.cds-head {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
 }
 
-.cds-minimal-title {
-  font-size: 13px;
-  font-weight: 600;
+.cds-title {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--text-primary);
 }
 
-.cds-minimal-close {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.3);
-  font-size: 16px;
+.cds-hint {
+  font: 400 0.6875rem/1.5 var(--font-mono);
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+}
+
+.cds-close {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  margin-left: auto;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-tertiary);
   cursor: pointer;
-  padding: 4px;
-  transition: color 0.2s;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
-.cds-minimal-close:focus-visible,
-.cds-badge-btn:focus-visible,
-.cds-fcal-nav:focus-visible,
-.cds-fcal-day:focus-visible,
-.cds-minimal-apply:focus-visible {
-  outline: 2px solid #a78bfa;
+@media (hover: hover) and (pointer: fine) {
+  .cds-close:hover {
+    color: var(--text-primary);
+    border-color: var(--border-default);
+  }
+}
+
+/* ── The rail ──
+   Its own labels ride the handles, so the years are read where they are being
+   set rather than in a caption somewhere else. */
+.cds-rail-wrap {
+  padding: 0 2px;
+  margin-bottom: var(--space-6);
+}
+
+.cds-rail-labels {
+  position: relative;
+  height: 20px;
+  margin-bottom: 6px;
+}
+
+.cds-rail-label {
+  position: absolute;
+  top: 0;
+  font: 600 0.8125rem/1.4 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.cds-rail {
+  padding: 0 8px;
+}
+
+/* Placed by year rather than spread evenly: spacing them with space-between
+   put 1960 a fifth of the way along a rail where it belongs an eighth of the
+   way along, so the scale lied about itself. */
+.cds-rail-ticks {
+  position: relative;
+  height: 12px;
+  margin-top: var(--space-3);
+}
+
+.cds-tick {
+  position: absolute;
+  top: 0;
+  font: 400 0.625rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+
+/* rc-slider ships its own look; these override it in place of the inline
+   gradient objects the component used to pass as props. */
+.cds-rail .rc-slider {
+  height: 18px;
+  padding: 7px 0;
+}
+
+.cds-rail .rc-slider-rail {
+  height: 3px;
+  border-radius: 0;
+  background: var(--border-subtle);
+}
+
+.cds-rail .rc-slider-track {
+  height: 3px;
+  border-radius: 0;
+  background: var(--text-primary);
+}
+
+.cds-rail .rc-slider-handle {
+  width: 15px;
+  height: 15px;
+  margin-top: -6px;
+  border: 1px solid var(--text-primary);
+  background: var(--bg-card);
+  opacity: 1;
+  box-shadow: none;
+  /* Nothing eased here on purpose: a transition on a dragged handle reads as
+     lag, however small. */
+  transition: none;
+}
+
+.cds-rail .rc-slider-handle:hover,
+.cds-rail .rc-slider-handle-dragging,
+.cds-rail .rc-slider-handle:focus-visible {
+  border-color: var(--text-primary);
+  background: var(--text-primary);
+  box-shadow: none;
+}
+
+.cds-rail .rc-slider-handle:focus-visible {
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .cds-minimal-close:hover {
-    color: #fff;
-  }
+/* ── The two steps ── */
+.cds-steps {
+  border-top: 1px solid var(--border-subtle);
+  margin-bottom: var(--space-5);
 }
 
-/* Timeline Layout */
-.cds-minimal-timeline {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  margin-bottom: 32px;
-}
-
-.cds-timeline-labels {
+.cds-step {
   display: flex;
   align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.cds-year-label {
-  font-family: var(--font-title);
-  font-size: 32px;
-  font-weight: 800;
-  color: #fff;
-  text-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
-}
-
-.cds-year-divider {
-  color: rgba(255, 255, 255, 0.3);
-  font-weight: 300;
-}
-
-.cds-timeline-slider {
+  gap: var(--space-3);
   width: 100%;
-  padding: 0 10px;
+  min-height: 52px;
+  padding: var(--space-3) 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
 }
 
-/* Actions Row */
-.cds-minimal-actions {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.cds-badge-placeholder {
-  font-size: 13px;
-  color: rgba(255, 255, 255, 0.3);
-  font-style: italic;
-}
-
-/* Popover Wrapper */
-.cds-popover-wrapper {
-  position: relative;
-}
-
-.cds-badge-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  background: rgba(155, 135, 245, 0.1);
-  border: 1px solid rgba(155, 135, 245, 0.2);
-  border-radius: 20px;
-  color: #9b87f5;
-  font-size: 13px;
-  font-weight: 600;
+.cds-step--action {
   cursor: pointer;
-  transition: all 0.3s ease;
-}
-
-.cds-badge-btn.active {
-  background: rgba(155, 135, 245, 0.2);
-  border-color: rgba(155, 135, 245, 0.4);
-  box-shadow: 0 0 15px rgba(155, 135, 245, 0.2);
-  color: #fff;
+  transition: color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .cds-badge-btn:hover {
-    background: rgba(155, 135, 245, 0.2);
-    border-color: rgba(155, 135, 245, 0.4);
-    box-shadow: 0 0 15px rgba(155, 135, 245, 0.2);
-    color: #fff;
-  }
+  .cds-step--action:hover .cds-step-body { color: var(--text-primary); }
+  .cds-step--action:hover .cds-step-n { background: var(--text-primary); color: var(--text-inverse); }
 }
 
-.cds-badge-arrow {
-  transition: transform 0.3s;
+.cds-step--off {
+  color: var(--text-tertiary);
 }
 
-.cds-badge-arrow.rotated {
-  transform: rotate(180deg);
+.cds-step-n {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 21px;
+  height: 21px;
+  border: 1px solid var(--border-ink);
+  border-radius: var(--radius-full);
+  font: 600 0.625rem/1 var(--font-mono);
+  transition: background var(--transition-fast), color var(--transition-fast),
+    border-color var(--transition-fast);
 }
 
-/* Floating Calendar */
-.cds-floating-calendar {
-  position: absolute;
-  bottom: 100%;
-  left: 0;
-  margin-bottom: 12px;
-  width: 280px;
-  background: rgba(15, 15, 20, 0.85);
-  backdrop-filter: blur(40px);
-  -webkit-backdrop-filter: blur(40px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 16px;
-  padding: 16px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(255,255,255,0.05);
-  z-index: 100;
-  animation: popoverFade 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+.cds-step--off .cds-step-n {
+  border-color: var(--border-default);
+  color: var(--text-tertiary);
 }
 
-@keyframes popoverFade {
-  from { opacity: 0; transform: translateY(10px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+.cds-step-body {
+  font-size: var(--fs-sm);
+  transition: color var(--transition-fast);
 }
 
-.cds-fcal-header {
-  display: flex;
-  justify-content: space-between;
+.cds-step-why {
+  display: inline-flex;
   align-items: center;
-  margin-bottom: 12px;
+  gap: 5px;
+  margin-left: auto;
+  text-align: right;
+  font: 400 0.6875rem/1.5 var(--font-mono);
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
 }
 
-.cds-fcal-month {
-  font-size: 14px;
-  font-weight: 700;
-  color: #fff;
+.cds-step-chevron {
+  transition: transform var(--transition-base);
 }
 
-.cds-fcal-nav {
-  background: transparent;
-  border: none;
-  color: rgba(255, 255, 255, 0.5);
+.cds-step--action.is-open .cds-step-chevron {
+  transform: rotate(90deg);
+}
+
+/* ── The day step, expanded in place ── */
+.cds-cal-slot {
+  overflow: hidden;
+}
+
+.cds-cal {
+  padding: var(--space-4) 0 var(--space-5);
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.cds-cal-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.cds-cal-month {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.cds-cal-nav {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-secondary);
   cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: color 0.2s;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
 }
+
+.cds-cal-nav:last-of-type { margin-left: auto; }
 
 @media (hover: hover) and (pointer: fine) {
-  .cds-fcal-nav:hover:not(:disabled) {
-    color: #fff;
+  .cds-cal-nav:hover:not(:disabled) {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
   }
 }
 
-.cds-fcal-nav:disabled {
-  opacity: 0.2;
+.cds-cal-nav:disabled {
+  opacity: 0.35;
   cursor: not-allowed;
 }
 
-.cds-fcal-grid {
+/* The calendar used to be a single 336px month pinned to the left of a panel
+   more than a thousand wide, which read as a hole in the page. Three months
+   fill the measure instead, and since step two never leaves one year, a
+   quarter at a time is also the useful unit. */
+.cds-cal-months {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-8);
 }
 
-.cds-fcal-wd {
-  text-align: center;
-  font-size: 11px;
-  font-weight: 700;
-  color: rgba(255, 255, 255, 0.3);
-  padding-bottom: 8px;
+.cds-cal-month-name {
+  display: block;
+  margin-bottom: var(--space-2);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
 }
 
-.cds-fcal-day {
-  aspect-ratio: 1;
+.cds-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.cds-cal-wd {
+  display: grid;
+  place-items: center;
+  min-height: 26px;
+  font: 600 0.625rem/1 var(--font-mono);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.cds-cal-day {
+  display: grid;
+  place-items: center;
+  min-height: 44px;
+  border: 0;
+  border-right: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: 500 0.875rem/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cds-cal-day:hover:not(:disabled):not(.is-blank) {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+  }
+}
+
+/* The brand yellow marks the span, ink marks the two ends the reader set. */
+.cds-cal-day.is-in-range {
+  background: var(--brand-yellow-soft);
+  color: var(--text-primary);
+}
+
+.cds-cal-day.is-end {
+  background: var(--text-primary);
+  color: var(--text-inverse);
+}
+
+.cds-cal-day.is-blank {
+  border-right-color: transparent;
+  cursor: default;
+}
+
+.cds-cal-day:disabled {
+  color: var(--border-default);
+  cursor: not-allowed;
+  background: none;
+}
+
+.cds-cal-clear {
+  margin-top: var(--space-3);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cds-cal-clear:hover { color: var(--text-primary); }
+}
+
+/* ── The sentence, and the way out ── */
+.cds-reading {
   display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-4);
+}
+
+.cds-reading-line {
+  margin: 0;
+  max-width: 62ch;
+  font-family: var(--font-serif);
+  font-size: 1.05rem;
+  line-height: 1.45;
+  color: var(--text-primary);
+  text-wrap: pretty;
+}
+
+.cds-reading-note {
+  font: 400 0.6875rem/1.5 var(--font-mono);
+  letter-spacing: 0.02em;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+
+.cds-reading-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.cds-btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 13px;
-  font-weight: 600;
-  border-radius: 8px;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.7);
-  transition: all 0.2s ease;
-  border: 0;
-  background: transparent;
-}
-
-.cds-fcal-day.empty {
-  cursor: default;
-}
-
-.cds-fcal-day:disabled {
-  opacity: 0.22;
-  cursor: default;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .cds-fcal-day:not(.empty):hover {
-    background: rgba(255, 255, 255, 0.1);
-    color: #fff;
-    text-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
-  }
+  .cds-btn:hover { background: var(--bg-secondary); }
+  .cds-btn--primary:hover { background: var(--accent-primary-hover); }
 }
 
-.cds-fcal-day.selected {
-  background: rgba(155, 135, 245, 0.2);
-  color: #fff;
+.cds-btn--primary {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
 }
 
-.cds-fcal-day.endpoint {
-  background: var(--accent-primary) !important;
-  color: #fff;
-  box-shadow: 0 0 15px rgba(155, 135, 245, 0.6);
-  text-shadow: 0 0 4px rgba(255, 255, 255, 0.8);
+.cds-close:focus-visible,
+.cds-step--action:focus-visible,
+.cds-cal-nav:focus-visible,
+.cds-cal-day:focus-visible,
+.cds-cal-clear:focus-visible,
+.cds-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
-@media (max-width: 560px) {
-  .cds-minimal-container {
-    padding: 18px 4px;
+@media (max-width: 640px) {
+  .cds-head { flex-wrap: wrap; }
+  .cds-hint { width: 100%; order: 3; }
+
+  .cds-step {
+    align-items: flex-start;
+    flex-wrap: wrap;
   }
 
-  .cds-year-label {
-    font-size: 27px;
-  }
-
-  .cds-minimal-actions {
-    align-items: stretch;
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .cds-popover-wrapper,
-  .cds-badge-btn,
-  .cds-minimal-apply {
+  .cds-step-why {
     width: 100%;
+    margin-left: 33px;
+    text-align: left;
   }
 
-  .cds-badge-btn,
-  .cds-minimal-apply {
-    min-height: 44px;
-    justify-content: center;
-  }
-
-  .cds-floating-calendar {
-    position: fixed;
-    right: 12px;
-    bottom: 88px;
-    left: 12px;
-    width: auto;
-    max-width: 360px;
-    margin: 0 auto;
-  }
-
-  .cds-fcal-day {
-    min-height: 38px;
-  }
+  .cds-reading-actions { margin-left: 0; width: 100%; }
+  .cds-btn { flex: 1 1 auto; }
 }
 
-/* Apply Button */
-.cds-minimal-apply {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  background: transparent;
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 8px 20px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.3s ease;
+/* Two months, then one, as the measure narrows. */
+@media (max-width: 1080px) {
+  .cds-cal-months { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-6); }
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .cds-minimal-apply:hover {
-    background: #fff;
-    color: #000;
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.2);
+@media (max-width: 720px) {
+  .cds-cal-months { grid-template-columns: minmax(0, 1fr); gap: var(--space-6); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cds-enter,
+  .cds-step-chevron,
+  .cds-cal-day,
+  .cds-btn {
+    animation: none;
+    transition: none;
   }
 }

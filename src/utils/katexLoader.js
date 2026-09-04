@@ -4,9 +4,13 @@
  * instead of riding in the feed's critical chunk (measured 2026-08-22: the
  * single 2 MB bundle cost 0.9–1.3 s of parse before any content).
  *
- * The stylesheet loads alongside the module but never gates it: a lost CSS
- * chunk costs styling for a moment, not the formulas themselves. Under node
- * (tests) the CSS import always rejects and that is fine for the same reason.
+ * The stylesheet is awaited with the module, but a failure to fetch it is not.
+ * Waiting matters because KaTeX renders each formula twice — a visual copy and
+ * a MathML copy it hides by clipping — and the clip lives in that stylesheet:
+ * render before it lands and every formula is printed twice, which in a page of
+ * prose is unmissable. Failing on it would be worse than the flash, so a CSS
+ * chunk that never arrives costs styling and never the formulas. Under node
+ * (tests) that import always rejects, and that is exactly the tolerated case.
  */
 
 let katexModule = null;
@@ -19,8 +23,11 @@ export function getKatex() {
 
 export function loadKatex() {
   if (!katexPromise) {
-    katexPromise = import('katex')
-      .then(module => {
+    katexPromise = Promise.all([
+      import('katex'),
+      import('katex/dist/katex.min.css').catch(() => null),
+    ])
+      .then(([module]) => {
         katexModule = module.default || module;
         return katexModule;
       })
@@ -30,7 +37,6 @@ export function loadKatex() {
         katexPromise = null;
         return null;
       });
-    import('katex/dist/katex.min.css').catch(() => {});
   }
   return katexPromise;
 }

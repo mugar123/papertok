@@ -1,3 +1,5 @@
+import { safeCatalogUrl } from '../utils/externalUrl.js';
+
 const MEMORY_CACHE = new Map();
 const POSITIVE_TTL = 7 * 24 * 60 * 60 * 1000;
 const NEGATIVE_TTL = 24 * 60 * 60 * 1000;
@@ -10,20 +12,11 @@ export function normalizeDoi(value) {
     .toLowerCase();
 }
 
-function safeHttpUrl(value) {
-  try {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
-  } catch {
-    return '';
-  }
-}
-
 export function mapUnpaywallResult(payload) {
   const location = payload?.best_oa_location;
   if (!location) return null;
-  const pdfUrl = safeHttpUrl(location.url_for_pdf);
-  const landingPageUrl = safeHttpUrl(location.url_for_landing_page || location.url || payload.doi_url);
+  const pdfUrl = safeCatalogUrl(location.url_for_pdf);
+  const landingPageUrl = safeCatalogUrl(location.url_for_landing_page || location.url || payload.doi_url);
   if (!pdfUrl && !landingPageUrl) return null;
   return {
     pdfUrl: pdfUrl || undefined,

@@ -8,15 +8,18 @@ import {
 } from '../test-support/deadlineHarness.js';
 import {
   buildOpenAlexIdFilter,
+  buildRorIdFilter,
   fetchWithTimeout,
   buildRecentImpactUrl,
   dedupeAuthors,
   enrichAuthorInstitutionLocalization,
   fetchRecentImpactWorks,
+  fetchPaperByWorkId,
   getLocalTopicEntity,
   isOpenAlexEnrichmentId,
   mapOpenAlexEnrichmentWork,
   normalizeRecentImpactEntityId,
+  searchInstitutions,
   searchLocalTopics,
 } from './openAlexService.js';
 
@@ -331,4 +334,189 @@ test('the deadline covers a non-OpenAlex body that never finishes', async () => 
       'TimeoutError',
     );
   });
+});
+
+
+// --- institution prominence -------------------------------------------------
+
+// Live ROR, 2026-08-26: `?query=MIT` answers with 47 organisations, 20 on the
+// page, SEVEN of which carry MIT in `acronyms`. Every one of them scores 100,
+// and Massachusetts Institute of Technology is seventh in ROR's own order.
+const ROR_MIT_ITEMS = [
+  ['04mtcj695', 'University of Southern Mindanao', ['MIT', 'USM']],
+  ['047m6hg73', 'Management Intelligenter Technologien (Germany)', ['MIT']],
+  ['002r67t24', 'Manukau Institute of Technology', ['MIT']],
+  ['02mb6z761', 'Myanmar Institute of Theology', ['MIT']],
+  ['02qk9nj07', 'Ministry of Infrastructures and Transport', ['MIT']],
+  ['02yyma482', 'International Tourism Institute', ['ITI', 'MIT']],
+  ['042nb2s44', 'Massachusetts Institute of Technology', ['MIT']],
+].map(([rorId, displayName, acronyms]) => ({
+  id: `https://ror.org/${rorId}`,
+  names: [
+    { value: displayName, lang: 'en', types: ['ror_display', 'label'] },
+    ...acronyms.map(value => ({ value, types: ['acronym'] })),
+  ],
+  locations: [{ geonames_details: { country_code: 'US', country_name: 'United States' } }],
+  types: ['education'],
+}));
+
+// The real OpenAlex figures for those same ROR ids.
+const OPENALEX_MIT_STATS = [
+  ['042nb2s44', 355652, 65816719],
+  ['002r67t24', 1004, 22797],
+  ['04mtcj695', 974, 8769],
+  ['02mb6z761', 255, 4328],
+  ['02qk9nj07', 150, 3472],
+  ['047m6hg73', 128, 1225],
+  ['02yyma482', 122, 338],
+].map(([rorId, works_count, cited_by_count]) => ({
+  ror: `https://ror.org/${rorId}`,
+  works_count,
+  cited_by_count,
+  summary_stats: { h_index: works_count },
+}));
+
+// ROR goes through the bare global `fetch`; OpenAlex does not. The shared
+// client bound `globalThis.fetch` when its module loaded, so it has to be
+// injected instead — see `fetchInstitutionProminence`.
+function stubRorFetch() {
+  return async (input) => {
+    const href = String(input?.url || input);
+    if (!href.includes('api.ror.org')) throw new Error(`unexpected request: ${href}`);
+    return new Response(JSON.stringify({ items: ROR_MIT_ITEMS }), { status: 200 });
+  };
+}
+
+async function withRorFetch(run) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = stubRorFetch();
+  try {
+    return await run();
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+}
+
+test('an acronym search does not cut off the institution everybody meant', async () => {
+  // The whole bug in one assertion: six organisations tie at 100 above MIT, the
+  // slice keeps five, so a search for "MIT" answered without MIT in it.
+  const requested = [];
+  const results = await withRorFetch(() => searchInstitutions('MIT', {
+    openAlexJson: async (url) => {
+      requested.push(url);
+      return { results: OPENALEX_MIT_STATS };
+    },
+  }));
+  {
+    // One request for the whole candidate list, filtered by the identifiers we
+    // already hold — not one per institution, and not a second text search.
+    assert.equal(requested.length, 1);
+    assert.match(requested[0], /filter=ror:[0-9a-z]{9}(?:%7C[0-9a-z]{9}){6}&/);
+
+    assert.equal(results[0].display_name, 'Massachusetts Institute of Technology');
+    assert.equal(results.length, 5);
+    assert.deepEqual(
+      results.map(institution => institution.display_name),
+      [
+        'Massachusetts Institute of Technology',
+        'Manukau Institute of Technology',
+        'University of Southern Mindanao',
+        'Myanmar Institute of Theology',
+        'Ministry of Infrastructures and Transport',
+      ],
+    );
+    // The ROR identity is what both search surfaces navigate with
+    // (`institution.id.split('/').pop()`), so enrichment must not swap in an
+    // OpenAlex id.
+    assert.equal(results[0].id, 'https://ror.org/042nb2s44');
+    assert.equal(results[0].cited_by_count, 65816719);
+  }
+});
+
+test('a dead prominence lookup costs the order, never the results', async () => {
+  // Best-effort by construction: OpenAlex is metered and rate-limited, and the
+  // institutions task has 4.5s. If the tie-break cannot be had, the section
+  // still renders in ROR's order rather than coming back empty.
+  // A query of its own, because `searchRorInstitutions` caches on the
+  // normalized query and "MIT" is already answered above.
+  const results = await withRorFetch(() => searchInstitutions('Institute of Technology', {
+    openAlexJson: async () => { throw new Error('OpenAlex is down'); },
+  }));
+  {
+    assert.deepEqual(
+      results.map(institution => institution.display_name),
+      // ROR's own order, untouched: Manukau is third on its page and
+      // Massachusetts seventh. Nothing was dropped, only left unranked.
+      ['Manukau Institute of Technology', 'Massachusetts Institute of Technology'],
+    );
+    assert.equal(results[0].cited_by_count, null, 'un-enriched, exactly as ROR sent it');
+  }
+});
+
+test('ROR identifiers OR as values of one filter, like every other OpenAlex filter', () => {
+  assert.equal(buildRorIdFilter(['042nb2s44', 'https://ror.org/02f40zc51']), 'ror:042nb2s44%7C02f40zc51');
+  assert.doesNotMatch(buildRorIdFilter(['042nb2s44', '02f40zc51']), /ror:.*ror:/);
+  assert.equal(buildRorIdFilter(['042nb2s44', '042nb2s44']), 'ror:042nb2s44');
+  assert.equal(buildRorIdFilter(['not-a-ror', '']), '');
+  assert.equal(buildRorIdFilter([]), '');
+  assert.equal(buildRorIdFilter(null), '');
+});
+
+/**
+ * The public paper page opens the likes the feed remembered under a provider
+ * id — `openalex:W…` from an OpenAlex card, `pmid:…` from a PubMed one — and
+ * OpenAlex resolves both through `GET /works/{id}`. The paper comes back with
+ * the id the feed would have given it, so a like made on the page and one
+ * made on the card are the same interaction document.
+ */
+const WORK_FIXTURE = {
+  id: 'https://openalex.org/W2741809807',
+  doi: 'https://doi.org/10.7717/peerj.4375',
+  title: 'The state of OA',
+  publication_date: '2018-02-13',
+  cited_by_count: 12,
+  authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Heather Piwowar' }, institutions: [] }],
+  abstract_inverted_index: { Open: [0], access: [1] },
+  primary_location: { landing_page_url: 'https://peerj.com/articles/4375', source: { display_name: 'PeerJ', type: 'journal' } },
+  open_access: { is_oa: true, oa_url: 'https://peerj.com/articles/4375.pdf' },
+  concepts: [],
+};
+
+test('opens an OpenAlex work id or a PubMed id through /works/{id}, keyed as the feed keys it', async () => {
+  const requested = [];
+  const openAlexJson = async (url) => { requested.push(url); return WORK_FIXTURE; };
+
+  const byWork = await fetchPaperByWorkId('openalex', 'w2741809807', { openAlexJson });
+  assert.equal(byWork.id, 'openalex:W2741809807');
+  assert.equal(byWork.title, 'The state of OA');
+  assert.equal(byWork.doi, '10.7717/peerj.4375');
+  assert.equal(byWork.abstract, 'Open access');
+
+  const byPmid = await fetchPaperByWorkId('pmid', '31234567', { openAlexJson });
+  assert.equal(byPmid.id, 'pmid:31234567');
+
+  assert.deepEqual(requested, [
+    'https://api.openalex.org/works/W2741809807',
+    'https://api.openalex.org/works/pmid%3A31234567',
+  ]);
+});
+
+test('refuses to ask OpenAlex for an id that is not a work or a PubMed number', async () => {
+  const openAlexJson = async () => { throw new Error('must not be called'); };
+  assert.equal(await fetchPaperByWorkId('openalex', 'A2741809807', { openAlexJson }), null);
+  assert.equal(await fetchPaperByWorkId('pmid', '12a', { openAlexJson }), null);
+  assert.equal(await fetchPaperByWorkId('doi', '10.1/x', { openAlexJson }), null);
+  assert.equal(await fetchPaperByWorkId('openalex', '', { openAlexJson }), null);
+});
+
+test('a work OpenAlex does not have is not found; a provider failure is an error the page can retry', async () => {
+  const notFound = Object.assign(new Error('OpenAlex API error: 404'), { status: 404 });
+  assert.equal(await fetchPaperByWorkId('openalex', 'W1', { openAlexJson: async () => { throw notFound; } }), null);
+  assert.equal(await fetchPaperByWorkId('openalex', 'W1', { openAlexJson: async () => ({}) }), null);
+
+  const down = Object.assign(new Error('OpenAlex API error: 503'), { status: 503 });
+  await assert.rejects(
+    fetchPaperByWorkId('openalex', 'W1', { openAlexJson: async () => { throw down; } }),
+    down,
+  );
 });

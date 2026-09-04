@@ -5,7 +5,6 @@ import {
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   takeFeedPage,
-  waitForInitialEnrichment,
 } from './feedEnrichment.js';
 
 test('normalizes arXiv versions for OpenAlex enrichment', () => {
@@ -62,7 +61,49 @@ test('merges OpenAlex metadata before a feed batch is displayed', () => {
   assert.deepEqual(merged[0].sources.enrichedBy, ['openalex']);
 });
 
-test('stops waiting when initial enrichment exceeds its budget', async () => {
-  const result = await waitForInitialEnrichment(new Promise(() => {}), 5);
-  assert.equal(result, null);
+test('paper identity survives a late OpenAlex merge that adds nothing new', () => {
+  // Three cases distinguish "no record for this paper" from "a record that
+  // changes nothing": both must return the *same* object so memo(PaperCard)
+  // and its IntersectionObserver (keyed on `paper`) are not torn down for a
+  // card whose content never actually moved.
+  const untouched = {
+    id: 'arxiv:2607.11111',
+    title: 'Untouched',
+    citationCount: 0,
+    citationCountKnown: false,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  };
+  const realChange = {
+    id: 'arxiv:2607.22222',
+    title: 'Real change',
+    citationCount: 0,
+    citationCountKnown: false,
+    sources: { primary: 'arxiv', enrichedBy: [] },
+  };
+  const noopChange = {
+    id: 'arxiv:2607.33333',
+    title: 'No-op change',
+    citationCount: 12,
+    citationCountKnown: true,
+    sources: { primary: 'arxiv', enrichedBy: ['openalex'] },
+    hasReferences: false,
+    hasData: false,
+    hasSupplement: false,
+    peerReviewed: false,
+    // PaperBuilder.merge unconditionally stamps `openAlex` with the raw
+    // enrichment record it was given; this is a *different* object than the
+    // one below (fresh API payload) but equal in every value, which is
+    // exactly the case a reference check would miss.
+    openAlex: { citationCount: 12, citationCountKnown: true },
+  };
+
+  const result = mergeOpenAlexEnrichment([untouched, realChange, noopChange], {
+    '2607.22222': { citationCount: 9, citationCountKnown: true },
+    '2607.33333': { citationCount: 12, citationCountKnown: true },
+  });
+
+  assert.ok(Object.is(result[0], untouched), 'no record at all: same object');
+  assert.ok(!Object.is(result[1], realChange), 'record with new data: different object');
+  assert.equal(result[1].citationCount, 9);
+  assert.ok(Object.is(result[2], noopChange), 'record present but changes nothing: same object');
 });

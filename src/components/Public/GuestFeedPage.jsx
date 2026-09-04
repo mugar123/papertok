@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { LogIn, RotateCw, Search } from 'lucide-react';
+import { LogIn, Search } from 'lucide-react';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useGuestFeed } from '../../hooks/useGuestFeed.js';
 import { ANALYTICS_CONSENT } from '../../services/analyticsService.js';
 import FeedContainer from '../Feed/FeedContainer.jsx';
+import ThemeToggle from '../Layout/ThemeToggle.jsx';
+import GuestEndCard from './GuestEndCard.jsx';
 import './GuestFeedPage.css';
 
 export default function GuestFeedPage({ onReady, onAuthRequired, onOpenPdf, onOpenComments = null }) {
@@ -45,30 +47,41 @@ export default function GuestFeedPage({ onReady, onAuthRequired, onOpenPdf, onOp
   return (
     <main className="guest-feed-page">
       <header className="guest-feed-header" aria-label={isEnglish ? 'PaperTok guest navigation' : 'Navegación de invitado de PaperTok'}>
-        <button
-          type="button"
-          className={`guest-header-button ${guestFeed.isRefreshing ? 'is-spinning' : ''}`}
-          onClick={guestFeed.refresh}
-          aria-label={isEnglish ? 'Refresh papers' : 'Recargar papers'}
-        >
-          <RotateCw size={19} />
-        </button>
         <div className="guest-wordmark" aria-label="PaperTok">Paper<span>Tok</span></div>
         <div className="guest-header-actions">
           <button type="button" className="guest-language-button" onClick={() => setLanguage(isEnglish ? 'es' : 'en')}>
             {isEnglish ? 'ES' : 'EN'}
           </button>
+          {/* A visitor gets the system's answer by default and can still
+              overrule it here: the bar that carries this control for a session
+              is not rendered for them. */}
+          <ThemeToggle className="guest-header-button" />
           <button type="button" className="guest-header-button" onClick={() => requestAccount('other')} aria-label={isEnglish ? 'Search' : 'Buscar'}>
-            <Search size={19} />
+            <Search size={17} />
           </button>
           <button type="button" className="guest-sign-in-button" onClick={() => requestAccount('other')}>
-            <LogIn size={17} /> {isEnglish ? 'Sign in' : 'Entrar'}
+            <LogIn size={15} /> {isEnglish ? 'Sign in' : 'Entrar'}
           </button>
         </div>
       </header>
 
       <FeedContainer
-        source={{ ...guestFeed, publicMode: true, onAuthRequired: requestAccount }}
+        source={{
+          ...guestFeed,
+          publicMode: true,
+          onAuthRequired: requestAccount,
+          // One more snap item after the last paper. `requestAccount` is the
+          // same door the header uses: it opens the AuthPrompt modal in place
+          // instead of routing to /login, which would take the guest away from
+          // the feed they were reading.
+          endCard: (
+            <GuestEndCard
+              paperCount={guestFeed.papers.length}
+              position={guestFeed.papers.length + 1}
+              onSignUp={() => requestAccount('other')}
+            />
+          ),
+        }}
         scrollKey="guest"
         onOpenPdf={onOpenPdf}
         onSaveToList={() => requestAccount('list')}

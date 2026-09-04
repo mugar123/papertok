@@ -4,13 +4,14 @@ This Cloudflare Worker protects provider keys and caches trend, related-paper an
 
 ```bash
 npx wrangler secret put OPENALEX_API_KEY # required since Feb 2026; without it OpenAlex runs on the $0.10/day anonymous budget
-npx wrangler secret put SEMANTIC_SCHOLAR_API_KEY
+npx wrangler secret put SEMANTIC_SCHOLAR_API_KEY # required in practice, not optional -- see below; set 2026-09-02
 npx wrangler secret put OPENCITATIONS_ACCESS_TOKEN # optional, recommended for production traffic
 npx wrangler secret put UNPAYWALL_EMAIL
 npx wrangler secret put GEMINI_API_KEY
 npx wrangler secret put MODAL_PROXY_TOKEN_ID
 npx wrangler secret put MODAL_PROXY_TOKEN_SECRET
 npx wrangler secret put MODAL_KIMI_BASE_URL
+npx wrangler secret put NVIDIA_API_KEY # nvapi-... key from build.nvidia.com; serves the DeepSeek fallback
 npx wrangler secret put CORE_API_KEY # optional, raises CORE rate limits
 npx wrangler secret put NCBI_API_KEY # optional, raises PubMed E-utilities from 3 to 10 req/s
 npx wrangler secret put NASA_ADS_API_TOKEN # optional; INSPIRE is used until configured
@@ -28,13 +29,22 @@ Brevo is the primary notification provider when `EMAIL_PROVIDER = "brevo"`.
 `BREVO_FROM_EMAIL` must match an active sender in the Brevo account. Resend remains
 available as a fallback by changing `EMAIL_PROVIDER` to `resend`.
 
-After deployment, set the GitHub Actions repository variable `VITE_PAPER_API_BASE_URL` to:
+After deployment, set the GitHub Actions repository variable `VITE_PAPER_API_BASE_URL` to
+the Worker's Custom Domain:
 
 ```text
-https://papertok-report-api.<account>.workers.dev
+https://api.papertok.app
 ```
 
-Available routes are `/locale`, `/report/trends`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/explain`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, and `/health`. `/locale` returns only Cloudflare's country code for the automatic Spanish/English interface choice and is never cached. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback.
+The native `https://papertok-report-api.<account>.workers.dev` route still answers and is
+still accepted by `src/services/workerApiClient.js`, so a bundle built before the variable
+was flipped keeps working.
+
+Available routes are `/locale`, `/thread-anchor`, `/thread-anchor/invalidate`, `/account/delete`, `/report/trends`, `/related`, `/citation-graph`, `/oa`, `/arxiv`, `/sources/biorxiv`, `/sources/europepmc`, `/sources/pubmed`, `/sources/s2`, `/sources/core`, `/sources/osti`, `/sources/nasa`, `/sources/physics`, `/sources/scopus`, `/sources/openreview`, `/sources/huggingface`, `/enrich/icite`, `/resources/huggingface`, `/ai/explain`, `/notifications/preferences`, `/notifications/test`, `/notifications/unsubscribe`, `/openalex/*`, `/health/email`, `/health/ai`, `/health/scopus`, `/health/openalex`, and `/health`. `/locale` returns only Cloudflare's country code for the automatic Spanish/English interface choice and is never cached. The citation graph combines OpenCitations relationships with OpenAlex metadata and caches the result for seven days. The specialist-source routes validate, cache and proxy biology, engineering, physics and AI searches so the browser never depends on public CORS proxies. OpenReview and Hugging Face are keyless discovery sources. NIH iCite enriches up to 200 validated PubMed identifiers per cached batch, while Hugging Face paper details expose associated models and datasets. `/sources/physics` uses NASA ADS when `NASA_ADS_API_TOKEN` is configured and falls back to the public INSPIRE API otherwise. `CORE_API_KEY` is optional; anonymous CORE access remains a best-effort fallback.
+
+`/thread-anchor` is the comments-sheet open path. The browser used to resolve a paper stub in Firestore and then query comments — a sequential chain on the Firestore WebChannel, which is what made an empty thread sit on a skeleton for seconds (and why closing and reopening was instant: the channel was warm). The Worker resolves the stub over Firestore REST, caches the correspondence in KV (`thread:v1:{paperKey}`, currently on `NOTIFICATION_STORE`), and returns the first page of comments with it. Guests can read it (comments are public); `POST /thread-anchor/invalidate` requires a Firebase identity and is called after a create, edit or delete so the next open rebuilds. KV is the cache (HTTP `Cache-Control: private, no-store`) so a delete is not raced by a CDN max-age. A 60-second TTL on live threads and a 2-minute TTL on empty stubs are the safety net for a missed invalidation. This is a **new** route: deploy the Worker before the frontend.
+
+`POST /account/delete` deletes the signed-in Firebase account. It is authenticated with a Firebase ID token (no identity cache), uses the Firestore service account, and is safe to retry: each request does one bounded stage (dissociate comments, drop public lists, follows, profile and handle, the private user tree, newsletter KV, then Auth last). Comments stay in their threads with `dissociated: true` rather than being removed. This is a **new** route: deploy the Worker before the frontend.
 
 `/sources/pubmed` runs the whole E-utilities chain server-side — esearch, then esummary and efetch
 in parallel — and returns the three upstream payloads unchanged, so the browser keeps its own
@@ -54,15 +64,31 @@ cache, and a **global** per-minute ceiling reserved only after a cache miss
 ceiling with `/sources/s2` because both spend the same provider allowance; the browser's old
 per-tab limiter counted per caller, so N tabs were N times the limit.
 
+`/thread-anchor` takes the same trade for the comments sheet: origin gate (`Origin` required — the
+API host has no same-origin page), KV as the cache, and a **global** per-minute ceiling on Firestore
+REST misses only (`THREAD_ANCHOR_GLOBAL_MINUTE_LIMIT`, default 120). A hit costs KV and nothing else.
+
 `SEMANTIC_SCHOLAR_API_KEY` is listed above as if it were optional. It is not, in practice.
 Measured on 2026-08-24, Semantic Scholar's anonymous pool refused **10 of 10** requests from a
 residential address and **9 of 10** from the Worker: without a key, `/sources/s2` and `/related`
-are both effectively unavailable, and were before either route existed. The secret has never been
-set on this deployment — `wrangler secret list` does not show it — so setting it is what turns
-Semantic Scholar back on. A refusal is relayed as a 429 with the provider's own `retry-after`, not
+are both effectively unavailable, and were before either route existed. The secret was set on
+**2026-09-02** and the difference was measured the next day — 5 of 6 through the Worker against
+0 of 6 anonymous in the same minutes — so `/health` now reports `semanticScholarKeyConfigured`
+alongside `pubmedKeyConfigured`. They are not the same kind of flag: NCBI's absence costs speed,
+this one costs the source. A refusal is relayed as a 429 with the provider's own `retry-after`, not
 flattened into a 502, so a client can tell a rate limit from an outage; every `/sources/*` route
 does this now, not only Scopus.
 
+The key's introductory rate limit is **1 RPS**, and Semantic Scholar applies it per second: of
+five requests in one second, one is answered and four refused at once, with no `retry-after`
+(measured 2026-09-03). `S2_GLOBAL_MINUTE_LIMIT` (60, shared by `/sources/s2` and `/related`) is
+the same average and no say over which second, so under it both routes keep a one-a-second beat
+(`worker/upstream-pace.js`): a caller takes the first free second in the shared ledger and sleeps
+for it — at most 2.5 s of sleep, which does not count the handful of ledger round trips around it —
+and is refused here with `retry-after: 2` rather than upstream when none is free within that budget.
+A refusal Semantic Scholar does send is relayed with the same short wait from both routes;
+`/related` used to flatten every failure into a bare 502. Raising the ceiling does not help at
+1 RPS — asking Semantic Scholar for a higher limit is what does.
 
 `/openalex/*` exists because OpenAlex changed underneath the app. Since February 2026 it requires
 an API key and bills each call against a daily budget — $0.10/day anonymous, $1/day on a free key —
@@ -99,7 +125,7 @@ probe costs one upstream call, so it is served from the edge cache for ten minut
 route cannot drain the weekly Scopus allowance. Only `COMPLETE` returns `dc:description`, so an
 account limited to `STANDARD` produces papers without abstracts.
 
-The AI route requires a valid PaperTok Firebase ID token and keeps provider credentials exclusively in the Worker. Gemini 3.5 Flash remains the primary provider. PDF acquisition and Gemini model attempts use bounded latency budgets; a slow open PDF degrades to the available abstract, and malformed structured output can retry once with Gemini Flash Lite without exceeding the browser deadline. The response parser preserves LaTeX commands even when a provider returns raw JSON backslashes. When Gemini explicitly reports that its daily provider quota is exhausted, `AI_FALLBACK_PROVIDER = "modal-kimi"` routes abstract-based explanations to Modal's OpenAI-compatible Kimi K3 Shared API. Modal authentication requires the complete proxy-token pair (`wk-...` ID plus `ws-...` secret) and the Shared API base URL shown in the Modal dashboard.
+The AI route requires a valid PaperTok Firebase ID token and keeps provider credentials exclusively in the Worker. Gemini 3.5 Flash remains the primary provider. PDF acquisition and Gemini model attempts use bounded latency budgets; a slow open PDF degrades to the available abstract, and malformed structured output can retry once with Gemini Flash Lite without exceeding the browser deadline. The response parser preserves LaTeX commands even when a provider returns raw JSON backslashes. When Gemini explicitly reports that its daily provider quota is exhausted, `AI_FALLBACK_PROVIDER = "nvidia-deepseek,modal-kimi"` walks the fallback chain in cost order for abstract-based explanations: first DeepSeek V4 Flash on NVIDIA's free OpenAI-compatible API (`NVIDIA_API_KEY`, an `nvapi-...` key), then — only when NVIDIA could not answer — Modal's OpenAI-compatible Kimi K3 Shared API. Modal authentication requires the complete proxy-token pair (`wk-...` ID plus `ws-...` secret) and the Shared API base URL shown in the Modal dashboard.
 
 The Worker limits AI usage per user and globally per UTC day with atomic reservations in the
 `RequestQuotaLedger` Durable Object. A reservation is consumed before contacting the provider,

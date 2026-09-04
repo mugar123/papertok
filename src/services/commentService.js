@@ -214,6 +214,8 @@ async function defaultReadThreadPage(database, paperKey, pageSize, cursor) {
   const snapshot = await getDocs(query(
     collection(database, 'papers', paperKey, 'comments'),
     orderBy('createdAt', 'asc'),
+    // `cursor` is a DocumentSnapshot from a previous SDK page, or a Date — the
+    // last createdAt of a page the Worker served. `startAfter` takes both.
     ...(cursor ? [startAfter(cursor)] : []),
     limit(pageSize),
   ));

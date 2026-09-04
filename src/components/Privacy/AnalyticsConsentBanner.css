@@ -2,23 +2,27 @@
   position: fixed;
   z-index: 1200;
   right: 20px;
-  bottom: 20px;
+  bottom: calc(20px + var(--inset-bottom));
   display: grid;
   width: min(520px, calc(100vw - 40px));
-  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-columns: 40px minmax(0, 1fr) auto auto;
   gap: 12px;
   padding: 16px;
   border: 1px solid var(--border-strong);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-elevated) 94%, transparent);
-  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.38);
-  backdrop-filter: blur(18px);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-lg);
   transition: border-color 0.28s ease, box-shadow 0.28s ease;
+  align-items: center;
 }
 
 .analytics-consent.is-success {
   border-color: rgba(52, 211, 153, 0.38);
-  box-shadow: 0 20px 54px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(52, 211, 153, 0.06);
+  /* var(--shadow-lg), not the literal the base rule used to carry: that
+     literal was light-mode-only (rgba(17,19,24,...)) and never followed the
+     base rule when it moved to the token, so dark mode paired a near-black
+     --shadow-lg (rgba(0,0,0,0.5)) elsewhere with this still-light shadow. */
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(52, 211, 153, 0.06);
 }
 
 .analytics-consent-icon {
@@ -26,10 +30,18 @@
   width: 40px;
   height: 40px;
   place-items: center;
-  border: 1px solid rgba(167, 139, 250, 0.28);
-  border-radius: 8px;
-  color: #b49af8;
-  background: rgba(124, 58, 237, 0.09);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--gradient-physics);
+  background: var(--bg-secondary);
+  transition: color 0.28s ease, border-color 0.28s ease, background 0.28s ease;
+}
+
+/* The mark takes the confirmation too, on the same clock as the frame. */
+.analytics-consent.is-success .analytics-consent-icon {
+  color: var(--tint-green-fg);
+  border-color: var(--tint-green-line);
+  background: var(--tint-green-bg);
 }
 
 .analytics-consent-copy h2 {
@@ -46,15 +58,13 @@
 
 .analytics-consent-actions {
   display: flex;
-  grid-column: 2;
-  justify-content: flex-end;
   gap: 7px;
 }
 
 .analytics-consent-error {
-  grid-column: 2;
+  grid-column: 1 / -1;
   margin: -2px 0 0;
-  color: #fda4af;
+  color: var(--tint-red-fg);
   font-size: 10px;
   line-height: 1.4;
   text-align: right;
@@ -64,7 +74,7 @@
   min-height: 36px;
   padding: 7px 11px;
   border: 1px solid var(--border-default);
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
   font-size: 11px;
   font-weight: 750;
@@ -77,19 +87,64 @@
   align-items: center;
   justify-content: center;
   gap: 6px;
-  border-color: rgba(167, 139, 250, 0.4);
-  color: #fff;
-  background: rgba(124, 58, 237, 0.75);
+  border-color: var(--border-ink);
+  color: var(--text-inverse);
+  background: var(--accent-primary);
 }
 
-.analytics-consent-actions .analytics-consent-accept.is-loading svg {
+/* The three faces of the button — the invitation, the wait, the
+   confirmation — stacked in one grid cell, so the button is as wide as its
+   widest label from the first frame and never changes size between them.
+   The label used to be swapped in place: the persist is synchronous in
+   effect, so "Enabling…" lasted a frame and the button jumped to a new width
+   twice inside thirty milliseconds. Each step now rises into place from
+   6px below while the last one lifts 6px away, the way a counter ticks. */
+.analytics-consent-accept-faces {
+  display: grid;
+  align-items: center;
+  justify-items: center;
+}
+
+.analytics-consent-accept-face {
+  grid-area: 1 / 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 0.18s ease, transform 0.32s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.analytics-consent-accept-face.is-next {
+  transform: translateY(6px);
+}
+
+.analytics-consent-accept-face.is-past {
+  transform: translateY(-6px);
+}
+
+.analytics-consent-accept-face.is-current {
+  opacity: 1;
+  transform: none;
+}
+
+/* Only the face on show spins; an infinite animation on a hidden one would
+   still be ticking underneath. */
+.analytics-consent-accept-face.is-current[data-face="loading"] svg {
   animation: analyticsConsentSpin 0.8s linear infinite;
+}
+
+/* The check does not merely appear: it springs in, a little over and back,
+   the moment the confirmation face lands. */
+.analytics-consent-accept-face.is-current[data-face="success"] svg {
+  animation: analyticsConsentCheckIn 0.42s cubic-bezier(0.34, 1.4, 0.64, 1) both;
 }
 
 .analytics-consent-actions .analytics-consent-accept.is-success {
   border-color: rgba(52, 211, 153, 0.42);
-  color: #d8fff0;
-  background: rgba(16, 185, 129, 0.72);
+  color: var(--tint-green-fg);
+  background: var(--accent-success);
   animation: analyticsConsentConfirmed 0.32s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -97,14 +152,27 @@
   cursor: default;
 }
 
-.analytics-consent-decline:disabled {
+.analytics-consent-dismiss {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-tertiary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.analytics-consent-dismiss:disabled {
   opacity: 0.48;
+  cursor: default;
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .analytics-consent-decline:hover {
+  .analytics-consent-dismiss:hover {
     color: var(--text-primary);
-    background: rgba(255, 255, 255, 0.04);
+    background: var(--bg-sunken);
   }
 
   .analytics-consent-actions .analytics-consent-accept:hover {
@@ -115,25 +183,25 @@
 @media (max-width: 560px) {
   .analytics-consent {
     right: 12px;
-    bottom: 12px;
+    bottom: calc(12px + var(--inset-bottom));
     width: calc(100vw - 24px);
     padding: 14px;
+    grid-template-columns: minmax(0, 1fr) auto auto;
   }
 
-  .analytics-consent-actions {
-    grid-column: 1 / -1;
-  }
-
-  .analytics-consent-error {
-    grid-column: 1 / -1;
+  .analytics-consent-icon {
+    display: none;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .analytics-consent,
+  .analytics-consent-icon,
   .analytics-consent-accept.is-success,
-  .analytics-consent-accept.is-loading svg,
-  .analytics-consent-actions button {
+  .analytics-consent-accept-face,
+  .analytics-consent-accept-face svg,
+  .analytics-consent-actions button,
+  .analytics-consent-dismiss {
     animation: none;
     transition: none;
   }
@@ -146,4 +214,9 @@
 @keyframes analyticsConsentConfirmed {
   0% { transform: scale(0.97); }
   100% { transform: scale(1); }
+}
+
+@keyframes analyticsConsentCheckIn {
+  from { transform: scale(0.4) rotate(-12deg); opacity: 0; }
+  to { transform: none; opacity: 1; }
 }

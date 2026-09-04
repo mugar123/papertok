@@ -1,5 +1,6 @@
-import { filterRelevantSearchResults } from '../utils/searchRelevance.js';
+import { filterRelevantSearchResults, institutionSearchValues } from '../utils/searchRelevance.js';
 import { withEnforcedDeadline } from '../utils/requestDeadline.js';
+import { safeCatalogUrl } from '../utils/externalUrl.js';
 
 const API_BASE = 'https://api.ror.org/v2/organizations';
 const CACHE_PREFIX = 'papertok_ror_v3_';
@@ -37,15 +38,6 @@ function uniqueStrings(values) {
   return [...new Set(values.map(value => String(value || '').trim()).filter(Boolean))];
 }
 
-function safeHttpUrl(value) {
-  try {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : null;
-  } catch {
-    return null;
-  }
-}
-
 export function normalizeRorInstitution(record) {
   const rorId = normalizeRorId(record?.id);
   if (!rorId) return null;
@@ -75,8 +67,8 @@ export function normalizeRorInstitution(record) {
     },
     domains: record.domains || [],
     established: Number(record.established) || null,
-    homepage_url: safeHttpUrl(links.find(link => link.type === 'website')?.value),
-    wikipedia_url: safeHttpUrl(links.find(link => link.type === 'wikipedia')?.value),
+    homepage_url: safeCatalogUrl(links.find(link => link.type === 'website')?.value) || null,
+    wikipedia_url: safeCatalogUrl(links.find(link => link.type === 'wikipedia')?.value) || null,
     relationships: (record.relationships || []).map(relationship => ({
       id: relationship.id,
       rorId: normalizeRorId(relationship.id),
@@ -192,12 +184,7 @@ export async function searchRorInstitutions(query, limit = 8, options = {}) {
   const institutions = filterRelevantSearchResults(
     cleanQuery,
     normalizedInstitutions,
-    institution => [
-      institution.display_name,
-      ...Object.values(institution.localized_names || {}),
-      ...(institution.aliases || []),
-      ...(institution.acronyms || []),
-    ],
+    institutionSearchValues,
   )
     .slice(0, limit);
   SEARCH_CACHE.set(cacheKey, { value: institutions, timestamp: Date.now() });

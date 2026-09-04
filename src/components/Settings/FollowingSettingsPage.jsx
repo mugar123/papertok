@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
-  ArrowLeft,
   Building2,
   BriefcaseBusiness,
   ChevronRight,
@@ -16,6 +15,8 @@ import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getFollowedEntityPath } from '../../utils/followingNavigation';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
+import SettingsSubheader from './SettingsSubheader.jsx';
+import { SETTINGS_BREADCRUMB } from './settingsBreadcrumb.js';
 import './FollowingSettingsPage.css';
 
 const FOLLOW_TABS = [
@@ -86,28 +87,17 @@ export default function FollowingSettingsPage() {
   return (
     <main className="following-settings-page">
       <div className="following-settings-shell">
-        <header className="following-settings-header">
-          <button
-            className="following-settings-back"
-            type="button"
-            onClick={goBack}
-            aria-label={isEnglish ? 'Back' : 'Volver'}
-            title={isEnglish ? 'Back' : 'Volver'}
-          >
-            <ArrowLeft size={20} />
-          </button>
-          <div>
-            <span>{isEnglish ? 'Discovery preferences' : 'Preferencias de descubrimiento'}</span>
-            <h1>{isEnglish ? 'What you follow' : 'Lo que sigues'}</h1>
-            <p>
-              {loading && followedEntities.length === 0
-                ? (isEnglish ? 'Loading what you follow...' : 'Cargando tus seguimientos...')
-                : isEnglish
-                  ? `${followedEntities.length} ${followedEntities.length === 1 ? 'follow influences' : 'follows influence'} your recommendations.`
-                  : `${followedEntities.length} ${followedEntities.length === 1 ? 'seguimiento influye' : 'seguimientos influyen'} en tus recomendaciones.`}
-            </p>
-          </div>
-        </header>
+        <SettingsSubheader
+          eyebrow={SETTINGS_BREADCRUMB[isEnglish ? 'en' : 'es']}
+          title={isEnglish ? 'What you follow' : 'Lo que sigues'}
+          subtitle={loading && followedEntities.length === 0
+            ? (isEnglish ? 'Loading what you follow...' : 'Cargando tus seguimientos...')
+            : isEnglish
+              ? `${followedEntities.length} ${followedEntities.length === 1 ? 'follow influences' : 'follows influence'} your recommendations.`
+              : `${followedEntities.length} ${followedEntities.length === 1 ? 'seguimiento influye' : 'seguimientos influyen'} en tus recomendaciones.`}
+          backLabel={isEnglish ? 'Back' : 'Volver'}
+          onBack={goBack}
+        />
 
         <nav className="following-settings-tabs" aria-label={isEnglish ? 'Types of followed content' : 'Tipos de contenido seguido'}>
           {FOLLOW_TABS.map(({ type, label, Icon }) => {

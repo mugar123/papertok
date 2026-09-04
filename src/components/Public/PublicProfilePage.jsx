@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
-  BadgeCheck, Bookmark, FolderOpen, Globe2, Heart, Lock, RefreshCw, Rss,
+  ArrowRight, BadgeCheck, Bookmark, FolderOpen, Globe2, Heart, Lock, RefreshCw, Rss,
   Settings2, UserCheck, UserPlus, UserX,
 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext.jsx';
@@ -20,6 +20,7 @@ import {
   readUserProfileByHandle,
 } from '../../services/userProfileService.js';
 import VisibilityPrompt from '../Profile/VisibilityPrompt.jsx';
+import { EDITOR_FROM_PROFILE } from '../Profile/editorOrigin.js';
 import {
   countFollowedUsers,
   countFollowers,
@@ -27,10 +28,14 @@ import {
   isFollowing as readIsFollowing,
   unfollowUser,
 } from '../../services/followUserService.js';
-import { fetchLibraryRecords } from '../../services/interactionProfileStore.js';
+import { fetchLikedPaperRecords } from '../../services/likedPaperRecords.js';
 import { IS_DEMO } from '../../services/firebase.js';
 import { getPublicListPath, getPublicPaperPath } from '../../utils/publicNavigation.js';
+import { searchPaperDestination } from '../../utils/searchDestinations.js';
 import { resolveProfileView } from '../../utils/profileAccess.js';
+import { resolveListColor } from '../../utils/listColors.js';
+import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
+import { resolvedPaperTitle } from '../../utils/paperDisplayTitle.js';
 import {
   createPendingIdRequests,
   requestMissingRecords,
@@ -46,12 +51,14 @@ import {
   rememberOwnProfile,
   showcaseCache,
 } from '../../utils/profileSessionCaches.js';
-import { readStoredFollowStats, saveStoredFollowStats } from '../../utils/userScopedStorage.js';
+import { readStoredFollowStats, readStoredLists, readStoredProfile, saveStoredFollowStats, saveStoredProfile } from '../../utils/userScopedStorage.js';
+import { toProfileListCards } from '../../utils/ownLists.js';
 import { cleanPaperText, displayAuthorName } from '../../utils/paperText.js';
 import { getIcon } from '../../utils/icons.js';
 import { normalizeHandle } from '../../utils/userHandle.js';
 import ScientificText from '../ScientificText.js';
 import FollowSheet from './FollowSheet.jsx';
+import { loadProfileFonts } from '../../utils/loadDisplayFonts.js';
 import './PublicProfilePage.css';
 
 /**
@@ -113,44 +120,132 @@ const rowMotion = (prefersReducedMotion, index) => ({
   },
 });
 
-function PaperRow({ row, fallbackTitle }) {
+// The finished row's silhouette — rule, kicker, title, meta — so the title
+// landing changes ink, not layout. Title widths vary by position, so a column
+// of them reads as rows of text rather than as one tile repeated.
+const ROW_SKELETON_TITLE_WIDTHS = ['82%', '61%', '90%', '56%', '73%'];
+
+function RowSkeleton({ index = 0 }) {
+  const width = ROW_SKELETON_TITLE_WIDTHS[index % ROW_SKELETON_TITLE_WIDTHS.length];
+  return (
+    <div className="profile-row profile-row--unresolved profile-row--waiting" aria-hidden="true">
+      <span className="profile-row-skeleton-line profile-row-skeleton-line--kicker" />
+      <span className="profile-row-skeleton-line profile-row-skeleton-line--title" style={{ width }} />
+      <span className="profile-row-skeleton-line profile-row-skeleton-line--meta" />
+    </div>
+  );
+}
+
+function PaperRow({ row, index = 0, isEnglish, libraryReady }) {
+  /**
+   * A row with no title is a row we have not heard about, and it must not say
+   * otherwise — and it must never print the document id. Those ids (`openalex:W…`,
+   * `hep-th/0603001`) are machine names; showing them on Liked looked like the
+   * list was broken.
+   *
+   * While the read is still out, the row is a shimmer. Once it has answered
+   * and this id still has nothing, a short bilingual note says the title could
+   * not be loaded. The row stays a non-link: there is nothing useful to open.
+   */
+  if (row.unresolved) {
+    const waiting = !libraryReady || !row.missingTitle;
+    if (waiting) return <RowSkeleton index={index} />;
+    return (
+      <div className="profile-row profile-row--unresolved">
+        <span className="profile-row-title profile-row-title--placeholder">
+          {isEnglish ? 'The title could not be loaded' : 'No se pudo cargar el título'}
+        </span>
+      </div>
+    );
+  }
+
   // Titles arrive with source dirt (literal <sub> tags, $LaTeX$): HTML is
   // cleaned here at paint time — the stored documents keep the debt visible —
   // and the math is rendered by the same component the feed cards use.
-  const title = cleanPaperText(row.title) || fallbackTitle;
+  const title = cleanPaperText(row.title);
+  // The row carries its paper's research field, the same gesture the Explorer's
+  // rows and the feed's cards make: a 3px rule of `--area-accent` down the
+  // inner edge and a kicker in that same ink. A row whose seed never arrived
+  // simply has no kicker and no colour — nothing is guessed.
+  const paper = row.seed;
+  const field = paper ? areaLabelForPaper(paper, { english: isEnglish }) : null;
+  const kicker = [field, paper?.year].filter(Boolean).join(' · ');
+  const style = paper ? { '--area-accent': areaAccentForPaper(paper) } : undefined;
   const body = (
     <>
+      {kicker && <span className="profile-row-kicker">{kicker}</span>}
       <span className="profile-row-title"><ScientificText>{title}</ScientificText></span>
       {row.subtitle && <span className="profile-row-meta">{row.subtitle}</span>}
     </>
   );
-  // Interaction ids that predate the canonical paper key (raw OpenAlex ids and
-  // friends) do not map to a public paper page; those rows are labels, not
-  // links. The rows that do link hand over whatever copy of the paper is
-  // already in memory, so the paper page can render without waiting on — or
-  // being rate-limited by — arXiv.
+  // Every titled row links: to the public paper page when the paper has an
+  // address there (`rowDestination`), otherwise to a title search. The rows
+  // that reach the paper page hand over whatever copy of the paper is already
+  // in memory, so it can render without waiting on — or being rate-limited
+  // by — arXiv. The static branch only remains for a row that somehow has a
+  // title and no path, which `rowDestination` never produces.
   return row.path
     ? (
       <Link
         className="profile-row"
+        style={style}
         to={row.path}
-        state={row.seed ? { paper: row.seed } : undefined}
+        state={row.seed ? { paper: row.seed, stored: true } : undefined}
       >
         {body}
       </Link>
     )
-    : <div className="profile-row profile-row--static">{body}</div>;
+    : <div className="profile-row profile-row--static" style={style}>{body}</div>;
+}
+
+/**
+ * "Member since March 2026", or nothing at all.
+ *
+ * `createdAt` is written in the same batch that reserves the handle, so a
+ * profile that exists carries one — but it arrives as whatever Firestore
+ * stored, and a shape this cannot read (a legacy document, a Timestamp that
+ * never resolved) leaves the line out rather than printing a date nobody can
+ * vouch for. Month and year only: the day is noise on a profile.
+ */
+function joinedLabel(createdAt, isEnglish) {
+  const millis = createdAt?.toMillis?.()
+    ?? (typeof createdAt?.seconds === 'number' ? createdAt.seconds * 1000 : Date.parse(createdAt));
+  if (!Number.isFinite(millis)) return '';
+  return new Date(millis).toLocaleDateString(isEnglish ? 'en' : 'es', {
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 function EmptyState({ Icon, title, hint, action }) {
   return (
     <div className="profile-empty-state">
-      <span className="profile-empty-icon" aria-hidden="true"><Icon size={22} /></span>
+      <span className="profile-empty-icon" aria-hidden="true"><Icon size={20} /></span>
       <p className="profile-empty-title">{title}</p>
       {hint && <p className="profile-empty-hint">{hint}</p>}
       {action}
     </div>
   );
+}
+
+/**
+ * Where a row goes when it is clicked, and what it carries there.
+ *
+ * The public paper page, whenever the paper has an address there — a DOI, an
+ * arXiv id, the OpenAlex or PubMed id the feed keyed it by — with the copy in
+ * memory riding along so the page paints at once. A paper with no address at
+ * all (a Semantic Scholar hash, a Scopus eid, an ADS bibcode liked before the
+ * like stored the paper) goes to the search page carrying its title, where the
+ * same paper opens in an overlay that needs no identifier: the destination the
+ * search palette already uses for exactly this case. Every titled row is a
+ * link; a row that is nothing but its id used to be a label with nothing to do.
+ */
+function rowDestination(id, paper, title, seed) {
+  const path = paper ? getPublicPaperPath(paper) || getPublicPaperPath(id) : getPublicPaperPath(id);
+  if (path) return { path, seed };
+  if (!title) return { path: null, seed };
+  const fallback = searchPaperDestination({ title }, title);
+  return { path: fallback.path, seed: null };
 }
 
 /**
@@ -198,20 +293,34 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     user, profilePhoto, onboardingComplete, profileLoadError,
   } = useAuth();
   const {
-    likedPaperIds, personalLibrary, ensurePersonalLibrary, getCuratedInteractionIds,
+    likedPaperIds, personalLibrary, libraryPapers, ensurePersonalLibrary, getCuratedInteractionIds,
   } = useFeed();
   const { followedEntities, loading: followingLoading } = useFollowing();
+
+  useEffect(() => {
+    void loadProfileFonts();
+  }, []);
 
   // `{ profile }` wrappers, because "this account has no public profile yet"
   // (a null) is itself a cacheable answer on one's own page.
   const profileCacheKey = selfMode ? ownProfileKey(user?.uid) : handleProfileKey(handle);
-  const seededProfile = profileCacheKey ? ownProfileCache.get(profileCacheKey) : undefined;
+  const cachedProfile = profileCacheKey ? ownProfileCache.get(profileCacheKey) : undefined;
+  const storedOwnProfile = (cachedProfile === undefined && selfMode && user?.uid)
+    ? readStoredProfile(user.uid)
+    : null;
+  const seededProfile = cachedProfile !== undefined
+    ? cachedProfile
+    : (storedOwnProfile ? { profile: storedOwnProfile } : undefined);
   const [profile, setProfile] = useState(seededProfile ? seededProfile.profile : null);
   const [status, setStatus] = useState(seededProfile ? 'ready' : 'loading');
   const [reloadToken, setReloadToken] = useState(0);
   const [requestedTab, setRequestedTab] = useState('lists');
   const [ownLists, setOwnLists] = useState(
-    () => (user?.uid ? ownListsCache.get(user.uid) ?? null : null),
+    () => {
+      if (!user?.uid) return null;
+      const stored = ownListsCache.get(user.uid) ?? readStoredLists(user.uid);
+      return stored ? toProfileListCards(stored) : null;
+    },
   );
   const [ownListsFailed, setOwnListsFailed] = useState(false);
   const [libraryReady, setLibraryReady] = useState(false);
@@ -223,6 +332,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   // Releasing a claim mutates a ref, which schedules no render. This token is
   // what turns "these ids are askable again" into an effect that actually runs.
   const [likedRetry, setLikedRetry] = useState(0);
+  const [settledLikedLookups, setSettledLikedLookups] = useState(() => new Set());
   // Follows (F2). `null` still means "not asked yet" — what keeps the header
   // from flashing a zero before the real number lands — but starting there on a
   // page you were looking at two seconds ago announces a wait that need not
@@ -272,7 +382,10 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
         if (profileCacheKey) {
           // A visitor's not-found is not cached: the profile could be created
           // a moment later, and 'not-found' must stay a fresh answer.
-          if (selfMode) rememberOwnProfile(user?.uid, result);
+          if (selfMode) {
+            rememberOwnProfile(user?.uid, result);
+            if (result) saveStoredProfile(user?.uid, result);
+          }
           else if (result) ownProfileCache.set(profileCacheKey, { profile: result });
           else ownProfileCache.delete(profileCacheKey);
         }
@@ -322,7 +435,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     const uid = user?.uid;
     readOwnLists()
       .then(lists => {
-        if (uid) ownListsCache.set(uid, lists);
+        // Cards, not documents: do not stamp ownListsCache (the save modal and
+        // lists page store full list documents under the same key).
         if (!active) return;
         setOwnLists(lists);
         setOwnListsFailed(false);
@@ -330,8 +444,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       .catch(error => {
         console.error('Error loading own lists:', error);
         if (!active) return;
-        // Lists already on screen (from the session cache) beat an error row.
-        if (uid && ownListsCache.get(uid)) return;
+        // Lists already on screen (session cache or this device) beat an error row.
+        if (uid && (ownListsCache.get(uid) || readStoredLists(uid))) return;
         setOwnLists([]);
         setOwnListsFailed(true);
       });
@@ -471,7 +585,12 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
 
   useEffect(() => {
     if (!view.isOwner || activeTab !== 'liked' || IS_DEMO || !user?.uid) return undefined;
-    const wanted = likedOrder.filter(id => !personalLibrary[id]?.paper && !likedExtra[id]);
+    // `libraryPapers` is the mount's own read, which now KEEPS what it fetches.
+    // Every liked paper is in its id set, so in the ordinary case this filter
+    // empties and the second fan-out over the same collection never happens.
+    const wanted = likedOrder.filter(
+      id => !personalLibrary[id]?.paper && !libraryPapers[id] && !likedExtra[id],
+    );
     if (wanted.length === 0) return undefined;
     let abandoned = false;
     let retryTimer = null;
@@ -483,7 +602,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     requestMissingRecords({
       ids: wanted,
       requests: likedRequests.current,
-      fetchRecords: ids => fetchLibraryRecords(user.uid, ids),
+      fetchRecords: ids => fetchLikedPaperRecords(user.uid, ids),
     }).then(({ records, retryable, attempt, error }) => {
       // The merge is deliberately not cancelled: `likedExtra` is a cache keyed
       // by id, so a response arriving after a tab switch is idempotent and
@@ -496,6 +615,17 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
         });
       }
       if (error) console.error('Error loading liked paper titles:', error);
+      setSettledLikedLookups(prev => {
+        let changed = false;
+        const next = new Set(prev);
+        wanted.forEach(id => {
+          if (likedRequests.current.isSettled(id) && !next.has(id)) {
+            next.add(id);
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
       // The retry, on the other hand, only makes sense while this effect is
       // still the live one. `retryable` covers both a rejected read and the
       // quieter failure: a "successful" answer served from the local cache
@@ -516,7 +646,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       if (retryTimer) clearTimeout(retryTimer);
     };
   }, [
-    view.isOwner, activeTab, likedOrder, personalLibrary, likedExtra, user?.uid, likedRetry,
+    view.isOwner, activeTab, likedOrder, personalLibrary, libraryPapers, likedExtra,
+    user?.uid, likedRetry,
   ]);
 
   // Write-through: every title that lands survives the next unmount, so
@@ -530,17 +661,25 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const likedRows = useMemo(() => likedOrder.map(id => {
     const library = personalLibrary[id]?.paper;
     const extra = likedExtra[id];
-    const paper = library || extra?.paper;
-    const title = paper?.title || extra?.paperTitle || '';
+    const paper = library || libraryPapers[id] || extra?.paper;
+    const title = resolvedPaperTitle(
+      paper?.title || extra?.paperTitle || '',
+      id,
+    );
     const authors = paper?.authors || extra?.paperAuthors || [];
+    const hasRecord = Boolean(paper || extra);
     return {
       id,
       title,
+      // No title is never "this paper has no title" — a paper always has one.
+      // It means the read has not answered for this id, and the row has to say
+      // that rather than print a definite-sounding "Untitled paper".
+      unresolved: !title,
+      missingTitle: !title && (hasRecord || settledLikedLookups.has(id)),
       subtitle: authorLine(authors),
-      path: paper ? getPublicPaperPath(paper) || getPublicPaperPath(id) : getPublicPaperPath(id),
-      seed: seedPaperFor(id, paper, title, authors, extra?.paperCategory),
+      ...rowDestination(id, paper, title, seedPaperFor(id, paper, title, authors, extra?.paperCategory)),
     };
-  }), [likedOrder, personalLibrary, likedExtra]);
+  }), [likedOrder, personalLibrary, libraryPapers, likedExtra, settledLikedLookups]);
 
   // Same source and ordering as the "Leer después" pseudo-list in Mis listas.
   const savedRows = useMemo(() => {
@@ -549,14 +688,18 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       .filter(record => record.readLater)
       .sort((first, second) => new Date(second.updatedAt || 0) - new Date(first.updatedAt || 0))
       .slice(0, PROFILE_TAB_ROW_LIMIT)
-      .map(record => ({
-        id: record.paperId,
-        title: record.paper?.title || '',
-        subtitle: authorLine(record.paper?.authors),
-        path: getPublicPaperPath(record.paper) || getPublicPaperPath(record.paperId),
-        seed: record.paper || null,
-      }));
-  }, [view.isOwner, personalLibrary]);
+      .map(record => {
+        const title = resolvedPaperTitle(record.paper?.title || '', record.paperId);
+        return {
+          id: record.paperId,
+          title,
+          unresolved: !title,
+          missingTitle: !title && libraryReady,
+          subtitle: authorLine(record.paper?.authors),
+          ...rowDestination(record.paperId, record.paper, title, record.paper || null),
+        };
+      });
+  }, [view.isOwner, personalLibrary, libraryReady]);
 
   const metadata = useMemo(() => {
     const fallbackDescription = {
@@ -606,7 +749,10 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     unsupportedBody: 'Open this link in the full PaperTok app.',
     retry: 'Try again',
     verified: 'Verified researcher',
-    settings: 'Settings',
+    kicker: 'Profile',
+    joined: label => `Member since ${label}`,
+    publicLists: count => `${count} public ${count === 1 ? 'list' : 'lists'}`,
+    settings: 'Profile settings',
     editProfile: 'Edit profile',
     createProfile: 'Create your public profile',
     privateBadge: 'Private',
@@ -640,7 +786,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     emptyLikedHint: 'Papers you like will show up here.',
     truncated: count => `Showing the ${count} most recent.`,
     loadingRows: 'Loading...',
-    untitled: 'Untitled paper',
     authCta: 'Sign in to build your own',
   } : {
     brand: 'PaperTok',
@@ -654,7 +799,10 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     unsupportedBody: 'Abre este enlace en la aplicación completa de PaperTok.',
     retry: 'Reintentar',
     verified: 'Investigador verificado',
-    settings: 'Ajustes',
+    kicker: 'Perfil',
+    joined: label => `Miembro desde ${label}`,
+    publicLists: count => `${count} ${count === 1 ? 'pública' : 'públicas'}`,
+    settings: 'Ajustes del perfil',
     editProfile: 'Editar perfil',
     createProfile: 'Crea tu perfil público',
     privateBadge: 'Privado',
@@ -688,7 +836,6 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     emptyLikedHint: 'Los papers que te gusten aparecerán aquí.',
     truncated: count => `Se muestran los ${count} más recientes.`,
     loadingRows: 'Cargando...',
-    untitled: 'Paper sin título',
     authCta: 'Inicia sesión para crear el tuyo',
   };
 
@@ -703,12 +850,16 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       return (
         <main className={pageClass} aria-busy="true" aria-label={copy.loading}>
           <div className="public-profile-shell">
-            {!hasAppChrome && <p className="public-profile-brand">{copy.brand} · {copy.publicProfile}</p>}
             <header className="public-profile-header">
-              <div className="public-profile-avatar public-profile-skeleton" />
-              <div className="public-profile-identity">
-                <div className="public-profile-skeleton public-profile-skeleton--title" />
-                <div className="public-profile-skeleton public-profile-skeleton--line" />
+              <div className="profile-masthead-top">
+                <p className="profile-kicker">{copy.kicker}</p>
+              </div>
+              <div className="profile-masthead">
+                <div className="public-profile-avatar public-profile-skeleton" />
+                <div className="public-profile-identity">
+                  <div className="public-profile-skeleton public-profile-skeleton--title" />
+                  <div className="public-profile-skeleton public-profile-skeleton--line" />
+                </div>
                 <div className="profile-skeleton-stats">
                   <div className="public-profile-skeleton public-profile-skeleton--stat" />
                   <div className="public-profile-skeleton public-profile-skeleton--stat" />
@@ -736,7 +887,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     return (
       <main className={`${pageClass} public-profile-page--state`}>
         <div className="public-profile-shell">
-          <p className="public-profile-brand">{copy.brand}</p>
+          <p className="profile-kicker">{copy.brand}</p>
           <h1>{state.title}</h1>
           {state.body && <p className="public-profile-state-body">{state.body}</p>}
           {status === 'error' && (
@@ -764,7 +915,19 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   const followedContentCount = followedEntities?.length ?? 0;
   const likesCount = likedPaperIds?.size ?? 0;
 
+  const joined = joinedLabel(profile?.createdAt, isEnglish);
   const statValue = value => (typeof value === 'number' ? value.toLocaleString() : value);
+  // A dangling "0" reads as something broken, and a count that has not been
+  // read yet is not zero — both render as no number at all, the same way the
+  // followed-content door already withholds its own.
+  const tabCount = (tab) => {
+    const value = {
+      lists: ownLists?.length ?? null,
+      saved: libraryReady ? savedRows.length : null,
+      liked: likesCount,
+    }[tab];
+    return typeof value === 'number' && value > 0 ? statValue(value) : null;
+  };
   // Held back 320ms in CSS, so an aggregation that answers quickly never flashes
   // a placeholder for a wait that did not happen. The slot keeps its space
   // either way, so nothing jumps when the number lands.
@@ -806,22 +969,27 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
       {lists.map((list, index) => {
         // `emoji` holds a lucide icon name, not a literal emoji.
         const Icon = getIcon(list.emoji);
+        // The owner's colour, resolved the same way the lists page resolves
+        // it, so one list is one object wherever it is shown. A showcase card
+        // a visitor sees carries no list document, and therefore no colour:
+        // the tile falls back to a neutral rule rather than inventing one.
+        const accent = own ? resolveListColor(list) : null;
         const inner = (
           <>
-            <span className="public-profile-list-emoji" aria-hidden="true">
+            <span className="public-profile-list-icon" aria-hidden="true">
               <Icon size={18} />
             </span>
-            <span className="public-profile-list-copy">
-              <span className="public-profile-list-title">{list.title}</span>
+            <span className="public-profile-list-title">{list.title}</span>
+            <span className="public-profile-list-meta">
               <span className="public-profile-list-count">
                 {copy.papers(list.paperCount ?? 0)}
               </span>
+              {own && list.isPublished && (
+                <span className="profile-badge-public">
+                  <Globe2 size={11} aria-hidden="true" /> {copy.publicBadge}
+                </span>
+              )}
             </span>
-            {own && list.isPublished && (
-              <span className="profile-badge-public">
-                <Globe2 size={12} aria-hidden="true" /> {copy.publicBadge}
-              </span>
-            )}
           </>
         );
         return (
@@ -830,6 +998,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
               <button
                 type="button"
                 className="public-profile-list-card profile-list-card--own"
+                style={accent ? { '--list-accent': accent } : undefined}
                 onClick={() => navigate('/lists', { state: { openListId: list.id } })}
                 aria-label={copy.open(list.title)}
               >
@@ -851,17 +1020,29 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   );
 
   const paperRows = rows => (
-    <div className="profile-row-list">
+    <div
+      className="profile-row-list"
+      aria-busy={rows.some(row => row.unresolved && (!libraryReady || !row.missingTitle)) || undefined}
+    >
       {rows.map((row, index) => (
         <motion.div key={row.id} {...rowMotion(prefersReducedMotion, index)}>
-          <PaperRow row={row} fallbackTitle={copy.untitled} />
+          <PaperRow row={row} index={index} isEnglish={isEnglish} libraryReady={libraryReady} />
         </motion.div>
       ))}
     </div>
   );
 
+  // Rows that have not been heard about yet, in the panel's own shape. The
+  // tile skeleton above belongs to the lists grid; under Saved and Liked it
+  // read as four blank slabs where rows were promised.
+  const loadingRowList = (
+    <div className="profile-row-list" role="status" aria-label={copy.loadingRows} aria-busy="true">
+      {[0, 1, 2, 3].map(index => <RowSkeleton key={index} index={index} />)}
+    </div>
+  );
+
   const loadingRows = (
-    <div className="profile-skeleton-rows" aria-label={copy.loadingRows} aria-busy="true">
+    <div className="profile-skeleton-rows" role="status" aria-label={copy.loadingRows} aria-busy="true">
       <div className="public-profile-skeleton public-profile-skeleton--row" />
       <div className="public-profile-skeleton public-profile-skeleton--row" />
       <div className="public-profile-skeleton public-profile-skeleton--row" />
@@ -878,35 +1059,58 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
           ? { duration: 0.12 }
           : { duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
       >
-        {!hasAppChrome && <p className="public-profile-brand">{copy.brand} · {copy.publicProfile}</p>}
-
         {view.isOwner && profile && !profileIsPublic(profile) && (
           <div className="profile-private-notice">
             <Lock size={14} aria-hidden="true" />
             <span>{copy.privateNotice}</span>
-            <button type="button" onClick={() => navigate('/settings/profile')}>
+            <button type="button" onClick={() => navigate('/settings/profile', EDITOR_FROM_PROFILE)}>
               {copy.privateManage}
             </button>
           </div>
         )}
 
         <header className="public-profile-header">
-          {/* Anchored to the header's own corner, not floated over the page:
-              the gear belongs to the identity block at every width. */}
-          {view.isOwner && (
-            <button
-              type="button"
-              className="profile-gear"
-              onClick={() => navigate('/settings')}
-              aria-label={copy.settings}
-              title={copy.settings}
-            >
-              <Settings2 size={20} />
-            </button>
-          )}
+          {/* The kicker names the page and the gear closes the row — a utility
+              icon behind a hairline, the way rule 6 groups them everywhere
+              else. It is part of the masthead's composition, not a float. */}
+          <div className="profile-masthead-top">
+            <p className="profile-kicker">
+              {hasAppChrome ? copy.kicker : `${copy.brand} · ${copy.publicProfile}`}
+            </p>
+            {view.isOwner && (
+              <button
+                type="button"
+                className="profile-gear"
+                // Straight to the screen that edits what this page shows.
+                // General settings are the navbar's job (the preferences
+                // menu's link); a gear ON the profile that landed on the
+                // whole hub made the reader hunt for the profile section
+                // (asked for on 2026-08-29).
+                onClick={() => navigate('/settings/profile', EDITOR_FROM_PROFILE)}
+                aria-label={copy.settings}
+                title={copy.settings}
+              >
+                <Settings2 size={18} />
+              </button>
+            )}
+          </div>
+
+          <div className="profile-masthead">
           <div className="public-profile-avatar">
             {avatar
-              ? <img src={avatar} alt="" referrerPolicy="no-referrer" />
+              ? (
+                <img
+                  src={avatar}
+                  alt=""
+                  referrerPolicy="no-referrer"
+                  // The page's own masthead avatar, visible on load -- not
+                  // lazy. `.public-profile-avatar img` renders at 96x96
+                  // (56x56 on the narrow layout).
+                  decoding="async"
+                  width="96"
+                  height="96"
+                />
+              )
               : (
                 // The initial comes from the display name, which is public.
                 // The app's other avatars fall back to the email initial, and
@@ -928,7 +1132,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
             {profile
               ? (
                 <p className="public-profile-handle">
-                  @{profile.handle}
+                  <span>@{profile.handle}</span>
+                  {joined && <span className="profile-joined">{copy.joined(joined)}</span>}
                   {/* Only the owner ever renders this: for anyone else the
                       document is unreadable, so there is no page to badge. */}
                   {view.isOwner && !profileIsPublic(profile) && (
@@ -942,52 +1147,12 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                 <button
                   type="button"
                   className="profile-handle-cta"
-                  onClick={() => navigate('/settings/profile')}
+                  onClick={() => navigate('/settings/profile', EDITOR_FROM_PROFILE)}
                 >
                   {copy.createProfile} →
                 </button>
               ))}
             {profile?.bio && <p className="public-profile-bio">{profile.bio}</p>}
-
-            <ul className="profile-stats">
-              <li>
-                <button
-                  type="button"
-                  className="profile-stat"
-                  onClick={() => setFollowSheet('following')}
-                  disabled={!statsUid}
-                  title={copy.openFollowing}
-                >
-                  <strong>{followedView ? followCount(followedView) : pendingCount}</strong>
-                  <span>{copy.stats.following}</span>
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  className="profile-stat"
-                  onClick={() => setFollowSheet('followers')}
-                  disabled={!statsUid}
-                  title={copy.openFollowers}
-                >
-                  <strong>{followersView ? followCount(followersView) : pendingCount}</strong>
-                  <span>{copy.stats.followers}</span>
-                </button>
-              </li>
-              {view.isOwner && (
-                <li>
-                  <button
-                    type="button"
-                    className="profile-stat"
-                    onClick={() => setRequestedTab('liked')}
-                    title={copy.openLiked}
-                  >
-                    <strong>{statValue(likesCount)}</strong>
-                    <span>{copy.stats.likes}</span>
-                  </button>
-                </li>
-              )}
-            </ul>
 
             <div className="profile-owner-actions">
               {view.isOwner ? (
@@ -995,7 +1160,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   <button
                     type="button"
                     className="profile-edit-button"
-                    onClick={() => navigate('/settings/profile')}
+                    onClick={() => navigate('/settings/profile', EDITOR_FROM_PROFILE)}
                   >
                     {copy.editProfile}
                   </button>
@@ -1036,12 +1201,63 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
             </div>
             {followError && <p className="profile-follow-error">{copy.followFailed}</p>}
           </div>
+
+          {/* A count is machine data, so it sits in the ruled grid the
+              Explorer's entity header uses rather than in a row of pills. The
+              grid takes its column count from its children: three for the
+              owner, two for a visitor, who has no Likes counter at all. */}
+          <ul className="profile-stats">
+            <li>
+              <button
+                type="button"
+                className="profile-stat"
+                onClick={() => setFollowSheet('following')}
+                disabled={!statsUid}
+                title={copy.openFollowing}
+              >
+                <span className="profile-stat-value">
+                  {followedView ? followCount(followedView) : pendingCount}
+                </span>
+                <span className="profile-stat-label">{copy.stats.following}</span>
+              </button>
+            </li>
+            <li>
+              <button
+                type="button"
+                className="profile-stat"
+                onClick={() => setFollowSheet('followers')}
+                disabled={!statsUid}
+                title={copy.openFollowers}
+              >
+                <span className="profile-stat-value">
+                  {followersView ? followCount(followersView) : pendingCount}
+                </span>
+                <span className="profile-stat-label">{copy.stats.followers}</span>
+              </button>
+            </li>
+            {view.isOwner && (
+              <li>
+                <button
+                  type="button"
+                  className="profile-stat"
+                  onClick={() => setRequestedTab('liked')}
+                  title={copy.openLiked}
+                >
+                  <span className="profile-stat-value">{statValue(likesCount)}</span>
+                  <span className="profile-stat-label">{copy.stats.likes}</span>
+                </button>
+              </li>
+            )}
+          </ul>
+          </div>
         </header>
 
         {view.isOwner ? (
           <>
             <div className="profile-tabs" role="tablist" aria-label={copy.tabsLabel}>
-              {view.tabs.map(tab => (
+              {view.tabs.map(tab => {
+                const count = tabCount(tab);
+                return (
                 <button
                   key={tab}
                   type="button"
@@ -1053,6 +1269,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   onClick={() => setRequestedTab(tab)}
                 >
                   {copy.tabs[tab]}
+                  {count && <span className="profile-tab-count">{count}</span>}
                   {activeTab === tab && (
                     <motion.span
                       className="profile-tab-indicator"
@@ -1064,7 +1281,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                     />
                   )}
                 </button>
-              ))}
+                );
+              })}
             </div>
 
             <AnimatePresence mode="wait" initial={false}>
@@ -1083,7 +1301,10 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   <>
                     <div className="profile-panel-header">
                       <p className="profile-panel-note">{copy.ownListsNote}</p>
-                      <Link className="profile-manage-link" to="/lists">{copy.manageLists}</Link>
+                      <Link className="profile-manage-link" to="/lists">
+                        {copy.manageLists}
+                        <ArrowRight size={13} aria-hidden="true" />
+                      </Link>
                     </div>
                     {ownListsFailed && (
                       <EmptyState
@@ -1103,7 +1324,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   </>
                 )}
 
-                {activeTab === 'saved' && (!libraryReady ? loadingRows
+                {activeTab === 'saved' && (!libraryReady ? loadingRowList
                   : savedRows.length === 0 ? (
                     <EmptyState
                       Icon={Bookmark}
@@ -1120,7 +1341,7 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   ))}
 
                 {activeTab === 'liked' && (likedRows.length === 0 ? (
-                  !libraryReady ? loadingRows : (
+                  !libraryReady ? loadingRowList : (
                     <EmptyState
                       Icon={Heart}
                       title={copy.emptyLikedTitle}
@@ -1139,8 +1360,15 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
             </AnimatePresence>
           </>
         ) : (
-          <section className="profile-visitor-lists" aria-label={copy.pinnedHeading}>
-            <h2 className="profile-visitor-heading">{copy.pinnedHeading}</h2>
+          <section aria-label={copy.pinnedHeading}>
+            <div className="profile-visitor-lists">
+              <h2 className="profile-visitor-heading">{copy.pinnedHeading}</h2>
+              {visitorLists.length > 0 && (
+                <span className="profile-visitor-count">
+                  {copy.publicLists(visitorLists.length)}
+                </span>
+              )}
+            </div>
             {visitorLists.length === 0 ? (
               // The empty state waits for the showcase to answer: claiming
               // "no lists" while the read is in flight would be a guess.

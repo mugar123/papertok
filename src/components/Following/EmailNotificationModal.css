@@ -5,18 +5,23 @@
   display: grid;
   place-items: center;
   padding: 20px;
+  /* No `backdrop-filter`: EmailNotificationModal.jsx fades this element's
+     own opacity in and out with framer-motion, and a blur under an
+     animated opacity is re-resolved every frame — the worst case for a
+     mobile GPU. The dark veil alone reads as the backdrop; its 10px blur
+     was invisible under it. */
   background: rgba(5, 5, 8, 0.72);
-  backdrop-filter: blur(10px);
 }
 
 .email-notification-modal {
   width: min(520px, 100%);
   max-height: calc(100vh - 32px);
+  max-height: calc(100dvh - 32px);
   overflow-y: auto;
   border: 1px solid var(--border-default);
-  border-radius: 8px;
-  background: #111116;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: 0 24px 80px rgba(17, 19, 24, 0.12);
 }
 
 .email-notification-modal > header {
@@ -33,10 +38,10 @@
   place-items: center;
   width: 42px;
   height: 42px;
-  border: 1px solid rgba(139, 92, 246, 0.38);
-  border-radius: 7px;
-  color: #b79aff;
-  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid var(--border-ink);
+  border-radius: var(--radius-md);
+  color: var(--gradient-physics);
+  background: var(--bg-secondary);
 }
 
 .email-notification-modal h2 {
@@ -64,7 +69,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .email-notification-close:hover { color: #fff; background: rgba(255, 255, 255, 0.07); }
+  .email-notification-close:hover { color: var(--text-primary); background: var(--bg-secondary); }
 }
 
 .email-notification-body { padding: 20px 22px; }
@@ -76,16 +81,16 @@
   margin: 0 0 18px;
   padding: 11px 12px;
   border-left: 2px solid #ff8a5c;
-  background: rgba(255, 138, 92, 0.075);
+  background: var(--tint-amber-bg);
 }
 
-.email-notification-provider-warning strong { color: #ffb091; font-size: 12px; }
+.email-notification-provider-warning strong { color: var(--tint-amber-fg); font-size: 12px; }
 .email-notification-provider-warning span { color: var(--text-secondary); font-size: 12px; }
 .email-notification-provider-warning.is-info {
-  border-left-color: #8b5cf6;
-  background: rgba(139, 92, 246, 0.075);
+  border-left-color: var(--accent-primary);
+  background: var(--bg-secondary);
 }
-.email-notification-provider-warning.is-info strong { color: #bca3ff; }
+.email-notification-provider-warning.is-info strong { color: var(--gradient-physics); }
 
 .email-notification-toggle-row,
 .email-notification-count {
@@ -112,8 +117,8 @@
   width: 42px;
   height: 24px;
   border: 1px solid var(--border-default);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-secondary);
   transition: background 180ms ease, border-color 180ms ease;
 }
 
@@ -130,13 +135,13 @@
 }
 
 .email-notification-toggle-row input:checked + .email-notification-switch {
-  border-color: #8b5cf6;
-  background: #7c3aed;
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
 }
 
 .email-notification-toggle-row input:checked + .email-notification-switch::after {
   transform: translateX(18px);
-  background: #fff;
+  background: var(--bg-card);
 }
 
 .email-notification-options {
@@ -154,14 +159,14 @@
   grid-template-columns: 1fr 1fr;
   gap: 4px;
   padding: 4px;
-  border-radius: 7px;
-  background: rgba(255, 255, 255, 0.045);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
 }
 
 .email-notification-segments button {
   min-height: 36px;
   border: 1px solid transparent;
-  border-radius: 5px;
+  border-radius: var(--radius-sm);
   color: var(--text-secondary);
   background: transparent;
   font-weight: 650;
@@ -170,8 +175,8 @@
 
 .email-notification-segments button.is-active {
   border-color: var(--border-default);
-  color: #fff;
-  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-primary);
+  background: var(--bg-secondary);
 }
 
 .email-notification-count { margin-top: 18px; }
@@ -179,7 +184,7 @@
   min-width: 72px;
   height: 38px;
   border: 1px solid var(--border-default);
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 0 10px;
   color: var(--text-primary);
   background: var(--bg-elevated);
@@ -191,9 +196,9 @@
   gap: 9px;
   margin-top: 20px;
   padding: 11px 12px;
-  border-left: 2px solid rgba(139, 92, 246, 0.65);
+  border-left: 2px solid var(--border-ink);
   color: var(--text-secondary);
-  background: rgba(139, 92, 246, 0.055);
+  background: var(--bg-secondary);
   font-size: 12px;
 }
 
@@ -204,8 +209,8 @@
   margin: 14px 0 0;
   font-size: 12px;
 }
-.email-notification-feedback.is-success { color: #58d89b; }
-.email-notification-feedback.is-error { color: #ff7d91; }
+.email-notification-feedback.is-success { color: var(--tint-green-fg); }
+.email-notification-feedback.is-error { color: var(--tint-red-fg); }
 
 .email-notification-modal > footer {
   display: flex;
@@ -221,7 +226,7 @@
   justify-content: center;
   gap: 8px;
   min-height: 40px;
-  border-radius: 6px;
+  border-radius: var(--radius-md);
   padding: 0 14px;
   font-weight: 700;
   cursor: pointer;
@@ -242,19 +247,19 @@
   gap: 8px;
 }
 .email-notification-test.is-sending {
-  border-color: rgba(139, 92, 246, 0.55);
-  color: #c4b5fd;
-  background: rgba(124, 58, 237, 0.1);
+  border-color: var(--border-ink);
+  color: var(--accent-primary);
+  background: var(--bg-secondary);
 }
 .email-notification-test.is-sending:disabled { opacity: 1; }
 .email-notification-test.is-sent {
   border-color: rgba(52, 211, 153, 0.5);
-  color: #78e5b4;
-  background: rgba(16, 185, 129, 0.12);
+  color: var(--tint-green-fg);
+  background: var(--tint-green-bg);
 }
 .email-notification-test.is-sent:disabled { opacity: 1; }
 .email-notification-test-spinner { animation: emailNotificationSpin 0.8s linear infinite; }
-.email-notification-save { border: 1px solid #8b5cf6; color: #fff; background: #7c3aed; }
+.email-notification-save { border: 1px solid var(--border-ink); color: var(--text-inverse); background: var(--accent-primary); }
 
 @keyframes emailNotificationSpin {
   to { transform: rotate(360deg); }
@@ -267,7 +272,7 @@
 
 @media (max-width: 520px) {
   .email-notification-backdrop { align-items: end; padding: 0; }
-  .email-notification-modal { width: 100%; max-height: 92vh; border-radius: 8px 8px 0 0; }
+  .email-notification-modal { width: 100%; max-height: 92vh; max-height: 92dvh; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
   .email-notification-modal > header,
   .email-notification-body { padding-left: 18px; padding-right: 18px; }
   .email-notification-modal > footer { padding-left: 18px; padding-right: 18px; }

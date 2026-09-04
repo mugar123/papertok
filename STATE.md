@@ -1,5 +1,324 @@
 # Estado / pendientes
 
+## La entrada del feed en móvil deja de dar un salto (2026-09-03)
+
+**`pc-abstract-toggle` («Leer el abstract completo», 25 px) se montaba dos
+frames después de la tarjeta —el veredicto que lo enciende es una medida y el
+panel no tiene altura en el commit que lo monta— y bajo 900 px la columna de
+la hoja está anclada abajo, así que no aparecía debajo del abstract: empujaba
+25 px hacia arriba el abstract, los autores, el título y el antetítulo, en un
+solo frame, con las piezas a media opacidad.** Medido sobre el build de
+producción: el título recorría 40 px en móvil con un salto de 28 px en un
+frame, frente a 14–16 px suaves en escritorio, donde la columna más ancha deja
+el abstract sin recortar y el botón no llega a existir. Ahora el botón reserva
+su caja siempre y el veredicto solo enciende su etiqueta
+(`pc-abstract-toggle--reserved`, fundido de 0,2 s): móvil 17 px de recorrido y
+5 px de salto máximo, igual que escritorio (18–19 px / 5 px), en los dos
+sentidos de la barra. Se descartó medir antes de pintar
+(`useLayoutEffect`): quitaba el salto pero forzaba un layout síncrono por
+tarjeta montada, tres tareas de 50–56 ms con CPU ×4 al volver a Para ti.
+Detalle y tablas en `docs/superpowers/plans/2026-09-03-feed-entrada-movil.md`.
+
+
+## La dirección de las páginas sale del índice del historial (2026-09-03)
+
+**React Router 7.18 con `HashRouter` informa `POP` en todas las navegaciones
+(medido en la barra: el NavLink a Siguiendo y el `navigate('/')` de Para ti
+llegan como POP con `history.state.idx` en 1 y 2). Leída por el tipo, cada
+página entraba desde la izquierda «como una vuelta» y las tarjetas del feed
+nunca componían al cambiar de pestaña: la llegada coreografiada de la
+tarjeta solo se veía en el arranque.** `directionForHistoryIndex`
+(utils/routeDirection.js) deriva ahora la dirección del índice — sube =
+avance, baja = vuelta, igual = reemplazo, primer índice = llegada — con una
+memoria de módulo para que los muchos renders de una navegación lean lo
+mismo; el tipo del router solo queda de reserva cuando no hay índice.
+Medido sobre el build de producción en 390×844: Para ti → Siguiendo y
+Siguiendo → Para ti entran desde la derecha con el título 0 → 1 y el carril
+0 → 1; `history.back()` entra desde la izquierda con la tarjeta en reposo.
+Con CPU ×4 no hay tareas largas ni frames >34 ms en la entrada (las tareas
+de 90–135 ms que se vieron primero eran del modo desarrollo de Vite/React,
+no del build). La sonda gana el modo `tabswitch` (`demo,mobile,slow,late`;
+siembra un autor seguido para que Siguiendo tenga tarjetas).
+
+
+## El carril de botones ya no salta al llegar en móvil (2026-09-03)
+
+**Bajo 900 px el carril de Me gusta/Guardar/… se centraba con
+`transform: translateY(-50%)`, y la llegada de cada pieza de la tarjeta
+(`pcArrive`) anima `transform`: durante los 0,55 s de la llegada el valor de
+la animación sustituía el centrado, el carril quedaba media altura más abajo
+(medido en 390×844: top 456 → 448, y 288 el frame en que soltaba la
+propiedad) y saltaba arriba al terminar.** Visible desde que la primera
+entrada compone (`1c01d24`, esta mañana); antes la regla
+`[data-nav-direction="-1"]` apagaba la llegada en el arranque y lo
+escondía. El centrado es ahora la propiedad individual `translate`, que
+compone con el `transform` animado en vez de sustituirlo: medido después,
+el carril solo asienta los 8 px de la coreografía (296 → 288). Test de
+fuente en `paperCardArrival.test.js`; la sonda `bootload` muestrea también
+el carril (`rail`).
+
+## Un solo átomo del arranque a la primera tarjeta (2026-09-03)
+
+**La puerta de auth ya no pinta un átomo propio sobre `/`: mientras carga la
+sesión entrega el árbol del feed, cuyo veil (`.feed-empty--veil`) es la
+pantalla de arranque desde el primer pintado y recede sobre la primera
+tarjeta como ya hacía. La barra se funde en 0,24 s en su primer montaje de la
+sesión (`navbar--arriving`).** Lo que había: dos SVG distintos sustituidos en
+un frame (electrones reiniciados, otro texto, otra altura), sin nada que lo
+tapara porque `AnimatePresence initial={false}` anula la entrada de
+`PageTransition` en el primer render, y con snapshot un veil de un frame que
+salía en 0,42 s: un átomo fantasma tras el sólido. Medido antes y después con
+`explorer-loading-probe.mjs bootload` (nuevo modo; flags `demo`, `mobile`,
+`hold`, `shots`, y `PROFILE_DIR`/`ORIGIN` por entorno) en escritorio y móvil:
+cero frames sin veil ni tarjeta en los cuatro casos. Plan y tabla en
+`docs/superpowers/plans/2026-09-03-feed-arranque-un-atomo.md`.
+
+Salvedad honesta: la medición con sesión se hizo en modo demo (la única
+sesión disponible sin pedir credenciales); en la app real la puerta dura lo
+que tarde Firebase (90 ms de invitado en producción; más con perfil), y ese
+tramo lo cubre el mismo veil por construcción, no por medida.
+
+## Semantic Scholar sobrevive a su segundo (2026-09-03)
+
+**Las dos rutas de S2 llevan ahora un compás de una petición por segundo
+debajo del techo por minuto (`worker/upstream-pace.js`: una reserva por
+segundo en el ledger de siempre, dormir hasta 2,5 s a la espera del siguiente
+sin contar las idas y vueltas al ledger, y rechazar aquí con `retry-after: 2`
+antes que arriba), `/related` relaya los fallos del proveedor con el mismo
+mapeo que `/sources/*` (429 con `code`, `upstreamStatus` y `retry-after`;
+`UPSTREAM_TIMEOUT` en el cuelgue), y el navegador pide una vez por paper: una
+clave de caché sin `limit` en el borde y en el cliente, y deduplicación de
+peticiones en vuelo en `relatedPapersService`.** De regalo:
+el feed pide recomendaciones también para papers con DOI y sin arXiv, y el
+adaptador ya no mutila «CORD-19». Plan en
+`docs/superpowers/plans/2026-09-03-semantic-scholar-endurecimiento.md`;
+hallazgos en `docs/AUDITORIA-SEMANTIC-SCHOLAR-2026-09-03.md` (S6, la caché
+partida por origen, sigue abierta a propósito).
+
+**Implementado, probado (suite entera 1.931/1.931 en la rama, 1.962/1.962 tras
+fusionar, cero `cancelled`), revisado y DESPLEGADO el 03-09.** El Worker salió
+primero (versión `f7dc994a`, `/health` ya publica `semanticScholarKeyConfigured:
+true`) y el frontend después, con el push de `main` que dispara Vercel; el
+bundle servido lleva `{paper_id}` sin `limit` y el presupuesto de 11 s. Ese
+orden no era opcional: un bundle nuevo contra el Worker viejo pide `/related`
+sin `limit` (ya no lo necesita), y el `getSafeLimit(null, 8, 20)` de la versión
+anterior lo traduce en ocho candidatos en vez de veinte para sembrar el feed
+— sin ningún error visible que lo delate. Quien vuelva a desplegar las dos
+piezas tiene que respetar el mismo orden.
+
+Verificado en vivo tras desplegar, y con una salvedad honesta: `/health`
+confirma el código nuevo, y una petición espaciada devuelve 200. Pero la
+comprobación en ráfaga cayó dentro del propio régimen de cuelgue que describe
+la auditoría — de tres en paralelo, una 429 y dos `UPSTREAM_TIMEOUT` a los
+6,6 s— y las sondas de esta misma sesión contribuyeron a provocarlo. Los
+tiempos escalonados (2,7 s / 6,6 s / 7,3 s) demuestran que el compás corre, y
+los códigos diferenciados (`UPSTREAM_RATE_LIMITED` frente a `UPSTREAM_TIMEOUT`,
+en vez de un 502 pelado) demuestran que el relay funciona; lo que **no** se
+pudo demostrar es «tres de tres en verde», y forzarlo habría empeorado la
+fuente. Queda por medir en frío, sin sondas encima.
+
+Lo que motiva el compás ya estaba medido esta mañana contra producción,
+antes de este cambio: cinco peticiones en
+paralelo dieron un 200 y cuatro 429, y bajo presión sostenida el proveedor
+dejó de rechazar y colgó la conexión dos veces (`UPSTREAM_TIMEOUT`) — ver
+`docs/AUDITORIA-SEMANTIC-SCHOLAR-2026-09-03.md`, §2.2. Que el compás lo
+convierta en seis de seis es lo que predice el diseño, no algo que se haya
+visto todavía contra `api.papertok.app` real: la verificación en vivo (los
+seis espaciados y la ráfaga de tres del plan) queda pendiente del despliegue.
+Pendiente también, y sin relación con este código: la solicitud a Semantic
+Scholar de un límite mayor que 1 RPS.
+
+## Semantic Scholar vuelve a responder: la clave está puesta (2026-09-03)
+
+**`SEMANTIC_SCHOLAR_API_KEY` quedó configurada el 02-09 a las 22:41 UTC
+(`wrangler secret list` la muestra, y el despliegue `Secret Change` que la
+introdujo sirve el 100 % del tráfico). Con eso `/sources/s2` está vivo por
+primera vez y `/related` deja de depender del pool anónimo.** El pendiente de
+@mugar que arrastraba la entrada de G8 desde el 24-08 queda cerrado; el otro
+(`NCBI_API_KEY`) ya se había hecho el 01-09.
+
+Medido en vivo el 03-09, seis consultas distintas espaciadas 3 s:
+
+| Camino | 200 de 6 |
+|---|---|
+| Por el Worker, con clave | **5 / 6** |
+| Directo a `api.semanticscholar.org` sin clave, en los mismos minutos | **0 / 6** |
+
+El control importa tanto como la medida: el pool anónimo sigue exactamente
+igual de agotado que el 24-08 (0/10 entonces desde IP residencial), así que la
+diferencia es la clave y no una ventana de tráfico bajo. `/related` no se pudo
+comprobar desde fuera —exige identidad Firebase y devuelve `401 AUTH_REQUIRED`
+a un cliente anónimo, que es su comportamiento correcto—, pero comparte clave y
+línea de código con `/sources/s2` (`report-api.js:450`), así que hereda el
+arreglo; la llamada autenticada real queda por verificar desde la app logueada.
+
+`/health` gana `semanticScholarKeyConfigured`, con test que muere por mutación:
+hasta ahora informaba de `pubmedKeyConfigured` pero no de esta, y no son el
+mismo tipo de bandera. La de NCBI ausente significa «PubMed va a 3 req/s en vez
+de 10»; la de S2 ausente significa «la fuente no existe».
+
+**Lo que queda abierto, y no es cosmético:** el límite introductorio de S2 es
+**1 RPS**, y nuestro techo es *por minuto* (`S2_GLOBAL_MINUTE_LIMIT = 60`,
+`report-api.js:191`). Sesenta peticiones caben legalmente dentro del mismo
+segundo, y S2 rechazaría casi todas. Se vio en la propia medición: una ráfaga
+de cuatro peticiones sin espaciar cobró tres 429, y con 3 s de separación no
+falló ninguna. El techo protege el minuto pero no reparte dentro de él. Si el
+feed llega a dispararlas en bloque se manifestará como fuente muerta
+intermitente, y el arreglo es espaciar las salidas, **no subir el número**.
+
+## El resumen anotado se descarga también en PDF (2026-08-29)
+
+**La tarjeta de exportación del lector gana un selector de formato: PDF
+(por defecto) además del `.tex`. El PDF se genera íntegro en cliente —
+`buildPdfModel` en `src/utils/pdfExport.js` comparte filtrado, numeración y
+copys con `latexExport.js` (que ahora exporta `documentCopy` y acepta
+extensión en `exportFileName`), y el renderizador pagina divs A4 fuera de
+pantalla, rasteriza con `html2canvas-pro` y ensambla con `jspdf`, ambos como
+chunks bajo demanda.** Notas al pie de su propia página con etiqueta
+Tuya/IA, marcas amarillas del lector y grises con subrayado de tinta las de
+la IA (lo que la vista previa de la tarjeta prometía y el `.tex` no hace),
+pie con procedencia + enlace + número en cada página, y tipografía
+Newsreader — colores fijos en hex, ajenos al tema.
+
+Dos hallazgos del rasterizador, ya recogidos en el código: `hyphens: auto`
+dibuja el corte sin el guion («justific ado»), así que el PDF va justificado
+sin partir; y la prosa llega en espacio normalizado con `%` escapado a `\%`
+(que el `.tex` compila bien), así que `displayProse` lo desescapa al pintar
+— el lector en pantalla arrastra ese mismo `\%` de siempre y quedó apuntado
+como tarea aparte. Plan en
+`docs/superpowers/plans/2026-08-29-pdf-export.md`; modelo testeado en node
+(`pdfExport.test.js`), paginado y PDF verificados en vivo contra el dev
+server. Sin commit: árbol compartido con otra sesión.
+
+## DeepSeek V4 Flash como fallback intermedio de IA (2026-08-29)
+
+**La cadena de `/ai/explain` pasa de Gemini → Kimi a Gemini → DeepSeek → Kimi,
+en orden de coste: DeepSeek corre gratis en la API OpenAI-compatible de NVIDIA
+(`NVIDIA_API_KEY`, secreto ya subido a Cloudflare) y Kimi en Modal cobra por
+token, así que Modal solo se toca cuando NVIDIA no contesta.**
+
+`AI_FALLBACK_PROVIDER` ahora es una lista separada por comas
+(`"nvidia-deepseek,modal-kimi"`) y `explainWithProviderChain` la recorre:
+el disparador sigue siendo el agotamiento de cuota diaria de Gemini, y un
+fallback que falla por BUSY/UNAVAILABLE/NOT_CONFIGURED/INVALID_RESPONSE/
+BUDGET_EXHAUSTED cede el paper al siguiente. Presupuesto propio
+(`deepseekMs = 30 s`, mínimo 8 s), sin ledger — NVIDIA no factura. La clave de
+caché incorpora la cadena completa, así que las explicaciones cacheadas bajo
+`gemini+modal-kimi` se regenerarán una vez.
+
+**Ojo medido, no supuesto:** el 29-08 la cola gratuita de NVIDIA para
+`deepseek-ai/deepseek-v4-flash-0731` tardaba 130–213 s en responder una
+petición trivial (tres sondas, ninguna bajo 70 s). Mientras eso siga así, el
+intento DeepSeek abortará a los 30 s y la cadena seguirá cayendo a Kimi, con
+30 s extra de latencia en cada evento de fallback. El código es correcto para
+cuando la cola mejore; si no mejora, bajar `deepseekMs` o quitar el eslabón es
+un cambio de una línea en `wrangler.toml`.
+
+Sin desplegar: hay otra sesión editando este árbol y wrangler sube el árbol
+entero — rebasar antes de desplegar.
+
+## PR #19 revisado — el lector no estaba enchufado (2026-08-24)
+
+**Revisión completa de `feat/light-design-system` (@samuelcorsan): 74 ficheros,
++10.300/−6.864, quince fallos, tres bloqueantes. Los arreglos van en
+`fix/pr19-review`, sacada del HEAD del PR. Nada mergeado, nada empujado.**
+
+El PR no es lo que dice su título. Además del sistema de diseño claro trae un
+endpoint de IA nuevo en el Worker (`ai-rewrite.js`, 823 líneas), un lector de
+papers, subrayados persistidos, extracción de figuras de arXiv, una paleta de
+comandos, Tailwind v4 con cinco primitivas de Radix, y cambios en
+`firestore.rules` y `wrangler.toml`. **No toca este fichero**: su documentación
+vive en `design.md`, nuevo y bueno, pero STATE.md se quedó sin entrada.
+
+### Los tres bloqueantes
+
+**1. `/ai/rewrite` nunca se registró.** `wrangler.toml` declara
+`main = "worker/report-api.js"`, y ese fichero no importaba `ai-rewrite.js`: el
+único import del módulo en todo el repo estaba en su propio test. El POST del
+cliente caía en el 404 genérico, así que la funcionalidad estrella del PR estaba
+muerta de origen. Los 1197 tests pasaban porque importan el handler directamente
+y **nunca cruzan el enrutado** — el agujero es ese, no el descuido.
+
+**2. La cuota diaria se reservaba y no se devolvía.** `handlePaperRewrite`
+llamaba a `reserveAIQuota` y no liberaba en ningún camino de fallo: PDF
+inaccesible, 429/502/504 del proveedor, o stream muerto a mitad. Con
+`AI_DAILY_USER_LIMIT = "10"`, unos pocos PDFs caídos dejaban al lector sin
+servicio. `ai-explanation.js` ya tenía el par reserve/release, y el diff
+exportaba `reserveAIQuota` dejando `releaseAIQuota` sin exportar: la huella
+exacta de la mitad olvidada.
+
+**3. Se cacheaban 30 días las reescrituras truncadas, servidas como completas.**
+`finishReason` se capturaba y no se consultaba antes de `writeCachedRewrite`. Un
+corte por `MAX_TOKENS` parkeaba medio paper en KV un mes, replicado a todos los
+lectores cerrando con `done` y sin marca de truncado.
+
+**Ninguno llegó a morder en producción**, porque el 1 hacía el handler
+inalcanzable: no hay cuota quemada ni KV que purgar. El 3 habría empezado a
+morder en el primer despliegue después de registrar la ruta.
+
+### Lo demás, por orden de severidad
+
+| # | Dónde | Qué |
+|---|---|---|
+| 4 | `paper-figures.js:132` | `MAX_HTML_BYTES` se medía sobre `content-length` (ausente si es chunked → 0 → pasa) y luego sobre el cuerpo **ya bufferizado entero**: la guarda solo corría cuando ya no servía |
+| 5 | `useEntitySearch.js:79` | `performSearch` no reseteaba `results`: las secciones aún en vuelo seguían mostrando la consulta anterior mezclada con la nueva |
+| 6 | `userHighlightService.js:76` | `getDocs` de la colección entera sin `where` ni `limit`; el filtro por paper corría con todo ya descargado |
+| 7 | `paper-figures.js:145` | Los dos renderizadores en serie, 15 s cada uno: hasta 30 s por figura fallida, y el vacío solo se cachea 1 h |
+| 8 | `paper-figures.js:37` | El regex de id excluía `math/0309136` y todo lo anterior a 2007 — justo el catálogo que ar5iv existe para cubrir |
+| 9 | `ProtectedRoute.jsx:79` | Al quitar `/login` se perdió el `returnTo`: el invitado aterriza en el feed sin memoria de adónde iba |
+| 10 | `paperRewriteService.js:158` | `addEventListener('abort')` sin comprobar `signal.aborted`: un signal ya disparado no cancela y gasta un uso |
+| 11 | `PaperReader.jsx:178` | El efecto depende de la identidad del objeto `paper`; al resolverse la copia en abierto se relanza la reescritura y gasta otro uso |
+| 12 | `paper-figures.js:41` | `&amp;` decodificado el primero → doble decodificación; `fromCharCode` trunca fuera del BMP; sin entidades hex |
+| 13 | `.env.example` | Borrado entero, y era la única documentación de las once `VITE_*` (el `.env.local` está en `.gitignore`) |
+| 14 | `ui/dialog.jsx:17` | `animate-in`/`animate-out` sin el plugin que las define: clases muertas |
+| 15 | `firestore.rules:850` | Colección `highlights` nueva, veinte líneas de validación encadenada, **cero tests**, pese a existir `npm run test:rules` |
+
+### Dos agujeros adyacentes que aparecieron al arreglar
+
+- **`fetchFromRenderer` hacía `encodeURIComponent(arxivId)` sobre el id entero**,
+  que convierte la barra en `%2F`: ampliar el regex del punto 8 no habría
+  servido de nada porque `arxiv.org/html/math%2F0309136` da 404 en ambos
+  renderizadores. Escapado ahora segmento a segmento.
+- **`paperFigureService.js:26` tiene su propio `/^\d{4}\.\d{4,5}$/`**, así que el
+  navegador nunca pediría figuras de un paper antiguo aunque el Worker ya las
+  sirva. Los dos filtros tienen que moverse juntos.
+
+### El choque de decisión sobre `/login`
+
+`design.md:165` dice, con todas las letras, **«Never reintroduce a `/login`
+page»**: el patrón de auth del PR es el modal `AuthPrompt`, y un invitado que
+toca una ruta cerrada va al feed. @mugar ha decidido lo contrario — la página
+vuelve, con el `returnTo` completo y el CSS re-vestido a los tokens claros; el
+modal se queda para las acciones en contexto. **`design.md` hay que actualizarlo
+en el mismo commit**, o el documento y el código dirán cosas distintas y la
+siguiente sesión creerá al documento.
+
+### Lo verificado de paso
+
+`OPENALEX_API_KEY` **sí está configurada** (`wrangler secret list`, 24-08). La
+API privada de OpenAlex está montada de punta a punta: `identifyOpenAlexUrl`
+reescribe `api.openalex.org/*` a `${VITE_PAPER_API_BASE_URL}/openalex/*` y borra
+cualquier clave del navegador, y el proxy del Worker adjunta la suya en
+`report-api.js:1823`. Importa más que antes: la paleta nueva dispara hasta
+cuatro búsquedas de OpenAlex por tecleo, contra techos de 300/min y 8.000/día.
+
+Punto ciego que queda: `fetchOpenAlexJsonWithFallback` reintenta **sin clave**
+cuando la petición con clave falla, así que una credencial caducada se
+manifiesta como funcionamiento normal contra el pool público, sin un solo log.
+
+`SEMANTIC_SCHOLAR_API_KEY` sigue sin configurar, como decía la entrada de G8.
+*(Configurada el 02-09-2026 y verificada en vivo el 03-09 — ver la entrada de
+cabecera; lo de abajo describe lo que era cierto el 24-08.)*
+
+### Estado del trabajo
+
+Cerrados y verificados con tests ejecutados: los tres bloqueantes (128 tests en
+`worker/ai-rewrite.test.js` + `worker/report-api.test.js`, con casos que
+**entran por el router**) y los cuatro de figuras (25 tests, también en verde
+bajo Node 22, el de CI). En curso: lector, búsqueda, varios y la restauración
+del login. Pendiente al cerrar: pasar la suite completa de CI, actualizar
+`design.md`, y decidir cómo aterriza `fix/pr19-review` sobre el PR.
+
 ## G8 cerrado — PubMed y Semantic Scholar entran por el Worker (2026-08-24)
 
 **Hecho, verificado en vivo y desplegado; quedan dos secretos que solo puede
@@ -78,15 +397,16 @@ antes —`/related` incluido— y migrarlo **no es una regresión**; pero sin la
 PubMed de 3 a 10 req/s y la ruta responde sin ella (`/health` lo dice ahora con
 `pubmedKeyConfigured`).
 
-**Pendiente de @mugar:**
+**Pendiente de @mugar:** *(ambos hechos ya — ver la entrada de cabecera del
+03-09; se conserva el bloque porque explica por qué hacía falta.)*
 
 ```bash
-npx wrangler secret put SEMANTIC_SCHOLAR_API_KEY   # https://www.semanticscholar.org/product/api#api-key-form
-npx wrangler secret put NCBI_API_KEY               # opcional, NCBI account settings
+# npx wrangler secret put SEMANTIC_SCHOLAR_API_KEY # hecho 02-09, verificado 03-09
+# npx wrangler secret put NCBI_API_KEY             # hecho 01-09 (B2)
 ```
 
-Con `NCBI_API_KEY` puesta, `PUBMED_GLOBAL_MINUTE_LIMIT` puede subir de 60 a ~200
-(cada fallo de caché son tres llamadas a NCBI).
+`PUBMED_GLOBAL_MINUTE_LIMIT` **se queda en 60 a propósito**: es margen, no un
+techo pendiente de subir.
 
 ### Verificado por mutación
 

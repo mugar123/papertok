@@ -1,90 +1,180 @@
-/* Research filters */
+/* ============================================
+   Research — the filter row
+
+   Dressed as a continuation of the EDITION row directly above it, not as a
+   framework accordion: a mono label, the state set in running text, one
+   hairline rule, and a panel that is white paper with ruled sections rather
+   than a sunken rounded card. The panel still has to hold twelve discipline
+   chips, a country search, eight quick picks and a world map, so the
+   disclosure stays a disclosure — only its voice changed.
+   ============================================ */
+
 .rf {
-  margin-bottom: 24px;
+  margin-bottom: var(--space-6);
   animation: sr-fade-up 0.4s both;
   animation-delay: 0.05s;
 }
 
-.rf button,
-.rf input {
-  font: inherit;
+/* There used to be a `.rf button, .rf input { font: inherit }` here. It is the
+   trap from design.md in miniature: unlayered, and one specificity step above
+   every `.rf-*` rule in this file, so it silently reset each control back to
+   the inherited 16px/400 — the panel's own type scale, and the shared Button's
+   `text-sm font-semibold`, never rendered. The `@layer base` reset in
+   global.css already gives `button` and `input` the body family, so nothing
+   here needs to repeat it. */
+
+/* The global `:focus-visible` rule already applies this ring, but it lives
+   unlayered too and these `.rf-*` selectors are more specific, so they would
+   win with no ring at all if this were left implicit. Spell it out so it
+   survives. */
+.rf button:focus-visible,
+.rf input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
 }
 
+/* ── The row ── */
 .rf-toggle {
+  position: relative;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: var(--space-3);
   width: 100%;
   min-height: 44px;
-  padding: 10px 15px;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  color: rgba(255, 255, 255, 0.64);
-  font-size: 13px;
-  font-weight: 650;
+  padding: var(--space-3) 0;
+  border: 0;
+  border-bottom: 1px solid var(--border-subtle);
+  border-radius: 0;
+  background: none;
+  color: var(--text-secondary);
+  text-align: left;
   cursor: pointer;
-  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+  transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
 .rf-toggle.is-open {
-  background: rgba(124, 58, 237, 0.08);
-  border-color: rgba(139, 92, 246, 0.22);
-  color: rgba(255, 255, 255, 0.88);
+  color: var(--text-primary);
+  border-bottom-color: var(--border-default);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .rf-toggle:hover {
-    background: rgba(255, 255, 255, 0.06);
-    border-color: rgba(255, 255, 255, 0.13);
-    color: rgba(255, 255, 255, 0.88);
+    color: var(--text-primary);
+    border-bottom-color: var(--border-default);
   }
 }
 
-.rf-toggle-left,
+/* Twin of `.sr-tabs-label`, down to the extra 4px it carries, so the state
+   below starts on the same x as "Today and yesterday" above. */
+.rf-toggle-label {
+  flex: 0 0 auto;
+  margin-right: var(--space-1);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* The state, set as running text the way the period options are. */
+.rf-toggle-summary {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* A count is machine data. */
+.rf-toggle-count {
+  font-family: var(--font-mono);
+  font-weight: var(--fw-semibold);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* The auto margin keeps the disclosure pinned right whether the summary reads
+   long, short, or (at 375px) not at all. */
+/* The sweep rides the row's own hairline rather than adding one: clipped to the
+   row's width, centred on the border so the rule reads as thickening where the
+   light passes. */
+.rf-sweep {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.rf-sweep::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  width: 34%;
+  background: var(--text-primary);
+  animation: rf-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes rf-sweep {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rf-sweep::after {
+    animation: none;
+  }
+}
+
 .rf-toggle-status {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
-.rf-badge {
-  min-width: 20px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: var(--gradient-brand);
-  color: #fff;
-  font-size: 10px;
-  font-weight: 750;
-  text-align: center;
+.rf-toggle-action {
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
 }
 
+/* ── The panel ── */
 .rf-panel {
   display: flex;
   flex-direction: column;
-  gap: 22px;
-  margin-top: 10px;
-  padding: 20px;
-  border: 1px solid rgba(255, 255, 255, 0.075);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.025);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
 .rf-section {
   display: flex;
   flex-direction: column;
-  gap: 11px;
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* The country section's second child is a block that collapses to nothing and
+   then unmounts, and a flex `gap` cannot be animated away with it: the 12px
+   between the toggle and the panel survived the whole fold and then
+   disappeared in the frame after it, jolting everything below by exactly that
+   much (measured: the actions row went 281px → 269px at unmount, one frame
+   after the height reached 0). The gap moves inside the collapsing box as
+   padding, where the fold takes it along. */
+.rf-section--country {
+  gap: 0;
 }
 
 .rf-section-label,
 .rf-country-toggle > span,
 .rf-quick-label {
-  font-size: 11px;
-  font-weight: 750;
-  color: rgba(255, 255, 255, 0.55);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--text-tertiary);
 }
 
 .rf-country-toggle {
@@ -96,113 +186,111 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: rgba(255, 255, 255, 0.55);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
 .rf-country-toggle > span {
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.rf-country-toggle:focus-visible,
-.rf-toggle:focus-visible,
-.rf-pill:focus-visible,
-.rf-search-result:focus-visible,
-.rf-quick-country:focus-visible,
-.rf-active-chip:focus-visible,
-.rf-country-pill button:focus-visible,
-.rf-clear:focus-visible,
-.rf-cancel:focus-visible,
-.rf-apply:focus-visible,
-.rf-search-clear:focus-visible {
-  outline: 2px solid #a78bfa;
-  outline-offset: 2px;
+  gap: var(--space-2);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .rf-country-toggle:hover {
-    color: rgba(255, 255, 255, 0.82);
+    color: var(--text-primary);
+  }
+
+  .rf-country-toggle:hover > span {
+    color: var(--text-primary);
   }
 }
 
 .rf-country-controls {
   display: flex;
   flex-direction: column;
-  gap: 11px;
-  padding-top: 4px;
+  gap: var(--space-3);
+  /* --space-3 (the gap `.rf-section--country` gave up) + --space-2 (what this
+     already had), so the resting layout is unchanged to the pixel. */
+  padding-top: var(--space-5);
 }
 
 .rf-country-note {
   margin: 0;
-  color: rgba(255, 255, 255, 0.42);
-  font-size: 11.5px;
-  line-height: 1.45;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
 }
 
+/* ── Discipline chips ── */
 .rf-pills {
   display: flex;
   flex-wrap: wrap;
-  gap: 7px;
+  gap: var(--space-2);
 }
 
 .rf-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  min-height: 36px;
-  padding: 7px 12px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.045);
-  color: rgba(255, 255, 255, 0.62);
-  font-size: 12px;
-  font-weight: 650;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
   white-space: nowrap;
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .rf-pill:hover {
-    border-color: rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.9);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
   }
 }
 
+/* Selection is marked with the discipline's own field colour, derived from it
+   rather than hardcoded — the chip is the only place on this row where colour
+   carries data. */
 .rf-pill.active {
-  border-color: rgba(255, 255, 255, 0.18);
-  background: var(--rf-pill-accent, var(--gradient-brand));
-  color: #fff;
-  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.2);
+  border-color: color-mix(in srgb, var(--rf-pill-accent, var(--gradient-brand)) 40%, var(--border-default));
+  background: color-mix(in srgb, var(--rf-pill-accent, var(--gradient-brand)) 8%, var(--bg-card));
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
 }
 
+.rf-pill.active svg {
+  color: var(--rf-pill-accent, var(--gradient-brand));
+}
+
+/* ── Country search ── */
 .rf-search-wrap {
   position: relative;
 }
 
 .rf-search-icon {
   position: absolute;
-  left: 13px;
+  left: 12px;
   top: 50%;
   transform: translateY(-50%);
-  color: rgba(255, 255, 255, 0.36);
+  color: var(--text-tertiary);
   pointer-events: none;
 }
 
 .rf-search {
   width: 100%;
   min-height: 44px;
-  padding: 10px 38px 10px 38px;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 9px;
-  outline: none;
-  background: rgba(255, 255, 255, 0.045);
-  color: #fff;
-  font-size: 14px;
-  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+  padding: 10px 38px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
 }
 
 .rf-search::-webkit-search-cancel-button {
@@ -210,18 +298,17 @@
 }
 
 .rf-search::placeholder {
-  color: rgba(255, 255, 255, 0.34);
+  color: var(--text-tertiary);
 }
 
 .rf-search:focus {
-  border-color: rgba(139, 92, 246, 0.5);
-  background: rgba(255, 255, 255, 0.06);
-  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.12);
+  border-color: var(--border-ink);
+  box-shadow: var(--shadow-glow-primary);
 }
 
 .rf-search-clear {
   position: absolute;
-  right: 9px;
+  right: 8px;
   top: 50%;
   display: flex;
   align-items: center;
@@ -230,21 +317,23 @@
   height: 26px;
   padding: 0;
   transform: translateY(-50%);
-  border: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.09);
-  color: rgba(255, 255, 255, 0.62);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
   cursor: pointer;
 }
 
+/* Hairline-separated rows, the pattern the report's own lists use. */
 .rf-search-results {
   display: flex;
   flex-direction: column;
-  max-height: 224px;
+  max-height: min(28em, 40vh);
+  max-height: min(28em, 40dvh);
   overflow-y: auto;
-  border: 1px solid rgba(255, 255, 255, 0.11);
-  border-radius: 9px;
-  background: rgba(15, 15, 22, 0.96);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
 }
 
 .rf-search-result {
@@ -253,15 +342,15 @@
   justify-content: space-between;
   width: 100%;
   min-height: 44px;
-  padding: 10px 13px;
+  padding: 10px 12px;
   border: 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border-subtle);
   background: transparent;
-  color: rgba(255, 255, 255, 0.74);
-  font-size: 13px;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s ease, color 0.15s ease;
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 .rf-search-result:last-child {
@@ -270,48 +359,43 @@
 
 @media (hover: hover) and (pointer: fine) {
   .rf-search-result:hover {
-    background: rgba(255, 255, 255, 0.065);
-    color: #fff;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
   }
 }
 
 .rf-search-result.selected {
-  color: #c4b5fd;
-  background: rgba(124, 58, 237, 0.08);
-  font-weight: 650;
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  font-weight: var(--fw-semibold);
 }
 
 .rf-country-result-meta {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-2);
 }
 
 .rf-country-code {
-  color: rgba(255, 255, 255, 0.36);
-  font-size: 10.5px;
-  font-weight: 750;
-  letter-spacing: 0.04em;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  color: var(--text-tertiary);
 }
 
 .rf-search-empty {
   margin: 0;
   padding: 12px 14px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 9px;
-  color: rgba(255, 255, 255, 0.45);
-  font-size: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
 }
 
+/* ── Quick picks, selected countries, applied chips ── */
 .rf-quick-countries {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-}
-
-.rf-quick-label {
-  color: rgba(255, 255, 255, 0.4);
-  font-size: 10px;
+  gap: var(--space-2);
 }
 
 .rf-quick-list {
@@ -320,171 +404,112 @@
   gap: 6px;
 }
 
-.rf-quick-country {
-  min-height: 34px;
-  padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 999px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.52);
-  font-size: 11.5px;
-  cursor: pointer;
-  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
-}
-
-.rf-quick-country.selected {
-  border-color: rgba(139, 92, 246, 0.42);
-  background: rgba(124, 58, 237, 0.14);
-  color: #d8ccff;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .rf-quick-country:hover {
-    border-color: rgba(255, 255, 255, 0.17);
-    color: rgba(255, 255, 255, 0.82);
-  }
-}
-
-.rf-map-wrap {
-  position: relative;
-  width: min(100%, 780px);
-}
-
-.rf-map-hint {
-  margin: 8px 0 0;
-  color: rgba(255, 255, 255, 0.38);
-  font-size: 11px;
-  text-align: center;
-}
-
-.rf-selected-countries {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.rf-country-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-height: 34px;
-  padding: 5px 7px 5px 11px;
-  border: 1px solid rgba(139, 92, 246, 0.35);
-  border-radius: 999px;
-  background: rgba(124, 58, 237, 0.14);
-  color: #ddd3ff;
-  font-size: 12px;
-  font-weight: 650;
-}
-
-.rf-country-pill button {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.09);
-  color: inherit;
-  cursor: pointer;
-}
-
-.rf-active-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-  padding-top: 9px;
-}
-
+.rf-quick-country,
+.rf-country-pill,
 .rf-active-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-height: 32px;
   padding: 5px 10px;
-  border: 1px solid rgba(139, 92, 246, 0.3);
-  border-radius: 999px;
-  background: rgba(139, 92, 246, 0.11);
-  color: #cbb8ff;
-  font-size: 11.5px;
-  font-weight: 650;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.rf-quick-country,
+.rf-active-chip {
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease;
 }
 
 @media (hover: hover) and (pointer: fine) {
+  .rf-quick-country:hover,
   .rf-active-chip:hover {
-    border-color: rgba(139, 92, 246, 0.5);
-    background: rgba(139, 92, 246, 0.19);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
   }
 }
 
+.rf-quick-country.selected,
+.rf-country-pill,
+.rf-active-chip {
+  border-color: var(--border-ink);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-weight: var(--fw-semibold);
+}
+
+.rf-country-pill {
+  padding-right: 4px;
+}
+
+.rf-country-pill button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.rf-selected-countries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+/* The applied set, shown under the row while the panel is closed. */
+.rf-active-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: var(--space-3);
+}
+
+/* ── Map ── */
+/* The cap is what makes the centring necessary. `.rf-country-controls` is a
+   flex column, so `align-items` is `stretch`; a child that declares a width
+   stops stretching and settles against the cross-start edge — the left. At the
+   report's full 1240px the panel is 1192px wide and the map is 780, so the
+   world sat hard left with 414px of paper beside it while the note, the search
+   field and the quick list below it all ran the full width. */
+.rf-map-wrap {
+  position: relative;
+  width: min(100%, 780px);
+  margin-inline: auto;
+}
+
+.rf-map-hint {
+  margin: var(--space-2) 0 0;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+
+/* ── Actions (buttons come from ui/button.jsx) ── */
 .rf-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid rgba(255, 255, 255, 0.07);
+  gap: var(--space-3);
+  padding: var(--space-4) 0;
 }
 
 .rf-actions-primary {
   display: flex;
   align-items: center;
-  gap: 8px;
-}
-
-.rf-clear,
-.rf-cancel,
-.rf-apply {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  min-height: 40px;
-  padding: 8px 14px;
-  border-radius: 8px;
-  font-size: 12px;
-  font-weight: 650;
-  cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, opacity 0.18s ease;
-}
-
-.rf-clear,
-.rf-cancel {
-  border: 1px solid transparent;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.rf-clear {
-  padding-left: 0;
-}
-
-.rf-apply {
-  border: 1px solid rgba(139, 92, 246, 0.55);
-  background: rgba(124, 58, 237, 0.9);
-  color: #fff;
-}
-
-.rf-clear:disabled,
-.rf-apply:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .rf-clear:not(:disabled):hover,
-  .rf-cancel:hover {
-    color: rgba(255, 255, 255, 0.82);
-  }
-
-  .rf-apply:not(:disabled):hover {
-    border-color: rgba(167, 139, 250, 0.85);
-    background: #7c3aed;
-  }
+  gap: var(--space-2);
 }
 
 .rf-chevron {
@@ -503,13 +528,12 @@
 
 @media (max-width: 700px) {
   .rf {
-    margin-bottom: 18px;
+    margin-bottom: var(--space-5);
   }
 
-  .rf-panel {
-    gap: 18px;
-    padding: 15px;
-    border-radius: 10px;
+  /* The default sentence is too long for a 375px row; a live count is not. */
+  .rf-toggle-summary.is-empty {
+    display: none;
   }
 
   .rf-pill {
@@ -518,7 +542,7 @@
   }
 
   .rf-search {
-    font-size: 16px;
+    font-size: var(--fs-base);
   }
 
   .rf-map-wrap {
@@ -527,8 +551,8 @@
 
   .rf-quick-list {
     flex-wrap: nowrap;
-    margin: 0 -15px;
-    padding: 0 15px 3px;
+    margin: 0 calc(-1 * var(--space-4));
+    padding: 0 var(--space-4) 3px;
     overflow-x: auto;
     scrollbar-width: none;
   }
@@ -552,7 +576,7 @@
     flex-direction: column;
   }
 
-  .rf-clear {
+  .rf-actions > button {
     align-self: flex-start;
   }
 
@@ -561,8 +585,8 @@
     grid-template-columns: 1fr 1.3fr;
   }
 
-  .rf-cancel,
-  .rf-apply {
+  .rf-actions-primary > button {
+    height: auto;
     min-height: 44px;
   }
 }

@@ -4,175 +4,224 @@
 
 @import './variables.css';
 
+/* Tailwind, for the shadcn/ui primitives.
+   Theme and utilities only — preflight is deliberately left out. It is a second
+   opinionated reset, and this file already owns the base layer; loading both
+   made the two fight over headings, borders and form controls. */
+@layer theme, base, components, utilities;
+@import 'tailwindcss/theme.css' layer(theme);
+/* `source(none)` is load-bearing. Importing Tailwind piecewise does *not* turn
+   off its automatic source detection: with no `source(...)` modifier the
+   compiler leaves its scan root unset, and @tailwindcss/vite then falls back to
+   scanning every file under the Vite root that .gitignore does not exclude. That
+   swept in the mockups in design/ and the HTML prototypes at the repo root, and
+   shipped 931 utilities no component ever renders — 74 kB of the built
+   stylesheet, 12 kB of it over the wire. Turning the fallback off makes the
+   @source line below the whole contract rather than an addition to it, so the
+   built CSS can only ever contain what the app actually renders. */
+@import 'tailwindcss/utilities.css' layer(utilities) source(none);
+@source '../**/*.{js,jsx}';
+
+/* shadcn expects semantic token names. Rather than a parallel palette, they are
+   aliases onto the design system above, so there is one source of colour. */
+@theme inline {
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --color-card: var(--bg-card);
+  --color-card-foreground: var(--text-primary);
+  --color-popover: var(--bg-card);
+  --color-popover-foreground: var(--text-primary);
+  --color-primary: var(--accent-primary);
+  --color-primary-foreground: var(--text-inverse);
+  --color-secondary: var(--bg-secondary);
+  --color-secondary-foreground: var(--text-primary);
+  --color-muted: var(--bg-secondary);
+  --color-muted-foreground: var(--text-secondary);
+  --color-accent: var(--bg-secondary);
+  --color-accent-foreground: var(--text-primary);
+  --color-destructive: var(--accent-danger);
+  --color-destructive-foreground: var(--text-inverse);
+  --color-border: var(--border-default);
+  --color-input: var(--border-default);
+  --color-ring: var(--accent-primary);
+  --color-brand: var(--brand-yellow);
+  --color-brand-soft: var(--brand-yellow-soft);
+
+  --font-sans: var(--font-body);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+
+  --radius-sm: 2px;
+  --radius-md: 3px;
+  --radius-lg: 4px;
+  --radius-xl: 6px;
+}
+
 /* ── Reset ── */
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+/* Element resets live in the base layer on purpose. Unlayered CSS beats
+   every cascade layer, so an unlayered `button { background: none }` silently
+   defeated every Tailwind background utility on shadcn buttons. */
+@layer base {
 
-html {
-  /* No global smooth scrolling: it fights the feed's `scroll-snap-type: y
-     mandatory` and made every programmatic jump animate. Whoever wants a
-     smooth scroll must ask for it per call (scrollTo/scrollIntoView with
-     behavior: 'smooth'), which is what FeedContainer already does. */
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-}
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
 
-body {
-  font-family: var(--font-body);
-  font-size: var(--fs-base);
-  line-height: var(--lh-normal);
-  color: var(--text-primary);
-  background-color: var(--bg-primary);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
-}
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
 
-/* ── Scrollbar ── */
-::-webkit-scrollbar {
-  width: 6px;
-}
+  body {
+    font-family: var(--font-body);
+    font-size: var(--fs-base);
+    line-height: var(--lh-normal);
+    color: var(--text-primary);
+    background-color: var(--bg-primary);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
 
-::-webkit-scrollbar-track {
-  background: transparent;
-}
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
 
-::-webkit-scrollbar-thumb {
-  background: var(--border-default);
-  border-radius: var(--radius-full);
-}
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
 
-@media (hover: hover) and (pointer: fine) {
-  ::-webkit-scrollbar-thumb:hover {
+  ::-webkit-scrollbar-thumb {
     background: var(--border-strong);
+    border: 3px solid var(--bg-primary);
+    border-radius: var(--radius-full);
   }
-}
 
-/* Firefox */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-default) transparent;
-}
-
-/* ── Selection ── */
-::selection {
-  background: var(--accent-primary);
-  color: var(--text-primary);
-}
-
-/* ── Links ── */
-a {
-  color: var(--accent-secondary);
-  text-decoration: none;
-  transition: color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  a:hover {
-    color: var(--accent-primary);
+  @media (hover: hover) and (pointer: fine) {
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-tertiary);
+    }
   }
-}
 
-/* ── Headings ── */
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading);
-  line-height: var(--lh-tight);
-  color: var(--text-primary);
-}
+  /* Firefox */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
 
-/* ── Focus ──
-   Without this, keyboard focus renders the OS default ring (whatever accent
-   color the system uses), which reads as a stray warning on this palette.
-   :where() keeps specificity at zero so any component can restyle it. */
-:where(button, a, [role='button'], [role='tab'], summary):focus-visible {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
-}
+  /* ── Selection ── */
+  ::selection {
+    background: var(--brand-yellow);
+    color: var(--text-on-brand);
+  }
 
-/* A dialog opened with showModal() can end up focused itself; the ring around
-   the whole sheet reads as a broken border, and focus styling belongs to the
-   controls inside. */
-dialog:focus,
-dialog:focus-visible {
-  outline: none;
-}
+  /* ── Links ── */
+  a {
+    color: var(--accent-secondary);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+  }
 
-/* ── Buttons ── */
-button {
-  font-family: var(--font-body);
-  cursor: pointer;
-  border: none;
-  background: none;
-  color: var(--text-primary);
-  font-size: var(--fs-base);
-  /* Only paint-cheap properties animate. `all` also animated layout
-     (width/height/padding), which is what made every button feel spongy. */
-  transition:
-    color var(--transition-base),
-    background-color var(--transition-base),
-    border-color var(--transition-base),
-    opacity var(--transition-base),
-    box-shadow var(--transition-base),
-    transform var(--transition-base);
-}
+  @media (hover: hover) and (pointer: fine) {
+    a:hover {
+      color: var(--accent-primary);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+  }
 
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+  /* ── Headings ── */
+  h1, h2, h3, h4, h5, h6 {
+    font-family: var(--font-heading);
+    line-height: var(--lh-tight);
+    letter-spacing: -0.015em;
+    color: var(--text-primary);
+  }
 
-/* ── Inputs ── */
-input, textarea, select {
-  font-family: var(--font-body);
-  font-size: var(--fs-base);
-  color: var(--text-primary);
-  background: var(--bg-glass);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: var(--space-3) var(--space-4);
-  outline: none;
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
+  /* ── Buttons ── */
+  button {
+    font-family: var(--font-body);
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: var(--text-primary);
+    font-size: var(--fs-base);
+    transition:
+      background-color var(--transition-base),
+      border-color var(--transition-base),
+      color var(--transition-base),
+      opacity var(--transition-base),
+      box-shadow var(--transition-base),
+      transform var(--transition-base);
+  }
 
-input:focus, textarea:focus, select:focus {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 0 3px var(--accent-primary-glow);
-}
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
 
-input::placeholder, textarea::placeholder {
-  color: var(--text-tertiary);
-}
+  /* ── Inputs ── */
+  input, textarea, select {
+    font-family: var(--font-body);
+    font-size: var(--fs-base);
+    color: var(--text-primary);
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
+    padding: var(--space-3) var(--space-4);
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+  }
 
-/* ── Images ── */
-img, svg {
-  display: block;
-  max-width: 100%;
-}
+  input:focus, textarea:focus, select:focus {
+    border-color: var(--accent-primary);
+    box-shadow: var(--shadow-glow-primary);
+  }
 
-/* ── Lists ── */
-ul, ol {
-  list-style: none;
-}
+  input::placeholder, textarea::placeholder {
+    color: var(--text-tertiary);
+  }
 
-/* ── Dialog reset ── */
-dialog {
-  border: none;
-  padding: 0;
-  background: transparent;
-  color: var(--text-primary);
-  max-width: 100vw;
-  max-height: 100vh;
-}
+  /* ── Images ── */
+  img, svg {
+    display: block;
+    max-width: 100%;
+  }
 
-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  /* ── Lists ── */
+  ul, ol {
+    list-style: none;
+  }
+
+  /* ── Dialog reset ── */
+  dialog {
+    border: none;
+    padding: 0;
+    background: transparent;
+    color: var(--text-primary);
+    max-width: 100vw;
+    max-height: 100vh;
+    max-height: 100dvh;
+  }
+
+  /* No `backdrop-filter` in this base rule. Both `<dialog>`s in the app
+     (CreateListDialog.css, SaveToListModal.css) override `::backdrop`
+     entirely — background, animation, everything — so this rule is what a
+     future dialog would actually render with, and every dialog that exists
+     today animates its backdrop's opacity in with `fadeIn`. A blur left
+     here would apply to those two unopposed the moment their own rules
+     stopped declaring `backdrop-filter` at all, re-resolving on every
+     frame of that animation without a single line in either file naming
+     it — which is exactly what happened before this comment was written. */
+  dialog::backdrop {
+    background: rgba(17, 19, 24, 0.4);
+  }
 }
 
 /* Utility Animations */
@@ -183,4 +232,198 @@ dialog::backdrop {
 @keyframes spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
+}
+
+/* ============================================
+   Maths
+
+   KaTeX's stylesheet is imported at runtime (`utils/katexLoader.js`), so it
+   lands in the document after this file and wins any tie. Every rule here is
+   written with a doubled class to take the specificity instead of relying on
+   an order we do not control.
+   ============================================ */
+
+/* KaTeX ships `.katex { font-size: 1.21em }`. The factor is not arbitrary: it
+   matches Computer Modern's x-height to a UI sans. Our prose is Newsreader,
+   whose x-height is unusually generous — 0.512em against KaTeX_Main's 0.431em,
+   measured — so 1.21 lines the lowercase up correctly and then lands every
+   digit, capital and operator in a formula 14% taller than the capitals around
+   it. That is what reads as "the maths is a size bigger than the text". Maths
+   sits at cap height far more than at x-height, so the factor leans that way:
+   1.08 puts formula capitals within 3% of the prose's own. */
+.katex.katex {
+  font-size: 1.08em;
+}
+
+/* Display maths is its own paragraph and can afford the full step up. */
+.katex-display .katex.katex {
+  font-size: 1.12em;
+}
+
+/* KaTeX renders every formula twice: the visual copy, and a MathML copy for
+   screen readers that it hides by clipping rather than by removing. Clipped is
+   still selectable, so a selection or a copy that crosses a formula picks up
+   both and comes out as `x2x^2x2`. The reader anchors highlights on offsets
+   rather than on the selected string for that reason, but a copy-paste has no
+   such escape — so the accessible copy stays in the tree and out of the
+   selection. */
+.katex-mathml.katex-mathml {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ============================================
+   Theme switch — the ink sweep
+
+   Pressing the toggle does not fade the window: a circle of the incoming theme
+   opens out of the button itself. `utils/themeTransition.js` measures the
+   button and writes the centre and the radius here; everything below is one
+   composited `clip-path`, with no second copy of the DOM anywhere.
+
+   Going to ink the *new* page grows over the old one; coming back the *old*
+   one — the ink — shrinks through the same hole, and faster, so the return
+   reads as the ink lifting rather than as the same animation rewound. The
+   attribute already holds the incoming theme while the transition runs, which
+   is what these selectors are reading.
+
+   These rules sit outside `@layer base` deliberately: they are not element
+   resets, and the pseudo-elements they target have to beat the UA's own
+   cross-fade.
+   ============================================ */
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  /* The browser's default cross-fade would show through the circle and turn
+     the sweep into a smear. */
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+:root[data-theme='dark']::view-transition-new(root) {
+  z-index: 1;
+  animation: themeSweepIn 420ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+:root[data-theme='dark']::view-transition-old(root) {
+  z-index: 0;
+}
+
+:root[data-theme='light']::view-transition-old(root) {
+  z-index: 1;
+  animation: themeSweepOut 320ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+:root[data-theme='light']::view-transition-new(root) {
+  z-index: 0;
+}
+
+@keyframes themeSweepIn {
+  from { clip-path: circle(0px at var(--theme-sweep-x, 100%) var(--theme-sweep-y, 0)); }
+  to { clip-path: circle(var(--theme-sweep-r, 150vmax) at var(--theme-sweep-x, 100%) var(--theme-sweep-y, 0)); }
+}
+
+@keyframes themeSweepOut {
+  from { clip-path: circle(var(--theme-sweep-r, 150vmax) at var(--theme-sweep-x, 100%) var(--theme-sweep-y, 0)); }
+  to { clip-path: circle(0px at var(--theme-sweep-x, 100%) var(--theme-sweep-y, 0)); }
+}
+
+/* Coarse pointer: the class is on for the length of the transition, set and
+   cleared by `runThemeSwitch`. No circle — the incoming snapshot fades in
+   over the outgoing one in 160 ms, opacity only, which composites on any
+   GPU. Placed after the sweep rules on purpose: `:root.theme-switch-plain`
+   and `:root[data-theme='…']` tie in specificity (0,2,1 each), so with both
+   matching during a fade — the theme attribute flips alongside the class —
+   source order is what lets these win. */
+:root.theme-switch-plain::view-transition-old(root) {
+  z-index: 0;
+  animation: none;
+}
+
+:root.theme-switch-plain::view-transition-new(root) {
+  z-index: 1;
+  animation: themePlainFade 160ms ease-out;
+}
+
+@keyframes themePlainFade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* A circle crossing the whole viewport is precisely the movement this
+   preference exists to refuse, and a full-page fade is the same movement
+   slower — so the switch is instant, and only the switch. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}
+
+/* ============================================
+   Focus ring
+   Deliberately OUTSIDE @layer base: component stylesheets are unlayered, and
+   unlayered CSS beats any layer, so while this rule lived inside the layer
+   every component `outline: none` silently killed the ring (WCAG 2.4.7).
+   Out here it competes on normal specificity and wins.
+   ============================================ */
+:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+/* Text fields are the one place `:focus-visible` fires even for a mouse click
+   — the browser assumes typing follows — so the ring boxed every search field
+   the moment it was clicked. A field signals focus in the app's own marking
+   vocabulary instead: its border turns to ink, doubled by an inset hairline so
+   the change reads as a state and not a subtlety. Keyboard and mouse get the
+   same visible indicator (WCAG 2.4.7, at ink-on-surface contrast); buttons and
+   links keep the ring above, which a mouse click never triggers anyway. */
+input:not([type='checkbox']):not([type='radio']):not([type='range']):focus-visible,
+textarea:focus-visible,
+[contenteditable='true']:focus-visible {
+  outline: none;
+  border-color: var(--border-ink);
+  box-shadow: inset 0 0 0 1px var(--border-ink);
+}
+
+/* Visible only while focused: the first Tab of every page lands here.
+   The z-index is a literal, not `--z-toast + 1`: the token scale tops out at
+   400, but the page chrome this link has to sit in front of ignores that scale
+   — the guest header and the public paper header are at 900 and the search
+   header at 1000. At 401 the link was focused and completely painted over by
+   the guest header (verified in the browser: `elementFromPoint` on the focused
+   link returned `.guest-wordmark`), which is exactly the "focus is hidden by
+   author content" failure of WCAG 2.4.11, and it made 2.4.1 useless to anyone
+   who needs to see where the focus went. 1100 clears every fixed header while
+   staying under the dialog layers (AuthPrompt 1800, overlays 9999+), which no
+   focused skip link ever has to cross. */
+.skip-link {
+  position: fixed;
+  top: -100px;
+  left: var(--space-4);
+  z-index: 1100;
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-weight: var(--fw-semibold);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  transition: top var(--transition-fast);
+}
+.skip-link:focus-visible {
+  top: var(--space-2);
+}
+
+/* Programmatic focus target; the ring belongs on real controls. */
+#main-content:focus {
+  outline: none;
+}
+
+/* `html { scroll-behavior: smooth }` above is its own movement — every
+   anchor jump and every `scrollTo({ behavior: 'smooth' })` call in the app
+   inherits it — and the view-transition block above does not reach it. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }

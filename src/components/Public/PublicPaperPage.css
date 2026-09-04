@@ -13,88 +13,110 @@
   height: 100%;
 }
 
-/* Covers the card's box exactly and sits above it, so the card can take its
-   time appearing underneath without any of that showing as empty screen.
-   Below the nav chrome, which stays usable throughout. */
+/* The way back, signed in.
+   The app navbar owns the top of the screen on this route, so this is a
+   floating control over the page rather than a bar of its own — and it is the
+   shared icon button, the same one the Explorer's back arrow is, so it reads
+   as the same affordance rather than as a second idea of "back". It had no
+   rules at all before: a bare 20px chevron at (0, 0), `position: static`, over
+   the top-left corner of a card that starts with a watermark there. In
+   practice, no back arrow. */
+.public-paper-back-floating {
+  position: absolute;
+  z-index: 6;
+  /* Below the navbar, not behind it. The page is laid out from viewport 0 and
+     the navbar is fixed over the top of it, so an inset measured from the
+     page's own edge puts the button underneath the bar. This element only
+     renders when PublicPaperPage.jsx is in its signed-in branch, where the
+     REAL shared app navbar (Navbar.css's .navbar) is what's mounted above it
+     — not this file's own .public-paper-nav, which is the signed-out-only
+     bar below. --nav-total is that shared navbar's own height token (it
+     shrinks to --nav-height-mobile under 768px, unlike .public-paper-nav),
+     so this has to track --nav-total to stay under the real bar at every
+     width, not the plain --nav-height used below. */
+  top: calc(var(--nav-total) + var(--space-3));
+  left: var(--space-5);
+}
+
+/* The cover, which has to actually cover.
+   This class had no rules either, so the skeleton painted as a plain block in
+   normal flow: 294px of placeholder stacked *above* the paper, pushing the card
+   that far down the page instead of standing in front of it while it arrived.
+   Absolute and opaque is the whole of what it was always described as doing —
+   "it sits on top and lifts only once the card has animated in". */
 .public-paper-skeleton {
   position: absolute;
   inset: 0;
-  z-index: 800;
-  pointer-events: none;
+  z-index: 3;
+  display: grid;
+  overflow: hidden;
+  background: var(--bg-primary);
 }
 
+/* The same bar the guest feed puts over its own cards, not a floating capsule.
+   A shared link is most people's first sight of PaperTok, so it should look
+   like PaperTok: a flat ground with one hairline under it, the way every other
+   header in the app sits. The glass pill it replaced belonged to a different
+   design — rounded, blurred, shadowed, and centred over the page like a widget
+   dropped on top of it. Mirrors `.guest-feed-header`, deliberately: two headers
+   doing the same job should not be two designs. */
 .public-paper-nav {
   position: fixed;
   z-index: 900;
-  top: max(10px, env(safe-area-inset-top));
-  left: 50%;
+  top: 0;
+  left: 0;
+  right: 0;
+  /* --nav-total is not used here: this bar has no 768px breakpoint of its
+     own (unlike the signed-in navbar and the guest header, it stays
+     --nav-height at every width), so the token that switches to
+     --nav-height-mobile there would shrink it on phones for no reason. The
+     inset is added directly instead — --inset-top is still the one shared
+     source for the raw value. */
+  height: calc(var(--nav-height) + var(--inset-top));
+  padding-top: var(--inset-top);
   display: grid;
-  width: min(480px, calc(100vw - 24px));
-  min-height: 48px;
-  grid-template-columns: 40px 1fr 40px;
+  grid-template-columns: 32px 1fr 32px;
   align-items: center;
-  gap: 8px;
-  padding: 4px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 8px;
-  background: rgba(17, 15, 31, 0.82);
-  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.26);
-  backdrop-filter: blur(18px);
-  transform: translateX(-50%);
+  gap: var(--space-3);
+  padding-inline: var(--space-5);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-primary);
 }
 
 .public-paper-nav-button {
   display: grid;
-  width: 40px;
-  height: 40px;
+  width: 32px;
+  height: 32px;
   place-items: center;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   color: var(--text-secondary);
+  background: transparent;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .public-paper-nav-button:hover {
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+  }
 }
 
 .public-paper-wordmark {
   overflow: hidden;
   font-family: var(--font-heading);
-  font-size: 18px;
-  font-weight: 800;
+  font-size: 0.9375rem;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
+/* The highlighter under "Tok", as everywhere else. It was a violet letter here
+   and nowhere else in the app. */
 .public-paper-wordmark span {
-  color: #a78bfa;
-}
-
-/* Signed-in view: the app navbar owns the top, so the page keeps only this
-   floating way back, tucked under it on the left. */
-.public-paper-back-floating {
-  position: fixed;
-  z-index: 900;
-  top: calc(var(--nav-height) + 12px);
-  left: max(12px, env(safe-area-inset-left));
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 999px;
-  background: rgba(17, 15, 31, 0.82);
-  box-shadow: 0 14px 45px rgba(0, 0, 0, 0.26);
-  backdrop-filter: blur(18px);
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-
-.public-paper-back-floating:hover,
-.public-paper-back-floating:focus-visible {
-  color: var(--text-primary);
-}
-
-@media (max-width: 560px) {
-  .public-paper-back-floating {
-    top: calc(var(--nav-height-mobile) + 12px);
-  }
+  box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
 }
 
 .public-paper-state {
@@ -125,6 +147,11 @@
   line-height: 1.6;
 }
 
+.public-paper-spinner {
+  color: var(--accent-primary);
+  animation: public-paper-spin 0.9s linear infinite;
+}
+
 .public-paper-state-actions {
   display: flex;
   flex-wrap: wrap;
@@ -141,27 +168,27 @@
   justify-content: center;
   gap: 8px;
   padding: 0 15px;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   font-size: 13px;
   font-weight: 750;
 }
 
 .public-paper-primary-action {
-  color: white;
-  background: rgba(124, 58, 237, 0.9);
+  color: var(--text-inverse);
+  background: var(--accent-primary);
 }
 
 .public-paper-secondary-action {
   color: var(--text-primary);
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--border-default);
+  background: var(--bg-secondary);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .public-paper-nav-button:hover,
   .public-paper-secondary-action:hover {
-    color: white;
-    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    background: var(--bg-glass-hover);
   }
 
   .public-paper-primary-action:hover {
@@ -169,3 +196,12 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .public-paper-spinner {
+    animation: none;
+  }
+}
+
+@keyframes public-paper-spin {
+  to { transform: rotate(360deg); }
+}

@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useContext, useState, useEffect } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from './contexts';
 import { IS_DEMO, auth, db } from '../services/firebase';
 import { onAuthStateChanged, signOut as firebaseSignOut } from 'firebase/auth';
@@ -16,7 +16,11 @@ import {
 } from '../utils/userSettings';
 import { settleWithin } from '../utils/asyncTiming';
 import { normalizeProfilePhoto } from '../utils/profileImage';
-import { clearUserScopedStorage } from '../utils/userScopedStorage';
+import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/userScopedStorage';
+import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.js';
+import { forgetOwnProfile } from '../utils/profileSessionCaches.js';
+import { accountLooksOnboarded } from '../utils/accountOnboarding.js';
+import { toggleFollowedAuthor } from '../utils/followedAuthors.js';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
 const PROFILE_NETWORK_TIMEOUT_MS = 7000;
@@ -75,24 +79,42 @@ export function AuthProvider({ children }) {
       setLoading(true);
       setProfileLoadError(null);
       setUser(currentUser);
-      setOnboardingComplete(false);
-      setUserPreferences(null);
       setFollowedAuthors([]);
       setReadingPreferences(DEFAULT_READING_PREFERENCES);
       setProfilePhoto(null);
       setSignInProviders(providerIdsOf(currentUser));
 
       if (currentUser) {
+        hydrateAccountCaches(currentUser.uid);
+        void warmAccountCaches(currentUser.uid);
+        const storedOnboarding = readStoredOnboarding(currentUser.uid);
+        if (storedOnboarding?.complete) {
+          setOnboardingComplete(true);
+          if (storedOnboarding.preferences.length > 0) {
+            setUserPreferences(storedOnboarding.preferences);
+          }
+        } else {
+          setOnboardingComplete(false);
+          setUserPreferences(null);
+        }
         const userRef = doc(db, 'users', currentUser.uid);
         const isCurrent = () => !disposed && changeId === authChangeId;
         const applyProfile = (snapshot) => {
           if (!snapshot?.exists() || !isCurrent()) return false;
           const data = snapshot.data();
-          setOnboardingComplete(Boolean(data.onboardingComplete));
-          setUserPreferences(data.preferences || data.selectedCategories || null);
+          const onboarded = accountLooksOnboarded(data);
+          setOnboardingComplete(onboarded);
+          const preferences = data.preferences || data.selectedCategories || null;
+          setUserPreferences(preferences);
           setFollowedAuthors(data.followedAuthors || []);
           setReadingPreferences(normalizeReadingPreferences(data.readingPreferences));
           setProfilePhoto(normalizeProfilePhoto(data.profilePhoto));
+          if (onboarded) {
+            saveStoredOnboarding(currentUser.uid, {
+              complete: true,
+              preferences: Array.isArray(preferences) ? preferences : [],
+            });
+          }
           return true;
         };
 
@@ -109,8 +131,12 @@ export function AuthProvider({ children }) {
         if (!isCurrent()) return;
 
         if (remote.status === 'fulfilled') {
-          if (!applyProfile(remote.value) && !hydratedFromCache) {
+          // The server is the authority on whether the document exists. A
+          // remembered onboarding only decided the paint while this read was
+          // in flight; it does not get to overrule a missing document.
+          if (!applyProfile(remote.value)) {
             setOnboardingComplete(false);
+            saveStoredOnboarding(currentUser.uid, { complete: false, preferences: [] });
           }
         } else if (!hydratedFromCache) {
           setProfileLoadError('PROFILE_LOAD_FAILED');
@@ -120,6 +146,9 @@ export function AuthProvider({ children }) {
             console.warn('Profile loading exceeded the timeout');
           }
         }
+      } else {
+        setOnboardingComplete(false);
+        setUserPreferences(null);
       }
       if (!disposed && changeId === authChangeId) setLoading(false);
     });
@@ -131,12 +160,15 @@ export function AuthProvider({ children }) {
     };
   }, [profileReloadKey]);
 
-  const retryProfileLoad = () => {
+  const retryProfileLoad = useCallback(() => {
     setProfileLoadError(null);
     setProfileReloadKey(key => key + 1);
-  };
+  }, []);
 
-  const signInWith = async (providerId) => {
+  // No reactive read besides state setters and module-level constants, so this
+  // never needs to be recreated — every context consumer that depends on it
+  // (both sign-in buttons below) inherits that stability.
+  const signInWith = useCallback(async (providerId) => {
     setError(null);
     if (IS_DEMO) {
       setTimeout(() => {
@@ -159,10 +191,16 @@ export function AuthProvider({ children }) {
       setError(err?.code || 'AUTH_FAILED');
       throw err;
     }
-  };
+  }, []);
 
-  const signInWithGoogle = () => signInWith(SIGN_IN_PROVIDERS.google);
-  const signInWithGitHub = () => signInWith(SIGN_IN_PROVIDERS.github);
+  const signInWithGoogle = useCallback(
+    () => signInWith(SIGN_IN_PROVIDERS.google),
+    [signInWith],
+  );
+  const signInWithGitHub = useCallback(
+    () => signInWith(SIGN_IN_PROVIDERS.github),
+    [signInWith],
+  );
 
   /**
    * Attaches a second sign-in method to the account already in session (F5).
@@ -171,13 +209,16 @@ export function AuthProvider({ children }) {
    * thrown on: the caller shows them next to the button that was pressed,
    * rather than in the page-wide banner meant for a failed sign-in.
    */
-  const linkGitHubAccount = async () => {
+  const linkGitHubAccount = useCallback(async () => {
     const result = await linkSignInProvider(SIGN_IN_PROVIDERS.github);
     setSignInProviders(providerIdsOf(result.user || auth.currentUser));
     return result;
-  };
+  }, []);
 
-  const signOut = async () => {
+  // `user?.uid` rather than `user`: Firebase re-emits `currentUser` on token
+  // refresh with the same uid but a new object reference, and that must not
+  // recreate a function whose only reactive read is the id.
+  const signOut = useCallback(async () => {
     const signingOutUserId = user?.uid;
     if (IS_DEMO) {
       setUser(null);
@@ -193,64 +234,73 @@ export function AuthProvider({ children }) {
     try {
       await firebaseSignOut(auth);
       clearUserScopedStorage(signingOutUserId);
+      forgetOwnProfile(signingOutUserId);
+      resetAccountWarmup(signingOutUserId);
     } catch (err) {
       setError(err?.code || 'AUTH_FAILED');
     }
-  };
+  }, [user?.uid]);
 
-  const completeOnboarding = async (preferences) => {
+  const completeOnboarding = useCallback(async (preferences) => {
     setUserPreferences(preferences);
     setOnboardingComplete(true);
-    
+
     if (IS_DEMO) {
       demoSet('selectedCategories', preferences);
       demoSet('onboardingComplete', true);
       return;
     }
 
-    if (user) {
-      await setDoc(doc(db, 'users', user.uid), {
+    const userId = user?.uid;
+    if (userId) {
+      await setDoc(doc(db, 'users', userId), {
         onboardingComplete: true,
         preferences
       }, { merge: true });
+      saveStoredOnboarding(userId, { complete: true, preferences });
     }
-  };
+  }, [user?.uid]);
 
-  const updatePreferences = async (newPreferences) => {
+  const updatePreferences = useCallback(async (newPreferences) => {
     setUserPreferences(newPreferences);
-    
+
     if (IS_DEMO) {
       demoSet('selectedCategories', newPreferences);
       return;
     }
 
-    if (user) {
-      await setDoc(doc(db, 'users', user.uid), {
+    const userId = user?.uid;
+    if (userId) {
+      await setDoc(doc(db, 'users', userId), {
         preferences: newPreferences
       }, { merge: true });
+      saveStoredOnboarding(userId, { complete: true, preferences: newPreferences });
     }
-  };
+  }, [user?.uid]);
 
-  const toggleFollowAuthor = async (authorName) => {
-    const newFollowed = followedAuthors.includes(authorName)
-      ? followedAuthors.filter(a => a !== authorName)
-      : [...followedAuthors, authorName];
-    
-    setFollowedAuthors(newFollowed);
+  // Needs the previous list itself, not just its owner's id: the new array is
+  // both written to Firestore and (in demo mode) to storage in this same call,
+  // so a functional state update alone would not hand it back for that.
+  const toggleFollowAuthor = useCallback(async (authorName) => {
+    const { next, patch } = toggleFollowedAuthor(followedAuthors, authorName);
+    setFollowedAuthors(next);
 
     if (IS_DEMO) {
-      demoSet('followedAuthors', newFollowed);
+      demoSet('followedAuthors', next);
       return;
     }
 
-    if (user) {
-      await setDoc(doc(db, 'users', user.uid), {
-        followedAuthors: newFollowed
-      }, { merge: true });
+    const userId = user?.uid;
+    if (userId) {
+      await setDoc(doc(db, 'users', userId), patch, { merge: true });
     }
-  };
+  }, [followedAuthors, user?.uid]);
 
-  const updateReadingPreferences = async (updates) => {
+  // Same reasoning: `previous` is what a failed write rolls back to, read from
+  // the closure rather than from a functional update the error path could not
+  // reach.
+  const updateReadingPreferences = useCallback(async (updates) => {
+    const userId = user?.uid;
     const previous = readingPreferences;
     const next = normalizeReadingPreferences({ ...readingPreferences, ...updates });
     setReadingPreferences(next);
@@ -261,8 +311,8 @@ export function AuthProvider({ children }) {
         return next;
       }
 
-      if (user) {
-        await setDoc(doc(db, 'users', user.uid), {
+      if (userId) {
+        await setDoc(doc(db, 'users', userId), {
           readingPreferences: next,
         }, { merge: true });
       }
@@ -271,9 +321,10 @@ export function AuthProvider({ children }) {
       setReadingPreferences(previous);
       throw updateError;
     }
-  };
+  }, [readingPreferences, user?.uid]);
 
-  const updateProfilePhoto = async (value) => {
+  const updateProfilePhoto = useCallback(async (value) => {
+    const userId = user?.uid;
     const previous = profilePhoto;
     const next = normalizeProfilePhoto(value);
     if (value && !next) throw new Error('La imagen procesada no es válida.');
@@ -285,8 +336,8 @@ export function AuthProvider({ children }) {
         return next;
       }
 
-      if (user) {
-        await setDoc(doc(db, 'users', user.uid), {
+      if (userId) {
+        await setDoc(doc(db, 'users', userId), {
           profilePhoto: next || deleteField(),
         }, { merge: true });
       }
@@ -295,9 +346,16 @@ export function AuthProvider({ children }) {
       setProfilePhoto(previous);
       throw updateError;
     }
-  };
+  }, [profilePhoto, user?.uid]);
 
-  const value = {
+  // Every key here is either a primitive/state value (already stable — React
+  // only replaces it when its own setter is called) or one of the callbacks
+  // above, each wrapped in `useCallback` with the narrowest deps its body
+  // actually reads. Wrapping this object without that would have changed
+  // nothing: a `useMemo` recomputes whenever anything in its dependency list
+  // has a new identity, and an unwrapped function has a new identity every
+  // render regardless of what it reads.
+  const value = useMemo(() => ({
     user,
     loading,
     error,
@@ -320,7 +378,13 @@ export function AuthProvider({ children }) {
     updateProfilePhoto,
     retryProfileLoad,
     isDemo: IS_DEMO,
-  };
+  }), [
+    completeOnboarding, error, followedAuthors, linkGitHubAccount, loading,
+    onboardingComplete, profileLoadError, profilePhoto, readingPreferences,
+    retryProfileLoad, setUserPreferences, signInProviders, signInWithGitHub,
+    signInWithGoogle, signOut, toggleFollowAuthor, updatePreferences,
+    updateProfilePhoto, updateReadingPreferences, user, userPreferences,
+  ]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

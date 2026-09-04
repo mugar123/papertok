@@ -1,0 +1,137 @@
+/* ============================================
+   Theme toggle — the ink switch
+
+   Chrome comes from the host: `.navbar-icon-btn` in the bar,
+   `.guest-header-button` in the guest header — the same 32 × 32 control under
+   two names, with the same hover wash and the same orange focus ring as reload
+   and search. Only what is particular to this one lives here: the press, the
+   touch area, and the sun/moon morph.
+
+   Every timing is written out rather than tokenised because the morph is a
+   sequence, not a duration: four properties with four delays, and the order is
+   the whole point. The transitions for going *to* ink sit on the pressed
+   state, and the ones for coming back sit on the base rule, so the return is
+   not the same animation played backwards — the disc shrinks first and the
+   rays come back last, which is the order the reader would draw it in.
+   ============================================ */
+
+.theme-toggle {
+  position: relative;
+}
+
+/* 32 px is the drawing; 44 is what a thumb has to hit. The pseudo-element is
+   out of flow, so the button keeps its size and its grid centring, and the
+   bar's spacing does not move. */
+.theme-toggle::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 44px;
+  height: 44px;
+  transform: translate(-50%, -50%);
+}
+
+/* The acknowledgement: it finishes before the icon starts moving, so the press
+   is felt even when the page behind it takes longer.
+
+   The class is tripled for the same reason `.katex.katex` is doubled in
+   `global.css`: the host — `.navbar-icon-btn` in the bar, `.guest-header-button`
+   in the guest header — already declares a `transition`, and `transition` is a
+   shorthand, so the loser of that tie drops `transform` entirely. Three classes
+   take the specificity outright instead of depending on which stylesheet the
+   bundler happens to emit last. */
+.theme-toggle.theme-toggle.theme-toggle {
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.theme-toggle:active {
+  transform: scale(0.92);
+}
+
+/* ── The disc ──
+   One circle at r 8: halved and hollow it is lucide's sun, full and inked it
+   is the moon. `fill-box` keeps every transform around the circle's own
+   centre. */
+.theme-toggle-rays,
+.theme-toggle-core,
+.theme-toggle-bite {
+  transform-box: fill-box;
+  transform-origin: center;
+}
+
+/* Back to paper — the disc shrinks and empties first, the rays return last. */
+.theme-toggle-rays {
+  opacity: 1;
+  transform: scale(1);
+  transition:
+    opacity 180ms ease 140ms,
+    transform 220ms cubic-bezier(0.16, 1, 0.3, 1) 120ms;
+}
+
+.theme-toggle-core {
+  transform: scale(0.5);
+  fill-opacity: 0;
+  transition:
+    transform 240ms cubic-bezier(0.16, 1, 0.3, 1),
+    fill-opacity 140ms ease;
+}
+
+.theme-toggle-bite {
+  transform: translate(14px, -14px);
+  transition: transform 200ms ease;
+}
+
+/* To ink — the rays go first, the bite arrives last and is what turns the
+   disc into a crescent. The state comes off `aria-pressed`, so the drawing and
+   the accessible state are the same fact. */
+.theme-toggle[aria-pressed='true'] .theme-toggle-rays {
+  opacity: 0;
+  transform: scale(0.35);
+  transition:
+    opacity 140ms ease,
+    transform 140ms cubic-bezier(0.4, 0, 1, 1);
+}
+
+.theme-toggle[aria-pressed='true'] .theme-toggle-core {
+  transform: scale(1);
+  fill-opacity: 1;
+  transition:
+    transform 180ms cubic-bezier(0.16, 1, 0.3, 1) 60ms,
+    fill-opacity 140ms ease 60ms;
+}
+
+.theme-toggle[aria-pressed='true'] .theme-toggle-bite {
+  transform: translate(4px, -4px);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1) 100ms;
+}
+
+/* The bar drops its icons to 28 px on the narrowest screens; this one stays at
+   32, matching the avatar button beside it, and keeps its 44 px touch area. */
+@media (max-width: 420px) {
+  .theme-toggle.theme-toggle.theme-toggle {
+    width: 32px;
+    height: 32px;
+  }
+}
+
+/* Nothing here degrades to a shorter animation: the icon swaps, the state
+   still changes, and the sweep in `global.css` is skipped entirely. */
+@media (prefers-reduced-motion: reduce) {
+  .theme-toggle.theme-toggle.theme-toggle,
+  .theme-toggle-rays,
+  .theme-toggle-core,
+  .theme-toggle-bite,
+  .theme-toggle[aria-pressed='true'] .theme-toggle-rays,
+  .theme-toggle[aria-pressed='true'] .theme-toggle-core,
+  .theme-toggle[aria-pressed='true'] .theme-toggle-bite {
+    transition: none;
+  }
+
+  .theme-toggle:active {
+    transform: none;
+  }
+}

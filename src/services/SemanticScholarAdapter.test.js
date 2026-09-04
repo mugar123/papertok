@@ -83,3 +83,50 @@ test('gives up on an unavailable Semantic Scholar instead of retrying locally', 
     restore();
   }
 });
+
+/**
+ * A paper saved from a Semantic Scholar card was remembered under its S2 hash
+ * alone: the adapter wrote `doi: null` whatever the API said. The DOI and the
+ * arXiv id arrive in `externalIds`, and they are the paper's only addresses.
+ */
+test('keeps the DOI and the arXiv id Semantic Scholar reports, and nothing invented when it reports none', () => {
+  const adapter = new SemanticScholarAdapter();
+  const addressed = adapter.mapToStandard({
+    paperId: '649def34f8be52c8b66281af98ae884c09aef38b',
+    title: 'Attention Is All You Need',
+    externalIds: { DOI: '10.48550/arXiv.1706.03762', ArXiv: '1706.03762', CorpusId: 13756489 },
+  });
+  assert.equal(addressed.id, '649def34f8be52c8b66281af98ae884c09aef38b', 'the S2 hash stays the id');
+  assert.equal(addressed.doi, '10.48550/arXiv.1706.03762');
+  assert.equal(addressed.arxivId, '1706.03762');
+
+  const bare = adapter.mapToStandard({ paperId: 'abc', title: 'One', externalIds: { CorpusId: 1 } });
+  assert.equal(bare.doi, null);
+  assert.equal(bare.arxivId, undefined);
+  const absent = adapter.mapToStandard({ paperId: 'abc', title: 'One' });
+  assert.equal(absent.doi, null);
+});
+
+test('strips boolean operators as words, not as letters inside words', async () => {
+  const escaped = [];
+  const restore = silencedGlobalFetch(escaped);
+  let asked = '';
+  try {
+    const adapter = new SemanticScholarAdapter({
+      apiBase: 'https://papertok-report-api.example',
+      fetchImpl: async url => {
+        asked = new URL(String(url)).searchParams.get('q');
+        return new Response(JSON.stringify({ total: 0, data: [] }), { headers: { 'content-type': 'application/json' } });
+      },
+    });
+
+    await adapter.search('CORD-19 NAND ANDROID OR bandwidth', 1);
+  } finally {
+    restore();
+  }
+
+  // `replace(/OR|AND/g, ' ')` turned CORD-19 into "C D-19" and ANDROID into
+  // " ROID". Nobody saw it because the adapter is only reached with
+  // `type: 'author'`, which skips the line -- until the day it is not.
+  assert.match(asked, /^CORD-19 NAND ANDROID\s+bandwidth$/);
+});

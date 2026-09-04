@@ -107,23 +107,134 @@ function findDelimiterEnd(text, delimiter, startIndex) {
   return -1;
 }
 
-function unwrapEnsureMath(match, expression, offset, source) {
-  const nextCharacter = source[offset + match.length];
-  const needsCommandSeparator = /\\[a-zA-Z]+$/.test(expression) && /[a-zA-Z]/.test(nextCharacter);
-
+function commandSeparator(expression, nextCharacter) {
+  const needsCommandSeparator = /\\[a-zA-Z]+$/.test(expression) && /[a-zA-Z]/.test(nextCharacter || '');
   return needsCommandSeparator ? `${expression} ` : expression;
+}
+
+function unwrapEnsureMath(match, expression, offset, source) {
+  return commandSeparator(expression, source[offset + match.length]);
+}
+
+// One brace level deep is as far as OpenAlex's `\ensuremath` arguments go
+// (`\ensuremath{\mathrm{*}}`); anything deeper stays as it came.
+const ENSUREMATH = /\\ensuremath\{((?:\\[a-zA-Z]+|[^{}]|\{[^{}]*\})*)\}/g;
+// `\ifmmode A\else B\fi{}`: A is the maths spelling, B the text one.
+const IFMMODE = /\\ifmmode\s*([\s\S]*?)(?:\\else\s*([\s\S]*?))?\\fi(?:\{\})?/g;
+// The argument may carry one brace level (`{\ensuremath{\gamma}}`): in prose
+// it is matched BEFORE the generic `\ensuremath` pass, so that pass cannot
+// have flattened it yet.
+const STACKREL_TILDE = /\\stackrel\{\\ifmmode\s*\\tilde\{\}\s*\\else\s*\\~\{\}\s*\\fi\{\}\}\{((?:\\[a-zA-Z]+|[^{}]|\{[^{}]*\})+)\}/g;
+
+/**
+ * Text-only macros with no maths spelling: the character is the whole answer.
+ * `\AA{}` swallows its empty group; `\AA bond` keeps its space, because the
+ * abstracts that carry these wrote the space on purpose.
+ */
+const TEXT_SYMBOLS = {
+  AA: 'Å',
+  textcopyright: '©',
+  texttimes: '×',
+  textdegree: '°',
+  textmu: 'µ',
+  textpm: '±',
+  textperiodcentered: '·',
+  textellipsis: '…',
+  textendash: '–',
+  textemdash: '—',
+  textquoteleft: '‘',
+  textquoteright: '’',
+  textquotedblleft: '“',
+  textquotedblright: '”',
+  textasciitilde: '~',
+};
+const TEXT_SYMBOL = new RegExp(`\\\\(${Object.keys(TEXT_SYMBOLS).join('|')})(?![a-zA-Z])(?:\\{\\})?`, 'g');
+
+/**
+ * Applies one transform to the prose and another inside every formula, using
+ * the same delimiter walk `splitLatexText` does, so "inside a formula" means
+ * exactly what the renderer will later take it to mean.
+ */
+function transformByMode(text, transformProse, transformMath) {
+  let output = '';
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    const match = findNextDelimiter(text, cursor);
+    if (!match) {
+      output += transformProse(text.slice(cursor));
+      break;
+    }
+    if (match.index > cursor) {
+      output += transformProse(text.slice(cursor, match.index));
+    }
+    const contentStart = match.index + match.delimiter.left.length;
+    const contentEnd = findDelimiterEnd(text, match.delimiter, contentStart);
+    if (contentEnd === -1) {
+      output += transformProse(text.slice(match.index));
+      break;
+    }
+    output += match.delimiter.left
+      + transformMath(text.slice(contentStart, contentEnd))
+      + match.delimiter.right;
+    cursor = contentEnd + match.delimiter.right.length;
+  }
+
+  return output;
+}
+
+function normalizeMathRun(value) {
+  return value
+    .replace(ENSUREMATH, unwrapEnsureMath)
+    .replace(STACKREL_TILDE, '\\tilde{$1}')
+    .replace(IFMMODE, (match, mathBranch, textBranch, offset, source) => (
+      commandSeparator(mathBranch.trim(), source[offset + match.length])
+    ));
+}
+
+/**
+ * APS abstracts, as OpenAlex relays them, put `\ensuremath{\sigma}` and
+ * `4\ifmmode\times\else\texttimes\fi{}4` straight in the prose with no `$`
+ * around them: the macro IS the formula. Each becomes its own inline formula,
+ * in `\( \)` so a stray `$` in the prose cannot pair with it.
+ */
+function normalizeProseRun(value) {
+  return value
+    .replace(STACKREL_TILDE, (match, expression) => `\\(\\tilde{${expression.replace(ENSUREMATH, '$1')}}\\)`)
+    .replace(ENSUREMATH, (match, expression) => `\\(${expression}\\)`)
+    .replace(IFMMODE, (match, mathBranch) => `\\(${mathBranch.trim()}\\)`)
+    .replace(TEXT_SYMBOL, (match, name) => TEXT_SYMBOLS[name]);
 }
 
 export function normalizeLatexText(text) {
   if (!text) return '';
 
-  return normalizeScientificMarkup(text)
-    .replace(/\\ensuremath\{((?:\\[a-zA-Z]+|[^{}])*)\}/g, unwrapEnsureMath)
-    .replace(
-      /\\stackrel\{\\ifmmode\s*\\tilde\{\}\s*\\else\s*\\~\{\}\s*\\fi\{\}\}\{((?:\\[a-zA-Z]+|[^{}])+)\}/g,
-      '\\tilde{$1}',
-    )
+  return transformByMode(normalizeScientificMarkup(text), normalizeProseRun, normalizeMathRun)
     .replace(/(^|[^\\])%/g, '$1\\%');
+}
+
+/**
+ * `normalizeLatexText` escapes every prose `%` to `\%` so a later LaTeX pass
+ * cannot read it as a comment — but a screen (or a page of HTML) prints what
+ * it is given. Prose runs go through here at paint time; the normalized space
+ * itself keeps the escape, because highlight offsets are measured against it.
+ */
+export function displayProse(value) {
+  return String(value).replace(/\\%/g, '%');
+}
+
+/**
+ * Maps an offset in a run's *displayed* text (see `displayProse`) back to the
+ * offset in its normalized source, where each `\%` occupies two characters but
+ * paints as one. Identity when the run carries no escapes.
+ */
+export function proseSourceOffset(normalizedRun, displayOffset) {
+  const run = String(normalizedRun);
+  let source = 0;
+  for (let display = 0; display < displayOffset && source < run.length; display += 1) {
+    source += run[source] === '\\' && run[source + 1] === '%' ? 2 : 1;
+  }
+  return source;
 }
 
 export function splitLatexText(text) {

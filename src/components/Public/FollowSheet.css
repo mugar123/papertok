@@ -1,3 +1,18 @@
+/* ============================================
+   La hoja de seguidores / seguidos.
+
+   Antes era una tarjeta genérica: pestañas en píldora de radio completo,
+   contadores en viñeta dentro de la píldora, filas flotando en un chip
+   redondeado y un cuerpo de altura fija que dejaba 440px de vacío bajo un
+   único seguidor. Nada de eso era el idioma de la app, que es una página
+   impresa: esquinas casi cuadradas (2–8px), estructura por filetes de un
+   pelo en vez de sombras, y mono para todo lo que es dato.
+
+   Ahora la hoja habla ese idioma, y en concreto el de la cabecera del perfil
+   desde la que se abre: las mismas pestañas en mono versalitas con el
+   subrayado amarillo de 3px que `.profile-tab` ya usa dos dedos más arriba.
+   ============================================ */
+
 .follow-sheet-backdrop {
   position: fixed;
   inset: 0;
@@ -6,18 +21,28 @@
   align-items: flex-end;
   justify-content: center;
   padding: 0;
+  /* No `backdrop-filter`: FollowSheet.jsx fades this element's own opacity
+     in and out with framer-motion, and a blur under an animated opacity is
+     re-resolved every frame — the worst case for a mobile GPU. The dark
+     veil alone reads as the backdrop; its 6px blur was invisible under it. */
   background: rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(6px);
 }
 
-/* Anchored to the bottom edge on phones (it enters from there), floating
-   centered on anything wider. The body height is fixed per breakpoint so
-   switching tabs never resizes or re-centers the dialog. */
+/* Anclada al borde inferior en el móvil (de ahí entra), y anclada ARRIBA
+   cuando flota en pantallas anchas. Lo segundo es deliberado: el cuerpo ya no
+   tiene altura fija, así que cambiar de pestaña cambia la altura — y una caja
+   centrada que cambia de altura se recentra, que es justo el salto que la
+   altura fija existía para evitar. Anclada arriba crece sólo hacia abajo. */
 .follow-sheet {
   display: flex;
   flex-direction: column;
   width: 100%;
   max-width: 460px;
+  /* Despeja el home indicator: la hoja va a ras del borde inferior del
+     viewport en el móvil, así que sin esto la última fila (`.follow-sheet-more`,
+     o el último seguidor visible) queda debajo de él. Cero en un dispositivo
+     sin home indicator, así que el borde de la hoja no se mueve ahí. */
+  padding-bottom: var(--inset-bottom);
   border: 1px solid var(--border-default);
   border-bottom: none;
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
@@ -26,204 +51,198 @@
   overflow: hidden;
 }
 
+/* ─── Cabecera ─── */
+
 .follow-sheet-header {
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: space-between;
   gap: var(--space-3);
-  padding: var(--space-4) var(--space-4) var(--space-3);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .follow-sheet-tabs {
   display: flex;
-  gap: var(--space-2);
+  gap: var(--space-1);
   min-width: 0;
 }
 
+/* Copia exacta de `.profile-tab`: mismo font, mismo tracking, mismo padding.
+   Las dos rejillas de pestañas de esta pantalla eran dos idiomas distintos. */
 .follow-sheet-tab {
+  position: relative;
   display: inline-flex;
-  align-items: center;
-  padding: var(--space-2) var(--space-4);
+  align-items: baseline;
+  gap: 7px;
+  padding: var(--space-3) var(--space-3) 14px;
   border: none;
-  border-radius: var(--radius-full);
   background: none;
   color: var(--text-tertiary);
-  font-family: var(--font-body);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
-  transition: color var(--transition-fast), background var(--transition-fast);
+  transition: color var(--transition-fast);
 }
 
-.follow-sheet-tab:hover,
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-tab:hover {
+    color: var(--text-secondary);
+  }
+}
+
 .follow-sheet-tab:focus-visible {
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 
 .follow-sheet-tab--active {
-  background: var(--bg-glass);
   color: var(--text-primary);
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-tab--active:hover {
+    color: var(--text-primary);
+  }
+}
+
+/* El contador deja de ser una viñeta dentro de una píldora y vuelve a ser lo
+   que es: un número, en mono, en la línea base del rótulo. */
 .follow-sheet-tab-count {
-  margin-left: var(--space-2);
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-full);
-  background: var(--bg-glass);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  line-height: 1.6;
+  font-size: 0.625rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
 }
 
 .follow-sheet-tab--active .follow-sheet-tab-count {
-  background: var(--bg-glass-strong);
-  color: var(--text-primary);
+  color: var(--text-secondary);
+}
+
+/* El amarillo marca la pestaña activa, y nada más en esta hoja. Lo pinta
+   framer-motion con un layoutId compartido, así que se DESLIZA de una pestaña
+   a otra en vez de parpadear — el mismo gesto que `.profile-tab-indicator`. */
+.follow-sheet-tab-indicator {
+  position: absolute;
+  left: var(--space-3);
+  right: var(--space-3);
+  bottom: -1px;
+  height: 3px;
+  background: var(--brand-yellow);
+}
+
+.follow-sheet-close-wrap {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  padding-right: var(--space-3);
 }
 
 .follow-sheet-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 auto;
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: none;
   color: var(--text-secondary);
   cursor: pointer;
   transition: border-color var(--transition-fast), color var(--transition-fast);
 }
 
-.follow-sheet-close:hover,
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-close:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+}
+
 .follow-sheet-close:focus-visible {
   border-color: var(--border-strong);
   color: var(--text-primary);
 }
 
-/* Sized by the larger of the two counts (--follow-rows, injected by the
-   component; both counts are known before the sheet opens), so switching tabs
-   never resizes the dialog — the rule the old fixed height enforced — but a
-   near-empty list no longer floats in a full-height void. Falls back to the
-   old fixed height when no count is known. */
-.follow-sheet-body {
-  height: min(72dvh, 560px, calc(var(--follow-rows, 9) * 58px + 72px));
-  overflow-y: auto;
-  padding: var(--space-2) var(--space-3) calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
-}
+/* ─── Franja de paginación ─── */
 
-/* Loading, error and empty all live centered in the fixed-height body, so the
-   sheet reads as one calm surface whatever state the list is in. */
-.follow-sheet-loading {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-2) 0;
-  /* Held back like every other placeholder in the app (see .profile-loading):
-     the edge query usually answers well inside 320ms, and a skeleton that
-     appears and leaves inside a fifth of a second is a flicker announcing a
-     wait that was already over. Deliberately NOT disabled under reduced
-     motion — this is a delay, not decoration, and cancelling it would leave
-     the skeleton at opacity 0 for good. */
-  opacity: 0;
-  animation: follow-sheet-loading-reveal 140ms ease-out 320ms forwards;
-}
-
-@keyframes follow-sheet-loading-reveal {
-  to { opacity: 1; }
-}
-
-.follow-row-skeleton {
-  height: 56px;
-  border-radius: var(--radius-lg);
-  background: var(--bg-secondary);
-  animation: follow-sheet-pulse 1.4s ease-in-out infinite;
-}
-
-@keyframes follow-sheet-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
-
-.follow-sheet-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  height: 100%;
-  color: var(--text-tertiary);
-  font-size: var(--fs-sm);
-  text-align: center;
-}
-
-.follow-sheet-state p {
+/* Sólo aparece cuando la lista está paginada de verdad. Con tres seguidores
+   repetiría el número que ya está en la pestaña. */
+.follow-sheet-meta {
   margin: 0;
-  max-width: 34ch;
+  padding: var(--space-2) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
 }
 
-.follow-sheet-state-title {
-  font-family: var(--font-heading);
-  font-size: var(--fs-base);
-  font-weight: var(--fw-semibold);
-  color: var(--text-primary);
+/* ─── Cuerpo ─── */
+
+/* La altura la fija el contador de LA PESTAÑA ACTIVA (`--follow-rows`, que
+   inyecta el componente), no el mayor de los dos: eso era lo que dejaba el
+   pozo bajo un solo seguidor. Como es una longitud calculada y no `auto`,
+   transiciona sola al cambiar de pestaña, con la curva de la casa.
+
+   El tope son 8 filas: a partir de ahí la lista scrollea. */
+.follow-sheet-body {
+  height: min(calc(var(--follow-rows, 6) * 60px), 72dvh, 520px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  transition: height var(--transition-spring);
 }
 
-.follow-sheet-state .follow-sheet-more {
-  width: auto;
-  margin-top: 0;
-  padding: var(--space-2) var(--space-5);
+@media (prefers-reduced-motion: reduce) {
+  .follow-sheet-body {
+    transition: none;
+  }
 }
 
-.follow-sheet-state-icon {
+/* El panel de una pestaña. Columna flexible de alto mínimo completo para que
+   las bandas de estado puedan repartirse el hueco que el cuerpo ya reserva,
+   sin alturas en porcentaje contra un padre de alto automático. */
+.follow-sheet-panel {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
-  color: var(--accent-primary);
+  flex-direction: column;
+  min-height: 100%;
 }
+
+/* ─── Filas ─── */
 
 .follow-list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
 }
 
-.follow-row {
-  display: block;
+/* A sangre y separadas por filete, sin tarjeta flotante: es un índice. */
+.follow-row + .follow-row {
+  border-top: 1px solid var(--border-subtle);
 }
 
-.follow-row-link {
+.follow-row-link,
+.follow-row--gone {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-lg);
+  padding: var(--space-3) var(--space-4);
   color: inherit;
   text-decoration: none;
   transition: background var(--transition-fast);
 }
 
-.follow-row-link:hover,
+@media (hover: hover) and (pointer: fine) {
+  .follow-row-link:hover {
+    background: var(--bg-glass-hover);
+  }
+}
+
 .follow-row-link:focus-visible {
   background: var(--bg-glass-hover);
 }
 
 .follow-row--gone {
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-2) var(--space-3);
   color: var(--text-tertiary);
 }
 
@@ -232,13 +251,13 @@
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: var(--radius-full);
   background: var(--bg-secondary);
   color: var(--text-secondary);
   font-family: var(--font-heading);
-  font-size: var(--fs-base);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   overflow: hidden;
 }
@@ -252,6 +271,7 @@
 .follow-row-body {
   display: flex;
   flex-direction: column;
+  gap: 3px;
   min-width: 0;
 }
 
@@ -264,14 +284,16 @@
   white-space: nowrap;
 }
 
+/* Un @handle es un identificador, y en esta app los identificadores van en
+   mono, como los IDs, las categorías y las fechas. */
 .follow-row-handle {
+  font: 400 var(--fs-xs)/1 var(--font-mono);
   color: var(--text-tertiary);
-  font-size: var(--fs-xs);
 }
 
-/* A row whose edge has landed and whose account has not. The avatar sets the
-   row height either way, so this holds exactly the geometry the real row will
-   have: the name arriving replaces a shape with a shape and moves nothing. */
+/* Una fila cuya arista ha llegado y cuya cuenta no. El avatar fija la altura
+   igual, así que esto sostiene exactamente la geometría que tendrá la fila
+   real: el nombre al llegar sustituye una forma por otra y no mueve nada. */
 .follow-row-link--pending {
   pointer-events: none;
 }
@@ -292,39 +314,158 @@
 .follow-row-pending-line--short {
   width: 84px;
   height: 9px;
-  margin-top: 6px;
 }
 
-.follow-sheet-more {
-  display: block;
-  width: 100%;
-  margin-top: var(--space-3);
-  padding: var(--space-3);
-  border: 1px solid var(--border-default);
+@keyframes follow-sheet-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
+/* ─── Esqueleto ─── */
+
+.follow-sheet-loading {
+  /* Retenido como cualquier otro placeholder de la app (ver `.profile-loading`):
+     la consulta de aristas suele contestar bastante antes de 320ms, y un
+     esqueleto que aparece y se va en una quinta de segundo es un parpadeo
+     anunciando una espera que ya había terminado. Deliberadamente NO se
+     desactiva bajo reduced motion — es un retraso, no decoración, y cancelarlo
+     dejaría el esqueleto en opacidad 0 para siempre. */
+  opacity: 0;
+  animation: follow-sheet-loading-reveal 140ms ease-out 320ms forwards;
+}
+
+@keyframes follow-sheet-loading-reveal {
+  to { opacity: 1; }
+}
+
+.follow-row-skeleton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  height: 60px;
+  box-sizing: border-box;
+}
+
+.follow-row-skeleton + .follow-row-skeleton {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.follow-sheet-loading-note {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+/* ─── Bandas de estado ─── */
+
+/* Vacío y error dejan de ser un icono centrado en un pozo de 440px: son una
+   banda corta, del alto que el cuerpo ya reserva para ellas. */
+.follow-sheet-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex: 1 1 auto;
+  padding: var(--space-6);
+  box-sizing: border-box;
+  color: var(--text-tertiary);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.follow-sheet-state p {
+  margin: 0;
+  max-width: 34ch;
+}
+
+.follow-sheet-state-title {
+  font-family: var(--font-heading);
+  font-size: var(--fs-base);
+  font-weight: var(--fw-semibold);
+  color: var(--text-primary);
+}
+
+.follow-sheet-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: var(--space-1);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-full);
   background: var(--bg-secondary);
+  color: var(--text-secondary);
+}
+
+.follow-sheet-retry {
+  margin-top: var(--space-2);
+  height: 30px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
   color: var(--text-primary);
   font-family: var(--font-body);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
   cursor: pointer;
   transition: border-color var(--transition-fast);
 }
 
-.follow-sheet-more:hover:not(:disabled),
-.follow-sheet-more:focus-visible:not(:disabled) {
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-retry:hover {
+    border-color: var(--border-strong);
+  }
+}
+
+.follow-sheet-retry:focus-visible {
   border-color: var(--border-strong);
+}
+
+/* ─── Cargar más ─── */
+
+/* Fuera del cuerpo, no dentro: antes se iba con el scroll, que es justo
+   cuando hace falta. Ahora es una banda fija al pie de la hoja. */
+.follow-sheet-more {
+  display: block;
+  width: 100%;
+  padding: var(--space-3);
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .follow-sheet-more:hover:not(:disabled) {
+    background: var(--bg-secondary);
+  }
+}
+
+.follow-sheet-more:focus-visible:not(:disabled) {
+  background: var(--bg-secondary);
 }
 
 .follow-sheet-more:disabled {
   cursor: default;
-  opacity: 0.6;
+  color: var(--text-tertiary);
 }
+
+/* ─── Escritorio ─── */
 
 @media (min-width: 600px) {
   .follow-sheet-backdrop {
-    align-items: center;
-    padding: var(--space-4);
+    align-items: flex-start;
+    padding: 10vh var(--space-4) var(--space-4);
   }
 
   .follow-sheet {
@@ -333,8 +474,7 @@
   }
 
   .follow-sheet-body {
-    height: min(52vh, 440px, calc(var(--follow-rows, 8) * 58px + 72px));
-    padding-bottom: var(--space-4);
+    height: min(calc(var(--follow-rows, 6) * 60px), 60vh, 480px);
   }
 }
 

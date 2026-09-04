@@ -1,8 +1,8 @@
 /* eslint-disable react-refresh/only-export-components */
-import { useContext, useState, useCallback, useEffect, useRef, useLayoutEffect } from 'react';
+import { useContext, useState, useCallback, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { FeedContext } from './contexts';
 import { IS_DEMO, db } from '../services/firebase';
-import { doc, setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
+import { setDoc, updateDoc, deleteField, increment, writeBatch } from 'firebase/firestore';
 import { useAuth } from './AuthContext';
 import { useFollowing } from './FollowingContext';
 import { fetchPapers, clearCache, fetchPapersByIds, getAuthorPapers } from '../services/arxivService';
@@ -29,6 +29,8 @@ import {
   saveSeenPaperIds,
 } from '../utils/userScopedStorage';
 import { serializeLibraryPaper } from '../utils/readingLibrary';
+import { buildInteractionAliasIndex, resolveInteractionId } from '../utils/interactionAliases.js';
+import { isPlaceholderPaperTitle } from '../utils/paperDisplayTitle.js';
 import {
   createEmptyInteractionProfile,
   curatedIds,
@@ -44,6 +46,7 @@ import {
 import {
   createInteractionProfileClient,
   fetchLibraryRecords,
+  interactionDocRef,
   flushAllInteractionProfiles,
   flushInteractionProfileNow,
   scheduleInteractionProfileFlush,
@@ -54,12 +57,13 @@ import {
   mergeOpenAlexEnrichment,
   needsOpenAlexEnrichment,
   takeFeedPage,
-  waitForInitialEnrichment,
 } from '../utils/feedEnrichment';
-import { resolveWithin, settleWithin } from '../utils/asyncTiming';
+import { resolveWithin, settleWithin, settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming';
 import { shouldAbortFeedLoad } from '../utils/feedLoadGuard';
-import { dedupeInteractionPapers } from '../utils/feedInteractions';
+import { lateSourceCandidates } from '../utils/feedLateCandidates';
+import { dedupeInteractionPapers, definedFields, selectSemanticProfilePositiveIds } from '../utils/feedInteractions';
 import { fetchICiteMetrics, mergeICiteEnrichment } from '../services/iCiteService';
+import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService';
 // topicRetrievalService carries a ~32 KB gzip topic table and only matters
 // once a feed load actually ranks followed topics, so it loads on first use
 // instead of riding in the boot graph of every route.
@@ -72,18 +76,19 @@ const PAGE_SIZE = 15;
 // which the previous 5 s budget lost anyway after waiting the full 5 s for it.
 const FEED_SOURCE_RENDER_BUDGET_MS = 4000;
 const OPTIONAL_SOURCE_RENDER_BUDGET_MS = 3500;
+// How long the main query may wait for the followed-topic category ids. The
+// topic module is prewarmed the moment a topic follow is known (see the
+// following effect), so this is normally 0 ms and the budget only ever covers
+// a cold chunk on a slow connection.
+const FOLLOWED_TOPIC_RANK_BUDGET_MS = 300;
 const OPENALEX_FEED_REQUEST_TIMEOUT_MS = 6500;
-// How long the first paint may wait for enrichment. Warm-edge enrichment lands
-// in 0.2–0.9 s (measured 2026-08-22); slower responses merge into the visible
-// cards through the existing late-enrichment path instead of holding the
-// skeleton — the old 4.5 s wait was the largest single slice of the measured
-// 9.5 s worst case.
-const OPENALEX_FEED_WAIT_BUDGET_MS = 900;
-const ICITE_FEED_WAIT_BUDGET_MS = 900;
 const INTERACTIONS_NETWORK_TIMEOUT_MS = 5000;
 // Upper bound on the reading-library records fetched on demand by the library
-// screens. Ten ids per `in` query, so this is 60 queries in the worst case and
-// it is reached only by an account with hundreds of deliberately kept papers.
+// screens. How many queries that costs depends on the `in` operator's cap,
+// which is stated once in `utils/firestoreLimits.js` and nowhere else — this
+// comment used to do the arithmetic itself and was still quoting a cap
+// Firestore had already raised. It is reached only by an account with hundreds
+// of deliberately kept papers.
 const PERSONAL_LIBRARY_MAX_RECORDS = 600;
 // How often a device re-checks the aggregate against its subcollection. The
 // check costs a count aggregation, so it must stay off the normal feed load: at
@@ -234,6 +239,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   const [savedPaperIds, setSavedPaperIds] = useState(new Set());
   const [readPaperIds, setReadPaperIds] = useState(new Set());
   const [personalLibrary, setPersonalLibrary] = useState({});
+  // Paper metadata for everything the library read fetched, by id — including
+  // the records `personalLibrary` filters out. See ensurePersonalLibrary.
+  const [libraryPapers, setLibraryPapers] = useState({});
   const [recommendationProfileUserId, setRecommendationProfileUserId] = useState(null);
   const recommendationProfileReady = Boolean(user?.uid && recommendationProfileUserId === user.uid);
 
@@ -248,6 +256,13 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   const feedRequestId = useRef(0);
   const feedSessionId = useRef(0);
   const openAlexEnrichmentAttempts = useRef(new Set());
+  // Papers the slower sources returned after the page painted (see
+  // utils/feedLateCandidates.js). Offered to the next page's pool, once.
+  const lateSourceCandidatesRef = useRef([]);
+  // Bumped on every reset. The session id only changes with the account, but
+  // a preference or follow change resets the feed too, and a query still in
+  // flight from before must not refill the pool for the old preferences.
+  const latePoolGenerationRef = useRef(0);
   const openAlexEnrichmentRequests = useRef(new Map());
   const activeUserId = useRef(user?.uid || null);
   const sessionSeenPapers = useRef(readSeenPaperIds(user?.uid));
@@ -308,8 +323,40 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     scheduleInteractionProfileFlush(userId, interactionProfile.current);
   }, [user?.uid]);
 
+  // The late-enrichment merges each call this once more (OpenAlex, then
+  // iCite) after the feed has already rendered, just to persist the enriched
+  // papers into the same snapshot key. Debounced: a 500ms setTimeout that a
+  // second call for the SAME (userId, signature) within the window replaces,
+  // so back-to-back merges from the same load pay for one serialisation of up
+  // to 30 papers instead of two. Keyed by a map rather than one slot: a mode
+  // switch or a preference edit can leave a previous load's late-enrichment
+  // still in flight when a new one starts, and those two target different
+  // storage keys — collapsing them into a single pending write would silently
+  // drop whichever one lost.
+  const pendingSnapshotWritesRef = useRef(new Map());
+  const scheduleFeedSnapshotWrite = useCallback((userId, signature, snapshot) => {
+    const writeKey = `${userId}:${signature}`;
+    const pending = pendingSnapshotWritesRef.current.get(writeKey);
+    if (pending) clearTimeout(pending.timer);
+    const flush = () => {
+      pendingSnapshotWritesRef.current.delete(writeKey);
+      writeFeedSnapshot(userId, signature, snapshot);
+    };
+    pendingSnapshotWritesRef.current.set(writeKey, { timer: setTimeout(flush, 500), flush });
+  }, []);
+
   useEffect(() => {
-    const flush = () => { void flushAllInteractionProfiles(); };
+    const flush = () => {
+      void flushAllInteractionProfiles();
+      // Every snapshot debounced behind a 500ms timer must land before a tab
+      // closing inside that window loses it — the feed relies on it to
+      // restore on the next visit. Same guarantee as the interaction-profile
+      // flush above, and on the same two events.
+      pendingSnapshotWritesRef.current.forEach((pending) => {
+        clearTimeout(pending.timer);
+        pending.flush();
+      });
+    };
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') flush();
     };
@@ -325,6 +372,37 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   // came out of the same full scan. It holds a serialised paper per record, so
   // it is now fetched only by the screens that render it, from the ids the
   // aggregate already knows, in bounded `in` batches.
+  // The id a reader's marks for a paper live under. A mark is keyed by the
+  // id the feed gave the paper the day it was made — `openalex:W…`, `arxiv:…`,
+  // a Semantic Scholar hash — and the same paper comes back under another of
+  // those from a shared link hydrated by DOI, or from the feed served by
+  // another source. The stored copies the library loads carry the DOI and
+  // arXiv id beside the id the mark lives under, so they are the alias table
+  // (utils/interactionAliases.js). Every mark written from here goes under
+  // the resolved id, so a paper never ends up half-liked under two ids.
+  const interactionAliasIndex = useMemo(() => buildInteractionAliasIndex([
+    ...Object.entries(libraryPapers),
+    ...Object.entries(personalLibrary).map(([id, entry]) => [id, entry?.paper]),
+  ]), [libraryPapers, personalLibrary]);
+  const interactionIdFor = useCallback((paper) => resolveInteractionId(
+    paper,
+    interactionAliasIndex,
+    (id) => likedPaperIds.has(id) || savedPaperIds.has(id) || readPaperIds.has(id)
+      || Boolean(personalLibrary[id]) || Boolean(libraryPapers[id]),
+  ), [interactionAliasIndex, likedPaperIds, savedPaperIds, readPaperIds, personalLibrary, libraryPapers]);
+  const withInteractionId = useCallback((paper) => {
+    if (!paper || typeof paper !== 'object') return paper;
+    const id = interactionIdFor(paper);
+    return id === paper.id ? paper : { ...paper, id };
+  }, [interactionIdFor]);
+  // The copy the library holds for this paper, under whichever id, with that id.
+  const libraryCopyFor = useCallback((paper) => {
+    const id = interactionIdFor(paper);
+    if (!id) return null;
+    const copy = libraryPapers[id] || personalLibrary[id]?.paper;
+    return copy ? { id, paper: copy } : null;
+  }, [interactionIdFor, libraryPapers, personalLibrary]);
+
   const ensurePersonalLibrary = useCallback(async () => {
     const userId = user?.uid;
     if (!userId || IS_DEMO) return;
@@ -340,10 +418,21 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
     try {
       const profile = interactionProfile.current;
+      // `liked` joins the three curated sets, and joins them LAST so the cap
+      // below still favours the reading library proper.
+      //
+      // It is here because of what the lists screen had to do without it.
+      // Favorites is assembled from the liked ids, and no read on this path
+      // ever fetched them — so opening it went out for every paper one card
+      // click at a time, on a connection the mount was already using. Liked ids
+      // are already in the aggregate, and the fan-out that fetches them is this
+      // one; asking for them here costs one larger bounded read instead of a
+      // second round trip per list.
       const paperIds = [...new Set([
         ...curatedIds(profile, 'read'),
         ...curatedIds(profile, 'readLater'),
         ...curatedIds(profile, 'saved'),
+        ...curatedIds(profile, 'liked'),
       ])].slice(0, PERSONAL_LIBRARY_MAX_RECORDS);
 
       const { records, fromCache } = await fetchLibraryRecords(userId, paperIds);
@@ -357,17 +446,36 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       }
 
       const library = {};
+      /**
+       * Every paper this read paid for, whatever the record turned out to be.
+       *
+       * `personalLibrary` means something specific — the papers the owner has
+       * READ, kept for later, annotated or tagged — and the filter below is
+       * what enforces it. But the filter used to be the end of the story: a
+       * paper that was merely liked or merely saved was fetched, decoded and
+       * thrown away, and then fetched a second time the moment a list holding
+       * it was opened. Same documents, same collection, same connection.
+       *
+       * So the meaning stays, and the metadata is kept beside it.
+       */
+      const papers = {};
       records.forEach(({ id, data }) => {
+        const paper = data.paper || serializeLibraryPaper({
+          id,
+          title: data.paperTitle || '',
+          authors: data.paperAuthors || [],
+          primaryCategory: data.paperCategory || '',
+          published: data.timestamp || '',
+        });
+        // Only a real title: standing the id in for one used to paint
+        // `openalex:W…` on Liked. An empty title stays empty so a later
+        // fetch can fill it.
+        if (paper.title && !isPlaceholderPaperTitle(paper.title, id)) papers[id] = paper;
+
         if (!(data.read || data.readLater || data.note || data.tags?.length)) return;
         library[id] = {
           paperId: id,
-          paper: data.paper || serializeLibraryPaper({
-            id,
-            title: data.paperTitle || id,
-            authors: data.paperAuthors || [],
-            primaryCategory: data.paperCategory || '',
-            published: data.timestamp || '',
-          }),
+          paper,
           readLater: Boolean(data.readLater),
           readAt: data.readAt || (data.read ? data.timestamp : null),
           note: data.note || '',
@@ -377,6 +485,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       });
 
       setPersonalLibrary(current => ({ ...library, ...current }));
+      // Existing entries win, exactly as above: a paper already in hand came
+      // from a screen that fetched it deliberately and may be richer.
+      setLibraryPapers(current => ({ ...papers, ...current }));
+      // Existing entries win, exactly as above: a paper already in hand came
+      // from a screen that fetched it deliberately.
+      setLibraryPapers(current => ({ ...papers, ...current }));
       // A cache-served answer is worth showing but not worth latching: with
       // the backend unreachable, getDocs resolves against the in-memory cache
       // (empty on a fresh page) instead of rejecting. Marking that 'ready'
@@ -439,6 +553,55 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     reRankFeedRef.current = reRankFeed;
   }, [reRankFeed]);
 
+  // Re-ranking used to run synchronously on the card-snap path (58-151ms
+  // longtasks measured in production, right when the just-settled card should
+  // be responsive). Deferring it to idle takes it off that path entirely: the
+  // snap observer returns immediately, and the reorder — which only affects
+  // cards further down the queue — lands whenever the main thread next has
+  // spare time.
+  //
+  // `requestIdleCallback` alone is not enough: Safari only shipped it in 16.4,
+  // and a permanently busy tab could starve it forever. So every scheduling
+  // call carries a `timeout`, which forces the browser to run it anyway, and
+  // the `setTimeout` fallback (unconditionally scheduled, no idle gating to
+  // starve) covers browsers with no `requestIdleCallback` at all.
+  //
+  // Only one re-rank is ever pending: a later call while one is already
+  // queued just updates which paper it should split around, rather than
+  // resetting the timer — a stream of calls inside the timeout window must
+  // not be able to push the deadline out indefinitely.
+  const pendingReRankRef = useRef(null);
+  const scheduleReRank = useCallback((sourcePaperId) => {
+    if (pendingReRankRef.current) {
+      pendingReRankRef.current.sourcePaperId = sourcePaperId;
+      return;
+    }
+    const pending = { sourcePaperId, handle: null, isTimeout: false };
+    const run = () => {
+      pendingReRankRef.current = null;
+      reRankFeedRef.current(pending.sourcePaperId);
+    };
+    if (typeof window !== 'undefined' && typeof window.requestIdleCallback === 'function') {
+      pending.handle = window.requestIdleCallback(run, { timeout: 800 });
+    } else {
+      pending.isTimeout = true;
+      pending.handle = setTimeout(run, 120);
+    }
+    pendingReRankRef.current = pending;
+  }, []);
+
+  // A deferred re-rank that fires after this provider unmounts would be a
+  // `setState` on a dead component — React 19 swallows it silently, so it
+  // would never surface as a warning or a test failure, only as a re-rank
+  // that quietly never happened.
+  useEffect(() => () => {
+    const pending = pendingReRankRef.current;
+    if (!pending) return;
+    pendingReRankRef.current = null;
+    if (pending.isTimeout) clearTimeout(pending.handle);
+    else window.cancelIdleCallback?.(pending.handle);
+  }, []);
+
   const traverseAndExpandNetwork = useCallback(async (paper) => {
     const sessionId = feedSessionId.current;
     if (!activeUserId.current) return;
@@ -477,7 +640,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       
       try {
         // Fetch ML recommendations from Semantic Scholar first (High quality)
-        const semanticRecs = await getPaperRecommendations(paper.arxivId);
+        const semanticRecs = await getPaperRecommendations(paper);
         relatedArxivIds = [...semanticRecs];
       } catch (err) {
         console.warn("Semantic Scholar fetch failed", err);
@@ -556,6 +719,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   // Load user interactions
   useEffect(() => {
     let cancelled = false;
+    let semanticIdleHandle = null;
     const userId = user?.uid || null;
     const sessionId = ++feedSessionId.current;
 
@@ -698,39 +862,51 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         relatedCandidates.current = [];
         setRecommendationProfileUserId(userId);
 
-        // --- OpenAlex Semantic Profile ---
-        const positiveIds = [...liked, ...saved];
-        let conceptWeights = {};
-        let relatedWorksPool = [];
-
-        if (positiveIds.length > 0) {
-           const openAlexData = await enrichPapersBatch(positiveIds);
-
-           positiveIds.forEach(id => {
-              const pid = id.startsWith('arxiv:') ? id.split(':')[1].replace(/v\d+$/, '') : id.replace(/v\d+$/, '');
-              const data = openAlexData[pid];
-              if (data) {
-                 data.concepts.forEach(c => {
-                    if (!conceptWeights[c.id]) conceptWeights[c.id] = 0;
-                    conceptWeights[c.id] += c.score; // Score is confidence [0, 1]
-                 });
-                 if (data.related_works) {
-                    relatedWorksPool.push(...data.related_works);
-                 }
-              }
-           });
-        }
-
-        const relatedArxivIds = await getArxivIdsForOpenAlexWorks(relatedWorksPool);
-
-        if (cancelled) return;
-
-        Object.keys(conceptWeights).forEach((id) => {
-          conceptWeights[id] = Math.max(CONCEPT_AFFINITY_MIN, Math.min(CONCEPT_AFFINITY_MAX, conceptWeights[id]));
+        // OpenAlex concept weights are a ranking overlay, not a gate. Cap the
+        // sample and run it after the first source wave has the network, so a
+        // large liked library cannot stall the first cards. The sample comes
+        // from the aggregate's own order (newest first): `liked`/`saved` above
+        // are Sets sorted by id for the lists, and cutting those to 24 kept
+        // the alphabetically-first likes forever (audit 2026-09-02, A3).
+        const positiveIds = selectSemanticProfilePositiveIds(
+          curatedIds(profile, 'liked'),
+          curatedIds(profile, 'saved'),
+        );
+        const scheduleIdle = typeof requestIdleCallback === 'function'
+          ? (fn) => requestIdleCallback(fn, { timeout: 2500 })
+          : (fn) => setTimeout(fn, 0);
+        const semanticIdleHandleId = scheduleIdle(() => {
+          void (async () => {
+            if (cancelled) return;
+            let conceptWeights = {};
+            let relatedWorksPool = [];
+            if (positiveIds.length > 0) {
+              const openAlexData = await enrichPapersBatch(positiveIds);
+              if (cancelled) return;
+              positiveIds.forEach((id) => {
+                const pid = id.startsWith('arxiv:') ? id.split(':')[1].replace(/v\d+$/, '') : id.replace(/v\d+$/, '');
+                const data = openAlexData[pid];
+                if (!data) return;
+                data.concepts.forEach((c) => {
+                  if (!conceptWeights[c.id]) conceptWeights[c.id] = 0;
+                  conceptWeights[c.id] += c.score;
+                });
+                if (data.related_works) {
+                  relatedWorksPool.push(...data.related_works);
+                }
+              });
+            }
+            const relatedArxivIds = await getArxivIdsForOpenAlexWorks(relatedWorksPool);
+            if (cancelled) return;
+            Object.keys(conceptWeights).forEach((id) => {
+              conceptWeights[id] = Math.max(CONCEPT_AFFINITY_MIN, Math.min(CONCEPT_AFFINITY_MAX, conceptWeights[id]));
+            });
+            conceptAffinities.current = conceptWeights;
+            relatedCandidates.current = relatedArxivIds;
+            reRankFeedRef.current();
+          })();
         });
-        conceptAffinities.current = conceptWeights;
-        relatedCandidates.current = relatedArxivIds;
-        reRankFeedRef.current();
+        semanticIdleHandle = semanticIdleHandleId;
       } catch (err) {
         if (!cancelled) console.error('Error loading interactions:', err);
       } finally {
@@ -741,6 +917,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
     return () => {
       cancelled = true;
+      if (semanticIdleHandle != null) {
+        if (typeof cancelIdleCallback === 'function') {
+          try { cancelIdleCallback(semanticIdleHandle); }
+          catch { clearTimeout(semanticIdleHandle); }
+        } else {
+          clearTimeout(semanticIdleHandle);
+        }
+      }
       // Anything still sitting in the write debounce belongs to the account we
       // are leaving, so it has to land before the profile ref is reused.
       if (userId && interactionProfileHydrated.current) void flushInteractionProfileNow(userId);
@@ -766,7 +950,10 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     if (reset) {
       openAlexEnrichmentAttempts.current.clear();
       openAlexEnrichmentRequests.current.clear();
+      lateSourceCandidatesRef.current = [];
+      latePoolGenerationRef.current += 1;
     }
+    const poolGeneration = latePoolGenerationRef.current;
 
     setLoading(true);
     setError(null);
@@ -781,9 +968,17 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       if (activeMode === 'top' || activeMode === null) {
         const allCategories = getAllLeafCategories();
         
-        // ─── STEP 1: Rank user's selected categories by learned affinity ───
-        const followedTopicIds = followedEntities.length > 0
-          ? (await loadTopicRetrieval()).getFollowedTopicCategoryIds(followedEntities)
+        // Followed topics widen the main query. The lookup used to be an
+        // unbounded `await loadTopicRetrieval()` in front of every source;
+        // dropping it altogether left a followed topic worth at most six
+        // papers (audit 2026-09-02, A4). It is budgeted now, and normally
+        // served from the module the following effect already warmed.
+        const followedTopicIds = followedEntities.some(entity => entity?.type === 'topic')
+          ? await resolveWithin(
+            loadTopicRetrieval().then(module => module.getFollowedTopicCategoryIds(followedEntities)),
+            FOLLOWED_TOPIC_RANK_BUDGET_MS,
+            [],
+          )
           : [];
         const rankedPreferences = [...new Set([...userPreferences, ...followedTopicIds])].sort((a, b) => {
           const affA = categoryAffinities.current[a] || 0;
@@ -872,13 +1067,29 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             queryMode,
           );
 
-          const sourceResults = await Promise.all(
-            [arxivProm, pubmedProm, openAlexProm, domainProm]
-              .map(sourcePromise => settleWithin(sourcePromise, FEED_SOURCE_RENDER_BUDGET_MS))
+          const { first, all } = settleSourcesForFirstPaint(
+            [arxivProm, pubmedProm, openAlexProm, domainProm],
+            FEED_SOURCE_RENDER_BUDGET_MS,
+            (papers) => PaperBuilder.deduplicate(papers).length >= PAGE_SIZE,
           );
-          mainPapers = PaperBuilder.deduplicate(
-            sourceResults.flatMap(result => result.status === 'fulfilled' ? result.value : [])
-          );
+          let sourceResults = await first;
+          mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
+          if (mainPapers.length === 0) {
+            sourceResults = await all;
+            mainPapers = PaperBuilder.deduplicate(fulfilledPaperLists(sourceResults));
+          } else {
+            // The sources still running answer into the next page's pool.
+            // Guarded by session and pool generation, not request: a later
+            // page of the same feed is exactly who should receive them, a
+            // reset feed is not. Appended, not assigned: the auto-fetch path
+            // starts page N+1 before N's late answer lands.
+            const painted = mainPapers;
+            all.then((settled) => {
+              if (feedSessionId.current !== activeSessionId || latePoolGenerationRef.current !== poolGeneration) return;
+              const pooled = lateSourceCandidatesRef.current;
+              lateSourceCandidatesRef.current = [...pooled, ...lateSourceCandidates([...painted, ...pooled], settled)];
+            });
+          }
           mainSourceResults = sourceResults;
         } catch (e) {
           console.error("Error fetching main papers:", e);
@@ -1074,7 +1285,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         }
 
         // ─── STEP 7: Merge, deduplicate, score, and shuffle ───
-        const allFetched = [...mainPapers, ...graphPapers, ...followedPapers, ...explorationPapers];
+        const lateMain = lateSourceCandidatesRef.current.splice(0);
+        lateMain.forEach(p => { p._type = 'exploit'; });
+        const allFetched = [...mainPapers, ...lateMain, ...graphPapers, ...followedPapers, ...explorationPapers];
         
         const uniqueMap = new Map();
         allFetched.forEach(p => {
@@ -1182,25 +1395,20 @@ export function FeedProvider({ children, feedRouteActive = true }) {
 
       const iCitePmids = [...new Set(filtered.map(paper => paper?.pmid).filter(Boolean))];
       const iCitePromise = fetchICiteMetrics(iCitePmids);
-
-      const [initialOpenAlexData, initialICiteData] = await Promise.all([
-        waitForInitialEnrichment(enrichmentPromise, OPENALEX_FEED_WAIT_BUDGET_MS),
-        resolveWithin(iCitePromise, ICITE_FEED_WAIT_BUDGET_MS, null),
-      ]);
+      // Same pmids, same moment: after the page is on screen. ade641a took
+      // this out of PubmedAdapter to win the first-page race and nothing
+      // picked it up again (audit 2026-09-02, A2). A failure here is a page
+      // without Europe PMC data, never a page that fails to paint.
+      const europePmcPromise = enrichPubmedIds(iCitePmids).catch((err) => {
+        console.warn('Europe PMC feed enrichment failed', err);
+        return new Map();
+      });
       if (requestId !== feedRequestId.current) return;
-      if (initialOpenAlexData) {
-        filtered = mergeOpenAlexEnrichment(filtered, initialOpenAlexData);
-      }
-      if (initialICiteData) {
-        filtered = mergeICiteEnrichment(filtered, initialICiteData);
-      }
 
+      // Paint now. A second shuffle after enrichment used to reorder the
+      // cards the reader had just started looking at; late merge keeps order
+      // and identity (paperFieldsEqual) so citations appear in place.
       if (activeMode === 'top' || activeMode === null) {
-        filtered = diversifiedWeightedShuffle(filtered, {
-          scorePaper: calculateAndAttachScore,
-          weights: recommendationWeights.current,
-          initialPapers: reset ? [] : papers,
-        });
         logRankingBatch('fresh feed', filtered);
       }
 
@@ -1230,9 +1438,26 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       // Save to cache
       feedCache.current[activeMode] = { papers: nextPapers, page: nextPage, hasMore: nextHasMore };
       const preferenceSignature = feedPreferenceSignature(userPreferences);
+      // This write is synchronous and bypasses the debounce map on purpose —
+      // it's the primary persist, not a merge, so it should land immediately.
+      // But it shares its localStorage key (userId, preferenceSignature) with
+      // whatever an in-flight enrichment's `scheduleFeedSnapshotWrite` may
+      // already have pending from an earlier `loadPapers` call (feedSessionId
+      // does not guard this key — only `traverseAndExpandNetwork` bumps it):
+      // an enrichment can schedule against a smaller, older cache object,
+      // and if this fresher write lands before that timer fires, the stale
+      // one would overwrite it 500ms later and regress the snapshot. Cancel
+      // any pending write for this exact key first so this fresher write is
+      // always the one left standing.
+      const snapshotWriteKey = `${activeUserId.current}:${preferenceSignature}`;
+      const pendingSnapshotWrite = pendingSnapshotWritesRef.current.get(snapshotWriteKey);
+      if (pendingSnapshotWrite) {
+        clearTimeout(pendingSnapshotWrite.timer);
+        pendingSnapshotWritesRef.current.delete(snapshotWriteKey);
+      }
       writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
 
-      if (!initialOpenAlexData && enrichmentIds.length > 0) {
+      if (enrichmentIds.length > 0) {
         enrichmentPromise.then((lateEnrichment) => {
           if (feedSessionId.current !== activeSessionId || !lateEnrichment || Object.keys(lateEnrichment).length === 0) return;
           setPapers(current => {
@@ -1240,14 +1465,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             const cachedMode = feedCache.current[activeMode];
             if (cachedMode) {
               feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
-              writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
             }
             return enriched;
           });
         });
       }
 
-      if (!initialICiteData && iCitePmids.length > 0) {
+      if (iCitePmids.length > 0) {
         iCitePromise.then((lateMetrics) => {
           if (feedSessionId.current !== activeSessionId || !lateMetrics || Object.keys(lateMetrics).length === 0) return;
           setPapers(current => {
@@ -1255,7 +1480,20 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             const cachedMode = feedCache.current[activeMode];
             if (cachedMode) {
               feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
-              writeFeedSnapshot(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
+            }
+            return enriched;
+          });
+        });
+
+        europePmcPromise.then((lateRecords) => {
+          if (feedSessionId.current !== activeSessionId || !lateRecords || lateRecords.size === 0) return;
+          setPapers(current => {
+            const enriched = mergeEuropePmcEnrichment(current, lateRecords);
+            const cachedMode = feedCache.current[activeMode];
+            if (cachedMode) {
+              feedCache.current[activeMode] = { ...cachedMode, papers: enriched };
+              scheduleFeedSnapshotWrite(activeUserId.current, preferenceSignature, feedCache.current[activeMode]);
             }
             return enriched;
           });
@@ -1285,7 +1523,8 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   }, [
     userPreferences, page, papers, loading, feedMode,
     categoryAffinities, relatedCandidates, isKnownPaper,
-    calculateAndAttachScore, followedEntities, recommendationProfileReady
+    calculateAndAttachScore, followedEntities, recommendationProfileReady,
+    scheduleFeedSnapshotWrite,
   ]);
 
   const preferencesSignatureRef = useRef(null);
@@ -1359,6 +1598,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
   const followingSignatureRef = useRef(null);
 
   useEffect(() => {
+    // Warm the topic table as soon as a topic follow is known, off the feed's
+    // critical path, so loadPapers meets a resident module.
+    if (followedEntities.some(entity => entity?.type === 'topic')) void loadTopicRetrieval();
     if (followingLoading) return;
     const signature = followedEntities
       .map(entity => `${entity.type}:${entity.canonicalId}`)
@@ -1439,7 +1681,9 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     }
   }, []);
 
-  const toggleLike = useCallback(async (paper) => {
+  const toggleLike = useCallback(async (paperInput) => {
+    const paper = withInteractionId(paperInput);
+    const userId = user?.uid;
     const isCurrentlyLiked = likedPaperIds.has(paper.id);
     const newLiked = new Set(likedPaperIds);
 
@@ -1475,31 +1719,38 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         arxivId: paper.arxivId, summary: paper.summary?.substring(0, 500),
       };
       demoSet('savedPapersData', allSaved);
-    } else if (user) {
+    } else if (userId) {
       recordProfileEvent({
         paperId: paper.id,
         kind: isCurrentlyLiked ? 'unlike' : 'like',
         category: paper.primaryCategory,
       });
       try {
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        const ref = interactionDocRef(userId, paper.id);
+        await setDoc(ref, definedFields({
           liked: !isCurrentlyLiked,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
           paperCategory: paper.primaryCategory,
           paperAbstract: paper.summary?.substring(0, 500),
+          // The same copy a save keeps. A like used to store only the title
+          // and three authors, so the row on the Liked tab knew no DOI, no
+          // arXiv id and no year for the paper — nothing to build a link or a
+          // kicker from. Written on like only; an unlike changes the flag.
+          paper: isCurrentlyLiked ? undefined : serializeLibraryPaper(paper),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error saving like:', err);
         setLikedPaperIds(likedPaperIds);
       }
     }
-  }, [recordProfileEvent, user, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
+  }, [withInteractionId, recordProfileEvent, user?.uid, likedPaperIds, reRankFeed, traverseAndExpandNetwork]);
 
-  const markNotInterested = useCallback(async (paper) => {
-    if (!user) return;
+  const markNotInterested = useCallback(async (paperInput) => {
+    const paper = withInteractionId(paperInput);
+    const userId = user?.uid;
+    if (!userId) return;
     const newNotInterested = new Set(notInterestedIdsRef.current);
     newNotInterested.add(paper.id);
     setNotInterestedIds(newNotInterested);
@@ -1522,21 +1773,23 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           kind: 'notInterested',
           category: paper.primaryCategory,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        const ref = interactionDocRef(userId, paper.id);
+        await setDoc(ref, definedFields({
           notInterested: true, paperCategory: paper.primaryCategory,
           paperAbstract: paper.summary?.substring(0, 500),
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error saving not interested:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, user]);
+  }, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid]);
 
-  const markAsRead = useCallback(async (paper) => {
-    if (!user) return;
+  const markAsRead = useCallback(async (paperInput) => {
+    const paper = withInteractionId(paperInput);
+    const userId = user?.uid;
+    if (!userId) return;
     const newRead = new Set(readPaperIdsRef.current);
     newRead.add(paper.id);
     setReadPaperIds(newRead);
@@ -1547,12 +1800,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         ...current,
         [paper.id]: { ...current[paper.id], paperId: paper.id, paper: storedPaper, readAt },
       };
-      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
       return next;
     });
-    
-    // Instantly remove it from the visual feed
-    setPapers((prev) => prev.filter((p) => p.id !== paper.id));
+
+    // The card stays where it is: the reader marked it read, they did not ask
+    // for it to vanish. `readPaperIdsRef` keeps it out of the next load.
 
     if (IS_DEMO) {
       demoSet('readPaperIds', Array.from(newRead));
@@ -1573,23 +1826,24 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           timestamp: readAt,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        const ref = interactionDocRef(userId, paper.id);
+        await setDoc(ref, definedFields({
           read: true,
           paperTitle: paper.title, paperAuthors: paper.authors?.slice(0, 3),
-          paperCategory: paper.primaryCategory, 
+          paperCategory: paper.primaryCategory,
           timestamp: readAt,
           readAt,
           paper: storedPaper,
           deviceType: getDeviceInfo().type,
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error saving read status:', err);
       }
     }
-  }, [recordProfileEvent, user]);
+  }, [withInteractionId, recordProfileEvent, user?.uid]);
 
   const trackViewTime = useCallback(async (paper, timeInSeconds) => {
+    const userId = user?.uid;
     if (timeInSeconds < 1) return;
     
     // ─── BOREDOM RESET: user is engaging, not bored ───
@@ -1610,10 +1864,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       traverseAndExpandNetwork(paper);
     }
     if (timeInSeconds >= 3.0) {
-      reRankFeed(paper.id);
+      // Off the snap path: the reader is settled on this card, not watching
+      // the rest of the queue reorder underneath it.
+      scheduleReRank(paper.id);
     }
 
-    if (user && !IS_DEMO) {
+    if (userId && !IS_DEMO) {
       try {
         recordProfileEvent({
           paperId: paper.id,
@@ -1621,50 +1877,52 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           viewTime: timeInSeconds,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        const ref = interactionDocRef(userId, paper.id);
+        await setDoc(ref, definedFields({
           viewTime: increment(timeInSeconds),
           paperCategory: paper.primaryCategory,
           timestamp: new Date().toISOString(),
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error tracking view time:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user]);
+  }, [scheduleReRank, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
 
   const trackPdfOpened = useCallback(async (paper) => {
+    const userId = user?.uid;
     // ─── BOREDOM RESET & GRAFO EXPANSION: opening PDF = highly engaged ───
     boredomLevel.current = 0;
     traverseAndExpandNetwork(paper);
-    
+
     // Instantly update local weights for real-time re-ranking
     applyCategoryAffinityDelta(categoryAffinities.current, paper, 4);
     bumpConceptAffinities(conceptAffinities.current, paper, 1);
     reRankFeed(paper.id);
 
-    if (user && !IS_DEMO) {
+    if (userId && !IS_DEMO) {
       try {
         recordProfileEvent({
           paperId: paper.id,
           kind: 'openedPdf',
           category: paper.primaryCategory,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        const ref = interactionDocRef(userId, paper.id);
+        await setDoc(ref, definedFields({
           openedPdf: true,
           paperCategory: paper.primaryCategory,
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
           context: 'feed',
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error tracking PDF open:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user]);
+  }, [reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
 
   const trackSkips = useCallback(async (papersToSkip) => {
+    const userId = user?.uid;
     const skippedPapers = dedupeInteractionPapers(papersToSkip);
     if (skippedPapers.length === 0) return;
 
@@ -1674,9 +1932,11 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     skippedPapers.forEach((paper) => {
       applyCategoryAffinityDelta(categoryAffinities.current, paper, -1);
     });
-    reRankFeed(skippedPapers[skippedPapers.length - 1].id);
+    // Off the snap path, same as trackViewTime: a fling across several cards
+    // must not pay a synchronous re-rank per card it crosses.
+    scheduleReRank(skippedPapers[skippedPapers.length - 1].id);
 
-    if (user && !IS_DEMO) {
+    if (userId && !IS_DEMO) {
       try {
         const batch = writeBatch(db);
         const timestamp = new Date().toISOString();
@@ -1689,14 +1949,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
             category: paper.primaryCategory,
             timestamp,
           });
-          const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-          batch.set(ref, {
+          const ref = interactionDocRef(userId, paper.id);
+          batch.set(ref, definedFields({
             skip: increment(1),
             paperCategory: paper.primaryCategory,
             timestamp,
             deviceType,
             context: 'feed',
-          }, { merge: true });
+          }), { merge: true });
         });
 
         await batch.commit();
@@ -1704,38 +1964,41 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error tracking skips:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, user]);
+  }, [scheduleReRank, recordProfileEvent, user?.uid]);
 
   const trackSkip = useCallback((paper) => trackSkips([paper]), [trackSkips]);
 
   const trackPdfBounce = useCallback(async (paper) => {
+    const userId = user?.uid;
     // Deduct category affinity for bounce (user opened PDF but closed it instantly)
     applyCategoryAffinityDelta(categoryAffinities.current, paper, -3);
     
     reRankFeed(paper.id);
     
-    if (user && !IS_DEMO) {
+    if (userId && !IS_DEMO) {
       try {
         recordProfileEvent({
           paperId: paper.id,
           kind: 'pdfBounce',
           category: paper.primaryCategory,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paper.id);
-        await setDoc(ref, {
+        const ref = interactionDocRef(userId, paper.id);
+        await setDoc(ref, definedFields({
           pdfBounce: increment(1),
           paperCategory: paper.primaryCategory,
           timestamp: new Date().toISOString(),
           deviceType: getDeviceInfo().type,
           context: 'feed',
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error tracking PDF bounce:', err);
       }
     }
-  }, [reRankFeed, recordProfileEvent, user]);
+  }, [reRankFeed, recordProfileEvent, user?.uid]);
 
-  const markSaved = useCallback(async (paperOrId) => {
+  const markSaved = useCallback(async (paperOrIdInput) => {
+    const paperOrId = paperOrIdInput && typeof paperOrIdInput === 'object' ? withInteractionId(paperOrIdInput) : paperOrIdInput;
+    const userId = user?.uid;
     const paperId = typeof paperOrId === 'string' ? paperOrId : paperOrId?.id;
     if (!paperId || savedPaperIdsRef.current.has(paperId)) return;
 
@@ -1768,14 +2031,14 @@ export function FeedProvider({ children, feedRouteActive = true }) {
       return;
     }
 
-    if (user) {
+    if (userId) {
       try {
         recordProfileEvent({
           paperId,
           kind: 'save',
           category: paper?.primaryCategory,
         });
-        const ref = doc(db, 'users', user.uid, 'interactions', paperId);
+        const ref = interactionDocRef(userId, paperId);
         const interactionData = {
           saved: true,
           timestamp: new Date().toISOString(),
@@ -1792,17 +2055,18 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error saving recommendation interaction:', err);
       }
     }
-  }, [papers, reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user]);
+  }, [withInteractionId, papers, reRankFeed, recordProfileEvent, traverseAndExpandNetwork, user?.uid]);
 
   const unmarkAsRead = useCallback(async (paperId) => {
-    if (!user) return;
+    const userId = user?.uid;
+    if (!userId) return;
     const newRead = new Set(readPaperIdsRef.current);
     newRead.delete(paperId);
     setReadPaperIds(newRead);
     setPersonalLibrary((current) => {
       if (!current[paperId]) return current;
       const next = { ...current, [paperId]: { ...current[paperId], readAt: null } };
-      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
       return next;
     });
 
@@ -1811,7 +2075,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     } else {
       try {
         recordProfileEvent({ paperId, kind: 'unread' });
-        const ref = doc(db, 'users', user.uid, 'interactions', paperId);
+        const ref = interactionDocRef(userId, paperId);
         await updateDoc(ref, {
           read: deleteField(),
           readAt: deleteField(),
@@ -1820,10 +2084,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error unmarking read status:', err);
       }
     }
-  }, [recordProfileEvent, user]);
+  }, [recordProfileEvent, user?.uid]);
 
-  const toggleReadLater = useCallback(async (paper) => {
-    if (!user || !paper?.id) return false;
+  const toggleReadLater = useCallback(async (paperInput) => {
+    const paper = withInteractionId(paperInput);
+    const userId = user?.uid;
+    if (!userId || !paper?.id) return false;
     const nextValue = !personalLibrary[paper.id]?.readLater;
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
@@ -1839,7 +2105,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           updatedAt,
         },
       };
-      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
       return next;
     });
 
@@ -1852,23 +2118,25 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           timestamp: updatedAt,
         });
-        await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), {
+        await setDoc(interactionDocRef(userId, paper.id), definedFields({
           readLater: nextValue,
           paper: storedPaper,
           paperTitle: paper.title,
           paperAuthors: paper.authors?.slice(0, 3) || [],
           paperCategory: paper.primaryCategory || '',
           libraryUpdatedAt: updatedAt,
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error updating read later:', err);
       }
     }
     return nextValue;
-  }, [personalLibrary, recordProfileEvent, user]);
+  }, [withInteractionId, personalLibrary, recordProfileEvent, user?.uid]);
 
-  const saveReadingMetadata = useCallback(async (paper, { note = '', tags = [] }) => {
-    if (!user || !paper?.id) return;
+  const saveReadingMetadata = useCallback(async (paperInput, { note = '', tags = [] }) => {
+    const paper = withInteractionId(paperInput);
+    const userId = user?.uid;
+    if (!userId || !paper?.id) return;
     const normalizedTags = [...new Set(tags.map(tag => tag.trim()).filter(Boolean))].slice(0, 12);
     const updatedAt = new Date().toISOString();
     const storedPaper = serializeLibraryPaper(paper);
@@ -1885,7 +2153,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           updatedAt,
         },
       };
-      if (IS_DEMO) demoSet(`readingLibrary_${user.uid}`, next);
+      if (IS_DEMO) demoSet(`readingLibrary_${userId}`, next);
       return next;
     });
 
@@ -1897,7 +2165,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           category: paper.primaryCategory,
           timestamp: updatedAt,
         });
-        await setDoc(doc(db, 'users', user.uid, 'interactions', paper.id), {
+        await setDoc(interactionDocRef(userId, paper.id), definedFields({
           note: note.trim(),
           tags: normalizedTags,
           paper: storedPaper,
@@ -1905,12 +2173,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           paperAuthors: paper.authors?.slice(0, 3) || [],
           paperCategory: paper.primaryCategory || '',
           libraryUpdatedAt: updatedAt,
-        }, { merge: true });
+        }), { merge: true });
       } catch (err) {
         console.error('Error saving reading metadata:', err);
       }
     }
-  }, [recordProfileEvent, user]);
+  }, [withInteractionId, recordProfileEvent, user?.uid]);
 
   // The curated interaction ids, most recent first, exactly as the aggregate
   // holds them. `likedPaperIds` and friends are the same ids re-sorted for the
@@ -1936,17 +2204,54 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     readPaperIds: Array.from(readPaperIdsRef.current),
   }), [followedAuthors, followedEntities, recommendationProfileReady, user?.uid, userPreferences]);
 
-  const value = {
+  // Every function key below is already `useCallback`-wrapped (or, for
+  // `setFeedMode`/`loadPapers`, deliberately re-created when the state its own
+  // logic needs — papers/page/feedMode/hasMore — actually changes; see the
+  // per-key audit in the Task 11 report). Wrapping only this object and not
+  // those would be a `useMemo` that never hits: it recomputes whenever any
+  // dependency below gets a new identity, and an unwrapped function has a new
+  // identity on every render regardless of what it reads.
+  //
+  // Every one of those functions that touches the signed-in user depends on
+  // `user?.uid`, never on bare `user` — deliberately, and it matters for all
+  // twelve of them at once, not just individually. Firebase re-emits
+  // `currentUser` with the same uid but a new object identity on every token
+  // refresh; `user` itself is therefore not stable across that refresh, only
+  // `user.uid` is. Because this whole object is a single `useMemo`, a single
+  // function anywhere in this dependency list still keying off bare `user`
+  // would invalidate the entire memo — and therefore re-render every
+  // consumer of this context — on every token refresh, even though every
+  // other function narrowed for nothing. Narrowing eleven of twelve buys
+  // nothing; it has to be all of them or none. If a new action is added here
+  // and it touches the signed-in user, read `user?.uid` into a local
+  // `userId` as its first statement (see `toggleLike` for the pattern) and
+  // depend on `user?.uid`, not `user` — unless it genuinely needs a field of
+  // `user` beyond the id, which none of the current ones do.
+  const value = useMemo(() => ({
     papers, loading, error, hasMore, isRefreshing,
     likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
+    libraryPapers,
     ensurePersonalLibrary, getCuratedInteractionIds,
+    interactionIdFor, libraryCopyFor,
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
     toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
-  };
+  }), [
+    papers, loading, error, hasMore, isRefreshing,
+    likedPaperIds, notInterestedIds, savedPaperIds, readPaperIds, personalLibrary,
+    libraryPapers,
+    ensurePersonalLibrary, getCuratedInteractionIds,
+    interactionIdFor, libraryCopyFor,
+    feedMode, handleSetFeedMode,
+    loadPapers, loadMore, refreshFeed,
+    getRecommendationProfileSnapshot,
+    toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
+    toggleReadLater, saveReadingMetadata,
+    trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce,
+  ]);
 
   return <FeedContext.Provider value={value}>{children}</FeedContext.Provider>;
 }

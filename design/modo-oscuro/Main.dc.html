@@ -1,0 +1,260 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #1a5fd0; } a:hover { color: #12459b; }
+    * { box-sizing: border-box; }
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.5 'IBM Plex Mono', monospace; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+    .lead { font-size: 0.8125rem; line-height: 1.55; color: #5b6270; margin: 0; }
+    .num { display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: #111318; color: #ffffff; font: 600 0.625rem/1 'IBM Plex Mono', monospace; flex: 0 0 auto; }
+
+    /* ── El escenario: dos capas de la misma app, la de tinta recortada en un
+       círculo que nace en el propio botón. Así se implementa de verdad con
+       View Transitions: crece la entrante, se encoge la saliente. ── */
+    .stage { --k: 1; }
+    .frame { position: relative; height: 344px; overflow: hidden; border: 1px solid #d3d5db; border-radius: 3px; }
+    .layer { position: absolute; inset: 0; background: var(--paper); color: var(--ink);
+      --paper: #ffffff; --paper-2: #f7f7f8; --sunken: #fafafa; --ink: #111318; --ink-2: #5b6270; --ink-3: #8a919e;
+      --rule: #e6e7ea; --rule-2: #d3d5db; --wash: rgba(17, 19, 24, 0.03); --yellow: #ffd21e; }
+    .layer.is-dark { --paper: #111318; --paper-2: #1a1d24; --sunken: #0d0f13; --ink: #f2f3f5; --ink-2: #a1a8b5; --ink-3: #757c8a;
+      --rule: #23262e; --rule-2: #2e323b; --wash: rgba(255, 255, 255, 0.045); --yellow: #ffd21e; }
+    /* Vuelta al papel: más corta y con salida seca — la tinta se levanta. */
+    .layer.over { transition: clip-path calc(320ms * var(--k)) cubic-bezier(0.4, 0, 1, 1); }
+    /* Entrada a la tinta: larga y frenada, la misma curva que usa toda la app. */
+    .stage.is-dark .layer.over { transition: clip-path calc(420ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1); }
+
+    /* ── Barra: medidas calcadas de Navbar.css ── */
+    .nav { height: 56px; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid var(--rule-2); background: var(--paper); }
+    .brand { display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+    .mark { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 2px; background: #ffd21e; color: #111318; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; box-shadow: 2px 2px 0 var(--ink); }
+    .word { font-size: 0.9375rem; font-weight: 700; letter-spacing: -0.02em; color: var(--ink); }
+    .word .hl { box-shadow: inset 0 -0.32em 0 #ffd21e; }
+    .search { display: flex; align-items: center; gap: 8px; flex: 0 1 320px; height: 34px; padding: 0 12px; border: 1px solid var(--rule-2); border-radius: 3px; background: var(--paper-2); color: var(--ink-3); font: 400 0.875rem/1 'Inter', sans-serif; }
+    .search span { flex: 1; text-align: left; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+    .search kbd { padding: 1px 5px; border: 1px solid var(--rule-2); border-radius: 2px; background: var(--paper); color: var(--ink-3); font: 500 0.6875rem/1.4 'IBM Plex Mono', monospace; }
+    .links { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+    .link { position: relative; display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 3px; color: var(--ink-2); font-size: 0.875rem; font-weight: 500; }
+    .link svg { color: var(--ink-3); }
+    .link.active { color: var(--ink); font-weight: 600; }
+    .link.active svg { color: var(--ink); }
+    .link.active::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -2px; height: 3px; border-radius: 9999px; background: #ffd21e; }
+    .right { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; padding-left: 12px; margin-left: 8px; border-left: 1px solid var(--rule-2); }
+    .ibtn { display: grid; place-items: center; width: 32px; height: 32px; padding: 0; border: none; border-radius: 3px; background: transparent; color: var(--ink-2); cursor: pointer;
+      transition: background calc(120ms * var(--k)) ease, color calc(120ms * var(--k)) ease, transform calc(120ms * var(--k)) ease; }
+    @media (hover: hover) and (pointer: fine) { .ibtn:hover { background: var(--wash); color: var(--ink); } }
+    .ibtn:active { transform: scale(0.92); }
+    .ibtn:focus-visible { outline: 2px solid #ff9d00; outline-offset: 2px; }
+    .avatar { display: grid; place-items: center; width: 26px; height: 26px; margin-left: 4px; border: 1px solid var(--rule-2); border-radius: 9999px; background: #ffd21e; color: #111318; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; }
+
+    /* ── El disco: sol contorneado en papel, luna llena de tinta ── */
+    .disc .rays, .disc .core, .disc .bite { transform-box: fill-box; transform-origin: center; }
+    .disc .rays { opacity: 1; transform: scale(1);
+      transition: opacity calc(180ms * var(--k)) ease calc(140ms * var(--k)), transform calc(220ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1) calc(120ms * var(--k)); }
+    .disc .core { transform: scale(0.5); fill-opacity: 0;
+      transition: transform calc(240ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1), fill-opacity calc(140ms * var(--k)) ease; }
+    .disc .bite { transform: translate(14px, -14px); transition: transform calc(200ms * var(--k)) ease; }
+    .is-dark .disc .rays { opacity: 0; transform: scale(0.35);
+      transition: opacity calc(140ms * var(--k)) ease, transform calc(140ms * var(--k)) cubic-bezier(0.4, 0, 1, 1); }
+    .is-dark .disc .core { transform: scale(1); fill-opacity: 1;
+      transition: transform calc(180ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1) calc(60ms * var(--k)), fill-opacity calc(140ms * var(--k)) ease calc(60ms * var(--k)); }
+    .is-dark .disc .bite { transform: translate(4px, -4px);
+      transition: transform calc(220ms * var(--k)) cubic-bezier(0.16, 1, 0.3, 1) calc(100ms * var(--k)); }
+
+    /* ── La tarjeta de debajo, para que el barrido tenga algo que cruzar ── */
+    .paperbody { padding: 26px 20px 0; background: var(--paper); height: 288px; }
+    .card { max-width: 680px; margin: 0 auto; }
+    .fieldrule { width: 34px; height: 3px; margin-bottom: 16px; background: #c2410c; }
+    .meta { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-2); }
+    .dot { color: var(--rule-2); }
+    .title { font-family: 'Newsreader', Georgia, serif; font-size: 1.6rem; font-weight: 600; line-height: 1.16; letter-spacing: -0.015em; color: var(--ink); margin: 0 0 14px; }
+    .abs { font-family: 'Newsreader', Georgia, serif; font-size: 1rem; line-height: 1.6; color: var(--ink-2); margin: 0 0 18px; }
+    .actions { display: flex; align-items: center; gap: 8px; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border: 1px solid var(--rule-2); border-radius: 3px; background: var(--paper); color: var(--ink); font: 500 0.8125rem/1 'Inter', sans-serif; }
+    .btn.brand { border-color: transparent; background: #ffd21e; color: #111318; font-weight: 600; }
+
+    /* ── Fichas de detalle (3×) ── */
+    .zoom { display: grid; place-items: center; width: 96px; height: 96px; border-radius: 3px; }
+    .zoom.paper { background: #ffffff; border: 1px solid #e6e7ea; color: #5b6270; }
+    .zoom.ink { background: #111318; border: 1px solid #2e323b; color: #a1a8b5; }
+    .zoom .rays, .zoom .core, .zoom .bite { transform-box: fill-box; transform-origin: center; }
+    .zoom.paper .core { transform: scale(0.5); fill-opacity: 0; }
+    .zoom.paper .bite { transform: translate(14px, -14px); }
+    .zoom.ink .rays { opacity: 0; transform: scale(0.35); }
+    .zoom.ink .core { transform: scale(1); fill-opacity: 1; }
+    .zoom.ink .bite { transform: translate(4px, -4px); }
+
+    .is-still * { transition-duration: 1ms !important; animation-duration: 1ms !important; }
+    @media (prefers-reduced-motion: reduce) { .stage * { transition-duration: 1ms !important; } }
+  </style>
+</helmet>
+
+<div style="width: 1240px; min-height: 900px; background: #ffffff; padding: 40px 44px">
+
+  <span class="k" style="color: #8a919e">Modo oscuro · Opción A · recomendada</span>
+  <h1 class="serif" style="font-size: 1.8rem; font-weight: 600; line-height: 1.15; margin: 8px 0 6px">El interruptor de tinta</h1>
+  <p class="lead" style="max-width: 74ch; margin-bottom: 10px">Un botón más de la fila de utilidades: 32&nbsp;×&nbsp;32, radio 3&nbsp;px, sin fondo — el mismo control que recargar. Lo único suyo es el disco: en papel es un sol de contorno, en tinta una luna maciza. El modo oscuro no estrena ningún color: el papel se vuelve <span class="m" style="color: #111318">#111318</span>, la misma tinta con la que está escrito el modo claro.</p>
+  <p class="k" style="color: #8a919e; margin: 0 0 14px">Pruébalo · pulsa el disco de la barra</p>
+
+  <div class="{{rootClass}}" style="--k: {{speedVar}}">
+    <div class="frame">
+      <sc-for list="{{layers}}" as="layer" hint-placeholder-count="2">
+        <div class="layer {{layer.cls}}" style="clip-path: circle({{layer.r}} at calc(100% - 70px) 28px)">
+
+          <div class="nav">
+            <div class="brand">
+              <span class="mark">PT</span>
+              <span class="word">Paper<span class="hl">Tok</span></span>
+            </div>
+
+            <div class="search">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+              <span>Buscar papers, autores, temas…</span>
+              <kbd>/</kbd>
+            </div>
+
+            <div class="links">
+              <span class="link active">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"></path><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"></path></svg>
+                Para ti
+              </span>
+              <span class="link">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"></path><path d="M18 14h-8"></path><path d="M15 18h-5"></path><path d="M10 6h8v4h-8V6Z"></path></svg>
+                Research
+              </span>
+              <span class="link">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><polyline points="16 11 18 13 22 9"></polyline></svg>
+                Siguiendo
+              </span>
+            </div>
+
+            <div class="right">
+              <span class="ibtn">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path></svg>
+              </span>
+
+              <button type="button" class="ibtn" onClick="{{toggle}}" aria-pressed="{{pressed}}" title="{{hint}}" aria-label="{{hint}}">
+                <svg class="disc" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                  <g class="rays">
+                    <path d="M12 2v2"></path>
+                    <path d="M12 20v2"></path>
+                    <path d="M2 12h2"></path>
+                    <path d="M20 12h2"></path>
+                    <path d="m4.93 4.93 1.41 1.41"></path>
+                    <path d="m17.66 17.66 1.41 1.41"></path>
+                    <path d="m6.34 17.66-1.41 1.41"></path>
+                    <path d="m19.07 4.93-1.41 1.41"></path>
+                  </g>
+                  <mask id="{{layer.mask}}">
+                    <rect x="-6" y="-6" width="36" height="36" fill="#ffffff"></rect>
+                    <circle class="bite" cx="12" cy="12" r="8" fill="#000000"></circle>
+                  </mask>
+                  <circle class="core" cx="12" cy="12" r="8" fill="currentColor" fill-opacity="0" vector-effect="non-scaling-stroke" mask="url({{layer.maskRef}})"></circle>
+                </svg>
+              </button>
+
+              <span class="avatar">NM</span>
+            </div>
+          </div>
+
+          <div class="paperbody">
+            <div class="card">
+              <div class="fieldrule"></div>
+              <div class="meta">
+                <span>cs.LG</span><span class="dot">·</span><span>22 ago 2026</span><span class="dot">·</span><span>1 240 citas</span><span class="dot">·</span><span>6 min</span>
+              </div>
+              <h2 class="title">Un estimador de importancia que no necesita conocer la partición</h2>
+              <p class="abs">El coste de normalizar domina el entrenamiento en cuanto el vocabulario crece. Mostramos que basta con muestrear del propio historial de gradientes para acotar el sesgo, y que la cota se mantiene cuando la partición cambia entre pasos.</p>
+              <div class="actions">
+                <span class="btn brand">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"></path></svg>
+                  Leer en simple
+                </span>
+                <span class="btn">Guardar</span>
+                <span class="btn">Comentar</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <!-- Detalle 3× y anatomía -->
+  <div style="display: grid; grid-template-columns: 300px minmax(0, 1fr); gap: 36px; margin-top: 30px">
+
+    <div>
+      <span class="k" style="color: #8a919e">Detalle 3×</span>
+      <div style="display: flex; gap: 14px; margin-top: 12px">
+        <div>
+          <div class="zoom paper">
+            <svg class="disc" width="51" height="51" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <g class="rays"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></g>
+              <mask id="bite-zoom-a"><rect x="-6" y="-6" width="36" height="36" fill="#ffffff"></rect><circle class="bite" cx="12" cy="12" r="8" fill="#000000"></circle></mask>
+              <circle class="core" cx="12" cy="12" r="8" fill="currentColor" fill-opacity="0" vector-effect="non-scaling-stroke" mask="url(#bite-zoom-a)"></circle>
+            </svg>
+          </div>
+          <p class="k" style="color: #8a919e; margin: 9px 0 0">Papel</p>
+        </div>
+        <div>
+          <div class="zoom ink">
+            <svg class="disc" width="51" height="51" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+              <g class="rays"><path d="M12 2v2"></path><path d="M12 20v2"></path><path d="M2 12h2"></path><path d="M20 12h2"></path><path d="m4.93 4.93 1.41 1.41"></path><path d="m17.66 17.66 1.41 1.41"></path><path d="m6.34 17.66-1.41 1.41"></path><path d="m19.07 4.93-1.41 1.41"></path></g>
+              <mask id="bite-zoom-b"><rect x="-6" y="-6" width="36" height="36" fill="#ffffff"></rect><circle class="bite" cx="12" cy="12" r="8" fill="#000000"></circle></mask>
+              <circle class="core" cx="12" cy="12" r="8" fill="currentColor" fill-opacity="0" vector-effect="non-scaling-stroke" mask="url(#bite-zoom-b)"></circle>
+            </svg>
+          </div>
+          <p class="k" style="color: #8a919e; margin: 9px 0 0">Tinta</p>
+        </div>
+      </div>
+      <p class="m" style="color: #8a919e; margin: 14px 0 0; line-height: 1.6">Rejilla de 24, trazo 2, icono a 17&nbsp;px — lucide, como sus vecinos. El disco es el mismo círculo: r&nbsp;4 sin relleno, r&nbsp;8 macizo.</p>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 30px; align-content: start">
+      <div style="display: flex; gap: 10px"><span class="num">1</span><p class="lead"><strong style="color: #111318; font-weight: 600">Vive con las utilidades.</strong> A la derecha de la regla de 1&nbsp;px, junto a recargar y al avatar. No es un control nuevo: es <span class="m" style="color: #111318">.navbar-icon-btn</span> otra vez.</p></div>
+      <div style="display: flex; gap: 10px"><span class="num">2</span><p class="lead"><strong style="color: #111318; font-weight: 600">El icono dice dónde estás, y <span class="m">aria-pressed</span> lo dice igual.</strong> El nombre se queda quieto — <span class="m" style="color: #111318">«Modo oscuro»</span> — porque un nombre que cambia <em>y</em> un estado pulsado se anuncian juntos y no se sabe cuál es cuál.</p></div>
+      <div style="display: flex; gap: 10px"><span class="num">3</span><p class="lead"><strong style="color: #111318; font-weight: 600">Sin amarillo.</strong> El amarillo es hilo de marca — pestaña activa, lectura con IA, subrayados. Una utilidad no lo toca: su estado activo es tinta.</p></div>
+      <div style="display: flex; gap: 10px"><span class="num">4</span><p class="lead"><strong style="color: #111318; font-weight: 600">El barrido nace del botón.</strong> El círculo de tinta se abre desde su centro, no desde el medio de la pantalla: el gesto y el cambio comparten origen.</p></div>
+      <div style="display: flex; gap: 10px"><span class="num">5</span><p class="lead"><strong style="color: #111318; font-weight: 600">Foco naranja en los dos modos.</strong> <span class="m" style="color: #111318">outline: 2px solid #ff9d00</span> con 2&nbsp;px de separación, sin sombra ni halo.</p></div>
+      <div style="display: flex; gap: 10px"><span class="num">6</span><p class="lead"><strong style="color: #111318; font-weight: 600">Un solo estado, dos capas.</strong> El icono termina de mutar (320&nbsp;ms) antes de que el barrido acabe (420&nbsp;ms): el botón llega primero a donde lleva la página.</p></div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"speed":{"editor":"range","default":1,"min":0.25,"max":2,"step":0.25,"unit":"×","section":"Movimiento"},"reduced":{"editor":"boolean","default":false,"section":"Movimiento"},"$preview":{"width":1240,"height":900}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { dark: false };
+  }
+
+  renderVals() {
+    const dark = this.state.dark;
+    const still = this.props.reduced ?? false;
+    return {
+      rootClass: 'stage' + (dark ? ' is-dark' : '') + (still ? ' is-still' : ''),
+      speedVar: String(this.props.speed ?? 1),
+      pressed: dark ? 'true' : 'false',
+      hint: 'Modo oscuro',
+      layers: [
+        { cls: '', r: '145%', mask: 'bite-paper', maskRef: '#bite-paper' },
+        { cls: 'is-dark over', r: dark ? '145%' : '0%', mask: 'bite-ink', maskRef: '#bite-ink' },
+      ],
+      toggle: () => this.setState({ dark: !this.state.dark }),
+    };
+  }
+}
+</script>
+</body>
+</html>

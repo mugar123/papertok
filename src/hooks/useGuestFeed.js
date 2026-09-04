@@ -4,32 +4,27 @@ import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.js';
 import { PubmedAdapter } from '../services/adapters/PubmedAdapter.js';
 import { PaperBuilder } from '../services/PaperBuilder.js';
 import { fetchDomainPapers } from '../services/domainSourceService.js';
-import { settleWithin } from '../utils/asyncTiming.js';
+import { settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming.js';
 import { GUEST_CATEGORIES, buildGuestDiscoveryQuery } from '../utils/guestFeedPlan.js';
 import { enrichPapersBatch } from '../services/openAlexService.js';
+import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.js';
 import {
   getOpenAlexEnrichmentId,
   mergeOpenAlexEnrichment,
-  waitForInitialEnrichment,
 } from '../utils/feedEnrichment.js';
 
 const GUEST_PAGE_SIZE = 12;
-// How long the first paint may wait for OpenAlex metadata. Enrichment lands in
-// 0.2–0.9 s when the Worker edge is warm (measured 2026-08-22), so this budget
-// covers the common case; anything slower merges into the visible cards via
-// the late-enrichment path below instead of holding the skeleton hostage —
-// the old 4.5 s budget was most of the measured 9.5 s worst case.
-const INITIAL_ENRICHMENT_BUDGET_MS = 900;
+const GUEST_EARLY_PAINT_COUNT = 4;
 // Per-source cap. The slowest healthy source measured 2.4 s (OpenAlex, cold
 // edge); the only thing ever seen above 4 s is OpenReview's cold upstream at
 // 5.2 s, which no realistic budget saves. Waiting 5 s for it bought nothing.
 const GUEST_SOURCE_BUDGET_MS = 4_000;
 
-async function fetchGuestCandidates({ refresh = false } = {}) {
+function startGuestCandidateRequests({ refresh = false } = {}) {
   const query = buildGuestDiscoveryQuery();
   const openAlex = new OpenAlexAdapter();
   const pubmed = new PubmedAdapter();
-  const requests = [
+  return [
     fetchPapers(
       GUEST_CATEGORIES,
       0,
@@ -45,10 +40,6 @@ async function fetchGuestCandidates({ refresh = false } = {}) {
     }).then(result => result.papers),
     fetchDomainPapers(GUEST_CATEGORIES, 1, GUEST_PAGE_SIZE, 'recent'),
   ];
-  const settled = await Promise.all(requests.map(request => settleWithin(request, GUEST_SOURCE_BUDGET_MS)));
-  return PaperBuilder.deduplicate(
-    settled.flatMap(result => result.status === 'fulfilled' ? result.value : []),
-  ).slice(0, GUEST_PAGE_SIZE);
 }
 
 function dedupePapers(papers) {
@@ -59,6 +50,17 @@ function dedupePapers(papers) {
     seen.add(key);
     return true;
   });
+}
+
+function mergeKeepingShownOrder(shown, incoming, pageSize) {
+  const seen = new Set(shown.map((paper) => String(paper?.doi || paper?.arxivId || paper?.id || '').toLowerCase()).filter(Boolean));
+  const extra = incoming.filter((paper) => {
+    const key = String(paper?.doi || paper?.arxivId || paper?.id || '').toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return [...shown, ...extra].slice(0, pageSize);
 }
 
 export function useGuestFeed() {
@@ -75,26 +77,61 @@ export function useGuestFeed() {
     setError(null);
 
     try {
-      const discovered = dedupePapers(await fetchGuestCandidates({ refresh }));
-      if (requestId !== requestIdRef.current) return;
-      if (discovered.length === 0) throw new Error('Guest discovery returned no papers.');
+      const { first, all } = settleSourcesForFirstPaint(
+        startGuestCandidateRequests({ refresh }),
+        GUEST_SOURCE_BUDGET_MS,
+        (papers) => PaperBuilder.deduplicate(papers).length >= GUEST_EARLY_PAINT_COUNT,
+      );
 
-      const ids = discovered.map(getOpenAlexEnrichmentId).filter(Boolean);
-      const enrichmentRequest = enrichPapersBatch(ids, { timeoutMs: 6_500 }).catch(() => ({}));
-      const initialEnrichment = await waitForInitialEnrichment(
-        enrichmentRequest,
-        INITIAL_ENRICHMENT_BUDGET_MS,
+      // Europe PMC has no in-flight map, and the early and late batches
+      // overlap: each pmid is asked for once per load.
+      const askedPmids = new Set();
+      const enrichVisible = (batch) => {
+        const ids = batch.map(getOpenAlexEnrichmentId).filter(Boolean);
+        if (ids.length > 0) {
+          enrichPapersBatch(ids, { timeoutMs: 6_500 }).catch(() => ({})).then((lateEnrichment) => {
+            if (requestId !== requestIdRef.current || !lateEnrichment || !Object.keys(lateEnrichment).length) return;
+            setPapers((current) => mergeOpenAlexEnrichment(current, lateEnrichment));
+          });
+        }
+        // The guest feed shows PubMed cards too, and they carry the same debt
+        // ade641a left behind: no open access, no PMC PDF, no citations until
+        // Europe PMC answers. Asked for after the batch is on screen.
+        const pmids = [...new Set(batch.map(paper => paper?.pmid).filter(pmid => pmid && !askedPmids.has(pmid)))];
+        if (pmids.length > 0) {
+          pmids.forEach(pmid => askedPmids.add(pmid));
+          enrichPubmedIds(pmids).catch(() => new Map()).then((lateRecords) => {
+            if (requestId !== requestIdRef.current || !lateRecords || lateRecords.size === 0) return;
+            setPapers((current) => mergeEuropePmcEnrichment(current, lateRecords));
+          });
+        }
+      };
+
+      const early = dedupePapers(
+        PaperBuilder.deduplicate(fulfilledPaperLists(await first)),
+      ).slice(0, GUEST_PAGE_SIZE);
+      if (requestId !== requestIdRef.current) return;
+
+      if (early.length > 0) {
+        setPapers(early);
+        setLoading(false);
+        setIsRefreshing(false);
+        enrichVisible(early);
+      }
+
+      const late = dedupePapers(
+        PaperBuilder.deduplicate(fulfilledPaperLists(await all)),
       );
       if (requestId !== requestIdRef.current) return;
-      setPapers(initialEnrichment
-        ? mergeOpenAlexEnrichment(discovered, initialEnrichment)
-        : discovered);
-
-      if (!initialEnrichment) {
-        enrichmentRequest.then((lateEnrichment) => {
-          if (requestId !== requestIdRef.current || !Object.keys(lateEnrichment).length) return;
-          setPapers(current => mergeOpenAlexEnrichment(current, lateEnrichment));
-        });
+      if (early.length === 0 && late.length === 0) {
+        throw new Error('Guest discovery returned no papers.');
+      }
+      if (early.length === 0) {
+        setPapers(late.slice(0, GUEST_PAGE_SIZE));
+        enrichVisible(late);
+      } else {
+        setPapers((current) => mergeKeepingShownOrder(current, late, GUEST_PAGE_SIZE));
+        enrichVisible(late);
       }
     } catch (loadError) {
       if (requestId === requestIdRef.current) {

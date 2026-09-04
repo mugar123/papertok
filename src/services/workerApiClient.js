@@ -1,7 +1,15 @@
 import { auth } from './firebase.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
 
-const PRODUCTION_WORKER_ORIGIN = 'https://papertok-report-api.papertok-mugar123.workers.dev';
+// El Worker responde en los dos: `api.papertok.app` es el Custom Domain, y
+// `*.workers.dev` sigue siendo su ruta nativa. Los dos se admiten porque el
+// valor que llega aqui viene de una variable de GitHub Actions que cambia sin
+// commit: si solo se admitiera el nuevo, un despliegue hecho antes de tocar la
+// variable enviaria un bundle que no alcanza ningun backend.
+const PRODUCTION_WORKER_ORIGINS = Object.freeze([
+  'https://api.papertok.app',
+  'https://papertok-report-api.papertok-mugar123.workers.dev',
+]);
 
 function configuredWorkerOrigin() {
   const configured = import.meta.env?.VITE_PAPER_API_BASE_URL;
@@ -11,7 +19,7 @@ function configuredWorkerOrigin() {
     const isLocalDevelopment = import.meta.env?.DEV
       && ['localhost', '127.0.0.1'].includes(url.hostname)
       && ['http:', 'https:'].includes(url.protocol);
-    return url.origin === PRODUCTION_WORKER_ORIGIN || isLocalDevelopment ? url.origin : '';
+    return PRODUCTION_WORKER_ORIGINS.includes(url.origin) || isLocalDevelopment ? url.origin : '';
   } catch {
     return '';
   }
@@ -57,6 +65,39 @@ export function workerSourceUrl(path, params = {}, apiBase = configuredWorkerOri
   return url.toString();
 }
 
+/**
+ * The error a source route's refusal becomes.
+ *
+ * The Worker answers a failed upstream with a body -- `code` for a refusal or a
+ * stall, `upstreamStatus` for the code the upstream itself returned -- and
+ * `${path} returned 502` threw all of it away. A 400 we caused and an outage they
+ * had reached the console as the same line; NCBI's 429 and the ledger's too. The
+ * body travels on the error instead, where `reportDomainSourceFailures` already
+ * looks for `code`, and the message carries it for anyone reading a log.
+ *
+ * It lives in this module, and not beside the `fetchJson` of
+ * `domainSourceService.js` that first needed it, because the `/sources/*` routes
+ * reach the browser through two independent entry points and the diagnostic is
+ * worth nothing unless both build the same error: `fetchJson` covers the nine
+ * paths of `DOMAIN_SOURCE_PATHS`, and `fetchWorkerSourceJson` below covers
+ * `/sources/pubmed` and `/sources/s2`. PubMed is the route that motivated the
+ * whole thing -- NCBI refusing us and our own quota ledger refusing us both
+ * arrive as an HTTP 429, and `code` (`UPSTREAM_RATE_LIMITED` vs
+ * `PROVIDER_RATE_LIMITED`) is the only way to tell them apart from a browser.
+ * Of the two modules this is the one the other already imports, so a single
+ * shared definition can only sit here without closing an import cycle.
+ */
+export function sourceResponseError(path, status, body = null) {
+  const code = typeof body?.code === 'string' ? body.code : '';
+  const upstreamStatus = Number.isInteger(body?.upstreamStatus) ? body.upstreamStatus : 0;
+  const detail = [code, upstreamStatus ? `upstream ${upstreamStatus}` : ''].filter(Boolean).join(', ');
+  const error = new Error(`${path} returned ${status}${detail ? ` (${detail})` : ''}`);
+  error.status = status;
+  if (code) error.code = code;
+  if (upstreamStatus) error.upstreamStatus = upstreamStatus;
+  return error;
+}
+
 // The unauthenticated half of this module, for the `/sources/*` routes the guest
 // feed reads. `apiBase` and `fetchImpl` are injectable for the same reason
 // `openAlexClient` injects them: `import.meta.env` does not exist under
@@ -74,7 +115,12 @@ export async function fetchWorkerSourceJson(path, params = {}, {
   // feed's `allSettled`, where an upstream that answers its headers and then
   // stops used to hold every other source behind it.
   const response = await fetchImpl(url, withRequestDeadline({ headers: { accept: 'application/json' } }, timeoutMs));
-  if (!response.ok) throw new Error(`${path} returned ${response.status}`);
+  if (!response.ok) {
+    // Read under the same deadline as the headers (`withRequestDeadline` keeps
+    // the signal armed for the body); a body that is not JSON is simply no body.
+    const body = await response.json().catch(() => null);
+    throw sourceResponseError(path, response.status, body);
+  }
   return response.json();
 }
 

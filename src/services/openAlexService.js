@@ -31,6 +31,11 @@ import {
   readOpenAlexPersistent,
   writeOpenAlexPersistent,
 } from './openAlexClient.js';
+import {
+  filterRelevantSearchResults,
+  institutionProminenceWeight,
+  institutionSearchValues,
+} from '../utils/searchRelevance.js';
 
 const CACHE = new Map();
 const GRAPH_CACHE = new Map(); // caches W... to arxivId mappings
@@ -73,7 +78,18 @@ function extractArxivId(value) {
   return match?.[1] || '';
 }
 
-function getArxivIdFromWork(work) {
+/**
+ * The arXiv id an OpenAlex work is hosted under, if any.
+ *
+ * OpenAlex indexes the preprint and the published version as one work, and the
+ * arXiv id is never a field of its own: it has to be read out of whichever of
+ * the identifiers happens to carry it. Exported because the feed and the search
+ * want it too — a card without this id can never show the paper's figure.
+ *
+ * Deliberately not used by the scientific report: Research reads better as
+ * type alone, so its mapper leaves the id off and its forme stays plateless.
+ */
+export function getArxivIdFromWork(work) {
   const direct = extractArxivId(work?.ids?.arxiv);
   if (direct) return direct;
 
@@ -620,13 +636,14 @@ function settleAuthorInstitutionLookup(promise, timeoutMs) {
 
   return new Promise(resolve => {
     let settled = false;
+    let timeoutId = null;
     const finish = value => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
       resolve(value);
     };
-    const timeoutId = setTimeout(() => finish(null), timeoutMs);
+    timeoutId = setTimeout(() => finish(null), timeoutMs);
 
     promise.then(finish).catch(() => finish(null));
   });
@@ -716,16 +733,133 @@ export async function searchAuthors(query, options = {}) {
   return [];
 }
 
+// ROR answers a search with one page of twenty. Asking for all of them and
+// cutting to five only after the tie-break is the entire fix: cutting first is
+// what threw away Massachusetts Institute of Technology, which ROR puts seventh.
+const INSTITUTION_SEARCH_CANDIDATES = 20;
+const INSTITUTION_SEARCH_LIMIT = 5;
+
+// The same 1 500 ms this search path already allows `enrichAuthorInstitutionLocalization`,
+// for the same reason. `settleSearch` gives the institutions task 4 500 ms and
+// ROR spends ~250 ms of it (measured against the live API, 2026-08-26), so a
+// second-and-a-half is affordable while still leaving the section time to
+// render. `retries: 0` is load-bearing: the client retries twice by default,
+// which would put three timeouts inside a budget that only has room for one.
+const INSTITUTION_PROMINENCE_TIMEOUT_MS = 1500;
+
+/**
+ * `ror:a|b|c` — values of ONE filter, never `ror:a|ror:b`.
+ *
+ * The same trap `buildOpenAlexIdFilter` documents for work identifiers:
+ * OpenAlex refuses an OR across filters with «It looks like you're trying to do
+ * an OR query between filters and it's not supported».
+ */
+export function buildRorIdFilter(rorIds) {
+  const values = [...new Set((Array.isArray(rorIds) ? rorIds : [])
+    .map(id => normalizeRorId(id))
+    .filter(Boolean))];
+  return values.length > 0 ? `ror:${encodeURIComponent(values.join('|'))}` : '';
+}
+
+/**
+ * The counts ROR does not carry, for a whole candidate list in one request.
+ *
+ * Filtering by the ROR identifiers we already hold, rather than searching
+ * OpenAlex for the same words a second time, is what makes the coverage
+ * complete: measured against the live APIs on 2026-08-26, this answered for
+ * 20 of 20 candidates, where `?search=MIT` covered 14 and spent 11 of its 25
+ * slots on organisations that were never candidates. A candidate OpenAlex's own
+ * relevance leaves out would weigh nothing and sink for a reason that has
+ * nothing to do with how prominent it is.
+ */
+export async function fetchInstitutionProminence(rorIds, options = {}) {
+  const filter = buildRorIdFilter(rorIds);
+  if (!filter) return new Map();
+
+  // Injectable for the test, the way `OpenAlexClient` already takes `fetchImpl`
+  // and `storage`. The shared client binds `globalThis.fetch` when the module
+  // loads — deliberately, so Safari keeps the native receiver — so swapping the
+  // global does NOT reach it, and a test that tried would quietly hit the live
+  // API and pass on whatever OpenAlex happened to say that day.
+  const requestJson = options.openAlexJson || openAlexJson;
+  const url = `https://api.openalex.org/institutions?filter=${filter}`
+    + `&per-page=${INSTITUTION_SEARCH_CANDIDATES}`
+    + '&select=ror,works_count,cited_by_count,summary_stats';
+  const data = await requestJson(url, {
+    timeoutMs: INSTITUTION_PROMINENCE_TIMEOUT_MS,
+    retries: 0,
+    cacheTtlMs: 10 * 60 * 1000,
+    signal: options.signal,
+  });
+
+  const prominenceByRorId = new Map();
+  (data?.results || []).forEach((result) => {
+    const rorId = normalizeRorId(result?.ror);
+    if (rorId) prominenceByRorId.set(rorId, result);
+  });
+  return prominenceByRorId;
+}
+
+/**
+ * Fills in the three fields `normalizeRorInstitution` ships as null, and only
+ * those.
+ *
+ * Deliberately NOT `mergeInstitutionWithRor`, which takes `id` from the
+ * OpenAlex side. Both search surfaces navigate with
+ * `institution.id.split('/').pop()` and expect a ROR identifier there
+ * (SearchPage.jsx, SearchCommand.jsx), so swapping in an OpenAlex id would
+ * hand the explorer an `I…` where it wants an `0…` on every institution result.
+ */
+export function applyInstitutionProminence(institutions, prominenceByRorId) {
+  if (!prominenceByRorId?.size) return institutions;
+  return institutions.map((institution) => {
+    const prominence = prominenceByRorId.get(institution._rorId);
+    if (!prominence) return institution;
+    return {
+      ...institution,
+      works_count: prominence.works_count ?? institution.works_count,
+      cited_by_count: prominence.cited_by_count ?? institution.cited_by_count,
+      summary_stats: prominence.summary_stats ?? institution.summary_stats,
+    };
+  });
+}
+
+/**
+ * Best-effort by construction: the prominence lookup can only change the ORDER.
+ *
+ * OpenAlex is metered and rate-limited and this runs on a 4 500 ms budget, so
+ * every way the second request can fail — down, throttled, slow, cancelled —
+ * has to leave the candidates exactly as ROR sent them. Losing the tie-break is
+ * a worse answer; losing the section is a bug.
+ */
+async function rankInstitutionsByProminence(query, candidates, options = {}) {
+  if (candidates.length <= 1) return candidates;
+
+  const prominenceByRorId = await fetchInstitutionProminence(
+    candidates.map(candidate => candidate._rorId),
+    options,
+  ).catch(() => null);
+  if (!prominenceByRorId?.size) return candidates;
+
+  return filterRelevantSearchResults(
+    query,
+    applyInstitutionProminence(candidates, prominenceByRorId),
+    institutionSearchValues,
+    { getWeight: institutionProminenceWeight },
+  );
+}
+
 /**
  * Search institutions by name.
- * @param {string} query 
+ * @param {string} query
  * @returns {Promise<Array>}
  */
 export async function searchInstitutions(query, options = {}) {
   if (!query) return [];
   try {
-    const institutions = await searchRorInstitutions(query, 5, options);
-    return institutions.map(institution => ({
+    const candidates = await searchRorInstitutions(query, INSTITUTION_SEARCH_CANDIDATES, options);
+    const ranked = await rankInstitutionsByProminence(query, candidates, options);
+    return ranked.slice(0, INSTITUTION_SEARCH_LIMIT).map(institution => ({
       ...institution,
       country_code: institution.geo?.country || institution.country_code || '',
     }));
@@ -1552,13 +1686,21 @@ function formatOpenAlexWorkAsPaper(work) {
     pdfUrl: work.open_access?.oa_url,
     landingPageUrl: work.primary_location?.landing_page_url || work.id,
     doi: work.doi,
+    arxivId: getArxivIdFromWork(work) || undefined,
     journal: work.primary_location?.source?.display_name,
     publisher: work.primary_location?.source?.host_organization_name,
     citationCount: work.cited_by_count || 0,
     citationCountKnown: Number.isFinite(work.cited_by_count),
     concepts: work.concepts || [],
     categories: categories,
-    keywords: categories
+    keywords: categories,
+    // The work's branch of science, kept because `categories` above is a list
+    // of concept names — "Toric code", "The Imaginary" — and a concept is not a
+    // field. Without this the Explorer's rows had nothing to take a field
+    // colour from and every one of them rendered in the brand ink, while the
+    // same paper in the feed, which arrives with an arXiv category, rendered in
+    // its own. `areaAccentForPaper` reads it when there is no arXiv id to go on.
+    primaryTopic: work.primary_topic || null,
   });
 }
 
@@ -1585,6 +1727,48 @@ export async function fetchPaperByArxivIdViaOpenAlex(arxivId, { timeoutMs = 8000
   } catch (error) {
     console.warn('OpenAlex arXiv fallback failed', error);
     return null;
+  }
+}
+
+/**
+ * One work fetched from OpenAlex by a provider id the feed keys papers with:
+ * an OpenAlex work id (`W2741809807`) or a PubMed id (`pmid:31234567`), both
+ * of which `GET /works/{id}` resolves directly. This is how the public paper
+ * page opens the likes and saves the feed remembered under those ids — a
+ * paper liked from an OpenAlex or PubMed card had no DOI or arXiv id stored
+ * beside it, so its row on the profile could not link anywhere.
+ *
+ * The returned paper carries the id the feed would have given it
+ * (`openalex:W…` / `pmid:…`), so a like made on the page lands on the same
+ * interaction document as one made on the card.
+ *
+ * `openAlexJson` is injectable for the test: the shared client binds
+ * `globalThis.fetch` when the module loads, so swapping the global would not
+ * reach it.
+ */
+export async function fetchPaperByWorkId(type, value, options = {}) {
+  const kind = String(type || '').toLowerCase();
+  const clean = String(value || '').trim();
+  const lookup = kind === 'openalex' && /^W\d+$/i.test(clean)
+    ? clean.toUpperCase()
+    : kind === 'pmid' && /^\d+$/.test(clean) ? `pmid:${clean}` : '';
+  if (!lookup) return null;
+  const feedId = kind === 'openalex' ? `openalex:${lookup}` : lookup;
+
+  const requestJson = options.openAlexJson || openAlexJson;
+  try {
+    const work = await requestJson(`https://api.openalex.org/works/${encodeURIComponent(lookup)}`, {
+      timeoutMs: options.timeoutMs ?? 8000,
+      retries: 0,
+      cacheTtlMs: 5 * 60 * 1000,
+    });
+    if (!work?.id) return null;
+    return { ...formatOpenAlexWorkAsPaper(work), id: feedId };
+  } catch (error) {
+    // A 404 is an id nobody can open, which the page reports as not found;
+    // anything else is the provider misbehaving, and the page offers a retry.
+    if (error?.status === 404) return null;
+    throw error;
   }
 }
 

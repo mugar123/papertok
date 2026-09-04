@@ -1,412 +1,1021 @@
 /* ============================================
-   Onboarding Flow Styles
+   Onboarding Flow
+
+   La última pantalla que seguía en el tema oscuro. Lo que había: baldosas
+   grises redondeadas, el titular recortado sobre un degradado que ya no
+   existe, «Seleccionar todo» en un cian que no aparece en ningún otro sitio
+   de la app, y un botón «Siguiente» pintado de tinta sobre tinta — invisible.
+
+   Lo que hay ahora es el vocabulario de LoginPage, que es la pantalla de
+   justo antes: papel cuadriculado, marca amarilla con su desplazamiento de
+   2px, titular en la serif de edición, etiquetas en mono, esquinas casi
+   rectas. Y la regla de la izquierda con la tinta del campo, el mismo recurso
+   que ya usan las baldosas de Mis listas y las filas de paper del perfil.
+
+   Todo el color sale de `variables.css`: no hay ni un hex aquí, así que el
+   tema oscuro entra sin tocar este archivo.
    ============================================ */
 
 .onboarding {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  /* PageTransition es una columna flex: sin ancho explícito la ruta se mide
+     contra su contenido y la página salta al montar. */
+  width: 100%;
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--bg-primary);
-  display: flex;
-  flex-direction: column;
-  padding: var(--space-8) var(--space-6);
-  padding-bottom: 100px;
+}
+
+/* ── Papel cuadriculado ──
+   Sólo en el paso 1, que es donde enlaza con la pantalla de acceso; detrás
+   de sesenta chips sería ruido. La misma celda de 28px, y el borde se apaga
+   con el propio fondo de la página en vez de con una máscara, para que un
+   token pueda hacer el trabajo en los dos temas. */
+.onboarding-paper {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.onboarding-paper::before {
+  content: '';
+  position: absolute;
+  inset: -56px;
+  background-image:
+    linear-gradient(to right, var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border-subtle) 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+
+.onboarding-paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 68% 62% at 50% 38%, transparent 0%, var(--bg-primary) 76%);
+}
+
+/* ── Barra superior ── */
+.onboarding-bar {
   position: relative;
-}
-
-/* ── Progress Dots ── */
-.onboarding-progress {
+  z-index: 1;
   display: flex;
-  justify-content: center;
-  gap: var(--space-3);
-  margin-bottom: var(--space-10);
+  align-items: center;
+  gap: var(--space-4);
+  height: 57px;
+  padding: 0 var(--space-6);
+  border-bottom: 1px solid var(--border-subtle);
 }
 
-.onboarding-progress-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--border-default);
-  transition: all var(--transition-base);
+.onboarding-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
-.onboarding-progress-dot.active {
-  width: 32px;
-  border-radius: var(--radius-full);
-  background: var(--accent-primary);
-  box-shadow: var(--shadow-glow-primary);
+/* La marca de LoginPage, un punto más pequeña. El amarillo no cambia de valor
+   entre temas, así que lo que va encima toma `--text-on-brand`. */
+.onboarding-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: var(--brand-yellow);
+  color: var(--text-on-brand);
+  font-family: var(--font-mono);
+  font-size: 0.8125rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  letter-spacing: 0.02em;
+  box-shadow: 2px 2px 0 var(--text-primary);
 }
 
-.onboarding-progress-dot.done {
-  background: var(--accent-success);
-}
-
-/* ── Step Content ── */
-.onboarding-step {
-  flex: 1;
-  max-width: 900px;
-  margin: 0 auto;
-  width: 100%;
-  animation: fadeIn 0.4s ease-out, onboardingSlideUp 0.4s ease-out;
-}
-
-.onboarding-title {
-  font-family: var(--font-heading);
-  font-size: var(--fs-3xl);
-  font-weight: var(--fw-bold);
-  text-align: center;
-  margin-bottom: var(--space-2);
-  background: var(--gradient-brand);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.onboarding-subtitle {
-  text-align: center;
-  color: var(--text-secondary);
+.onboarding-wordmark {
   font-size: var(--fs-base);
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+/* El amarillo subraya la marca; nunca lleva el color del texto. */
+.onboarding-wordmark span {
+  box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
+}
+
+.onboarding-stepcount {
+  margin-left: auto;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.onboarding-stepcount b {
+  font-weight: inherit;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+/* ── Cuerpo ── */
+.onboarding-body {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-8) var(--space-10);
+}
+
+/* ── Rail de progreso ──
+   Tres puntos no dicen en qué paso estás ni cuántos quedan. Tres tramos
+   numerados sí, y el hilo amarillo marca el activo — el mismo recurso que la
+   barra de secciones del perfil. */
+.onboarding-rail {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-2);
   margin-bottom: var(--space-8);
 }
 
-/* ── Areas Grid (Step 1) ── */
-.onboarding-areas-grid {
+.onboarding-rail-seg {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  padding-bottom: 9px;
+  border-bottom: 3px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  transition: color var(--transition-base), border-color var(--transition-base);
+}
+
+.onboarding-rail-n,
+.onboarding-rail-t {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+}
+
+.onboarding-rail-n {
+  font-variant-numeric: tabular-nums;
+}
+
+.onboarding-rail-t {
+  text-transform: uppercase;
+}
+
+.onboarding-rail-seg.is-active {
+  border-bottom-color: var(--brand-yellow);
+  color: var(--text-primary);
+}
+
+.onboarding-rail-seg.is-done {
+  border-bottom-color: var(--accent-primary);
+  color: var(--text-secondary);
+}
+
+/* ── Paso ── */
+.onboarding-step {
+  animation: fadeIn 0.4s ease-out, onboardingSlideUp 0.4s ease-out;
+}
+
+.onboarding-head {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--space-10);
+  margin-bottom: var(--space-6);
+}
+
+.onboarding-head-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.onboarding-eyebrow {
+  display: block;
+  margin-bottom: var(--space-3);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* Alineado a la izquierda, como cualquier otra cabecera de la app: el
+   centrado era lo que hacía que la pantalla no se pareciera a nada. */
+.onboarding-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 2rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.12;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.onboarding-title--big {
+  font-size: 2.25rem;
+  line-height: 1.1;
+}
+
+.onboarding-title span {
+  box-shadow: inset 0 -0.3em 0 var(--brand-yellow);
+}
+
+.onboarding-lede {
+  margin: var(--space-3) 0 0;
+  max-width: 62ch;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--text-secondary);
+  text-wrap: pretty;
+}
+
+/* El contador grande: la cifra que antes no estaba en ninguna parte. */
+.onboarding-meter {
+  flex: 0 0 auto;
+  padding-bottom: var(--space-1);
+  text-align: right;
+}
+
+.onboarding-meter-n {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-2xl);
+  font-weight: var(--fw-semibold);
+  line-height: 1;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.onboarding-meter-n i {
+  font-style: normal;
+  color: var(--border-default);
+}
+
+.onboarding-meter-l {
+  display: block;
+  margin-top: 7px;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* ── Áreas (paso 1) ──
+   La ficha es una entrada de índice, no una baldosa: regla del campo a la
+   izquierda, casilla a la derecha, y el recuento real de subcategorías en
+   mono, que es el dato que ayuda a decidir. */
+.onboarding-areas {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-  gap: var(--space-4);
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
 }
 
 .area-card {
   position: relative;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: var(--space-2);
-  padding: var(--space-6) var(--space-4);
-  border-radius: var(--radius-xl);
-  background: var(--bg-glass);
+  align-items: stretch;
+  min-height: 140px;
+  padding: 13px 15px 13px 12px;
+  text-align: left;
   border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--area-accent, var(--border-default));
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
   cursor: pointer;
-  transition: all var(--transition-spring);
-  animation: scaleIn 0.4s ease-out backwards;
-  animation-delay: var(--delay);
-  overflow: hidden;
-}
-
-.area-card::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: var(--area-gradient);
-  opacity: 0;
-  transition: opacity var(--transition-base);
-  border-radius: inherit;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .area-card:hover::before {
-    opacity: 0.08;
-  }
+  transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .area-card:hover {
-    transform: translateY(-4px);
     border-color: var(--border-default);
-    box-shadow: var(--shadow-lg);
+    background: var(--bg-sunken);
+  }
+
+  .area-card:hover .area-card-box {
+    border-color: var(--border-strong);
   }
 }
 
-.area-card--selected {
-  border-color: var(--accent-primary);
-  box-shadow: 0 0 20px var(--accent-primary-glow);
+.area-card.is-selected {
+  border-color: var(--border-ink);
 }
 
-.area-card--selected::before {
-  opacity: 0.12;
+.area-card-top {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
 }
 
 .area-card-icon {
-  font-size: 2.5rem;
-  position: relative;
-  z-index: 1;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--area-accent, var(--text-tertiary));
 }
 
-.area-card-label {
-  font-family: var(--font-heading);
-  font-weight: var(--fw-semibold);
-  font-size: var(--fs-base);
+.area-card-count {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+.area-card.is-selected .area-card-count {
   color: var(--text-primary);
-  position: relative;
-  z-index: 1;
+}
+
+.area-card-box {
+  flex: 0 0 auto;
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-inverse);
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+
+.area-card-box svg {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.area-card.is-selected .area-card-box {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+}
+
+.area-card.is-selected .area-card-box svg {
+  opacity: 1;
+}
+
+.area-card-name {
+  display: block;
+  margin-top: 11px;
+  font-family: var(--font-heading);
+  font-size: 0.9375rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+/* Marcar un área es subrayarla: el mismo trazo que lleva el logotipo, así
+   que seleccionar se parece a marcar una página. */
+.area-card-name span {
+  box-shadow: none;
+  transition: box-shadow var(--transition-base);
+}
+
+.area-card.is-selected .area-card-name span {
+  box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
 }
 
 .area-card-desc {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin-top: 6px;
   font-size: var(--fs-xs);
-  color: var(--text-tertiary);
-  text-align: center;
-  position: relative;
-  z-index: 1;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  text-wrap: pretty;
 }
 
-.area-card-check {
-  position: absolute;
-  top: var(--space-3);
-  right: var(--space-3);
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: var(--accent-primary);
-  color: white;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-bold);
-  animation: scaleIn 0.3s var(--transition-spring);
-  z-index: 1;
-}
-
-/* ── Subcategories (Step 2) ── */
+/* ── Categorías (paso 2) ── */
 .onboarding-subcategories {
   display: flex;
   flex-direction: column;
   gap: var(--space-8);
 }
 
-.subcat-section {
-  animation: onboardingSlideUp 0.4s ease-out backwards;
-}
-
 .subcat-section-header {
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  margin-bottom: var(--space-4);
+  padding-bottom: var(--space-3);
+  /* La regla de la sección lleva la tinta del campo, rebajada contra el papel
+     para que ordene sin gritar. */
+  border-bottom: 1px solid color-mix(in srgb, var(--area-accent, var(--border-default)) 30%, var(--bg-primary));
 }
 
 .subcat-section-icon {
-  font-size: 1.5rem;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: var(--area-accent, var(--text-tertiary));
 }
 
 .subcat-section-title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-family: var(--font-heading);
-  font-size: var(--fs-xl);
+  font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
+  letter-spacing: -0.01em;
   color: var(--text-primary);
-  flex: 1;
 }
 
+.subcat-section-count {
+  flex: 0 0 auto;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary);
+}
+
+/* Era una píldora cian del tema oscuro. Ahora es un enlace en voz de máquina. */
 .subcat-select-all {
-  font-size: var(--fs-xs);
-  color: var(--accent-secondary);
-  padding: var(--space-1) var(--space-3);
-  border-radius: var(--radius-full);
-  border: 1px solid var(--accent-secondary);
-  background: transparent;
-  transition: all var(--transition-fast);
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-2);
+  border: none;
+  border-radius: var(--radius-sm);
+  background: none;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .subcat-select-all:hover {
-    background: rgba(6, 182, 212, 0.1);
+    background: var(--bg-secondary);
+    color: var(--text-primary);
   }
 }
 
-.subcat-select-all--active {
-  background: rgba(6, 182, 212, 0.15);
+.subcat-select-all.is-active {
+  color: var(--text-primary);
 }
 
 .subcat-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: var(--space-2);
+  gap: 7px;
+  padding-top: var(--space-4);
 }
 
 .subcat-chip {
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-full);
-  font-size: var(--fs-sm);
-  background: var(--bg-glass);
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 11px;
   border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   color: var(--text-secondary);
-  transition: all var(--transition-base);
+  font-size: 0.8125rem;
+  font-weight: var(--fw-medium);
+  line-height: 1;
+  text-align: left;
   cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .subcat-chip:hover {
     border-color: var(--border-default);
+    background: var(--bg-sunken);
     color: var(--text-primary);
-    background: var(--bg-glass-hover);
   }
 }
 
-.subcat-chip--selected {
-  background: var(--accent-primary);
+.subcat-chip-dot {
+  flex: 0 0 auto;
+  width: 5px;
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--area-accent, var(--border-default));
+  opacity: 0.55;
+  transition: background var(--transition-fast), opacity var(--transition-fast);
+}
+
+.subcat-chip.is-selected {
   border-color: var(--accent-primary);
-  color: white;
-  box-shadow: 0 0 12px var(--accent-primary-glow);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .subcat-chip--selected:hover {
-    background: var(--accent-primary-hover);
-    color: white;
-  }
+.subcat-chip.is-selected .subcat-chip-dot {
+  background: var(--brand-yellow);
+  opacity: 1;
 }
 
-/* ── Confirmation (Step 3) ── */
+/* ── Confirmación (paso 3) ──
+   El check con degradado violeta-cian era lo último que quedaba del tema
+   oscuro. En su lugar, un recibo: qué entra, de cuánto, y el total. */
 .onboarding-step--confirm {
   display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding-top: var(--space-16);
+  align-items: flex-start;
+  gap: var(--space-16);
 }
 
-.confirm-check {
-  width: 80px;
-  height: 80px;
-  margin-bottom: var(--space-8);
-  animation: scaleIn 0.5s var(--transition-spring);
+.onboarding-confirm-copy {
+  flex: 0 0 420px;
 }
 
-.confirm-check-svg {
-  width: 100%;
-  height: 100%;
+.onboarding-confirm-receipt {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.confirm-check-path {
-  stroke-dasharray: 48;
-  stroke-dashoffset: 48;
-  animation: checkDraw 0.6s 0.3s ease-out forwards;
-}
-
-@keyframes checkDraw {
-  to { stroke-dashoffset: 0; }
-}
-
-.confirm-summary {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2);
-  margin-top: var(--space-6);
-  margin-bottom: var(--space-10);
-}
-
-.confirm-badge {
-  padding: var(--space-2) var(--space-4);
-  border-radius: var(--radius-full);
-  font-size: var(--fs-sm);
-  background: var(--bg-glass-strong);
+.onboarding-receipt {
   border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.onboarding-receipt-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  padding: 10px var(--space-5) 10px 21px;
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-sunken);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.onboarding-receipt-head span:first-child {
+  flex: 1 1 auto;
+}
+
+.onboarding-receipt-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: 15px var(--space-5);
+  border-left: 3px solid var(--area-accent, var(--border-default));
+}
+
+/* La regla va arriba y no abajo: así la última fila no choca con la línea
+   doble del total. */
+.onboarding-receipt-row + .onboarding-receipt-row {
+  border-top: 1px solid var(--border-subtle);
+}
+
+.onboarding-receipt-icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  padding-top: 1px;
+  color: var(--area-accent, var(--text-tertiary));
+}
+
+.onboarding-receipt-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.onboarding-receipt-name {
+  font-size: 0.9375rem;
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.01em;
   color: var(--text-primary);
 }
 
-.onboarding-finish-btn {
-  padding: var(--space-4) var(--space-10);
-  background: var(--gradient-brand);
-  border: none;
-  border-radius: var(--radius-xl);
-  color: white;
-  font-family: var(--font-heading);
-  font-size: var(--fs-lg);
+.onboarding-receipt-sample {
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+}
+
+.onboarding-receipt-count {
+  flex: 0 0 auto;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-size: 0.9375rem;
   font-weight: var(--fw-semibold);
-  cursor: pointer;
-  transition: all var(--transition-base);
-  box-shadow: var(--shadow-glow-primary);
-  min-height: 52px;
-  min-width: 220px;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.onboarding-receipt-count small {
+  display: block;
+  margin-top: 5px;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.onboarding-receipt-total {
   display: flex;
   align-items: center;
+  gap: var(--space-4);
+  padding: 14px var(--space-5) 14px 21px;
+  border-top: 2px solid var(--border-ink);
+  background: var(--bg-sunken);
+}
+
+.onboarding-receipt-total span:first-child {
+  flex: 1 1 auto;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.onboarding-receipt-total-n {
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.onboarding-receipt-total-n i {
+  font-style: normal;
+  color: var(--text-tertiary);
+}
+
+.onboarding-receipt-note {
+  display: block;
+  margin-top: var(--space-3);
+  text-align: right;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.onboarding-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-8);
+}
+
+/* ── Botones ──
+   El «Siguiente» de antes pintaba `--gradient-brand` de fondo y
+   `--text-primary` de letra: tinta sobre tinta, ilegible desde que el tema
+   claro aterrizó. La letra ahora es la inversa, que es lo que significa. */
+.onboarding-btn {
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
+  gap: var(--space-2);
+  min-height: 44px;
+  padding: 0 var(--space-5);
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.onboarding-btn--lg {
+  min-height: 48px;
+  padding: 0 var(--space-6);
+  font-size: var(--fs-base);
+}
+
+.onboarding-btn--ink {
+  border-color: var(--border-ink);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .onboarding-finish-btn:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-glow-primary), var(--shadow-lg);
+  .onboarding-btn--ink:hover:not(:disabled) {
+    border-color: var(--accent-primary-hover);
+    background: var(--accent-primary-hover);
+  }
+}
+
+/* Un botón apagado no se lee mejor por estar medio transparente: se dibuja
+   como lo que es, y la razón de que lo esté va escrita al lado. */
+.onboarding-btn--ink:disabled {
+  opacity: 1;
+  border-color: var(--border-subtle);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+}
+
+.onboarding-btn--ghost {
+  color: var(--text-secondary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .onboarding-btn--ghost:hover:not(:disabled) {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
   }
 }
 
 .onboarding-spinner {
-  width: 24px;
-  height: 24px;
-  border: 3px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  width: 20px;
+  height: 20px;
+  border: 2px solid color-mix(in srgb, var(--text-inverse) 35%, transparent);
+  border-top-color: var(--text-inverse);
+  border-radius: var(--radius-full);
+  animation: spin 0.7s linear infinite;
 }
 
-/* ── Navigation Buttons ── */
-.onboarding-nav {
-  position: fixed;
+/* ── Pie ──
+   Pegajoso, no fijo: cuando el contenido no llega abajo se queda en su sitio
+   sin necesidad del relleno de 100px y del degradado que lo tapaba. */
+.onboarding-foot {
+  position: sticky;
   bottom: 0;
-  left: 0;
-  right: 0;
-  padding: var(--space-4) var(--space-6);
-  display: flex;
-  justify-content: space-between;
-  background: linear-gradient(to top, var(--bg-primary) 60%, transparent);
   z-index: var(--z-nav);
+  margin-top: auto;
+  border-top: 1px solid var(--border-default);
+  background: var(--bg-primary);
 }
 
-.onboarding-nav-btn {
-  padding: var(--space-3) var(--space-6);
-  border-radius: var(--radius-lg);
+.onboarding-foot-inner {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-3) var(--space-8);
+}
+
+.onboarding-tally {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.onboarding-tally-n {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
-  font-size: var(--fs-base);
-  transition: all var(--transition-base);
+  font-variant-numeric: tabular-nums;
+  color: var(--text-tertiary);
+  transition: color var(--transition-base);
 }
 
-.onboarding-nav-btn--back {
+.onboarding-tally-n.is-on {
+  color: var(--text-primary);
+}
+
+.onboarding-tally-hint {
+  display: block;
+  margin-top: var(--space-1);
+  font-size: var(--fs-xs);
+  line-height: 1.4;
   color: var(--text-secondary);
-  background: var(--bg-glass);
-  border: 1px solid var(--border-subtle);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .onboarding-nav-btn--back:hover {
-    background: var(--bg-glass-hover);
-  }
-}
-
-.onboarding-nav-btn--next {
-  background: var(--gradient-brand);
-  color: white;
-  margin-left: auto;
-  box-shadow: var(--shadow-glow-primary);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .onboarding-nav-btn--next:hover:not(:disabled) {
-    transform: translateY(-1px);
-  }
-}
-
-.onboarding-nav-btn--next:disabled {
-  opacity: 0.4;
-  box-shadow: none;
 }
 
 /* ── Responsive ── */
+@media (pointer: coarse) {
+  .subcat-chip {
+    min-height: 44px;
+    padding: 0 var(--space-3);
+  }
+
+  .subcat-select-all {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .area-card-box {
+    width: 22px;
+    height: 22px;
+  }
+}
+
+@media (max-width: 900px) {
+  .onboarding-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
+  }
+
+  .onboarding-meter {
+    padding-bottom: 0;
+    text-align: left;
+  }
+
+  .onboarding-step--confirm {
+    flex-direction: column;
+    gap: var(--space-8);
+  }
+
+  .onboarding-confirm-copy {
+    flex: 1 1 auto;
+  }
+
+  .onboarding-confirm-receipt {
+    width: 100%;
+  }
+}
+
 @media (max-width: 600px) {
-  .onboarding-areas-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-3);
+  .onboarding-bar {
+    height: 52px;
+    padding: 0 var(--space-4);
   }
 
-  .area-card {
-    padding: var(--space-4) var(--space-3);
+  .onboarding-body {
+    padding: var(--space-5) var(--space-4) var(--space-6);
   }
 
-  .area-card-icon {
-    font-size: 2rem;
+  .onboarding-rail {
+    gap: var(--space-1);
+    margin-bottom: var(--space-6);
   }
 
   .onboarding-title {
-    font-size: var(--fs-2xl);
+    font-size: 1.625rem;
   }
+
+  .onboarding-title--big {
+    font-size: 1.75rem;
+  }
+
+  /* En el móvil la ficha se vuelve fila: doce áreas de un vistazo, a ancho
+     completo, en vez de una rejilla de baldosas que obliga a rebuscar. */
+  .onboarding-areas {
+    grid-template-columns: 1fr;
+    gap: 0;
+    margin: 0 calc(var(--space-4) * -1);
+    border-top: 1px solid var(--border-subtle);
+  }
+
+  .area-card {
+    flex-direction: row;
+    align-items: center;
+    gap: var(--space-3);
+    min-height: 56px;
+    padding: 0 var(--space-4) 0 13px;
+    border-width: 0 0 1px;
+    border-left-width: 3px;
+    border-left-style: solid;
+    border-radius: 0;
+  }
+
+  .area-card.is-selected {
+    border-color: var(--border-subtle);
+    border-left-color: var(--area-accent, var(--border-default));
+    background: var(--bg-sunken);
+  }
+
+  /* Los tres hijos de la cabecera pasan a ser hijos de la fila, y el orden lo
+     pone el CSS: icono · nombre · recuento · casilla. */
+  .area-card-top {
+    display: contents;
+  }
+
+  .area-card-icon { order: 1; }
+
+  .area-card-name {
+    order: 2;
+    flex: 1 1 auto;
+    min-width: 0;
+    margin-top: 0;
+    font-size: var(--fs-sm);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .area-card-count { order: 3; }
+
+  .area-card-box {
+    order: 4;
+    margin-left: 0;
+  }
+
+  .area-card-desc {
+    display: none;
+  }
+
+  .subcat-section-header {
+    flex-wrap: wrap;
+  }
+
+  .subcat-section-title {
+    flex: 1 1 100%;
+    order: -1;
+  }
+
+  .onboarding-foot-inner {
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+  }
+
+  .onboarding-tally-hint {
+    display: none;
+  }
+
+  .onboarding-actions {
+    flex-wrap: wrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-step {
+    animation: none;
+  }
+
+  .onboarding-spinner {
+    animation: none;
+  }
+
+  .area-card,
+  .area-card-box,
+  .area-card-box svg,
+  .area-card-name span,
+  .subcat-chip,
+  .subcat-chip-dot,
+  .subcat-select-all,
+  .onboarding-btn,
+  .onboarding-rail-seg,
+  .onboarding-tally-n {
+    transition: none;
+  }
+}
+
+.onboarding-step--profile {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+  max-width: 40rem;
+}
+
+.onboarding-profile-fields {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.onboarding-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.onboarding-field label {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.onboarding-field input {
+  width: 100%;
+  min-height: 44px;
+  padding: var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--fs-base);
+}
+
+.onboarding-handle-input {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.onboarding-handle-input > span {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+}
+
+.onboarding-field-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+.onboarding-field-hint.is-error,
+.onboarding-profile-error {
+  margin: 0;
+  color: var(--accent-danger);
+  font-size: var(--fs-sm);
 }

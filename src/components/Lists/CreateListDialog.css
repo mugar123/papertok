@@ -8,6 +8,7 @@
   padding: 0;
   max-width: 100vw;
   max-height: 100vh;
+  max-height: 100dvh;
   width: 100%;
   height: 100%;
   display: flex;
@@ -16,20 +17,49 @@
 }
 
 .create-list-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(2px);
-  -webkit-backdrop-filter: blur(2px);
+  /* No `backdrop-filter`: this backdrop fades in with `fadeIn`, and
+     animating opacity over a blurred layer forces the blur to be
+     re-resolved every frame — the worst case for a mobile GPU. The rgba
+     scrim alone reads as the backdrop; its 3px blur was invisible under it.
+     This rule fully owns its `::backdrop` (background, animation, and now
+     the absence of a filter) rather than falling through to `dialog::backdrop`
+     in global.css — that base rule carries no `backdrop-filter` of its own
+     either, so nothing reintroduces one here unopposed. */
+  background: rgba(17, 19, 24, 0.4);
   animation: fadeIn 0.15s ease;
 }
 
 .create-list-card {
-  width: min(calc(100vw - 32px), 380px);
+  width: min(calc(100vw - var(--space-8)), 380px);
   padding: var(--space-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
+  background: var(--bg-card);
   box-shadow: var(--shadow-xl);
-  animation: scaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  animation: createListIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* A matched pair, and the exit is the shorter of the two: an entrance is worth
+   watching because the window is arriving, while a dismissal that lingers is
+   just the interface holding on after the decision was made. */
+@keyframes createListIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes createListOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(4px) scale(0.985); }
+}
+
+/* `forwards` matters: the window stays mounted for the length of this, and
+   without it the card would snap back to full opacity for the last frame. */
+.create-list-card.is-closing {
+  animation: createListOut 0.16s ease forwards;
+}
+
+.create-list-dialog.is-closing::backdrop {
+  animation: fadeOut 0.16s ease forwards;
 }
 
 .create-list-header {
@@ -47,22 +77,6 @@
   font-weight: var(--fw-semibold);
 }
 
-.create-list-close {
-  width: 32px;
-  height: 32px;
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  transition: color var(--transition-fast), background var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .create-list-close:hover {
-    color: var(--text-primary);
-    background: var(--bg-glass-hover);
-  }
-}
-
 .create-list-field {
   display: flex;
   flex-direction: column;
@@ -71,11 +85,10 @@
 }
 
 .create-list-field > span {
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  color: var(--text-secondary);
 }
 
 .create-list-input {
@@ -83,9 +96,16 @@
   padding: var(--space-2) var(--space-3);
   border-radius: var(--radius-md);
   border: 1px solid var(--border-default);
-  background: var(--bg-glass);
+  background: var(--bg-card);
   color: var(--text-primary);
+  font-family: var(--font-body);
   font-size: var(--fs-sm);
+}
+
+.create-list-input:focus {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -1px;
+  border-color: var(--border-strong);
 }
 
 .create-list-icon-picker {
@@ -108,14 +128,85 @@
 
 @media (hover: hover) and (pointer: fine) {
   .create-list-icon-btn:hover {
-    background: var(--bg-glass-hover);
+    background: var(--bg-secondary);
   }
 }
 
 .create-list-icon-btn.is-active {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary-glow);
+  border-color: var(--border-ink);
+  background: var(--bg-sunken);
   color: var(--text-primary);
+}
+
+/* The palette. Eight swatches on one row at the dialog's full width; the fill
+   arrives as `--swatch` from the component so the colour stays in
+   `variables.css` and no hex is spelled out here. The border is the swatch
+   walked towards the ink, which keeps a light colour from dissolving into the
+   card without inventing a second value per colour. */
+.create-list-color-picker {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: var(--space-2);
+}
+
+.create-list-color-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  border: 1px solid color-mix(in srgb, var(--swatch) 72%, var(--text-primary));
+  border-radius: var(--radius-md);
+  background: var(--swatch);
+  color: var(--text-inverse);
+  cursor: pointer;
+  transition: outline-color var(--transition-fast), outline-offset var(--transition-fast),
+    transform var(--transition-fast);
+}
+
+.create-list-color-btn:active {
+  transform: scale(0.94);
+}
+
+/* The tick lands rather than appearing. Eight swatches is a row the eye scans,
+   and a mark that pops in with no travel is easy to miss at the far end of it. */
+.create-list-color-btn > svg {
+  animation: swatchTick 0.2s cubic-bezier(0.34, 1.4, 0.64, 1) backwards;
+}
+
+@keyframes swatchTick {
+  from { opacity: 0; transform: scale(0.4); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* The tick carries the choice; the ink ring is what survives a screenshot in
+   grayscale, where eight swatches are eight greys. */
+.create-list-color-btn.is-active {
+  outline: 2px solid var(--border-ink);
+  outline-offset: 2px;
+}
+
+.create-list-color-btn:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.create-list-color-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+/* Eight across is 35px a swatch, which is fine for a pointer and not for a
+   thumb. Four across on a phone clears the 44px floor. */
+@media (max-width: 420px) {
+  .create-list-color-picker {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .create-list-color-btn {
+    height: 44px;
+  }
 }
 
 .create-list-note {
@@ -126,7 +217,11 @@
 
 .create-list-error {
   margin: var(--space-3) 0 0;
-  color: var(--accent-danger, #f87171);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--tint-red-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
   font-size: var(--fs-xs);
 }
 
@@ -138,47 +233,21 @@
   margin-top: var(--space-4);
 }
 
-.create-list-cancel {
-  min-height: 38px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  transition: color var(--transition-fast), border-color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .create-list-cancel:hover {
-    color: var(--text-primary);
-    border-color: var(--border-strong);
-  }
-}
-
-.create-list-confirm {
-  min-height: 38px;
-  padding: 0 var(--space-4);
-  background: var(--accent-primary);
-  color: #fff;
-  border-radius: var(--radius-full);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .create-list-confirm:not(:disabled):hover {
-    background: var(--accent-primary-hover);
-  }
-}
-
-.create-list-confirm:disabled {
-  opacity: 0.4;
+.create-list-icon-btn:active {
+  transform: scale(0.94);
 }
 
 @media (prefers-reduced-motion: reduce) {
   .create-list-card,
-  .create-list-dialog::backdrop {
+  .create-list-card.is-closing,
+  .create-list-dialog::backdrop,
+  .create-list-dialog.is-closing::backdrop,
+  .create-list-color-btn > svg {
     animation: none;
+  }
+
+  .create-list-color-btn:active,
+  .create-list-icon-btn:active {
+    transform: none;
   }
 }

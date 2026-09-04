@@ -1,0 +1,129 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #1a5fd0; } a:hover { color: #12459b; }
+    * { box-sizing: border-box; }
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.5 'IBM Plex Mono', monospace; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+    .lead { font-size: 0.8125rem; line-height: 1.55; color: #5b6270; margin: 0; }
+
+    .frame { position: relative; height: 132px; overflow: hidden; border: 1px solid #d3d5db; border-radius: 3px; }
+    .layer { position: absolute; inset: 0; padding: 20px; background: var(--paper); color: var(--ink);
+      --paper: #ffffff; --paper-2: #f7f7f8; --sunken: #fafafa; --ink: #111318; --ink-2: #5b6270; --ink-3: #8a919e; --rule: #e6e7ea; --rule-2: #d3d5db; --inverse: #ffffff; }
+    .layer.is-dark { --paper: #111318; --paper-2: #1a1d24; --sunken: #0d0f13; --ink: #f2f3f5; --ink-2: #a1a8b5; --ink-3: #757c8a; --rule: #23262e; --rule-2: #2e323b; --inverse: #111318; }
+    .layer.over { transition: clip-path calc(320ms * var(--k, 1)) cubic-bezier(0.4, 0, 1, 1); }
+    .stage.is-dark .layer.over { transition: clip-path calc(420ms * var(--k, 1)) cubic-bezier(0.16, 1, 0.3, 1); }
+
+    .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; }
+    .row h3 { margin: 0 0 3px; font-size: 0.8125rem; font-weight: 600; color: var(--ink); }
+    .row p { margin: 0; font-size: 0.6875rem; line-height: 1.45; color: var(--ink-3); }
+
+    /* Segmentado, calcado de .settings-language */
+    .seg { position: relative; display: grid; grid-template-columns: repeat(3, 78px); gap: 4px; width: 252px; padding: 4px; border: 1px solid var(--rule-2); border-radius: 4px; background: var(--sunken); }
+    .chip { position: absolute; top: 4px; left: 4px; width: 78px; height: 36px; border-radius: 3px; background: var(--ink);
+      transition: transform calc(240ms * var(--k, 1)) cubic-bezier(0.16, 1, 0.3, 1); }
+    .seg button { position: relative; z-index: 1; height: 36px; padding: 0; border: none; border-radius: 3px; background: none; color: var(--ink-3); font: 750 0.6875rem/1 'Inter', sans-serif; cursor: pointer;
+      transition: color calc(120ms * var(--k, 1)) ease; }
+    .seg button.on { color: var(--inverse); }
+    .seg button:focus-visible { outline: 2px solid #ff9d00; outline-offset: 2px; }
+    .note { display: block; margin-top: 8px; text-align: right; font: 400 0.625rem/1 'IBM Plex Mono', monospace; color: var(--ink-3); }
+    @media (prefers-reduced-motion: reduce) { .stage * { transition-duration: 1ms !important; } }
+  </style>
+</helmet>
+
+<div style="width: 620px; min-height: 460px; background: #ffffff; padding: 34px 36px">
+
+  <span class="k" style="color: #8a919e">Opción C</span>
+  <h1 class="serif" style="font-size: 1.4rem; font-weight: 600; line-height: 1.15; margin: 8px 0 6px">Claro · Auto · Oscuro</h1>
+  <p class="lead" style="margin-bottom: 18px">El segmentado del selector de idioma, con una pastilla de tinta que se desliza. Es el único de los tres que sabe decir «lo que diga el sistema».</p>
+
+  <div class="{{rootClass}}" style="--k: 1">
+    <div class="frame">
+      <sc-for list="{{layers}}" as="layer" hint-placeholder-count="2">
+        <div class="layer {{layer.cls}}" style="clip-path: circle({{layer.r}} at calc(100% - 145px) 42px)">
+          <div class="row">
+            <div>
+              <h3>Apariencia</h3>
+              <p>Papel o tinta. En Auto, la app sigue lo que tengas puesto en el sistema.</p>
+            </div>
+            <div>
+              <div class="seg" role="radiogroup" aria-label="Apariencia">
+                <span class="chip" style="transform: translateX({{chipX}})" aria-hidden="true"></span>
+                <button type="button" class="{{claroCls}}" role="radio" aria-checked="{{claroOn}}" onClick="{{ pickClaro }}">Claro</button>
+                <button type="button" class="{{autoCls}}" role="radio" aria-checked="{{autoOn}}" onClick="{{ pickAuto }}">Auto</button>
+                <button type="button" class="{{oscuroCls}}" role="radio" aria-checked="{{oscuroOn}}" onClick="{{ pickOscuro }}">Oscuro</button>
+              </div>
+              <span class="note">{{note}}</span>
+            </div>
+          </div>
+        </div>
+      </sc-for>
+    </div>
+  </div>
+
+  <div style="display: grid; gap: 10px; margin-top: 20px">
+    <p class="lead"><strong style="color: #111318; font-weight: 600">A favor.</strong> Tres estados de verdad. Auto es el que la mayoría deja puesto, y es el único que respeta la hora del sistema sin que nadie toque nada. La pastilla se desliza — 240&nbsp;ms, la curva de la casa — así que el cambio se ve venir.</p>
+    <p class="lead"><strong style="color: #111318; font-weight: 600">En contra.</strong> Ocupa 252&nbsp;px: no cabe en la barra, así que vive en Ajustes igual que la&nbsp;B. Y con tres opciones ya no es «un botón»: es un ajuste.</p>
+    <p class="lead"><strong style="color: #111318; font-weight: 600">Se llevan bien.</strong> C en Ajustes y A en la barra no compiten: el segmentado guarda la preferencia de fondo — incluido Auto — y el disco de la barra es el atajo, que al pulsarse deja de ser Auto y fija el modo elegido.</p>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{"$preview":{"width":620,"height":460}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { pick: 'claro' };
+  }
+
+  systemIsDark() {
+    try {
+      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    } catch (err) {
+      return false;
+    }
+  }
+
+  renderVals() {
+    const pick = this.state.pick;
+    const sys = this.systemIsDark();
+    const dark = pick === 'oscuro' || (pick === 'auto' && sys);
+    const offsets = { claro: '0px', auto: '82px', oscuro: '164px' };
+    const notes = {
+      claro: 'fijado a papel',
+      auto: sys ? 'el sistema dice tinta' : 'el sistema dice papel',
+      oscuro: 'fijado a tinta',
+    };
+    return {
+      rootClass: dark ? 'stage is-dark' : 'stage',
+      chipX: offsets[pick],
+      note: notes[pick],
+      claroCls: pick === 'claro' ? 'on' : '',
+      autoCls: pick === 'auto' ? 'on' : '',
+      oscuroCls: pick === 'oscuro' ? 'on' : '',
+      claroOn: pick === 'claro' ? 'true' : 'false',
+      autoOn: pick === 'auto' ? 'true' : 'false',
+      oscuroOn: pick === 'oscuro' ? 'true' : 'false',
+      layers: [
+        { cls: '', r: '145%' },
+        { cls: 'is-dark over', r: dark ? '145%' : '0%' },
+      ],
+      pickClaro: () => this.setState({ pick: 'claro' }),
+      pickAuto: () => this.setState({ pick: 'auto' }),
+      pickOscuro: () => this.setState({ pick: 'oscuro' }),
+    };
+  }
+}
+</script>
+</body>
+</html>

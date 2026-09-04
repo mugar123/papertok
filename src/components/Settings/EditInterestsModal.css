@@ -4,9 +4,13 @@
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: rgba(0, 0, 0, 0.6);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
+  height: 100dvh;
+  /* No `backdrop-filter`: this overlay animates its own opacity in and out
+     (`eim-fade-in`/`eim-fade-out` below), which would force the blur to be
+     re-resolved on every frame — the worst case for a mobile GPU. The rgba
+     veil alone is what reads as the backdrop; its 8px blur was invisible
+     under it. */
+  background: rgba(17, 19, 24, 0.60);
   z-index: 9999;
   display: flex;
   justify-content: center;
@@ -33,10 +37,11 @@
   width: 100%;
   max-width: 800px;
   max-height: 90vh;
-  background: rgba(20, 20, 25, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  max-height: 90dvh;
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
-  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  box-shadow: 0 24px 64px rgba(17, 19, 24, 0.12), inset 0 1px 0 rgba(17, 19, 24, 0.06);
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -58,7 +63,7 @@
 
 .eim-header {
   padding: var(--space-6);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  border-bottom: 1px solid var(--border-subtle);
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
@@ -69,7 +74,7 @@
   font-family: var(--font-heading);
   font-size: var(--fs-xl);
   font-weight: var(--fw-bold);
-  color: #fff;
+  color: var(--text-primary);
   margin: 0 0 var(--space-2) 0;
 }
 
@@ -81,7 +86,7 @@
 }
 
 .eim-close-btn {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-secondary);
   border: none;
   width: 36px;
   height: 36px;
@@ -96,8 +101,8 @@
 
 @media (hover: hover) and (pointer: fine) {
   .eim-close-btn:hover {
-    background: rgba(255, 255, 255, 0.15);
-    color: #fff;
+    background: var(--bg-glass-hover);
+    color: var(--text-primary);
   }
 }
 
@@ -118,12 +123,12 @@
   background: transparent;
 }
 .eim-body::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 4px;
+  background: var(--bg-glass-hover);
+  border-radius: var(--radius-sm);
 }
 @media (hover: hover) and (pointer: fine) {
   .eim-body::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.2);
+    background: var(--bg-glass-hover);
   }
 }
 
@@ -142,21 +147,21 @@
 
 .eim-area-toggle-btn {
   background: transparent;
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  border: 1px solid var(--border-default);
   color: var(--text-secondary);
   font-family: var(--font-body);
   font-size: var(--fs-xs);
   padding: 4px 10px;
-  border-radius: 12px;
+  border-radius: var(--radius-2xl);
   cursor: pointer;
   transition: all 0.2s ease;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .eim-area-toggle-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
+    background: var(--bg-glass-hover);
     color: var(--text-primary);
-    border-color: rgba(255, 255, 255, 0.3);
+    border-color: var(--border-strong);
   }
 }
 
@@ -167,7 +172,7 @@
   width: 40px;
   height: 40px;
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--bg-secondary);
   color: var(--text-primary);
   /* The icon color will be set dynamically via style prop */
 }
@@ -190,16 +195,15 @@
 
 .eim-pill {
   position: relative;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-default);
   padding: 10px 18px;
-  border-radius: 20px;
+  border-radius: var(--radius-2xl);
   color: var(--text-secondary);
   font-family: var(--font-body);
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   cursor: pointer;
-  outline: none;
   overflow: hidden;
   
   /* Transition for hover push-up */
@@ -214,9 +218,9 @@
 @media (hover: hover) and (pointer: fine) {
   .eim-pill:hover {
     transform: translateY(-2px);
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.15);
-    color: #fff;
+    background: var(--bg-secondary);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
   }
 }
 
@@ -228,17 +232,17 @@
 
 .eim-pill--selected {
   /* Glow */
-  background: rgba(255, 255, 255, 0.15);
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #fff;
-  box-shadow: 0 0 15px rgba(255, 255, 255, 0.1), inset 0 0 10px rgba(255, 255, 255, 0.05);
-  text-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+  background: var(--bg-glass-hover);
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+  box-shadow: 0 0 15px rgba(17, 19, 24, 0.06), inset 0 0 10px rgba(17, 19, 24, 0.03);
+  text-shadow: 0 0 8px rgba(17, 19, 24, 0.12);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .eim-pill--selected:hover {
-    background: rgba(255, 255, 255, 0.2);
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.15), inset 0 0 15px rgba(255, 255, 255, 0.1);
+    background: var(--bg-glass-hover);
+    box-shadow: 0 0 20px rgba(17, 19, 24, 0.09), inset 0 0 15px rgba(17, 19, 24, 0.06);
   }
 }
 
@@ -257,8 +261,8 @@
 
 .eim-footer {
   padding: var(--space-4) var(--space-6);
-  border-top: 1px solid rgba(255, 255, 255, 0.05);
-  background: rgba(0, 0, 0, 0.2);
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
   display: flex;
   justify-content: flex-end;
   align-items: center;
@@ -273,11 +277,11 @@
 }
 
 .eim-save-btn {
-  background: #fff;
-  color: #000;
+  background: var(--bg-card);
+  color: var(--text-primary);
   border: none;
   padding: 12px 28px;
-  border-radius: 30px;
+  border-radius: var(--radius-2xl);
   font-family: var(--font-body);
   font-weight: var(--fw-bold);
   font-size: var(--fs-md);
@@ -291,13 +295,13 @@
 @media (hover: hover) and (pointer: fine) {
   .eim-save-btn:hover:not(:disabled) {
     transform: scale(1.05);
-    box-shadow: 0 0 20px rgba(255, 255, 255, 0.3);
+    box-shadow: 0 0 20px rgba(17, 19, 24, 0.12);
   }
 }
 
 .eim-save-btn:disabled {
-  background: rgba(255, 255, 255, 0.2);
-  color: rgba(255, 255, 255, 0.4);
+  background: var(--bg-glass-hover);
+  color: var(--text-tertiary);
   cursor: not-allowed;
 }
 
@@ -305,8 +309,8 @@
 .eim-spinner {
   width: 16px;
   height: 16px;
-  border: 2px solid rgba(0, 0, 0, 0.1);
-  border-top-color: #000;
+  border: 2px solid var(--border-default);
+  border-top-color: var(--text-primary);
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -322,6 +326,7 @@
   .eim-modal {
     height: 100%;
     max-height: 100vh;
+    max-height: 100dvh;
     border-radius: var(--radius-lg);
   }
   .eim-body {

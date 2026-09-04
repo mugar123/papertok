@@ -43,7 +43,6 @@ jobs:
           VITE_PAPER_API_BASE_URL: ${{ vars.VITE_PAPER_API_BASE_URL }}
           VITE_SCOPUS_ENABLED: ${{ vars.VITE_SCOPUS_ENABLED }}
           VITE_UNPAYWALL_EMAIL: ${{ vars.VITE_UNPAYWALL_EMAIL }}
-          VITE_GA_MEASUREMENT_ID: ${{ vars.VITE_GA_MEASUREMENT_ID }}
 
       - name: Setup Pages
         uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5

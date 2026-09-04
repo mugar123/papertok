@@ -6,13 +6,15 @@ import {
   microsToUsd,
   usdToMicros,
 } from './kimi-budget-ledger.js';
-import { releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.js';
+import { peekRequestQuota, releaseRequestQuota, reserveRequestQuota } from './request-quota-ledger.js';
 import { verifyFirebaseIdentity, WorkerAuthError } from './firebase-auth.js';
 
 const PROMPT_VERSION = 'paper-explainer-v4';
 const DEFAULT_MODEL = 'gemini-3.5-flash';
 const DEFAULT_FALLBACK_MODEL = 'gemini-3.5-flash-lite';
 const DEFAULT_KIMI_MODEL = 'moonshotai/Kimi-K3';
+const DEFAULT_DEEPSEEK_MODEL = 'deepseek-ai/deepseek-v4-flash-0731';
+const NVIDIA_API_BASE_URL = 'https://integrate.api.nvidia.com/v1';
 const DEFAULT_KIMI_MONTHLY_HARD_CAP_USD = 27;
 const DEFAULT_KIMI_PROMPT_USD_PER_MILLION = 3;
 const DEFAULT_KIMI_CACHED_PROMPT_USD_PER_MILLION = 0.3;
@@ -27,6 +29,7 @@ export const AI_REQUEST_BUDGETS = Object.freeze({
   pdfOnlySourceMs: 9_000,
   geminiPrimaryMs: 12_000,
   geminiFallbackMs: 32_000,
+  deepseekMs: 30_000,
   kimiMs: 52_000,
   browserMs: 70_000,
   // Room to settle the Kimi ledger and serialise the answer before the browser
@@ -36,12 +39,13 @@ export const AI_REQUEST_BUDGETS = Object.freeze({
   // remaining time, and Kimi would additionally charge its reservation for a
   // call that was never going to return.
   minGeminiFallbackMs: 8_000,
+  minDeepseekMs: 8_000,
   minKimiMs: 20_000,
 });
 
 /**
- * The stage budgets add up to more than the browser waits: 9 + 12 + 32 + 52 =
- * 105 s against `browserMs`. So each stage is capped by what is left of the
+ * The stage budgets add up to more than the browser waits: 9 + 12 + 32 + 30 +
+ * 52 = 135 s against `browserMs`. So each stage is capped by what is left of the
  * request, not only by its own budget, and a stage without room is skipped.
  * The caller then gets the real provider error at ~53 s instead of an
  * `AI_TIMEOUT` at 70 s with the daily use spent and a reservation in flight.
@@ -119,7 +123,7 @@ const LEVELS = {
   },
 };
 
-function normalizeExplanationLanguage(language) {
+export function normalizeExplanationLanguage(language) {
   return language === 'en' ? 'en' : 'es';
 }
 
@@ -229,7 +233,7 @@ export class AIExplanationError extends Error {
   }
 }
 
-function cleanText(value, maxLength) {
+export function cleanText(value, maxLength) {
   return String(value || '').replace(/\0/g, '').trim().slice(0, maxLength);
 }
 
@@ -354,7 +358,7 @@ function bytesToBase64(bytes) {
   return btoa(binary);
 }
 
-async function fetchPaperPdf(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOnlySourceMs) {
+export async function fetchPaperPdf(pdfUrl, timeoutMs = AI_REQUEST_BUDGETS.pdfOnlySourceMs) {
   if (!isAIReadablePdfUrl(pdfUrl)) return null;
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
@@ -416,7 +420,7 @@ function hasOddEscapingBackslash(text, index) {
   return count % 2 === 1;
 }
 
-function escapeLatexBackslashesInJson(value, { broad = false } = {}) {
+export function escapeLatexBackslashesInJson(value, { broad = false } = {}) {
   const text = String(value || '');
   let output = '';
   let mathDelimiter = '';
@@ -954,35 +958,169 @@ async function explainWithKimi({ paper, level, language, env, deadline, now = Da
   return result;
 }
 
+export function isDeepseekConfigured(env) {
+  return /^nvapi-/.test(cleanText(env.NVIDIA_API_KEY, 200));
+}
+
+function deepseekModel(env) {
+  return cleanText(env.NVIDIA_DEEPSEEK_MODEL || DEFAULT_DEEPSEEK_MODEL, 160) || DEFAULT_DEEPSEEK_MODEL;
+}
+
+async function explainWithDeepseek({ paper, level, language, env, deadline }) {
+  if (!isDeepseekConfigured(env) || !paper.abstract) {
+    throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
+  }
+  const model = deepseekModel(env);
+  const budgetMs = stageBudgetMs(deadline, AI_REQUEST_BUDGETS.deepseekMs);
+  if (budgetMs <= 0) throw new AIExplanationError('AI_UNAVAILABLE', 503);
+
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), budgetMs);
+  try {
+    const response = await fetch(`${NVIDIA_API_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      signal: controller.signal,
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${cleanText(env.NVIDIA_API_KEY, 200)}`,
+      },
+      body: JSON.stringify({
+        model,
+        messages: [
+          { role: 'system', content: buildSystemInstruction(language) },
+          {
+            role: 'user',
+            content: `${buildPaperExplanationPrompt(paper, level, 'abstract', language)}\n\n${buildJsonContractInstruction(language)}`,
+          },
+        ],
+        response_format: { type: 'json_object' },
+        max_tokens: kimiMaxOutputTokens(level),
+        temperature: 0.2,
+        stream: false,
+      }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      // The classifier reads the OpenAI-compatible error shape both providers
+      // share; nothing in it is Kimi-specific.
+      const code = classifyKimiError(response.status, payload);
+      throw new AIExplanationError(
+        code,
+        response.status === 429 ? 429 : code === 'AI_NOT_CONFIGURED' ? 503 : 502,
+        code,
+        code === 'AI_BUSY' ? getProviderRetry(payload, response.headers.get('retry-after')) : null,
+      );
+    }
+    const result = {
+      explanation: parseOpenAIChatPayload(payload),
+      model,
+      provider: 'nvidia-deepseek',
+      sourceBasis: 'abstract',
+    };
+    console.info('AI provider attempt', JSON.stringify({
+      provider: 'nvidia-deepseek',
+      model,
+      language,
+      sourceBasis: 'abstract',
+      outcome: 'success',
+      durationMs: Date.now() - startedAt,
+    }));
+    return result;
+  } catch (error) {
+    const normalizedError = error instanceof AIExplanationError
+      ? error
+      : new AIExplanationError('AI_UNAVAILABLE', 502);
+    console.warn('AI provider attempt', JSON.stringify({
+      provider: 'nvidia-deepseek',
+      model,
+      language,
+      sourceBasis: 'abstract',
+      outcome: normalizedError.code,
+      durationMs: Date.now() - startedAt,
+    }));
+    throw normalizedError;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 const PROVIDERS = {
   gemini: explainWithGemini,
+  'nvidia-deepseek': explainWithDeepseek,
   'modal-kimi': explainWithKimi,
 };
 
-async function explainWithProviderChain({ providerName, fallbackProviderName, ...args }) {
+/**
+ * The order is the cost order: DeepSeek on NVIDIA is free, Kimi on Modal pays
+ * per token, so the chain only reaches Modal when NVIDIA could not answer.
+ */
+const FALLBACK_PROVIDER_NAMES = Object.freeze(['nvidia-deepseek', 'modal-kimi']);
+
+export function parseFallbackProviderNames(env) {
+  return cleanText(env.AI_FALLBACK_PROVIDER, 200)
+    .toLowerCase()
+    .split(',')
+    .map(name => name.trim())
+    .filter(name => FALLBACK_PROVIDER_NAMES.includes(name));
+}
+
+/**
+ * Whether a fallback can even start: configured, fed by an abstract, and with
+ * room to finish. Starting Kimi without that room charges its reservation for
+ * a call the browser will not wait for; skipping is what keeps the honest
+ * answer — the previous provider's error — reachable.
+ */
+function isFallbackReady(name, { env, paper, deadline }) {
+  if (!paper.abstract) return false;
+  if (name === 'nvidia-deepseek') {
+    return isDeepseekConfigured(env)
+      && stageBudgetMs(deadline, AI_REQUEST_BUDGETS.deepseekMs) >= AI_REQUEST_BUDGETS.minDeepseekMs;
+  }
+  return isKimiConfigured(env)
+    && stageBudgetMs(deadline, AI_REQUEST_BUDGETS.kimiMs) >= AI_REQUEST_BUDGETS.minKimiMs;
+}
+
+/**
+ * Failures that hand the paper to the next provider in the chain rather than
+ * the caller: the provider was busy, broken, misconfigured, or out of its own
+ * budget. What stays out: `AI_INVALID_REQUEST_UPSTREAM` never reaches here
+ * (only Gemini raises it), and a provider that *answered wrongly* enough times
+ * to matter is already covered by `AI_INVALID_RESPONSE`.
+ */
+const FALLBACK_ADVANCE_CODES = new Set([
+  'AI_BUSY',
+  'AI_UNAVAILABLE',
+  'AI_NOT_CONFIGURED',
+  'AI_INVALID_RESPONSE',
+  'AI_FALLBACK_BUDGET_EXHAUSTED',
+]);
+
+async function explainWithProviderChain({ providerName, fallbackProviderNames = [], ...args }) {
   const provider = PROVIDERS[providerName];
   if (!provider) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   try {
     const result = await provider(args);
     return { ...result, provider: result.provider || providerName };
   } catch (primaryError) {
-    const canUseKimi = fallbackProviderName === 'modal-kimi'
-      && providerName === 'gemini'
-      && shouldFallbackToKimi(primaryError)
-      && isKimiConfigured(args.env)
-      && Boolean(args.paper.abstract)
-      // Starting Kimi without room to finish charges its reservation for a call
-      // the browser will not wait for. The honest answer is Gemini's error.
-      && stageBudgetMs(args.deadline, AI_REQUEST_BUDGETS.kimiMs) >= AI_REQUEST_BUDGETS.minKimiMs;
-    if (!canUseKimi) throw primaryError;
-    try {
-      return await PROVIDERS['modal-kimi'](args);
-    } catch (fallbackError) {
-      if (fallbackError instanceof AIExplanationError && fallbackError.code === 'AI_NOT_CONFIGURED') {
-        throw primaryError;
+    if (providerName !== 'gemini' || !shouldFallbackToKimi(primaryError)) throw primaryError;
+    let lastError = null;
+    for (const name of fallbackProviderNames) {
+      if (!isFallbackReady(name, args)) continue;
+      try {
+        const result = await PROVIDERS[name](args);
+        return { ...result, provider: result.provider || name };
+      } catch (fallbackError) {
+        lastError = fallbackError;
+        const advances = fallbackError instanceof AIExplanationError
+          && FALLBACK_ADVANCE_CODES.has(fallbackError.code);
+        if (!advances) throw fallbackError;
       }
-      throw fallbackError;
     }
+    // Nothing was attempted, or the last attempt turned out not to be
+    // configured after all — either way Gemini's quota error is the truth.
+    if (!lastError || lastError.code === 'AI_NOT_CONFIGURED') throw primaryError;
+    throw lastError;
   }
 }
 
@@ -1042,28 +1180,92 @@ async function checkKimiHealth(env) {
   }
 }
 
+async function checkDeepseekHealth(env) {
+  const provider = 'nvidia-deepseek';
+  const model = deepseekModel(env);
+  if (!isDeepseekConfigured(env)) {
+    return { provider, model, configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(`${NVIDIA_API_BASE_URL}/models`, {
+      signal: controller.signal,
+      headers: { authorization: `Bearer ${cleanText(env.NVIDIA_API_KEY, 200)}` },
+    });
+    const payload = response.ok ? null : await response.json().catch(() => ({}));
+    return {
+      provider,
+      model,
+      configured: true,
+      available: response.ok,
+      code: response.ok ? null : classifyKimiError(response.status, payload),
+    };
+  } catch {
+    return { provider, model, configured: true, available: false, code: 'AI_UNAVAILABLE' };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+const HEALTH_CHECKS = {
+  gemini: checkGeminiHealth,
+  'nvidia-deepseek': checkDeepseekHealth,
+  'modal-kimi': checkKimiHealth,
+};
+
 export async function checkAIProviderHealth(env) {
   const provider = cleanText(env.AI_PROVIDER || 'gemini', 40).toLowerCase();
-  const fallbackProvider = cleanText(env.AI_FALLBACK_PROVIDER, 40).toLowerCase();
-  const primaryHealth = provider === 'gemini'
-    ? await checkGeminiHealth(env)
-    : provider === 'modal-kimi'
-      ? await checkKimiHealth(env)
-      : { provider, model: '', configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
-  const fallbackHealth = fallbackProvider === 'modal-kimi'
-    ? await checkKimiHealth(env)
-    : null;
+  const primaryHealth = HEALTH_CHECKS[provider]
+    ? await HEALTH_CHECKS[provider](env)
+    : { provider, model: '', configured: false, available: false, code: 'AI_NOT_CONFIGURED' };
+  const fallbackHealth = [];
+  for (const name of parseFallbackProviderNames(env)) {
+    fallbackHealth.push(await HEALTH_CHECKS[name](env));
+  }
   return {
     ...primaryHealth,
-    fallback: fallbackHealth,
-    available: primaryHealth.available || Boolean(fallbackHealth?.available),
+    // One entry per configured fallback, in chain order. It was a single
+    // object when the chain had a single link; nothing consumed that shape.
+    fallback: fallbackHealth.length ? fallbackHealth : null,
+    available: primaryHealth.available || fallbackHealth.some(health => health.available),
   };
 }
 
-async function verifyFirebaseUser(request, env) {
+/**
+ * Accounts the per-user daily allowance does not apply to.
+ *
+ * A wrangler secret rather than a `[vars]` entry in `wrangler.toml`: the repo
+ * already carries an admin uid with the note that a uid is not a secret, and an
+ * email is not the same thing. Matched against the *verified* address only —
+ * an unverified email is a claim, and this is the one place in the Worker where
+ * a claim would buy something.
+ *
+ * The global daily ceiling still applies. That one is not a product limit, it is
+ * the cost ceiling on the provider key, and an exemption from it is how a
+ * runaway loop becomes a bill.
+ */
+export function hasUnlimitedAI(env, identity) {
+  if (!identity?.emailVerified || !identity.email) return false;
+  const allowed = String(env.AI_UNLIMITED_EMAILS || '')
+    .split(',')
+    .map(entry => entry.trim().toLowerCase())
+    .filter(Boolean);
+  return allowed.includes(identity.email);
+}
+
+/**
+ * The verified identity, plus whether the daily allowance applies to it.
+ *
+ * Replaced a `verifyFirebaseUser` that returned a bare uid: every AI route now
+ * has to know *which* account is asking, not merely that some account is, and a
+ * second lookup to find out would have doubled the Identity Toolkit traffic in
+ * front of every protected route.
+ */
+export async function verifyFirebaseAccount(request, env) {
   try {
     const identity = await verifyFirebaseIdentity(request, env);
-    return identity.uid;
+    return { ...identity, unlimitedAI: hasUnlimitedAI(env, identity) };
   } catch (error) {
     if (error instanceof WorkerAuthError) {
       throw new AIExplanationError(
@@ -1104,6 +1306,13 @@ const REFUNDABLE_AI_CODES = new Set([
   'AI_NOT_CONFIGURED',
   'AI_SOURCE_UNAVAILABLE',
   'AI_FALLBACK_BUDGET_EXHAUSTED',
+  // Only `/ai/rewrite` raises this one, and it raises it twice for two different
+  // reasons: a paper with no PDF at all, refused before anything is reserved,
+  // and a PDF that would not download, discovered after. This predicate is
+  // consulted only past the reservation, so the case it sees here is always the
+  // second — the source being unreachable, which is the same event
+  // `AI_SOURCE_UNAVAILABLE` covers for the explainer.
+  'AI_REWRITE_NEEDS_FULL_TEXT',
 ]);
 
 export function shouldRefundAIQuota(error) {
@@ -1115,15 +1324,57 @@ export function shouldRefundAIQuota(error) {
   return REFUNDABLE_AI_CODES.has(error.code);
 }
 
-async function reserveAIQuota(env, uid) {
+/**
+ * The daily allowance as it stands, without touching it.
+ *
+ * Split out from `reserveAIQuota` rather than derived from it because the reader
+ * needs the number *before* it decides to spend one: the rewrite shows how many
+ * uses are left, and reserving to find out would cost a use per look. The limit
+ * travels with the answer so the client does not have to hardcode a ten it does
+ * not own.
+ */
+export async function peekAIQuota(env, uid, { unlimited = false } = {}) {
+  const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
+  // An exempt account is not given a separate code path: its per-user ceiling is
+  // simply raised to the global one, so the ledger still counts what it spends
+  // and the only thing that can refuse it is the cost ceiling.
+  const subjectLimit = unlimited
+    ? globalLimit
+    : safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100);
+  const reading = await peekRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    periodKey: `ai:${todayKey()}`,
+    subject: `ai:${uid}`,
+    subjectLimit,
+    globalLimit,
+  });
+  if (reading.code) {
+    throw reading.code === 'QUOTA_LEDGER_NOT_CONFIGURED'
+      ? new AIExplanationError('AI_NOT_CONFIGURED', 503)
+      : new AIExplanationError('AI_UNAVAILABLE', 503);
+  }
+  return {
+    remainingUses: Math.max(0, Number(reading.remaining) || 0),
+    dailyLimit: subjectLimit,
+    // Said plainly rather than left for the client to infer from a suspiciously
+    // round number: a reader showing "1000/1000 today" is telling the truth in a
+    // way nobody reads as "no limit".
+    ...(unlimited ? { unlimited: true } : {}),
+    ...getDailyQuotaReset(),
+  };
+}
+
+export async function reserveAIQuota(env, uid, { unlimited = false } = {}) {
+  const globalLimit = safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000);
   // The day is fixed once and travels with the reservation: recomputing it at
   // release time would refund against tomorrow's ledger for a request that
   // straddles UTC midnight.
   const ledgerRequest = {
     periodKey: `ai:${todayKey()}`,
     subject: `ai:${uid}`,
-    subjectLimit: safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100),
-    globalLimit: safeInteger(env.AI_DAILY_GLOBAL_LIMIT, DEFAULT_GLOBAL_DAILY_LIMIT, 1, 100_000),
+    subjectLimit: unlimited
+      ? globalLimit
+      : safeInteger(env.AI_DAILY_USER_LIMIT, DEFAULT_USER_DAILY_LIMIT, 1, 100),
+    globalLimit,
   };
   const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {
@@ -1143,7 +1394,16 @@ async function reserveAIQuota(env, uid) {
   return { remainingUses: reservation.remaining, ledgerRequest };
 }
 
-async function releaseAIQuota(env, quota) {
+/**
+ * Gives back exactly what `reserveAIQuota` took. `quota` has to be the handle it
+ * returned rather than a freshly built one: the ledger request inside it carries
+ * the day the use was charged to, so a request that started before UTC midnight
+ * and failed after it still credits yesterday.
+ *
+ * Exported because `/ai/rewrite` reserves against the same daily ledger and has
+ * more ways to fail than the explainer does.
+ */
+export async function releaseAIQuota(env, quota) {
   try {
     await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, quota.ledgerRequest);
   } catch {
@@ -1151,7 +1411,7 @@ async function releaseAIQuota(env, quota) {
   }
 }
 
-async function sha256(value) {
+export async function sha256(value) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
 }
@@ -1167,7 +1427,8 @@ export async function handleAIExplanation(request, env, { now = Date.now } = {})
   const deadline = createRequestDeadline(now);
   const contentLength = Number(request.headers.get('content-length') || 0);
   if (contentLength > MAX_REQUEST_BYTES) throw new AIExplanationError('AI_REQUEST_TOO_LARGE', 413);
-  const uid = await verifyFirebaseUser(request, env);
+  const account = await verifyFirebaseAccount(request, env);
+  const uid = account.uid;
   const payload = await request.json().catch(() => null);
   if (!payload || JSON.stringify(payload).length > MAX_REQUEST_BYTES) {
     throw new AIExplanationError('AI_INVALID_REQUEST', 400);
@@ -1177,19 +1438,19 @@ export async function handleAIExplanation(request, env, { now = Date.now } = {})
   const language = normalizeExplanationLanguage(payload.language);
   const paper = normalizePaperForExplanation(payload.paper);
   const providerName = cleanText(env.AI_PROVIDER || 'gemini', 40).toLowerCase();
-  const fallbackProviderName = cleanText(env.AI_FALLBACK_PROVIDER, 40).toLowerCase();
+  const fallbackProviderNames = parseFallbackProviderNames(env);
   if (!PROVIDERS[providerName]) throw new AIExplanationError('AI_NOT_CONFIGURED', 503);
   const model = cleanText(env.AI_MODEL || DEFAULT_MODEL, 100) || DEFAULT_MODEL;
-  const fallbackModel = fallbackProviderName === 'modal-kimi'
+  const fallbackModels = fallbackProviderNames.map(name => name === 'modal-kimi'
     ? cleanText(env.MODAL_KIMI_MODEL || DEFAULT_KIMI_MODEL, 160) || DEFAULT_KIMI_MODEL
-    : '';
-  const cacheProvider = fallbackProviderName ? `${providerName}+${fallbackProviderName}` : providerName;
-  const cacheModel = fallbackModel ? `${model}+${fallbackModel}` : model;
+    : deepseekModel(env));
+  const cacheProvider = [providerName, ...fallbackProviderNames].join('+');
+  const cacheModel = [model, ...fallbackModels].join('+');
   const cacheKey = await explanationCacheKey(paper, level, language, cacheProvider, cacheModel);
   const cached = await caches.default.match(cacheKey);
   if (cached) return { ...(await cached.json()), remainingUses: null, cached: true };
 
-  const quota = await reserveAIQuota(env, uid);
+  const quota = await reserveAIQuota(env, uid, { unlimited: account.unlimitedAI });
   let result;
   try {
     const pdfBudgetMs = stageBudgetMs(
@@ -1203,7 +1464,7 @@ export async function handleAIExplanation(request, env, { now = Date.now } = {})
     if (!pdfBase64 && !paper.abstract) throw new AIExplanationError('AI_SOURCE_UNAVAILABLE', 502);
     result = await explainWithProviderChain({
       providerName,
-      fallbackProviderName,
+      fallbackProviderNames,
       paper,
       level,
       language,

@@ -15,8 +15,8 @@ cp .env.example .env.local
 npm run dev
 ```
 
-The GitHub Pages base path is handled by Vite. Use the URL printed by the dev server for local
-work.
+The site is served from the domain root, so Vite's `base` is `/`. Use the URL printed by the dev
+server for local work.
 
 ## Environment Variables
 
@@ -25,7 +25,6 @@ Frontend variables are public in the built JavaScript:
 | Variable | Purpose |
 | --- | --- |
 | `VITE_FIREBASE_*` | Firebase web configuration |
-| `VITE_GA_MEASUREMENT_ID` | Public GA4 measurement ID; analytics remains consent-gated |
 | `VITE_PAPER_API_BASE_URL` | Cloudflare Worker base URL |
 | `VITE_REPORT_API_URL` | Legacy report API alias |
 | `VITE_SCOPUS_ENABLED` | Enables Scopus-backed browser flows. Declared `false` in `src/utils/deployFlags.js`, which is where the decision is made and reviewed; `vite build` fails when this variable disagrees with that declaration, so change the declaration first. Check `/health/scopus` on the Worker before ever declaring it on: with the flag on and the key refused, the feed queues calls that only ever fail. Scopus reaches Elsevier through the Deno Deploy egress in `proxy/README.md`, never from the Worker |
@@ -37,13 +36,35 @@ February 2026 it requires a key and bills against a daily budget, and its keys t
 Without `VITE_PAPER_API_BASE_URL` the browser still calls OpenAlex directly, on the anonymous
 $0.10/day allowance.
 
-Google Analytics uses basic consent mode: the Analytics SDK is not loaded until the user
-explicitly opts in. PaperTok records normalized application routes and a strict allowlist of
-coarse funnel events (acquisition channel, guest demo, search result count, follow/save/share,
-AI explanation status, onboarding, newsletter subscription, activation, and day-seven return).
-Entity identifiers, search text, paper titles, interests, account identifiers, URLs, and other
-free-form values are excluded. Consent is stored in local browser storage with a first-party
-cookie fallback, so either explicit choice survives reloads. It can be changed from Settings.
+## Analytics
+
+Measurement is **Vercel Web Analytics**, and it stays consent-gated: `AnalyticsProvider` renders
+`<Analytics />` only while consent is granted, so the script is not on the page at all until the
+reader opts in. It sets no cookies of its own.
+
+PaperTok records normalized application routes and a strict allowlist of coarse funnel events
+(acquisition channel, guest demo, search result count, follow/save/share, AI explanation status,
+onboarding, newsletter subscription, activation, and day-seven return). Entity identifiers, search
+text, paper titles, interests, account identifiers, URLs, and other free-form values are excluded.
+Consent is stored in local browser storage with a first-party cookie fallback, so either explicit
+choice survives reloads. It can be changed from Settings.
+
+Two details are load-bearing and easy to undo by accident:
+
+- The app uses `HashRouter`, so every route lives in the fragment and `location.pathname` is `/`
+  for all of them. Passing `route` to `<Analytics />` disables the script's own pathname-based
+  tracking and makes the component emit each view instead. Remove it and the whole site collapses
+  into a single `/` row.
+- `route`, `path` and the `beforeSend` rewrite all carry the *normalized* path, never the real one.
+  The published privacy policy promises that reading a paper is reported as `/public/paper/:id`
+  and never says which; `sanitizeAnalyticsEventUrl` is what keeps that true, because the script
+  builds its payload's `url` from `location.href` on its own.
+
+**Custom events need a paid plan.** On Hobby, Vercel accepts page views and discards custom
+events, so the funnel above is wired but silent. Pro allows 2 properties per event; four of these
+events carry 3 or 4 (`paper_export`, `paper_open`, `paper_annotation`, `share`), so keeping every
+field needs the Web Analytics Plus add-on. The instrumentation is left in place either way: moving
+to Pro turns it on with no code change.
 
 ## Commands
 

@@ -93,12 +93,31 @@ export async function requestMissingRecords({ ids, requests, fetchRecords }) {
   }
   try {
     const result = await fetchRecords(missing);
-    const { records, authoritative } = Array.isArray(result)
-      ? { records: result, authoritative: true }
-      : { records: result.records, authoritative: !result.fromCache && result.authoritative !== false };
+    const { records, authoritative, unsettled } = Array.isArray(result)
+      ? { records: result, authoritative: true, unsettled: [] }
+      : {
+        records: result.records,
+        authoritative: !result.fromCache && result.authoritative !== false,
+        // Ids a second source behind this read failed to answer for. They
+        // stay askable on their own; the rest settles as the answer says.
+        unsettled: Array.isArray(result.unsettled) ? result.unsettled : [],
+      };
     const answered = new Set(records.map(record => record.id));
     requests.fulfill(missing.filter(id => answered.has(id)));
-    const unanswered = missing.filter(id => !answered.has(id));
+    const owed = new Set(unsettled);
+    const unanswered = missing.filter(id => !answered.has(id) && !owed.has(id));
+    const stillOwed = missing.filter(id => !answered.has(id) && owed.has(id));
+    if (stillOwed.length > 0) {
+      if (authoritative) requests.fulfill(unanswered);
+      const askable = requests.release(authoritative ? stillOwed : [...unanswered, ...stillOwed]);
+      return {
+        records,
+        missing,
+        retryable: askable > 0,
+        attempt: requests.attemptsFor(stillOwed),
+        error: null,
+      };
+    }
     if (authoritative) {
       // The server itself said these ids have no records. That absence is
       // final: re-asking on every render would burn reads on a known blank.

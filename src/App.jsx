@@ -1,16 +1,18 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react'
-import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom'
+import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
+import { safeExternalUrl } from './utils/externalUrl.js'
 import RouteFallback from './components/Layout/RouteFallback'
+import RouteAnnouncer from './components/Layout/RouteAnnouncer'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { LanguageProvider, useLanguage } from './context/LanguageContext'
+import { ThemeProvider } from './context/ThemeContext'
 import { AnalyticsProvider } from './context/AnalyticsContext'
 import { FeedProvider } from './context/FeedContext'
 import { FollowingProvider } from './context/FollowingContext'
 import { FollowingUpdatesProvider } from './context/FollowingUpdatesContext'
 import { EmailNotificationsProvider } from './context/EmailNotificationsContext'
-import LoginPage from './components/Auth/LoginPage'
 import ProtectedRoute from './components/Auth/ProtectedRoute'
 import FeedContainer from './components/Feed/FeedContainer'
 import Navbar from './components/Layout/Navbar'
@@ -18,34 +20,68 @@ import AnalyticsConsentBanner from './components/Privacy/AnalyticsConsentBanner'
 import GuestFeedPage from './components/Public/GuestFeedPage'
 import AuthPrompt from './components/Public/AuthPrompt'
 import { getPublicPaperPath } from './utils/publicNavigation'
+import { lazyWithPreload } from './utils/lazyPreload'
 import './App.css'
 
 // Only what the first paint of the feed needs loads eagerly. Everything below
 // is its own chunk: the 2 MB single bundle was the measured cost of every
-// screen riding in the boot graph (25 static screens, 0.9–1.3 s of parse), and
-// React Router v7 navigations run inside startTransition, so switching to a
-// route whose chunk is still downloading keeps the current screen on instead
-// of flashing a fallback.
-const OnboardingFlow = lazy(() => import('./components/Onboarding/OnboardingFlow'))
-const ListsPage = lazy(() => import('./components/Lists/ListsPage'))
-const PDFViewer = lazy(() => import('./components/PDF/PDFViewer'))
-const SaveToListModal = lazy(() => import('./components/Lists/SaveToListModal'))
-const CommentsSheet = lazy(() => import('./components/Comments/CommentsSheet'))
-const SearchPage = lazy(() => import('./components/Search/SearchPage'))
-const EntityExplorer = lazy(() => import('./components/Explorer/EntityExplorer'))
-const ScientificReport = lazy(() => import('./components/Report/ScientificReport'))
-const FollowingFeedPage = lazy(() => import('./components/Following/FollowingFeedPage'))
-const SettingsPage = lazy(() => import('./components/Settings/SettingsPage'))
-const FollowingSettingsPage = lazy(() => import('./components/Settings/FollowingSettingsPage'))
-const MyCommentsPage = lazy(() => import('./components/Settings/MyCommentsPage'))
-const ModerationPage = lazy(() => import('./components/Admin/ModerationPage'))
-const PublicPaperPage = lazy(() => import('./components/Public/PublicPaperPage'))
-const PublicListPage = lazy(() => import('./components/Lists/PublicListPage'))
-const PublicProfilePage = lazy(() => import('./components/Public/PublicProfilePage'))
-const ProfilePage = lazy(() => import('./components/Profile/ProfilePage'))
+// screen riding in the boot graph (25 static screens, 0.9–1.3 s of parse).
+//
+// React Router v7 navigations run inside startTransition, but that does not
+// keep the current screen on while a chunk downloads here: `AnimatePresence
+// mode="wait"` mounts the incoming screen from its own exit-complete callback,
+// outside the transition, so a screen that suspends there commits the
+// RouteFallback above the presence wrapper. The outgoing screen has finished
+// leaving by then (measured: opacity 0 before the fallback ever commits), so
+// nothing is cut; what a cold chunk costs is a gap between exit and entrance,
+// kept invisible under 320 ms by the fallback's own delay. The screens are
+// preloadable (`lazyWithPreload`) so the ones prefetched below never suspend at all.
+
+// The sign-in page rides in that same list rather than in the boot graph, as it
+// used to: a session that already exists never renders it, and a guest reaches
+// it by a redirect or a direct link — both can afford one chunk.
+const LoginPage = lazyWithPreload(() => import('./components/Auth/LoginPage'))
+const OnboardingFlow = lazyWithPreload(() => import('./components/Onboarding/OnboardingFlow'))
+const ListsPage = lazyWithPreload(() => import('./components/Lists/ListsPage'))
+const PDFViewer = lazyWithPreload(() => import('./components/PDF/PDFViewer'))
+const SaveToListModal = lazyWithPreload(() => import('./components/Lists/SaveToListModal'))
+const CommentsSheet = lazyWithPreload(() => import('./components/Comments/CommentsSheet'))
+const SearchPage = lazyWithPreload(() => import('./components/Search/SearchPage'))
+const EntityExplorer = lazyWithPreload(() => import('./components/Explorer/EntityExplorer'))
+const ScientificReport = lazyWithPreload(() => import('./components/Report/ScientificReport'))
+const FollowingFeedPage = lazyWithPreload(() => import('./components/Following/FollowingFeedPage'))
+const SettingsPage = lazyWithPreload(() => import('./components/Settings/SettingsPage'))
+const FollowingSettingsPage = lazyWithPreload(() => import('./components/Settings/FollowingSettingsPage'))
+const MyCommentsPage = lazyWithPreload(() => import('./components/Settings/MyCommentsPage'))
+const ModerationPage = lazyWithPreload(() => import('./components/Admin/ModerationPage'))
+const PublicPaperPage = lazyWithPreload(() => import('./components/Public/PublicPaperPage'))
+const PublicListPage = lazyWithPreload(() => import('./components/Lists/PublicListPage'))
+const PublicProfilePage = lazyWithPreload(() => import('./components/Public/PublicProfilePage'))
+const ProfilePage = lazyWithPreload(() => import('./components/Profile/ProfilePage'))
+const SearchCommand = lazyWithPreload(() => import('./components/Search/SearchCommand'))
 
 function AppContent() {
   const [pdfPaper, setPdfPaper] = useState(null)
+  // On a coarse pointer, "open the PDF" means the browser's own viewer in a
+  // new tab, straight away: framed PDFs are crippled on every touch platform
+  // (iOS paints only the first page; Android Chrome renders nothing), and the
+  // hand-off card the overlay showed instead was one tap of ceremony nobody
+  // asked for (2026-08-29). The overlay stays the desktop route, and the
+  // fallthrough (no usable URL, or no matchMedia) still mounts it — its own
+  // hand-off card is the belt to this suspender.
+  const openPdf = useCallback((paper) => {
+    try {
+      if (window.matchMedia('(pointer: coarse)').matches) {
+        const candidate = paper.pdfUrl || (paper.arxivId ? `https://arxiv.org/pdf/${paper.arxivId}` : '')
+        const url = safeExternalUrl(candidate)
+        // `window.open` answers null when a popup blocker eats it; falling
+        // through to the overlay then still gives the reader its hand-off
+        // link instead of a tap that visibly did nothing.
+        if (url && window.open(url, '_blank', 'noopener')) return
+      }
+    } catch { /* matchMedia absence falls through to the overlay */ }
+    setPdfPaper(paper)
+  }, [])
   const [saveModalPaper, setSaveModalPaper] = useState(null)
   // The comment sheet is hosted here, next to the PDF viewer and the save
   // modal, for the same reason those are: the feed hands over a paper and
@@ -54,8 +90,21 @@ function AppContent() {
   const [commentsPaper, setCommentsPaper] = useState(null)
   const [guestFeedReady, setGuestFeedReady] = useState(false)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  // The palette mounts on its first open and then stays mounted, closed or
+  // not. Its exit is `@radix-ui/react-presence` keeping the sheet on screen
+  // while `scSheetOut` runs (SearchCommand.css), and Presence can only do that
+  // inside a component that still exists: mounted behind `searchOpen &&`, a
+  // close removed the whole tree in the same commit — gone from the DOM 2 ms
+  // after the click, `data-state="closed"` never observed — and the exit had
+  // never played once. The lazy chunk still waits for the first open, which is
+  // what the conditional mount was for; a closed palette costs one idle hook.
+  const [searchMounted, setSearchMounted] = useState(false)
+  const openSearch = useCallback(() => {
+    setSearchMounted(true)
+    setSearchOpen(true)
+  }, [])
   const location = useLocation()
-  const navigate = useNavigate()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const { isEnglish } = useLanguage()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
@@ -77,31 +126,73 @@ function AppContent() {
     setAuthPromptOpen(true)
   }, [])
 
-  const continueToAuthentication = useCallback(() => {
-    setAuthPromptOpen(false)
-    const returnTo = `${location.pathname}${location.search}`
-    navigate('/login', { state: { returnTo } })
-  }, [location.pathname, location.search, navigate])
-
-  // Warm the chunks a session is most likely to need next — the three
-  // overlays any card can open, and the other navbar feeds — once the first
-  // screen has had the network and the main thread to itself for a while.
+  // Warm the chunks a session is most likely to need next — the overlays any
+  // card can open, and the other navbar feeds — once the first screen has
+  // had the network and the main thread to itself for a while. Skipped on a
+  // connection that says it is paying for every byte: Save-Data or an
+  // effective 2G link. `navigator.connection` is absent in Safari, and an
+  // unknown connection prefetches as before — guessing "slow" for every
+  // iPhone would cost more than it saves.
   useEffect(() => {
     const prefetch = () => {
-      import('./components/Comments/CommentsSheet').catch(() => {})
-      import('./components/PDF/PDFViewer').catch(() => {})
-      import('./components/Lists/SaveToListModal').catch(() => {})
-      import('./components/Report/ScientificReport').catch(() => {})
-      import('./components/Following/FollowingFeedPage').catch(() => {})
+      const conn = navigator.connection
+      const frugal = conn && (conn.saveData || /2g/.test(conn.effectiveType || ''))
+      if (frugal) return
+      // Everything goes through `preload()`, not a bare `import()`: the
+      // import warms the module cache, but the first render of a `lazy`
+      // component still suspends on it (see utils/lazyPreload.js), and React
+      // then commits the Suspense fallback and holds it for its 300 ms
+      // throttle. Measured on the screens: a 300 ms blank beat between exit
+      // and entrance on the first visit to Research or Following, chunk
+      // cached or not. Measured on the overlays: the comments sheet appeared
+      // ~420 ms after the tap that opened it the first time in a session,
+      // chunk cached or not, and at once every time after. Preloaded, the
+      // first time is every other time.
+      CommentsSheet.preload().catch(() => {})
+      PDFViewer.preload().catch(() => {})
+      SaveToListModal.preload().catch(() => {})
+      ScientificReport.preload().catch(() => {})
+      FollowingFeedPage.preload().catch(() => {})
+      // The avatar and the gear are one tap from every screen. Fetched on
+      // first visit instead, the profile and settings chunks were what a
+      // deploy most often took away from an open tab: a 404 on the chunk,
+      // the forced reload in main.jsx, and the feed coming back from the top
+      // — which read as the whole feed reloading.
+      PublicProfilePage.preload().catch(() => {})
+      SettingsPage.preload().catch(() => {})
+      // Every card links to authors, topics and projects; the first of those
+      // opened in a session used to pay the chunk and the fallback throttle.
+      EntityExplorer.preload().catch(() => {})
+      import('./components/Reader/PaperReader.jsx').catch(() => {})
+      SearchCommand.preload().catch(() => {})
     }
     const schedule = window.requestIdleCallback || (fn => setTimeout(fn, 0))
     const timer = setTimeout(() => schedule(prefetch), 2500)
     return () => clearTimeout(timer)
   }, [])
 
+  // HashRouter (src/main.jsx) treats the URL fragment as the route. Letting
+  // href="#main-content" reach the browser would rewrite the whole hash, so
+  // react-router would read "/main-content" as the pathname, match no route,
+  // and the catch-all `<Route path="*">` below would redirect to "/" —
+  // ejecting a keyboard user from whatever route they were actually on (e.g.
+  // /login). The href stays for assistive technology; the click is handled
+  // here instead of letting the fragment reach the router.
+  const handleSkipLinkClick = (event) => {
+    event.preventDefault()
+    document.getElementById('main-content')?.focus()
+  }
+
   return (
     <FeedProvider feedRouteActive={normalizedPathname === '/'}>
-      {showNavbar && <Navbar />}
+      <a className="skip-link" href="#main-content" onClick={handleSkipLinkClick}>
+        {isEnglish ? 'Skip to content' : 'Saltar al contenido'}
+      </a>
+      <RouteAnnouncer />
+      {showNavbar && <Navbar searchOpen={searchOpen} onOpenSearch={openSearch} />}
+      {/* Focus target for the skip link and for route changes (RouteAnnouncer).
+          A div, not <main>: several routes render their own <main> inside. */}
+      <div id="main-content" tabIndex={-1}>
       <Suspense fallback={<RouteFallback />}>
       <AnimatePresence mode="wait" initial={false}>
         <Routes location={location} key={location.pathname}>
@@ -121,7 +212,11 @@ function AppContent() {
                 <ProtectedRoute>
                   <PageTransition>
                     <FeedContainer
-                      onOpenPdf={setPdfPaper}
+                      landmark={{
+                        label: isEnglish ? 'Paper feed' : 'Feed de papers',
+                        heading: isEnglish ? 'For you' : 'Para ti',
+                      }}
+                      onOpenPdf={openPdf}
                       onSaveToList={setSaveModalPaper}
                       onOpenComments={setCommentsPaper}
                     />
@@ -132,7 +227,7 @@ function AppContent() {
                   <GuestFeedPage
                     onReady={setGuestFeedReady}
                     onAuthRequired={requestAuthentication}
-                    onOpenPdf={setPdfPaper}
+                    onOpenPdf={openPdf}
                     onOpenComments={setCommentsPaper}
                   />
                 </PageTransition>
@@ -144,7 +239,7 @@ function AppContent() {
             element={
               <ProtectedRoute>
                 <PageTransition>
-                  <ListsPage onOpenPdf={setPdfPaper} onEditPaper={setSaveModalPaper} />
+                  <ListsPage onOpenPdf={openPdf} onEditPaper={setSaveModalPaper} />
                 </PageTransition>
               </ProtectedRoute>
             }
@@ -155,7 +250,7 @@ function AppContent() {
               <ProtectedRoute>
                 <PageTransition>
                   <ScientificReport
-                    onOpenPdf={setPdfPaper}
+                    onOpenPdf={openPdf}
                     onSaveToList={setSaveModalPaper}
                   />
                 </PageTransition>
@@ -170,7 +265,7 @@ function AppContent() {
               <ProtectedRoute>
                 <PageTransition>
                   <FollowingFeedPage
-                    onOpenPdf={setPdfPaper}
+                    onOpenPdf={openPdf}
                     onSaveToList={setSaveModalPaper}
                     onOpenComments={setCommentsPaper}
                   />
@@ -294,7 +389,7 @@ function AppContent() {
                 <PublicPaperPage
                   isAuthenticated={Boolean(user)}
                   onAuthRequired={requestAuthentication}
-                  onOpenPdf={setPdfPaper}
+                  onOpenPdf={openPdf}
                   onSaveToList={user ? setSaveModalPaper : requestAuthentication}
                 />
               </PageTransition>
@@ -323,6 +418,13 @@ function AppContent() {
         </Routes>
       </AnimatePresence>
       </Suspense>
+      </div>
+
+      {user && searchMounted && (
+        <Suspense fallback={null}>
+          <SearchCommand open={searchOpen} onOpenChange={setSearchOpen} />
+        </Suspense>
+      )}
 
       <AnalyticsConsentBanner guestFeedReady={guestFeedReady} />
 
@@ -330,7 +432,6 @@ function AppContent() {
         {authPromptOpen && (
           <AuthPrompt
             onClose={() => setAuthPromptOpen(false)}
-            onContinue={continueToAuthentication}
           />
         )}
       </AnimatePresence>
@@ -385,13 +486,15 @@ function UserScopedAppContent() {
 
 function App() {
   return (
-    <AuthProvider>
-      <LanguageProvider>
-        <AnalyticsProvider>
-          <UserScopedAppContent />
-        </AnalyticsProvider>
-      </LanguageProvider>
-    </AuthProvider>
+    <ThemeProvider>
+      <AuthProvider>
+        <LanguageProvider>
+          <AnalyticsProvider>
+            <UserScopedAppContent />
+          </AnalyticsProvider>
+        </LanguageProvider>
+      </AuthProvider>
+    </ThemeProvider>
   )
 }
 

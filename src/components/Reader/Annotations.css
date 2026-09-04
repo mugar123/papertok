@@ -1,0 +1,627 @@
+/* ============================================
+   Annotations — the selection menu and the margin
+
+   Two surfaces. The menu is an overlay on the selection and borrows the
+   overlay vocabulary: ink border, near-square corners, a short drop. The rail
+   is a margin and borrows the ruled-row vocabulary: hairlines, a 3px rule down
+   the inner edge, mono for machine data and serif for anything quoted from the
+   paper. Neither invents a colour — the only two in play are the brand yellow
+   (your pen) and ink (the model's).
+   ============================================ */
+
+/* ── The selection menu ── */
+.rd-menu {
+  position: fixed;
+  z-index: 12060;
+  border: 1px solid var(--border-ink);
+  border-radius: var(--radius-xl);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-lg);
+  /* Scaled by framer on entry; without this the corners crawl. */
+  transform-origin: top left;
+}
+
+.rd-menu-list {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1);
+}
+
+.rd-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  min-height: 34px;
+  padding: 0 var(--space-3);
+  border: none;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.rd-menu-item small {
+  margin-left: auto;
+  font: 400 0.625rem/1 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.rd-menu-item:disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rd-menu-item:not(:disabled):hover { background: var(--bg-secondary); }
+}
+
+/* The day's allowance, stated where it is about to be spent. */
+.rd-menu-foot {
+  padding: 6px var(--space-3) 4px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border-subtle);
+  font: 400 0.625rem/1.5 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.rd-menu-compose {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: var(--space-3);
+}
+
+.rd-menu-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.rd-menu-pen {
+  width: 13px;
+  height: 13px;
+  border: 1px solid rgba(17, 19, 24, 0.16);
+  border-radius: var(--radius-sm);
+  background: var(--brand-yellow);
+}
+
+.rd-menu-input {
+  width: 100%;
+  height: 78px;
+  padding: var(--space-2);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+  resize: none;
+}
+
+.rd-menu-input:focus {
+  border-color: var(--border-ink);
+}
+
+.rd-menu-actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.rd-menu-save {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  border: 1px solid var(--border-ink);
+  border-radius: var(--radius-md);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  cursor: pointer;
+}
+
+.rd-menu-save:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rd-menu-cancel {
+  min-height: 32px;
+  padding: 0 13px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-medium);
+  cursor: pointer;
+}
+
+/* ── The margin ── */
+.rd-rail {
+  --rd-rail-w: 320px;
+  flex: 0 0 var(--rd-rail-w);
+  align-self: flex-start;
+  position: sticky;
+  top: 0;
+  display: flex;
+  flex-direction: column;
+  padding-left: var(--space-5);
+  border-left: 1px solid var(--border-subtle);
+}
+
+/* ── Putting the margin away ──
+   The margin leaves and the paper takes the space back, and those are one
+   movement, not two: a negative right margin shrinks the flex line by exactly
+   the rail's own footprint, so a `justify-content: center` line re-centres the
+   paper continuously while the rail slides out past the edge.
+
+   Animating the margin rather than the width is what keeps this cheap: the
+   rail's own box never changes size, so not one card reflows on the way out —
+   the paper's column doesn't either, since taking the rail away only ever
+   gives it more room than its 68ch. Above 1100px it is never shrunk to begin
+   with, and below it this rail is a sheet and none of this applies.
+
+   Hidden rather than unmounted, so coming back is the same movement reversed
+   and not a rebuild — the notes are still where they were left, and none of
+   their entrance animations replay. `visibility` waits for the slide to finish
+   so the rail leaves the tab order and the reader's reach only once it is
+   actually gone. */
+.rd-rail[data-surface='rail'] {
+  transition:
+    margin-right var(--transition-slow) cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 180ms ease-out,
+    transform var(--transition-slow) cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s;
+}
+
+.rd-rail[data-surface='rail'][data-hidden] {
+  margin-right: calc(-1 * (var(--rd-rail-w) + var(--space-8)));
+  /* Just past its own edge: far enough to read as leaving, not so far that it
+     races the paper it is travelling with. */
+  transform: translateX(28px);
+  opacity: 0;
+  visibility: hidden;
+  transition-delay: 0s, 0s, 0s, var(--transition-slow);
+}
+
+.rd-rail-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.rd-rail-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-primary);
+}
+
+.rd-rail-count {
+  font: 400 0.6875rem/1.5 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.rd-rail-filters {
+  display: flex;
+  gap: 4px;
+  margin: var(--space-3) 0;
+}
+
+.rd-rail-filter {
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font: 500 0.625rem/1 var(--font-mono);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  cursor: pointer;
+  /* Deliberately fast and unanimated in position: a filter is a switch, and
+     animating a switch makes it feel slower than it is. */
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.rd-rail-filter[data-on] {
+  border-color: var(--border-ink);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+.rd-rail-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.rd-rail-list::-webkit-scrollbar { display: none; }
+
+.rd-rail-empty {
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--text-tertiary);
+  /* Delayed by exactly the cards' exit. Deleting the last note used to put this
+     on screen while that note was still animating off it, so for a fifth of a
+     second the rail said both things at once. */
+  animation: rdRailEmptyIn 240ms ease-out 180ms backwards;
+}
+
+@keyframes rdRailEmptyIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── One annotation ── */
+.rd-note {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: var(--space-3) var(--space-3) var(--space-3) 14px;
+  margin-bottom: 10px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--brand-yellow);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
+  background: var(--bg-card);
+  /* The exit collapses height; without this the content spills while it does. */
+  overflow: hidden;
+}
+
+.rd-note[data-kind='ai'],
+.rd-note--ai {
+  border-left-color: var(--accent-primary);
+  background: var(--bg-sunken);
+}
+
+
+.rd-note-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.rd-note-origin {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--accent-save);
+}
+
+.rd-note[data-kind='ai'] .rd-note-origin,
+.rd-note--ai .rd-note-origin {
+  color: var(--text-primary);
+}
+
+.rd-note-where {
+  border: none;
+  background: transparent;
+  padding: 0;
+  font: 400 0.6875rem/1.5 var(--font-mono);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  text-align: left;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rd-note-where:hover { color: var(--text-primary); }
+}
+
+.rd-note-remove {
+  margin-left: auto;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--border-strong);
+  cursor: pointer;
+  /* Quiet rather than hidden. It used to appear only under the pointer, which
+     on the sheet — where there is no pointer — meant it never appeared at all;
+     at this weight one small mark per card still reads as notes, not a toolbar. */
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .rd-note-remove:hover {
+    background: var(--tint-red-bg);
+    color: var(--tint-red-fg);
+  }
+}
+
+/* Text lifted from the paper, set as the paper sets it. */
+.rd-note-quote {
+  font-family: var(--font-serif);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--text-secondary);
+  padding-left: var(--space-2);
+  border-left: 2px solid var(--border-subtle);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.rd-note-body {
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: var(--text-secondary);
+}
+
+/* An answer arrives the way the rewrite's own sections do. */
+.rd-note-body[data-fresh] {
+  -webkit-mask-image: var(--rd-write-mask);
+  mask-image: var(--rd-write-mask);
+  -webkit-mask-size: 260% 100%;
+  mask-size: 260% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-position: 0 0;
+  mask-position: 0 0;
+  animation: rdWriteIn 620ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.rd-note--thinking {
+  gap: 10px;
+}
+
+.rd-note-bar {
+  display: block;
+  height: 9px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary) 25%,
+    var(--border-subtle) 50%,
+    var(--bg-secondary) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s ease-in-out infinite;
+}
+
+.rd-note-bar--short {
+  width: 72%;
+  animation-delay: -140ms;
+}
+
+.rd-note--failed {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  border-left-color: var(--tint-red-fg);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
+  font-size: 0.8125rem;
+  line-height: 1.5;
+}
+
+/* ── The marks these leave in the text ── */
+/* The model's annotation does not take the pen: a second saturated yellow would
+   claim the reader wrote it. An ink underline says "something is attached here"
+   without pretending to be a highlight. */
+.rd-mark--ai {
+  background: var(--bg-secondary);
+  box-shadow: inset 0 -2px 0 var(--accent-primary);
+}
+
+/* The pen laying the colour down, left to right, at the speed of a stroke. It
+   is the only thing that says "saved" — a toast would say it worse. */
+.rd-mark[data-fresh] {
+  background-color: transparent;
+  background-image: linear-gradient(var(--brand-yellow), var(--brand-yellow));
+  background-repeat: no-repeat;
+  animation: rdPenDown 420ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+}
+
+.rd-mark--ai[data-fresh] {
+  background-image: linear-gradient(var(--bg-secondary), var(--bg-secondary));
+}
+
+@keyframes rdPenDown {
+  from { background-size: 0% 100%; }
+  to { background-size: 100% 100%; }
+}
+
+/* A passage waiting on the menu's answer wears the pen already, so the mark you
+   are about to make is the mark you can already see. */
+.rd-mark--pending {
+  background: var(--brand-yellow-soft);
+  box-shadow: inset 0 -2px 0 var(--brand-yellow);
+}
+
+/* ── The margin, where there is no margin ──
+   Under 1100px the document has the whole width and the rail becomes a sheet:
+   pinned to the bottom, peeking by its header so the count is readable,
+   pulled up when wanted. Fixed rather than in flow, so it never takes width
+   from the paper. Fine pointers only by construction: the touch route mounts
+   no rail at all (the mobile reader is level + download, 2026-08-29). */
+.rd-rail[data-surface='sheet'] {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  flex: none;
+  z-index: 12050;
+  max-height: 72vh;
+  max-height: 72dvh;
+  padding-left: 0;
+  /* Clears the home indicator once the sheet is expanded and its list runs
+     to the true bottom edge. Zero with no home indicator, so nothing moves
+     there. */
+  padding-bottom: var(--inset-bottom);
+  border-left: none;
+  border-top: 1px solid var(--border-default);
+  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+  background: var(--bg-card);
+  box-shadow: 0 -8px 24px rgba(17, 19, 24, 0.08);
+  /* translateY(100% - X) leaves exactly the sheet's own top X px on screen,
+     anchored to the viewport's bottom edge — that's the peeked state: the
+     grab handle and header, not the padding-bottom above (which lives at the
+     sheet's far end and is entirely off-screen while peeked). Padding alone
+     can't clear the home indicator here, so the peek amount itself grows by
+     --inset-bottom via --rd-sheet-peek-total (defined on `.rd` in
+     PaperReader.css, next to --rd-sheet-peek itself — `.rd` is this
+     element's ancestor, so the custom property inherits straight down to
+     here). PaperReader.css's panel dock and scroll padding below 1100px read
+     the same token, so nothing parked against the sheet can disagree with it
+     about where its top edge actually is. The fallback below only matters if
+     `.rd-rail` is ever used somewhere `.rd` is not an ancestor; it mirrors
+     the old inline arithmetic so behaviour there is unchanged. Zero inset:
+     identical to the plain --rd-sheet-peek reveal from before either way. */
+  transform: translateY(calc(100% - var(--rd-sheet-peek-total, calc(62px + var(--inset-bottom)))));
+  transition: transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rd-rail[data-surface='sheet'][data-expanded] {
+  transform: translateY(0);
+}
+
+/* While a finger is on the header the sheet is not animating, it is being
+   moved. A transition here would put 260ms of lag between the thumb and the
+   sheet, which is the difference between dragging something and asking it to
+   follow. The inline transform that does the moving is written and cleared by
+   the component; this only gets out of its way. */
+.rd-rail[data-surface='sheet'][data-dragging] {
+  transition: none;
+}
+
+.rd-rail-grab {
+  display: block;
+  width: 100%;
+  padding: 10px var(--space-4) 12px;
+  border: none;
+  border-bottom: 1px solid var(--border-subtle);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  /* The browser's own vertical gesture — scrolling the page behind — would
+     claim the drag before `pointermove` ever fired. Only the header gives it
+     up; the notes below scroll normally. */
+  touch-action: none;
+  /* A drag across a header made of text otherwise selects the text it crosses,
+     and the selection stays behind once the sheet has moved. */
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.rd-rail-grabber {
+  display: block;
+  width: 34px;
+  height: 4px;
+  margin: 0 auto 12px;
+  border-radius: var(--radius-sm);
+  background: var(--border-default);
+}
+
+.rd-rail-headline {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.rd-rail-chevron {
+  margin-left: auto;
+  color: var(--text-tertiary);
+  transition: transform 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rd-rail[data-expanded] .rd-rail-chevron {
+  transform: rotate(180deg);
+}
+
+.rd-rail[data-surface='sheet'] .rd-rail-filters {
+  margin: var(--space-3) var(--space-4);
+}
+
+.rd-rail[data-surface='sheet'] .rd-rail-list {
+  padding: 0 var(--space-4) var(--space-5);
+}
+
+.rd-rail[data-surface='sheet'] .rd-rail-empty {
+  padding: 0 var(--space-4) var(--space-5);
+}
+
+/* The air the peeking sheet needs under the last lines of the paper is set in
+   `PaperReader.css`, alongside the panel that stands in the same corner. It was
+   here, and being here — in the file that loads second — it silently outranked
+   the phone rule next to it. */
+
+@media (max-width: 640px) {
+  .rd-menu {
+    /* A phone has no room for a floating menu beside a passage: it spans the
+       page and stays put, with rows a thumb can hit. */
+    left: var(--space-4) !important;
+    right: var(--space-4);
+    width: auto !important;
+    max-width: calc(100vw - var(--space-8));
+  }
+
+  .rd-menu-item { min-height: 46px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rd-rail[data-surface='sheet'],
+  .rd-rail-chevron {
+    transition: none;
+  }
+
+  /* Still hidden, just not travelled to. */
+  .rd-rail[data-surface='rail'] {
+    transition: opacity 120ms linear, visibility 0s;
+  }
+
+  .rd-rail[data-surface='rail'][data-hidden] {
+    transform: none;
+    transition-delay: 0s, 120ms;
+  }
+
+  .rd-mark[data-fresh],
+  .rd-note-body[data-fresh],
+  .rd-rail-empty {
+    animation: none;
+  }
+
+  .rd-note-body[data-fresh] {
+    -webkit-mask-image: none;
+    mask-image: none;
+  }
+
+  .rd-mark[data-fresh] {
+    background-color: var(--brand-yellow);
+    background-image: none;
+  }
+
+  .rd-mark--ai[data-fresh] {
+    background-color: var(--bg-secondary);
+  }
+
+  .rd-note-bar { animation: none; background: var(--bg-secondary); }
+}

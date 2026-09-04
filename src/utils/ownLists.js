@@ -80,3 +80,65 @@ export function withPaperMembership(lists, paperId, { added = [], removed = [] }
     return list;
   });
 }
+
+/**
+ * The lists a read found, plus the ones created since it was issued.
+ *
+ * "Create a new list" is on screen from the first frame, before the lists have
+ * landed. The document is written the moment the button is pressed, but the
+ * `getDocs` already on the wire was issued BEFORE it existed and its snapshot
+ * cannot contain it — and neither can a late answer delivered minutes later by
+ * `patientRead`'s healing loop. Applying that snapshot wholesale took the list
+ * the user had just made off the screen and out of the shared session cache,
+ * which `rememberOwnLists` then stamped fresh: for the next thirty seconds
+ * every screen in the app agreed the list did not exist.
+ *
+ * The fetched lists win on content — a rename made elsewhere is real — and only
+ * the ids the snapshot has never heard of are carried over. Returns the very
+ * same array when there is nothing to merge, so the common case costs nothing.
+ */
+export function mergeCreatedLists(fetched, created) {
+  if (!Array.isArray(fetched) || !Array.isArray(created) || created.length === 0) return fetched;
+  const known = new Set(fetched.map((list) => list?.id));
+  const missing = created.filter((list) => list?.id && !known.has(list.id));
+  return missing.length === 0 ? fetched : [...fetched, ...missing];
+}
+
+function createdAtMillis(value) {
+  if (typeof value?.toMillis === 'function') return value.toMillis();
+  if (typeof value === 'number' && Number.isFinite(value)) return value;
+  if (typeof value === 'string') {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
+  return 0;
+}
+
+/**
+ * The profile page paints cards (`title`, `paperCount`), while the save modal
+ * and lists page cache full documents (`name`, `paperIds`). One mapper so a
+ * cache written by one screen can seed the other without corrupting it.
+ */
+export function toProfileListCards(lists) {
+  if (!Array.isArray(lists)) return [];
+  return lists
+    .map((list) => {
+      if (!list || typeof list !== 'object' || !list.id) return null;
+      const paperIds = Array.isArray(list.paperIds) ? list.paperIds : null;
+      const title = typeof list.title === 'string' && list.title
+        ? list.title
+        : (typeof list.name === 'string' ? list.name : '');
+      if (!title) return null;
+      return {
+        id: list.id,
+        title,
+        emoji: list.emoji ?? null,
+        color: list.color ?? null,
+        paperCount: paperIds ? paperIds.length : (Number.isFinite(list.paperCount) ? list.paperCount : 0),
+        isPublished: Boolean(list.publicShareId) || list.isPublished === true,
+        onProfile: list.onProfile === true,
+        createdAtMillis: createdAtMillis(list.createdAt) || list.createdAtMillis || 0,
+      };
+    })
+    .filter(Boolean);
+}

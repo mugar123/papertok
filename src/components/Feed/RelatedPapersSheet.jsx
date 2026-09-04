@@ -1,10 +1,24 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BookOpen, ChevronRight, GitBranch, Network, Sparkles, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  ChevronRight,
+  Crosshair,
+  GitBranch,
+  List,
+  Lock,
+  Network,
+  Sparkles,
+  TriangleAlert,
+  X,
+} from 'lucide-react';
 import { useReducedMotion } from 'framer-motion';
 import { getCitationGraph, getCitationGraphDoi } from '../../services/citationGraphService';
 import { getRelatedPapers } from '../../services/relatedPapersService';
+import { buildCitationMapLayout } from '../../utils/citationMap.js';
+import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import {
   buildRelatedPaperEntries,
+  getRelatedPaperIdentity,
   getRelatedTransitionAction,
   getRelatedTransitionDuration,
   getRelatedTransitionFallbackDelay,
@@ -21,11 +35,43 @@ const INITIAL_GRAPH = {
   counts: { references: 0, citations: 0 },
   source: '',
   partial: false,
+  degraded: false,
 };
 
-function formatCompactCount(value, locale = 'es-ES') {
-  const count = Math.max(0, Number(value) || 0);
-  return new Intl.NumberFormat(locale, { notation: count >= 1000 ? 'compact' : 'standard' }).format(count);
+/**
+ * Centring on a neighbour is a move inside one space, not a change of screen:
+ * the node travels up to the rule while everything else fades, and the new
+ * neighbourhood is drawn around it. `LEAVE` is how long that trip takes;
+ * `PLACEHOLDER` is how long the sheet waits, after the node lands, before it
+ * admits it is waiting — with the answer in the service cache the skeleton
+ * never appears at all.
+ */
+const WALK = { SETTLE: 40, LEAVE: 440, REVEAL: 1200, PLACEHOLDER: 320 };
+
+/**
+ * A neighbourhood that has an answer, whatever the answer is. Absent means the
+ * request is still out. `error` belongs here too: the effect re-runs whenever
+ * `graphs` changes, so treating a failure as unanswered would spin a hot retry
+ * loop against a Worker route that reserves nine OpenAlex calls a time. The
+ * retry is closing the sheet and opening it again.
+ */
+const SETTLED = new Set(['ready', 'empty', 'error']);
+
+function formatCount(value, locale = 'es-ES') {
+  return new Intl.NumberFormat(locale).format(Math.max(0, Number(value) || 0));
+}
+
+/** The node label has room for one word: the first author's family name. */
+function nodeAuthorLabel(paper) {
+  const first = paper?.authors?.[0];
+  const name = String(first?.name || first || '').trim();
+  if (name) return name.split(/\s+/).pop();
+  return String(paper?.title || '').split(/\s+/)[0] || '';
+}
+
+function shortTitle(title, max) {
+  const text = String(title || '').trim();
+  return text.length > max ? `${text.slice(0, max).trim()}…` : text;
 }
 
 function LoadingState({ label }) {
@@ -43,35 +89,39 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
   const { isEnglish, locale } = useLanguage();
   const hasGraphIdentifier = Boolean(getCitationGraphDoi(paper));
   const [mode, setMode] = useState(hasGraphIdentifier ? 'graph' : 'similar');
-  const [graphSide, setGraphSide] = useState('references');
-  const [graph, setGraph] = useState(INITIAL_GRAPH);
-  const [graphStatus, setGraphStatus] = useState(hasGraphIdentifier ? 'loading' : 'unavailable');
+  const [view, setView] = useState('map');
+  const [trail, setTrail] = useState([paper]);
+  const [graphs, setGraphs] = useState({});
   const [papers, setPapers] = useState([]);
   const [relatedStatus, setRelatedStatus] = useState(hasGraphIdentifier ? 'idle' : 'loading');
   const [isClosing, setIsClosing] = useState(false);
   const [isSelectionReady, setIsSelectionReady] = useState(false);
   const [selectedPaperKey, setSelectedPaperKey] = useState(null);
+  const [focusedKey, setFocusedKey] = useState(null);
+  const [box, setBox] = useState({ width: 0, height: 0 });
+  const [phase, setPhase] = useState('idle');
+  const [travel, setTravel] = useState(null);
+  const [hasTravelled, setHasTravelled] = useState(false);
+  const [previousCenterX, setPreviousCenterX] = useState(0);
+  const [hasSlid, setHasSlid] = useState(true);
+  const [placeholderFor, setPlaceholderFor] = useState('');
+
   const closingRef = useRef(false);
   const mountedRef = useRef(false);
   const pendingSelectionRef = useRef(null);
   const transitionTimerRef = useRef(null);
+  const walkTimersRef = useRef([]);
+  const walkingRef = useRef(false);
+  const resizeRef = useRef(null);
   const onCloseRef = useRef(onClose);
   const onPreparePaperRef = useRef(onPreparePaper);
   const onSelectPaperRef = useRef(onSelectPaper);
   const relatedRequestedRef = useRef(!hasGraphIdentifier);
   const prefersReducedMotion = useReducedMotion();
 
-  useEffect(() => {
-    onCloseRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    onPreparePaperRef.current = onPreparePaper;
-  }, [onPreparePaper]);
-
-  useEffect(() => {
-    onSelectPaperRef.current = onSelectPaper;
-  }, [onSelectPaper]);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+  useEffect(() => { onPreparePaperRef.current = onPreparePaper; }, [onPreparePaper]);
+  useEffect(() => { onSelectPaperRef.current = onSelectPaper; }, [onSelectPaper]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -79,7 +129,15 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
       mountedRef.current = false;
       pendingSelectionRef.current = null;
       if (transitionTimerRef.current !== null) clearTimeout(transitionTimerRef.current);
+      walkTimersRef.current.forEach(clearTimeout);
+      resizeRef.current?.disconnect();
     };
+  }, []);
+
+  const later = useCallback((ms, action) => {
+    walkTimersRef.current.push(setTimeout(() => {
+      if (mountedRef.current) action();
+    }, ms));
   }, []);
 
   const finishClose = useCallback(() => {
@@ -145,22 +203,48 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     if (action === 'select') finishSelection();
   }, [finishClose, finishSelection]);
 
+  const center = trail[trail.length - 1];
+  const centerDoi = getCitationGraphDoi(center);
+  const centerEntry = centerDoi ? graphs[centerDoi] : null;
+  const graph = centerEntry?.data || INITIAL_GRAPH;
+  const graphStatus = centerDoi ? (centerEntry?.status || 'loading') : 'unavailable';
+
+  /**
+   * No ref remembers which neighbourhoods were asked for. StrictMode mounts,
+   * tears down and mounts again, and a guard like that would hand the request
+   * to the run whose result the teardown throws away — the sheet would wait
+   * for an answer nobody was going to deliver. The service holds one request
+   * per neighbourhood and a day of cache, so asking again is free.
+   */
   useEffect(() => {
-    if (!hasGraphIdentifier) return undefined;
+    if (!centerDoi || SETTLED.has(graphs[centerDoi]?.status)) return undefined;
     let cancelled = false;
-    getCitationGraph(paper).then(result => {
-      if (cancelled) return;
-      const nextGraph = result || INITIAL_GRAPH;
-      setGraph(nextGraph);
-      if (!nextGraph.references.length && nextGraph.citations.length) setGraphSide('citations');
-      setGraphStatus(nextGraph.references.length || nextGraph.citations.length ? 'ready' : 'empty');
+    getCitationGraph(center).then(result => {
+      if (cancelled || !mountedRef.current) return;
+      const data = result || INITIAL_GRAPH;
+      const empty = !data.references.length && !data.citations.length;
+      setGraphs(previous => ({ ...previous, [centerDoi]: { status: empty ? 'empty' : 'ready', data } }));
     }).catch(error => {
-      if (cancelled) return;
+      if (cancelled || !mountedRef.current) return;
       console.error('No se pudo cargar el grafo de citas', error);
-      setGraphStatus('error');
+      setGraphs(previous => ({ ...previous, [centerDoi]: { status: 'error' } }));
     });
     return () => { cancelled = true; };
-  }, [hasGraphIdentifier, paper]);
+  }, [center, centerDoi, graphs]);
+
+  /**
+   * A placeholder that appears before the answer has had a chance to arrive
+   * reads as slowness the app invented. Nothing is drawn for the first
+   * `PLACEHOLDER` milliseconds; a cached neighbourhood beats the timer.
+   */
+  useEffect(() => {
+    if (graphStatus !== 'loading') return undefined;
+    const timer = setTimeout(() => {
+      if (mountedRef.current) setPlaceholderFor(centerDoi);
+    }, WALK.PLACEHOLDER);
+    return () => clearTimeout(timer);
+  }, [graphStatus, centerDoi]);
+  const showPlaceholder = graphStatus === 'loading' && placeholderFor === centerDoi;
 
   useEffect(() => {
     if (mode !== 'similar' || relatedRequestedRef.current) return undefined;
@@ -194,22 +278,412 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     return () => { cancelled = true; };
   }, [hasGraphIdentifier, paper]);
 
-  const graphPapers = graph[graphSide] || [];
-  const graphEmptyLabel = graphSide === 'references'
-    ? (isEnglish ? 'No linked references were found for this paper.' : 'No se encontraron referencias enlazadas para este paper.')
-    : (isEnglish ? 'No linked later works have been found yet.' : 'Todavía no se encontraron trabajos posteriores enlazados.');
-  const visiblePapers = mode === 'graph' ? graphPapers : papers;
-  const visibleEntries = useMemo(() => buildRelatedPaperEntries(visiblePapers), [visiblePapers]);
-  const visibleStatus = mode === 'graph' ? graphStatus : relatedStatus;
-  const sourceLabel = graph.source === 'opencitations'
-    ? 'OpenCitations'
-    : 'OpenCitations + OpenAlex';
+  const measurePlot = useCallback((node) => {
+    resizeRef.current?.disconnect();
+    resizeRef.current = null;
+    if (!node || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(entries => {
+      const rect = entries[0]?.contentRect;
+      if (!rect || !mountedRef.current) return;
+      setBox({ width: Math.round(rect.width), height: Math.round(rect.height) });
+    });
+    observer.observe(node);
+    resizeRef.current = observer;
+  }, []);
 
-  const currentPaperLabel = useMemo(() => {
-    const title = String(paper?.title || (isEnglish ? 'Current paper' : 'Paper actual')).trim();
-    return title.length > 38 ? `${title.slice(0, 38).trim()}…` : title;
-  }, [isEnglish, paper?.title]);
+  const layout = useMemo(() => buildCitationMapLayout({
+    width: box.width,
+    height: box.height,
+    center,
+    references: graph.references,
+    citations: graph.citations,
+  }), [box.width, box.height, center, graph]);
+
+  const focusedNode = useMemo(
+    () => layout.nodes.find(node => node.key === focusedKey) || null,
+    [layout.nodes, focusedKey],
+  );
+  const listEntries = useMemo(() => ({
+    references: buildRelatedPaperEntries(graph.references),
+    citations: buildRelatedPaperEntries(graph.citations),
+  }), [graph]);
+  const focusedListPaper = useMemo(() => {
+    if (focusedNode) return focusedNode.paper;
+    const all = [...listEntries.references, ...listEntries.citations];
+    return all.find(entry => `list:${entry.key}` === focusedKey)?.paper || null;
+  }, [focusedNode, listEntries, focusedKey]);
+
+  const appendToTrail = useCallback((next) => {
+    setTrail(previous => {
+      const identity = getRelatedPaperIdentity(next);
+      const seen = previous.findIndex(item => getRelatedPaperIdentity(item) === identity);
+      // A citation graph has cycles; a trail of breadcrumbs must not.
+      return seen >= 0 ? previous.slice(0, seen + 1) : [...previous, next];
+    });
+  }, []);
+
+  const requestCentre = useCallback((targetPaper, origin, currentCenterX) => {
+    if (walkingRef.current || closingRef.current) return;
+    if (!getCitationGraphDoi(targetPaper)) return;
+    walkTimersRef.current.forEach(clearTimeout);
+    walkTimersRef.current = [];
+    setView('map');
+
+    if (prefersReducedMotion || !origin) {
+      appendToTrail(targetPaper);
+      setFocusedKey(null);
+      return;
+    }
+
+    walkingRef.current = true;
+    setPhase('leaving');
+    setTravel({ x: origin.x, y: origin.y, accent: areaAccentForPaper(targetPaper) });
+    setHasTravelled(false);
+    later(WALK.SETTLE, () => setHasTravelled(true));
+    later(WALK.LEAVE, () => {
+      // The mark slides from where the centre stood to the column its new
+      // citation count earns, so the departing position is captured here.
+      setPreviousCenterX(currentCenterX);
+      setHasSlid(false);
+      appendToTrail(targetPaper);
+      setFocusedKey(null);
+      setTravel(null);
+      setPhase('arriving');
+      later(WALK.SETTLE, () => setHasSlid(true));
+      later(WALK.REVEAL, () => {
+        setPhase('idle');
+        walkingRef.current = false;
+      });
+    });
+  }, [appendToTrail, later, prefersReducedMotion]);
+
+  const goBackTo = useCallback((index) => {
+    if (walkingRef.current) return;
+    walkTimersRef.current.forEach(clearTimeout);
+    walkTimersRef.current = [];
+    setPhase('idle');
+    setTravel(null);
+    setHasSlid(true);
+    setFocusedKey(null);
+    // Going back is not a discovery: it does not get the travelling animation.
+    setTrail(previous => (index < previous.length - 1 ? previous.slice(0, index + 1) : previous));
+  }, []);
+
+  const isWalking = trail.length > 1;
+  const previousCentre = isWalking ? trail[trail.length - 2] : null;
+  const previousIdentity = previousCentre ? getRelatedPaperIdentity(previousCentre) : '';
+  const isLeaving = phase === 'leaving';
+  const isArriving = phase === 'arriving';
+
+  const graphEmptyLabel = isWalking
+    ? (isEnglish
+      ? 'OpenCitations has no links for this work. That happens with very recent papers, and with anything published where nobody deposits their citations.'
+      : 'OpenCitations no tiene enlaces para este trabajo. Pasa con lo muy reciente, y también con lo que se publicó donde nadie deposita sus citas.')
+    : (isEnglish
+      ? 'No linked references or later works were found for this paper.'
+      : 'No se encontraron referencias ni trabajos posteriores enlazados para este paper.');
+
+  const visibleStatus = mode === 'graph' ? graphStatus : relatedStatus;
+  const similarEntries = useMemo(() => buildRelatedPaperEntries(papers), [papers]);
+  const sourceLabel = graph.source === 'opencitations' ? 'OpenCitations' : 'OpenCitations + OpenAlex';
   const isSelectingPaper = Boolean(selectedPaperKey) && isSelectionReady;
+  const isMap = mode === 'graph' && view === 'map';
+  const isList = mode === 'graph' && view === 'list';
+  // Only the short states shrink the sheet: a map that is still loading keeps
+  // its frame, because the frame is what the loading state is made of.
+  const sheetStatus = visibleStatus === 'loading' && mode === 'graph' ? 'ready' : visibleStatus;
+
+  const bandCaption = (relation) => {
+    // Nothing is known until the neighbourhood lands, and "0 of 0" on both
+    // bands is how a sheet that is merely waiting looks broken.
+    if (graphStatus !== 'ready') return '—';
+    const shown = relation === 'reference' ? graph.references.length : graph.citations.length;
+    const total = relation === 'reference' ? graph.counts.references : graph.counts.citations;
+    const totalLabel = formatCount(Math.max(total, shown), locale);
+    if (relation === 'reference') {
+      return isEnglish ? `${shown} most cited of ${totalLabel}` : `${shown} más citadas de ${totalLabel}`;
+    }
+    return isEnglish ? `${shown} most recent of ${totalLabel}` : `${shown} más recientes de ${totalLabel}`;
+  };
+
+  const renderNode = (node) => {
+    const isFocused = focusedKey === node.key;
+    const accent = areaAccentForPaper(node.paper);
+    const descending = isArriving && getRelatedPaperIdentity(node.paper) === previousIdentity;
+    const travelling = isLeaving && travel;
+    const classes = ['graph-node'];
+    if (isFocused) classes.push('is-focused');
+    if (travelling) classes.push(isFocused ? 'is-travelling' : 'is-fading');
+    else if (descending) classes.push(node.relation === 'reference' ? 'is-arriving-up' : 'is-arriving-down');
+    else classes.push('is-entering');
+
+    const style = {
+      top: `${node.y - node.rowHeight / 2}px`,
+      height: `${node.rowHeight}px`,
+      '--node-delay': `${node.delay}ms`,
+      '--node-accent': accent,
+    };
+    if (node.side === 'left') style.right = `${box.width - node.x - 22}px`;
+    else style.left = `${node.x - 22}px`;
+
+    const citations = node.paper.citationCountKnown
+      ? `${formatCount(node.paper.citationCount, locale)} ${isEnglish ? 'citations' : 'citas'}`
+      : (isEnglish ? 'citations unknown' : 'citas desconocidas');
+
+    return (
+      <button
+        key={node.key}
+        type="button"
+        className={classes.join(' ')}
+        data-side={node.side}
+        data-relation={node.relation}
+        style={style}
+        onClick={() => setFocusedKey(isFocused ? null : node.key)}
+        disabled={Boolean(selectedPaperKey) || isLeaving}
+        aria-pressed={isFocused}
+        aria-label={`${node.paper.title} · ${node.paper.year} · ${citations}`}
+      >
+        <span className="graph-node-dot" aria-hidden="true"><i /></span>
+        <span className="graph-node-label" aria-hidden="true">
+          <b>{nodeAuthorLabel(node.paper)}</b> {`’${String(node.paper.year).slice(2)}`}
+        </span>
+      </button>
+    );
+  };
+
+  const renderPeek = () => {
+    const peekPaper = focusedListPaper;
+    if (!peekPaper) return null;
+    const accent = areaAccentForPaper(peekPaper);
+    const fieldLabel = areaLabelForPaper(peekPaper, { english: isEnglish });
+    const canCentre = Boolean(getCitationGraphDoi(peekPaper));
+    const focusedEntry = focusedNode
+      || [...listEntries.references, ...listEntries.citations].find(entry => `list:${entry.key}` === focusedKey);
+    const openKey = focusedNode ? focusedNode.key : focusedKey;
+
+    return (
+      <div className={`graph-peek ${isLeaving ? 'is-leaving' : ''}`}>
+        <div className="graph-peek-meta">
+          <span className="graph-peek-field" style={{ color: accent }}>{fieldLabel}</span>
+          <span className="graph-peek-dot" aria-hidden="true">·</span>
+          <span>{peekPaper.year}</span>
+          <span className="graph-peek-dot" aria-hidden="true">·</span>
+          <span>
+            {peekPaper.citationCountKnown
+              ? `${formatCount(peekPaper.citationCount, locale)} ${isEnglish ? 'citations' : 'citas'}`
+              : (isEnglish ? 'citations unknown' : 'citas desconocidas')}
+          </span>
+          {peekPaper.openAccess && (
+            <span className="graph-peek-open">
+              <Lock size={11} aria-hidden="true" />
+              {isEnglish ? 'Open access' : 'Acceso abierto'}
+            </span>
+          )}
+          <button
+            type="button"
+            className="graph-peek-close"
+            onClick={() => setFocusedKey(null)}
+            aria-label={isEnglish ? 'Close details' : 'Cerrar ficha'}
+          >
+            <X size={15} />
+          </button>
+        </div>
+        <strong className="graph-peek-title"><ScientificText>{peekPaper.title}</ScientificText></strong>
+        <small className="graph-peek-authors">
+          {peekPaper.authors.slice(0, 4).map(author => author.name || author).join(', ')}
+        </small>
+        <div className="graph-peek-actions">
+          <button
+            type="button"
+            className="graph-peek-open-action"
+            onClick={() => requestPaper(peekPaper, openKey || getRelatedPaperIdentity(peekPaper))}
+            disabled={Boolean(selectedPaperKey)}
+          >
+            {isEnglish ? 'Open' : 'Abrir'}
+          </button>
+          <button
+            type="button"
+            className="graph-peek-centre"
+            onClick={() => requestCentre(peekPaper, focusedNode, layout.centerX)}
+            disabled={!canCentre || Boolean(selectedPaperKey) || phase !== 'idle'}
+            title={canCentre
+              ? undefined
+              : (isEnglish ? 'This work has no DOI to follow' : 'Este trabajo no tiene DOI que seguir')}
+          >
+            <Crosshair size={15} aria-hidden="true" />
+            {isEnglish ? 'Centre here' : 'Centrar aquí'}
+          </button>
+          {focusedEntry?.paper?.doi && (
+            <span className="graph-peek-doi">{`doi:${focusedEntry.paper.doi}`}</span>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  const renderMap = () => (
+    <div className="graph-map">
+      <div className="graph-band-head">
+        <span className="graph-band-name">{isEnglish ? 'Before · what it cites' : 'Antes · lo que cita'}</span>
+        <span className="graph-band-count">
+          {bandCaption('reference')}
+          {layout.omitted.references > 0 && (
+            <button type="button" className="graph-omitted" onClick={() => setView('list')}>
+              {isEnglish ? `+${layout.omitted.references} without data` : `+${layout.omitted.references} sin dato`}
+            </button>
+          )}
+        </span>
+      </div>
+
+      <div className="graph-plot" ref={measurePlot}>
+        {layout.ready && (
+          <>
+            <svg className="graph-lines" width={box.width} height={box.height} aria-hidden="true">
+              {layout.ticks.map(tick => (
+                <line key={`tick-${tick.value}`} className="graph-grid" x1={tick.x} y1="0" x2={tick.x} y2={box.height} />
+              ))}
+              {layout.nodes.map(node => (
+                <line
+                  key={`edge-${node.key}`}
+                  className={`graph-edge ${focusedKey === node.key ? 'is-focused' : ''} ${focusedKey && focusedKey !== node.key ? 'is-dimmed' : ''} ${isLeaving ? 'is-gone' : ''}`}
+                  x1={layout.centerX}
+                  y1={layout.ruleY}
+                  x2={node.x}
+                  y2={node.y}
+                  style={{ '--edge-delay': `${node.edgeDelay}ms` }}
+                />
+              ))}
+            </svg>
+
+            <div className="graph-rule" style={{ top: `${layout.ruleY}px`, transformOrigin: `${layout.centerX}px 50%` }} />
+            <div
+              className={`graph-mark ${isLeaving ? 'is-gone' : ''} ${isArriving ? 'is-sliding' : ''}`}
+              style={{
+                left: `${(isArriving && !hasSlid ? previousCenterX : layout.centerX) - 8}px`,
+                top: `${layout.ruleY - 8}px`,
+              }}
+            />
+            <span
+              className={`graph-chip ${isLeaving ? 'is-gone' : ''}`}
+              data-side={layout.centerX > box.width - 180 ? 'left' : 'right'}
+              style={layout.centerX > box.width - 180
+                ? { right: `${box.width - layout.centerX + 16}px`, top: `${layout.ruleY}px` }
+                : { left: `${layout.centerX + 16}px`, top: `${layout.ruleY}px` }}
+            >
+              {isWalking
+                ? `${isEnglish ? 'Centre' : 'Centro'} · ${center.year}`
+                : `${isEnglish ? 'This paper' : 'Este paper'} · ${center.year}`}
+            </span>
+
+            {graphStatus === 'ready' && layout.nodes.map(renderNode)}
+
+            {graphStatus === 'loading' && showPlaceholder && Array.from({ length: 12 }, (_, index) => {
+              const above = index < 6;
+              const columns = 6;
+              const spread = Math.max(0, box.width - 60);
+              return (
+                <span
+                  key={`skeleton-${index}`}
+                  className="graph-skeleton"
+                  aria-hidden="true"
+                  style={{
+                    left: `${30 + ((index % columns) + 0.5) / columns * spread + (above ? 0 : 24)}px`,
+                    top: `${above
+                      ? layout.bands.references.top + 18 + (index % columns) * 20
+                      : layout.bands.citations.top + 14 + (index % columns) * 20}px`,
+                    '--skeleton-delay': `${index * 70}ms`,
+                  }}
+                />
+              );
+            })}
+
+            {travel && (
+              <span
+                className="graph-travel"
+                aria-hidden="true"
+                style={{
+                  left: `${travel.x}px`,
+                  top: `${hasTravelled ? layout.ruleY : travel.y}px`,
+                  background: hasTravelled ? 'var(--accent-primary)' : travel.accent,
+                  transform: `scale(${hasTravelled ? 1.45 : 1.28})`,
+                }}
+              />
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="graph-band-head">
+        <span className="graph-band-name">{isEnglish ? 'After · what cites it' : 'Después · quien lo cita'}</span>
+        <span className="graph-band-count">
+          {bandCaption('citation')}
+          {layout.omitted.citations > 0 && (
+            <button type="button" className="graph-omitted" onClick={() => setView('list')}>
+              {isEnglish ? `+${layout.omitted.citations} without data` : `+${layout.omitted.citations} sin dato`}
+            </button>
+          )}
+        </span>
+      </div>
+
+      <div className="graph-axis">
+        {layout.ticks.length > 0 && layout.ticks[0].x > 110 && (
+          <span className="graph-axis-name">{isEnglish ? 'Citations received' : 'Citas recibidas'}</span>
+        )}
+        {layout.ticks.map(tick => (
+          <span key={`label-${tick.value}`} className="graph-axis-tick" style={{ left: `${tick.x}px` }}>{tick.label}</span>
+        ))}
+      </div>
+    </div>
+  );
+
+  const renderList = () => (
+    <div className="related-list" key={`list-${trail.length}`}>
+      {[
+        { relation: 'reference', entries: listEntries.references },
+        { relation: 'citation', entries: listEntries.citations },
+      ].map(({ relation, entries }) => (entries.length ? (
+        <div key={relation}>
+          <div className="graph-list-head">
+            <span className="graph-band-name">
+              {relation === 'reference'
+                ? (isEnglish ? 'Before · what it cites' : 'Antes · lo que cita')
+                : (isEnglish ? 'After · what cites it' : 'Después · quien lo cita')}
+            </span>
+            <span className="graph-band-count">{bandCaption(relation)}</span>
+          </div>
+          {entries.map(({ paper: related, key }, index) => {
+            const listKey = `list:${key}`;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`related-item ${focusedKey === listKey ? 'is-selected' : ''}`}
+                style={{ '--related-index': index }}
+                onClick={() => setFocusedKey(focusedKey === listKey ? null : listKey)}
+                disabled={Boolean(selectedPaperKey)}
+                aria-pressed={focusedKey === listKey}
+              >
+                <span
+                  className={`graph-list-dot ${relation === 'reference' ? 'is-hollow' : 'is-filled'}`}
+                  style={{ '--node-accent': areaAccentForPaper(related) }}
+                  aria-hidden="true"
+                />
+                <span className="related-item-copy">
+                  <strong><ScientificText>{related.title}</ScientificText></strong>
+                  <small>
+                    {related.authors.slice(0, 2).map(author => author.name || author).join(', ')}
+                    {related.year ? ` · ${related.year}` : ''}
+                    {related.citationCountKnown ? ` · ${related.citationCount} ${isEnglish ? 'citations' : 'citas'}` : ''}
+                  </small>
+                </span>
+                <ChevronRight size={18} />
+              </button>
+            );
+          })}
+        </div>
+      ) : null))}
+    </div>
+  );
 
   return (
     <div
@@ -219,7 +693,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     >
       <section
         ref={dialogRef}
-        className={`related-sheet related-sheet--graph related-sheet--${visibleStatus} ${isSelectingPaper ? 'is-selecting-paper' : ''}`}
+        className={`related-sheet related-sheet--graph related-sheet--${sheetStatus} ${isSelectingPaper ? 'is-selecting-paper' : ''}`}
         onClick={event => event.stopPropagation()}
         onAnimationEnd={handleSheetAnimationEnd}
         aria-label={isEnglish ? 'Paper connections' : 'Conexiones del paper'}
@@ -231,14 +705,39 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
         <div className="related-grabber" aria-hidden="true" />
         <header className="related-header">
           <div><Network size={18} /><h3>{isEnglish ? 'Paper connections' : 'Conexiones del paper'}</h3></div>
-          <button
-            onClick={requestClose}
-            aria-label={isEnglish ? 'Close' : 'Cerrar'}
-            title={isEnglish ? 'Close' : 'Cerrar'}
-            data-dialog-initial-focus
-          >
-            <X size={20} />
-          </button>
+          <div className="related-header-actions">
+            {mode === 'graph' && (
+              <>
+                <button
+                  className={`graph-view-button ${view === 'map' ? 'is-active' : ''}`}
+                  onClick={() => setView('map')}
+                  aria-label={isEnglish ? 'Map view' : 'Ver como mapa'}
+                  title={isEnglish ? 'Map' : 'Mapa'}
+                  aria-pressed={view === 'map'}
+                >
+                  <Network size={17} />
+                </button>
+                <button
+                  className={`graph-view-button ${view === 'list' ? 'is-active' : ''}`}
+                  onClick={() => setView('list')}
+                  aria-label={isEnglish ? 'List view' : 'Ver como lista'}
+                  title={isEnglish ? 'List' : 'Lista'}
+                  aria-pressed={view === 'list'}
+                >
+                  <List size={17} />
+                </button>
+                <span className="related-header-divider" aria-hidden="true" />
+              </>
+            )}
+            <button
+              onClick={requestClose}
+              aria-label={isEnglish ? 'Close' : 'Cerrar'}
+              title={isEnglish ? 'Close' : 'Cerrar'}
+              data-dialog-initial-focus
+            >
+              <X size={20} />
+            </button>
+          </div>
         </header>
 
         <div className="related-mode-tabs" role="tablist" aria-label={isEnglish ? 'Connection type' : 'Tipo de conexión'}>
@@ -263,38 +762,56 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
         </div>
 
         {mode === 'graph' && (
-          <div className="knowledge-path" aria-label={isEnglish ? 'Bibliographic lineage' : 'Linaje bibliográfico'}>
-            <button
-              className={graphSide === 'references' ? 'is-active' : ''}
-              onClick={() => setGraphSide('references')}
-              disabled={Boolean(selectedPaperKey)}
-              aria-pressed={graphSide === 'references'}
-            >
-              <BookOpen size={17} />
-              <span><strong>{formatCompactCount(graph.counts.references, locale)}</strong><small>{isEnglish ? 'References' : 'Referencias'}</small></span>
-            </button>
-            <span className="knowledge-path-line" aria-hidden="true" />
-            <div className="knowledge-path-current" title={paper?.title}>
-              <Network size={18} />
-              <span><strong>{isEnglish ? 'Current paper' : 'Paper actual'}</strong><small>{currentPaperLabel}</small></span>
+          <div className="graph-trail" aria-label={isEnglish ? 'Path through the graph' : 'Recorrido por el grafo'}>
+            {isWalking && (
+              <button
+                type="button"
+                className="graph-trail-back"
+                onClick={() => goBackTo(trail.length - 2)}
+                aria-label={isEnglish ? 'Back' : 'Atrás'}
+                title={isEnglish ? 'Back' : 'Atrás'}
+              >
+                <ArrowLeft size={15} />
+              </button>
+            )}
+            <span className="graph-trail-label">
+              {isWalking ? (isEnglish ? 'Path' : 'Recorrido') : (isEnglish ? 'This paper' : 'Este paper')}
+            </span>
+            <div className="graph-trail-steps">
+              {trail.map((step, index) => {
+                const last = index === trail.length - 1;
+                return (
+                  <span className="graph-trail-step" key={getRelatedPaperIdentity(step) || index}>
+                    {index > 0 && <ChevronRight size={12} aria-hidden="true" />}
+                    <button
+                      type="button"
+                      className={`graph-crumb ${last ? 'is-current' : ''}`}
+                      onClick={() => goBackTo(index)}
+                      aria-current={last ? 'true' : undefined}
+                    >
+                      {shortTitle(step.title, last ? 40 : 22)}
+                    </button>
+                  </span>
+                );
+              })}
             </div>
-            <span className="knowledge-path-line" aria-hidden="true" />
-            <button
-              className={graphSide === 'citations' ? 'is-active' : ''}
-              onClick={() => setGraphSide('citations')}
-              disabled={Boolean(selectedPaperKey)}
-              aria-pressed={graphSide === 'citations'}
-            >
-              <GitBranch size={17} />
-              <span><strong>{formatCompactCount(graph.counts.citations, locale)}</strong><small>{isEnglish ? 'Later works' : 'Posteriores'}</small></span>
-            </button>
           </div>
         )}
 
-        {visibleStatus === 'loading' && (
-          <LoadingState label={mode === 'graph'
-            ? (isEnglish ? 'Tracing the lineage...' : 'Trazando el linaje...')
-            : (isEnglish ? 'Finding connections...' : 'Buscando conexiones...')} />
+        {mode === 'graph' && graph.degraded && graphStatus === 'ready' && (
+          <p className="graph-degraded" role="status">
+            <TriangleAlert size={14} aria-hidden="true" />
+            {isEnglish
+              ? 'Incomplete neighbourhood — one source did not answer, and this is what the other could give.'
+              : 'Vecindario incompleto — una fuente no respondió, y esto es lo que la otra pudo dar.'}
+          </p>
+        )}
+
+        {isMap && (graphStatus === 'ready' || graphStatus === 'loading') && renderMap()}
+        {isList && graphStatus === 'ready' && renderList()}
+
+        {mode === 'similar' && visibleStatus === 'loading' && (
+          <LoadingState label={isEnglish ? 'Finding connections...' : 'Buscando conexiones...'} />
         )}
         {visibleStatus === 'unavailable' && (
           <div className="related-state">
@@ -302,10 +819,18 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
           </div>
         )}
         {visibleStatus === 'empty' && (
-          <div className="related-state">
-            {mode === 'graph'
-              ? graphEmptyLabel
-              : (isEnglish ? 'No recommendations are available for this paper.' : 'No hay recomendaciones disponibles para este paper.')}
+          <div className="related-state graph-state">
+            <p>
+              {mode === 'graph'
+                ? graphEmptyLabel
+                : (isEnglish ? 'No recommendations are available for this paper.' : 'No hay recomendaciones disponibles para este paper.')}
+            </p>
+            {mode === 'graph' && isWalking && (
+              <button type="button" className="graph-back-button" onClick={() => goBackTo(trail.length - 2)}>
+                <ArrowLeft size={15} aria-hidden="true" />
+                {isEnglish ? 'Back to' : 'Volver a'} {shortTitle(previousCentre?.title, 24)}
+              </button>
+            )}
           </div>
         )}
         {visibleStatus === 'error' && (
@@ -316,11 +841,12 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
           </div>
         )}
 
-        {visibleStatus === 'ready' && (
-          <div className="related-list" key={`${mode}-${graphSide}`}>
-            {visibleEntries.length ? visibleEntries.map(({ paper: related, key }, index) => (
+        {mode === 'similar' && visibleStatus === 'ready' && (
+          <div className="related-list" key="similar">
+            {similarEntries.map(({ paper: related, key }, index) => (
               <button
                 key={key}
+                type="button"
                 className={`related-item ${selectedPaperKey === key ? 'is-selected' : ''}`}
                 style={{ '--related-index': index }}
                 onClick={() => requestPaper(related, key)}
@@ -336,13 +862,16 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                 </span>
                 <ChevronRight size={18} />
               </button>
-            )) : <div className="related-state">{graphEmptyLabel}</div>}
+            ))}
           </div>
         )}
+
+        {mode === 'graph' && renderPeek()}
 
         {mode === 'graph' && graphStatus === 'ready' && (
           <div className="knowledge-source">
             <span>{sourceLabel}</span>
+            <span>{isEnglish ? 'One hop · cached 24 h' : 'Un salto · en caché 24 h'}</span>
           </div>
         )}
       </section>

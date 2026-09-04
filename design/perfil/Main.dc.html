@@ -1,0 +1,359 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #111318; text-decoration: none; }
+    a:hover { color: #2b2f38; }
+    button { font-family: inherit; }
+
+    /* ── Las tres voces ── */
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .k-sm { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+
+    /* ── Chrome ── */
+    .nav-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: none; border-radius: 3px; background: none; color: #5b6270; font-size: 0.875rem; font-weight: 500; cursor: pointer; }
+    .nav-link svg { color: #8a919e; }
+    .nav-link:hover { background: rgba(17,19,24,0.03); color: #111318; }
+    .nav-icon { display: grid; place-items: center; width: 32px; height: 32px; border: none; border-radius: 3px; background: transparent; color: #5b6270; cursor: pointer; }
+    .nav-icon:hover { background: rgba(17,19,24,0.03); color: #111318; }
+
+    /* ── Botones (del componente: rounded-md, 14px/600) ── */
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 40px; padding: 0 16px; border-radius: 3px; font-size: 0.875rem; font-weight: 600; white-space: nowrap; cursor: pointer; transition: background 120ms ease, border-color 120ms ease, color 120ms ease; }
+    .btn-outline { border: 1px solid #d3d5db; background: #ffffff; color: #111318; }
+    .btn-outline:hover { background: #f7f7f8; border-color: #a9aeba; }
+    .btn-sm { height: 32px; padding: 0 12px; font-size: 0.8125rem; }
+    .btn-ghost { border: 1px solid transparent; background: none; color: #5b6270; }
+    .btn-ghost:hover { background: #f7f7f8; color: #111318; }
+
+    /* ── Rejilla de contadores (patrón .ehc-stats-grid) ── */
+    .stats { display: grid; grid-template-columns: repeat(3, minmax(94px, 1fr)); align-self: flex-start; border-top: 1px solid #d3d5db; border-left: 1px solid #d3d5db; }
+    .stat { display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; border-right: 1px solid #d3d5db; border-bottom: 1px solid #d3d5db; background: #ffffff; text-align: left; cursor: pointer; transition: background 120ms ease; }
+    .stat:hover { background: #fafafa; }
+    .stat-v { font: 600 1.05rem/1.1 'IBM Plex Mono', monospace; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: #111318; }
+    .stat-l { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #8a919e; }
+
+    /* ── Barra de secciones: el hilo amarillo marca la activa ── */
+    .tab { position: relative; display: inline-flex; align-items: baseline; gap: 7px; padding: 13px 12px 14px; border: none; background: none; color: #8a919e; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: color 120ms ease; }
+    .tab:hover { color: #5b6270; }
+    .tab.on { color: #111318; }
+    .tab-n { font-size: 0.625rem; font-variant-numeric: tabular-nums; color: #8a919e; }
+    .tab.on .tab-n { color: #5b6270; }
+    .tab.on::after { content: ''; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 3px; border-radius: 9999px; background: #ffd21e; }
+
+    /* ── Baldosa de lista (vocabulario de Mis listas) ── */
+    .tile { display: flex; flex-direction: column; padding: 20px 20px 20px 18px; border: 1px solid #e6e7ea; border-left: 3px solid var(--la, #d3d5db); border-radius: 4px; background: #ffffff; text-align: left; cursor: pointer; transition: background 120ms ease, border-color 120ms ease; }
+    .tile:hover { border-color: #d3d5db; border-left-color: var(--la, #a9aeba); }
+    .tile-ic { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 3px; border: 1px solid color-mix(in srgb, var(--la, #d3d5db) 24%, #ffffff); background: color-mix(in srgb, var(--la, #d3d5db) 8%, #ffffff); color: var(--la, #8a919e); transition: background 200ms ease, border-color 200ms ease; }
+    .tile:hover .tile-ic { border-color: color-mix(in srgb, var(--la, #d3d5db) 42%, #ffffff); background: color-mix(in srgb, var(--la, #d3d5db) 15%, #ffffff); }
+    .tile-n { margin: 12px 0 0; font-family: 'Newsreader', Georgia, serif; font-size: 1.125rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; color: #111318; }
+
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid #c3ecd5; border-radius: 2px; background: #ecfdf3; color: #067647; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+
+    /* ── Fila reglada: un paper es una entrada de índice ── */
+    .row { display: flex; align-items: flex-start; gap: 16px; padding: 14px 16px 14px 13px; border-bottom: 1px solid #e6e7ea; border-left: 3px solid var(--fa, #d3d5db); background: #ffffff; cursor: pointer; transition: background 120ms ease; }
+    .row:hover { background: #fafafa; }
+    .row-k { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fa, #8a919e); }
+    .row-t { margin: 7px 0 0; font-family: 'Newsreader', Georgia, serif; font-size: 1rem; font-weight: 500; line-height: 1.35; color: #111318; }
+    .row-a { margin: 5px 0 0; font: 400 0.6875rem/1.5 'IBM Plex Mono', monospace; color: #8a919e; }
+    .row-d { flex: 0 0 auto; font: 400 0.6875rem/1.5 'IBM Plex Mono', monospace; color: #8a919e; padding-top: 2px; }
+
+    .link { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8125rem; font-weight: 600; color: #111318; cursor: pointer; }
+    .link:hover { text-decoration: underline; }
+  </style>
+</helmet>
+
+<div style="width: 1440px; min-height: 900px; background: #ffffff">
+
+  <!-- ═══ Chrome: la barra real, con el avatar marcado en su ruta ═══ -->
+  <div style="display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 20px; border-bottom: 1px solid #d3d5db; background: #ffffff">
+    <div style="display: inline-flex; align-items: center; gap: 8px; flex: 0 0 auto">
+      <span style="display: grid; place-items: center; width: 26px; height: 26px; border-radius: 2px; background: #ffd21e; color: #111318; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.02em; box-shadow: 2px 2px 0 #111318">PT</span>
+      <span style="font-size: 0.9375rem; font-weight: 700; letter-spacing: -0.02em">Paper<span style="box-shadow: inset 0 -0.32em 0 #ffd21e">Tok</span></span>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 8px; flex: 0 1 320px; height: 34px; padding: 0 12px; border: 1px solid #d3d5db; border-radius: 3px; background: #f7f7f8; color: #8a919e; font-size: 0.875rem">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      <span style="flex: 1">Buscar papers, autores, temas...</span>
+      <kbd style="padding: 1px 5px; border: 1px solid #d3d5db; border-radius: 2px; background: #ffffff; font: 500 0.6875rem/1.4 'IBM Plex Mono', monospace">/</kbd>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 4px; margin-left: auto">
+      <button class="nav-link">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"></path><path d="m6.08 10.37-3.5 1.59a1 1 0 0 0 0 1.83l8.6 3.91a2 2 0 0 0 1.65 0l8.58-3.9a1 1 0 0 0 0-1.83l-3.5-1.6"></path></svg>
+        Para ti
+      </button>
+      <button class="nav-link">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18h-5"></path><path d="M18 14h-8"></path><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-4 0v-9a2 2 0 0 1 2-2h2"></path></svg>
+        Research
+      </button>
+      <button class="nav-link">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><polyline points="16 11 18 13 22 9"></polyline></svg>
+        Siguiendo
+      </button>
+    </div>
+
+    <div style="display: flex; align-items: center; gap: 4px; flex: 0 0 auto; padding-left: 12px; margin-left: 8px; border-left: 1px solid #d3d5db">
+      <button class="nav-icon">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path></svg>
+      </button>
+      <button class="nav-icon">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.3-4.3"></path></svg>
+      </button>
+      <!-- En su propia ruta el avatar lleva el aro amarillo: es la pestaña activa. -->
+      <span style="display: grid; place-items: center; width: 32px; height: 32px; margin-left: 4px">
+        <span style="display: grid; place-items: center; width: 26px; height: 26px; border-radius: 9999px; border: 1px solid #111318; box-shadow: 0 0 0 2px #ffd21e; background: #c2410c; color: #ffffff; font: 600 0.6875rem/1 'IBM Plex Mono', monospace">m</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- ═══ La ficha ═══ -->
+  <div style="max-width: 1040px; margin: 0 auto; padding: 44px 40px 72px">
+
+    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 24px; margin-bottom: 18px">
+      <p class="k" style="margin: 0; color: #8a919e">Perfil</p>
+      <div style="display: flex; align-items: center; gap: 4px; padding-left: 12px; border-left: 1px solid #e6e7ea">
+        <button class="nav-icon" title="Ajustes" aria-label="Ajustes">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 7h-9"></path><path d="M14 17H5"></path><circle cx="17" cy="17" r="3"></circle><circle cx="7" cy="7" r="3"></circle></svg>
+        </button>
+      </div>
+    </div>
+
+    <div style="display: flex; align-items: flex-start; gap: 28px; padding-bottom: 26px; border-bottom: 3px double #111318">
+
+      <div style="flex: 0 0 auto; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 9999px; background: #c2410c; color: #ffffff; font: 600 2.25rem/1 'IBM Plex Mono', monospace; box-shadow: 0 1px 2px rgba(17,19,24,0.04)">m</div>
+
+      <div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+        <h1 class="serif" style="display: flex; align-items: center; gap: 10px; margin: 0; font-size: 2.25rem; font-weight: 600; line-height: 1.05; letter-spacing: -0.025em; padding-top: 0.025em">
+          mugar
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#111318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 auto"><path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z"></path><path d="m9 12 2 2 4-4"></path></svg>
+        </h1>
+
+        <p class="mono" style="display: flex; align-items: center; gap: 10px; margin: 8px 0 0; font-size: 0.75rem; color: #8a919e">
+          <span>@mugar</span>
+          <span style="width: 3px; height: 3px; border-radius: 9999px; background: #d3d5db"></span>
+          <span class="k-sm" style="color: #8a919e">Miembro desde mar 2026</span>
+        </p>
+
+        <p class="serif" style="max-width: 62ch; margin: 14px 0 0; font-size: 1.0625rem; line-height: 1.6; color: #5b6270">Verificando la fase 1 de perfiles públicos.</p>
+
+        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 22px">
+          <button class="btn btn-outline">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4Z"></path></svg>
+            Editar perfil
+          </button>
+          <button class="btn btn-sm btn-ghost" style="border-color: #e6e7ea; color: #5b6270">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11a9 9 0 0 1 9 9"></path><path d="M4 4a16 16 0 0 1 16 16"></path><circle cx="5" cy="19" r="1"></circle></svg>
+            Contenido seguido
+            <span class="mono" style="font-size: 0.6875rem; font-weight: 600; color: #111318">12</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Contadores: dato de máquina, en rejilla reglada. Me gusta abre su sección. -->
+      <div class="stats" style="flex: 0 0 auto; max-width: 300px">
+        <button class="stat">
+          <span class="stat-v">1</span>
+          <span class="stat-l">Siguiendo</span>
+        </button>
+        <button class="stat">
+          <span class="stat-v">0</span>
+          <span class="stat-l">Seguidores</span>
+        </button>
+        <button class="stat" onClick="{{ goLiked }}">
+          <span class="stat-v">44</span>
+          <span class="stat-l">Me gusta</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- ═══ Secciones ═══ -->
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 24px; border-bottom: 1px solid #e6e7ea">
+      <div style="display: flex; align-items: center; gap: 4px">
+        <button class="tab {{ t1.cls }}" onClick="{{ t1.pick }}">Listas <span class="tab-n">3</span></button>
+        <button class="tab {{ t2.cls }}" onClick="{{ t2.pick }}">Guardados <span class="tab-n">12</span></button>
+        <button class="tab {{ t3.cls }}" onClick="{{ t3.pick }}">Me gusta <span class="tab-n">44</span></button>
+      </div>
+      <span class="k-sm" style="color: #8a919e">{{ hint }}</span>
+    </div>
+
+    <!-- Listas -->
+    <sc-if value="{{ isListas }}" hint-placeholder-val="{{ true }}">
+      <div>
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 24px; margin: 20px 0 14px">
+          <p style="margin: 0; font-size: 0.8125rem; color: #8a919e">Las listas no publicadas solo las ves tú.</p>
+          <span class="link">
+            Gestionar en Mis listas
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+          </span>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+          <div class="tile" style="--la: #515bc3">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-height: 36px">
+              <span class="tile-ic">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>
+              </span>
+            </div>
+            <p class="tile-n">Relatividad numérica</p>
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px">
+              <span class="k" style="color: #8a919e; font-variant-numeric: tabular-nums">20 papers</span>
+              <span class="badge">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20"></path><path d="M12 2a14.5 14.5 0 0 1 0 20 14.5 14.5 0 0 1 0-20"></path></svg>
+                Pública
+              </span>
+            </div>
+          </div>
+
+          <div class="tile" style="--la: #1a786f">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-height: 36px">
+              <span class="tile-ic">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>
+              </span>
+            </div>
+            <p class="tile-n">Métodos bayesianos</p>
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px">
+              <span class="k" style="color: #8a919e; font-variant-numeric: tabular-nums">12 papers</span>
+            </div>
+          </div>
+
+          <div class="tile">
+            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-height: 36px">
+              <span class="tile-ic" style="border-color: #e6e7ea; background: #f7f7f8; color: #8a919e">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              </span>
+            </div>
+            <p class="tile-n">Leer luego</p>
+            <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px">
+              <span class="k" style="color: #8a919e; font-variant-numeric: tabular-nums">7 papers</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- Guardados -->
+    <sc-if value="{{ isGuardados }}" hint-placeholder-val="{{ true }}">
+      <div>
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 24px; margin: 20px 0 14px">
+          <p style="margin: 0; font-size: 0.8125rem; color: #8a919e">Se muestran los 12 más recientes.</p>
+        </div>
+        <div style="border-top: 1px solid #e6e7ea">
+          <div class="row" style="--fa: #c2410c">
+            <div style="flex: 1; min-width: 0">
+              <span class="row-k">Networking · 2020 · 2 citas</span>
+              <p class="row-t">DAPES: Named Data for Off-the-Grid File Sharing with Peer-to-Peer Interactions</p>
+              <p class="row-a">Mastorakis, Li, Zhang</p>
+            </div>
+            <span class="row-d">guardado 22 ago</span>
+          </div>
+          <div class="row" style="--fa: #4f46e5">
+            <div style="flex: 1; min-width: 0">
+              <span class="row-k">Física · 2024 · 31 citas</span>
+              <p class="row-t">Gravitational-wave background from binary neutron star mergers</p>
+              <p class="row-a">Renzini, Romero-Shaw, Lasky</p>
+            </div>
+            <span class="row-d">guardado 19 ago</span>
+          </div>
+          <div class="row" style="--fa: #7e22ce">
+            <div style="flex: 1; min-width: 0">
+              <span class="row-k">Matemáticas · 2023 · 8 citas</span>
+              <p class="row-t">On the convergence of nested sampling estimators</p>
+              <p class="row-a">Chopin, Robert</p>
+            </div>
+            <span class="row-d">guardado 14 ago</span>
+          </div>
+          <div class="row" style="--fa: #15803d">
+            <div style="flex: 1; min-width: 0">
+              <span class="row-k">Biología · 2025 · 4 citas</span>
+              <p class="row-t">Structural basis of ribosome stalling during antibiotic response</p>
+              <p class="row-a">Ito, Suzuki, Nakatogawa</p>
+            </div>
+            <span class="row-d">guardado 11 ago</span>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- Me gusta -->
+    <sc-if value="{{ isMeGusta }}" hint-placeholder-val="{{ true }}">
+      <div>
+        <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 24px; margin: 20px 0 14px">
+          <p style="margin: 0; font-size: 0.8125rem; color: #8a919e">Se muestran los 20 más recientes de 44.</p>
+        </div>
+        <div style="border-top: 1px solid #e6e7ea">
+          <div class="row" style="--fa: #1d4ed8">
+            <div style="flex: 1; min-width: 0">
+              <span class="row-k">Estadística · 2024 · 17 citas</span>
+              <p class="row-t">Calibrated uncertainty for scientific machine learning</p>
+              <p class="row-a">Angelopoulos, Bates</p>
+            </div>
+            <span class="row-d">26 ago</span>
+          </div>
+          <div class="row" style="--fa: #be123c">
+            <div style="flex: 1; min-width: 0">
+              <span class="row-k">Medicina · 2025 · 12 citas</span>
+              <p class="row-t">Sleep fragmentation and hippocampal consolidation in adults</p>
+              <p class="row-a">Ngo, Born</p>
+            </div>
+            <span class="row-d">25 ago</span>
+          </div>
+          <div class="row" style="--fa: #4f46e5">
+            <div style="flex: 1; min-width: 0">
+              <span class="row-k">Física · 2026 · sin citas</span>
+              <p class="row-t">A numerical relativity catalogue of eccentric binary inspirals</p>
+              <p class="row-a">Ramos-Buades, Husa, Pratten</p>
+            </div>
+            <span class="row-d">24 ago</span>
+          </div>
+          <div class="row" style="--fa: #c2410c">
+            <div style="flex: 1; min-width: 0">
+              <span class="row-k">Computación · 2025 · 63 citas</span>
+              <p class="row-t">Retrieval-augmented generation over long documents</p>
+              <p class="row-a">Lewis, Perez, Piktus</p>
+            </div>
+            <span class="row-d">23 ago</span>
+          </div>
+        </div>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const tab = (this.state && this.state.tab) || 'listas';
+    const mk = (id) => ({ cls: tab === id ? 'on' : '', pick: () => this.setState({ tab: id }) });
+    const hints = {
+      listas: '3 listas · 1 pública',
+      guardados: '12 guardados',
+      megusta: '44 me gusta',
+    };
+    return {
+      t1: mk('listas'),
+      t2: mk('guardados'),
+      t3: mk('megusta'),
+      isListas: tab === 'listas',
+      isGuardados: tab === 'guardados',
+      isMeGusta: tab === 'megusta',
+      hint: hints[tab],
+      goLiked: () => this.setState({ tab: 'megusta' }),
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,263 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif; }
+    a { color: #1a5fd0; text-decoration: none; }
+    a:hover { color: #144aa3; }
+
+    .pt {
+      --bg-elevated: #ffffff;
+      --bg-secondary: #f7f7f8;
+      --bg-sunken: #fafafa;
+      --text-primary: #111318;
+      --text-secondary: #5b6270;
+      --text-tertiary: #8a919e;
+      --border-subtle: #e6e7ea;
+      --border-default: #d3d5db;
+      --border-strong: #a9aeba;
+      --glass-hover: rgba(17, 19, 24, 0.06);
+      --brand-yellow: #ffd21e;
+      --shadow-xl: 0 16px 48px rgba(17, 19, 24, 0.12);
+      --canvas: #737373;
+      --font-body: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+      --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .pt[data-theme='dark'] {
+      --bg-elevated: #1c2029;
+      --bg-secondary: #1a1d24;
+      --bg-sunken: #16191f;
+      --text-primary: #f2f3f5;
+      --text-secondary: #a1a8b5;
+      --text-tertiary: #757c8a;
+      --border-subtle: #23262e;
+      --border-default: #2e323b;
+      --border-strong: #474d59;
+      --glass-hover: rgba(255, 255, 255, 0.08);
+      --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6);
+      --canvas: #08090b;
+    }
+
+    /* El teléfono: la hoja sigue anclada al borde inferior, del que entra, y
+       sigue creciendo sólo hacia arriba. Nada de barra de estado dibujada. */
+    .phone { box-sizing: border-box; display: flex; flex-direction: column; justify-content: flex-end; width: 390px; height: 844px; background: var(--canvas); }
+    .sheet {
+      display: flex; flex-direction: column;
+      border: 1px solid var(--border-default); border-bottom: none; border-radius: 8px 8px 0 0;
+      background: var(--bg-elevated); box-shadow: var(--shadow-xl); overflow: hidden;
+    }
+
+    .hd { display: flex; align-items: stretch; justify-content: space-between; border-bottom: 1px solid var(--border-subtle); }
+    .tabs { display: flex; gap: 2px; }
+    .tab {
+      position: relative; display: inline-flex; align-items: baseline; gap: 7px;
+      padding: 19px 16px 18px; border: none; background: none; color: var(--text-tertiary);
+      font: 600 0.6875rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
+      white-space: nowrap; cursor: pointer;
+    }
+    .tab--on { color: var(--text-primary); }
+    .tab-count { font-size: 0.625rem; font-variant-numeric: tabular-nums; color: var(--text-tertiary); }
+    .tab--on .tab-count { color: var(--text-secondary); }
+    .tab-bar { position: absolute; left: 16px; right: 16px; bottom: -1px; height: 3px; background: var(--brand-yellow); }
+
+    .close-wrap { display: flex; align-items: center; padding-right: 8px; }
+    .close {
+      display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px;
+      border: 1px solid var(--border-subtle); border-radius: 3px; background: none; color: var(--text-secondary); cursor: pointer;
+    }
+
+    .strip {
+      padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-sunken);
+      font: 600 0.625rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary);
+    }
+
+    .rows { max-height: 448px; overflow-y: auto; }
+    /* 64px de fila: el botón de acción mide 44, que es el mínimo táctil. */
+    .row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; }
+    .row + .row { border-top: 1px solid var(--border-subtle); }
+    .av {
+      display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+      width: 40px; height: 40px; border-radius: 9999px; overflow: hidden; font: 600 0.9375rem/1 var(--font-body);
+    }
+    .who { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+    .nm { font: 600 0.9375rem/1.2 var(--font-body); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .hnd { font: 400 0.75rem/1 var(--font-mono); letter-spacing: 0.02em; color: var(--text-tertiary); }
+    .act {
+      flex: 0 0 auto; height: 44px; padding: 0 16px; border: 1px solid var(--border-default); border-radius: 3px;
+      background: var(--bg-elevated); color: var(--text-primary); font: 600 0.8125rem/1 var(--font-body); cursor: pointer;
+    }
+    .act--on { border-color: var(--border-subtle); background: var(--bg-secondary); color: var(--text-tertiary); }
+
+    .more {
+      display: block; width: 100%; padding: 17px; border: none; border-top: 1px solid var(--border-subtle);
+      background: var(--bg-sunken); color: var(--text-primary);
+      font: 600 0.625rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+    }
+
+    .band { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 32px 24px 34px; text-align: center; }
+    .band-t { margin: 0; font: 600 0.9375rem/1.3 var(--font-body); color: var(--text-primary); }
+    .band-p { margin: 0; max-width: 30ch; font: 400 0.875rem/1.5 var(--font-body); color: var(--text-tertiary); }
+
+    /* El hueco del área segura del teléfono; el indicador de inicio lo pinta
+       el sistema encima, no nosotros. */
+    .safe { height: 24px; background: var(--bg-elevated); }
+  </style>
+</helmet>
+
+<div class="pt" data-theme="{{view.theme}}">
+  <div class="phone">
+    <div class="sheet" role="dialog" aria-modal="true">
+
+      <header class="hd">
+        <div class="tabs" role="tablist">
+          <sc-for list="{{view.tabs}}" as="tab" hint-placeholder-count="2">
+            <button type="button" role="tab" class="{{tab.cls}}" onClick="{{tab.pick}}">
+              <span>{{tab.label}}</span>
+              <span class="tab-count">{{tab.count}}</span>
+              <sc-if value="{{tab.active}}" hint-placeholder-val="{{true}}">
+                <span class="tab-bar"></span>
+              </sc-if>
+            </button>
+          </sc-for>
+        </div>
+        <div class="close-wrap">
+          <button type="button" class="close" aria-label="Cerrar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+              <path d="M18 6 6 18M6 6l12 12"></path>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <sc-if value="{{view.paged}}" hint-placeholder-val="{{true}}">
+        <div class="strip">{{view.stripText}}</div>
+      </sc-if>
+
+      <sc-if value="{{view.empty}}" hint-placeholder-val="{{false}}">
+        <div class="band">
+          <p class="band-t">{{view.emptyTitle}}</p>
+          <p class="band-p">{{view.emptyHint}}</p>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{view.hasRows}}" hint-placeholder-val="{{true}}">
+        <div class="rows">
+          <sc-for list="{{view.rows}}" as="r" hint-placeholder-count="6">
+            <div class="row">
+              <span class="av" style="{{r.avStyle}}">{{r.initial}}</span>
+              <span class="who">
+                <span class="nm">{{r.name}}</span>
+                <span class="hnd">@{{r.handle}}</span>
+              </span>
+              <button type="button" class="{{r.actCls}}" onClick="{{r.toggle}}">{{r.actLabel}}</button>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{view.more}}" hint-placeholder-val="{{true}}">
+        <button type="button" class="more">Cargar 30 más</button>
+      </sc-if>
+
+      <div class="safe"></div>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":390,"height":844},"estado":{"editor":"enum","options":["lista","uno","vacio"],"default":"lista","section":"Prototipo"},"dark":{"editor":"boolean","default":false,"section":"Prototipo"}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { mode: 'followers', followed: {} };
+  }
+
+  people() {
+    return {
+      followers: [
+        { name: 'mugar', handle: 'mugar', initial: 'm', color: '#ef6c00' },
+        { name: 'Elena Ruiz Sáez', handle: 'eruiz', initial: 'E', color: '' },
+        { name: 'Tomás Bernal', handle: 'tbernal', initial: 'T', color: '' },
+        { name: 'Nadia Ostrovska', handle: 'nadiao', initial: 'N', color: '#2f6f4e' },
+        { name: 'Jonás Herrera', handle: 'jherrera', initial: 'J', color: '' },
+        { name: 'Priya Raghavan', handle: 'praghavan', initial: 'P', color: '#5b4bc4' },
+        { name: 'Marc Delacroix', handle: 'mdelacroix', initial: 'M', color: '' }
+      ],
+      following: [
+        { name: 'Elena Ruiz Sáez', handle: 'eruiz', initial: 'E', color: '' },
+        { name: 'Priya Raghavan', handle: 'praghavan', initial: 'P', color: '#5b4bc4' },
+        { name: 'Kenji Watanabe', handle: 'kwatanabe', initial: 'K', color: '' },
+        { name: 'Sofía Marchetti', handle: 'smarchetti', initial: 'S', color: '#0e7490' },
+        { name: 'Alex Nwosu', handle: 'anwosu', initial: 'A', color: '' }
+      ]
+    };
+  }
+
+  scenario() {
+    const estado = this.props.estado || 'lista';
+    if (estado === 'uno') return { counts: { followers: 1, following: 0 }, cut: { followers: 1, following: 0 } };
+    if (estado === 'vacio') return { counts: { followers: 0, following: 0 }, cut: { followers: 0, following: 0 } };
+    return { counts: { followers: 128, following: 12 }, cut: { followers: 7, following: 5 } };
+  }
+
+  renderVals() {
+    const mode = this.state.mode;
+    const scenario = this.scenario();
+    const counts = scenario.counts;
+    const list = this.people()[mode].slice(0, scenario.cut[mode]);
+    const total = counts[mode];
+
+    const rows = list.map((p) => {
+      const on = this.state.followed[p.handle] === true;
+      return {
+        name: p.name,
+        handle: p.handle,
+        initial: p.initial,
+        avStyle: p.color
+          ? 'background: ' + p.color + '; color: #ffffff'
+          : 'background: var(--bg-secondary); color: var(--text-secondary)',
+        actLabel: on ? 'Siguiendo' : 'Seguir',
+        actCls: on ? 'act act--on' : 'act',
+        toggle: () => {
+          const next = Object.assign({}, this.state.followed);
+          next[p.handle] = !next[p.handle];
+          this.setState({ followed: next });
+        }
+      };
+    });
+
+    const tabs = ['followers', 'following'].map((key) => ({
+      key: key,
+      label: key === 'followers' ? 'Seguidores' : 'Siguiendo',
+      count: String(counts[key]),
+      active: mode === key,
+      cls: mode === key ? 'tab tab--on' : 'tab',
+      pick: () => this.setState({ mode: key })
+    }));
+
+    return {
+      theme: this.props.dark === true ? 'dark' : 'light',
+      tabs: tabs,
+      rows: rows,
+      hasRows: rows.length > 0,
+      empty: rows.length === 0,
+      paged: total > 30,
+      stripText: 'Mostrando 1–' + Math.min(30, total) + ' de ' + total,
+      more: total > 30,
+      emptyTitle: mode === 'followers' ? 'Sin seguidores todavía' : 'Sin usuarios seguidos todavía',
+      emptyHint: mode === 'followers'
+        ? 'Cuando alguien siga esta cuenta, aparecerá aquí.'
+        : 'Aquí aparecerán los usuarios que siga esta cuenta.'
+    };
+  }
+}
+</script>
+</body>
+</html>

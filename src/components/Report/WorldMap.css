@@ -1,14 +1,19 @@
 /* ============================================
    World Map — react19-simple-maps
+
+   The map sits inside the report's filter panel, so it is drawn in the same
+   ink-on-paper palette as the rest of the page: white sea, hairline coasts,
+   and a selected country filled with a tint derived from the ink token rather
+   than an indigo of its own.
    ============================================ */
 
 .wm {
+  position: relative;
   width: 100%;
-  border-radius: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.02);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  position: relative; /* For tooltip positioning context if needed, but tooltip is fixed/absolute based on viewport if using clientX/Y */
+  background: var(--bg-card);
 }
 
 /* We must make the map fill nicely */
@@ -18,60 +23,62 @@
 
 /* Geography */
 .wm-geo {
-  fill: rgba(255, 255, 255, 0.08);
-  stroke: rgba(255, 255, 255, 0.15);
+  fill: var(--bg-secondary);
+  stroke: var(--border-strong);
   stroke-width: 0.5px;
-  transition: fill 0.4s ease-out, stroke 0.4s ease-out;
+  transition: fill var(--transition-slow), stroke var(--transition-slow);
 }
 
 .wm-geo.unsupported {
-  fill: rgba(255, 255, 255, 0.035);
-  stroke: rgba(255, 255, 255, 0.07);
+  fill: var(--bg-sunken);
+  stroke: var(--border-subtle);
   pointer-events: none;
 }
 
 @media (hover: hover) and (pointer: fine) {
   .wm-geo:hover {
-    fill: rgba(255, 255, 255, 0.2);
-    stroke: rgba(255, 255, 255, 0.4);
+    fill: var(--bg-glass-hover);
+    stroke: var(--border-strong);
     cursor: pointer;
   }
 }
 
 .wm-geo.selected {
-  fill: rgba(99, 102, 241, 0.4);
-  stroke: rgba(99, 102, 241, 0.8);
+  fill: color-mix(in srgb, var(--accent-primary) 22%, var(--bg-card));
+  stroke: var(--border-ink);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .wm-geo.selected:hover {
-    fill: rgba(99, 102, 241, 0.6);
-    stroke: rgba(99, 102, 241, 1);
+    fill: color-mix(in srgb, var(--accent-primary) 34%, var(--bg-card));
+    stroke: var(--border-ink);
   }
 }
 
 .wm-geo:focus-visible {
-  outline: 2px solid #a5b4fc;
+  outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
-  stroke: #c7d2fe;
+  stroke: var(--border-ink);
   stroke-width: 1.5px;
 }
 
-/* Floating Tooltip */
+/* Floating Tooltip — ink sheet, so the label has to be set in the inverse
+   colour. It used to be `--text-primary` on a 0.85 ink wash: black on black. */
 .wm-tooltip {
   position: fixed;
-  background: rgba(0, 0, 0, 0.85);
-  color: #fff;
   padding: 6px 12px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
+  border: 1px solid var(--border-ink);
+  border-radius: var(--radius-sm);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-medium);
   pointer-events: none;
-  border: 1px solid rgba(255, 255, 255, 0.15);
   transform: translate(-50%, -100%);
   z-index: 9999;
   white-space: nowrap;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-lg);
   animation: wm-tooltip-fade 0.15s ease-out forwards;
 }
 
@@ -83,5 +90,15 @@
   to {
     opacity: 1;
     transform: translate(-50%, -100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wm-geo {
+    transition: none;
+  }
+
+  .wm-tooltip {
+    animation: none;
   }
 }

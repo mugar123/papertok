@@ -27,3 +27,4 @@ export const FeedContext = createContext(null);
 export const FollowingContext = createContext(null);
 export const FollowingUpdatesContext = createContext(null);
 export const LanguageContext = createContext(null);
+export const ThemeContext = createContext(null);

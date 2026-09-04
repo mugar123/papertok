@@ -20,6 +20,19 @@ import { createSessionCache } from './sessionCache.js';
  */
 export const ownProfileCache = createSessionCache({ maxEntries: 8 });
 export const ownListsCache = createSessionCache({ maxEntries: 4 });
+/**
+ * Paper metadata the lists screen has already paid for, keyed by uid.
+ *
+ * `savedPapers` on that screen is plain component state, so leaving a list to
+ * read a paper and coming back re-fetched every document the tab had in its
+ * hands seconds earlier — and Firestore's own cache cannot cover it, because
+ * `firebase.js` deliberately keeps the in-memory one with no persistence.
+ *
+ * One entry per account rather than per paper: the value is the whole
+ * `{ [paperId]: paper }` map, which is what the screen seeds its state from, and
+ * an LRU over individual papers would evict the middle of a list.
+ */
+export const listPapersCache = createSessionCache({ maxEntries: 2 });
 export const pinnableListsCache = createSessionCache({ maxEntries: 4 });
 export const likedExtraCache = createSessionCache({ maxEntries: 4 });
 // The showcase (F12): the one `profileLists/{uid}` read a visitor's Listas
@@ -130,6 +143,29 @@ export function forgetOwnLists(uid) {
   if (!uid) return;
   ownListsCache.delete(uid);
   ownListsReadAt.delete(uid);
+}
+
+/** The papers this account's lists screen has already resolved. */
+export function readListPapers(uid) {
+  return uid ? listPapersCache.get(uid) : undefined;
+}
+
+/**
+ * Folds newly resolved papers into what the account already had.
+ *
+ * Merged rather than replaced: a list is opened one at a time, and replacing
+ * would throw away the previous list's papers on every visit — which is the
+ * re-fetching this cache exists to stop.
+ */
+export function rememberListPapers(uid, papers) {
+  if (!uid || !papers || typeof papers !== 'object') return;
+  const known = listPapersCache.get(uid);
+  listPapersCache.set(uid, known ? { ...known, ...papers } : { ...papers });
+}
+
+export function forgetListPapers(uid) {
+  if (!uid) return;
+  listPapersCache.delete(uid);
 }
 
 /**

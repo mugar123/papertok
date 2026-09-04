@@ -1,0 +1,65 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900,
+      "title": "El lector, descargando",
+      "is_interactive": true
+    },
+    {
+      "file": "Movil.dc.html",
+      "x": 1560,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Móvil",
+      "is_interactive": true
+    },
+    {
+      "file": "Salida.dc.html",
+      "x": 0,
+      "y": 1020,
+      "w": 794,
+      "h": 1123,
+      "title": "El .tex compilado (A4)",
+      "print": "fixed"
+    },
+    {
+      "file": "Fuente.dc.html",
+      "x": 914,
+      "y": 1020,
+      "w": 820,
+      "h": 1010,
+      "title": "Lo que hay dentro del .tex"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "pruebalo",
+      "x": 0,
+      "y": -186,
+      "w": 640,
+      "text": "Pruébalo: el botón de descarga del panel de abajo abre la tarjeta.\n\nCambia entre PDF y LaTeX, y marca o desmarca qué se lleva — la vista previa de la página 1 responde: el subrayado amarillo, la marca de la IA, sus marcadores numerados y el bloque de notas al pie aparecen y desaparecen con sus casillas."
+    },
+    {
+      "id": "decisiones",
+      "x": 700,
+      "y": -186,
+      "w": 480,
+      "text": "Dos cosas que decidí por ti y conviene mirar:\n\n· El PDF no es un PDF distinto del .tex: es el mismo fichero compilado. Por eso hay un solo diseño de salida y no dos.\n\n· La atribución NO es una casilla. Un derivado del paper de otro viaja con su procedencia o no viaja.\n\n· Las referencias sí son casilla, y se apaga sola cuando el paper no tiene DOI — que es la mitad de los de arXiv."
+    },
+    {
+      "id": "fuente",
+      "x": 0,
+      "y": 2190,
+      "w": 700,
+      "text": "La página está compuesta en Newsreader, la serif de la app, embebida con fontspec: un export que se parece a de dónde vino, en vez de a cualquier otro preprint.\n\nSi quitas esa línea del preámbulo sale en Latin Modern y parece LaTeX de fábrica. Es una línea, y la decisión es tuya."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

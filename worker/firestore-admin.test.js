@@ -328,6 +328,69 @@ test('commit sends every write in one request, so a publish is atomic', async ()
   assert.equal(JSON.parse(calls[0].init.body).writes.length, 2);
 });
 
+test('batchGet keeps caller order and maps missing names to null', async () => {
+  const { admin, calls } = adminWith(async () => new Response(JSON.stringify([
+    { found: { name: 'projects/papertok-168df/databases/(default)/documents/papers/a', fields: { title: { stringValue: 'A' } } } },
+    { missing: 'projects/papertok-168df/databases/(default)/documents/papers/b' },
+  ]), { status: 200 }));
+  const rows = await admin.batchGet([['papers', 'a'], ['papers', 'b']]);
+  assert.deepEqual(rows, [{ title: 'A' }, null]);
+  assert.match(calls[0].url, /:batchGet$/);
+});
+
+test('runQuery returns id plus decoded fields, skipping readTime-only rows', async () => {
+  const { admin } = adminWith(async () => new Response(JSON.stringify([
+    { readTime: '2026-08-31T00:00:00Z' },
+    {
+      document: {
+        name: 'projects/p/databases/(default)/documents/papers/k/comments/c1',
+        fields: { text: { stringValue: 'Hi' } },
+      },
+    },
+  ]), { status: 200 }));
+  const rows = await admin.runQuery({
+    parentSegments: ['papers', 'k'],
+    collectionId: 'comments',
+    orderByField: 'createdAt',
+    limit: 20,
+  });
+  assert.deepEqual(rows, [{
+    id: 'c1',
+    data: { text: 'Hi' },
+    path: ['papers', 'k', 'comments', 'c1'],
+  }]);
+});
+
+test('runQuery sends a field filter and collection-group descendants', async () => {
+  let body;
+  const { admin } = adminWith(async (_url, init) => {
+    body = JSON.parse(init.body);
+    return new Response(JSON.stringify([]), { status: 200 });
+  });
+  await admin.runQuery({
+    collectionId: 'comments',
+    allDescendants: true,
+    where: { field: 'authorUid', op: 'EQUAL', value: 'uid-1' },
+    limit: 80,
+  });
+  assert.equal(body.structuredQuery.from[0].allDescendants, true);
+  assert.equal(body.structuredQuery.where.fieldFilter.field.fieldPath, 'authorUid');
+  assert.equal(body.structuredQuery.where.fieldFilter.op, 'EQUAL');
+  assert.equal(body.structuredQuery.where.fieldFilter.value.stringValue, 'uid-1');
+  assert.equal(body.structuredQuery.limit, 80);
+});
+
+test('countQuery reads the integer aggregation alias', async () => {
+  const { admin } = adminWith(async () => new Response(JSON.stringify([
+    { result: { aggregateFields: { count: { integerValue: '7' } } } },
+  ]), { status: 200 }));
+  assert.equal(await admin.countQuery({
+    parentSegments: ['papers', 'k'],
+    collectionId: 'comments',
+    limit: 1000,
+  }), 7);
+});
+
 test('a 401 drops the isolate cached token and retries once with a fresh one', async () => {
   let answered = 0;
   const { admin, calls, mints } = adminWith(async () => {

@@ -1,0 +1,292 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; font-family: 'Inter', -apple-system, 'Segoe UI', sans-serif; }
+    a { color: #1a5fd0; text-decoration: none; }
+    a:hover { color: #144aa3; }
+
+    .pt {
+      --bg-elevated: #ffffff;
+      --bg-card: #ffffff;
+      --bg-secondary: #f7f7f8;
+      --bg-sunken: #fafafa;
+      --text-primary: #111318;
+      --text-secondary: #5b6270;
+      --text-tertiary: #8a919e;
+      --border-subtle: #e6e7ea;
+      --border-default: #d3d5db;
+      --border-strong: #a9aeba;
+      --glass-hover: rgba(17, 19, 24, 0.06);
+      --brand-yellow: #ffd21e;
+      --shadow-xl: 0 16px 48px rgba(17, 19, 24, 0.12);
+      --canvas: #737373;
+      --tint-neutral-bg: #f4f4f5;
+      --tint-neutral-fg: #4a5160;
+      --tint-neutral-line: #e4e4e7;
+      --font-body: 'Inter', -apple-system, 'Segoe UI', sans-serif;
+      --font-mono: 'IBM Plex Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+    }
+    .pt[data-theme='dark'] {
+      --bg-elevated: #1c2029;
+      --bg-card: #16191f;
+      --bg-secondary: #1a1d24;
+      --bg-sunken: #16191f;
+      --text-primary: #f2f3f5;
+      --text-secondary: #a1a8b5;
+      --text-tertiary: #757c8a;
+      --border-subtle: #23262e;
+      --border-default: #2e323b;
+      --border-strong: #474d59;
+      --glass-hover: rgba(255, 255, 255, 0.08);
+      --shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6);
+      --canvas: #08090b;
+      --tint-neutral-bg: #181e2b;
+      --tint-neutral-fg: #a9b1c2;
+      --tint-neutral-line: #363d4b;
+    }
+
+    .stage { box-sizing: border-box; min-height: 700px; padding: 40px 50px; background: var(--canvas); }
+    .dlg {
+      display: flex; flex-direction: column; width: 460px;
+      border: 1px solid var(--border-default); border-radius: 8px;
+      background: var(--bg-elevated); box-shadow: var(--shadow-xl); overflow: hidden;
+    }
+
+    .top { display: flex; align-items: center; justify-content: space-between; padding: 12px 12px 12px 16px; }
+    .top-label { font: 600 0.6875rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); }
+    .close {
+      display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 30px;
+      border: 1px solid var(--border-subtle); border-radius: 3px; background: none; color: var(--text-secondary); cursor: pointer;
+    }
+    .close:hover { border-color: var(--border-strong); }
+
+    /* La pestaña ES el contador: la misma rejilla reglada de la cabecera del
+       perfil, de la que se abre esta hoja. La cifra deja de ser una viñeta
+       dentro de una píldora y vuelve a ser un dato. */
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; border-top: 1px solid var(--border-default); border-left: 1px solid var(--border-default); }
+    .cell {
+      position: relative; display: flex; flex-direction: column; gap: 3px; width: 100%; padding: 12px 14px;
+      border: none; border-right: 1px solid var(--border-default); border-bottom: 1px solid var(--border-default);
+      background: var(--bg-secondary); text-align: left; cursor: pointer; transition: background 120ms ease;
+    }
+    .cell:hover { background: var(--bg-card); }
+    .cell--on { background: var(--bg-card); }
+    .cell-bar { position: absolute; left: -1px; right: -1px; top: -1px; height: 3px; background: var(--brand-yellow); }
+    .cell-value {
+      font-family: var(--font-mono); font-size: 1.05rem; font-weight: 600; line-height: 1.1;
+      letter-spacing: -0.02em; font-variant-numeric: tabular-nums; color: var(--text-tertiary);
+    }
+    .cell--on .cell-value { color: var(--text-primary); }
+    .cell-label { font: 600 0.625rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-tertiary); }
+
+    .filter { display: flex; align-items: center; gap: 9px; padding: 10px 16px; border-bottom: 1px solid var(--border-subtle); background: var(--bg-sunken); color: var(--text-tertiary); }
+    .filter input {
+      flex: 1 1 auto; min-width: 0; border: none; background: none; color: var(--text-primary);
+      font: 400 0.8125rem/1.2 var(--font-body); outline: none;
+    }
+    .filter input::placeholder { color: var(--text-tertiary); }
+
+    .rows { max-height: 384px; overflow-y: auto; }
+    .row { display: flex; align-items: center; gap: 12px; padding: 12px 16px; transition: background 120ms ease; }
+    .row + .row { border-top: 1px solid var(--border-subtle); }
+    .row:hover { background: var(--glass-hover); }
+    .av {
+      display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+      width: 40px; height: 40px; border-radius: 9999px; overflow: hidden; font: 600 0.9375rem/1 var(--font-body);
+    }
+    .who { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 auto; }
+    .line1 { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .nm { font: 600 0.875rem/1.2 var(--font-body); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .badge {
+      flex: 0 0 auto; padding: 2px 5px; border: 1px solid var(--tint-neutral-line); border-radius: 2px;
+      background: var(--tint-neutral-bg); color: var(--tint-neutral-fg);
+      font: 600 0.5625rem/1.2 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase;
+    }
+    .line2 { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+    .hnd { flex: 0 0 auto; font: 400 0.6875rem/1.3 var(--font-mono); color: var(--text-tertiary); }
+    .bio { min-width: 0; font: 400 0.75rem/1.3 var(--font-body); color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .act {
+      flex: 0 0 auto; height: 28px; padding: 0 12px; border: 1px solid var(--border-default); border-radius: 3px;
+      background: var(--bg-elevated); color: var(--text-primary); font: 600 0.75rem/1 var(--font-body); cursor: pointer;
+    }
+    .act:hover { border-color: var(--border-strong); }
+    .act--on { border-color: var(--border-subtle); background: var(--bg-secondary); color: var(--text-tertiary); }
+
+    .more {
+      display: block; width: 100%; padding: 13px; border: none; border-top: 1px solid var(--border-subtle);
+      background: var(--bg-sunken); color: var(--text-primary);
+      font: 600 0.625rem/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+    }
+    .band { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 30px 24px 32px; text-align: center; }
+    .band-t { margin: 0; font: 600 0.875rem/1.3 var(--font-body); color: var(--text-primary); }
+    .band-p { margin: 0; max-width: 32ch; font: 400 0.8125rem/1.5 var(--font-body); color: var(--text-tertiary); }
+  </style>
+</helmet>
+
+<div class="pt" data-theme="{{view.theme}}">
+  <div class="stage">
+    <div class="dlg" role="dialog" aria-modal="true">
+
+      <div class="top">
+        <span class="top-label">Nicolás Muñoz García</span>
+        <button type="button" class="close" aria-label="Cerrar">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+            <path d="M18 6 6 18M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div class="grid" role="tablist">
+        <sc-for list="{{view.tabs}}" as="tab" hint-placeholder-count="2">
+          <button type="button" role="tab" class="{{tab.cls}}" onClick="{{tab.pick}}">
+            <sc-if value="{{tab.active}}" hint-placeholder-val="{{true}}">
+              <span class="cell-bar"></span>
+            </sc-if>
+            <span class="cell-value">{{tab.count}}</span>
+            <span class="cell-label">{{tab.label}}</span>
+          </button>
+        </sc-for>
+      </div>
+
+      <div class="filter">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round">
+          <circle cx="11" cy="11" r="7"></circle>
+          <path d="m20 20-3.5-3.5"></path>
+        </svg>
+        <input type="text" placeholder="Filtrar por nombre o @handle" value="{{view.query}}" onChange="{{view.onQuery}}">
+      </div>
+
+      <sc-if value="{{view.hasRows}}" hint-placeholder-val="{{true}}">
+        <div class="rows">
+          <sc-for list="{{view.rows}}" as="r" hint-placeholder-count="5">
+            <div class="row">
+              <span class="av" style="{{r.avStyle}}">{{r.initial}}</span>
+              <span class="who">
+                <span class="line1">
+                  <span class="nm">{{r.name}}</span>
+                  <sc-if value="{{r.mutual}}" hint-placeholder-val="{{true}}">
+                    <span class="badge">Te sigue</span>
+                  </sc-if>
+                </span>
+                <span class="line2">
+                  <span class="hnd">@{{r.handle}}</span>
+                  <span class="bio">{{r.bio}}</span>
+                </span>
+              </span>
+              <button type="button" class="{{r.actCls}}" onClick="{{r.toggle}}">{{r.actLabel}}</button>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{view.empty}}" hint-placeholder-val="{{false}}">
+        <div class="band">
+          <p class="band-t">{{view.emptyTitle}}</p>
+          <p class="band-p">{{view.emptyHint}}</p>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{view.more}}" hint-placeholder-val="{{true}}">
+        <button type="button" class="more">Cargar 30 más · quedan {{view.remaining}}</button>
+      </sc-if>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":560,"height":700},"dark":{"editor":"boolean","default":false,"section":"Prototipo"}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { mode: 'followers', query: '', followed: {} };
+  }
+
+  people() {
+    return {
+      followers: [
+        { name: 'mugar', handle: 'mugar', initial: 'm', color: '#ef6c00', bio: 'Materia condensada. Leo más de lo que publico.', mutual: false },
+        { name: 'Elena Ruiz Sáez', handle: 'eruiz', initial: 'E', color: '', bio: 'Bioinformática', mutual: true },
+        { name: 'Tomás Bernal', handle: 'tbernal', initial: 'T', color: '', bio: 'Doctorando en NLP', mutual: false },
+        { name: 'Nadia Ostrovska', handle: 'nadiao', initial: 'N', color: '#2f6f4e', bio: 'Astrofísica computacional', mutual: false },
+        { name: 'Jonás Herrera', handle: 'jherrera', initial: 'J', color: '', bio: 'Estadística bayesiana en ensayos clínicos', mutual: false },
+        { name: 'Priya Raghavan', handle: 'praghavan', initial: 'P', color: '#5b4bc4', bio: 'Sistemas de ML', mutual: true },
+        { name: 'Marc Delacroix', handle: 'mdelacroix', initial: 'M', color: '', bio: '', mutual: false }
+      ],
+      following: [
+        { name: 'Elena Ruiz Sáez', handle: 'eruiz', initial: 'E', color: '', bio: 'Bioinformática', mutual: true },
+        { name: 'Priya Raghavan', handle: 'praghavan', initial: 'P', color: '#5b4bc4', bio: 'Sistemas de ML', mutual: true },
+        { name: 'Kenji Watanabe', handle: 'kwatanabe', initial: 'K', color: '', bio: 'Óptica cuántica', mutual: false },
+        { name: 'Sofía Marchetti', handle: 'smarchetti', initial: 'S', color: '#0e7490', bio: 'Economía de la energía', mutual: false },
+        { name: 'Alex Nwosu', handle: 'anwosu', initial: 'A', color: '', bio: 'Epidemiología genómica', mutual: false }
+      ]
+    };
+  }
+
+  renderVals() {
+    const mode = this.state.mode;
+    const counts = { followers: 128, following: 12 };
+    const query = this.state.query.trim().toLowerCase();
+    const all = this.people()[mode];
+    const list = query === ''
+      ? all
+      : all.filter((p) => (p.name + ' @' + p.handle).toLowerCase().indexOf(query) !== -1);
+
+    const rows = list.map((p) => {
+      const on = this.state.followed[p.handle] === true;
+      return {
+        name: p.name,
+        handle: p.handle,
+        initial: p.initial,
+        bio: p.bio,
+        mutual: p.mutual,
+        avStyle: p.color
+          ? 'background: ' + p.color + '; color: #ffffff'
+          : 'background: var(--bg-secondary); color: var(--text-secondary)',
+        actLabel: on ? 'Siguiendo' : 'Seguir',
+        actCls: on ? 'act act--on' : 'act',
+        toggle: () => {
+          const next = Object.assign({}, this.state.followed);
+          next[p.handle] = !next[p.handle];
+          this.setState({ followed: next });
+        }
+      };
+    });
+
+    const tabs = ['followers', 'following'].map((key) => ({
+      key: key,
+      label: key === 'followers' ? 'Seguidores' : 'Siguiendo',
+      count: String(counts[key]),
+      active: mode === key,
+      cls: mode === key ? 'cell cell--on' : 'cell',
+      pick: () => this.setState({ mode: key, query: '' })
+    }));
+
+    return {
+      theme: this.props.dark === true ? 'dark' : 'light',
+      tabs: tabs,
+      rows: rows,
+      hasRows: rows.length > 0,
+      empty: rows.length === 0,
+      query: this.state.query,
+      onQuery: (event) => this.setState({ query: event.target.value }),
+      more: query === '' && counts[mode] > 30,
+      remaining: String(counts[mode] - 30),
+      emptyTitle: query === '' ? 'Sin seguidores todavía' : 'Ningún resultado',
+      emptyHint: query === ''
+        ? 'Cuando alguien siga esta cuenta, aparecerá aquí.'
+        : 'El filtro sólo mira las cuentas ya cargadas.'
+    };
+  }
+}
+</script>
+</body>
+</html>

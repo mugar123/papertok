@@ -1,0 +1,84 @@
+/* The shared heading for every /settings/* sub-page. Square back control,
+   breadcrumb eyebrow, title — the same three parts in the same places, so
+   crossing between the tabs does not move the furniture. */
+
+.settings-subheader {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+  margin-bottom: var(--space-8);
+}
+
+.settings-subheader-back {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 40px;
+  place-items: center;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .settings-subheader-back:hover {
+    border-color: var(--border-ink);
+    color: var(--text-primary);
+    background: var(--bg-secondary);
+  }
+}
+
+.settings-subheader-back:focus-visible {
+  border-color: var(--border-ink);
+  color: var(--text-primary);
+}
+
+.settings-subheader-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.settings-subheader-eyebrow {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--gradient-physics);
+}
+
+.settings-subheader h1 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: 34px;
+  font-weight: var(--fw-bold);
+  letter-spacing: -0.01em;
+}
+
+.settings-subheader p {
+  max-width: 60ch;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+}
+
+@media (max-width: 700px) {
+  .settings-subheader {
+    gap: var(--space-3);
+    margin-bottom: var(--space-6);
+  }
+
+  .settings-subheader h1 {
+    font-size: 28px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-subheader-back {
+    transition: none;
+  }
+}

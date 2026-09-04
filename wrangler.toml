@@ -2,15 +2,36 @@ name = "papertok-report-api"
 main = "worker/report-api.js"
 compatibility_date = "2026-07-16"
 
+# Declarar `[[routes]]` hace que wrangler apague workers.dev por defecto, y esa
+# es la URL que sigue llamando el bundle en produccion: sin esta linea, el
+# despliegue que anade api.papertok.app deja la web viva sin API. Se queda
+# encendida hasta que el frontend haya migrado del todo.
+workers_dev = true
+
+# El Custom Domain del Worker. Cloudflare crea aqui el registro DNS y el
+# certificado al desplegar, y solo puede hacerlo con la zona papertok.app ya en
+# la cuenta: un deploy antes de mover los nameservers falla con "zone not
+# found". La ruta nativa papertok-report-api.<cuenta>.workers.dev sigue viva.
+[[routes]]
+pattern = "api.papertok.app"
+custom_domain = true
+
 [vars]
-ALLOWED_ORIGINS = "https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:4175,http://127.0.0.1:4175"
+# 5174/5175 are here because Vite increments the port when 5173 is taken, and a
+# missing origin only shows up as a blocked POST after a successful preflight.
+ALLOWED_ORIGINS = "https://papertok.app,https://www.papertok.app,https://papertok-ten.vercel.app,https://mugar123.github.io,http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174,http://localhost:5175,http://127.0.0.1:5175,http://localhost:4175,http://127.0.0.1:4175"
 AI_PROVIDER = "gemini"
-AI_FALLBACK_PROVIDER = "modal-kimi"
+# Cost order: DeepSeek on NVIDIA is free, Kimi on Modal pays per token, so the
+# chain only reaches Modal when NVIDIA could not answer.
+AI_FALLBACK_PROVIDER = "nvidia-deepseek,modal-kimi"
 AI_MODEL = "gemini-3.5-flash"
 AI_FALLBACK_MODEL = "gemini-3.5-flash-lite"
 AI_DAILY_USER_LIMIT = "10"
 AI_DAILY_GLOBAL_LIMIT = "1000"
+# Paper rewrites stream from this model. Falls back to AI_MODEL when unset.
+AI_REWRITE_MODEL = "gemini-3.5-flash"
 MODAL_KIMI_MODEL = "moonshotai/Kimi-K3"
+NVIDIA_DEEPSEEK_MODEL = "deepseek-ai/deepseek-v4-flash-0731"
 KIMI_MONTHLY_HARD_CAP_USD = "27"
 KIMI_PROMPT_USD_PER_MILLION = "3"
 KIMI_CACHED_PROMPT_USD_PER_MILLION = "0.3"
@@ -23,7 +44,7 @@ FIREBASE_PROJECT_ID = "papertok-168df"
 # far under the Firebase Spark daily allowance (20k writes, 50k reads).
 PUBLIC_LIST_USER_DAILY_LIMIT = "60"
 PUBLIC_LIST_GLOBAL_DAILY_LIMIT = "2000"
-WORKER_PUBLIC_URL = "https://papertok-report-api.papertok-mugar123.workers.dev"
+WORKER_PUBLIC_URL = "https://api.papertok.app"
 EMAIL_PROVIDER = "brevo"
 EMAIL_DAILY_SEND_LIMIT = "290"
 PROVIDER_USER_MINUTE_LIMIT = "60"
@@ -38,17 +59,45 @@ OPENALEX_GLOBAL_MINUTE_LIMIT = "300"
 # (which spends outside this ledger) and the health probe.
 OPENALEX_GLOBAL_DAILY_LIMIT = "8000"
 # PubMed and Semantic Scholar limit by provider, not by caller, and the guest feed
-# reads both, so their ceiling is global like OpenAlex's. Sixty route misses a
-# minute are at most 180 E-utilities calls -- three per miss -- which is NCBI's
-# anonymous 3 req/s; raise it once NCBI_API_KEY is set, which buys 10 req/s.
+# reads both, so their ceiling is global like OpenAlex's. Each miss spends three
+# E-utilities calls, six if every one is refused once and retried -- what NCBI
+# actually refuses is per-second bursts, which a per-minute ceiling cannot see;
+# withPubmedRetry is what absorbs those. So 60 route misses a minute are at most
+# 360 calls, and NCBI_API_KEY (set since 2026-09-01; /health reports
+# pubmedKeyConfigured) buys 10 req/s = 100 misses a minute at that worst case.
+# 60 is a deliberate margin, not the anonymous 3 req/s it once mirrored, and it
+# has never been the binding limit (151/151 reservations accepted, 2026-09-01).
 # Sixty is also roughly the 1 req/s Semantic Scholar allows, shared by
 # /sources/s2 and /related, which spend the same allowance.
 PUBMED_GLOBAL_MINUTE_LIMIT = "60"
 S2_GLOBAL_MINUTE_LIMIT = "60"
+# Firestore REST misses of /thread-anchor a minute, global: a KV hit is free
+# and not counted, and the unit reserved is one missing identity, not one
+# request -- a request can miss on up to four identities at once, and
+# charging per request would let it spend every one for the price of one.
+# 120 missing identities a minute is 360 reads a minute at worst, each miss
+# up to three service-account reads.
+THREAD_ANCHOR_GLOBAL_MINUTE_LIMIT = "120"
 
 [[kv_namespaces]]
 binding = "NOTIFICATION_STORE"
 id = "45c1519982dd48f8a0ea08403c159ae1"
+
+# Comment-thread anchors share this namespace under a `thread:v1:` prefix
+# until a dedicated `THREAD_ANCHOR_STORE` exists. Invalidation is a KV delete
+# on write, with a short TTL as the missed-invalidation net.
+# [[kv_namespaces]]
+# binding = "THREAD_ANCHOR_STORE"
+# id = "<id from wrangler kv namespace create THREAD_ANCHOR_STORE>"
+
+# A rewrite is identical for every reader, so it is cached globally in KV rather
+# than per edge. Until a dedicated namespace exists, ai-rewrite.js falls back to
+# NOTIFICATION_STORE under a "rewrite:" prefix. To separate them, run
+# `npx wrangler kv namespace create AI_REWRITE_STORE` and uncomment this block
+# with the id it prints.
+# [[kv_namespaces]]
+# binding = "AI_REWRITE_STORE"
+# id = "<id from wrangler kv namespace create>"
 
 [[durable_objects.bindings]]
 name = "KIMI_BUDGET_LEDGER"

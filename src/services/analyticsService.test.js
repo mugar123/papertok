@@ -8,7 +8,9 @@ import {
   markActivation,
   normalizeAnalyticsPath,
   persistAnalyticsConsent,
+  PRODUCT_ANALYTICS_EVENTS,
   readAnalyticsConsent,
+  sanitizeAnalyticsEventUrl,
   sanitizeAnalyticsLocation,
   sanitizeProductEventParams,
   setAnalyticsConsent,
@@ -105,6 +107,15 @@ test('normalizes entity identifiers and strips query strings from analytics path
   assert.equal(normalizeAnalyticsPath('/explorer/author/alice#publications'), '/explorer/author/:id');
   assert.equal(normalizeAnalyticsPath('/research/'), '/research');
   assert.equal(normalizeAnalyticsPath('/'), '/');
+});
+
+test('names the routes that reach analytics through the static list', () => {
+  assert.equal(normalizeAnalyticsPath('/profile'), '/profile');
+  assert.equal(normalizeAnalyticsPath('/settings/profile'), '/settings/profile');
+  assert.equal(normalizeAnalyticsPath('/settings/comments'), '/settings/comments');
+  assert.equal(normalizeAnalyticsPath('/admin/moderation'), '/admin/moderation');
+  assert.equal(normalizeAnalyticsPath('/report'), '/report');
+  assert.equal(normalizeAnalyticsPath('/public/user/nicolas?ref=share'), '/public/user/:handle');
 });
 
 test('maps unknown and malformed routes to a fixed analytics path', () => {
@@ -219,6 +230,39 @@ test('builds page locations from the sanitized path and origin only', () => {
   assert.equal(sanitizeAnalyticsLocation('/search?q=private', location), 'https://papertok.example/search');
 });
 
+/**
+ * The payload Vercel's own script builds, not the one this app hands it. It
+ * reads `location.href`, and under HashRouter that URL carries the real entity
+ * id in the fragment -- so this is the function standing between a paper id and
+ * a request leaving the browser. The policy published at /privacy.html promises
+ * it never does.
+ */
+test('strips the identifier out of the hash before the page-view URL is sent', () => {
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/#/public/paper/10.1234%2Fprivate-doi'),
+    'https://papertok.app/public/paper/:id',
+  );
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/#/explorer/author/a5023888391'),
+    'https://papertok.app/explorer/author/:id',
+  );
+  assert.equal(
+    sanitizeAnalyticsEventUrl('https://papertok.app/#/search?q=private+query'),
+    'https://papertok.app/search',
+  );
+  assert.equal(sanitizeAnalyticsEventUrl('https://papertok.app/#/'), 'https://papertok.app/');
+});
+
+test('falls back to the real path when there is no hash route, and never returns the input', () => {
+  // Non-hash URLs still exist on this origin: /privacy.html, and any deep link
+  // the SPA fallback serves. Neither should arrive as a raw string.
+  assert.equal(sanitizeAnalyticsEventUrl('https://papertok.app/'), 'https://papertok.app/');
+  assert.equal(sanitizeAnalyticsEventUrl('https://papertok.app/lists'), 'https://papertok.app/lists');
+  assert.equal(sanitizeAnalyticsEventUrl('https://papertok.app/some/private/path'), 'https://papertok.app/unknown');
+  assert.equal(sanitizeAnalyticsEventUrl('not a url at all'), '/');
+  assert.equal(sanitizeAnalyticsEventUrl(undefined), '/');
+});
+
 test('keeps only event-specific categorical and bounded analytics parameters', () => {
   assert.deepEqual(sanitizeProductEventParams('paper_open', {
     surface: 'feed',
@@ -325,4 +369,105 @@ test('clears consent-scoped activation state when consent is denied', async t =>
   assert.equal(storage.getItem('papertok_analytics_activation_at'), null);
   assert.equal(storage.getItem('papertok_analytics_activation_sent'), null);
   assert.equal(storage.getItem('papertok_analytics_day_7_return_sent'), null);
+});
+
+/**
+ * Every `trackEvent` call site in the app, checked against the two allowlists
+ * that decide whether it survives.
+ *
+ * `trackProductEvent` returns `false` on its first line for a name that is not
+ * in `EVENT_PARAMETER_SCHEMAS`, and `sanitizeProductEventParams` drops a value
+ * that is not in its category. Neither logs anything. So an unregistered event
+ * is not a smaller event, it is no event, and an unregistered `surface` is an
+ * event that no longer says where it happened — both indistinguishable from
+ * working, from the call site and from the dashboard, until someone goes
+ * looking for numbers that were never collected.
+ *
+ * The light redesign shipped four of these at once: `paper_rewrite` and
+ * `paper_highlight` unregistered entirely, and the `reader` and `auth_prompt`
+ * surfaces stripped off the events that did survive. This test is why that can
+ * only happen once.
+ */
+test('every event the app emits is registered, with a surface that survives', async () => {
+  const { readdir, readFile } = await import('node:fs/promises');
+  const roots = [new URL('../', import.meta.url)];
+  const sources = [];
+  while (roots.length) {
+    const dir = roots.pop();
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const child = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, dir);
+      if (entry.isDirectory()) roots.push(child);
+      // `analyticsService.js` is the vocabulary, not a caller: its schema
+      // entries read `surface: 'surface'`, naming the category rather than a
+      // value, and scanning them would flag the declaration as a violation of
+      // itself.
+      else if (
+        /\.jsx?$/.test(entry.name)
+        && !entry.name.endsWith('.test.js')
+        && entry.name !== 'analyticsService.js'
+      ) sources.push(child);
+    }
+  }
+
+  const emitted = new Map();
+  const surfaces = new Map();
+  for (const file of sources) {
+    const code = (await readFile(file, 'utf8')).replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+    for (const [, name] of code.matchAll(/\btrackEvent\(\s*'([a-z0-9_]+)'/g)) {
+      emitted.set(name, (emitted.get(name) || []).concat(file.pathname));
+    }
+    for (const [, value] of code.matchAll(/\bsurface:\s*'([a-z0-9_]+)'/g)) {
+      surfaces.set(value, (surfaces.get(value) || []).concat(file.pathname));
+    }
+  }
+
+  assert.ok(emitted.size > 0, 'the scan found call sites at all');
+
+  const unregistered = [...emitted.keys()].filter(name => !PRODUCT_ANALYTICS_EVENTS.includes(name));
+  assert.deepEqual(unregistered, [], `emitted but never recorded: ${unregistered.join(', ')}`);
+
+  // A surface only survives if `sanitizeProductEventParams` keeps it, which is
+  // the same question the dashboard asks. Ask it directly rather than
+  // re-declaring the category list here and letting the two drift.
+  const stripped = [...surfaces.keys()].filter(value => (
+    sanitizeProductEventParams('paper_view', { surface: value }).surface !== value
+  ));
+  assert.deepEqual(stripped, [], `surface dropped by the sanitizer: ${stripped.join(', ')}`);
+});
+
+
+/**
+ * A route the router serves but `normalizeAnalyticsPath` does not name is not a
+ * missing label — it is a page that disappears. Every one of them lands on
+ * `/unknown`, where they pile up as a single anonymous row: `/profile`,
+ * `/settings/profile`, `/settings/comments` and `/admin/moderation` spent three
+ * months there, together the third most viewed "page" on the site, and nothing
+ * about the report said which pages they were.
+ *
+ * Reading the routes out of `App.jsx` rather than restating them here is the
+ * point: the list cannot pass by being edited alongside the router, only by
+ * matching it.
+ */
+test('every route the app declares is a named analytics path', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const app = await readFile(new URL('../App.jsx', import.meta.url), 'utf8');
+
+  const declared = [...app.matchAll(/\bpath="([^"]+)"/g)]
+    .map(([, path]) => path)
+    // The catch-all is React Router's fallback, not a page anyone lands on.
+    .filter(path => path !== '*');
+
+  assert.ok(declared.length > 10, 'the scan found the router at all');
+
+  // Fill the parameters with values that must never survive into the report,
+  // so a route that leaks one fails here rather than in production.
+  const sample = path => path.replace(/:[A-Za-z]\w*/g, 'private-value');
+
+  const unnamed = declared.filter(path => normalizeAnalyticsPath(sample(path)) === '/unknown');
+  assert.deepEqual(unnamed, [], `routes filed under /unknown: ${unnamed.join(', ')}`);
+
+  const leaked = declared
+    .filter(path => path.includes(':'))
+    .filter(path => normalizeAnalyticsPath(sample(path)).includes('private-value'));
+  assert.deepEqual(leaked, [], `routes leaking their parameter: ${leaked.join(', ')}`);
 });

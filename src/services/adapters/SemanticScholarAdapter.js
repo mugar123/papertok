@@ -14,7 +14,8 @@ export class SemanticScholarAdapter extends BaseAdapter {
 
   async search(query, page = 1, filters = {}) {
     // Clean query
-    let safeQuery = query.replace(/OR|AND/g, ' ').replace(/"/g, '').replace(/[()]/g, '');
+    // Word boundaries, or CORD-19 becomes "C D-19": the operators are words.
+    let safeQuery = query.replace(/\b(?:OR|AND)\b/g, ' ').replace(/"/g, '').replace(/[()]/g, '');
     if (filters && filters.type === 'author') {
        safeQuery = query;
     }
@@ -65,10 +66,18 @@ export class SemanticScholarAdapter extends BaseAdapter {
 
   mapToStandard(raw) {
     const isPreprint = raw.publicationTypes?.some(t => t.toLowerCase().includes('review') || t === 'preprint');
+    // The DOI and the arXiv id ride in `externalIds` (the Worker asks for
+    // them). They used to be dropped — `doi: null` — so a paper saved from a
+    // Semantic Scholar card was remembered under its S2 hash alone, an id no
+    // public paper page can load, and its row in a list had no address.
+    const externalIds = raw.externalIds || {};
+    const doi = typeof externalIds.DOI === 'string' && externalIds.DOI.trim() ? externalIds.DOI.trim() : null;
+    const arxivId = typeof externalIds.ArXiv === 'string' && externalIds.ArXiv.trim() ? externalIds.ArXiv.trim() : undefined;
     return {
       id: raw.paperId,
       sources: { primary: 'semanticscholar', enrichedBy: [] },
-      doi: null,
+      doi,
+      arxivId,
       title: raw.title || 'Untitled',
       abstract: raw.abstract || 'No abstract available.',
       authors: raw.authors?.map(a => ({ name: a.name, id: a.authorId })) || [],

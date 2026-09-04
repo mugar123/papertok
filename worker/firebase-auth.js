@@ -122,7 +122,17 @@ export async function verifyFirebaseIdentity(request, env, { allowCache = true }
     throw new WorkerAuthError('AUTH_UNAVAILABLE', 503);
   }
   const user = lookup.payload?.users?.[0];
-  const identity = user?.localId ? { uid: user.localId } : null;
+  // The email travels with the identity so a caller can recognise a specific
+  // account without a second lookup, and `emailVerified` travels with it because
+  // an unverified address is a claim rather than an identity — anything that
+  // grants on the strength of an email has to see both.
+  const identity = user?.localId
+    ? {
+      uid: user.localId,
+      email: String(user.email || '').trim().toLowerCase(),
+      emailVerified: user.emailVerified === true,
+    }
+    : null;
   if (!lookup.ok || !identity) throw new WorkerAuthError('AUTH_REQUIRED', 401);
 
   if (allowCache) {

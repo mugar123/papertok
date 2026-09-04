@@ -1,0 +1,134 @@
+/* ============================================
+   GuestEndCard — the door at the end of the guest feed
+
+   Drawn from the same parts as PaperCard so the swipe that reveals it feels
+   like one more card: full viewport height inside .feed-snap-item, the same
+   --bg-secondary ground, the same 34x3 rule over a serif headline, metadata in
+   mono. What changes is the alignment — a paper sits at the bottom of the
+   screen, this sits in the middle — because it is a destination, not a page.
+
+   Deliberately not animated on entry: .feed-snap-item carries
+   `content-visibility: auto`, and the browser skips animations inside a
+   skipped subtree, which pins an `animation: ... both` at its `from` frame
+   (opacity 0) and the card never appears. Every value here is the final one.
+   ============================================ */
+
+.gec {
+  /* No research field applies to a sign-up card, so the rule takes the ink
+     fallback rather than borrowing a colour that means something else. */
+  --area-accent: var(--gradient-brand);
+
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 3vh, 40px);
+  padding: clamp(16px, 3dvh, 40px);
+  background: var(--bg-secondary);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gec-sheet {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+}
+
+/* The field rule, same 34x3 bar the paper sheet wears. */
+.gec-sheet::before {
+  content: '';
+  flex: 0 0 auto;
+  width: 34px;
+  height: 3px;
+  margin-bottom: var(--space-4);
+  background: var(--area-accent);
+}
+
+/* ── Machine line ── */
+.gec-kicker {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-4);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
+.gec-kicker-dot {
+  color: var(--border-strong);
+}
+
+/* ── Copy ── */
+.gec-heading {
+  margin: 0 0 var(--space-3);
+  font-family: var(--font-serif);
+  font-size: clamp(1.45rem, 2.5vw, 2.1rem);
+  font-weight: var(--fw-semibold);
+  line-height: 1.16;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
+}
+
+.gec-lede {
+  margin: 0 0 var(--space-6);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-relaxed);
+  color: var(--text-secondary);
+}
+
+/* ── What is on the other side: hairline-ruled rows, no card ── */
+.gec-perks {
+  margin: 0 0 var(--space-6);
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.gec-perk {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) 0;
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
+  color: var(--text-secondary);
+}
+
+.gec-perk svg {
+  flex: 0 0 auto;
+  color: var(--text-primary);
+}
+
+/* ── The door ── */
+.gec-actions {
+  display: flex;
+  align-items: center;
+  margin-bottom: var(--space-3);
+}
+
+.gec-foot {
+  margin: 0;
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 640px) {
+  .gec-heading {
+    font-size: 1.3rem;
+  }
+
+  .gec-lede,
+  .gec-perks {
+    margin-bottom: var(--space-4);
+  }
+
+  .gec-cta {
+    width: 100%;
+  }
+}

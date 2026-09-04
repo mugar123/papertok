@@ -81,7 +81,7 @@ Worker's probe, which reports the view Elsevier granted and whether that view
 carried an abstract:
 
 ```bash
-curl -s -H "origin: https://mugar123.github.io" https://papertok-report-api.papertok-mugar123.workers.dev/health/scopus
+curl -s -H "origin: https://papertok.app" https://api.papertok.app/health/scopus
 ```
 
 `available: true` is necessary but not sufficient, and the browser flow is

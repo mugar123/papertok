@@ -29,6 +29,9 @@ import {
 import { db } from './firebase';
 import { serializeInteractionProfile } from '../utils/interactionProfile.js';
 import { mapWithConcurrency } from '../utils/mapWithConcurrency.js';
+import { FIRESTORE_IN_FILTER_MAX } from '../utils/firestoreLimits.js';
+import { planLibraryBatches } from '../utils/listPaperMetadataPlan.js';
+import { decodeInteractionDocId, encodeInteractionDocId } from '../utils/interactionDocId.js';
 
 export const INTERACTION_PROFILE_COLLECTION = 'aggregates';
 export const INTERACTION_PROFILE_DOC_ID = 'interactions';
@@ -37,16 +40,19 @@ export const INTERACTION_PROFILE_DOC_ID = 'interactions';
 // events and the aggregate only has to be durable, not instantaneous. The
 // in-memory profile is updated synchronously, so nothing the user sees waits.
 const FLUSH_DELAY_MS = 4000;
-const LIBRARY_BATCH_SIZE = 10;
+const LIBRARY_BATCH_SIZE = FIRESTORE_IN_FILTER_MAX;
 /**
  * How many library batches may be in flight at once.
  *
- * The batch size is fixed by the `in` operator; the number of batches is not —
- * it scales with the account, up to PERSONAL_LIBRARY_MAX_RECORDS / 10 = 60. All
- * sixty used to start together on the one WebChannel the app has, and the reads
- * belonging to whatever screen asked for the library queued behind them. Six at
- * a time keeps a large library from monopolising the connection while still
- * covering the common case (an account with sixty saved papers) in one round.
+ * The batch size is capped by the `in` operator (firestoreLimits.js owns that
+ * number, and this comment deliberately does not repeat it — the last two that
+ * did were still quoting a cap Firestore had already raised). The number of
+ * batches is not capped: it scales with the account, up to
+ * PERSONAL_LIBRARY_MAX_RECORDS worth of ids. All of them used to start together
+ * on the one WebChannel the app has, and the reads belonging to whatever screen
+ * asked for the library queued behind them. Six at a time keeps a large library
+ * from monopolising the connection while still covering the common case in one
+ * round.
  */
 export const LIBRARY_READ_CONCURRENCY = 6;
 
@@ -92,6 +98,16 @@ export function interactionsRef(userId) {
   return collection(db, 'users', userId, 'interactions');
 }
 
+/**
+ * The one way to address a paper's interaction document. The id is encoded
+ * (see utils/interactionDocId.js): a raw `doc(..., 'hep-th/0603001')` threw on
+ * the slash after the aggregate had already recorded the interaction, which is
+ * what left likes the Liked tab could not name.
+ */
+export function interactionDocRef(userId, paperId) {
+  return doc(interactionsRef(userId), encodeInteractionDocId(paperId));
+}
+
 export function createInteractionProfileClient(userId) {
   return {
     userId,
@@ -105,9 +121,10 @@ export function createInteractionProfileClient(userId) {
       // optional field and an orderBy on it would silently drop any document
       // that never received one.
       const constraints = [orderBy(documentId()), limit(pageSize)];
-      if (startAfterId) constraints.splice(1, 0, startAfter(startAfterId));
+      if (startAfterId) constraints.splice(1, 0, startAfter(encodeInteractionDocId(startAfterId)));
       const snapshot = await getDocs(query(interactionsRef(userId), ...constraints));
-      const documents = snapshot.docs.map(item => ({ id: item.id, data: item.data() }));
+      // Decoded: the rebuilt aggregate must carry paper ids, never document names.
+      const documents = snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() }));
       countReads('interactions', documents.length);
       return { documents, hasMore: documents.length === pageSize };
     },
@@ -169,8 +186,8 @@ export function flushAllInteractionProfiles() {
  *
  * The reading library used to arrive as a side effect of scanning every
  * interaction document on feed load. It is now loaded on demand by the screens
- * that render it, from the ids the aggregate already holds, in batches the
- * `in` operator accepts.
+ * that render it, from the ids the aggregate already holds, in the largest
+ * batches the `in` operator accepts.
  */
 /**
  * Returns `{ records, fromCache }`, not a bare array, because the caller has
@@ -184,10 +201,12 @@ export function flushAllInteractionProfiles() {
  */
 export async function fetchLibraryRecords(userId, paperIds) {
   if (!userId || !paperIds?.length) return { records: [], fromCache: false };
-  const batches = [];
-  for (let index = 0; index < paperIds.length; index += LIBRARY_BATCH_SIZE) {
-    batches.push(paperIds.slice(index, index + LIBRARY_BATCH_SIZE));
-  }
+  // Ids are encoded into document names first (utils/interactionDocId.js), so
+  // a pre-2007 arXiv id is a batch member like any other; the plan still keeps
+  // out what no encoding can save (`..`, `__x__`). A slash in an `in` filter
+  // used to reject the whole query and blank every paper in its batch.
+  const { batches } = planLibraryBatches(paperIds.map(encodeInteractionDocId), LIBRARY_BATCH_SIZE);
+  if (batches.length === 0) return { records: [], fromCache: false };
 
   const settled = await mapWithConcurrency(batches, LIBRARY_READ_CONCURRENCY, async (batch) => {
     const snapshot = await getDocs(
@@ -195,7 +214,7 @@ export async function fetchLibraryRecords(userId, paperIds) {
     );
     return {
       fromCache: snapshot.metadata.fromCache,
-      records: snapshot.docs.map(item => ({ id: item.id, data: item.data() })),
+      records: snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() })),
     };
   });
   // A bounded pool cannot abandon its in-flight workers the way Promise.all

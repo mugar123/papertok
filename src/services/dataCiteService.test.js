@@ -86,6 +86,32 @@ test('maps direct version and software relations with safe links', () => {
   assert.equal(resources[0].url, 'https://doi.org/10.5281/zenodo.2');
 });
 
+// DataCite reexpide la `url` de depósito tal cual la registró el repositorio, y
+// muchos repositorios institucionales la registraron en claro. La tarjeta pinta
+// ese recurso con `href={safeExternalUrl(resource.url) || undefined}`, que solo
+// deja pasar `https:`, así que una `url` en `http:` llegaba a la pantalla como
+// un enlace sin `href`: con su icono de «abrir fuera» y mudo al pulsarlo.
+test('sube a HTTPS los recursos que DataCite entrega en claro', () => {
+  const resource = mapDataCiteRecord({
+    id: '10.5281/zenodo.124',
+    attributes: {
+      doi: '10.5281/zenodo.124',
+      titles: [{ title: 'Reusable measurements' }],
+      types: { resourceTypeGeneral: 'Dataset' },
+      relatedIdentifiers: [{ relatedIdentifier: '10.1000/paper', relatedIdentifierType: 'DOI', relationType: 'IsSupplementTo' }],
+      url: 'http://repositorio.example/records/124',
+    },
+  }, '10.1000/paper');
+
+  assert.equal(resource.url, 'https://repositorio.example/records/124');
+
+  const [related] = mapDataCiteDirectRelations({ attributes: { relatedIdentifiers: [
+    { relatedIdentifier: 'http://repositorio.example/software/1', relatedIdentifierType: 'URL', relationType: 'IsDocumentedBy', resourceTypeGeneral: 'Software' },
+  ] } }, '10.5281/zenodo.1');
+
+  assert.equal(related.url, 'https://repositorio.example/software/1');
+});
+
 test('the deadline covers a DataCite body that never finishes', async () => {
   // Before the fix the timer was cleared as soon as the headers landed, so the
   // `response.json()` on the next line ran with nothing bounding it.

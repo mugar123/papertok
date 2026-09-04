@@ -159,3 +159,119 @@ test('breaks otherwise equal relevance with citations and tolerates empty input'
   assert.deepEqual(ordered, ['high', 'low']);
   assert.deepEqual(orderFollowingFeedPapers(undefined, undefined), []);
 });
+
+import { readFile } from 'node:fs/promises';
+import { followingFirstLoadPending, mergeOrderedPapers } from './followingFeed.js';
+
+const readSource = (path) => readFile(new URL(path, import.meta.url), 'utf8');
+
+/**
+ * A silent refresh landing while the Following feed is on screen used to
+ * re-rank the whole list under the reader. The cards already showing keep
+ * their places, under their fresh copies; what the refresh dropped goes,
+ * what it brought is appended in its own order.
+ */
+test('a refresh keeps the cards on screen where they are and appends what is new', () => {
+  const previous = [
+    { id: 'a', title: 'A', citationCount: 1 },
+    { id: 'b', title: 'B', citationCount: 1 },
+    { id: 'c', title: 'C', citationCount: 1 },
+  ];
+  const fresh = [
+    { id: 'd', title: 'D', citationCount: 9 },
+    { id: 'c', title: 'C', citationCount: 5 },
+    { id: 'a', title: 'A', citationCount: 4 },
+    { id: 'e', title: 'E', citationCount: 2 },
+  ];
+  const merged = mergeOrderedPapers(previous, fresh);
+  assert.deepEqual(merged.map(paper => paper.id), ['a', 'c', 'd', 'e'], 'a and c stay in order, b is gone, d and e follow');
+  assert.equal(merged[0].citationCount, 4, 'the copy on screen is the fresh one');
+  assert.equal(mergeOrderedPapers([], fresh), fresh, 'nothing on screen: the fresh ranking as is');
+  assert.deepEqual(mergeOrderedPapers(previous, []), [], 'the refresh emptied the feed');
+});
+
+test('SOURCE: the Following page ranks on its first render and merges refreshes', async () => {
+  const code = await readSource('../components/Following/FollowingFeedPage.jsx');
+  assert.match(code, /useState\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/,
+    'an empty initial state painted the empty state for a frame before the cards');
+  assert.match(code, /setOrderedPapers\(current => mergeOrderedPapers\(current, orderFollowingFeedPapers\(items, seenIds\)\)\)/);
+});
+
+test('SOURCE: the follow-reason pill arrives after the paper it explains, not on a fade of its own ahead of it', async () => {
+  const jsx = await readSource('../components/Feed/PaperCard.jsx');
+  const css = await readSource('../components/Feed/PaperCard.css');
+  assert.match(jsx, /<div className="pc-follow-reason">/);
+  assert.doesNotMatch(jsx, /<motion\.div\s+className="pc-follow-reason"/);
+  assert.match(css, /\.pc-title \{ --arrive: 0; \}/, 'the paper comes first');
+  assert.match(css, /\.pc-follow-reason \{ --arrive: 4; \}/, 'and its label after the abstract, never alone ahead of it');
+  assert.match(css, /@keyframes pcArrive \{/);
+  assert.match(css, /@keyframes cardSlideUp \{\s*0% \{ transform: translateY\(10px\); \}/, 'the sheet only travels; the pieces carry the fade');
+});
+
+/**
+ * Following showed a skeleton card while it waited for its first papers; For
+ * You shows its discovery screen. Same screen for both: the page tells the
+ * container it is on its first load until something has answered.
+ */
+test('the first wait of the Following feed is a first load until something has answered', () => {
+  assert.equal(followingFirstLoadPending({ items: [], loading: false, lastUpdatedAt: null }), true, 'the tick before the refresh starts');
+  assert.equal(followingFirstLoadPending({ items: [], loading: true, lastUpdatedAt: null }), true, 'the refresh in flight');
+  assert.equal(followingFirstLoadPending({ items: [], loading: false, lastUpdatedAt: '2026-09-03T00:00:00Z' }), false, 'answered with nothing: the empty state');
+  assert.equal(followingFirstLoadPending({ items: [{ id: 'a' }], loading: true, lastUpdatedAt: null }), false, 'cards on screen: the feed');
+  assert.equal(followingFirstLoadPending({ items: [], loading: true, lastUpdatedAt: null, error: new Error('x') }), false, 'an error is the error screen\'s');
+});
+
+test('SOURCE: the container honours a source\'s own first-load flag, and Following sets it', async () => {
+  const container = await readSource('../components/Feed/FeedContainer.jsx');
+  assert.match(container, /initialLoadPending: \(source \? Boolean\(source\.initialLoadPending\) : !initialFeedReady\) && !error/);
+  const page = await readSource('../components/Following/FollowingFeedPage.jsx');
+  assert.match(page, /initialLoadPending: followingFirstLoadPending\(\{ items, loading, lastUpdatedAt, error \}\)/);
+});
+
+/**
+ * Coming back to Following found the cards shuffled: every mount ranked from
+ * scratch with a seen-set that had just grown by the cards scrolled past.
+ * The feed the reader left is the feed they come back to.
+ */
+test('the Following feed resumes the order it left with, and merges a refresh into it', async () => {
+  const { resumeOrderedPapers } = await import('./followingFeed.js');
+  const items = [{ id: 'a', title: 'A', citationCount: 1 }, { id: 'b', title: 'B', citationCount: 9 }];
+  const first = resumeOrderedPapers({ items: null, ordered: [] }, items, new Set());
+  assert.deepEqual(first.map(paper => paper.id), ['b', 'a'], 'the first visit ranks');
+  const resumed = resumeOrderedPapers({ items, ordered: first }, items, new Set(['doi:x', 'id:b']));
+  assert.equal(resumed, first, 'the same items resume in the same order, whatever was marked seen meanwhile');
+  const fresh = [{ id: 'c', title: 'C', citationCount: 99 }, { id: 'a', title: 'A', citationCount: 1 }];
+  const merged = resumeOrderedPapers({ items, ordered: first }, fresh, new Set());
+  assert.deepEqual(merged.map(paper => paper.id), ['a', 'c'], 'a refresh keeps the places it can and appends the rest');
+});
+
+test('SOURCE: the Following page resumes from the order it left, kept at module scope', async () => {
+  const code = await readSource('../components/Following/FollowingFeedPage.jsx');
+  assert.match(code, /const lastOrder = \{ items: null, ordered: \[\] \};/);
+  assert.match(code, /useState\(\(\) => resumeOrderedPapers\(lastOrder, items, seenIds\)\)/);
+  assert.match(code, /lastOrder\.items = items;\s*lastOrder\.ordered = orderedPapers;/);
+});
+
+import { orderFromKeys, orderKeysOf, resumeOrderedPapers as resumeFromKeys } from './followingFeed.js';
+import { getFollowingUpdatePaperKey } from './followingUpdates.js';
+
+test('after a reload the order the reader left is rebuilt from its keys over the items that came back', () => {
+  const a = followedPaper('a', 'x', { published: '2026-07-01' });
+  const b = followedPaper('b', 'y', { published: '2026-07-27' });
+  const c = followedPaper('c', 'z', { published: '2026-07-10' });
+  const d = followedPaper('d', 'w', { published: '2026-07-26' });
+  const items = [a, b, c, d];
+  const keys = [getFollowingUpdatePaperKey(c), getFollowingUpdatePaperKey(a), 'id:gone'];
+
+  assert.deepEqual(orderFromKeys(items, keys).map(paper => paper.id), ['c', 'a'], 'the stored keys pick the items, in the stored order, and skip what is gone');
+  assert.deepEqual(orderFromKeys(items, []), []);
+  assert.deepEqual(orderFromKeys(items, null), []);
+
+  const resumed = resumeFromKeys({ items: null, ordered: [], orderKeys: keys }, items, new Set());
+  assert.deepEqual(resumed.slice(0, 2).map(paper => paper.id), ['c', 'a'], 'the feed resumes in the order it left');
+  assert.deepEqual([...resumed.map(paper => paper.id)].sort(), ['a', 'b', 'c', 'd'], 'and the rest is appended');
+  assert.deepEqual(orderKeysOf(resumed).slice(0, 2), keys.slice(0, 2));
+
+  const inMemory = resumeFromKeys({ items: null, ordered: [b, a], orderKeys: keys }, items, new Set());
+  assert.deepEqual(inMemory.slice(0, 2).map(paper => paper.id), ['b', 'a'], 'the order still in memory wins over the stored keys');
+});

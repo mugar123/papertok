@@ -1,0 +1,146 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #111318; text-decoration: none; }
+    a:hover { color: #2b2f38; }
+    button { font-family: inherit; border: none; background: none; cursor: pointer; }
+
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .k-sm { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+
+    .rail { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+    .seg { display: flex; align-items: baseline; gap: 8px; padding: 0 0 9px; border-bottom: 3px solid #e6e7ea; color: #8a919e; }
+    .seg .n { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; }
+    .seg .t { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .seg.on { border-bottom-color: var(--hl, #ffd21e); color: #111318; }
+    .seg.done { border-bottom-color: #111318; color: #5b6270; }
+
+    /* ── El recibo: una tabla reglada, no un check con degradado ── */
+    .rcp { border: 1px solid #d3d5db; border-radius: 4px; background: #ffffff; overflow: hidden; }
+    .rcp-h { display: flex; align-items: center; gap: 16px; padding: 10px 18px 10px 21px; border-bottom: 1px solid #d3d5db; background: #fafafa; }
+    .row { display: flex; align-items: flex-start; gap: 16px; padding: 15px 18px 15px 18px; border-bottom: 1px solid #e6e7ea; border-left: 3px solid var(--fa, #d3d5db); }
+    .row-ic { flex: 0 0 auto; display: grid; place-items: center; padding-top: 1px; color: var(--fa, #8a919e); }
+    .row-n { font-size: 0.9375rem; font-weight: 600; letter-spacing: -0.01em; color: #111318; }
+    .row-l { margin-top: 6px; font: 400 0.6875rem/1.55 'IBM Plex Mono', monospace; color: #5b6270; }
+    .row-c { flex: 0 0 auto; text-align: right; font: 600 0.9375rem/1.2 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; color: #111318; }
+    .row-c small { display: block; margin-top: 5px; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #5b6270; }
+    .rcp-t { display: flex; align-items: center; gap: 16px; padding: 14px 18px 14px 21px; background: #fafafa; }
+
+    .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 44px; padding: 0 22px; border-radius: 3px; font-size: 0.9375rem; font-weight: 600; white-space: nowrap; transition: background 120ms ease, border-color 120ms ease, color 120ms ease; }
+    .btn-ink { border: 1px solid #111318; background: #111318; color: #ffffff; }
+    .btn-ink:hover { background: #2b2f38; border-color: #2b2f38; }
+    .btn-ghost { border: 1px solid transparent; background: none; color: #5b6270; font-size: 0.875rem; }
+    .btn-ghost:hover { background: #f7f7f8; color: #111318; }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 1280px; height: 620px; background: #ffffff; overflow: hidden; --hl: {{ hl }}">
+
+  <!-- ═══ Cabecera ═══ -->
+  <div style="display: flex; align-items: center; height: 57px; padding: 0 24px; border-bottom: 1px solid #e6e7ea; background: #ffffff">
+    <div style="display: flex; align-items: center; gap: 8px">
+      <div style="display: grid; place-items: center; width: 28px; height: 28px; border-radius: 2px; background: #ffd21e; color: #111318; font: 600 0.8125rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.02em; box-shadow: 2px 2px 0 #111318">P</div>
+      <div style="font-size: 1rem; font-weight: 700; letter-spacing: -0.02em; color: #111318">Paper<span style="box-shadow: inset 0 -0.32em 0 var(--hl, #ffd21e)">Tok</span></div>
+    </div>
+    <div class="k" style="margin-left: auto; color: #8a919e">Paso <span class="mono" style="color: #111318">03</span> / 03</div>
+  </div>
+
+  <div style="display: flex; flex-direction: column; padding: 34px 64px 0">
+
+    <div class="rail" style="margin-bottom: 34px">
+      <div class="seg done"><span class="n">01</span><span class="t">Áreas</span></div>
+      <div class="seg done"><span class="n">02</span><span class="t">Categorías</span></div>
+      <div class="seg on"><span class="n">03</span><span class="t">Tu feed</span></div>
+    </div>
+
+    <div style="display: flex; gap: 64px; align-items: flex-start">
+
+      <!-- Columna izquierda: el titular y la salida -->
+      <div style="flex: 0 0 420px">
+        <div class="k" style="color: #8a919e; margin-bottom: 12px">Hecho</div>
+        <h1 class="serif" style="margin: 0; font-size: 2.25rem; font-weight: 600; line-height: 1.1; letter-spacing: -0.02em; color: #111318">Tu feed está <span style="box-shadow: inset 0 -0.3em 0 var(--hl, #ffd21e)">listo</span></h1>
+        <p style="margin: 14px 0 0; font-size: 0.9375rem; line-height: 1.6; color: #5b6270; text-wrap: pretty">Vas a ver papers de las 27 categorías que marcaste, ordenados por lo que vaya funcionando contigo. Puedes ajustar la selección cuando quieras desde Ajustes.</p>
+
+        <div style="display: flex; align-items: center; gap: 14px; margin-top: 30px">
+          <button class="btn btn-ink">
+            Empezar a explorar
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </button>
+          <button class="btn btn-ghost">Ajustar selección</button>
+        </div>
+      </div>
+
+      <!-- Columna derecha: el recibo de lo elegido -->
+      <div style="flex: 1 1 auto; min-width: 0">
+        <div class="rcp">
+          <div class="rcp-h">
+            <span class="k-sm" style="flex: 1 1 auto; color: #8a919e">Área</span>
+            <span class="k-sm" style="flex: 0 0 auto; color: #8a919e">Categorías</span>
+          </div>
+
+          <div class="row" style="--fa: #4f46e5">
+            <span class="row-ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><path d="M20.2 20.2c2.04-2.03.02-7.36-4.5-11.9-4.54-4.52-9.87-6.54-11.9-4.5-2.04 2.03-.02 7.36 4.5 11.9 4.54 4.52 9.87 6.54 11.9 4.5Z"/><path d="M15.7 15.7c4.52-4.54 6.54-9.87 4.5-11.9-2.03-2.04-7.36-.02-11.9 4.5-4.52 4.54-6.54 9.87-4.5 11.9 2.03 2.04 7.36.02 11.9-4.5Z"/></svg></span>
+            <div style="flex: 1 1 auto; min-width: 0">
+              <div class="row-n">Física</div>
+              <div class="row-l">Física Cuántica · Ciencia de Materiales · Mecánica Estadística · +6 más</div>
+            </div>
+            <div class="row-c">9<small>de 26</small></div>
+          </div>
+
+          <div class="row" style="--fa: #c2410c">
+            <span class="row-ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/></svg></span>
+            <div style="flex: 1 1 auto; min-width: 0">
+              <div class="row-n">Ciencias de la Computación</div>
+              <div class="row-l">Inteligencia Artificial · Machine Learning · Visión por Computador · +9 más</div>
+            </div>
+            <div class="row-c">12<small>de 21</small></div>
+          </div>
+
+          <div class="row" style="--fa: #15803d; border-bottom: none">
+            <span class="row-ic"><svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m10 16 1.5 1.5"/><path d="m14 8-1.5-1.5"/><path d="M15 2c-1.798 1.998-2.518 3.995-2.807 5.993"/><path d="m16.5 10.5 1 1"/><path d="m17 6-2.891-2.891"/><path d="M2 15c6.667-6 13.333 0 20-6"/><path d="m20 9 .891.891"/><path d="M3.109 14.109 4 15"/><path d="m6.5 12.5 1 1"/><path d="m7 18 2.891 2.891"/><path d="M9 22c1.798-1.998 2.518-3.995 2.807-5.993"/></svg></span>
+            <div style="flex: 1 1 auto; min-width: 0">
+              <div class="row-n">Biología</div>
+              <div class="row-l">Genética y Herencia · Biología Molecular · Neurociencia y Neurobiología · +3 más</div>
+            </div>
+            <div class="row-c">6<small>de 15</small></div>
+          </div>
+
+          <div class="rcp-t" style="border-top: 2px solid #111318">
+            <span class="k-sm" style="flex: 1 1 auto; color: #111318">Total</span>
+            <span class="mono" style="flex: 0 0 auto; font-size: 1.125rem; font-weight: 600; letter-spacing: -0.02em; color: #111318">27<span style="color: #8a919e"> / 62</span></span>
+          </div>
+        </div>
+
+        <div class="k-sm" style="margin-top: 14px; color: #8a919e; text-align: right">Guardado en tu perfil</div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{
+  "resalte": { "editor": "color", "default": "#ffd21e", "options": ["#ffd21e", "#ff9d00", "#c9e8ff", "#ffe0e6"], "section": "Marca" },
+  "$preview": { "width": 1280, "height": 620 }
+}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { hl: this.props.resalte ?? '#ffd21e' };
+  }
+}
+</script>
+</body>
+</html>

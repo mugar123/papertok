@@ -1,4 +1,6 @@
 import { mapEuropePmcRecord } from '../utils/europePmcRecord.js';
+import { PaperBuilder } from './PaperBuilder.js';
+import { paperFieldsEqual } from '../utils/feedEnrichment.js';
 
 const API_BASE = 'https://www.ebi.ac.uk/europepmc/webservices/rest/search';
 const CACHE_PREFIX = 'papertok_epmc_';
@@ -102,4 +104,56 @@ export async function enrichPubmedIds(rawPmids) {
   }
 
   return results;
+}
+
+const CLOSED_RECORD_ACCESS_FIELDS = ['openAccess', 'accessSource', 'landingPageUrl'];
+
+const normalizePmid = value => String(value || '').trim().replace(/^pmid:/i, '');
+
+function unionStrings(base, extra) {
+  return [...new Set([...(base || []), ...(extra || [])].filter(Boolean))];
+}
+
+/**
+ * Late merge of Europe PMC records into an already painted page.
+ *
+ * ade641a took this enrichment out of PubmedAdapter.fetchSearch so PubMed
+ * would stop losing the first-page race, and nothing picked it up again:
+ * PubMed cards lost open access, the PMC PDF, citations and the biomedical
+ * terms (audit 2026-09-02, A2). Same identity discipline as
+ * mergeICiteEnrichment: a record that changes nothing returns the same
+ * object, so memo(PaperCard) keeps its IntersectionObserver.
+ */
+export function mergeEuropePmcEnrichment(papers, recordsByPmid) {
+  const lookup = recordsByPmid instanceof Map
+    ? recordsByPmid
+    : new Map(Object.entries(recordsByPmid || {}));
+  if (lookup.size === 0) return papers;
+
+  return papers.map((paper) => {
+    const pmid = normalizePmid(paper?.pmid);
+    const record = pmid ? lookup.get(pmid) : null;
+    if (!record) return paper;
+
+    // Access only ever goes UP, as the adapter code ade641a removed did:
+    // PubMed marks a card open the moment a PMC id exists, and an embargoed
+    // author manuscript answers isOpenAccess 'N' — handing that to
+    // PaperBuilder.merge would flip the card closed a second after it
+    // painted. When the record IS open, its landing page replaces PubMed's.
+    let patch = record;
+    if (!record.openAccess) {
+      patch = { ...record };
+      for (const field of CLOSED_RECORD_ACCESS_FIELDS) delete patch[field];
+    }
+    const merged = PaperBuilder.merge(paper, patch, 'europepmc');
+    if (record.openAccess && record.landingPageUrl) merged.landingPageUrl = record.landingPageUrl;
+    if (record.biomedicalTerms?.length > 0) {
+      // PaperBuilder.merge unions the terms; the categories and keywords the
+      // classifier reads are unioned here, the way the old adapter did.
+      merged.biomedicalTerms = record.biomedicalTerms;
+      merged.categories = unionStrings(merged.categories, record.biomedicalTerms);
+      merged.keywords = unionStrings(merged.keywords, record.biomedicalTerms);
+    }
+    return paperFieldsEqual(merged, paper) ? paper : merged;
+  });
 }

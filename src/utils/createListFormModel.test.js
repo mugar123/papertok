@@ -63,6 +63,34 @@ test('the icon survives everything except reopening', () => {
   assert.equal(CREATE_LIST_FORM_INITIAL.icon, 'Folder');
 });
 
+test('opening seeds the window, and an omitted field never carries over', () => {
+  const dirty = createListFormReducer(
+    createListFormReducer(typed('Vieja'), { type: 'icon', value: 'Atom' }),
+    { type: 'color', value: 'violet' },
+  );
+
+  // Editing: the window opens on the list as it stands.
+  const editing = createListFormReducer(dirty, {
+    type: 'open',
+    preset: { name: 'Papers de sugar', icon: 'Dna', color: 'green' },
+  });
+  assert.deepEqual({ name: editing.name, icon: editing.icon, color: editing.color },
+    { name: 'Papers de sugar', icon: 'Dna', color: 'green' });
+
+  // Creating: only the rolled colour is seeded, and the name and icon must come
+  // back empty rather than from whatever the window held last time.
+  const creating = createListFormReducer(dirty, { type: 'open', preset: { color: 'teal' } });
+  assert.deepEqual({ name: creating.name, icon: creating.icon, color: creating.color },
+    { name: '', icon: 'Folder', color: 'teal' });
+});
+
+test('the colour survives everything except reopening', () => {
+  const picked = createListFormReducer(typed('T'), { type: 'color', value: 'crimson' });
+  assert.equal(createListFormReducer(picked, { type: 'name', value: 'T2' }).color, 'crimson');
+  assert.equal(createListFormReducer(picked, { type: 'icon', value: 'Dna' }).color, 'crimson');
+  assert.equal(createListFormReducer(picked, { type: 'failed' }).color, 'crimson');
+});
+
 test('an action nobody defined leaves the state exactly as it was', () => {
   const state = typed('T');
   assert.equal(createListFormReducer(state, { type: 'nonsense' }), state);

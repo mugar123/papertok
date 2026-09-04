@@ -653,7 +653,7 @@ test('scheduled digest fetches and emails papers from every followed entity type
     );
     assert.equal(brevoPayload.subject, '4 novedades científicas para ti');
     assert.equal(
-      brevoPayload.htmlContent.includes('https://papertok-report-api.papertok-mugar123.workers.dev/notifications/unsubscribe?token=unsubscribe-token'),
+      brevoPayload.htmlContent.includes('https://api.papertok.app/notifications/unsubscribe?token=unsubscribe-token'),
       true,
     );
     ['Author', 'Institution', 'Topic', 'Project'].forEach(source => {
@@ -1916,7 +1916,7 @@ test('sends the Brevo digest with one-click unsubscribe headers', async () => {
     assert.equal(summary.sent, 1);
     // Gmail and Yahoo score sender reputation on RFC 8058 one-click, which the
     // Resend branch already sent and the production Brevo branch did not.
-    const unsubscribeUrl = 'https://papertok-report-api.papertok-mugar123.workers.dev/notifications/unsubscribe?token=unsubscribe-token&lang=es';
+    const unsubscribeUrl = 'https://api.papertok.app/notifications/unsubscribe?token=unsubscribe-token&lang=es';
     assert.equal(payload.headers['List-Unsubscribe'], `<${unsubscribeUrl}>`);
     assert.equal(payload.headers['List-Unsubscribe-Post'], 'List-Unsubscribe=One-Click');
     assert.equal(typeof payload.headers.idempotencyKey, 'string');

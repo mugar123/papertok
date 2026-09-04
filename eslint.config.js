@@ -17,6 +17,14 @@ export default defineConfig([
       globals: globals.browser,
       parserOptions: { ecmaFeatures: { jsx: true } },
     },
+    rules: {
+      // A `const` read before its line runs is a crash the test suite can
+      // miss entirely when `||` short-circuits past it — it shipped one to
+      // production on 2026-08-29 (barVisible read isStreaming declared 250
+      // lines further down; the first scroll was the first evaluation).
+      // Variables only: hoisted function declarations are fine and common.
+      'no-use-before-define': ['error', { functions: false, classes: false, variables: true }],
+    },
   },
   {
     // Rules tests run under Node against the Firestore emulator, not in a page.

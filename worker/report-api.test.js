@@ -195,6 +195,51 @@ test('proxies OpenReview forum papers while excluding imported public records', 
   assert.equal(payload.notes[0].id, 'submission');
 });
 
+// api2's search accepts `sort=cdate:desc` and does nothing with it: measured
+// 2026-09-02, `cdate:asc`, `cdate:desc`, `tmdate:*` and no sort at all returned
+// the same sequence for three different queries (`tcdate`, `mdate` and `pdate`
+// are refused with a 400). So the recent ordering is the Worker's to produce,
+// over the relevance pool `limit * 3` already fetches, and with the same date
+// precedence the client shows on the card: `pdate`, then `cdate`, then `tcdate`.
+test('orders OpenReview by date itself because api2 accepts the sort and ignores it', async () => {
+  const notes = [
+    { id: 'older', forum: 'older', domain: 'ICLR.cc/2024/Conference', cdate: 1_700_000_000_000, content: { title: { value: 'Older' } } },
+    { id: 'newest', forum: 'newest', domain: 'ICLR.cc/2026/Conference', cdate: 1_760_000_000_000, content: { title: { value: 'Newest' } } },
+    {
+      id: 'published-late',
+      forum: 'published-late',
+      domain: 'ICLR.cc/2025/Conference',
+      cdate: 1_710_000_000_000,
+      pdate: 1_780_000_000_000,
+      content: { title: { value: 'Published late' } },
+    },
+  ];
+  const upstream = [];
+  const fetchMock = async url => {
+    upstream.push(new URL(String(url)));
+    return new Response(JSON.stringify({ count: 3, notes }), {
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+
+  const recent = await withWorkerFetchMock(fetchMock, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/openreview?q=neuroscience&limit=5&sort=recent',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), {}));
+
+  assert.equal(recent.status, 200);
+  assert.equal(upstream[0].searchParams.has('sort'), false, 'a sort api2 ignores is not worth sending');
+  assert.deepEqual((await recent.json()).notes.map(note => note.id), ['published-late', 'newest', 'older']);
+
+  const relevance = await withWorkerFetchMock(fetchMock, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/openreview?q=neuroscience&limit=5',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), {}));
+
+  assert.equal(relevance.status, 200);
+  assert.deepEqual((await relevance.json()).notes.map(note => note.id), ['older', 'newest', 'published-late'], 'relevance keeps the upstream order');
+});
+
 test('proxies Hugging Face paper search through the specialist source contract', async () => {
   const response = await withWorkerFetchMock(async url => {
     assert.match(String(url), /huggingface\.co\/api\/papers\/search/);
@@ -770,6 +815,21 @@ test('duplicate cache parameters cannot create cache variants for one upstream r
     if (originalCaches === undefined) delete globalThis.caches;
     else globalThis.caches = originalCaches;
   }
+});
+
+// `/health` is where an operator learns a key is missing, and for Semantic Scholar
+// that is not a footnote: without the key both `/sources/s2` and `/related` are
+// refused by the anonymous pool, so a flag that reported "configured" regardless
+// of the environment would hide a dead source behind a green check.
+test('/health reports whether the Semantic Scholar key is configured', async () => {
+  const read = async env => (await (await reportApi.fetch(
+    new Request('https://papertok-report-api.example/health'),
+    env,
+  )).json()).semanticScholarKeyConfigured;
+
+  assert.equal(await read({ SEMANTIC_SCHOLAR_API_KEY: 's2-test-key' }), true);
+  assert.equal(await read({ SEMANTIC_SCHOLAR_API_KEY: '' }), false);
+  assert.equal(await read({}), false);
 });
 
 test('adds baseline browser hardening headers to JSON responses', async () => {
@@ -1590,6 +1650,85 @@ test('keeps the PubMed summaries when only the abstract half fails', async () =>
   assert.doesNotMatch(response.headers.get('cache-control'), /stale-while-revalidate/);
 });
 
+// NCBI counts per second. A burst of route misses spends esearch calls all at
+// once and then twice as many esummary+efetch calls all at once -- eight misses
+// are past the 10 req/s the key buys, and 3 of the 8 came back 429 (measured
+// 2026-09-01, reproduced 2026-09-02). The window is a second, so one retry after
+// a short wait lands in the next one. `retry-after: 0` here so the test does not
+// sleep; in production NCBI sends none and the route waits 300-800 ms.
+test('retries a PubMed call NCBI refused for a second instead of losing the batch', async () => {
+  const calls = [];
+  const response = await withWorkerFetchMock(async url => {
+    const endpoint = new URL(String(url)).pathname.split('/').pop();
+    calls.push(endpoint);
+    if (endpoint === 'esearch.fcgi') {
+      return new Response(JSON.stringify({ esearchresult: { count: '1', idlist: ['31000001'] } }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (endpoint === 'esummary.fcgi') {
+      if (calls.filter(name => name === 'esummary.fcgi').length === 1) {
+        return new Response(JSON.stringify({ error: 'API rate limit exceeded' }), {
+          status: 429,
+          headers: { 'content-type': 'application/json', 'retry-after': '0' },
+        });
+      }
+      return new Response(JSON.stringify({ result: { 31000001: { uid: '31000001', title: 'One' } } }), {
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    return new Response('<PubmedArticleSet><PubmedArticle/></PubmedArticleSet>', {
+      headers: { 'content-type': 'application/xml' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/pubmed?q=malaria',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), OPEN_ROUTE_ENV));
+
+  assert.equal(response.status, 200);
+  const payload = await response.json();
+  assert.equal(payload.result['31000001'].title, 'One');
+  assert.equal(payload._papertok.efetch, 'ok');
+  assert.equal(calls.filter(name => name === 'esummary.fcgi').length, 2, 'refused once, retried once');
+  assert.equal(calls.filter(name => name === 'esearch.fcgi').length, 1, 'a call that succeeded is not repeated');
+});
+
+test('a second PubMed refusal is relayed as a refusal, not retried again', async () => {
+  let attempts = 0;
+  const response = await withWorkerFetchMock(async () => {
+    attempts += 1;
+    return new Response('{}', {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': '0' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/pubmed?q=malaria',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), OPEN_ROUTE_ENV));
+
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).code, 'UPSTREAM_RATE_LIMITED');
+  assert.equal(attempts, 2, 'esearch: one refusal, one retry, then the refusal is relayed');
+});
+
+test('does not retry a PubMed refusal whose advertised wait the route cannot afford', async () => {
+  let attempts = 0;
+  const response = await withWorkerFetchMock(async () => {
+    attempts += 1;
+    return new Response('{}', {
+      status: 429,
+      headers: { 'content-type': 'application/json', 'retry-after': '30' },
+    });
+  }, () => reportApi.fetch(new Request(
+    'https://papertok-report-api.example/sources/pubmed?q=malaria',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), OPEN_ROUTE_ENV));
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('retry-after'), '30');
+  assert.equal(attempts, 1, 'thirty seconds do not fit in a six-second route');
+});
+
 test('drops identifiers PubMed did not answer with before putting them in a URL', async () => {
   const upstream = [];
   await withWorkerFetchMock(async url => {
@@ -1753,11 +1892,14 @@ test('charges /related and /sources/s2 to the same Semantic Scholar ceiling', as
 
   // One namespace, because both spend the same provider allowance. A limiter with
   // one counter per route is the per-tab limiter this replaced, wearing a hat.
-  const s2Keys = state.periodKeys.filter(key => key.startsWith('s2:'));
-  assert.equal(s2Keys.length, 2, `expected both routes on the s2 ceiling, saw ${JSON.stringify(state.periodKeys)}`);
+  // The pace keys are the same namespace's beat, counted separately below.
+  const minuteKeys = state.periodKeys.filter(key => key.startsWith('s2:') && !key.endsWith(':pace'));
+  assert.equal(minuteKeys.length, 2, `expected both routes on the s2 ceiling, saw ${JSON.stringify(state.periodKeys)}`);
+  const paceKeys = state.periodKeys.filter(key => key === 's2:pace');
+  assert.equal(paceKeys.length, 2, 'both routes have to keep the same beat');
 });
 
-test('lets /related ask for the twenty recommendations the feed seeds from', async () => {
+test('asks Semantic Scholar for twenty whatever the client asked, so one paper is one entry', async () => {
   let upstreamUrl = '';
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async url => {
@@ -1766,14 +1908,151 @@ test('lets /related ask for the twenty recommendations the feed seeds from', asy
   };
   try {
     await withCachedIdentity(() => reportApi.fetch(new Request(
-      'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=20',
+      'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=8',
       { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
     ), AUTHENTICATED_ENV));
   } finally {
     globalThis.fetch = originalFetch;
   }
 
+  // The feed seeds from twenty and the sheet shows eight. With `limit` in the key
+  // those were two misses and two provider calls for one list of which the
+  // second is a prefix of the first -- at one request a second, a refusal.
   assert.match(upstreamUrl, /limit=20/);
+});
+
+test('serves the sheet and the feed the same /related entry for one paper', async () => {
+  const stored = new Map();
+  let upstreamCalls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.fetch = async () => {
+    upstreamCalls += 1;
+    return new Response(JSON.stringify({ recommendedPapers: [] }), { headers: { 'content-type': 'application/json' } });
+  };
+  globalThis.caches = {
+    default: {
+      match: async request => (String(request.url).includes('/auth/')
+        ? new Response(JSON.stringify({ uid: 'user-1' }), { headers: { 'content-type': 'application/json' } })
+        : stored.get(request.url)?.clone() || null),
+      put: async (request, response) => stored.set(request.url, response.clone()),
+    },
+  };
+  try {
+    const ask = limit => reportApi.fetch(new Request(
+      `https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=${limit}`,
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), AUTHENTICATED_ENV);
+
+    await ask(20);
+    await ask(8);
+    await ask(20);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+
+  assert.equal(upstreamCalls, 1);
+  assert.equal(stored.size, 1);
+});
+
+// Semantic Scholar's 429 reached the browser from `/sources/s2` as a 429 with a
+// code and from `/related` as `502 Related papers unavailable` -- the one shape a
+// client retries at once. Both routes spend the same key; they relay the same way.
+test('/related relays a Semantic Scholar refusal with its code, its status and a short wait', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response('{}', { status: 429, headers: { 'content-type': 'application/json' } }),
+    () => withCachedIdentity(() => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=20',
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), AUTHENTICATED_ENV)),
+  );
+
+  assert.equal(response.status, 429);
+  const body = await response.json();
+  assert.equal(body.code, 'UPSTREAM_RATE_LIMITED');
+  assert.equal(body.upstreamStatus, 429);
+  // Semantic Scholar names no wait and its window is one second: a minute here
+  // is fifty-nine seconds of a reader waiting for a slot that opened long ago.
+  assert.equal(response.headers.get('retry-after'), '2');
+});
+
+test('/related names a stalled Semantic Scholar instead of dressing it as a generic failure', async () => {
+  const response = await withWorkerFetchMock(
+    async () => { throw new DOMException('aborted due to timeout', 'TimeoutError'); },
+    () => withCachedIdentity(() => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345&limit=20',
+      { headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' } },
+    ), AUTHENTICATED_ENV)),
+  );
+
+  assert.equal(response.status, 502);
+  const body = await response.json();
+  assert.equal(body.error, 'Related papers unavailable');
+  assert.equal(body.code, 'UPSTREAM_TIMEOUT');
+});
+
+test('tells a client refused by Semantic Scholar search to wait a second, not a minute', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response('{}', { status: 429, headers: { 'content-type': 'application/json' } }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/s2?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), OPEN_ROUTE_ENV),
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('retry-after'), '2');
+});
+
+// The ledger accepts the minute and refuses every second: what the route must do
+// then is answer 429 itself, with the short wait, and never call the provider.
+function paceRefusingLedger(state) {
+  let lastName = '';
+  return {
+    idFromName: name => {
+      lastName = String(name);
+      state.periodKeys.push(lastName);
+      return `quota-${lastName}`;
+    },
+    get: () => ({
+      fetch: async () => new Response(JSON.stringify(
+        lastName.endsWith(':pace') ? { accepted: false, scope: 'user' } : { accepted: true },
+      )),
+    }),
+  };
+}
+
+test('refuses a Semantic Scholar search itself when no second is free, without spending the provider', async () => {
+  const state = { periodKeys: [] };
+  let upstreamCalls = 0;
+  const response = await withWorkerFetchMock(
+    async () => { upstreamCalls += 1; return new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } }); },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/s2?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { REQUEST_QUOTA_LEDGER: paceRefusingLedger(state) }),
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+  assert.equal(response.headers.get('retry-after'), '2');
+  assert.equal(upstreamCalls, 0, 'a request the beat refused must not reach Semantic Scholar');
+  assert.ok(state.periodKeys.includes('s2:pace'), `the beat was never consulted: ${JSON.stringify(state.periodKeys)}`);
+});
+
+test('does not put PubMed on the Semantic Scholar beat', async () => {
+  const state = { periodKeys: [], reservations: 0 };
+  await withWorkerFetchMock(
+    async () => new Response(JSON.stringify({ esearchresult: { count: '0', idlist: [] } }), { headers: { 'content-type': 'application/json' } }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/pubmed?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { REQUEST_QUOTA_LEDGER: countingQuotaLedger(state) }),
+  );
+
+  assert.deepEqual(state.periodKeys.filter(key => key.endsWith(':pace')), [], 'NCBI counts ten a second and has its own retry; it needs no beat');
 });
 
 test('keeps two different PubMed queries in two different cache entries', async () => {
@@ -1845,4 +2124,229 @@ test('falls back to a minute when the upstream refused without saying for how lo
 
   assert.equal(response.status, 429);
   assert.equal(response.headers.get('retry-after'), '60');
+});
+
+// A 400 of our own making (a URL we built wrong) and an outage of theirs both
+// left the Worker as the same `Specialist source unavailable` 502; the one
+// number that told them apart -- `Upstream error: 400` -- lived only in
+// `wrangler tail`. That is how the OpenReview `tcdate` bug stayed invisible
+// for weeks. Scopus already relayed `upstreamStatus`; every source does now.
+test('names the upstream status on every source so a 400 of ours is not a 502 of theirs', async () => {
+  const response = await withWorkerFetchMock(
+    async () => new Response(JSON.stringify({ name: 'SearchError', message: 'No mapping found for [tcdate]' }), {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/openreview?q=neuroscience',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), {}),
+  );
+
+  assert.equal(response.status, 502);
+  const body = await response.json();
+  assert.equal(body.error, 'Specialist source unavailable');
+  assert.equal(body.upstreamStatus, 400);
+  assert.equal(body.code, undefined, 'a plain upstream error carries no code, only its status');
+});
+
+test('names a timed-out upstream instead of dressing it as a generic failure', async () => {
+  const response = await withWorkerFetchMock(
+    async () => { throw new DOMException('aborted due to timeout', 'TimeoutError'); },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/openreview?q=neuroscience',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), {}),
+  );
+
+  assert.equal(response.status, 502);
+  const body = await response.json();
+  assert.equal(body.code, 'UPSTREAM_TIMEOUT');
+  assert.equal(body.upstreamStatus, undefined, 'a stall has no status to relay');
+});
+
+/* ============================================================
+   /ai/rewrite
+   ============================================================ */
+
+// These go through `reportApi.fetch`, not through `handlePaperRewrite`, and
+// that is the whole point of them. The rewrite handler had a full suite of its
+// own and every test in it imported the module directly, so a `main` entrypoint
+// that never registered the route passed everything green while the browser got
+// the generic 404 on every rewrite.
+
+const REWRITE_ROUTE = 'https://papertok-report-api.example/ai/rewrite';
+
+const REWRITE_ENV = {
+  ...AUTHENTICATED_ENV,
+  GEMINI_API_KEY: 'gemini-test-key',
+};
+
+function rewriteRequest(method = 'POST', origin = 'https://mugar123.github.io') {
+  return new Request(REWRITE_ROUTE, {
+    method,
+    ...(method === 'POST' ? {
+      body: JSON.stringify({
+        paper: { title: 'A study of things', pdfUrl: 'https://arxiv.org/pdf/2601.00001.pdf' },
+        level: 'university',
+        language: 'en',
+      }),
+    } : {}),
+    headers: {
+      origin,
+      'content-type': 'application/json',
+      authorization: 'Bearer test-token',
+    },
+  });
+}
+
+/** One Gemini SSE line, in the CRLF form the real endpoint sends. */
+function geminiFrame(text, extra = {}) {
+  return `data: ${JSON.stringify({
+    candidates: [{ content: { parts: [{ text }] }, ...extra }],
+  })}\r\n\r\n`;
+}
+
+function rewriteUpstream(url, frames) {
+  return String(url).includes('generativelanguage.googleapis.com')
+    ? new Response(frames.join(''), { headers: { 'content-type': 'text/event-stream' } })
+    // Anything else on this route is the PDF download.
+    : new Response(new Uint8Array([0x25, 0x50, 0x44, 0x46]), {
+      headers: { 'content-type': 'application/pdf' },
+    });
+}
+
+test('the router serves POST /ai/rewrite instead of dropping it into the 404', async () => {
+  const section = `${JSON.stringify({
+    kind: 'intro',
+    heading: 'Why it matters',
+    paragraphs: ['Because of this.'],
+  })}\n`;
+
+  // The body is drained inside the mock's scope on purpose. The 200 now commits
+  // before the download and the model run — that is what keeps the browser's
+  // stall timer from killing a long paper — so by the time `fetch` resolves the
+  // detached pump has not made a single upstream call yet. Reading the body
+  // afterwards, as this test first did, restores the real `globalThis.fetch`
+  // first and sends the pump to the actual network: three seconds of it, and an
+  // `error` line instead of the sections.
+  const { response, body } = await withWorkerFetchMock(
+    async url => rewriteUpstream(url, [geminiFrame(section), geminiFrame('', { finishReason: 'STOP' })]),
+    () => withCachedIdentity(async () => {
+      const streamed = await reportApi.fetch(rewriteRequest(), REWRITE_ENV);
+      return { response: streamed, body: await streamed.text() };
+    }),
+  );
+
+  assert.equal(response.status, 200);
+  // Streamed, not wrapped in `json()`: the first line has to leave before the
+  // last one exists.
+  assert.match(response.headers.get('content-type'), /application\/x-ndjson/);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+
+  const events = body.trim().split('\n').map(line => JSON.parse(line));
+  assert.deepEqual(events.map(event => event.type), ['meta', 'section', 'done']);
+  assert.equal(events[1].heading, 'Why it matters');
+});
+
+test('/ai/rewrite refuses anything but POST', async () => {
+  const response = await reportApi.fetch(rewriteRequest('GET'), REWRITE_ENV);
+
+  // Not the generic GET fallthrough further down: a rewrite is a POST, and the
+  // route has to say so itself.
+  assert.equal(response.status, 405);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+});
+
+test('the /ai/rewrite preflight is answered before the route is reached', async () => {
+  const response = await reportApi.fetch(new Request(REWRITE_ROUTE, {
+    method: 'OPTIONS',
+    headers: {
+      origin: 'https://mugar123.github.io',
+      'access-control-request-method': 'POST',
+      'access-control-request-headers': 'authorization, content-type',
+    },
+  }), REWRITE_ENV);
+
+  assert.equal(response.status, 204);
+  assert.match(response.headers.get('access-control-allow-methods'), /(?:^|,\s*)POST(?:,|$)/);
+  assert.match(response.headers.get('access-control-allow-headers'), /authorization/);
+});
+
+test('/ai/rewrite refuses an origin that is not on the list', async () => {
+  const response = await withWorkerFetchMock(async () => {
+    throw new Error('No upstream request should be made');
+  }, () => reportApi.fetch(rewriteRequest('POST', 'https://evil.example'), REWRITE_ENV));
+
+  assert.equal(response.status, 403);
+  assert.equal(response.headers.get('access-control-allow-origin'), null);
+});
+
+test('relays a rewrite refusal with its own status, code and quota', async () => {
+  const response = await withWorkerFetchMock(async () => {
+    throw new Error('No upstream request should be made');
+  }, () => withCachedIdentity(() => reportApi.fetch(rewriteRequest(), {
+    ...REWRITE_ENV,
+    REQUEST_QUOTA_LEDGER: {
+      idFromName: () => 'quota-id',
+      get: () => ({ fetch: async () => new Response(JSON.stringify({ accepted: false, scope: 'user' })) }),
+    },
+  })));
+
+  // The quota block is what tells the reader when the uses come back; flattening
+  // this to a bare 502 would lose both the reason and the reset time.
+  assert.equal(response.status, 429);
+  const payload = await response.json();
+  assert.equal(payload.code, 'AI_QUOTA_EXHAUSTED');
+  assert.equal(payload.quota.scope, 'user');
+  assert.ok(payload.quota.resetAt);
+  assert.equal(response.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+});
+
+test('the thread-anchor route is origin-gated and public', async () => {
+  const blocked = await reportApi.fetch(new Request(
+    'https://papertok-report-api.example/thread-anchor?ids=doi:10.1234/abc',
+    { headers: { origin: 'https://evil.example' } },
+  ), {});
+  assert.equal(blocked.status, 403);
+
+  // No Origin at all is not one of our browsers: a cross-origin fetch always
+  // carries it, and the API host has no same-origin page. Refusing it keeps a
+  // script from draining Firestore through the service account.
+  const anonymous = await reportApi.fetch(new Request(
+    'https://papertok-report-api.example/thread-anchor?ids=doi:10.1234/abc',
+  ), {});
+  assert.equal(anonymous.status, 403);
+  assert.equal((await anonymous.json()).code, 'ORIGIN_NOT_ALLOWED');
+
+  const anonymousInvalidate = await reportApi.fetch(new Request(
+    'https://papertok-report-api.example/thread-anchor/invalidate',
+    { method: 'POST', body: '{"keys":["k"]}' },
+  ), {});
+  assert.equal(anonymousInvalidate.status, 403);
+
+  const allowed = await reportApi.fetch(new Request(
+    'https://papertok-report-api.example/thread-anchor?ids=doi:10.1234/abc',
+    { headers: { origin: 'https://mugar123.github.io' } },
+  ), {});
+  // No service account and no KV: the route exists and fails closed as
+  // unavailable, which is what the browser treats as "use Firestore".
+  assert.equal(allowed.status, 503);
+  assert.equal((await allowed.json()).code, 'THREAD_ANCHOR_UNAVAILABLE');
+  assert.equal(allowed.headers.get('access-control-allow-origin'), 'https://mugar123.github.io');
+});
+
+test('closes the API host to crawlers with its own robots.txt', async () => {
+  // Un rastreador no manda `origin`, asi que la ruta tiene que contestar sin el.
+  const response = await reportApi.fetch(
+    new Request('https://api.papertok.app/robots.txt'),
+    {},
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type'), /^text\/plain/);
+  const body = await response.text();
+  assert.match(body, /^User-agent: \*$/m);
+  assert.match(body, /^Disallow: \/$/m);
+  assert.doesNotMatch(body, /^Allow: \//m);
 });

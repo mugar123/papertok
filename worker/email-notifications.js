@@ -8,7 +8,7 @@ const UNSUBSCRIBE_PREFIX = 'notification:unsubscribe:';
 const BREVO_API = 'https://api.brevo.com/v3';
 const RESEND_API = 'https://api.resend.com';
 const ARXIV_API = 'https://export.arxiv.org/api/query';
-const PAPER_TOK_URL = 'https://mugar123.github.io/papertok/#/following';
+const PAPER_TOK_URL = 'https://papertok.app/#/following';
 const MAX_FOLLOWS = 40;
 const MAX_QUERIED_FOLLOWS = 24;
 const MAX_PREVIEW_ITEMS = 20;
@@ -836,6 +836,24 @@ async function deleteSubscription(env, uid, subscription) {
       ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`)
       : Promise.resolve(),
   ]);
+}
+
+/**
+ * Account deletion: drop the newsletter records even when the account never
+ * subscribed. Missing KV is not a failure here — there is nothing to erase.
+ */
+export async function purgeEmailSubscription(env, uid) {
+  if (!env?.NOTIFICATION_STORE || !uid) return { purged: false };
+  const key = `${SUBSCRIPTION_PREFIX}${uid}`;
+  const subscription = await env.NOTIFICATION_STORE.get(key, 'json');
+  await Promise.all([
+    env.NOTIFICATION_STORE.delete(key),
+    env.NOTIFICATION_STORE.delete(deliveryStateKey(uid, subscription || { uid })),
+    subscription?.unsubscribeToken
+      ? env.NOTIFICATION_STORE.delete(`${UNSUBSCRIBE_PREFIX}${subscription.unsubscribeToken}`)
+      : Promise.resolve(),
+  ]);
+  return { purged: true };
 }
 
 async function saveSubscription(request, env, identity) {
@@ -1781,7 +1799,7 @@ function buildDeliveryDraft(subscription, papers, provider, env, {
   sourceReport = createSourceReport(),
 } = {}) {
   const workerBase = cleanText(env.WORKER_PUBLIC_URL, 500)
-    || 'https://papertok-report-api.papertok-mugar123.workers.dev';
+    || 'https://api.papertok.app';
   const unsubscribeUrl = `${workerBase}/notifications/unsubscribe?token=${encodeURIComponent(subscription.unsubscribeToken)}&lang=${subscriptionLanguage(subscription)}`;
   return {
     provider,

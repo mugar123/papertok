@@ -1,4 +1,5 @@
 import { normalizeDoi } from './unpaywallService.js';
+import { safeCatalogUrl } from '../utils/externalUrl.js';
 import { withRequestDeadline } from '../utils/requestDeadline.js';
 
 const API_BASE = 'https://api.datacite.org/dois';
@@ -29,15 +30,6 @@ const TITLE_STOP_WORDS = new Set([
   'sobre', 'supplement', 'supplementary', 'the', 'with', 'this', 'that', 'using',
 ]);
 
-function safeHttpUrl(value) {
-  try {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
-  } catch {
-    return '';
-  }
-}
-
 function getResourceKind(resourceTypeGeneral, relationType) {
   const normalizedType = String(resourceTypeGeneral || '').toLowerCase().replace(/[^a-z]/g, '');
   if (VERSION_RELATIONS.has(relationType)) return 'version';
@@ -49,7 +41,7 @@ function getResourceUrl(identifier, identifierType) {
     const doi = normalizeDoi(identifier);
     return doi ? `https://doi.org/${doi}` : '';
   }
-  return safeHttpUrl(identifier);
+  return safeCatalogUrl(identifier);
 }
 
 function getTitle(attributes, kind) {
@@ -94,7 +86,7 @@ export function mapDataCiteRecord(record, targetDoi, targetTitle = '') {
   const title = getTitle(attributes, kind);
   if (!hasMeaningfulTitleOverlap(targetTitle, title)) return null;
 
-  const url = safeHttpUrl(attributes.url) || `https://doi.org/${doi}`;
+  const url = safeCatalogUrl(attributes.url) || `https://doi.org/${doi}`;
   return {
     id: doi,
     doi,

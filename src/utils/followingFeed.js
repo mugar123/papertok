@@ -165,3 +165,89 @@ export function orderFollowingFeedPapers(items = [], seenIds = new Set(), option
   }
   return ordered;
 }
+
+/**
+ * A refresh that lands while the feed is on screen must not reshuffle it.
+ *
+ * The ranking above is run once per visit, from the items the page opened
+ * with. When a silent refresh replaces those items a few seconds in, the
+ * papers already on screen keep their places — each under its fresh copy, so
+ * new citations and matches still reach the card — papers the refresh no
+ * longer carries are dropped, and papers it brings for the first time are
+ * appended in the fresh ranking's order. A card moving under the thumb read
+ * as the feed glitching; the next visit ranks everything again from scratch.
+ */
+export function mergeOrderedPapers(previousOrdered = [], freshOrdered = []) {
+  if (!previousOrdered.length) return freshOrdered;
+  const freshByKey = new Map(freshOrdered.map(paper => [getFollowingUpdatePaperKey(paper), paper]));
+  const kept = [];
+  const keptKeys = new Set();
+  previousOrdered.forEach((paper) => {
+    const key = getFollowingUpdatePaperKey(paper);
+    if (!freshByKey.has(key) || keptKeys.has(key)) return;
+    keptKeys.add(key);
+    kept.push(freshByKey.get(key));
+  });
+  const appended = freshOrdered.filter(paper => !keptKeys.has(getFollowingUpdatePaperKey(paper)));
+  return [...kept, ...appended];
+}
+
+/**
+ * Whether the Following feed is still waiting to hear about its papers for
+ * the first time — the moment it should show the same discovery screen For
+ * You shows, not a skeleton card.
+ *
+ * Nothing on screen, and either a load in flight or no answer ever recorded
+ * (`lastUpdatedAt` is set by the first refresh and by a restored cache, and
+ * by the no-follows shortcut, so a reader who follows nothing is not left
+ * "discovering" forever). An error is the error screen's to report.
+ */
+export function followingFirstLoadPending({ items = [], loading = false, lastUpdatedAt = null, error = null } = {}) {
+  if (error) return false;
+  if ((items || []).length > 0) return false;
+  return Boolean(loading) || !lastUpdatedAt;
+}
+
+/**
+ * The order the Following feed resumes with.
+ *
+ * Each visit used to rank from scratch, and each visit had a different
+ * seen-set — the cards the reader had just scrolled past — so coming back
+ * found the cards shuffled and the place the reader had kept in their head
+ * gone. The feed the reader left is the feed they come back to: the same
+ * items resume in the same order; items a refresh replaced meanwhile keep the
+ * places they had (`mergeOrderedPapers`), with what is new appended. A fresh
+ * ranking happens once, the first time in a session there is anything to rank.
+ *
+ * @param {{ items: Array|null, ordered: Array }} previous  what the page left last time
+ */
+export function resumeOrderedPapers(previous, items = [], seenIds = new Set()) {
+  if (previous?.items === items && Array.isArray(previous?.ordered)) return previous.ordered;
+  // The order still in memory wins; after a reload of the tab there is none,
+  // and the keys the page stored on its way out rebuild it over the items
+  // that came back (`orderFromKeys`).
+  const kept = previous?.ordered?.length ? previous.ordered : orderFromKeys(items, previous?.orderKeys);
+  return mergeOrderedPapers(kept, orderFollowingFeedPapers(items, seenIds));
+}
+
+/** The keys of an order, in order — what the page stores so a reload can resume it. */
+export function orderKeysOf(ordered = []) {
+  return (ordered || []).filter(Boolean).map(getFollowingUpdatePaperKey);
+}
+
+/**
+ * The items named by a stored key order, in that order; keys the items no
+ * longer carry are skipped. A reload of the tab loses the module-scope
+ * order but not the items (localStorage) nor these keys (sessionStorage).
+ */
+export function orderFromKeys(items = [], keys = []) {
+  if (!Array.isArray(keys) || keys.length === 0) return [];
+  const byKey = new Map((items || []).filter(Boolean).map(paper => [getFollowingUpdatePaperKey(paper), paper]));
+  const taken = new Set();
+  return keys.flatMap((key) => {
+    const paper = byKey.get(key);
+    if (!paper || taken.has(key)) return [];
+    taken.add(key);
+    return [paper];
+  });
+}

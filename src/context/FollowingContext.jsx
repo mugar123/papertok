@@ -13,6 +13,7 @@ import {
   getFollowingStorageKey,
   migrateLegacyAuthors,
 } from '../utils/following';
+import { finishLegacyAuthorsMigration } from '../utils/followingMigration';
 
 const EMPTY_LOCALIZED_INSTITUTION_NAMES = Object.freeze({});
 
@@ -175,10 +176,11 @@ export function FollowingProvider({ children }) {
           { ...legacy, followedAt: serverTimestamp() },
           { merge: true },
         )));
-        await setDoc(doc(db, 'users', userId), {
-          followedAuthors: [],
-          followingMigratedAt: serverTimestamp(),
-        }, { merge: true });
+        await setDoc(
+          doc(db, 'users', userId),
+          finishLegacyAuthorsMigration(followedAuthors),
+          { merge: true },
+        );
       } catch (migrationError) {
         console.warn('No se pudieron migrar todos los seguimientos', migrationError);
       }

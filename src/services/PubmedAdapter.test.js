@@ -98,10 +98,9 @@ test('reads PubMed through the Worker route instead of calling NCBI from the bro
     restore();
   }
 
-  // Enrichment may still reach OpenAlex and Europe PMC; what must never happen
-  // again is a browser talking to E-utilities.
   const toNcbi = escaped.filter(url => url.includes('eutils.ncbi.nlm.nih.gov'));
   assert.deepEqual(toNcbi, [], `PubMed was still called directly: ${toNcbi.join(', ')}`);
+  assert.deepEqual(escaped, [], `PubMed search still issued extra browser fetches: ${escaped.join(', ')}`);
 });
 
 test('carries a deadline on the PubMed request', async () => {

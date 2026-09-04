@@ -155,7 +155,13 @@ export async function fetchTopicPapers(topic, options = {}) {
     searchQuery = '',
     sortBy = mode === 'recent' ? 'publication_date:desc' : 'cited_by_count:desc',
     timeoutMs,
+    // Names of providers this call must not ask, whatever the plan would do:
+    // the Following inbox leaves the phrase searches out of a category topic
+    // (followingUpdatesService). A provider excluded here is simply absent.
+    excludeProviders = [],
   } = options;
+  const excluded = new Set(excludeProviders);
+  const provider = (name) => (excluded.has(name) ? null : providers[name]);
   const safePage = Math.max(1, Number(page) || 1);
   const safePageSize = Math.max(1, Math.min(30, Number(pageSize) || DEFAULT_PAGE_SIZE));
   const safeMaxPapers = Math.max(1, Math.min(90, Number(maxPapers) || DEFAULT_MAX_PAPERS));
@@ -174,13 +180,13 @@ export async function fetchTopicPapers(topic, options = {}) {
 
   const requests = [];
   const offset = (safePage - 1) * safePageSize;
-  if (plan.openAlexId && providers.fetchOpenAlexEntity) {
+  if (plan.openAlexId && provider('fetchOpenAlexEntity')) {
     const entityType = plan.openAlexId.toUpperCase().startsWith('T') ? 'topic' : 'concept';
     addRequest(
       requests,
       'openalex-exact',
       'exact',
-      invokeProvider(providers.fetchOpenAlexEntity, [
+      invokeProvider(provider('fetchOpenAlexEntity'), [
         entityType,
         plan.openAlexId,
         sortBy,
@@ -191,20 +197,20 @@ export async function fetchTopicPapers(topic, options = {}) {
     );
   } else {
     const arxivCategories = plan.categoryIds.filter(nativeArxivCategory).slice(0, 6);
-    if (arxivCategories.length && providers.fetchArxivCategories) {
+    if (arxivCategories.length && provider('fetchArxivCategories')) {
       addRequest(
         requests,
         'arxiv-categories',
         'exact',
-        invokeProvider(providers.fetchArxivCategories, [arxivCategories, offset, safePageSize, mode]),
+        invokeProvider(provider('fetchArxivCategories'), [arxivCategories, offset, safePageSize, mode]),
       );
     }
-    if (plan.categoryIds.length && providers.fetchDomainCategories) {
+    if (plan.categoryIds.length && provider('fetchDomainCategories')) {
       addRequest(
         requests,
         'domain-categories',
         'exact',
-        invokeProvider(providers.fetchDomainCategories, [
+        invokeProvider(provider('fetchDomainCategories'), [
           plan.categoryIds,
           safePage,
           Math.min(10, safePageSize),
@@ -216,32 +222,32 @@ export async function fetchTopicPapers(topic, options = {}) {
     const combinedQuery = [plan.query, cleanText(searchQuery)].filter(Boolean).join(' ');
     if (combinedQuery) {
       const relevanceTopic = { query: plan.query || combinedQuery, categoryIds: plan.categoryIds };
-      if (providers.searchArxiv) {
+      if (provider('searchArxiv')) {
         addRequest(
           requests,
           'arxiv-query',
           'generic',
-          invokeProvider(providers.searchArxiv, [combinedQuery, offset, safePageSize]),
+          invokeProvider(provider('searchArxiv'), [combinedQuery, offset, safePageSize]),
         );
       }
-      if (providers.searchOpenAlex) {
+      if (provider('searchOpenAlex')) {
         addRequest(
           requests,
           'openalex-query',
           'generic',
-          invokeProvider(providers.searchOpenAlex, [
+          invokeProvider(provider('searchOpenAlex'), [
             quotedQuery(combinedQuery),
             safePage,
             { internalCategories: plan.categoryIds },
           ]),
         );
       }
-      if (providers.searchPubmed) {
+      if (provider('searchPubmed')) {
         addRequest(
           requests,
           'pubmed-query',
           'generic',
-          invokeProvider(providers.searchPubmed, [
+          invokeProvider(provider('searchPubmed'), [
             quotedQuery(combinedQuery),
             safePage,
             { internalCategories: plan.categoryIds.slice(0, 3) },

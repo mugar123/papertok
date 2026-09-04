@@ -1,0 +1,34 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1240, "h": 900, "title": "El interruptor de tinta", "is_interactive": true },
+    { "file": "OpcionB.dc.html", "x": 1320, "y": 0, "w": 620, "h": 460, "title": "Opción B · el interruptor de Ajustes", "is_interactive": true },
+    { "file": "OpcionC.dc.html", "x": 1320, "y": 580, "w": 620, "h": 460, "title": "Opción C · Claro / Auto / Oscuro", "is_interactive": true },
+    { "file": "Animaciones.dc.html", "x": 0, "y": 1160, "w": 900, "h": 1240, "title": "Animaciones", "is_interactive": true },
+    { "file": "Barrido.dc.html", "x": 980, "y": 1160, "w": 680, "h": 720, "title": "El barrido de tinta", "is_interactive": true },
+    { "file": "Estados.dc.html", "x": 1740, "y": 1160, "w": 640, "h": 760, "title": "Estados y ficha" }
+  ],
+  "annotations": [
+    {
+      "id": "pruebalo",
+      "x": 0,
+      "y": -268,
+      "w": 600,
+      "text": "Pruébalo: pulsa el disco en la barra de «El interruptor de tinta» y la tinta se abre desde el propio botón.\n\nLas opciones B y C también responden. Los tableros de animaciones y del barrido se repiten solos, sin tocar nada."
+    },
+    {
+      "id": "supuestos",
+      "x": 680,
+      "y": -268,
+      "w": 600,
+      "text": "Estado: implementado.\n\n· La paleta oscura ya vive en variables.css bajo [data-theme='dark'], con los ocho valores de estos tableros y el resto de la familia levantada en oklch.\n· El disco va en la barra, con las utilidades — y en la cabecera de invitado, que es la única barra que ve quien no ha entrado.\n· El paper de la tarjeta es de muestra."
+    },
+    {
+      "id": "decidir",
+      "x": 1360,
+      "y": -268,
+      "w": 600,
+      "text": "Lo que sigue abierto:\n\n· El segmentado de Ajustes (C) no está hecho. Hoy, en cuanto pulsas el disco, la preferencia queda fijada y ya no hay vuelta a «lo que diga el sistema».\n· Las figuras de arXiv llegan con fondo blanco. ¿Se quedan como recortes de papel sobre la página oscura?\n\nDecidido y en el código: los doce colores de campo se levantan a oklch L 0.70 en vez de dejarse — sobre tinta se quedaban en 3:1."
+    }
+  ],
+  "launch": { "view": "canvas" }
+}

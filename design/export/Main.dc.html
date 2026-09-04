@@ -1,0 +1,336 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #1a5fd0; text-decoration: none; }
+    a:hover { color: #12459b; }
+    * { box-sizing: border-box; }
+
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.5 'IBM Plex Mono', monospace; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+
+    .card { animation: cardIn 260ms cubic-bezier(0.16, 1, 0.3, 1); transform-origin: bottom center; }
+    @keyframes cardIn { from { opacity: 0; transform: translateY(12px) scale(0.97); } to { opacity: 1; transform: none; } }
+
+    .seg { display: flex; padding: 2px; border: 1px solid #d3d5db; border-radius: 4px; background: #f7f7f8; }
+    .seg button {
+      flex: 1; display: flex; align-items: center; justify-content: center; gap: 7px;
+      min-height: 34px; padding: 0 14px; border: none; border-radius: 3px; background: transparent;
+      font: 500 0.8125rem/1 'Inter', sans-serif; color: #5b6270; cursor: pointer;
+      transition: background 160ms ease, color 160ms ease;
+    }
+    .seg button[data-on] { background: #ffd21e; color: #111318; font-weight: 600; }
+
+    .opt {
+      display: flex; align-items: flex-start; gap: 9px; width: 100%;
+      padding: 7px 8px; border: none; border-radius: 3px; background: transparent;
+      text-align: left; cursor: pointer; transition: background 120ms ease;
+    }
+    .opt:hover { background: #f7f7f8; }
+    .opt:disabled { cursor: not-allowed; }
+    .box { flex: 0 0 auto; width: 15px; height: 15px; margin-top: 1px; display: grid; place-items: center; border: 1px solid #a9aeba; border-radius: 2px; background: #ffffff; }
+    .box[data-on] { border-color: #111318; background: #111318; }
+    .opt-label { font: 500 0.8125rem/1.35 'Inter', sans-serif; color: #111318; }
+    .opt-note { display: block; font: 400 0.6875rem/1.45 'IBM Plex Mono', monospace; color: #8a919e; margin-top: 2px; }
+
+    /* The preview is a real page, drawn at 1/4 and clipped — not an icon of one. */
+    .sheet { width: 198px; height: 281px; padding: 22px 18px 14px; border: 1px solid #d3d5db; background: #ffffff; overflow: hidden; box-shadow: 0 2px 6px rgba(17,19,24,0.06); display: flex; flex-direction: column; }
+    .sheet-mark { display: flex; align-items: center; gap: 2px; }
+    .sheet-ref { flex: 0 0 auto; width: 3px; height: 3px; background: #111318; }
+    .sheet-rule { height: 1px; background: #d3d5db; }
+    .sheet-line { height: 3px; border-radius: 1px; background: #d3d5db; }
+    .sheet-line--soft { background: #e6e7ea; }
+    .mark { background: #ffd21e; }
+    .mark--ai { background: #f0f0f1; box-shadow: inset 0 -1px 0 #111318; }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 1440px; height: 900px; overflow: hidden; background: #ffffff">
+
+  <div style="position: absolute; top: 20px; left: 24px; z-index: 5; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid #d3d5db; border-radius: 6px; background: #ffffff; box-shadow: 0 2px 6px rgba(17,19,24,0.06)">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg>
+  </div>
+
+  <div style="position: absolute; top: 26px; right: 24px; z-index: 5; display: flex; align-items: center; gap: 8px">
+    <span class="k" style="display: inline-flex; align-items: center; gap: 5px; color: #8a919e">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"></path></svg>
+      Leer en simple
+    </span>
+    <span style="padding: 3px 7px; border: 1px solid #d3d5db; border-radius: 2px; font: 500 0.625rem/1.5 'IBM Plex Mono', monospace; color: #8a919e">IA sin límite</span>
+  </div>
+
+  <!-- The document, dimmed under the open card the way the reader dims nothing
+       else: no scrim, just the card's own shadow. -->
+  <div style="display: flex; gap: 32px; justify-content: center; padding: 76px 24px 96px; height: 900px; overflow: hidden">
+    <article style="flex: 0 1 686px; min-width: 0">
+      <h1 class="serif" style="font-size: 2.1rem; font-weight: 600; line-height: 1.12; letter-spacing: -0.02em; margin: 0 0 12px">Correladores de la longitud propia de la línea de universo</h1>
+      <p style="font: 500 0.75rem/1.5 'IBM Plex Mono', monospace; letter-spacing: 0.02em; color: #5b6270; margin: 0 0 24px; padding-bottom: 20px; border-bottom: 3px double #111318">Allic Sivaramakrishnan · 2024</p>
+      <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px">
+        <span class="k" style="color: #111318">Resumen</span>
+        <span class="m" style="color: #8a919e">Abstract</span>
+      </div>
+      <h2 class="serif" style="font-size: 1.35rem; font-weight: 600; line-height: 1.25; margin: 0 0 16px">De qué va el paper</h2>
+      <p class="serif" style="font-size: 1.0625rem; line-height: 1.72; margin: 0 0 16px">
+        Los autores calculan cuánto tiempo propio transcurre a lo largo de la línea de universo de una partícula, y encuentran que <mark style="background: #ffd21e; color: inherit; padding: 0 1px; border-radius: 2px">esa cantidad deja de ser un número y pasa a ser una distribución</mark> en cuanto la gravedad cuántica entra en juego.
+      </p>
+      <p class="serif" style="font-size: 1.0625rem; line-height: 1.72; margin: 0 0 16px">
+        El resultado se apoya en un cálculo de dos puntos ya conocido, pero al que nadie había dado esta lectura: la anchura de la distribución crece con la energía, y esa anchura es lo que un reloj real mediría como ruido.
+      </p>
+      <p class="serif" style="font-size: 1.0625rem; line-height: 1.72; margin: 0">
+        La parte técnica ocupa la segunda sección, y lo que queda del artículo es contabilidad alrededor de ese único paso.
+      </p>
+    </article>
+
+    <aside style="flex: 0 0 320px; align-self: flex-start; padding-left: 20px; border-left: 1px solid #e6e7ea">
+      <div style="display: flex; align-items: center; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid #e6e7ea">
+        <span class="k" style="display: inline-flex; align-items: center; gap: 5px; color: #111318">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+          Anotaciones
+        </span>
+        <span class="m" style="color: #8a919e">1 marca · 2 notas</span>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 9px; padding: 12px 12px 12px 14px; margin-top: 14px; border: 1px solid #e6e7ea; border-left: 3px solid #ffd21e; border-radius: 0 3px 3px 0; background: #ffffff">
+        <span class="k" style="color: #96650a">Tuya</span>
+        <p class="serif" style="font-size: 0.8125rem; line-height: 1.45; color: #5b6270; margin: 0; padding-left: 8px; border-left: 2px solid #e6e7ea">esa cantidad deja de ser un número</p>
+        <p style="font: 400 0.8125rem/1.6 'Inter', sans-serif; color: #5b6270; margin: 0">El ruido no lo pone el aparato: sale de la propia métrica.</p>
+      </div>
+      <div style="display: flex; flex-direction: column; gap: 9px; padding: 12px 12px 12px 14px; margin-top: 10px; border: 1px solid #e6e7ea; border-left: 3px solid #111318; border-radius: 0 3px 3px 0; background: #fafafa">
+        <span class="k" style="display: inline-flex; align-items: center; gap: 4px; color: #111318">
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"></path></svg>
+          IA
+        </span>
+        <p class="serif" style="font-size: 0.8125rem; line-height: 1.45; color: #5b6270; margin: 0; padding-left: 8px; border-left: 2px solid #e6e7ea">la anchura de la distribución crece con la energía</p>
+        <p style="font: 400 0.8125rem/1.6 'Inter', sans-serif; color: #5b6270; margin: 0">Cuanta más energía tiene la partícula, más se abre el abanico de tiempos posibles.</p>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ── The export card, grown out of the panel it was opened from ── -->
+  <sc-if value="{{ open }}" hint-placeholder-val="{{ true }}">
+    <div class="card" style="position: absolute; left: 0; right: 0; bottom: 108px; margin-inline: auto; width: 720px; z-index: 6; border: 1px solid #d3d5db; border-radius: 6px; background: #ffffff; box-shadow: 0 8px 24px rgba(17,19,24,0.08); overflow: hidden">
+
+      <div style="display: flex; align-items: center; gap: 8px; padding: 14px 18px; border-bottom: 1px solid #e6e7ea">
+        <span class="k" style="color: #111318">Descargar</span>
+        <span class="m" style="color: #8a919e">{{ stampLine }}</span>
+        <button onClick="{{ close }}" style="margin-left: auto; display: grid; place-items: center; width: 26px; height: 26px; border: none; border-radius: 3px; background: transparent; color: #8a919e; cursor: pointer">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"></path><path d="m6 6 12 12"></path></svg>
+        </button>
+      </div>
+
+      <div style="display: grid; grid-template-columns: minmax(0, 1fr) 236px; gap: 24px; padding: 18px">
+
+        <div style="display: flex; flex-direction: column; gap: 16px; min-width: 0">
+          <div style="display: flex; flex-direction: column; gap: 7px">
+            <span class="k" style="color: #8a919e">Formato</span>
+            <div class="seg">
+              <button data-on="{{ pdfOn }}" onClick="{{ pickPdf }}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"></path><path d="M14 2v5h6"></path></svg>
+                PDF
+              </button>
+              <button data-on="{{ texOn }}" onClick="{{ pickTex }}">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 16 4-4-4-4"></path><path d="m6 8-4 4 4 4"></path><path d="m14.5 4-5 16"></path></svg>
+                LaTeX
+              </button>
+            </div>
+            <p class="m" style="color: #8a919e; margin: 0">{{ formatNote }}</p>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 4px">
+            <span class="k" style="color: #8a919e; padding: 0 8px">Qué se lleva</span>
+            <button class="opt" onClick="{{ toggleMarks }}">
+              <span class="box" data-on="{{ marks }}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+              <span><span class="opt-label">Tus subrayados</span><span class="opt-note">1 pasaje</span></span>
+            </button>
+            <button class="opt" onClick="{{ toggleNotes }}">
+              <span class="box" data-on="{{ notes }}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+              <span><span class="opt-label">Tus notas</span><span class="opt-note">1 nota · numerada al pie</span></span>
+            </button>
+            <button class="opt" onClick="{{ toggleAi }}">
+              <span class="box" data-on="{{ ai }}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+              <span><span class="opt-label">Anotaciones de la IA</span><span class="opt-note">1 anotación · numerada al pie</span></span>
+            </button>
+            <button class="opt" onClick="{{ toggleRefs }}" disabled="{{ noRefs }}">
+              <span class="box" data-on="{{ refs }}"><svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"></path></svg></span>
+              <span><span class="opt-label" style="{{ refsLabelStyle }}">Referencias del paper</span><span class="opt-note">{{ refsNote }}</span></span>
+            </button>
+          </div>
+
+          <!-- Not a checkbox. A derivative of someone else's paper travels with
+               its provenance or it does not travel. -->
+          <div style="display: flex; align-items: flex-start; gap: 9px; padding: 10px 11px; border: 1px solid #e6e7ea; border-radius: 3px; background: #fafafa">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5b6270" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex: 0 0 auto; margin-top: 1px"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+            <p style="font: 400 0.75rem/1.5 'Inter', sans-serif; color: #5b6270; margin: 0">Siempre se incluyen el título, los autores, el enlace al original y la nota de que el texto lo escribió una IA. El fichero puede acabar lejos de aquí.</p>
+          </div>
+        </div>
+
+        <!-- ── Live page-one preview ── -->
+        <div style="display: flex; flex-direction: column; gap: 10px; align-items: center">
+          <div class="sheet">
+            <p class="serif" style="font-size: 8px; line-height: 1.15; font-weight: 600; text-align: center; margin: 0 0 4px">Correladores de la longitud propia de la línea de universo</p>
+            <p style="font: 400 4.5px/1.3 'Newsreader', serif; text-align: center; color: #5b6270; margin: 0 0 3px">Allic Sivaramakrishnan</p>
+            <p style="font: 400 4px/1.3 'IBM Plex Mono', monospace; text-align: center; color: #8a919e; margin: 0 0 9px">arXiv:2405.04331 · reescrito por PaperTok</p>
+            <div style="display: flex; flex-direction: column; gap: 4px; padding: 0 14px 9px">
+              <div class="sheet-line sheet-line--soft"></div>
+              <div class="sheet-line sheet-line--soft" style="width: 84%"></div>
+            </div>
+            <div class="sheet-rule" style="margin-bottom: 9px"></div>
+            <p style="font: 600 4.5px/1 'Newsreader', serif; margin: 0 0 5px">1 De qué va el paper</p>
+            <div style="display: flex; flex-direction: column; gap: 3.5px">
+              <div class="sheet-line"></div>
+              <div class="sheet-mark">
+                <div class="sheet-line" style="flex: 1; {{ markStyle }}"></div>
+                <sc-if value="{{ marks }}" hint-placeholder-val="{{ true }}"><span class="sheet-ref"></span></sc-if>
+              </div>
+              <div class="sheet-line" style="width: 72%"></div>
+              <div style="height: 5px"></div>
+              <div class="sheet-line"></div>
+              <div class="sheet-mark">
+                <div class="sheet-line" style="flex: 1; {{ aiMarkStyle }}"></div>
+                <sc-if value="{{ ai }}" hint-placeholder-val="{{ true }}"><span class="sheet-ref"></span></sc-if>
+              </div>
+              <div class="sheet-line" style="width: 61%"></div>
+            </div>
+            <sc-if value="{{ refs }}" hint-placeholder-val="{{ true }}">
+              <div style="margin-top: 12px">
+                <p style="font: 600 4.5px/1 'Newsreader', serif; margin: 0 0 4px">Referencias</p>
+                <div style="display: flex; flex-direction: column; gap: 3px">
+                  <div class="sheet-line sheet-line--soft" style="width: 88%"></div>
+                  <div class="sheet-line sheet-line--soft" style="width: 79%"></div>
+                </div>
+              </div>
+            </sc-if>
+            <div style="flex: 1; min-height: 8px"></div>
+            <sc-if value="{{ anyNotes }}" hint-placeholder-val="{{ true }}">
+              <div style="padding-top: 10px">
+                <div style="width: 42px; height: 0.6px; background: #111318; margin-bottom: 4px"></div>
+                <div style="display: flex; flex-direction: column; gap: 2.5px">
+                  <div class="sheet-line sheet-line--soft" style="height: 2.5px; width: 94%"></div>
+                  <div class="sheet-line sheet-line--soft" style="height: 2.5px; width: 68%"></div>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+          <p class="m" style="color: #8a919e; margin: 0; text-align: center">{{ previewNote }}</p>
+        </div>
+      </div>
+
+      <div style="display: flex; align-items: center; gap: 12px; padding: 14px 18px; border-top: 1px solid #e6e7ea; background: #fafafa">
+        <span class="m" style="color: #8a919e">{{ sizeLine }}</span>
+        <button onClick="{{ close }}" style="margin-left: auto; min-height: 34px; padding: 0 14px; border: 1px solid #d3d5db; border-radius: 3px; background: #ffffff; color: #5b6270; font: 500 0.8125rem/1 'Inter', sans-serif; cursor: pointer">Cancelar</button>
+        <button style="display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 16px; border: 1px solid #111318; border-radius: 3px; background: #111318; color: #ffffff; font: 600 0.8125rem/1 'Inter', sans-serif; cursor: pointer">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M7 10l5 5 5-5"></path><path d="M12 15V3"></path></svg>
+          {{ downloadLabel }}
+        </button>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- The panel, with the download group added at the end. -->
+  <div style="position: absolute; bottom: 24px; left: 0; right: 0; margin-inline: auto; width: fit-content; z-index: 4; display: flex; align-items: flex-end; gap: 12px; padding: 12px 16px; border: 1px solid #d3d5db; border-radius: 6px; background: rgba(255,255,255,0.95); box-shadow: 0 8px 24px rgba(17,19,24,0.08)">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span class="k" style="color: #8a919e">Nivel</span>
+      <div style="display: flex; padding: 2px; border: 1px solid #d3d5db; border-radius: 4px; background: #f7f7f8">
+        <span style="padding: 6px 12px; border-radius: 3px; font: 500 0.8125rem/1 'Inter', sans-serif; color: #5b6270">Principiante</span>
+        <span style="padding: 6px 12px; border-radius: 3px; background: #ffd21e; font: 600 0.8125rem/1 'Inter', sans-serif; color: #111318">Universitario</span>
+        <span style="padding: 6px 12px; border-radius: 3px; font: 500 0.8125rem/1 'Inter', sans-serif; color: #5b6270">Investigador</span>
+      </div>
+    </div>
+    <div style="align-self: stretch; width: 1px; background: #d3d5db"></div>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span class="k" style="color: #8a919e">Destacados</span>
+      <span style="display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #111318; border-radius: 3px; background: #ffd21e; color: #111318">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 11-6 6v3h9l3-3"></path><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"></path></svg>
+      </span>
+    </div>
+    <div style="align-self: stretch; width: 1px; background: #d3d5db"></div>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span class="k" style="color: #8a919e">Anotaciones</span>
+      <span style="display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #111318; border-radius: 3px; background: #ffd21e; color: #111318">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+      </span>
+    </div>
+    <div style="align-self: stretch; width: 1px; background: #d3d5db"></div>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span class="k" style="color: #8a919e">Descargar</span>
+      <button onClick="{{ toggleOpen }}" style="{{ downloadButtonStyle }}">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><path d="M7 10l5 5 5-5"></path><path d="M12 15V3"></path></svg>
+      </button>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900},"hasDoi":{"editor":"boolean","default":true,"section":"Datos del paper"}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { open: true, format: 'pdf', marks: true, notes: true, ai: true, refs: false };
+  }
+
+  renderVals() {
+    var self = this;
+    var isPdf = this.state.format === 'pdf';
+    var hasDoi = this.props.hasDoi ?? true;
+    var refsOn = hasDoi && this.state.refs;
+
+    return {
+      open: this.state.open,
+      toggleOpen: function () { self.setState({ open: !self.state.open }); },
+      close: function () { self.setState({ open: false }); },
+      downloadButtonStyle: 'display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid '
+        + (this.state.open ? '#111318' : '#d3d5db') + '; border-radius: 3px; background: '
+        + (this.state.open ? '#ffd21e' : '#ffffff') + '; color: #111318; cursor: pointer;'
+        + ' transition: background 160ms ease, border-color 160ms ease;',
+
+      // The export is of one level in one language, and the file says so — the
+      // same passage reads differently at another level, and a note anchored to
+      // it belongs to the version it was written on.
+      stampLine: 'Universitario · Español',
+
+      pdfOn: isPdf ? '' : undefined,
+      texOn: isPdf ? undefined : '',
+      pickPdf: function () { self.setState({ format: 'pdf' }); },
+      pickTex: function () { self.setState({ format: 'tex' }); },
+      formatNote: isPdf
+        ? 'LaTeX compilado. Texto seleccionable, fórmulas de verdad.'
+        : 'El .tex en crudo, para compilarlo o editarlo tú.',
+
+      marks: this.state.marks ? '' : undefined,
+      notes: this.state.notes ? '' : undefined,
+      ai: this.state.ai ? '' : undefined,
+      refs: refsOn ? '' : undefined,
+      toggleMarks: function () { self.setState({ marks: !self.state.marks }); },
+      toggleNotes: function () { self.setState({ notes: !self.state.notes }); },
+      toggleAi: function () { self.setState({ ai: !self.state.ai }); },
+      toggleRefs: function () { if (hasDoi) self.setState({ refs: !self.state.refs }); },
+
+      // Unavailable rather than absent: a checkbox that vanishes for some papers
+      // is a feature the reader never learns exists.
+      noRefs: hasDoi ? undefined : '',
+      refsLabelStyle: hasDoi ? '' : 'color: #8a919e',
+      refsNote: hasDoi ? 'hasta 40 · vía OpenAlex' : 'este paper no tiene DOI',
+
+      markStyle: this.state.marks ? 'background: #ffd21e' : '',
+      aiMarkStyle: this.state.ai ? 'background: #f0f0f1; box-shadow: inset 0 -1px 0 #111318' : '',
+      // Numbered markers in the text, the notes themselves under a rule at the
+      // foot of the page — so the block only exists when something is going in it.
+      anyNotes: this.state.notes || this.state.ai,
+
+      previewNote: 'Página 1 de ' + (refsOn ? '4' : '3'),
+      sizeLine: isPdf ? 'PDF · unas 3 páginas' : 'correladores-en-simple.tex',
+      downloadLabel: isPdf ? 'Descargar PDF' : 'Descargar .tex',
+    };
+  }
+}
+</script>
+</body>
+</html>

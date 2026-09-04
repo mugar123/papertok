@@ -124,6 +124,13 @@ export class PaperBuilder {
       // so that all subsequent state updates can find the paper by its original ID.
     }
 
+    // Every other provider identifier below is carried across; this one was
+    // missed, and it decides whether a card can ever show the paper's figure.
+    // It only fills a gap: a base that knows its own arXiv id keeps it.
+    if (!merged.arxivId && enrichmentData.arxivId) {
+      merged.arxivId = enrichmentData.arxivId;
+    }
+
     // Only fills a gap: a source that supplied its own abstract keeps it, since
     // it is the publisher's text rather than a rebuild of OpenAlex's inverted
     // index. `hasUsableAIAbstract` is the criterion the UI and the AI

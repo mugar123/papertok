@@ -33,19 +33,19 @@ export default function AnimatedAtom({ size = 24, strokeWidth = 1, className = '
 
       {prefersReducedMotion ? (
         <>
-          <circle cx="21" cy="12" r="0.9" fill="#fff" stroke="none" />
-          <circle cx="16.5" cy="19.794" r="0.9" fill="#fff" stroke="none" />
-          <circle cx="7.5" cy="19.794" r="0.9" fill="#fff" stroke="none" />
+          <circle cx="21" cy="12" r="0.9" fill="var(--brand-yellow)" stroke="none" />
+          <circle cx="16.5" cy="19.794" r="0.9" fill="var(--brand-yellow)" stroke="none" />
+          <circle cx="7.5" cy="19.794" r="0.9" fill="var(--brand-yellow)" stroke="none" />
         </>
       ) : (
         <>
-          <circle r="0.9" fill="#fff" stroke="none">
+          <circle r="0.9" fill="var(--brand-yellow)" stroke="none">
             <animateMotion dur="2.5s" repeatCount="indefinite" path={orbit1} />
           </circle>
-          <circle r="0.9" fill="#fff" stroke="none">
+          <circle r="0.9" fill="var(--brand-yellow)" stroke="none">
             <animateMotion dur="3s" repeatCount="indefinite" path={orbit2} begin="-1s" />
           </circle>
-          <circle r="0.9" fill="#fff" stroke="none">
+          <circle r="0.9" fill="var(--brand-yellow)" stroke="none">
             <animateMotion dur="3.5s" repeatCount="indefinite" path={orbit3} begin="-2s" />
           </circle>
         </>

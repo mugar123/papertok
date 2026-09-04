@@ -1,0 +1,188 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #1a5fd0; } a:hover { color: #12459b; }
+    * { box-sizing: border-box; }
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.6 'IBM Plex Mono', monospace; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+
+    .row { display: grid; grid-template-columns: 250px minmax(0, 1fr) 250px; gap: 24px; align-items: center; padding: 20px 0; border-top: 1px solid #e6e7ea; }
+    .stage { position: relative; height: 92px; display: grid; place-items: center; border: 1px solid #e6e7ea; border-radius: 3px; background: #fafafa; overflow: hidden; }
+    .name { font: 600 0.9375rem/1.3 'Inter', sans-serif; margin: 0 0 5px; }
+    .why { font-size: 0.8125rem; line-height: 1.55; color: #5b6270; margin: 0; }
+    .spec { font: 400 0.6875rem/1.7 'IBM Plex Mono', monospace; color: #5b6270; margin: 0; }
+    .spec b { color: #111318; font-weight: 600; }
+
+    /* Every demo runs on one 3.2s bar so the sheet reads as a single score. */
+    @keyframes loopPop {
+      0%, 8% { opacity: 0; transform: translateY(-6px) scale(0.96); }
+      13%, 74% { opacity: 1; transform: none; }
+      80%, 100% { opacity: 0; transform: translateY(-4px) scale(0.98); }
+    }
+    @keyframes loopRise {
+      0%, 12% { opacity: 0; transform: translateY(10px); }
+      22%, 86% { opacity: 1; transform: none; }
+      96%, 100% { opacity: 0; transform: translateY(6px); }
+    }
+    @keyframes loopWipe {
+      0%, 10% { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+      42%, 88% { -webkit-mask-position: 0 0; mask-position: 0 0; }
+      100% { -webkit-mask-position: 100% 0; mask-position: 100% 0; }
+    }
+    @keyframes loopPen {
+      0%, 10% { background-size: 0% 100%; }
+      42%, 88% { background-size: 100% 100%; }
+      100% { background-size: 0% 100%; }
+    }
+    @keyframes loopGrow {
+      0%, 10% { transform: scaleY(0.4); opacity: 0; }
+      26%, 84% { transform: none; opacity: 1; }
+      96%, 100% { transform: scaleY(0.4); opacity: 0; }
+    }
+    @keyframes loopRing {
+      0%, 20% { box-shadow: 0 0 0 0 rgba(255, 210, 30, 0); }
+      40% { box-shadow: 0 0 0 5px rgba(255, 210, 30, 0.55); }
+      70%, 100% { box-shadow: 0 0 0 0 rgba(255, 210, 30, 0); }
+    }
+    @keyframes loopCollapse {
+      0%, 30% { opacity: 1; max-height: 60px; transform: none; }
+      52%, 100% { opacity: 0; max-height: 0px; transform: translateX(-8px); }
+    }
+    @keyframes loopSlide {
+      0%, 14% { transform: translateY(14px) scale(0.97); opacity: 0; }
+      28%, 78% { transform: none; opacity: 1; }
+      92%, 100% { transform: translateY(10px) scale(0.98); opacity: 0; }
+    }
+    @keyframes dot { 0%, 72%, 100% { opacity: 0.32; transform: translateY(0); } 32% { opacity: 1; transform: translateY(-3px); } }
+
+    .dots { display: inline-flex; align-items: center; gap: 5px; }
+    .dots i { display: block; width: 5px; height: 5px; border-radius: 50%; background: #111318; opacity: 0.32; animation: dot 1.4s ease-in-out infinite; }
+    .dots i:nth-child(2) { animation-delay: 160ms; }
+    .dots i:nth-child(3) { animation-delay: 320ms; }
+
+    .chip { padding: 7px 11px; border: 1px solid #111318; border-radius: 6px; background: #ffffff; box-shadow: 0 8px 24px rgba(17,19,24,0.08); font: 500 0.75rem/1 'Inter', sans-serif; }
+    .mini { width: 176px; padding: 9px 10px 9px 11px; border: 1px solid #e6e7ea; border-left: 3px solid #ffd21e; border-radius: 0 3px 3px 0; background: #ffffff; }
+    .mini p { margin: 0; font: 400 0.6875rem/1.5 'Inter', sans-serif; color: #5b6270; }
+    .maskable {
+      -webkit-mask-image: linear-gradient(90deg, #000 0 40%, rgba(0,0,0,0.5) 50%, transparent 64%);
+      mask-image: linear-gradient(90deg, #000 0 40%, rgba(0,0,0,0.5) 50%, transparent 64%);
+      -webkit-mask-size: 260% 100%; mask-size: 260% 100%;
+      -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+    }
+  </style>
+</helmet>
+
+<div style="width: 1000px; min-height: 1160px; background: #ffffff; padding: 40px 44px 48px">
+
+  <span class="k" style="color: #8a919e">Microanimaciones</span>
+  <h1 class="serif" style="font-size: 1.8rem; font-weight: 600; line-height: 1.15; margin: 8px 0 6px">Ocho movimientos, un mismo vocabulario</h1>
+  <p class="why" style="max-width: 66ch; margin-bottom: 6px">
+    Todo entra con <span class="m" style="color:#111318">cubic-bezier(.16, 1, .3, 1)</span> y sale con <span class="m" style="color:#111318">ease-in</span> más corto: llegar es una oferta y puede tomarse su tiempo, irse es una respuesta y conviene que termine antes de que la notes. Cinco de los ocho reutilizan piezas que ya están en el lector — el barrido de máscara del reescrito, los tres puntos, el patrón del panel — así que anotar no introduce un lenguaje nuevo, hereda el que hay.
+  </p>
+  <p class="why" style="max-width: 66ch; margin-bottom: 10px">
+    Con <span class="m" style="color:#111318">prefers-reduced-motion</span> todo esto degrada a un fundido de 120&nbsp;ms sin desplazamiento ni máscara. Ninguna animación es la única señal de nada: cada estado se lee también parado.
+  </p>
+
+  <div class="row" style="border-top: none">
+    <div class="stage"><span class="chip" style="animation: loopPop 3.2s cubic-bezier(0.16,1,0.3,1) infinite">Subrayar · Nota · Explicar</span></div>
+    <div>
+      <p class="name">1 · El menú aparece sobre la selección</p>
+      <p class="why">Nace en el inicio del pasaje (<span class="m">transform-origin</span> en la selección), no en el centro de la pantalla: lo abrió ese texto y tiene que parecerlo.</p>
+    </div>
+    <p class="spec"><b>entra</b> 160 ms · out-expo<br><b>sale</b> 110 ms · ease-in<br>opacity + translateY(-6px) + scale(.96)</p>
+  </div>
+
+  <div class="row">
+    <div class="stage"><span class="chip" style="animation: loopSlide 3.2s cubic-bezier(0.16,1,0.3,1) infinite">Escribe tu nota…</span></div>
+    <div>
+      <p class="name">2 · El menú se convierte en compositor</p>
+      <p class="why">No se cierra uno y se abre otro: la misma caja crece hasta el cuadro de texto. Sustituirla rompería la relación con el pasaje.</p>
+    </div>
+    <p class="spec"><b>220 ms</b> · out-expo<br>height + width, mismo nodo<br>foco al textarea al terminar</p>
+  </div>
+
+  <div class="row">
+    <div class="stage">
+      <span style="display: inline-block; padding: 2px 3px; border-radius: 2px; background-image: linear-gradient(#ffd21e, #ffd21e); background-repeat: no-repeat; background-size: 0% 100%; animation: loopPen 3.2s cubic-bezier(0.16,1,0.3,1) infinite; font-family: 'Newsreader', Georgia, serif; font-size: 0.9375rem">la anchura crece con la energía</span>
+    </div>
+    <div>
+      <p class="name">3 · El rotulador se posa</p>
+      <p class="why">Al guardar, el amarillo se pinta de izquierda a derecha sobre el pasaje, a la velocidad de un trazo. Es la única animación que dice «guardado»; no hace falta un toast.</p>
+    </div>
+    <p class="spec"><b>420 ms</b> · out-expo<br>background-size: 0% → 100%<br>reduced-motion: pinta sin animar</p>
+  </div>
+
+  <div class="row">
+    <div class="stage"><div class="mini" style="animation: loopRise 3.2s cubic-bezier(0.16,1,0.3,1) infinite"><p>El ruido no lo pone el aparato…</p></div></div>
+    <div>
+      <p class="name">4 · La tarjeta entra en el carril</p>
+      <p class="why">Sube 10&nbsp;px y aparece, en el sitio que le toca por orden de documento. Las de debajo se apartan con la misma curva en vez de saltar.</p>
+    </div>
+    <p class="spec"><b>220 ms</b> · out-expo<br>opacity + translateY(10px)<br>vecinas: layout 220 ms</p>
+  </div>
+
+  <div class="row">
+    <div class="stage">
+      <span style="display: inline-flex; align-items: center; gap: 9px; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #5b6270">
+        <span class="dots"><i></i><i></i><i></i></span> Leyendo el pasaje
+      </span>
+    </div>
+    <div>
+      <p class="name">5 · La IA está leyendo</p>
+      <p class="why">Los mismos tres puntos que ya esperan a que llegue el paper. Un spinner mide el tiempo como fracaso; tres puntos leen como alguien a punto de hablar.</p>
+    </div>
+    <p class="spec"><b>ciclo 1,4 s</b> · ease-in-out<br>desfase 160 ms por punto<br>ya existe: <b>ThinkingDots</b></p>
+  </div>
+
+  <div class="row">
+    <div class="stage">
+      <p class="maskable" style="width: 210px; margin: 0; font: 400 0.6875rem/1.55 'Inter', sans-serif; color: #5b6270; animation: loopWipe 3.2s cubic-bezier(0.16,1,0.3,1) infinite">Antes medías un tiempo y salía un valor. Aquí sale un abanico de valores, cada uno con su probabilidad.</p>
+    </div>
+    <div>
+      <p class="name">6 · La respuesta se escribe</p>
+      <p class="why">El mismo barrido de máscara con el que aparecen las secciones del reescrito. Una respuesta de la IA se comporta como el resto del texto de la IA.</p>
+    </div>
+    <p class="spec"><b>620 ms</b> · out-expo<br>mask-position 100% → 0<br>ya existe: <b>rdWriteIn</b></p>
+  </div>
+
+  <div class="row">
+    <div class="stage">
+      <span style="padding: 2px 3px; border-radius: 2px; background: #ffd21e; font-family: 'Newsreader', Georgia, serif; font-size: 0.9375rem; animation: loopRing 3.2s ease-out infinite">esa cantidad deja de ser un número</span>
+    </div>
+    <div>
+      <p class="name">7 · La tarjeta señala su pasaje</p>
+      <p class="why">Al pasar por una tarjeta del carril, su marca en el texto da un pulso. Es lo que convierte dos listas separadas en una sola cosa.</p>
+    </div>
+    <p class="spec"><b>400 ms</b> · ease-out<br>box-shadow 0 → 5px → 0<br>al clicar: scroll + un pulso</p>
+  </div>
+
+  <div class="row">
+    <div class="stage"><div class="mini" style="animation: loopCollapse 3.2s cubic-bezier(0.4,0,1,1) infinite; overflow: hidden"><p>Esta se va…</p></div></div>
+    <div>
+      <p class="name">8 · Borrar</p>
+      <p class="why">La tarjeta colapsa y el amarillo del pasaje se retira en sentido contrario al que se posó. Deshacer un trazo tiene que verse como deshacerlo.</p>
+    </div>
+    <p class="spec"><b>180 ms</b> · ease-in<br>max-height + opacity + translateX<br>la marca: 100% → 0% de derecha a izquierda</p>
+  </div>
+
+  <p class="why" style="max-width: 68ch; margin-top: 26px; padding-top: 20px; border-top: 1px solid #e6e7ea">
+    <strong style="color:#111318; font-weight:600">Lo que no se anima:</strong> el filtro del carril, el contador de notas y el chip de usos cambian de golpe. Animar un número es decorar un dato, y este sistema saca el color de los datos, no al revés.
+  </p>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1000,"height":1160}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

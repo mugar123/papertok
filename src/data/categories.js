@@ -179,7 +179,7 @@ export const CATEGORIES = {
     label: 'Ingeniería Mecánica y Aeroespacial',
     labelEn: 'Mechanical & Aerospace Engineering',
     icon: Settings,
-    gradient: 'linear-gradient(135deg, #a18cd1, #fbc2eb)',
+    gradient: 'var(--gradient-mech)',
     description: 'Robótica, termodinámica, fluidos y manufactura',
     descriptionEn: 'Robotics, thermodynamics, fluids, and manufacturing',
     subcategories: {
@@ -198,7 +198,7 @@ export const CATEGORIES = {
     label: 'Ingeniería Civil y Ambiental',
     labelEn: 'Civil & Environmental Engineering',
     icon: Building,
-    gradient: 'linear-gradient(135deg, #f6d365, #fda085)',
+    gradient: 'var(--gradient-civil)',
     description: 'Estructuras, transporte, geotecnia y urbanismo',
     descriptionEn: 'Structures, transport, geotechnics, and urban planning',
     subcategories: {
@@ -216,7 +216,7 @@ export const CATEGORIES = {
     label: 'Ingeniería Química y Materiales',
     labelEn: 'Chemical & Materials Engineering',
     icon: Beaker,
-    gradient: 'linear-gradient(135deg, #84fab0, #8fd3f4)',
+    gradient: 'var(--gradient-chemeng)',
     description: 'Procesos químicos, nanotecnología y materiales',
     descriptionEn: 'Chemical processes, nanotechnology, and materials',
     subcategories: {
@@ -234,7 +234,7 @@ export const CATEGORIES = {
     label: 'Medicina',
     labelEn: 'Medicine',
     icon: HeartPulse,
-    gradient: 'linear-gradient(135deg, #ff758c, #ff7eb3)',
+    gradient: 'var(--gradient-med)',
     description: 'Investigación clínica, salud pública y especialidades',
     descriptionEn: 'Clinical research, public health, and specialties',
     subcategories: {
@@ -260,7 +260,7 @@ export const CATEGORIES = {
     label: 'Biología',
     labelEn: 'Biology',
     icon: Dna,
-    gradient: 'linear-gradient(135deg, #11998e, #38ef7d)',
+    gradient: 'var(--gradient-bio)',
     description: 'De la genética a la ecología y microbiología',
     descriptionEn: 'From genetics to ecology and microbiology',
     subcategories: {
@@ -306,6 +306,100 @@ function getFallbackAreaKey(categoryId = '') {
 }
 
 /**
+ * The twelve field inks are keyed to arXiv's category codes, and most of the
+ * corpus does not come from arXiv. OpenAlex hands back a topic's display name
+ * — "Wastewater Treatment and Reuse", "Neuroscience and Music Perception" —
+ * which matches no code, so every one of them fell through to the brand ink and
+ * the field accent said the same thing about every paper on the page.
+ *
+ * This reads the name instead. It is a heuristic and it behaves like one: a
+ * topic that matches nothing distinctive keeps the ink rather than being handed
+ * a field it may not belong to, because a wrong field colour is worse than no
+ * field colour. The keywords are deliberately not prefixes of unrelated common
+ * words — "genom" and "genetic" rather than "gene", which would have coloured
+ * every paper filed under "General" as biology.
+ */
+const AREA_TOPIC_KEYWORDS = {
+  bio: [
+    'transcriptom', 'genom', 'genetic', 'microbi', 'bacteri', 'protein', 'enzyme',
+    'cellular', 'cell', 'mitosis', 'microtubule', 'cytoskelet', 'ecolog', 'biodivers',
+    'evolutionary', 'plant', 'photosynth', 'biochem', 'metabolit', 'metabolom',
+    'organism', 'chromosom', 'molecular biolog',
+  ],
+  med: [
+    'immun', 'interferon', 'neuroscience', 'neurolog', 'cancer', 'tumour', 'tumor',
+    'oncolog', 'clinical', 'patient', 'diagnos', 'therapeut', 'therapy', 'disease',
+    'epidemiol', 'pharmac', 'vaccine', 'surger', 'cardiovascular', 'mri',
+    'physiolog', 'psychiatr', 'nutrition', 'exercise',
+  ],
+  physics: [
+    'physic', 'quantum', 'plasma', 'fusion', 'astronom', 'astrophys', 'cosmolog',
+    'galax', 'photon', 'optic', 'superconduct', 'relativity', 'gravitation',
+    'condensed matter', 'spectroscop', 'nuclear', 'thermodynam',
+  ],
+  cs: [
+    'comput', 'algorithm', 'software', 'machine learning', 'artificial intelligence',
+    'natural language', 'neural network', 'large language model', 'cryptograph',
+    'database', 'data management', 'human-computer', 'programming',
+  ],
+  math: [
+    'mathemat', 'algebra', 'geometr', 'topolog', 'number theory', 'combinator',
+    'differential equation', 'graph theory', 'manifold',
+  ],
+  stat: ['statistic', 'bayesian', 'regression', 'stochastic', 'probabilit'],
+  econ: [
+    'econom', 'labour market', 'labor market', 'monetary', 'inequalit',
+    'trade polic', 'financial',
+  ],
+  eess: [
+    'signal processing', 'image processing', 'telecommunicat', 'wireless', 'antenna',
+    'circuit', 'power system', 'electrical engineer', 'acoustic', 'speech', 'audio',
+    'systems and control', 'control system',
+  ],
+  mech: [
+    'fluid dynamic', 'aerodynam', 'mechanical engineer', 'manufactur', 'vibration',
+    'turbine', 'robot', 'combustion',
+  ],
+  civil: [
+    'wastewater', 'water supply', 'water treatment', 'structural engineer',
+    'construction', 'concrete', 'geotechn', 'hydraulic', 'seismic', 'urban planning',
+    'transportation',
+  ],
+  chemeng: [
+    'chemical engineer', 'catalys', 'polymer', 'electrochem', 'corrosion',
+    'distillation', 'membrane', 'nanoparticle',
+  ],
+};
+
+/**
+ * The area a topic's display name belongs to, or '' when nothing distinctive
+ * matched.
+ *
+ * The longest matching keyword wins, so the colour follows the noun rather than
+ * the modifier: "Cellular Mechanics" is biology, not mechanical engineering, and
+ * "Mathematics, Computing and Information Studies" is mathematics rather than
+ * computer science. Matches start on a word boundary, so "General" is not read
+ * as a gene.
+ */
+export function getAreaKeyFromTopicName(value) {
+  const text = String(value || '').toLowerCase().trim();
+  if (!text) return '';
+
+  let bestKey = '';
+  let bestLength = 0;
+  for (const [areaKey, keywords] of Object.entries(AREA_TOPIC_KEYWORDS)) {
+    for (const keyword of keywords) {
+      if (keyword.length <= bestLength) continue;
+      if (new RegExp(`\\b${keyword}`).test(text)) {
+        bestKey = areaKey;
+        bestLength = keyword.length;
+      }
+    }
+  }
+  return bestKey;
+}
+
+/**
  * Get the gradient CSS variable for a given arXiv category.
  * Maps any category to its parent area gradient.
  */
@@ -321,7 +415,11 @@ export function getCategoryGradient(arxivCategory) {
   }
   // Fallback: try to match by prefix
   const area = CATEGORIES[getFallbackAreaKey(arxivCategory)];
-  return area ? area.gradient : 'var(--gradient-brand)';
+  if (area) return area.gradient;
+
+  // Not an arXiv code at all, which is the common case: read the name.
+  const named = CATEGORIES[getAreaKeyFromTopicName(arxivCategory)];
+  return named ? named.gradient : 'var(--gradient-brand)';
 }
 
 /**

@@ -1,57 +1,108 @@
-/* Lists Page */
+/* ============================================
+   Mis listas
+
+   Rewritten in the light system. What was here before was the last screen
+   still speaking the dark one: an `h1` painted with a clipped gradient, cards
+   that lifted and dropped a 24px shadow on hover, four `rgba(239,68,68,…)`
+   literals no token could reach, and a `border-radius: 50%`.
+
+   Underneath that, thirty-five class names the component rendered had no rule
+   at all — `lists-eyebrow`, `lists-subtitle`, `lists-badge`, the whole expanded
+   header, every skeleton. They rendered as bare elements, which is the exact
+   failure `listsStyles.test.js` was written for next door.
+
+   Structure here is hairline rules, counts are mono, titles are serif, and a
+   list's colour arrives as `--list-accent` from `listColors.js`. Inside an open
+   list two accents are live at once: the header wears the list's colour, each
+   row wears its paper's field (`--area-accent`). They must stay tellable apart.
+   ============================================ */
+
 .lists-page {
+  /* Explicit, and not `min-width`: `PageTransition` wraps every route in a
+     column flex container, so without a declared width this becomes a
+     shrink-to-fit item measured against its own content — the page is laid out
+     narrow while the lists are still loading and jumps when they land. The
+     Report carries the same declaration for the same reason. */
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--bg-primary);
-  padding: calc(var(--nav-height) + var(--space-6)) var(--space-6) var(--space-16);
+  /* /lists is a ProtectedRoute in App.jsx's navbarRoutes: always under the
+     app navbar, no standalone mode. Only the top offset uses the nav token —
+     the trailing --space-16 is plain end-of-page breathing room. */
+  padding: calc(var(--nav-total) + var(--space-8)) var(--space-6) var(--space-16);
 }
 
-/* The same header grammar as Settings and What-you-follow: eyebrow, plain
-   heading, one-line subtitle. This was the only gradient-filled title in the
-   app. */
+/* ─── Nameplate ─── */
+
 .lists-header {
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-8);
+}
+
+/* No rule under the nameplate. `3px double` draws two hairlines with a gap
+   between them, and those two lines are what the masthead was being read as —
+   a divider rather than a heading. Without it the standfirst has to sit close
+   enough to the title to be read as belonging to it, which is what the
+   `--space-3` below does; the rule used to hold them apart. */
+.lists-masthead-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-6);
+}
+
+.lists-masthead-block {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-width: 0;
 }
 
 .lists-eyebrow {
-  margin: 0 0 var(--space-1);
-  color: var(--accent-primary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
+  margin: 0;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  color: var(--text-tertiary);
 }
 
 .lists-header h1 {
   margin: 0;
-  font-family: var(--font-heading);
-  font-size: var(--fs-3xl);
-  font-weight: var(--fw-bold);
+  font-family: var(--font-serif);
+  font-size: var(--fs-4xl);
+  font-weight: var(--fw-semibold);
+  line-height: 1.05;
+  letter-spacing: -0.025em;
   color: var(--text-primary);
+  /* The serif's ascenders ride above a line box this tight, eating into the
+     kicker above; half the leading deficit is reclaimed so the optical gap
+     matches the flex gap. */
+  padding-top: 0.025em;
+}
+
+.lists-create-btn {
+  flex: 0 0 auto;
 }
 
 .lists-subtitle {
-  margin: var(--space-2) 0 0;
+  max-width: 64ch;
+  margin: var(--space-3) 0 0;
   color: var(--text-secondary);
   font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
 }
 
-.lists-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding-top: var(--space-20);
-  gap: var(--space-4);
-  color: var(--text-secondary);
-}
+/* ─── Status lines ─── */
 
 .lists-loading-spinner {
   width: 40px;
   height: 40px;
   border: 3px solid var(--border-default);
   border-top-color: var(--accent-primary);
-  border-radius: 50%;
+  border-radius: var(--radius-full);
   animation: spin 0.8s linear infinite;
 }
 
@@ -73,14 +124,19 @@
   border-width: 2px;
 }
 
+/* Amber, not a hand-mixed red: a read that stalled is recoverable, and this is
+   the Explorer's `.explorer-inline-error` wearing the same tint tokens. */
 .lists-inline-status.is-error,
 .lists-metadata-status.is-error {
   justify-content: space-between;
+  flex-wrap: wrap;
   padding: var(--space-3) var(--space-4);
-  border: 1px solid rgba(239, 68, 68, 0.22);
-  border-radius: var(--radius-md);
-  background: rgba(239, 68, 68, 0.06);
-  color: var(--text-secondary);
+  border: 1px solid var(--tint-amber-line);
+  border-left: 3px solid var(--tint-amber-fg);
+  border-radius: var(--radius-sm);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-fg);
+  font-size: var(--fs-sm);
 }
 
 .lists-metadata-status {
@@ -88,254 +144,371 @@
 }
 
 .lists-retry-btn {
-  padding: 10px 24px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-xl);
-  background: var(--bg-elevated);
-  color: var(--text-primary);
+  flex: 0 0 auto;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid currentColor;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: inherit;
+  font-family: var(--font-body);
   font-weight: var(--fw-semibold);
   font-size: var(--fs-sm);
   cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease;
+  transition: background var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .lists-retry-btn:hover {
-    border-color: var(--accent-primary);
-    background: var(--bg-glass-hover);
+    background: var(--bg-secondary);
   }
 }
 
-/* Grid */
+/* ─── The grid of lists ─── */
+
 .lists-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: var(--space-4);
 }
 
+/* A tile, not a floating card. The colour is the owner's, and it runs down the
+   inner edge as a 3px rule — the same gesture the Explorer's rows and the
+   entity standfirst make with the research field. */
 .list-card {
-  border-radius: var(--radius-xl);
-  padding: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  min-height: 204px;
+  /* 18px, not 20: the 3px rule replaces the 1px border on that edge, so the
+     content would otherwise sit 2px further in on the left than on the right. */
+  padding: var(--space-5) var(--space-5) var(--space-5) 18px;
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--list-accent, var(--border-default));
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
   cursor: pointer;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  animation: fadeInUp 0.5s ease backwards;
-  animation-delay: calc(var(--stagger-index, 0) * 0.05s);
-  position: relative;
-  overflow: hidden;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+  opacity: 0;
+  animation: staggerFadeUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: calc(var(--stagger-index, 0) * 0.035s);
 }
 
-.list-card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: radial-gradient(circle at top right, rgba(255,255,255,0.05), transparent 70%);
-  opacity: 0;
-  transition: opacity 0.3s ease;
+/* Read later has no colour: it is a queue, not a shelf, and a neutral rule
+   reads correctly as "nothing assigned here". */
+.list-card--uncoloured {
+  border-left-color: var(--border-default);
+}
+
+/* Only ever seen on a first visit — a session-cached or IndexedDB-cached read
+   paints the real cards before the 320ms threshold. Its job is to stop three
+   system cards from looking like the whole answer while the owner's own lists
+   are still on their way. */
+.list-card--placeholder {
+  cursor: default;
+  pointer-events: none;
+  border-left-color: var(--border-default);
+}
+
+.list-card--placeholder .list-card-icon {
+  border-color: var(--border-subtle);
+  background: var(--bg-secondary);
+}
+
+.list-card--placeholder .lists-skeleton-bar--title {
+  margin-top: var(--space-3);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .list-card:hover {
-    /* The lift the profile cards use — the old -4px + scale bounce was the
-       only hover in the app that jumped. */
-    transform: translateY(-2px);
-    box-shadow: var(--shadow-md);
-    border-color: var(--border-default);
+    background: var(--bg-secondary);
+    border-color: var(--border-strong);
+    border-left-color: var(--list-accent, var(--border-strong));
   }
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .list-card:hover::before {
-    opacity: 1;
-  }
-}
-
-@keyframes fadeInUp {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.list-card:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .list-card-top {
   display: flex;
-  justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: var(--space-3);
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 36px;
 }
 
-.list-card-emoji {
-  font-size: 2rem;
+.list-card-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--list-accent, var(--border-default)) 24%, var(--bg-card));
+  background: color-mix(in srgb, var(--list-accent, var(--border-default)) 8%, var(--bg-card));
+  color: var(--list-accent, var(--text-tertiary));
+  transition: background var(--transition-base), border-color var(--transition-base);
 }
 
-.list-card-delete {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  font-size: var(--fs-xs);
-  color: var(--text-tertiary);
-  opacity: 0;
-  transition: all var(--transition-fast);
-}
-
+/* The tile's own colour deepens a step under the pointer. It is the one place
+   the list's colour can answer a hover without the card moving, which is what
+   the light system took away when it removed the lift. */
 @media (hover: hover) and (pointer: fine) {
-  .list-card:hover .list-card-delete {
+  .list-card:hover .list-card-icon {
+    border-color: color-mix(in srgb, var(--list-accent, var(--border-default)) 42%, var(--bg-card));
+    background: color-mix(in srgb, var(--list-accent, var(--border-default)) 15%, var(--bg-card));
+  }
+}
+
+.list-card--uncoloured .list-card-icon {
+  border-color: var(--border-subtle);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+}
+
+.list-card-tools {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+/* Revealed on hover on a pointer, but always present for touch and for the
+   keyboard: an action that only exists under a mouse is an action a phone
+   cannot reach. */
+@media (hover: hover) and (pointer: fine) {
+  .list-card:hover .list-card-tools,
+  .list-card:focus-within .list-card-tools {
     opacity: 1;
   }
 }
 
+@media not all and (hover: hover) {
+  .list-card-tools {
+    opacity: 1;
+  }
+}
+
+.list-card-tool {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.list-card-tool:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
 @media (hover: hover) and (pointer: fine) {
-  .list-card-delete:hover {
-    background: rgba(239, 68, 68, 0.2);
-    color: var(--accent-danger);
+  .list-card-tool:hover {
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  .list-card-tool--danger:hover {
+    border-color: var(--tint-red-line);
+    background: var(--tint-red-bg);
+    color: var(--tint-red-fg);
   }
 }
 
 .list-card-name {
-  font-family: var(--font-heading);
-  font-size: var(--fs-base);
+  margin: var(--space-3) 0 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
-  margin-bottom: var(--space-1);
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
 }
 
 .list-card-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
+/* A count is machine data. */
 .list-card-count {
-  font-size: var(--fs-xs);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
   color: var(--text-tertiary);
-}
-
-/* --- Create card -------------------------------------------------------------
-   The index's own door for making a list; before this the only way was inside
-   the save modal. */
-
-.list-card--create {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  min-height: 132px;
-  border: 1px dashed var(--border-default);
-  border-radius: var(--radius-xl);
-  background: none;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-  animation: fadeInUp 0.5s ease backwards;
-  animation-delay: calc(var(--stagger-index, 0) * 0.05s);
-  transition: border-color var(--transition-fast), color var(--transition-fast),
-    background var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .list-card--create:hover {
-    border-color: var(--accent-primary);
-    color: var(--text-primary);
-    background: var(--bg-glass);
-  }
-}
-
-.list-card-create-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: var(--radius-full);
-  background: var(--bg-glass);
-  color: var(--accent-primary);
+  font-variant-numeric: tabular-nums;
 }
 
 .list-card-preview {
-  margin-top: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-top: auto;
   padding-top: var(--space-3);
   border-top: 1px solid var(--border-subtle);
 }
 
 .list-card-preview-title {
-  font-size: var(--fs-xs);
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 0.8125rem;
+  line-height: 1.45;
   color: var(--text-secondary);
   display: -webkit-box;
   -webkit-line-clamp: 1;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  margin-bottom: var(--space-1);
 }
 
-/* Expanded view */
-/* `.lists-expanded` carries no rule of its own any more. It used to fade in
-   with CSS while `viewMotion` in ListsPage.jsx was already cross-fading the
-   very same element through framer-motion — two animations on one node, each
-   with its own timing. framer-motion owns the transition; nothing here needs
-   to. (Left empty rather than given a placeholder declaration: `position:
-   relative` would have created a positioning context this subtree never
-   asked for.) */
+.list-card-preview-empty {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+}
+
+/* ─── Badges ─── */
+
+.lists-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: 3px var(--space-2);
+  border: 1px solid var(--tint-neutral-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  white-space: nowrap;
+  /* The badge changes meaning under the reader — public, updating, up to date —
+     and a hard cut between three tints reads as a flicker rather than as
+     progress. Slow enough to be followed, short enough not to lag the state. */
+  transition: background var(--transition-slow), border-color var(--transition-slow),
+    color var(--transition-slow);
+}
+
+.lists-badge--public {
+  border-color: var(--tint-green-line);
+  background: var(--tint-green-bg);
+  color: var(--tint-green-fg);
+}
+
+.lists-badge--public.is-syncing {
+  border-color: var(--tint-blue-line);
+  background: var(--tint-blue-bg);
+  color: var(--tint-blue-fg);
+}
+
+/* Out of date is the one state the owner has to act on, so it is the one that
+   leaves the green. */
+.lists-badge--public.is-stale {
+  border-color: var(--tint-amber-line);
+  background: var(--tint-amber-bg);
+  color: var(--tint-amber-fg);
+}
+
+.lists-badge-spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: var(--radius-full);
+  animation: spin 0.8s linear infinite;
+}
+
+/* ─── The open list ─── */
+
+.lists-expanded {
+  animation: fadeIn 0.3s ease-out;
+}
 
 .lists-back-btn {
-  color: var(--accent-secondary);
-  font-size: var(--fs-sm);
-  margin-bottom: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-5);
   padding: var(--space-2) 0;
+  border: none;
+  background: none;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
   .lists-back-btn:hover {
-    color: var(--accent-primary);
+    color: var(--text-primary);
   }
 }
 
-/* One header for the open list: icon tile + title + meta on the left, the
-   primary share actions on the right, and everything secondary (export,
-   unpublish) on its own quiet row below. */
 .lists-expanded-header {
   display: flex;
   align-items: flex-start;
-  justify-content: space-between;
   flex-wrap: wrap;
   gap: var(--space-4);
-  margin-bottom: var(--space-4);
+  /* The twin of `.lists-masthead-row`, and it loses its rule for the same
+     reason. What the rule was also doing was spacing: it is now the only gap
+     between the nameplate and whatever follows, so the tools row below gives
+     up the padding it carried to clear the line. */
+  padding-bottom: var(--space-5);
 }
 
 .lists-expanded-titleblock {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
+  align-items: flex-start;
+  gap: var(--space-4);
+  flex: 1 1 320px;
   min-width: 0;
 }
 
 .lists-expanded-icon {
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: grid;
+  place-items: center;
   width: 44px;
   height: 44px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--list-accent, var(--border-default)) 24%, var(--bg-card));
+  background: color-mix(in srgb, var(--list-accent, var(--border-default)) 8%, var(--bg-card));
+  color: var(--list-accent, var(--text-tertiary));
+}
+
+.lists-expanded-header--uncoloured .lists-expanded-icon {
+  border-color: var(--border-subtle);
   background: var(--bg-secondary);
-  color: var(--text-secondary);
+  color: var(--text-tertiary);
 }
 
 .lists-expanded-copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
   min-width: 0;
 }
 
 .lists-expanded-title {
-  font-family: var(--font-heading);
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-bold);
-  line-height: var(--lh-tight);
   margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-3xl);
+  font-weight: var(--fw-semibold);
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
   overflow-wrap: anywhere;
 }
 
@@ -344,80 +517,47 @@
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
-  margin: var(--space-1) 0 0;
+  margin: 0;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
   color: var(--text-tertiary);
-  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
 }
 
-.lists-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-1);
-  padding: 1px var(--space-2);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-  white-space: nowrap;
-}
-
-.lists-badge--public {
-  border-color: var(--accent-success);
-  color: var(--accent-success);
-}
-
-/* The badge is the sync indicator now that no button reports it (P25). It is
-   the LAST item of the meta row, so its label growing (76px "Pública" to 119px
-   "Actualizando…") moves its own right edge and nothing else. */
-.lists-badge--public.is-syncing {
-  border-color: var(--border-default);
-  color: var(--text-tertiary);
-}
-
-.lists-badge--public.is-stale {
-  border-color: var(--accent-save);
-  color: var(--accent-save);
-}
-
-.lists-badge-spinner {
-  width: 9px;
-  height: 9px;
-  border: 1.5px solid var(--border-default);
-  border-top-color: var(--text-secondary);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-.lists-export-actions,
-.lists-paper-actions { display: flex; align-items: center; gap: var(--space-2); }
-
-.lists-export-actions button,
-.lists-share-actions button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 36px;
-  padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  font-weight: var(--fw-semibold);
-}
+/* ─── The action row: intent left, utilities right ─── */
 
 .lists-share-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
+  flex: 0 0 auto;
+}
+
+.lists-share-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
 .lists-share-actions button.is-primary {
-  border-color: transparent;
+  border-color: var(--border-ink);
   background: var(--accent-primary);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .lists-share-actions button:disabled {
@@ -425,49 +565,74 @@
   opacity: 0.55;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .lists-share-actions button:not(:disabled):hover {
+    background: var(--bg-secondary);
+    border-color: var(--border-strong);
+  }
+
+  .lists-share-actions button.is-primary:not(:disabled):hover {
+    background: var(--accent-primary-hover);
+    border-color: var(--accent-primary-hover);
+  }
+}
+
 .lists-expanded-tools {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   flex-wrap: wrap;
-  gap: var(--space-2) var(--space-4);
-  margin-bottom: var(--space-5);
-  padding-bottom: var(--space-4);
-  border-bottom: 1px solid var(--border-subtle);
+  gap: var(--space-2);
+  /* No top margin and no top padding: the gap above this row is the
+     nameplate's own `padding-bottom` (or the share note's margin when there is
+     one), so the row sits the same distance from the header whether or not the
+     note is there. */
+  margin: 0 0 var(--space-6);
+}
+
+.lists-export-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  /* Pushes the utilities to the far edge whether or not the export group
+     renders, so the row does not reflow when a list has no saved metadata. */
+  margin-right: auto;
 }
 
 .lists-tools-label {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
   color: var(--text-tertiary);
-  font-size: var(--fs-xs);
 }
 
-.lists-expanded-tools .lists-export-actions button {
-  min-height: 30px;
-  padding: var(--space-1) var(--space-3);
-  border-color: var(--border-subtle);
-}
-
-/* Unpublishing is destructive-adjacent: it keeps its name and its color, not
-   an anonymous icon. */
+.lists-export-actions button,
+.lists-edit-btn,
 .lists-unpublish-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  min-height: 30px;
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid transparent;
-  border-radius: var(--radius-full);
-  background: none;
-  color: var(--accent-danger);
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
   font-size: var(--fs-xs);
   font-weight: var(--fw-semibold);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .lists-unpublish-btn:not(:disabled):hover {
-    border-color: rgba(239, 68, 68, 0.35);
-    background: rgba(239, 68, 68, 0.08);
-  }
+/* Unpublishing takes a public page down, so it wears the danger tint rather
+   than hiding among the neutral utilities. */
+.lists-unpublish-btn {
+  border-color: var(--tint-red-line);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
 }
 
 .lists-unpublish-btn:disabled {
@@ -475,36 +640,58 @@
   opacity: 0.55;
 }
 
+@media (hover: hover) and (pointer: fine) {
+  .lists-export-actions button:hover,
+  .lists-edit-btn:hover {
+    background: var(--bg-secondary);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+  }
+
+  .lists-unpublish-btn:not(:disabled):hover {
+    background: var(--accent-danger);
+    border-color: var(--accent-danger);
+    color: var(--text-inverse);
+  }
+}
+
+/* ─── The public link ─── */
+
 .lists-share-status {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: var(--space-2);
-  margin: calc(var(--space-4) * -1) 0 var(--space-5);
-  padding: var(--space-3);
+  margin: 0 0 var(--space-5);
+  padding: var(--space-3) var(--space-4);
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-elevated);
+  border-left: 3px solid var(--accent-success);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
   color: var(--text-secondary);
+  font-family: var(--font-mono);
   font-size: var(--fs-xs);
 }
 
 .lists-share-status.is-error {
-  border-color: rgba(239, 68, 68, 0.35);
-  color: var(--accent-danger);
+  border-color: var(--tint-red-line);
+  border-left-color: var(--tint-red-fg);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
 }
 
 .lists-share-status a {
   max-width: 100%;
   overflow: hidden;
-  color: var(--accent-secondary);
+  color: var(--accent-sky);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .lists-share-status .lists-loading-spinner {
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
+  border-width: 2px;
 }
 
 .lists-share-demo-note,
@@ -514,269 +701,480 @@
 }
 
 .lists-share-limit-note {
-  margin: calc(var(--space-4) * -1) 0 var(--space-5);
+  margin: 0 0 var(--space-5);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .lists-export-actions button:hover { background: var(--bg-glass-hover); color: var(--text-primary); }
-  .lists-share-actions button:not(:disabled):hover { background: var(--bg-glass-hover); color: var(--text-primary); }
-  .lists-share-actions button.is-primary:not(:disabled):hover { background: var(--accent-primary-hover); color: #fff; }
-}
+/* ─── The papers, as ruled rows ─── */
 
 .lists-expanded-papers {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: 0;
+  border-top: 1px solid var(--border-default);
 }
 
+/* `.explorer-list-item`, to the pixel: the same padding, the same hairline, the
+   same 3px field rule at the same offset. Two screens listing papers should not
+   list them differently. */
 .lists-paper-item {
-  padding: var(--space-4);
-  border-radius: var(--radius-lg);
-  background: var(--bg-glass);
-  border: 1px solid var(--border-subtle);
-  cursor: pointer;
-  transition: all var(--transition-fast);
+  position: relative;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  /* Deliberately not animated. The cards on the index stagger in because the
-     index IS the arrival; inside an open list the view transition already says
-     the same thing, and twenty rows repeating it one after another was most of
-     the motion this screen was accused of. Opening a list is now one
-     transition and, while papers are still coming, one pulse. */
+  align-items: flex-start;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-5) var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-card);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.lists-paper-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: var(--space-5);
+  width: 3px;
+  height: 28px;
+  background: var(--area-accent, var(--accent-primary));
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lists-paper-item:hover {
+    background: var(--bg-secondary);
+  }
+}
+
+.lists-paper-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
 }
 
 .lists-paper-item--skeleton {
   cursor: default;
 }
 
+.lists-paper-item--skeleton::before {
+  background: var(--border-default);
+}
+
+/* The rows arrive with the same rhythm the Explorer's do. The skeleton and the
+   finished row share a key, so React swaps the contents in place and this runs
+   once, on the row's first appearance — not again when the metadata lands. */
+.lists-paper-item {
+  opacity: 0;
+  animation: staggerFadeUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: calc(var(--stagger-index, 0) * 0.035s);
+}
+
+.lists-paper-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.lists-paper-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-bottom: 10px;
+}
+
+.lists-paper-cat {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--area-accent, var(--text-secondary));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lists-paper-date {
+  flex: 0 0 auto;
+  font: 400 0.6875rem/1.4 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.lists-paper-title {
+  max-width: 776px;
+  margin: 0 0 8px;
+  font-family: var(--font-serif);
+  font-size: 1.2rem;
+  font-weight: var(--fw-semibold);
+  line-height: 1.28;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+}
+
+/* The id standing in for a title we could not resolve: mono, because that is
+   what it is — a machine identifier, not a name. */
+.lists-paper-placeholder {
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-regular);
+  letter-spacing: 0;
+  color: var(--text-tertiary);
+}
+
+.lists-paper-authors {
+  max-width: 776px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* The owner's own note, as a standfirst carrying the field rule down its edge
+   — the same shape the Explorer gives a Wikipedia excerpt. */
+.lists-paper-note {
+  max-width: 776px;
+  margin: var(--space-3) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--area-accent, var(--border-strong));
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  font-family: var(--font-serif);
+  font-size: 0.9375rem;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.lists-paper-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  margin-top: var(--space-3);
+}
+
+.lists-paper-tags span {
+  padding: 3px 7px;
+  border: 1px solid color-mix(in srgb, var(--area-accent, var(--text-secondary)) 22%, var(--bg-card));
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--area-accent, var(--text-secondary)) 6%, var(--bg-card));
+  color: var(--area-accent, var(--text-secondary));
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+}
+
+.lists-paper-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.lists-paper-edit-btn,
+.lists-paper-unmark-btn {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: none;
+  color: var(--text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast), border-color var(--transition-fast);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .lists-paper-edit-btn:hover {
+    border-color: var(--border-default);
+    background: var(--bg-card);
+    color: var(--text-primary);
+  }
+
+  .lists-paper-unmark-btn:hover {
+    border-color: var(--tint-red-line);
+    background: var(--tint-red-bg);
+    color: var(--tint-red-fg);
+  }
+}
+
+/* ─── Skeletons ─── */
+
+/* The silhouette is measured against the finished row, not sketched.
+   A real row is 11px of field label + 10 + a 25px title line + 8 + 21px of
+   authors = 74.6px of content. The old two-bar skeleton came to 39px, so the
+   moment the metadata landed every row in the list grew ~59px at once and the
+   page shoved itself down under whoever was reading it. These three bars carry
+   the real elements' own margins and land within a pixel of the finished row. */
 .lists-paper-skeleton {
   display: flex;
   flex-direction: column;
-  gap: var(--space-2);
-  width: 100%;
-  padding: var(--space-1) 0;
 }
 
 .lists-skeleton-bar {
+  display: block;
+  width: 34%;
   height: 12px;
-  width: 40%;
-  border-radius: var(--radius-full);
-  background: var(--bg-glass-strong);
-  animation: lists-skeleton-pulse 1.4s ease-in-out infinite;
+  border-radius: var(--radius-sm);
+  /* Two stops of one derived tint with a lighter sheen between them: a
+     skeleton that sits perfectly still reads as a broken layout, and one that
+     flashes reads as an error. This is the quietest thing that still says
+     "working". */
+  background-image: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-secondary)) 0%,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-secondary)) 38%,
+    var(--bg-secondary) 50%,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-secondary)) 62%,
+    color-mix(in srgb, var(--border-subtle) 55%, var(--bg-secondary)) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
 }
 
-.lists-skeleton-bar--wide {
-  height: 16px;
-  width: 72%;
+.lists-skeleton-bar--cat {
+  width: 180px;
+  max-width: 60%;
+  height: 11px;
+  margin-bottom: 10px;
 }
 
-.lists-skeleton-row {
-  height: 96px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-glass);
-  animation: lists-skeleton-pulse 1.4s ease-in-out infinite;
+.lists-skeleton-bar--title {
+  width: 62%;
+  height: 25px;
+  margin-bottom: 8px;
+}
+
+.lists-skeleton-bar--meta {
+  width: 34%;
+  height: 21px;
 }
 
 .lists-opening {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding-top: var(--space-8);
+  gap: 0;
+  border-top: 1px solid var(--border-default);
 }
 
-@keyframes lists-skeleton-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.55; }
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .lists-paper-item:hover {
-    background: var(--bg-glass-hover);
-    border-color: var(--border-default);
-  }
-}
-
-.lists-paper-item-content {
-  flex: 1;
-}
-
-.lists-paper-unmark-btn {
-  background: none;
-  border: none;
-  color: var(--text-tertiary);
-  padding: var(--space-2);
-  cursor: pointer;
-  border-radius: var(--radius-full);
-  transition: all var(--transition-fast);
+/* Same padding, same rule, same bars as a real row: opening a list settles
+   into its content rather than swapping one shape for another. */
+.lists-skeleton-row {
+  position: relative;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  padding: var(--space-5) var(--space-5) var(--space-5) var(--space-6);
+  border-bottom: 1px solid var(--border-default);
+  background: var(--bg-card);
+  opacity: 0;
+  animation: staggerFadeUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: calc(var(--stagger-index, 0) * 0.045s);
 }
 
-.lists-paper-edit-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: var(--space-2);
-  border-radius: var(--radius-full);
-  color: var(--text-tertiary);
-  transition: all var(--transition-fast);
+.lists-skeleton-row::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: var(--space-5);
+  width: 3px;
+  height: 28px;
+  background: var(--border-default);
 }
 
-@media (hover: hover) and (pointer: fine) {
-  .lists-paper-edit-btn:hover { color: var(--accent-secondary); background: var(--accent-primary-glow); }
-}
+/* ─── Empty states ─── */
 
-.lists-paper-tags { display: flex; flex-wrap: wrap; gap: 5px; margin-top: var(--space-2); }
-.lists-paper-tags span {
-  padding: 3px 7px;
-  border-radius: var(--radius-sm);
-  background: var(--accent-primary-glow);
-  color: var(--accent-secondary);
-  font-size: 11px;
-}
-.lists-paper-note {
-  max-width: 720px;
-  margin-top: var(--space-2);
-  color: var(--text-secondary);
-  font-size: var(--fs-xs);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .lists-paper-unmark-btn:hover {
-    color: var(--accent-danger);
-    background: rgba(255, 69, 58, 0.1);
-  }
-}
-
-.lists-paper-cat {
-  font-size: var(--fs-xs);
-  color: var(--accent-secondary);
-  font-weight: var(--fw-medium);
-}
-
-.lists-paper-title {
-  font-weight: var(--fw-medium);
-  font-size: var(--fs-sm);
-  margin-top: var(--space-1);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.lists-paper-placeholder {
-  color: var(--text-tertiary);
-}
-
-.lists-paper-authors {
-  font-size: var(--fs-xs);
-  color: var(--text-tertiary);
-  margin-top: var(--space-1);
-}
-
-.lists-paper-date {
-  font-size: var(--fs-xs);
-  color: var(--text-tertiary);
-}
-
-/* Empty states — the icon + fact + hint shape the rest of the app settled on. */
+/* No dashed frame, no 48px glyph at half opacity. A sunken panel with a rule
+   down its edge, which is what every other "nothing here yet" surface in the
+   app looks like. */
 .lists-empty-state {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-2);
-  text-align: center;
-  padding: var(--space-10) var(--space-6);
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin-top: var(--space-8);
+  padding: var(--space-8) var(--space-8) var(--space-8) calc(var(--space-8) - 3px);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  background: var(--bg-sunken);
   animation: fadeIn 0.4s ease-out;
 }
 
+.lists-empty-state--inline {
+  margin-top: 0;
+  padding: var(--space-6) var(--space-6) var(--space-6) calc(var(--space-6) - 3px);
+}
+
 .lists-empty-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  margin-bottom: var(--space-1);
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
   border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-full);
-  background: var(--bg-secondary);
-  color: var(--accent-primary);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-tertiary);
 }
 
 .lists-empty-state h3 {
-  font-family: var(--font-heading);
-  font-size: var(--fs-base);
-  font-weight: var(--fw-semibold);
-  color: var(--text-primary);
   margin: 0;
+  font-family: var(--font-serif);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  color: var(--text-primary);
 }
 
 .lists-empty-state p {
-  color: var(--text-tertiary);
-  font-size: var(--fs-sm);
-  max-width: 340px;
+  max-width: 56ch;
   margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: var(--lh-normal);
 }
 
-/* Animations */
+/* ─── Animations ─── */
+
 @keyframes fadeIn {
   from { opacity: 0; }
   to { opacity: 1; }
+}
+
+@keyframes staggerFadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-@media (max-width: 600px) {
-  .lists-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: var(--space-3);
-  }
-
-  .lists-expanded-header { flex-direction: column; align-items: stretch; }
-  .lists-share-actions button { flex: 1; }
-  .lists-expanded-tools { align-items: flex-start; flex-direction: column; }
-}
-
-@media (max-width: 768px) {
-  .lists-page {
-    padding-bottom: calc(var(--nav-height-mobile) + var(--space-8));
-  }
+/* Press feedback. The light system took the hover lift off cards deliberately,
+   but a control that acknowledges nothing on the way down feels slower than it
+   is — the delay the owner perceives is the one before anything happens, not
+   the one before the work finishes. 1px, on the press only. */
+.lists-share-actions button:not(:disabled):active,
+.lists-export-actions button:active,
+.lists-edit-btn:active,
+.lists-unpublish-btn:not(:disabled):active,
+.lists-retry-btn:active,
+.list-card-tool:active {
+  transform: translateY(1px);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  /* `.lists-paper-item` and `.lists-expanded` are gone from this list because
-     they no longer animate at all — naming them here would suggest they still
-     do. */
   .list-card,
-  .list-card--create,
-  .lists-empty-state {
+  .lists-paper-item,
+  .lists-skeleton-row,
+  .lists-expanded {
     animation: none;
+    opacity: 1;
   }
 
-  .lists-skeleton-bar,
-  .lists-skeleton-row {
+  /* The bars keep their ground colour and stop sweeping: the shimmer is the
+     one animation here that never ends, so leaving it running is the worst of
+     them for anyone who asked for less motion. */
+  .lists-skeleton-bar {
     animation: none;
+    background-image: none;
+    background-color: color-mix(in srgb, var(--border-subtle) 55%, var(--bg-secondary));
   }
 
-  /* Still visible, just still: the badge keeps its ring so "updating" is
-     readable without a spin. */
-  .lists-badge-spinner {
-    animation: none;
+  .lists-share-actions button:active,
+  .lists-export-actions button:active,
+  .lists-edit-btn:active,
+  .lists-unpublish-btn:active,
+  .lists-retry-btn:active,
+  .list-card-tool:active {
+    transform: none;
+  }
+}
+
+/* ─── Viewport ─── */
+
+@media (max-width: 768px) {
+  .lists-page {
+    /* Kept (not redundant): the top offset also shrinks --space-8 to
+       --space-6 here, not just the nav token. The bottom value deliberately
+       stays --nav-height-mobile, not --nav-total: there is no bottom-docked
+       bar on this page, so --nav-height-mobile is only ever being reused
+       here as a spacing constant, and --nav-total would wrongly add the TOP
+       safe-area inset to a bottom padding that has nothing to do with it. */
+    padding: calc(var(--nav-total) + var(--space-6)) var(--space-4)
+      calc(var(--nav-height-mobile) + var(--space-8));
   }
 
-  @media (hover: hover) and (pointer: fine) {
-    .list-card:hover {
-      transform: none;
-    }
+  .lists-header h1 {
+    font-size: var(--fs-3xl);
   }
+
+  .lists-expanded-title {
+    font-size: var(--fs-2xl);
+  }
+
+  .lists-paper-title {
+    font-size: 1.0625rem;
+  }
+}
+
+/* One column, not two. The old breakpoint went to `repeat(2, 1fr)` here, which
+   at 375px leaves a card 164px wide and breaks every list name onto three
+   lines. */
+@media (max-width: 600px) {
+  .lists-grid {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+  }
+
+  .list-card {
+    min-height: 0;
+  }
+
+  .lists-masthead-row {
+    align-items: flex-start;
+  }
+
+  .lists-create-btn {
+    width: 100%;
+  }
+
+  .lists-paper-item {
+    padding-right: var(--space-3);
+  }
+
+  .lists-share-actions {
+    width: 100%;
+  }
+
+  .lists-share-actions button {
+    flex: 1 1 auto;
+  }
+}
+
+/* The card titles are the real (keyboard-reachable) openers; the card's own
+   onClick is pointer redundancy. Inherit everything from the heading. */
+.list-card-name-btn,
+.lists-paper-title-btn {
+  font: inherit;
+  color: inherit;
+  padding: 0;
+  text-align: left;
+  display: block;
+  width: 100%;
+}
+
+/* The two-line clamp lives on the button, not on .lists-paper-title: that
+   paragraph's only child is now this block-level button, so a clamp on the
+   parent has no text run left to clip — -webkit-line-clamp only clips a
+   box's own line boxes, and the title text is inside the button's box now.
+   Do not "helpfully" move this back onto .lists-paper-title. */
+.lists-paper-title-btn {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }

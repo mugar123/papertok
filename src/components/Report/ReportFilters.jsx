@@ -2,12 +2,24 @@ import { useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CATEGORIES } from '../../data/categories';
 import { getCountryName, searchCountries } from '../../data/countries';
-import { Check, ChevronDown, Filter, LoaderCircle, MapPin, Search, X } from 'lucide-react';
+import { Check, ChevronDown, LoaderCircle, MapPin, Search, X } from 'lucide-react';
 import WorldMap from './WorldMap';
+import { Button } from '../ui/button.jsx';
 import { useLanguage } from '../../context/LanguageContext';
 import './ReportFilters.css';
 
 const EASE = [0.16, 1, 0.3, 1];
+/**
+ * Opening and closing are not the same movement played backwards.
+ *
+ * `EASE` is an expo-out: nearly all of its speed is spent in the first frames.
+ * Coming in that is what a panel should do — arrive fast, settle gently. Going
+ * out it means the block falls off a cliff and then crawls: measured on the
+ * affiliation-country section, 155 of its 579 pixels went in a single 17ms
+ * frame and the last 8 took 133ms. It read as a cut, not as a fold. Closing
+ * gets a curve that eases at both ends instead.
+ */
+const EASE_CLOSE = [0.4, 0, 0.2, 1];
 const QUICK_COUNTRIES = ['US', 'GB', 'DE', 'FR', 'CN', 'JP', 'ES', 'CA'];
 
 function normalizeFilters(filters = {}) {
@@ -33,9 +45,22 @@ function Collapse({ isOpen, children, reduced, id }) {
         <motion.div
           id={id}
           initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 'auto', opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={reduced ? { duration: 0 } : { height: { duration: 0.32, ease: EASE }, opacity: { duration: 0.22 } }}
+          animate={{
+            height: 'auto',
+            opacity: 1,
+            transition: reduced
+              ? { duration: 0 }
+              : { height: { duration: 0.32, ease: EASE }, opacity: { duration: 0.22 } },
+          }}
+          exit={{
+            height: 0,
+            opacity: 0,
+            transition: reduced
+              ? { duration: 0 }
+              // The content goes before the box does, so the last frames of the
+              // fold are empty rather than a strip of clipped text.
+              : { height: { duration: 0.28, ease: EASE_CLOSE }, opacity: { duration: 0.16, ease: 'easeIn' } },
+          }}
           style={{ overflow: 'hidden' }}
         >
           {children}
@@ -133,6 +158,8 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
 
   return (
     <div className="rf">
+      {/* The row reads as the twin of the EDITION row above it: a mono label,
+          the state set in running text, and one hairline rule underneath. */}
       <button
         type="button"
         className={`rf-toggle ${isOpen ? 'is-open' : ''}`}
@@ -140,27 +167,31 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
         aria-expanded={isOpen}
         aria-controls="rf-panel"
       >
-        <span className="rf-toggle-left">
-          <Filter size={15} />
-          <span>{isEnglish ? 'Filters' : 'Filtros'}</span>
-          <AnimatePresence>
-            {appliedCount > 0 && (
-              <motion.span
-                className="rf-badge"
-                initial={reduced ? false : { scale: 0.6, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={reduced ? { opacity: 0 } : { scale: 0.6, opacity: 0 }}
-                transition={{ duration: 0.18 }}
-              >
-                {appliedCount}
-              </motion.span>
-            )}
-          </AnimatePresence>
+        <span className="rf-toggle-label">{isEnglish ? 'Filters' : 'Filtros'}</span>
+        <span className={`rf-toggle-summary ${appliedCount > 0 ? '' : 'is-empty'}`}>
+          {appliedCount > 0 ? (
+            <>
+              <span className="rf-toggle-count">{appliedCount}</span>
+              {isEnglish ? ' active' : ' activos'}
+            </>
+          ) : (
+            isEnglish ? 'All disciplines and countries' : 'Todas las disciplinas y países'
+          )}
         </span>
         <span className="rf-toggle-status">
           {loading && <LoaderCircle className="rf-loading-icon" size={14} aria-hidden="true" />}
+          <span className="rf-toggle-action">
+            {isOpen
+              ? (isEnglish ? 'Close' : 'Cerrar')
+              : (isEnglish ? 'Refine' : 'Afinar')}
+          </span>
           <Chevron isOpen={isOpen} reduced={reduced} />
         </span>
+        {/* The rule under this row is the one that sweeps while the edition
+            compiles. It used to be a second rule drawn along the top of the
+            body, which spanned both columns and landed on the sidebar's
+            numbers — a line that only existed while loading. */}
+        {loading && <span className="rf-sweep" aria-hidden="true" />}
       </button>
 
       <AnimatePresence initial={false}>
@@ -240,7 +271,10 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
             </motion.div>
           </div>
 
-          <div className="rf-section">
+          {/* `--country` carries no gap: see the note on the rule. The space
+              between the toggle and the block below it has to live *inside*
+              the block, or it vanishes in one frame when the block unmounts. */}
+          <div className="rf-section rf-section--country">
             <button
               className="rf-country-toggle"
               type="button"
@@ -392,27 +426,27 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
           </div>
 
           <div className="rf-actions">
-            <button
+            <Button
               type="button"
-              className="rf-clear"
+              variant="ghost"
+              className="pl-0"
               onClick={() => setDraftFilters({ categories: [], countries: [] })}
               disabled={draftCount === 0}
             >
               <X size={13} /> {isEnglish ? 'Clear selection' : 'Limpiar selección'}
-            </button>
+            </Button>
             <div className="rf-actions-primary">
-              <button type="button" className="rf-cancel" onClick={closePanel}>
+              <Button type="button" variant="ghost" onClick={closePanel}>
                 {isEnglish ? 'Cancel' : 'Cancelar'}
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
-                className="rf-apply"
                 onClick={applyFilters}
                 disabled={!hasPendingChanges || loading}
               >
                 {loading ? <LoaderCircle className="rf-loading-icon" size={15} aria-hidden="true" /> : <Check size={15} aria-hidden="true" />}
                 {isEnglish ? 'Apply filters' : 'Aplicar filtros'}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

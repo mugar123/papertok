@@ -9,6 +9,7 @@ import { fetchPapersByIds } from '../../services/arxivService.js';
 import {
   enrichPapersBatch,
   fetchPaperByArxivIdViaOpenAlex,
+  fetchPaperByWorkId,
   fetchPapersByDois,
 } from '../../services/openAlexService.js';
 import {
@@ -21,8 +22,10 @@ import {
   parsePaperKey,
 } from '../../utils/publicNavigation.js';
 import { paperLegacyAdapter } from '../../models/Paper.js';
+import { hydrateSeededPaper, seedPaintsWhole } from '../../utils/paperSeed.js';
 import PaperCard from '../Feed/PaperCard.jsx';
 import SkeletonCard from '../Feed/SkeletonCard.jsx';
+import { Button } from '../ui/button.jsx';
 import CommentsSheet from '../Comments/CommentsSheet.jsx';
 import './PublicPaperPage.css';
 
@@ -65,6 +68,14 @@ async function loadPaper(identity) {
   if (identity.type === 'doi') {
     const papers = await fetchPapersByDois([identity.value], { throwOnProviderError: true });
     return papers[0] || null;
+  }
+
+  // Papers the feed keys by provider id — an OpenAlex work, a PubMed record —
+  // and remembered that way in Liked and Saved. OpenAlex resolves both ids
+  // directly, abstract included; a failure here rejects so the page can
+  // offer a retry rather than declare the paper missing.
+  if (identity.type === 'openalex' || identity.type === 'pmid') {
+    return fetchPaperByWorkId(identity.type, identity.value);
   }
 
   let paper = null;
@@ -115,6 +126,10 @@ export default function PublicPaperPage({
     toggleLike,
     markNotInterested,
     markAsRead,
+    unmarkAsRead,
+    interactionIdFor,
+    libraryCopyFor,
+    ensurePersonalLibrary,
     trackViewTime,
     trackSkip,
     trackPdfOpened,
@@ -142,12 +157,39 @@ export default function PublicPaperPage({
     }
   }, [location.state, paperKey]);
 
+  // A copy that carries its abstract is the page until the network upgrades
+  // it — when it is the paper itself, as the search palette hands over. A
+  // copy a list or a profile row stored (`state.stored`) is not painted even
+  // with an abstract in it: it is a truncated summary and a handful of fields,
+  // and painting it meant the card filling in piece by piece as the providers
+  // answered. Those open on the skeleton, the way Liked rows always did, and
+  // keep the copy only for the failure paths below.
+  const seedPainted = seedPaintsWhole(seededPaper) && !location.state?.stored;
   const requestKey = `${paperKey}:${attempt}`;
   const hasCurrentResult = result.requestKey === requestKey;
-  const paper = hasCurrentResult ? result.paper : seededPaper;
+  const loadedPaper = hasCurrentResult ? result.paper : (seedPainted ? seededPaper : null);
+  // A link that brought no copy of its own — a shared link, a bookmark — is
+  // answered by the provider under the provider's id, and the reader's own
+  // marks are keyed by the id the feed gave the paper. If the reader's
+  // library holds a copy of it under any id, that copy is laid over the
+  // answer exactly as a list's copy would be: their marks apply, and the
+  // paper reads as it did in the feed. With no copy, the id alone is
+  // resolved, so a like made here lands on the mark that already exists.
+  const paper = useMemo(() => {
+    if (!loadedPaper || seededPaper) return loadedPaper;
+    const copy = libraryCopyFor(loadedPaper);
+    if (copy) return hydrateSeededPaper(paperLegacyAdapter({ ...copy.paper, id: copy.id }), loadedPaper);
+    const id = interactionIdFor(loadedPaper);
+    return id === loadedPaper.id ? loadedPaper : { ...loadedPaper, id };
+  }, [loadedPaper, seededPaper, libraryCopyFor, interactionIdFor]);
+  // The library is what the alias table is built from; a signed-in reader
+  // arriving by link has not opened a list yet, so it is asked for here.
+  useEffect(() => {
+    if (isAuthenticated) void ensurePersonalLibrary?.();
+  }, [isAuthenticated, ensurePersonalLibrary]);
   const status = hasCurrentResult
     ? result.status
-    : (seededPaper ? 'ready' : (identity ? 'loading' : 'not-found'));
+    : (seedPainted ? 'ready' : (identity ? 'loading' : 'not-found'));
   const isEnglish = language === 'en';
   const text = useCallback((entry) => entry[isEnglish ? 'en' : 'es'], [isEnglish]);
 
@@ -159,7 +201,7 @@ export default function PublicPaperPage({
   const prefersReducedMotion = useReducedMotion();
   // Purely derived: a seed was on screen and the network has now answered, so
   // this render is the upgrade. Without a seed the card is simply entering.
-  const cardPhase = hasCurrentResult && seededPaper ? 'dissolve' : 'shown';
+  const cardPhase = hasCurrentResult && seedPainted ? 'dissolve' : 'shown';
 
   const cardVariants = useMemo(() => ({
     hidden: { opacity: 0, y: prefersReducedMotion ? 0 : 10 },
@@ -184,6 +226,12 @@ export default function PublicPaperPage({
   // No reset needed per paper: <Routes> is keyed by pathname, so a different
   // paper remounts this page outright.
   const [cardRevealed, setCardRevealed] = useState(false);
+  // A paper handed over in router state — from the search palette, a list, a
+  // profile tab — is painted on the very first frame, so there is no wait for
+  // the cover to bridge. Without this it went up anyway and sat over a finished
+  // page until the card's own animation reported in: a skeleton on top of the
+  // paper it was standing in for.
+  const [seededOnArrival] = useState(() => seedPainted);
   useEffect(() => {
     if (status !== 'ready' || cardRevealed) return undefined;
     // Belt and braces: if the animation's completion callback never lands,
@@ -219,7 +267,12 @@ export default function PublicPaperPage({
           setResult({ requestKey, paper: seededPaper, status: seededPaper ? 'ready' : 'not-found' });
           return;
         }
-        setResult({ requestKey, paper: loadedPaper, status: 'ready' });
+        // The provider's paper, with the copy the link handed over laid on
+        // top where it speaks: the id the reader's marks are keyed by, the
+        // branch the feed filed it under, the authors and abstract as the
+        // reader saw them. Without this the page showed another provider's
+        // account of the same paper, unread and unliked.
+        setResult({ requestKey, paper: hydrateSeededPaper(seededPaper, loadedPaper), status: 'ready' });
       })
       .catch((error) => {
         if (requestId !== requestIdRef.current) return;
@@ -255,15 +308,16 @@ export default function PublicPaperPage({
         // Signed in, the app navbar owns the top of the screen (App.jsx keeps
         // it mounted on this route), so the page adds only a way back. The
         // standalone chrome below is for shared links opened without session.
-        <button
-          type="button"
+        <Button
+          variant="outline"
+          size="icon"
           className="public-paper-back-floating"
           onClick={goBack}
           aria-label={text(COPY.back)}
           title={text(COPY.back)}
         >
           <ArrowLeft size={20} />
-        </button>
+        </Button>
       ) : (
         <nav className="public-paper-nav" aria-label={isEnglish ? 'Paper navigation' : 'Navegación del paper'}>
           <button type="button" className="public-paper-nav-button" onClick={goBack} aria-label={text(COPY.back)} title={text(COPY.back)}>
@@ -282,7 +336,7 @@ export default function PublicPaperPage({
           black screen — whether the wait is the network or the card warming
           up. */}
       <AnimatePresence>
-        {(status === 'loading' || (status === 'ready' && !cardRevealed)) && (
+        {!seededOnArrival && (status === 'loading' || (status === 'ready' && !cardRevealed)) && (
           <motion.div
             key="paper-skeleton"
             className="public-paper-skeleton"
@@ -328,6 +382,7 @@ export default function PublicPaperPage({
             onLike={toggleLike}
             onNotInterested={markNotInterested}
             onMarkAsRead={markAsRead}
+            onUnmarkAsRead={unmarkAsRead}
             trackViewTime={trackViewTime}
             trackSkip={trackSkip}
             getInteractionState={getInteractionState}

@@ -1,0 +1,375 @@
+/* Search palette rows: a mono identifier, a muted meta column, and an
+   optional follow action pushed to the far edge. */
+
+.sc-icon {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+/* A person's row opens with a monogram where every other row opens with an
+   icon: same 14px column, same rhythm. Not a photo — the people index carries
+   none, which is the point rather than an omission. */
+.sc-avatar {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--border-default);
+  border-radius: 50%;
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+  font: 600 0.5625rem/1 var(--font-mono);
+  text-transform: uppercase;
+}
+
+.sc-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+
+.sc-meta {
+  flex: 0 0 auto;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 400 0.6875rem/1.4 var(--font-mono);
+  color: var(--text-tertiary);
+}
+
+.sc-heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+/* The answer to the previous query, still up while the new one runs. Keeping it
+   is what stops every keystroke blinking the palette to empty; dimming it is
+   what stops it reading as the answer to what is being typed now. */
+.sc-group--stale {
+  opacity: 0.4;
+  transition: opacity var(--transition-fast);
+}
+
+.sc-follow {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font: 500 0.625rem/1.5 var(--font-mono);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.sc-follow.is-following {
+  border-color: var(--tint-green-line);
+  background: var(--tint-green-bg);
+  color: var(--tint-green-fg);
+}
+
+.sc-follow:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .sc-follow:not(:disabled):hover {
+    border-color: var(--border-ink);
+    color: var(--text-primary);
+  }
+}
+
+.sc-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--fs-sm);
+  color: var(--text-secondary);
+}
+
+.sc-status--warn {
+  color: var(--tint-amber-fg);
+}
+
+.sc-status--hint {
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
+@media (max-width: 640px) {
+  .sc-meta {
+    display: none;
+  }
+
+  /* Except a handle: a year or a country code is decoration on a narrow
+     screen, but "@nico" is half of how you tell two people apart. */
+  .sc-meta--handle {
+    display: block;
+  }
+}
+
+/* ─── Skeleton ───
+   The palette waits for every source before it paints anything, so the wait
+   needs a shape. A lone spinner over an empty sheet reads as nothing
+   happening, and a sheet that fills from nothing shifts every row under the
+   cursor the moment the answer lands. These are the height of a real row. */
+
+.sc-skeleton {
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-1);
+}
+
+.sc-skeleton-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 36px;
+  padding: var(--space-2);
+  opacity: 0;
+  animation: fadeIn 200ms ease-out forwards;
+}
+
+/* The stagger lives in the stylesheet rather than in an inline custom property,
+   because the count is fixed here and a `style={{ '--index': n }}` would owe
+   `profileStyles.test.js` an entry in INJECTED_PROPERTIES. */
+.sc-skeleton-row:nth-child(2) { animation-delay: 45ms; }
+.sc-skeleton-row:nth-child(3) { animation-delay: 90ms; }
+.sc-skeleton-row:nth-child(4) { animation-delay: 135ms; }
+.sc-skeleton-row:nth-child(5) { animation-delay: 180ms; }
+
+.sc-skeleton-row > span {
+  height: 9px;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(
+    90deg,
+    var(--bg-secondary) 0%,
+    var(--border-subtle) 50%,
+    var(--bg-secondary) 100%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease-in-out infinite;
+}
+
+/* The same three columns a painted row has: the 14px icon slot, the label, and
+   the mono meta pushed to the edge. */
+.sc-skeleton-icon {
+  flex: 0 0 14px;
+  height: 14px;
+}
+
+.sc-skeleton-line {
+  flex: 1 1 auto;
+  max-width: 62%;
+}
+
+.sc-skeleton-meta {
+  flex: 0 0 18%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The row starts at `opacity: 0` and only reaches 1 through the animation
+     just cancelled above. Turning the motion off must not turn the content off
+     with it — the same trap already documented in `SearchPage.css`. */
+  .sc-skeleton-row {
+    opacity: 1;
+    animation: none;
+  }
+
+  .sc-skeleton-row > span {
+    animation: none;
+  }
+}
+
+/* ─── The answer arriving ───
+   Everything lands in one commit, so without this the skeleton vanishes and a
+   finished sheet is simply there. Each heading and row rises into place on a
+   single cascade that runs down the whole list — see `renderedSections` in
+   `SearchCommand.jsx`, which is where the index comes from.
+
+   6px and 260ms: far enough that the eye reads it as arriving, short enough
+   that the first row is legible before the last one has landed.
+
+   The same cascade also carries the sheet's own opening, top to bottom: the
+   field at index 0, the `Sugerencias` heading at 1, the four suggestions at
+   2–5, the hint at 6. Two of those were added late. Before, the opening ran in
+   three tiers at once — the sheet travelling, the suggestion rows rising, and
+   the field and the hint frozen at full opacity between them — which is why it
+   read as a box being switched on with some of its contents animated, rather
+   than as one thing arriving.
+
+   The 6px is a lag, not a counter-motion, and it is worth being explicit about
+   which: the sheet comes down from -24px, so a row that starts 6px BELOW its
+   resting place is at -18px absolute and therefore travels less far than the
+   sheet it sits in. Flip the sign to "start above" and the rows would overtake
+   the sheet on the way down, which is what parallax is not. */
+
+@keyframes scEnterRise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sc-enter {
+  opacity: 0;
+  animation: scEnterRise 260ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation-delay: calc(var(--sc-enter-index, 0) * 24ms);
+}
+
+/* The hint keeps the cascade's clock but drops its travel. It is the tail of
+   the opening and the least important line on the sheet, and a footnote that
+   moves is both the last thing to stop moving and the thing the eye is left
+   on. Fading it resolves it without asking for that attention.
+
+   `animation-name` alone: the duration, easing, fill and delay all still come
+   from `.sc-enter` above, which is the point of overriding only the name. */
+@keyframes scEnterFade {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.sc-enter--quiet {
+  animation-name: scEnterFade;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The row starts at `opacity: 0` and only reaches 1 through the animation
+     being cancelled here. Turning the motion off must not turn the answer off
+     with it — the same trap `SearchPage.css` documents for `.search-item-enter`. */
+  .sc-enter {
+    opacity: 1;
+    animation: none;
+  }
+}
+
+/* ─── The sheet arriving and leaving ───
+   The scrim behind it already faded in and out (`dialog.jsx`); the sheet itself
+   did not, so it snapped into existence over a fading ground and snapped out of
+   it again. It is anchored near the top of the window and its results grow
+   downwards, so it arrives from above and leaves back the way it came.
+
+   Three things this depends on, all verified rather than assumed:
+
+   1. Tailwind v4 centres the sheet with the `translate` PROPERTY
+      (`translate: -50%` from `-translate-x-1/2`), not with `transform`. The two
+      are separate properties that compose, so these keyframes can own
+      `transform` outright. Had the centring been a `transform`, animating one
+      here would have replaced it and thrown the sheet at the left edge for the
+      length of the animation.
+   2. The exit must be an `animation`, never a `transition`:
+      `@radix-ui/react-presence` only defers unmount while
+      `getComputedStyle(node).animationName` is not `none`. `both` holds the
+      last frame so the sheet cannot flash back before it goes. This is the same
+      rule the overlay in `dialog.jsx` follows, and the trap `design.md`
+      documents.
+   3. The component has to still be mounted when `open` turns false. Presence
+      defers the unmount of the sheet, not of the palette: mounted behind
+      `searchOpen &&` in `App.jsx`, the whole tree went in the same commit as
+      the close (measured: out of the DOM 2 ms later, `data-state='closed'`
+      never seen) and this exit, `both` and all, had never played once.
+      `App.jsx` now latches the mount on the first open.
+
+   The exit is shorter than the entrance (220ms against 380ms): getting out of
+   the way should never make anybody wait. Both were 140 and 260 until
+   2026-09-03, when they were asked to be slower — half as long again, on the
+   same curves and the same distances. The scrim is timed below to the same
+   two clocks: the shared 150ms overlay (`dialog.jsx`) would now clear the
+   ground a few frames before the sheet had gone.
+
+   The distances were 10px and 6px, with a 1.5% scale, and read as nothing at
+   all — the palette looked like it was simply switched on. `getAnimations()`
+   confirmed both were running, so the fault was the amount, not the wiring: on
+   a 672px sheet arriving over a scrim that is darkening at the same moment,
+   10px of travel is below the threshold at which anybody registers movement.
+   24px and 3% is what makes it read as dropping into place. The duration went
+   up with it because the same speed over more distance is a jump, but the ease
+   is `0.16, 1, 0.3, 1` — most of the travel is spent in the first third, so the
+   palette still answers instantly however long the tail takes to settle. */
+
+@keyframes scSheetIn {
+  from {
+    opacity: 0;
+    transform: translateY(-24px) scale(0.97);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes scSheetOut {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.98);
+  }
+}
+
+.sc-sheet {
+  /* Anchored at the top edge, so the scale reads as the sheet dropping into
+     place rather than as a zoom about its middle. */
+  transform-origin: 50% 0;
+}
+
+.sc-sheet[data-state='open'] {
+  animation: scSheetIn 380ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sc-sheet[data-state='closed'] {
+  animation: scSheetOut 220ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+/* The scrim, on the sheet's own clocks (`overlayClassName` on the dialog).
+   The class is doubled because the shared overlay's fade is a Tailwind
+   data-state variant of the same specificity, and the order in which the two
+   stylesheets land in the bundle is not something to lean on. */
+.sc-scrim.sc-scrim[data-state='open'] {
+  animation: fadeIn 380ms ease;
+}
+
+.sc-scrim.sc-scrim[data-state='closed'] {
+  animation: fadeOut 220ms ease both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* No `opacity: 0` to undo here — the sheet's resting state is fully visible
+     and the keyframes only ever move it away from that — so dropping the
+     animation is enough. Presence then reads `animationName: none` and unmounts
+     the sheet immediately, which is the correct behaviour for this preference. */
+  .sc-sheet[data-state='open'],
+  .sc-sheet[data-state='closed'],
+  .sc-scrim.sc-scrim[data-state='open'],
+  .sc-scrim.sc-scrim[data-state='closed'] {
+    animation: none;
+  }
+}

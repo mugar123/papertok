@@ -7,6 +7,7 @@ import {
   getDomainSourcePlan,
   getEligibleDomainSources,
   reportDomainSourceFailures,
+  settleDomainSources,
   mapBioRxivPaper,
   mapCoreWork,
   mapEuropePmcSearchResult,
@@ -15,6 +16,9 @@ import {
   mapNasaRecord,
   mapOstiRecord,
 } from './domainSourceService.js';
+// Shared with `fetchWorkerSourceJson`, so it lives in the module both source
+// entry points can import without closing a cycle.
+import { sourceResponseError } from './workerApiClient.js';
 
 test('routes biology and engineering categories only to relevant specialist sources', () => {
   const plan = getDomainSourcePlan(['bio.cell', 'mech.aero', 'chemeng.energy', 'physics.optics']);
@@ -207,4 +211,81 @@ test('a rejected source names its path instead of vanishing', () => {
   assert.equal(logged.length, 2);
   assert.match(logged[0], /\/sources\/physics.*WORKER_AUTH_REQUIRED/);
   assert.match(logged[1], /\/sources\/nasa.*429/);
+});
+
+// The regression this file exists to hold: `Promise.allSettled` settles only
+// when its slowest member does, and every caller wraps the whole domain branch
+// in one render budget -- so a single upstream stalling past that budget threw
+// away the papers its siblings had already delivered. Budgeting each source on
+// its own is what keeps a stall local to the source that stalled.
+test('a source that hangs past its budget does not discard the ones that answered', async () => {
+  const logged = [];
+  const requests = [
+    { path: '/sources/biorxiv', promise: new Promise(() => {}) },
+    { path: '/sources/europepmc', promise: Promise.resolve([{ id: 'europepmc-1' }]) },
+    { path: '/sources/huggingface', promise: Promise.resolve([{ id: 'hf-1' }]) },
+  ];
+
+  const settled = await settleDomainSources(requests, 20, message => logged.push(message));
+
+  assert.deepEqual(settled.map(result => result.status), ['timed_out', 'fulfilled', 'fulfilled']);
+  assert.deepEqual(settled[1].value, [{ id: 'europepmc-1' }]);
+  assert.deepEqual(settled[2].value, [{ id: 'hf-1' }]);
+  assert.match(logged.join('\n'), /\/sources\/biorxiv/, 'a stalled source is named, not silent');
+});
+
+test('a rejected source still names its path once each source is budgeted alone', async () => {
+  const logged = [];
+  const requests = [
+    { path: '/sources/openreview', promise: Promise.reject(new Error('/sources/openreview returned 502')) },
+    { path: '/sources/europepmc', promise: Promise.resolve([{ id: 'europepmc-1' }]) },
+  ];
+
+  const settled = await settleDomainSources(requests, 20, message => logged.push(message));
+
+  assert.deepEqual(settled.map(result => result.status), ['rejected', 'fulfilled']);
+  assert.match(logged.join('\n'), /\/sources\/openreview failed: \/sources\/openreview returned 502/);
+});
+
+// `${path} returned ${status}` threw the Worker's body away, and with it the
+// `code` and `upstreamStatus` that tell a 400 of our own making from an outage
+// of theirs (and NCBI's 429 from the ledger's). The body travels on the error,
+// where `reportDomainSourceFailures` already looks for `code`.
+test('a refused source keeps the Worker body on the error instead of only the status', () => {
+  const masked = sourceResponseError('/sources/openreview', 502, {
+    error: 'Specialist source unavailable',
+    upstreamStatus: 400,
+  });
+  assert.equal(masked.status, 502);
+  assert.equal(masked.upstreamStatus, 400);
+  assert.equal(masked.code, undefined);
+  assert.equal(masked.message, '/sources/openreview returned 502 (upstream 400)');
+
+  const refused = sourceResponseError('/sources/pubmed', 429, {
+    error: 'Specialist source unavailable',
+    code: 'UPSTREAM_RATE_LIMITED',
+  });
+  assert.equal(refused.code, 'UPSTREAM_RATE_LIMITED');
+  assert.equal(refused.message, '/sources/pubmed returned 429 (UPSTREAM_RATE_LIMITED)');
+
+  const bare = sourceResponseError('/sources/biorxiv', 502, null);
+  assert.equal(bare.message, '/sources/biorxiv returned 502');
+  assert.equal(bare.code, undefined);
+  assert.equal(bare.upstreamStatus, undefined);
+
+  const hostile = sourceResponseError('/sources/core', 502, { code: 42, upstreamStatus: '400' });
+  assert.equal(hostile.code, undefined, 'a code that is not a string is not a code');
+  assert.equal(hostile.upstreamStatus, undefined, 'a status that is not an integer is not a status');
+});
+
+test('the failure report shows the upstream status once the body travels on the error', () => {
+  const logged = [];
+  reportDomainSourceFailures(
+    [{ status: 'rejected', reason: sourceResponseError('/sources/openreview', 502, { upstreamStatus: 400 }) }],
+    [{ path: '/sources/openreview' }],
+    message => logged.push(message),
+  );
+
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /\/sources\/openreview failed: \/sources\/openreview returned 502 \(upstream 400\)/);
 });

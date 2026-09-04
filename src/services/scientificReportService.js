@@ -9,6 +9,7 @@ import { PubmedAdapter } from './adapters/PubmedAdapter.js';
 import { PaperBuilder } from './PaperBuilder.js';
 import { CATEGORIES, getCategoryArea } from '../data/categories.js';
 import { openAlexJson } from './openAlexClient.js';
+import { enrichPapersBatch } from './openAlexService.js';
 import { reconstructOpenAlexAbstract } from '../utils/openAlexAbstract.js';
 import { REPORT_OPENALEX_FIELDS } from './openAlexReportQuery.js';
 import { normalizeScientificMarkup } from '../utils/latex.js';
@@ -29,6 +30,11 @@ const DEGRADED_CACHE_TTL = 5 * 60 * 1000;
 // degraded status then gets pinned in the corpus cache. The proxy cascade that
 // used to add 4.5s to both numbers is gone.
 const REPORT_SOURCE_TIMEOUT_MS = 10_000;
+/* Borrowing citations happens inside the corpus build, which is cached for an
+   hour, so this is paid once per edition rather than on every render. Kept well
+   under the source deadline: an edition without the counts is worse than an
+   edition, but only slightly. */
+const ARXIV_CITATION_TIMEOUT_MS = 6_000;
 
 const DEFAULT_ARXIV_REPORT_CATEGORIES = ['cs.AI', 'quant-ph', 'q-bio.NC', 'stat.ML', 'math.PR', 'eess.SP'];
 const REPORT_ARXIV_CATEGORIES = Object.freeze({
@@ -46,19 +52,79 @@ const REPORT_ARXIV_CATEGORIES = Object.freeze({
   bio: ['q-bio.BM', 'q-bio.CB', 'q-bio.GN', 'q-bio.MN', 'q-bio.NC', 'q-bio.OT', 'q-bio.PE', 'q-bio.QM', 'q-bio.SC', 'q-bio.TO'],
 });
 
-function withSourceDeadline(promise, timeoutMs = REPORT_SOURCE_TIMEOUT_MS) {
-  const unavailable = { papers: [], status: 'unavailable' };
+function withDeadline(promise, timeoutMs, fallback) {
   return new Promise((resolve) => {
     let settled = false;
+    let timeoutId = null;
     const finish = (result) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
-      resolve(result || unavailable);
+      resolve(result === undefined || result === null ? fallback : result);
     };
-    const timeoutId = setTimeout(() => finish(unavailable), timeoutMs);
-    Promise.resolve(promise).then(finish).catch(() => finish(unavailable));
+    timeoutId = setTimeout(() => finish(fallback), timeoutMs);
+    Promise.resolve(promise).then(finish).catch(() => finish(fallback));
   });
+}
+
+function withSourceDeadline(promise, timeoutMs = REPORT_SOURCE_TIMEOUT_MS) {
+  return withDeadline(promise, timeoutMs, { papers: [], status: 'unavailable' });
+}
+
+/**
+ * Lends the arXiv candidates the citation counts arXiv does not publish.
+ *
+ * arXiv's API carries no citation data, so a paper that reaches the selection
+ * from arXiv alone arrives with a zero — and the edition is chosen largely on
+ * citations. The effect was not a slight bias but a clean sweep: measured on
+ * 2026-08-26, neither the 7-day nor the 10-year edition contained a single
+ * arXiv paper. That matters beyond fairness, because arXiv is also the only
+ * source a figure can be extracted from, so the pictures and the selection were
+ * quietly shutting each other out.
+ *
+ * OpenAlex knows the counts, so they are borrowed here, before ranking and
+ * inside the cached corpus build. A lookup that is slow or fails leaves the
+ * papers exactly as they were: an edition ranked without them is still an
+ * edition, and holding one up for this would be a poor trade.
+ */
+export async function lendCitationsToArxivCandidates(candidates, lookup = enrichPapersBatch) {
+  const byArxivId = new Map();
+  for (const paper of candidates) {
+    // A paper that already carries a count got one from a source that knows,
+    // usually its own OpenAlex twin during deduplication.
+    if (!paper?.arxivId || Number(paper.citationCount) > 0) continue;
+    const id = String(paper.arxivId).replace(/^arxiv:/i, '').replace(/v\d+$/i, '').trim();
+    if (!id) continue;
+    if (!byArxivId.has(id)) byArxivId.set(id, []);
+    byArxivId.get(id).push(paper);
+  }
+  if (byArxivId.size === 0) return candidates;
+
+  const found = await withDeadline(
+    Promise.resolve()
+      .then(() => lookup([...byArxivId.keys()], { timeoutMs: ARXIV_CITATION_TIMEOUT_MS }))
+      .catch(() => null),
+    ARXIV_CITATION_TIMEOUT_MS,
+    null,
+  );
+  if (!found) return candidates;
+
+  const lent = new Map();
+  for (const id of byArxivId.keys()) {
+    const citations = Number(found[id]?.citationCount);
+    if (Number.isFinite(citations) && citations > 0) lent.set(id, citations);
+  }
+  if (lent.size === 0) return candidates;
+
+  const citationsFor = new Map();
+  for (const [id, papers] of byArxivId) {
+    if (!lent.has(id)) continue;
+    for (const paper of papers) citationsFor.set(paper, lent.get(id));
+  }
+
+  return candidates.map(paper => (citationsFor.has(paper)
+    ? { ...paper, citationCount: citationsFor.get(paper), citationCountKnown: true }
+    : paper));
 }
 
 export { getDateThresholds, extractFeaturedConcepts };
@@ -402,6 +468,9 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
       ));
     }
 
+    // Before ranking, so the counts are in the corpus the cache keeps.
+    candidates = await lendCitationsToArxivCandidates(candidates);
+
     corpus = { candidates, coverage };
     const hasUnavailableSource = coverage.sources.some(source => source.status === 'unavailable');
     cacheCorpus(cacheKey, {
@@ -413,16 +482,22 @@ export async function getScientificReport(timeframe = '7d', page = 1, filters = 
     console.log(`[ScientificReport] Reusing cached corpus for: ${cacheKey}`);
   }
 
+  /* Which selection of this period to read. The corpus is ranked whole and
+     cached, so a further selection is a slice of an ordering that already
+     exists — no request, no wait, and the earlier selections do not move. */
   const editions = buildScientificReportEditions(corpus.candidates, {
     timeframe: tf,
     days,
     profile: options.profile,
     trends: options.trends,
+    selection: options.selection,
   });
 
   return {
     ...editions.panorama,
     editions,
+    selection: editions.selection,
+    selectionCount: editions.selectionCount,
     coverage: corpus.coverage,
     corpusSize: corpus.candidates.length,
   };

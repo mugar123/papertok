@@ -1,0 +1,17 @@
+{
+  "name": "PaperTok",
+  "short_name": "PaperTok",
+  "description": "PaperTok es una aplicación para explorar y descubrir artículos científicos de distintas fuentes.",
+  "start_url": "./#/",
+  "scope": "./",
+  "display": "standalone",
+  "lang": "es",
+  "theme_color": "#ffffff",
+  "background_color": "#ffffff",
+  "icons": [
+    { "src": "favicon.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "icons/icon-192.png", "type": "image/png", "sizes": "192x192" },
+    { "src": "icons/icon-512.png", "type": "image/png", "sizes": "512x512" },
+    { "src": "icons/icon-maskable-512.png", "type": "image/png", "sizes": "512x512", "purpose": "maskable" }
+  ]
+}

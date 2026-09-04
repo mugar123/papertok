@@ -1,0 +1,223 @@
+# Explorador: la carga de autor, proyecto e institución, más fluida (2026-09-03)
+
+Petición: «mejora las animaciones de carga de la pestaña de autor, de proyecto
+y de institución; el objetivo es hacer la página más fluida». Las tres son la
+misma pantalla (`src/components/Explorer/EntityExplorer.jsx` y su CSS), así que
+se auditó la espera entera: el esqueleto, el relevo al héroe vivo, las piezas
+que llegan después (ORCID, impacto reciente, Wikipedia) y el cambio de pestaña.
+
+## Lo que hacía áspera la espera
+
+1. **El brillo del esqueleto repintaba en el hilo principal.** `.ex-skel`
+   animaba `background-position` (los keyframes `shimmer` de `variables.css`),
+   que es propiedad de pintado: cada una de las ~50 formas del esqueleto de un
+   autor se repintaba en cada frame mientras el perfil respondía, y también
+   durante los 0,3 s en que la transición de página deslizaba la hoja entera.
+   El feed (`SkeletonCard.css`) y el párrafo de Wikipedia ya barrían con un
+   `transform` en `::after`; el explorador no.
+2. **Las filas del esqueleto subían como si fueran filas.** Llevan la clase
+   `.explorer-list-item` para heredar el padding y el filete, y con ella
+   heredaban la entrada (`staggerFadeUp`): cuatro formas subiendo 6 px encima de
+   la transición en el primer pintado, y las cinco del listado subiendo otra
+   vez el frame en que aterrizaba el héroe.
+3. **Un frame de «no se encontraron resultados» entre el héroe y el listado.**
+   `isLoadingPapers` arrancaba en `false`; el primer render vivo llegaba antes
+   del efecto que pide los papers, y en ese frame el listado estaba vacío y no
+   cargando, que es exactamente la condición del estado vacío.
+4. **La tarjeta ORCID saltaba dos veces.** El impacto reciente y el registro
+   ORCID se pedían en serie, y `isLoadingOrcid` solo subía cuando el impacto
+   había contestado: el hueco reservado por el esqueleto se cerraba al llegar
+   el héroe, se reabría segundos después y se rellenaba más tarde. Y al llegar,
+   la tarjeta se fundía desde cero (`orcidReveal`) y cada bloque tardaba
+   **cuatro segundos** en asentarse (`orcidPremiumReveal 4s`), con el panel de
+   experiencia apareciendo de golpe a su altura completa (`initial={false}`).
+5. **Una institución sin web perdía su bloque de Wikipedia** al aterrizar el
+   héroe (el esqueleto lo reservaba, el héroe vivo solo lo montaba con
+   `homepage_url` o con descripción ya llegada) y lo recuperaba, empujando el
+   listado, cuando llegaba el párrafo.
+6. **Cambiar de pestaña rehacía el listado.** `activeTab` era dependencia del
+   efecto de papers y su limpieza cancelaba la petición en vuelo: volver a
+   Artículos era un segundo esqueleto y una segunda petición por filas ya
+   leídas. Autores igual. Un proyecto pagaba otra vuelta: la entidad optimista
+   arrancaba la petición y sus detalles, al llegar con el mismo código, la
+   cancelaban y repetían.
+7. Las tarjetas de autor partían de `opacity: 0` con `forwards` (parpadeaban
+   desde la nada una tras otra), y la nota de impacto pasaba de «…» al número
+   de un frame a otro.
+
+## Lo que cambia
+
+- `.ex-skel` es un bloque sólido con el barrido en `::after` (`exSkelSweep`,
+  un `translateX`), con las mismas fases descendentes de antes, ahora en el
+  pseudoelemento. El párrafo de Wikipedia usa el mismo keyframe. Las filas del
+  esqueleto no animan (`.explorer-list-item.ex-skel-row { animation: none }`)
+  y el esqueleto de página reserva cinco filas, las mismas que pinta el
+  listado.
+- `isLoadingPapers` arranca en `true` y cada carga de entidad lo rearma.
+- El impacto y el ORCID se declaran antes de arrancar y se piden a la vez
+  (`Promise.all`); el panel de experiencia crece al llegar; la tarjeta ORCID
+  ya no se funde y sus bloques asientan a 0,42 s desde 0,35 con 6 px de
+  subida, como las filas.
+- La institución mantiene el bloque de Wikipedia abierto mientras la petición
+  está pendiente (misma regla que temas y conceptos); si no llega nada, se
+  pliega con la salida de `AnimatePresence` en vez de cortarse.
+- La petición de papers se identifica por lo que lee
+  (`entityPapersRequestKey`, en `utils/entityExplorer.js`): la pestaña ya no
+  es dependencia, un re-render con la misma clave no toca la petición en
+  vuelo, y solo el desmontaje cancela. Autores se piden la primera vez que se
+  abre la pestaña (`authorsOpened`) y se conservan.
+- Las tarjetas de autor usan `both` sin `opacity: 0`; la nota de impacto lleva
+  `is-settled` al conocerse y asienta en 0,3 s.
+
+## Medido
+
+Chrome headless conducido por CDP (`scripts/diagnostics/explorer-loading-probe.mjs`)
+contra el dev server, perfil limpio en cada corrida. La traza de pintado
+sostiene la petición del perfil (`Fetch` en pausa) para que el esqueleto dure,
+y compara el barrido nuevo con el antiguo restaurado por una hoja de estilos
+inyectada en la misma página; 3 s de traza, 180 frames, 49 formas.
+
+| En 3 s de esqueleto de autor | Barrido antiguo | Barrido nuevo |
+|---|---|---|
+| Eventos `Paint` | 9000 / 165 ms | **0** |
+| `PaintImage` | 8818 | **0** |
+| `RasterTask` | 900 / 18 ms | **0** |
+| `GPUTask` | 227 / 250 ms | 68 / 4,6 ms |
+| `UpdateLayoutTree` | 180 / 107 ms | 120 / 69 ms |
+| Animaciones activas | 49 en el elemento (`shimmer`) | 49 en `::after` (`exSkelSweep`) |
+
+Líneas de tiempo (MutationObserver instalado antes de que corra ningún script
+de la página, tiempos desde el arranque del documento):
+
+- **Autor** (A5006398227, con ORCID): esqueleto a 263 ms con cinco filas y la
+  tarjeta ORCID; héroe vivo a 2322 ms **con la tarjeta ORCID reservada y la
+  nota en «…»**; nota asentada a 2425 ms; tarjeta y panel de experiencia a
+  3295 ms; 30 filas a 3464 ms. `explorer-empty` no aparece en ningún momento.
+- **Institución** (I173304897): esqueleto a 337 ms con el bloque de Wikipedia
+  cargando; héroe vivo a 8425 ms con el bloque todavía cargando y la nota en
+  «…»; 28 filas a 8701 ms; párrafo a 9139 ms, en el mismo sitio.
+- **Proyecto** (820394, ASTERIQS): esqueleto a 226 ms; héroe vivo a 739 ms con
+  las cinco filas del esqueleto; 20 filas a 7631 ms. Un solo relevo.
+- **Pestañas** (la institución): Autores muestra seis formas al instante y 30
+  autores después; volver a Artículos pinta las 28 filas de golpe, sin
+  esqueleto y sin petición nueva (las peticiones a `works` son las mismas dos
+  antes y después del ida y vuelta — dos porque StrictMode dobla el efecto en
+  desarrollo); volver a Autores, los 30 sin esqueleto.
+
+No medido: el «antes» de las líneas de tiempo (se describe desde el código) y
+un móvil real. La ganancia de pintado es la que se traslada a un dispositivo
+lento; en escritorio el barrido antiguo ya cabía en el frame.
+
+## Pruebas
+
+`src/components/Explorer/explorerLoading.test.js` (fuente, como
+`explorerEntrance.test.js`) fija cada decisión de arriba, y
+`utils/entityExplorer.test.js` cubre la clave de petición: los detalles de un
+proyecto no cambian la clave; página, orden, búsqueda, filtros, parámetros,
+reintentos e identidad del autor sí.
+
+## Segunda tanda (misma tarde): el pliegue de Wikipedia, los comentarios y dos tiempos
+
+**El bloque de Wikipedia que se pliega.** En un tema (o institución) sin
+extracto en Wikipedia, el bloque reservado se retira con la salida de
+`AnimatePresence`: `height: 0`, opacidad y 6 px de subida. Medido con la sonda
+(`wikiexit`, muestreando cada frame el borde superior del listado): la altura
+llegaba a 0 pero el `border-box` se quedaba en sus 26 px de padding y borde, y
+al desmontarse el elemento se iban de golpe esos 26 px más los 16 px del hueco
+del flex — **42 px en un solo frame**, 400 ms después de que el pliegue
+pareciera acabado. Es exactamente «la sección de papers sube un poco más de
+golpe». El bloque va ahora dentro de un plegador sin caja propia
+(`.ehc-wiki-fold`) cuya altura sí llega a cero y que anima además
+`marginTop` hasta `-16px` (`HERO_STACK_GAP_PX`, el `--space-4` con que apila
+`.explorer-hero-content`) para llevarse el hueco consigo. Después: el frame
+del desmontaje mueve **0 px** en las tres corridas; el pliegue reparte sus
+162 px en frames de 30 px como máximo con la curva expo. Observado y no
+resuelto aquí: en una de tres corridas, la llegada de las 30 filas del tema
+coincidió con el pliegue y bloqueó el hilo 315 ms; es coste del render de
+las filas, no del pliegue, y estaba antes.
+
+**Los comentarios, del esqueleto a «Nadie ha comentado todavía».** React
+cambiaba uno por otro en un frame. Los dos van ahora en un
+`AnimatePresence mode="popLayout"`: el esqueleto sale del flujo y se funde
+(180 ms, 6 px hacia abajo) mientras el mensaje sube a su sitio (320 ms desde
+10 px, curva expo). `initial={false}` para que un hilo servido de caché abra
+directamente en su estado. Dos detalles que importan: el retraso de 320 ms
+del esqueleto se mueve de `.comments-sheet-loading` a sus filas, porque una
+animación CSS sobre la misma `opacity` pisaría el valor en línea de framer
+durante toda la salida; y `.comments-sheet-body` pasa a `position: relative`,
+que es el ancestro contra el que `popLayout` fija el elemento saliente.
+Medido (`comments`, feed de invitado, primer hilo): en el frame en que llega
+el veredicto el esqueleto ya está `absolute` y el mensaje montado a opacidad
+0 y 10 px abajo; el esqueleto baja de 1 a 0 en 185 ms y el mensaje sube a 1
+en 320 ms; en ningún frame el cuerpo está vacío.
+
+**La paleta y el modal de guardar, más lentos.** A petición: la paleta entra
+en 380 ms y sale en 220 (eran 260 y 140), y el modal de guardar entra en 360
+y sale en 300 (eran 240 y 200), con `DIALOG_EXIT_MS` a juego. El velo de la
+paleta era el compartido de `dialog.jsx` (150 ms), que ahora despejaría el
+fondo antes de que la hoja se fuera: `CommandDialog` y `DialogContent`
+aceptan `overlayClassName`, y `.sc-scrim` va en los dos relojes de la hoja.
+Clase doblada porque la regla compartida es una variante `data-state` de
+Tailwind con la misma especificidad. Pruebas: `paletteMotion.test.js`,
+`saveModalMotion.test.js` (tiempos nuevos), `commentsSheetStates.test.js` y
+el plegador en `explorerLoading.test.js`.
+
+## Tercera tanda: del átomo a los papers en el feed principal
+
+La pantalla de carga del feed (el átomo con «Buscando descubrimientos…») y
+el feed eran dos ramas de retorno de `FeedContainer`, así que React cambiaba
+una por otra en un frame: átomo, y al siguiente una tarjeta componiéndose.
+Ahora la pantalla es un **velo** (`.feed-empty--veil`) sobre el mismo
+contenedor en el que montan las tarjetas, dentro de un `AnimatePresence`, y se
+retira cuando llegan: el fondo se funde en 0,42 s con la curva expo mientras
+el átomo encoge a 0,62 y sube 16 px (0,36 s) y el texto se asienta 6 px hacia
+abajo (0,24 s); debajo, la primera tarjeta compone con su coreografía de
+siempre (título, kicker, autores…, 45 ms entre piezas). Etiquetas de variante
+en los hijos, no objetos, para que el `gone` del átomo suene con el del velo.
+Con `prefers-reduced-motion`, solo opacidad en 0,12 s.
+
+El velo cubre dos esperas, decididas por `feedAtomVeilCopy`
+(`utils/feedLoadingState.js`): la primera carga (`INITIAL_DISCOVERY`,
+«Buscando descubrimientos…») y un feed vaciado que sigue cargando o se está
+refrescando (`EMPTY` con `loading`/`isRefreshing`, «Sintetizando papers…»).
+Un feed vacío que dejó de cargar sigue siendo un veredicto con botón, sin
+velo. La puerta de sesión (`ProtectedRoute`) conserva su átomo tal cual.
+
+Pruebas: `feedAtomVeil.test.js` (fuente) y `feedLoadingState.test.js`
+(helper). La sonda gana el modo `feedload`, que retiene las peticiones de
+fuentes de otros orígenes 3,5 s para que el feed de invitado —que contesta en
+medio segundo, por debajo del 1,5 s que espera el átomo— llegue a enseñar el
+velo, y muestrea cada frame el velo, el átomo y la primera hoja. Medido: el
+esqueleto a 240 ms, el velo sobre él a 1750 ms, las 13 tarjetas montan a
+3745 ms con el velo todavía a 1,00, el velo baja a 0 entre 3759 y 4124 ms
+mientras el átomo pasa de 1 a 0,62 y sube 16 px, y se desmonta a 4190 ms; en
+ningún frame del relevo faltan las dos cosas.
+
+Lo que la medición destapó: en la carga inicial la tarjeta aparecía ya
+compuesta (título a opacidad 1 en su primer frame), porque el enrutador
+informa `POP` en la primera entrada del historial y la regla
+`[data-nav-direction="-1"]` del commit anterior deja las tarjetas en reposo
+en toda vuelta. La primera entrada (`history.state.idx` 0) no es una vuelta:
+`directionForNavigationType` la distingue y devuelve 0, así que la tarjeta
+compone bajo el velo que se retira, que es el relevo que se quería.
+
+## Cuarta tanda: pulsar «Permitir analítica»
+
+La persistencia del consentimiento es síncrona en la práctica (localStorage),
+así que «Activando…» duraba un frame: el botón cambiaba de texto dos veces en
+treinta milisegundos y saltaba de anchura entre «Permitir analítica»,
+«Activando…» y «Analítica activada»; la marca de hecho aparecía sin más y la
+alerta se iba a los 620 ms en 0,22 s.
+
+Ahora el botón lleva sus tres caras apiladas en una celda de rejilla
+(`.analytics-consent-accept-face`, `grid-area: 1 / 1`), así que mide lo que
+su etiqueta más ancha desde el primer frame y no cambia de tamaño; cada paso
+sube a su sitio desde 6 px abajo mientras el anterior se eleva 6 px, como un
+contador. Solo se anuncia una etiqueta (`aria-live` en un span oculto); las
+caras son decorativas. «Activando…» dura al menos 320 ms
+(`Promise.all` con un temporizador), la marca de hecho brota con un pequeño
+rebote (`analyticsConsentCheckIn`, 0,42 s con sobreimpulso), el icono de la
+alerta se pone en verde con el marco, la confirmación se queda 800 ms y la
+alerta se despide en 0,3 s. Con movimiento reducido no hay instante mínimo ni
+transiciones. Pruebas en `analyticsConsentStyles.test.js`; la sonda gana el
+modo `consent`.

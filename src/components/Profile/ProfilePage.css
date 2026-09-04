@@ -1,14 +1,39 @@
 .profile-page {
+  /* The grid's measures, shared by the layout and by the heading that has to
+     line up with it. */
+  --profile-rail: 176px;
+  --profile-aside: 340px;
+  --profile-gap-x: 48px;
+  /* The three lines the page draws with. On paper they are the app's
+     hairlines. On ink they were not lines at all: --border-default measured
+     1.37:1 on --bg-card and 1.45:1 on the page, --border-subtle 1.16:1, and
+     the cards themselves 1.06:1 on the page (2026-09-03), so sections,
+     cards and fields all but vanished in the dark theme. The rule and the
+     card edge step up to --border-strong (2.2:1 -- separators, not
+     controls); the field boundary is a UI component, so it is mixed from the
+     tertiary ink to clear 3:1 (WCAG 1.4.11) against the field's own surface.
+     The light theme keeps its hairlines. */
+  --profile-rule: var(--border-default);
+  --profile-card-line: var(--border-subtle);
+  --profile-line-field: var(--border-default);
   min-height: 100vh;
   min-height: 100dvh;
   background: var(--bg-primary);
   color: var(--text-primary);
 }
 
+:root[data-theme='dark'] .profile-page {
+  --profile-rule: var(--border-strong);
+  --profile-card-line: var(--border-strong);
+  --profile-line-field: color-mix(in srgb, var(--text-tertiary) 70%, var(--bg-card));
+}
+
+/* Wide enough for the form and the preview side by side; the form itself
+   still stops at a readable measure inside .profile-main. */
 .profile-shell {
-  max-width: 680px;
+  max-width: 1280px;
   margin: 0 auto;
-  padding: 104px clamp(20px, 5vw, 40px) 96px;
+  padding: calc(var(--nav-total) + var(--space-6)) clamp(20px, 5vw, 40px) 96px;
   /* Same entrance as the profile page it belongs to. */
   animation: profile-shell-in 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
@@ -24,54 +49,42 @@
   }
 }
 
-.profile-heading h1 {
-  margin: var(--space-3) 0 var(--space-2);
-  font-family: var(--font-heading);
-  font-size: var(--fs-2xl);
-  font-weight: var(--fw-bold);
-}
+/* The heading, the back control and the intro now come from
+   SettingsSubheader, shared with the other /settings/* screens. */
 
-.profile-intro {
-  margin: 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
-  line-height: 1.5;
-}
-
-.profile-back,
 .profile-secondary,
 .profile-pin-toggle,
 .profile-primary {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  border-radius: 999px;
+  border-radius: var(--radius-lg);
   cursor: pointer;
   font-size: var(--fs-sm);
-}
-
-.profile-back {
-  min-height: 34px;
-  padding: 0 var(--space-3) 0 var(--space-2);
-  border: none;
-  background: none;
-  color: var(--text-tertiary);
-}
-
-.profile-public-link {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  margin-top: var(--space-3);
-  color: var(--text-secondary);
-  font-size: var(--fs-sm);
+  /* Named, so the global `button { transition: all }` does not animate their
+     layout too -- that is the "soft button" feel, and a state flip should
+     only move colour. */
+  transition: background var(--transition-fast), border-color var(--transition-fast),
+    color var(--transition-fast), opacity var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .profile-form {
   display: flex;
   flex-direction: column;
   gap: var(--space-5);
-  margin-top: var(--space-5);
+  margin-top: var(--space-2);
+}
+
+/* After an unpublish the create-a-profile form takes the place of the
+   sections that just went; remounted, it rises the way the page did. */
+.profile-form.is-reborn {
+  animation: profile-rise 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.profile-form > .profile-section:first-of-type {
+  padding-top: 0;
+  border-top: none;
 }
 
 .profile-field {
@@ -89,32 +102,83 @@
 
 .profile-field input[type='text'],
 .profile-field input:not([type]),
-.profile-field textarea,
-.profile-handle-input input {
+.profile-field textarea {
   width: 100%;
-  padding: var(--space-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: var(--bg-secondary);
+  min-height: 44px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--profile-line-field);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   color: var(--text-primary);
   font: inherit;
   font-size: var(--fs-base);
 }
 
 .profile-field textarea {
+  min-height: 7.5rem;
   resize: vertical;
   line-height: 1.5;
 }
 
-.profile-handle-input {
+.profile-field-head {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.profile-char-count {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-identity-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+/* The @ and the field are one control, so there is ONE box and the @ lives
+   inside it.
+
+   This was a flex row where the wrapper drew the box and the input drew
+   another one within it. At rest both were hairlines and the inner one went
+   unnoticed; on focus the global text-field rule in `styles/global.css` --
+   `input:not([type='checkbox']):not([type='radio']):not([type='range'])
+   :focus-visible`, specificity (0,4,1) -- painted its ink border and inset
+   hairline on the inner input, which no ordinary component override outranks.
+   That was the second box, and it framed the field without the @.
+
+   Overlaying the prefix instead of laying it out beside the field makes the
+   input an ordinary text field: it draws the only box, and it takes the app's
+   focus treatment like every other field, with nothing to override. */
+.profile-handle-input {
+  position: relative;
 }
 
 .profile-handle-input > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: var(--space-4);
+  display: grid;
+  place-items: center;
   color: var(--text-tertiary);
-  font-size: var(--fs-lg);
+  font-family: var(--font-mono);
+  font-size: var(--fs-base);
+  /* Decoration painted over the field: a click on the @ has to reach the
+     input underneath it. */
+  pointer-events: none;
+}
+
+/* Room for the prefix, and the mono face a handle is typed in. The border,
+   the radius and the surface come from the shared field rule above -- which
+   is the whole point of the change. */
+.profile-field .profile-handle-input input {
+  padding-left: calc(var(--space-4) + 1.4em);
+  font-family: var(--font-mono);
 }
 
 .profile-hint {
@@ -159,22 +223,96 @@
   color: var(--text-primary);
 }
 
+/* The soft yellow flips with the theme (#fff4c9 -> #35290b), so what sits
+   on it takes `--text-on-brand-soft`, which flips with it: ink on paper,
+   the brand yellow on the dark wash. `--text-on-brand` is for the FULL
+   yellow, which does not flip; on the dark soft surface it measured 1.30:1
+   and the pinned label was invisible (2026-09-03). Plain white text on the
+   dark wash read as brown mud, and an ink border framed it in white. */
 .profile-pin-toggle.is-pinned {
-  border-color: transparent;
-  background: var(--accent-primary);
-  color: #fff;
+  border-color: var(--tint-amber-line);
+  background: var(--brand-yellow-soft);
+  color: var(--text-on-brand-soft);
+}
+
+/* The toggles answer the pointer (user feedback, 2026-09-03: nothing on this
+   screen moved until it had already changed). An unmarked one firms its line;
+   a marked one goes to the full yellow with the fixed ink, the pair the brand
+   button already uses, so "hover" and "on" read as two steps of one mark. */
+.profile-pin-toggle:hover:not(:disabled),
+.profile-pin-toggle:focus-visible:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--bg-elevated);
+}
+
+.profile-pin-toggle.is-pinned:hover:not(:disabled),
+.profile-pin-toggle.is-pinned:focus-visible:not(:disabled) {
+  border-color: var(--brand-orange);
+  background: var(--brand-yellow);
+  color: var(--text-on-brand);
+}
+
+.profile-pin-toggle:active:not(:disabled),
+.profile-primary:active:not(:disabled),
+.profile-danger-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* A state that just flipped says so: the toggle pops once and settles. The
+   class comes from the component, set after the change is on screen and
+   cleared when the row's flash ends, so an already-pinned list does not pop
+   every time the page opens. */
+@keyframes profile-pin-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.06); }
+  100% { transform: scale(1); }
+}
+
+.profile-pin-toggle.is-settling {
+  animation: profile-pin-pop 260ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* The row lifts to the soft yellow and back, the mark the preview uses for a
+   committed save, so a pin and a saved field are the same kind of event. */
+@keyframes profile-row-flash {
+  0% { background: var(--bg-card); }
+  35% { background: var(--brand-yellow-soft); }
+  100% { background: var(--bg-card); }
+}
+
+.profile-pin-list li.is-flashing {
+  animation: profile-row-flash 920ms ease;
+}
+
+/* The pin button only exists while the list is on the profile; it arrives
+   with the attribution rather than flicking into the row. */
+@keyframes profile-pin-appear {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+
+.profile-pin-actions > button + button {
+  animation: profile-pin-appear 180ms ease-out both;
 }
 
 /* --- Sections -------------------------------------------------------------- */
 
+/* Ruled sections rather than grey cards: this screen is a document about one
+   page, and four stacked panels made four unrelated-looking forms. Structure
+   comes from the hairline above each heading, as it does across the app. */
 .profile-section {
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
-  padding: var(--space-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-secondary);
+  padding-top: var(--space-6);
+  border-top: 1px solid var(--profile-rule);
+  scroll-margin-top: calc(var(--nav-total) + var(--space-4));
+}
+
+.profile-section:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .profile-section h2 {
@@ -182,11 +320,6 @@
   font-family: var(--font-heading);
   font-size: var(--fs-lg);
   font-weight: var(--fw-semibold);
-}
-
-/* Inner cards sit on the page background so the nesting reads as depth. */
-.profile-section .profile-identity {
-  background: var(--bg-primary);
 }
 
 /* --- Privacy --------------------------------------------------------------- */
@@ -199,9 +332,10 @@
 
 .profile-privacy-column {
   padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
+  border: 1px solid var(--profile-card-line);
+  border-left: 3px solid var(--brand-yellow);
   border-radius: var(--radius-md);
-  background: var(--bg-primary);
+  background: var(--bg-card);
 }
 
 .profile-privacy-column h3 {
@@ -216,8 +350,12 @@
   letter-spacing: 0.05em;
 }
 
+.profile-privacy-column.is-private {
+  border-left-color: var(--accent-teal);
+}
+
 .profile-privacy-column.is-private h3 {
-  color: var(--accent-success);
+  color: var(--accent-teal);
 }
 
 .profile-privacy-column ul {
@@ -234,6 +372,11 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
+  min-height: 64px;
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--profile-card-line);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   cursor: pointer;
 }
 
@@ -267,7 +410,7 @@
   flex: 0 0 auto;
   width: 42px;
   height: 24px;
-  border: 1px solid var(--border-default);
+  border: 1px solid var(--profile-line-field);
   border-radius: var(--radius-full);
   background: var(--bg-elevated);
   transition: background var(--transition-fast), border-color var(--transition-fast);
@@ -291,12 +434,23 @@
 
 .profile-switch input:checked + .profile-switch-track .profile-switch-thumb {
   transform: translateX(18px);
-  background: #fff;
+  background: var(--text-inverse);
 }
 
 .profile-switch input:focus-visible + .profile-switch-track {
   outline: 2px solid var(--accent-primary);
   outline-offset: 2px;
+}
+
+/* The form ends here, and says so: the two sections under it save on their
+   own, so the page used to read as if it stopped at Privacy. */
+.profile-form-foot {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+  padding-top: var(--space-5);
+  border-top: 1px solid var(--profile-rule);
 }
 
 .profile-actions {
@@ -306,13 +460,30 @@
   flex-wrap: wrap;
 }
 
+.profile-actions-note {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--fs-xs);
+}
+
 .profile-primary {
-  min-height: 42px;
+  min-height: 44px;
   padding: 0 var(--space-6);
   border: none;
   background: var(--accent-primary);
-  color: #fff;
+  color: var(--text-inverse);
   font-weight: var(--fw-semibold);
+  box-shadow: inset 0 -3px 0 var(--brand-yellow);
+  transition: background var(--transition-fast), box-shadow var(--transition-fast),
+    opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+/* The yellow rule under the label thickens under the pointer, the way a
+   highlighter presses harder. */
+.profile-primary:hover:not(:disabled),
+.profile-primary:focus-visible:not(:disabled) {
+  background: var(--accent-primary-hover);
+  box-shadow: inset 0 -4px 0 var(--brand-yellow);
 }
 
 .profile-primary:disabled,
@@ -326,6 +497,12 @@
   align-items: center;
   gap: var(--space-2);
   font-size: var(--fs-sm);
+  animation: profile-feedback-in 0.2s ease-out both;
+}
+
+@keyframes profile-feedback-in {
+  from { opacity: 0; transform: translateX(-4px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 .profile-feedback.is-error { color: var(--accent-danger); }
@@ -339,6 +516,11 @@
 
 .profile-danger {
   margin-top: var(--space-5);
+  padding: var(--space-5);
+  border: 1px solid var(--accent-rose-line);
+  border-left: 3px solid var(--accent-rose);
+  border-radius: var(--radius-md);
+  background: var(--accent-rose-soft);
 }
 
 .profile-danger h2 {
@@ -361,22 +543,23 @@
 
 .profile-danger-button {
   flex: 0 0 auto;
-  min-height: 38px;
+  min-height: 40px;
   padding: 0 var(--space-5);
   border: 1px solid var(--accent-danger);
-  border-radius: var(--radius-full);
-  background: none;
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
   color: var(--accent-danger);
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast),
+    transform var(--transition-fast);
 }
 
 .profile-danger-button:hover:not(:disabled),
 .profile-danger-button:focus-visible:not(:disabled) {
   background: var(--accent-danger);
-  color: #fff;
+  color: var(--text-inverse);
 }
 
 .profile-danger-button:disabled {
@@ -463,9 +646,9 @@
   align-items: center;
   gap: var(--space-3);
   padding: var(--space-3) var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: 14px;
-  background: var(--bg-secondary);
+  border: 1px solid var(--profile-card-line);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
 }
 
 .profile-pin-emoji {
@@ -495,6 +678,7 @@
   gap: var(--space-3);
   color: var(--text-secondary);
   padding-top: clamp(48px, 12vh, 120px);
+  padding-top: clamp(48px, 12dvh, 120px);
   /* Held back, so a load that answers quickly never flashes a spinner for a
      wait that does not happen. */
   opacity: 0;
@@ -524,7 +708,7 @@
   display: flex;
   align-items: flex-start;
   gap: var(--space-4);
-  margin-top: var(--space-6);
+  margin: 0 0 var(--space-6);
   padding: var(--space-4);
   border: 1px solid var(--accent-danger);
   border-radius: 14px;
@@ -562,6 +746,11 @@
   margin-left: 0;
 }
 
+/* The migration's failure note, above the form it explains. */
+.profile-main > .profile-hint {
+  margin-bottom: var(--space-4);
+}
+
 /* A list row carries two controls now (F12): the attribution switch and,
    once attributed, the pin. They wrap as a pair on narrow screens. */
 .profile-pin-actions {
@@ -573,6 +762,29 @@
   margin-left: auto;
 }
 
+/* On a phone the row wraps instead of squeezing: the two Spanish action
+   buttons («En mi perfil» + «Desfijar») are rigid and together wider than
+   the column the card leaves, so the title's `flex: 1` + `min-width: 0` +
+   `overflow-wrap: anywhere` collapsed it to one CHARACTER per line
+   («Pa/pe/rs/de/su/ga/r», seen on a real iPhone, 2026-08-29). Wrapped, the
+   title keeps the first line beside its icon and the actions take a full
+   row underneath. */
+@media (max-width: 640px) {
+  .profile-pin-list li {
+    flex-wrap: wrap;
+  }
+
+  .profile-pin-actions {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+    margin-left: 0;
+  }
+
+  .profile-identity-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* The avatar is read-only here: it mirrors the account picture, which is
    changed in the general settings screen. Two pickers for one image was the
    confusing part. */
@@ -580,26 +792,27 @@
   display: flex;
   align-items: center;
   gap: var(--space-4);
-  padding: var(--space-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  background: var(--bg-secondary);
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--profile-card-line);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
 }
 
 .profile-identity-avatar {
   flex: 0 0 auto;
-  width: 52px;
-  height: 52px;
+  width: 56px;
+  height: 56px;
   border-radius: 50%;
   overflow: hidden;
   background: var(--gradient-brand);
+  border: 1px solid var(--border-strong);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #fff;
-  font-family: var(--font-heading);
-  font-size: var(--fs-lg);
-  font-weight: var(--fw-bold);
+  color: var(--text-inverse);
+  font-family: var(--font-mono);
+  font-size: var(--fs-xl);
+  font-weight: var(--fw-semibold);
 }
 
 .profile-identity-avatar img {
@@ -620,8 +833,543 @@
   padding: 0;
   border: none;
   background: none;
-  color: var(--accent-primary);
+  color: var(--text-primary);
   font: inherit;
+  font-weight: var(--fw-semibold);
   cursor: pointer;
   text-decoration: underline;
+  text-underline-offset: 0.18em;
+}
+
+/* ── The editor, and the page it edits ──
+   The form writes; the preview beside it shows what the public link will
+   serve. They are the same state, so the preview moves as the owner types —
+   the point being that nothing about the public page is a surprise. */
+
+/* The four parts of the grid arrive in reading order, a beat apart, on top
+   of the shell's own rise: heading, rail, form, then the preview settling
+   beside them. Opacity and transform only, so it costs the compositor and
+   not the layout. */
+@keyframes profile-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.profile-layout > * {
+  animation: profile-rise 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation-delay: calc(var(--profile-enter, 0) * 50ms);
+}
+
+.profile-layout > :nth-child(2) {
+  --profile-enter: 1;
+}
+
+.profile-layout > :nth-child(3) {
+  --profile-enter: 2;
+}
+
+.profile-layout > :nth-child(4) {
+  --profile-enter: 3;
+}
+
+.profile-layout {
+  display: grid;
+  grid-template-columns: var(--profile-rail) minmax(0, 1fr) var(--profile-aside);
+  grid-template-areas:
+    "head head preview"
+    "toc main preview";
+  gap: 40px var(--profile-gap-x);
+  align-items: start;
+}
+
+/* The heading is the grid's first row, set on the same columns: the back
+   control in the rail, the eyebrow and title over the form. It used to sit
+   above the grid on its own, 200px higher than the preview beside it. */
+.profile-layout > .settings-subheader {
+  grid-area: head;
+  display: grid;
+  grid-template-columns: var(--profile-rail) minmax(0, 1fr);
+  column-gap: var(--profile-gap-x);
+  margin-bottom: 0;
+}
+
+.profile-main {
+  grid-area: main;
+  min-width: 0;
+  max-width: 680px;
+}
+
+.profile-toc {
+  grid-area: toc;
+  position: sticky;
+  top: calc(var(--nav-total) + var(--space-6));
+  display: flex;
+  flex-direction: column;
+  padding-top: 14px;
+  border-top: 1px solid var(--profile-rule);
+}
+
+.profile-toc-title {
+  padding: 0 10px 10px;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.profile-toc-list {
+  --profile-toc-row: 36px;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-toc-marker {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 3px;
+  height: var(--profile-toc-row);
+  background: var(--brand-yellow);
+  transform: translateY(calc(var(--profile-toc-active, 0) * var(--profile-toc-row)));
+  transition: transform var(--transition-spring);
+}
+
+.profile-toc-list button {
+  display: flex;
+  height: var(--profile-toc-row);
+  align-items: center;
+  gap: 10px;
+  padding: 0 10px;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: var(--fw-medium);
+  text-align: left;
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.profile-toc-list button > span {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  color: var(--text-tertiary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .profile-toc-list button:hover {
+    color: var(--text-primary);
+    background: var(--bg-sunken);
+  }
+}
+
+.profile-toc-list button.is-active {
+  color: var(--text-primary);
+  background: var(--bg-secondary);
+  font-weight: var(--fw-semibold);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-toc-marker {
+    transition: none;
+  }
+}
+
+.profile-preview {
+  grid-area: preview;
+  position: sticky;
+  top: calc(var(--nav-total) + var(--space-6));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.profile-preview-label {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.profile-preview-card {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--profile-rule);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+}
+
+.profile-preview-chrome {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--profile-card-line);
+  background: var(--bg-sunken);
+}
+
+.profile-preview-url-label {
+  flex: 0 0 auto;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.profile-preview-url {
+  flex: 1 1 8rem;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-preview-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--tint-green-line);
+  border-radius: var(--radius-full);
+  background: var(--tint-green-bg);
+  color: var(--tint-green-fg);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: var(--fw-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.profile-preview-badge.is-private {
+  border-color: var(--tint-neutral-line);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
+}
+
+.profile-preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+}
+
+.profile-preview-identity {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.profile-preview-avatar {
+  display: grid;
+  width: 64px;
+  height: 64px;
+  flex: 0 0 auto;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--gradient-brand);
+  color: var(--text-inverse);
+  font-family: var(--font-mono);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+}
+
+.profile-preview-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.profile-preview-name {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+/* The preview claims to be the public page, so it wears the public page's
+   voices — only smaller: the serif nameplate, and the rounded bio below. */
+.profile-preview-name strong {
+  overflow: hidden;
+  font-family: var(--font-serif);
+  font-size: var(--fs-lg);
+  font-weight: var(--fw-semibold);
+  letter-spacing: -0.025em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-preview-name span {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-preview-bio {
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-rounded);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-relaxed);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.profile-preview-bio.is-empty {
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.profile-preview-private {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--profile-card-line);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.profile-preview-lists {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--profile-card-line);
+}
+
+.profile-preview-lists-label {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.profile-preview-list {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--profile-card-line);
+  border-radius: var(--radius-md);
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+}
+
+.profile-preview-list.is-pinned {
+  border-left: 3px solid var(--brand-yellow);
+}
+
+.profile-preview-list > svg:first-child {
+  flex: 0 0 auto;
+  color: var(--text-secondary);
+}
+
+.profile-preview-list > svg:last-child {
+  flex: 0 0 auto;
+  margin-left: auto;
+  color: var(--text-tertiary);
+}
+
+.profile-preview-list > span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.profile-preview-list strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--fs-xs);
+  font-weight: var(--fw-semibold);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-preview-list small {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.profile-preview-empty,
+.profile-preview-hint {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  line-height: var(--lh-normal);
+}
+
+/* The way to the page itself, at the foot of its likeness. */
+.profile-preview-open {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  min-height: 40px;
+  padding: 0 var(--space-4);
+  border-top: 1px solid var(--profile-card-line);
+  background: var(--bg-sunken);
+  color: var(--text-primary);
+  font-size: var(--fs-sm);
+  font-weight: var(--fw-semibold);
+  text-decoration: none;
+  transition: background var(--transition-fast);
+}
+
+.profile-preview-open svg {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .profile-preview-open:hover {
+    background: var(--bg-secondary);
+  }
+}
+
+/* The card clips its corners, so the ring sits inside the edge. */
+.profile-preview-open:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
+/* What a save just committed, said in the brand mark rather than in a toast:
+   the changed field lifts to the soft yellow and settles back. */
+@keyframes profile-preview-flash {
+  0% { background: transparent; }
+  35% { background: var(--brand-yellow-soft); }
+  100% { background: transparent; }
+}
+
+.profile-preview .is-flashing {
+  border-radius: var(--radius-sm);
+  animation: profile-preview-flash 920ms ease;
+}
+
+/* ── Numbered sections ──
+   The hub's index numbers its sections; this screen numbers its own, so a
+   long form reads as a document with a known length. */
+.profile-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  margin-bottom: var(--space-2);
+}
+
+.profile-section-index {
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+@media (max-width: 1180px) {
+  /* No rail: the index becomes a strip between the heading and the form,
+     and the preview keeps the right column beside all three. */
+  .profile-layout {
+    grid-template-columns: minmax(0, 1fr) 320px;
+    grid-template-areas:
+      "head preview"
+      "toc preview"
+      "main preview";
+    gap: 32px 40px;
+  }
+
+  .profile-layout > .settings-subheader {
+    display: flex;
+  }
+
+  .profile-toc {
+    position: static;
+    padding-top: 0;
+    border-top: none;
+  }
+
+  .profile-toc-list {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .profile-toc-marker {
+    display: none;
+  }
+
+  .profile-toc-list button {
+    flex: 0 0 auto;
+    height: 36px;
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-full);
+    padding: 0 12px;
+    background: var(--bg-card);
+  }
+
+  .profile-toc-list button.is-active {
+    border-color: var(--border-ink);
+  }
+}
+
+@media (max-width: 1040px) {
+  /* No room for the preview beside the form: it follows the form instead,
+     and stops sticking — a card that tall pinned to a phone screen would
+     cover the field being typed into. */
+  .profile-layout {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "toc"
+      "main"
+      "preview";
+    gap: var(--space-8);
+  }
+
+  .profile-preview {
+    position: static;
+    max-width: 420px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-preview .is-flashing,
+  .profile-layout > *,
+  .profile-feedback,
+  .profile-pin-toggle.is-settling,
+  .profile-pin-list li.is-flashing,
+  .profile-pin-actions > button + button,
+  .profile-form.is-reborn {
+    animation: none;
+  }
+
+  .profile-preview-open,
+  .profile-secondary,
+  .profile-pin-toggle,
+  .profile-primary {
+    transition: none;
+  }
+}
+
+/* The shell is wide for the two-column editor; the states that render
+   instead of it are single messages and keep the old measure. */
+.profile-loading,
+.profile-load-error {
+  max-width: 680px;
 }

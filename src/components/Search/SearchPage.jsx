@@ -17,8 +17,7 @@ import {
   RotateCw,
   UserRound,
 } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   searchAuthors,
   searchInstitutions,
@@ -53,15 +52,18 @@ import {
   outageAffectsFilter,
 } from '../../utils/searchOutage.js';
 import PaperCard from '../Feed/PaperCard';
+import PaperOverlay from '../Feed/PaperOverlay';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import {
+  authorProminenceWeight,
+  buildSearchSectionValues,
   filterRelevantSearchResults,
   getSearchSectionOrder,
+  isOrganisationAuthorRecord,
   resolvePreferredSearchSection,
 } from '../../utils/searchRelevance';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 
 import './SearchPage.css';
 
@@ -107,13 +109,14 @@ const wait = (delayMs) => new Promise(resolve => setTimeout(resolve, delayMs));
 function settleSearch(promise, fallback = [], timeoutMs = SEARCH_TIMEOUT_MS) {
   return new Promise((resolve) => {
     let settled = false;
+    let timeoutId = null;
     const finish = (value, status, error = null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timeoutId);
       resolve({ value, status, error });
     };
-    const timeoutId = setTimeout(() => finish(fallback, 'timeout'), timeoutMs);
+    timeoutId = setTimeout(() => finish(fallback, 'timeout'), timeoutMs);
     Promise.resolve(promise)
       .then(value => finish(value, 'fulfilled'))
       .catch(error => finish(fallback, 'rejected', error));
@@ -185,17 +188,23 @@ function formatPaperDate(paper, locale) {
 
 export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = () => {} }) {
   const navigate = useNavigate();
-  const prefersReducedMotion = useReducedMotion();
   const { language, isEnglish, locale } = useLanguage();
   const { user } = useAuth();
   const { trackEvent } = useAnalyticsConsent();
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
   const {
     likedPaperIds, savedPaperIds, readPaperIds,
-    toggleLike, markNotInterested, markAsRead, trackViewTime, trackSkip,
+    interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
   
-  const [query, setQuery] = useState('');
+  // Seeded from the URL, so a search is a place you can be sent to. The
+  // palette needs this for the one paper in fifty that carries neither a DOI
+  // nor an arXiv id: it has no public paper URL of its own, so the row hands
+  // the reader to this page with the query intact rather than to a dead link.
+  // The search effect below already keys on `query`, so seeding it is the
+  // whole of the wiring.
+  const [searchParams] = useSearchParams();
+  const [query, setQuery] = useState(() => searchParams.get('q')?.trim() || '');
   const [isSearching, setIsSearching] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [searchIntent, setSearchIntent] = useState(null);
@@ -221,7 +230,6 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   const [selectedPaper, setSelectedPaper] = useState(null);
   const [pdfPaper, setPdfPaper] = useState(null);
   const closeSelectedPaper = useCallback(() => setSelectedPaper(null), []);
-  const selectedPaperDialogRef = useDialogFocus(Boolean(selectedPaper && !pdfPaper), closeSelectedPaper);
   
   const timeoutRef = useRef(null);
   const requestAbortRef = useRef(null);
@@ -283,8 +291,15 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
           throwOnError: true,
         }).then(results => filterRelevantSearchResults(
           searchTerm,
-          results,
+          // OpenAlex answers an organisation name with institution-as-author
+          // records: four of them are called "University of Salamanca". They
+          // score 100 and took the top of this section from the people who
+          // actually wrote something.
+          results.filter(author => !isOrganisationAuthorRecord(author)),
           author => [author.display_name],
+          // Several exact matches all score 100; prominence decides which of
+          // them a reader was looking for.
+          { getWeight: authorProminenceWeight },
         )).then(results => Promise.all(
           results.map(author => enrichAuthorInstitutionLocalization(author, { timeoutMs: 1500 })),
         )),
@@ -565,31 +580,20 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   // change, not on every render. With the whole page landing in one commit,
   // that means once per search — the ordering churn that used to run 6-10 times
   // while stragglers trickled in is gone with the staggered reveal.
+  // The values each section votes with come from `buildSearchSectionValues`,
+  // which the palette calls too. They had drifted apart — the palette left out
+  // aliases and acronyms, so it alone could not answer "USAL" or "MIT".
   const preferredSection = useMemo(() => resolvePreferredSearchSection({
     query,
     hint: searchIntent,
-    sectionValues: {
-      // Both fields: an exact handle and an exact display name are each the
-      // strongest evidence available that a person was meant.
-      users: userResults.flatMap(person => [person.handle, person.name]),
-      papers: paperResults.map(paper => paper.title),
-      topics: conceptResults.flatMap(concept => [
-        concept.display_name,
-        concept.labelEs,
-        concept.labelEn,
-      ]),
-      authors: authorResults.map(author => author.display_name),
-      institutions: institutionResults.flatMap(institution => [
-        institution.display_name,
-        ...Object.values(institution.localized_names || {}),
-        ...(institution.aliases || []),
-        ...(institution.acronyms || []),
-      ]),
-      projects: projectResults.flatMap(project => [
-        project.acronym,
-        project.title,
-      ]),
-    },
+    sectionValues: buildSearchSectionValues({
+      users: userResults,
+      papers: paperResults,
+      topics: conceptResults,
+      authors: authorResults,
+      institutions: institutionResults,
+      projects: projectResults,
+    }),
   }), [
     query, searchIntent, userResults, paperResults,
     conceptResults, authorResults, institutionResults, projectResults,
@@ -601,16 +605,51 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   // that change nothing — and once a second in the last stretch.
   const [outageNow, setOutageNow] = useState(() => Date.now());
   const outageRetryAt = searchIssue?.retryAtMs || null;
+  // `outageNow` used to sit in this effect's own dependency array, so every
+  // tick's `setOutageNow` tore the interval down and rebuilt it — a fresh
+  // `setInterval` every second, and one that kept firing in a background tab.
+  // A self-rescheduling `setTimeout` reads the current time itself on every
+  // tick instead of closing over a value that only changes when this effect
+  // re-runs, so the cadence can still adapt (30s while far out, 1s in the
+  // final stretch) without `outageNow` needing to be a dependency at all.
+  // Hidden tabs pause it entirely — `visibilitychange` clears the pending
+  // timer — and `resume()` recomputes from `Date.now()` on return, so the
+  // countdown catches up instead of resuming from a stale value.
   useEffect(() => {
     if (!outageRetryAt) return undefined;
-    const remaining = outageRetryAt - Date.now();
-    if (remaining <= 0) return undefined;
-    const interval = setInterval(
-      () => setOutageNow(Date.now()),
-      remaining > 90_000 ? 30_000 : 1_000,
-    );
-    return () => clearInterval(interval);
-  }, [outageRetryAt, outageNow]);
+    let timer = null;
+
+    const clearPending = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+
+    const tick = () => {
+      const now = Date.now();
+      setOutageNow(now);
+      const remaining = outageRetryAt - now;
+      if (remaining <= 0) return;
+      timer = setTimeout(tick, remaining > 90_000 ? 30_000 : 1_000);
+    };
+
+    const resume = () => {
+      if (document.visibilityState === 'hidden') return;
+      clearPending();
+      tick();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') clearPending();
+      else resume();
+    };
+
+    resume();
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      clearPending();
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [outageRetryAt]);
   const openAlexRetryLabel = outageRetryAt
     ? formatRetryDelay(outageRetryAt - outageNow)
     : null;
@@ -1060,17 +1099,19 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                       key={inst.id}
                       className="search-item search-item-enter"
                       style={{ '--search-item-index': Math.min(index, 6) }}
-                      role="link"
-                      tabIndex={0}
                       onClick={() => navigate(`/explorer/institution/${inst.id.split('/').pop()}`)}
-                      onKeyDown={event => handleSearchItemKeyDown(
-                        event,
-                        () => navigate(`/explorer/institution/${inst.id.split('/').pop()}`),
-                      )}
                     >
                       <div className="search-item-icon"><Building2 size={22} /></div>
                       <div className="search-item-info">
-                        <h4>{localizedName}</h4>
+                        <h4>
+                          <button
+                            type="button"
+                            className="search-item-title-btn"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/explorer/institution/${inst.id.split('/').pop()}`); }}
+                          >
+                            {localizedName}
+                          </button>
+                        </h4>
                         <p>{inst.country_code || (isEnglish ? 'Unknown country' : 'País desconocido')} • {isEnglish ? 'Academic institution' : 'Institución académica'}</p>
                       </div>
                       <FollowButton
@@ -1100,17 +1141,19 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     key={project.id}
                     className="search-item search-item-enter"
                     style={{ '--search-item-index': Math.min(index, 6) }}
-                    role="link"
-                    tabIndex={0}
                     onClick={() => navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`)}
-                    onKeyDown={event => handleSearchItemKeyDown(
-                      event,
-                      () => navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`),
-                    )}
                   >
                     <div className="search-item-icon"><Briefcase size={22} /></div>
                     <div className="search-item-info">
-                      <h4>{project.acronym ? `${project.acronym}: ${project.title}` : project.title}</h4>
+                      <h4>
+                        <button
+                          type="button"
+                          className="search-item-title-btn"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/project/${project.id}?name=${encodeURIComponent(project.acronym || project.title)}&funder=${encodeURIComponent(project.funder)}`); }}
+                        >
+                          {project.acronym ? `${project.acronym}: ${project.title}` : project.title}
+                        </button>
+                      </h4>
                       <p>{project.funder}{project.budget > 0 ? (() => { try { return ` • ${new Intl.NumberFormat(locale, { style: 'currency', currency: project.currency, maximumFractionDigits: 0 }).format(project.budget)}`; } catch { return ` • ${project.budget.toLocaleString(locale)} €`; } })() : ''}</p>
                     </div>
                     <FollowButton
@@ -1132,17 +1175,19 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     key={concept.id}
                     className="search-item search-topic-item search-item-enter"
                     style={{ '--search-item-index': Math.min(index, 6) }}
-                    role="link"
-                    tabIndex={0}
                     onClick={() => navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop())}`)}
-                    onKeyDown={event => handleSearchItemKeyDown(
-                      event,
-                      () => navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop())}`),
-                    )}
                   >
                     <div className="search-item-icon search-topic-icon"><Lightbulb size={22} /></div>
                     <div className="search-item-info">
-                      <h4>{concept.display_name}</h4>
+                      <h4>
+                        <button
+                          type="button"
+                          className="search-item-title-btn"
+                          onClick={(e) => { e.stopPropagation(); navigate(`/explorer/topic/${encodeURIComponent(String(concept.id).split('/').pop())}`); }}
+                        >
+                          {concept.display_name}
+                        </button>
+                      </h4>
                       <p>
                         {concept._localTopic && concept.level === 0
                           ? `${concept.subcategoryCount || 0} ${isEnglish ? 'related topics' : 'temas relacionados'}`
@@ -1191,19 +1236,21 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                       key={author.id}
                       className="search-item search-item-enter"
                       style={{ '--search-item-index': Math.min(index, 6) }}
-                      role="link"
-                      tabIndex={0}
                       onClick={() => navigate(`/explorer/author/${author.id.split('/').pop()}`)}
-                      onKeyDown={event => handleSearchItemKeyDown(
-                        event,
-                        () => navigate(`/explorer/author/${author.id.split('/').pop()}`),
-                      )}
                     >
                       <div className="search-item-avatar">
                         {author.display_name.charAt(0).toUpperCase()}
                       </div>
                       <div className="search-item-info">
-                        <h4>{author.display_name}</h4>
+                        <h4>
+                          <button
+                            type="button"
+                            className="search-item-title-btn"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/explorer/author/${author.id.split('/').pop()}`); }}
+                          >
+                            {author.display_name}
+                          </button>
+                        </h4>
                         <p>{authorInstitution || (isEnglish ? 'Unknown institution' : 'Institución desconocida')}</p>
                       </div>
                       <FollowButton
@@ -1238,7 +1285,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                     >
                       <div className="search-item-icon"><FileText size={22} /></div>
                       <div className="search-item-info">
-                        <h4><ScientificText>{paper.title}</ScientificText></h4>
+                        <h4 lang="en"><ScientificText>{paper.title}</ScientificText></h4>
                         <p className="search-item-authors">{authors.slice(0, 3).join(', ')}{authors.length > 3 ? ` +${authors.length - 3}` : ''}</p>
                         <span className="search-item-meta">
                           {formatPaperDate(paper, locale) || (isEnglish ? 'Unknown date' : 'Fecha desconocida')} • {paper.primaryCategory || paper.journal || 'Paper'}
@@ -1256,50 +1303,30 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
       </div>
 
       {/* Paper Card Overlay */}
-      <AnimatePresence initial={false}>
-      {selectedPaper && !pdfPaper && (
-        <motion.div
-          ref={selectedPaperDialogRef}
-          className="search-overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label={isEnglish ? 'Paper details' : 'Detalles del paper'}
-          tabIndex={-1}
-          initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 18, scale: 0.99 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 12, scale: 0.995 }}
-          transition={prefersReducedMotion
-            ? { duration: 0 }
-            : { duration: 0.24, ease: [0.16, 1, 0.3, 1] }}
-        >
-          <button 
-            data-dialog-initial-focus
-            className="search-back-btn" 
-            onClick={closeSelectedPaper}
-            aria-label={isEnglish ? 'Back to search results' : 'Volver a los resultados'}
-            style={{ position: 'absolute', top: 'max(16px, env(safe-area-inset-top))', left: '16px', zIndex: 1200, background: 'rgba(255,255,255,0.1)', width: '40px', height: '40px' }}
-          >
-            <ArrowLeft size={22} />
-          </button>
-          <div style={{ height: '100%', width: '100%', overflow: 'hidden' }}>
-            <PaperCard 
-              paper={selectedPaper} 
-              isLiked={likedPaperIds.has(selectedPaper.id)}
-              isSaved={savedPaperIds.has(selectedPaper.id)}
-              isRead={readPaperIds.has(selectedPaper.id)}
-              onLike={toggleLike}
-              onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
-              onMarkAsRead={markAsRead}
-              onOpenPdf={(paper) => setPdfPaper(paper)}
-              onSaveToList={onSaveToList}
-              getInteractionState={getInteractionState}
-              trackViewTime={trackViewTime}
-              trackSkip={trackSkip}
-            />
-          </div>
-        </motion.div>
-      )}
-      </AnimatePresence>
+      <PaperOverlay
+        open={Boolean(selectedPaper && !pdfPaper)}
+        onClose={closeSelectedPaper}
+        isEnglish={isEnglish}
+        label={isEnglish ? 'Paper details' : 'Detalles del paper'}
+      >
+        {selectedPaper && (
+          <PaperCard
+            paper={selectedPaper}
+            isLiked={likedPaperIds.has(interactionIdFor(selectedPaper))}
+            isSaved={savedPaperIds.has(interactionIdFor(selectedPaper))}
+            isRead={readPaperIds.has(interactionIdFor(selectedPaper))}
+            onLike={toggleLike}
+            onNotInterested={(paper) => { markNotInterested(paper); setSelectedPaper(null); }}
+            onMarkAsRead={markAsRead}
+            onUnmarkAsRead={unmarkAsRead}
+            onOpenPdf={(paper) => setPdfPaper(paper)}
+            onSaveToList={onSaveToList}
+            getInteractionState={getInteractionState}
+            trackViewTime={trackViewTime}
+            trackSkip={trackSkip}
+          />
+        )}
+      </PaperOverlay>
 
       {/* PDF Viewer */}
       {pdfPaper && (

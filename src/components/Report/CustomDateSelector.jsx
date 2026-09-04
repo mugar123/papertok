@@ -1,8 +1,17 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
-import { ChevronRight, Calendar as CalendarIcon, Check, ChevronLeft, ChevronDown } from 'lucide-react';
+import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { ChevronRight, ChevronLeft, X } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
+import {
+  formatYMD,
+  getDaysArray,
+  monthWindowStart,
+  monthsInWindow,
+  prettyDate as readDate,
+  resolveCustomPeriod,
+} from '../../utils/customPeriod.js';
 import './CustomDateSelector.css';
 
 const MONTHS = {
@@ -14,16 +23,15 @@ const WEEKDAYS = {
   en: ['M', 'T', 'W', 'T', 'F', 'S', 'S'],
 };
 
-function formatYMD(year, month, day) {
-  return `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-}
+const MIN_YEAR = 1950;
+const EASE = [0.16, 1, 0.3, 1];
 
 function getInitialSelection(value, currentYear) {
   const valid = value?.type === 'custom'
     && /^\d{4}-\d{2}-\d{2}$/.test(value.from || '')
     && /^\d{4}-\d{2}-\d{2}$/.test(value.to || '');
   if (!valid) {
-    return { yearRange: [Math.max(1950, currentYear - 10), currentYear], start: null, end: null, month: 0 };
+    return { yearRange: [Math.max(MIN_YEAR, currentYear - 10), currentYear], start: null, end: null, month: 0 };
   }
 
   return {
@@ -34,10 +42,22 @@ function getInitialSelection(value, currentYear) {
   };
 }
 
+/**
+ * Where a year sits along the rail, and which way its label has to lean so it
+ * does not hang off the end. Centred everywhere except the last few percent at
+ * either side, where it anchors instead.
+ */
+function railPosition(year, currentYear) {
+  const span = Math.max(1, currentYear - MIN_YEAR);
+  const percent = Math.max(0, Math.min(100, ((year - MIN_YEAR) / span) * 100));
+  const shift = percent < 7 ? '0' : percent > 93 ? '-100%' : '-50%';
+  return { left: `${percent}%`, transform: `translateX(${shift})` };
+}
+
 export default function CustomDateSelector({ value, onApply, onCancel }) {
   const { language, isEnglish } = useLanguage();
+  const prefersReducedMotion = useReducedMotion();
   const currentYear = new Date().getFullYear();
-  const MIN_YEAR = 1950;
   const initial = getInitialSelection(value, currentYear);
   const today = new Date();
   const todayStr = formatYMD(today.getFullYear(), today.getMonth(), today.getDate());
@@ -45,67 +65,53 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
   const [yearRange, setYearRange] = useState(initial.yearRange);
   const isSingleYear = yearRange[0] === yearRange[1];
 
-  const [exactDateMode, setExactDateMode] = useState(isSingleYear && Boolean(initial.start));
-  const [selectedMonth, setSelectedMonth] = useState(initial.month);
+  const [showCalendar, setShowCalendar] = useState(isSingleYear && Boolean(initial.start));
+  const [monthWindow, setMonthWindow] = useState(monthWindowStart(initial.month));
   const [startDateStr, setStartDateStr] = useState(initial.start);
   const [endDateStr, setEndDateStr] = useState(initial.end);
 
-  const selectorRef = useRef(null);
-
-  // Close popover when clicking outside
+  /* Escape closes the day step rather than the whole panel: the panel has its
+     own close, and losing a range because the calendar was open is a bad trade.
+     There is no click-outside handler any more — step two expands in place, so
+     clicking elsewhere on the page has no business collapsing it. */
   useEffect(() => {
-    function handleClickOutside(event) {
-      if (selectorRef.current && !selectorRef.current.contains(event.target)) {
-        setExactDateMode(false);
-      }
-    }
-    function handleKeyDown(event) {
-      if (event.key === 'Escape') setExactDateMode(false);
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleKeyDown);
+    if (!showCalendar) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setShowCalendar(false);
     };
-  }, []);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [showCalendar]);
 
   const handleYearRangeChange = (nextRange) => {
     setYearRange(nextRange);
-    setExactDateMode(false);
+    setShowCalendar(false);
     setStartDateStr(null);
     setEndDateStr(null);
+    /* Back to the top of the year as well. Leaving the calendar parked on
+       whichever quarter was last open meant a fresh year could open on, say,
+       April — with nothing on screen saying the year had changed under it. */
+    setMonthWindow(0);
   };
+
+  /* Worked out in one place — `utils/customPeriod.js` — so the sentence on
+     screen and the period that gets applied cannot drift apart, and so the
+     month arithmetic can be pinned by tests. */
+  const period = resolveCustomPeriod({ yearRange, startDateStr, endDateStr, todayStr });
 
   const handleApply = () => {
-    if (startDateStr) {
-      onApply({ type: 'custom', from: startDateStr, to: endDateStr || startDateStr });
-    } else {
-      const fullRangeEnd = `${yearRange[1]}-12-31`;
-      onApply({
-        type: 'custom',
-        from: `${yearRange[0]}-01-01`,
-        to: fullRangeEnd > todayStr ? todayStr : fullRangeEnd,
-      });
-    }
+    onApply({ type: 'custom', from: period.from, to: period.to });
   };
 
-  const getDaysArray = (year, month) => {
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const firstDayIndex = new Date(year, month, 1).getDay(); 
-    const startOffset = firstDayIndex === 0 ? 6 : firstDayIndex - 1; 
-    
-    const blanks = Array.from({ length: startOffset }, () => null);
-    const days = Array.from({ length: daysInMonth }, (_, i) => i + 1);
-    
-    return [...blanks, ...days];
-  };
-
-  const handleDayClick = (day) => {
+  /* Every day helper takes the month it belongs to now that three are on
+     screen at once; none of them may read a "current month" from state. */
+  const handleDayClick = (month, day) => {
     if (!day) return;
-    const clickedDateStr = formatYMD(yearRange[0], selectedMonth, day);
+    const clickedDateStr = formatYMD(yearRange[0], month, day);
     if (clickedDateStr > todayStr) return;
-    
+
     if (startDateStr && endDateStr) {
       setStartDateStr(clickedDateStr);
       setEndDateStr(null);
@@ -122,149 +128,230 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
     }
   };
 
-  const isDaySelected = (day) => {
+  const isDaySelected = (month, day) => {
     if (!day) return false;
-    const cellDateStr = formatYMD(yearRange[0], selectedMonth, day);
+    const cellDateStr = formatYMD(yearRange[0], month, day);
     if (startDateStr === cellDateStr) return true;
     if (endDateStr === cellDateStr) return true;
     if (startDateStr && endDateStr && cellDateStr > startDateStr && cellDateStr < endDateStr) return true;
     return false;
   };
 
-  const isDayEndpoint = (day) => {
+  const isDayEndpoint = (month, day) => {
     if (!day) return false;
-    const cellDateStr = formatYMD(yearRange[0], selectedMonth, day);
+    const cellDateStr = formatYMD(yearRange[0], month, day);
     return cellDateStr === startDateStr || cellDateStr === endDateStr;
   };
 
-  const daysArray = getDaysArray(yearRange[0], selectedMonth);
-  const formatDayLabel = (day) => new Intl.DateTimeFormat(language === 'en' ? 'en-US' : 'es-ES', {
-    day: 'numeric',
-    month: 'long',
-    year: 'numeric',
-  }).format(new Date(yearRange[0], selectedMonth, day));
+  const locale = language === 'en' ? 'en-US' : 'es-ES';
+  const prettyDate = (iso) => readDate(iso, locale);
+  const visibleMonths = monthsInWindow(monthWindow);
+
+  const spanYears = yearRange[1] - yearRange[0] + 1;
+  const stepTwoReady = isSingleYear;
+
+  // Decade marks along the rail, plus the two real ends of the scale.
+  const ticks = [];
+  for (let year = MIN_YEAR; year <= currentYear; year += 1) {
+    if (year === MIN_YEAR || year === currentYear || year % 20 === 0) ticks.push(year);
+  }
 
   return (
-    <div className="cds-minimal-container" ref={selectorRef}>
-      <div className="cds-minimal-header">
-        <span className="cds-minimal-title">{isEnglish ? 'Historical period' : 'Periodo histórico'}</span>
+    <div className="cds">
+      <div className="cds-head cds-enter" style={{ '--enter-order': 0 }}>
+        <span className="cds-title">{isEnglish ? 'Custom period' : 'Periodo personalizado'}</span>
+        <span className="cds-hint">
+          {isEnglish ? 'Two steps: the years, then the days' : 'Dos pasos: los años y luego los días'}
+        </span>
         <button
           type="button"
-          className="cds-minimal-close"
+          className="cds-close"
           onClick={onCancel}
           aria-label={isEnglish ? 'Close date selector' : 'Cerrar selector de fechas'}
-        >✕</button>
+        >
+          <X size={16} />
+        </button>
       </div>
 
-      <div className="cds-minimal-timeline">
-        <div className="cds-timeline-labels">
-          <span className="cds-year-label">{yearRange[0]}</span>
-          <span className="cds-year-divider">—</span>
-          <span className="cds-year-label">{yearRange[1]}</span>
+      <div className="cds-rail-wrap cds-enter" style={{ '--enter-order': 1 }}>
+        <div className="cds-rail-labels" aria-hidden="true">
+          <span className="cds-rail-label" style={railPosition(yearRange[0], currentYear)}>{yearRange[0]}</span>
+          {!isSingleYear && (
+            <span className="cds-rail-label" style={railPosition(yearRange[1], currentYear)}>{yearRange[1]}</span>
+          )}
         </div>
-
-        <div className="cds-timeline-slider">
+        <div className="cds-rail">
           <Slider
             range
             min={MIN_YEAR}
             max={currentYear}
             value={yearRange}
             onChange={handleYearRangeChange}
+            allowCross={false}
             ariaLabelForHandle={isEnglish ? ['Start year', 'End year'] : ['Año inicial', 'Año final']}
-            trackStyle={[{ background: 'linear-gradient(90deg, #9b87f5, #7E69AB)', height: 4 }]}
-            handleStyle={[
-              { backgroundColor: '#fff', borderColor: 'transparent', width: 16, height: 16, marginTop: -6, boxShadow: '0 0 10px rgba(155, 135, 245, 0.5)' },
-              { backgroundColor: '#fff', borderColor: 'transparent', width: 16, height: 16, marginTop: -6, boxShadow: '0 0 10px rgba(155, 135, 245, 0.5)' }
-            ]}
-            railStyle={{ backgroundColor: 'rgba(255, 255, 255, 0.1)', height: 4 }}
           />
+        </div>
+        <div className="cds-rail-ticks" aria-hidden="true">
+          {ticks.map(year => (
+            <span key={year} className="cds-tick" style={railPosition(year, currentYear)}>{year}</span>
+          ))}
         </div>
       </div>
 
-      <div className="cds-minimal-actions">
-        {isSingleYear ? (
-          <div className="cds-popover-wrapper">
-            <button 
-              type="button"
-              className={`cds-badge-btn ${exactDateMode ? 'active' : ''}`}
-              onClick={() => setExactDateMode(!exactDateMode)}
-              aria-expanded={exactDateMode}
-            >
-              <CalendarIcon size={14} />
-              <span>{startDateStr
-                ? `${isEnglish ? 'Selection' : 'Selección'}: ${startDateStr}`
-                : `${isEnglish ? 'Daily precision in' : 'Precisión diaria en'} ${yearRange[0]}`}</span>
-              <ChevronDown size={14} className={`cds-badge-arrow ${exactDateMode ? 'rotated' : ''}`} />
-            </button>
+      <div className="cds-steps cds-enter" style={{ '--enter-order': 2 }}>
+        <div className="cds-step">
+          <span className="cds-step-n">1</span>
+          <span className="cds-step-body">
+            {isEnglish ? 'Drag the two ends to the years you want.' : 'Arrastra los dos extremos a los años que quieras.'}
+          </span>
+          <span className="cds-step-why">
+            {isSingleYear
+              ? `${yearRange[0]}`
+              : `${yearRange[0]} — ${yearRange[1]}`}
+            {' · '}
+            {isEnglish
+              ? `${spanYears} ${spanYears === 1 ? 'year' : 'years'}`
+              : `${spanYears} ${spanYears === 1 ? 'año' : 'años'}`}
+          </span>
+        </div>
 
-            {exactDateMode && (
-              <div className="cds-floating-calendar">
-                <div className="cds-fcal-header">
+        {/* Step two is always here, greyed with its reason rather than absent.
+            A control that vanishes teaches nothing about why it vanished. */}
+        {stepTwoReady ? (
+          <button
+            type="button"
+            className={`cds-step cds-step--action ${showCalendar ? 'is-open' : ''}`}
+            onClick={() => setShowCalendar(open => !open)}
+            aria-expanded={showCalendar}
+          >
+            <span className="cds-step-n">2</span>
+            <span className="cds-step-body">
+              {isEnglish ? 'Narrow to exact days.' : 'Afina a días exactos.'}
+            </span>
+            <span className="cds-step-why">
+              {startDateStr
+                ? (isEnglish ? 'Days chosen' : 'Días elegidos')
+                : (isEnglish ? 'Optional' : 'Opcional')}
+              <ChevronRight size={14} className="cds-step-chevron" aria-hidden="true" />
+            </span>
+          </button>
+        ) : (
+          <div className="cds-step cds-step--off">
+            <span className="cds-step-n">2</span>
+            <span className="cds-step-body">
+              {isEnglish ? 'Narrow to exact days.' : 'Afina a días exactos.'}
+            </span>
+            <span className="cds-step-why">
+              {isEnglish
+                ? 'Available once both ends sit on the same year'
+                : 'Disponible cuando los dos extremos caen en el mismo año'}
+            </span>
+          </div>
+        )}
+
+        <AnimatePresence initial={false}>
+          {stepTwoReady && showCalendar && (
+            <motion.div
+              className="cds-cal-slot"
+              initial={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+              animate={prefersReducedMotion ? { opacity: 1 } : { height: 'auto', opacity: 1 }}
+              exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
+              transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.28, ease: EASE }}
+            >
+              <div className="cds-cal">
+                <div className="cds-cal-head">
                   <button
                     type="button"
-                    className="cds-fcal-nav"
-                    onClick={() => setSelectedMonth(m => Math.max(0, m - 1))}
-                    disabled={selectedMonth === 0}
-                    aria-label={isEnglish ? 'Previous month' : 'Mes anterior'}
+                    className="cds-cal-nav"
+                    onClick={() => setMonthWindow(w => Math.max(0, w - 3))}
+                    disabled={monthWindow === 0}
+                    aria-label={isEnglish ? 'Earlier months' : 'Meses anteriores'}
                   >
                     <ChevronLeft size={16} />
                   </button>
-                  <span className="cds-fcal-month">{MONTHS[language][selectedMonth]} {yearRange[0]}</span>
+                  <span className="cds-cal-month">{yearRange[0]}</span>
                   <button
                     type="button"
-                    className="cds-fcal-nav"
-                    onClick={() => setSelectedMonth(m => Math.min(11, m + 1))}
-                    disabled={selectedMonth === 11}
-                    aria-label={isEnglish ? 'Next month' : 'Mes siguiente'}
+                    className="cds-cal-nav"
+                    onClick={() => setMonthWindow(w => Math.min(9, w + 3))}
+                    disabled={monthWindow >= 9}
+                    aria-label={isEnglish ? 'Later months' : 'Meses siguientes'}
                   >
                     <ChevronRight size={16} />
                   </button>
                 </div>
-                
-                <div className="cds-fcal-grid">
-                  {WEEKDAYS[language].map((wd, index) => <div key={`${wd}-${index}`} className="cds-fcal-wd">{wd}</div>)}
-                  {daysArray.map((day, idx) => {
-                    if (!day) return <span key={`empty-${idx}`} className="cds-fcal-day empty" aria-hidden="true" />;
-                    const dateValue = formatYMD(yearRange[0], selectedMonth, day);
-                    const isFuture = dateValue > todayStr;
-                    return (
-                      <button
-                        type="button"
-                        key={dateValue}
-                        className={`cds-fcal-day ${isDaySelected(day) ? 'selected' : ''} ${isDayEndpoint(day) ? 'endpoint' : ''}`}
-                        onClick={() => handleDayClick(day)}
-                        disabled={isFuture}
-                        aria-label={formatDayLabel(day)}
-                        aria-pressed={isDaySelected(day)}
-                      >
-                        {day}
-                      </button>
-                    );
-                  })}
-                </div>
-                
-                <div className="cds-exact-summary" style={{ marginTop: 16, fontSize: 13, color: 'rgba(255,255,255,0.7)', textAlign: 'center' }}>
-                  {startDateStr ? (
-                    <>
-                      {isEnglish ? 'From' : 'Desde'}: <strong>{startDateStr}</strong>
-                      {endDateStr ? <><br/>{isEnglish ? 'To' : 'Hasta'}: <strong>{endDateStr}</strong></> : ''}
-                    </>
-                  ) : (
-                    <span className="cds-summary-placeholder">
-                      {isEnglish ? 'Select the boundary dates' : 'Selecciona los días límite'}
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="cds-badge-placeholder">{isEnglish ? 'General historical range' : 'Rango histórico general'}</div>
-        )}
 
-        <button type="button" className="cds-minimal-apply" onClick={handleApply}>
-          <Check size={16} /> {isEnglish ? 'Search' : 'Buscar'}
-        </button>
+                {/* Three months at a time. Step two is confined to one year, so
+                    a quarter fits the width the panel actually has and a range
+                    that crosses a month no longer needs paging to set. */}
+                <div className="cds-cal-months">
+                  {visibleMonths.map(month => (
+                    <div className="cds-cal-month-block" key={month}>
+                      <span className="cds-cal-month-name">{MONTHS[language][month]}</span>
+                      <div className="cds-cal-grid">
+                        {WEEKDAYS[language].map((wd, index) => (
+                          <span key={`${month}-${wd}-${index}`} className="cds-cal-wd">{wd}</span>
+                        ))}
+                        {getDaysArray(yearRange[0], month).map((day, idx) => {
+                          if (!day) {
+                            return <span key={`empty-${month}-${idx}`} className="cds-cal-day is-blank" aria-hidden="true" />;
+                          }
+                          const dateValue = formatYMD(yearRange[0], month, day);
+                          const isFuture = dateValue > todayStr;
+                          return (
+                            <button
+                              type="button"
+                              key={dateValue}
+                              className={`cds-cal-day ${isDaySelected(month, day) ? 'is-in-range' : ''} ${isDayEndpoint(month, day) ? 'is-end' : ''}`}
+                              onClick={() => handleDayClick(month, day)}
+                              disabled={isFuture}
+                              aria-label={prettyDate(dateValue)}
+                              aria-pressed={isDaySelected(month, day)}
+                            >
+                              {day}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {startDateStr && (
+                  <button
+                    type="button"
+                    className="cds-cal-clear"
+                    onClick={() => { setStartDateStr(null); setEndDateStr(null); }}
+                  >
+                    {isEnglish ? 'Clear the days' : 'Quitar los días'}
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* The sentence is the readout and the validation at once: it says what
+          Apply is about to ask for, in the words the period is written in. */}
+      <div className="cds-reading cds-enter" style={{ '--enter-order': 3 }}>
+        <p className="cds-reading-line">
+          {isEnglish
+            ? `Papers published between ${prettyDate(period.from)} and ${prettyDate(period.to)}.`
+            : `Papers publicados entre el ${prettyDate(period.from)} y el ${prettyDate(period.to)}.`}
+        </p>
+        <span className="cds-reading-note">
+          {period.from} → {period.to}
+          {period.cappedAtToday && ` · ${isEnglish ? 'closed at today' : 'cerrado en hoy'}`}
+        </span>
+        <div className="cds-reading-actions">
+          <button type="button" className="cds-btn" onClick={onCancel}>
+            {isEnglish ? 'Cancel' : 'Cancelar'}
+          </button>
+          <button type="button" className="cds-btn cds-btn--primary" onClick={handleApply}>
+            {isEnglish ? 'Apply period' : 'Aplicar periodo'}
+          </button>
+        </div>
       </div>
     </div>
   );

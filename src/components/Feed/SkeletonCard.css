@@ -1,39 +1,67 @@
-/* Skeleton Card — matches new PaperCard layout */
+/* Skeleton Card — mirrors the PaperCard sheet so the swap doesn't jump */
 .sk {
   position: relative;
   height: 100%;
   display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 3vh, 40px);
+  padding: clamp(16px, 3dvh, 40px);
+  padding-right: clamp(96px, 10vw, 148px);
   overflow: hidden;
-  background: var(--bg-primary);
+  background: var(--bg-secondary);
 }
 
 .sk-bg {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(135deg, rgba(124, 58, 237, 0.08), rgba(6, 182, 212, 0.08));
+  display: none;
 }
 
 .sk-body {
-  padding: var(--space-6);
-  padding-right: 68px;
+  position: relative;
+  width: min(880px, 100%);
+  padding: clamp(22px, 3.2vw, 40px);
+  background: var(--bg-card);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-2xl);
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
 }
 
-/* Shimmer base */
+/* Shimmer base.
+   A solid block plus a translating gradient on `::after`, not an animated
+   `background-position`: the old version repainted the whole block every
+   frame (`background-position` is a paint property, not a compositor one).
+   `transform` on a pseudo-element is the same sweep for free — the block
+   itself never repaints, only the highlight layer moves.
+   None of these seven selectors already own a `::before`/`::after` or a
+   `position`/`overflow`, so `::after` is free for all of them; the circular
+   `.sk-avatar` still clips correctly because `overflow: hidden` clips to
+   its own `border-radius: 50%`. */
 .sk-pill, .sk-small, .sk-title, .sk-name, .sk-text, .sk-btn, .sk-avatar {
-  border-radius: var(--radius-md);
-  background: linear-gradient(
-    90deg,
-    rgba(255,255,255,0.04) 25%,
-    rgba(255,255,255,0.08) 50%,
-    rgba(255,255,255,0.04) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s ease-in-out infinite;
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  background: var(--bg-secondary);
+}
+
+.sk-pill::after,
+.sk-small::after,
+.sk-title::after,
+.sk-name::after,
+.sk-text::after,
+.sk-btn::after,
+.sk-avatar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--bg-glass-hover), transparent);
+  animation: shimmerSlide 1.5s ease-in-out infinite;
+}
+
+@keyframes shimmerSlide {
+  to { transform: translateX(100%); }
 }
 
 .sk-meta {
@@ -43,45 +71,45 @@
 }
 
 .sk-pill {
-  width: 90px;
-  height: 22px;
-  border-radius: var(--radius-full);
+  width: 110px;
+  height: 12px;
 }
 
 .sk-small {
-  width: 60px;
-  height: 14px;
+  width: 48px;
+  height: 12px;
 }
 
 .sk-title {
-  height: 24px;
-  width: 85%;
+  height: 28px;
+  width: 88%;
 }
 
 .sk-title--short {
-  width: 55%;
+  width: 56%;
 }
 
 .sk-authors {
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  margin-top: var(--space-2);
 }
 
 .sk-avatar {
-  width: 26px;
-  height: 26px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 .sk-name {
-  width: 120px;
-  height: 14px;
+  width: 140px;
+  height: 12px;
 }
 
 .sk-text {
-  height: 14px;
+  height: 13px;
   width: 100%;
 }
 
@@ -91,22 +119,50 @@
 
 .sk-bar {
   display: flex;
-  gap: var(--space-3);
-  margin-top: var(--space-2);
+  gap: var(--space-2);
+  margin-top: var(--space-4);
 }
 
 .sk-btn {
-  width: 130px;
+  width: 140px;
   height: 40px;
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-md);
 }
 
 .sk-btn--small {
   width: 100px;
 }
 
+@media (max-width: 900px) {
+  .sk {
+    padding: var(--space-5);
+    padding-right: 74px;
+  }
+
+  .sk-body {
+    width: 100%;
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background: transparent;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .sk-pill, .sk-small, .sk-title, .sk-name, .sk-text, .sk-btn, .sk-avatar {
+  .sk-pill::after,
+  .sk-small::after,
+  .sk-title::after,
+  .sk-name::after,
+  .sk-text::after,
+  .sk-btn::after,
+  .sk-avatar::after {
     animation: none;
+    /* `animation: none` alone still leaves the base rule's own transform in
+       place: translateX(-100%), the sweep's start position, parked
+       off-canvas to the left. `overflow: hidden` on the block clips it
+       there completely, so every block renders flat --bg-secondary with no
+       visible highlight at all. Reset the transform so the gradient layer
+       sits over the block instead of beside it. */
+    transform: none;
   }
 }

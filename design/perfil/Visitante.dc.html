@@ -1,0 +1,147 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #111318; text-decoration: none; }
+    a:hover { color: #2b2f38; }
+    button { font-family: inherit; }
+
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .k-sm { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .mono { font-family: 'IBM Plex Mono', monospace; font-variant-numeric: tabular-nums; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+
+    .stats { display: grid; grid-template-columns: repeat(2, minmax(94px, 1fr)); align-self: flex-start; border-top: 1px solid #d3d5db; border-left: 1px solid #d3d5db; }
+    .stat { display: flex; flex-direction: column; gap: 3px; padding: 10px 14px; border-right: 1px solid #d3d5db; border-bottom: 1px solid #d3d5db; background: #ffffff; text-align: left; cursor: pointer; }
+    .stat:hover { background: #fafafa; }
+    .stat-v { font: 600 1.05rem/1.1 'IBM Plex Mono', monospace; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+    .stat-l { font: 600 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #8a919e; }
+
+    /* Seguir: la única acción primaria de esta página, así que es la única tinta llena. */
+    .follow { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 148px; height: 40px; padding: 0 20px; border-radius: 3px; font-size: 0.875rem; font-weight: 600; cursor: pointer; transition: background 120ms ease, border-color 120ms ease, color 120ms ease; }
+    .follow.idle { border: 1px solid #111318; background: #111318; color: #ffffff; }
+    .follow.idle:hover { background: #2b2f38; border-color: #2b2f38; }
+    .follow.done { border: 1px solid #d3d5db; background: #ffffff; color: #111318; }
+    .follow.leave { border: 1px solid #d92d20; background: #fef3f2; color: #b42318; }
+
+    .tile { display: flex; flex-direction: column; min-height: 204px; padding: 20px 20px 20px 18px; border: 1px solid #e6e7ea; border-left: 3px solid var(--la, #d3d5db); border-radius: 4px; background: #ffffff; text-align: left; cursor: pointer; transition: border-color 120ms ease; }
+    .tile:hover { border-color: #d3d5db; }
+    .tile-ic { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 3px; border: 1px solid color-mix(in srgb, var(--la, #d3d5db) 24%, #ffffff); background: color-mix(in srgb, var(--la, #d3d5db) 8%, #ffffff); color: var(--la, #8a919e); }
+    .tile-n { margin: 12px 0 0; font-family: 'Newsreader', Georgia, serif; font-size: 1.125rem; font-weight: 600; line-height: 1.3; letter-spacing: -0.01em; }
+    .tile-pv { display: flex; flex-direction: column; gap: 4px; margin-top: auto; padding-top: 12px; border-top: 1px solid #e6e7ea; }
+    .tile-pv p { margin: 0; font-family: 'Newsreader', Georgia, serif; font-size: 0.8125rem; line-height: 1.45; color: #5b6270; }
+    .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid #c3ecd5; border-radius: 2px; background: #ecfdf3; color: #067647; font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+  </style>
+</helmet>
+
+<div style="width: 1040px; min-height: 740px; background: #ffffff">
+  <div style="max-width: 1040px; margin: 0 auto; padding: 40px 40px 48px">
+
+    <!-- Sin sesión no hay barra de la app, así que la página dice de dónde viene. -->
+    <p class="k" style="margin: 0 0 26px; color: #8a919e">PaperTok · Perfil público</p>
+
+    <div style="display: flex; align-items: flex-start; gap: 28px; padding-bottom: 26px; border-bottom: 3px double #111318">
+      <div style="flex: 0 0 auto; display: grid; place-items: center; width: 96px; height: 96px; border-radius: 9999px; background: #0f766e; color: #ffffff; font: 600 2.25rem/1 'IBM Plex Mono', monospace">e</div>
+
+      <div style="flex: 1; min-width: 0">
+        <h1 class="serif" style="margin: 0; font-size: 2.25rem; font-weight: 600; line-height: 1.05; letter-spacing: -0.025em; padding-top: 0.025em">Elena Ruiz</h1>
+        <p class="mono" style="display: flex; align-items: center; gap: 10px; margin: 8px 0 0; font-size: 0.75rem; color: #8a919e">
+          <span>@eruiz</span>
+          <span style="width: 3px; height: 3px; border-radius: 9999px; background: #d3d5db"></span>
+          <span class="k-sm">Miembro desde ene 2026</span>
+        </p>
+        <p class="serif" style="max-width: 62ch; margin: 14px 0 0; font-size: 1.0625rem; line-height: 1.6; color: #5b6270">Ondas gravitacionales y relatividad numérica. Publico lo que leo cada semana.</p>
+
+        <div style="margin-top: 22px">
+          <button class="follow {{ f.cls }}" onClick="{{ f.toggle }}" onMouseEnter="{{ f.enter }}" onMouseLeave="{{ f.leave }}">
+            {{ f.label }}
+          </button>
+        </div>
+      </div>
+
+      <div class="stats" style="flex: 0 0 auto; max-width: 200px">
+        <button class="stat"><span class="stat-v">128</span><span class="stat-l">Siguiendo</span></button>
+        <button class="stat"><span class="stat-v">2.4k</span><span class="stat-l">Seguidores</span></button>
+      </div>
+    </div>
+
+    <!-- Una sola sección: quien visita ve lo publicado, no las pestañas del dueño. -->
+    <div style="display: flex; align-items: baseline; justify-content: space-between; gap: 24px; margin: 26px 0 16px">
+      <h2 class="serif" style="margin: 0; font-size: 1.375rem; font-weight: 600; letter-spacing: -0.015em">Listas</h2>
+      <span class="k-sm" style="color: #8a919e">2 públicas</span>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px">
+      <div class="tile" style="--la: #515bc3">
+        <span class="tile-ic">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>
+        </span>
+        <p class="tile-n">Fusiones binarias 2026</p>
+        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px">
+          <span class="k" style="color: #8a919e; font-variant-numeric: tabular-nums">34 papers</span>
+          <span class="badge">Pública</span>
+        </div>
+        <div class="tile-pv"><p>A numerical relativity catalogue of eccentric binary inspirals</p></div>
+      </div>
+
+      <div class="tile" style="--la: #a14f16">
+        <span class="tile-ic">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"></path></svg>
+        </span>
+        <p class="tile-n">Detectores de tercera generación</p>
+        <div style="display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px">
+          <span class="k" style="color: #8a919e; font-variant-numeric: tabular-nums">11 papers</span>
+          <span class="badge">Pública</span>
+        </div>
+        <div class="tile-pv"><p>Einstein Telescope sensitivity to sub-solar mass binaries</p></div>
+      </div>
+
+      <div style="display: flex; flex-direction: column; justify-content: flex-end; min-height: 204px; padding: 20px 4px; border-left: 1px solid #e6e7ea; padding-left: 20px">
+        <p class="serif" style="margin: 0; font-size: 1rem; line-height: 1.55; color: #8a919e">El resto de sus listas son privadas.</p>
+      </div>
+    </div>
+
+    <!-- Pie: la única llamada, y solo para quien no tiene sesión. -->
+    <div style="margin-top: 40px; padding-top: 20px; border-top: 1px solid #e6e7ea">
+      <button style="display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 16px; border: 1px solid #d3d5db; border-radius: 3px; background: #ffffff; color: #111318; font-size: 0.875rem; font-weight: 600; cursor: pointer">
+        Inicia sesión para crear el tuyo
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="m12 5 7 7-7 7"></path></svg>
+      </button>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1040,"height":740}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const st = this.state || {};
+    const following = !!st.following;
+    const hover = !!st.hover;
+    // La intención de dejar de seguir nace del estado, no de :hover, para que
+    // el botón descanse quieto justo después de pulsar Seguir.
+    const leaving = following && hover;
+    return {
+      f: {
+        cls: leaving ? 'leave' : (following ? 'done' : 'idle'),
+        label: leaving ? 'Dejar de seguir' : (following ? 'Siguiendo' : 'Seguir'),
+        toggle: () => this.setState({ following: !following }),
+        enter: () => this.setState({ hover: true }),
+        leave: () => this.setState({ hover: false }),
+      },
+    };
+  }
+}
+</script>
+</body>
+</html>

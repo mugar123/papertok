@@ -17,21 +17,14 @@
  * called open is open, a term either side kept is kept.
  */
 
+import { safeCatalogUrl } from './externalUrl.js';
+
 // `OA` is open access; `F` is free full text. Both mean the reader can open it,
 // which is the only question either caller is asking.
 const OPEN_AVAILABILITY_CODES = new Set(['OA', 'F']);
 
 function isYes(value) {
   return String(value || '').toUpperCase() === 'Y';
-}
-
-function safeHttpUrl(value) {
-  try {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
-  } catch {
-    return '';
-  }
 }
 
 function stripMarkup(value) {
@@ -82,8 +75,8 @@ export function mapEuropePmcRecord(raw) {
   const declaredOpen = isYes(raw?.isOpenAccess);
   const urls = raw?.fullTextUrlList?.fullTextUrl || [];
   const openUrls = urls.filter(item => declaredOpen || isOpenFullTextUrl(item));
-  const htmlUrl = safeHttpUrl(openUrls.find(item => item?.documentStyle === 'html')?.url);
-  const pdfUrl = safeHttpUrl(openUrls.find(item => item?.documentStyle === 'pdf')?.url);
+  const htmlUrl = safeCatalogUrl(openUrls.find(item => item?.documentStyle === 'html')?.url);
+  const pdfUrl = safeCatalogUrl(openUrls.find(item => item?.documentStyle === 'pdf')?.url);
   const pmcid = String(raw?.pmcid || '').trim();
   const terms = uniqueTerms([...meshDescriptors(raw), ...(raw?.keywordList?.keyword || [])]);
 

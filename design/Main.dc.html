@@ -1,0 +1,402 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; font-family: 'Inter', system-ui, sans-serif; color: #111318; }
+    a { color: #1a5fd0; text-decoration: none; }
+    a:hover { color: #12459b; }
+    * { box-sizing: border-box; }
+
+    .k { font: 600 0.6875rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em; text-transform: uppercase; }
+    .m { font: 400 0.6875rem/1.5 'IBM Plex Mono', monospace; }
+    .serif { font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; }
+
+    /* A passage you can annotate announces itself only on approach: a dotted
+       rule under the words, never a filled box sitting in the prose. */
+    .pick { cursor: pointer; border-bottom: 1px dotted #a9aeba; transition: background 140ms ease, border-color 140ms ease; }
+    .pick:hover { background: #fff4c9; border-bottom-color: #111318; }
+
+    .pop { animation: popIn 160ms cubic-bezier(0.16, 1, 0.3, 1); transform-origin: top left; }
+    @keyframes popIn { from { opacity: 0; transform: translateY(-6px) scale(0.96); } to { opacity: 1; transform: none; } }
+
+    .card { animation: cardIn 220ms cubic-bezier(0.16, 1, 0.3, 1); }
+    @keyframes cardIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+    /* The same left-to-right mask the rewrite reveal already uses, so an answer
+       that arrives reads like the paper writing itself, not like a popup. */
+    @keyframes wipeIn { from { -webkit-mask-position: 100% 0; mask-position: 100% 0; } to { -webkit-mask-position: 0 0; mask-position: 0 0; } }
+    .wipe {
+      -webkit-mask-image: linear-gradient(90deg, #000 0 40%, rgba(0,0,0,0.5) 50%, transparent 64%);
+      mask-image: linear-gradient(90deg, #000 0 40%, rgba(0,0,0,0.5) 50%, transparent 64%);
+      -webkit-mask-size: 260% 100%; mask-size: 260% 100%;
+      -webkit-mask-repeat: no-repeat; mask-repeat: no-repeat;
+      animation: wipeIn 620ms cubic-bezier(0.16, 1, 0.3, 1) backwards;
+    }
+
+    @keyframes sh { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+    .bar { border-radius: 2px; background: linear-gradient(90deg, #f7f7f8 25%, #e6e7ea 50%, #f7f7f8 75%); background-size: 200% 100%; animation: sh 1.6s ease-in-out infinite; }
+
+    .dots { display: inline-flex; align-items: center; gap: 4px; vertical-align: middle; }
+    .dots i { display: block; width: 4px; height: 4px; border-radius: 50%; background: currentColor; opacity: 0.32; animation: dot 1.4s ease-in-out infinite; }
+    .dots i:nth-child(2) { animation-delay: 160ms; }
+    .dots i:nth-child(3) { animation-delay: 320ms; }
+    @keyframes dot { 0%, 72%, 100% { opacity: 0.32; transform: translateY(0); } 32% { opacity: 1; transform: translateY(-3px); } }
+
+    .act {
+      display: flex; align-items: center; gap: 9px; width: 100%;
+      padding: 8px 10px; border: none; background: transparent; cursor: pointer;
+      font: 500 0.8125rem/1.3 'Inter', sans-serif; color: #111318; text-align: left;
+      border-radius: 3px; transition: background 120ms ease;
+    }
+    .act:hover { background: #f4f4f5; }
+    .act small { margin-left: auto; font: 400 0.625rem/1 'IBM Plex Mono', monospace; color: #8a919e; }
+
+    .del { opacity: 0; border: none; background: transparent; cursor: pointer; color: #8a919e; padding: 2px; border-radius: 2px; transition: opacity 140ms ease, color 140ms ease; }
+    .note:hover .del { opacity: 1; }
+    .del:hover { color: #b42318; }
+  </style>
+</helmet>
+
+<div style="position: relative; width: 1440px; height: 900px; overflow: hidden; background: #ffffff">
+
+  <!-- Floating chrome: the page is the interface, the controls sit on top of it. -->
+  <div style="position: absolute; top: 20px; left: 24px; z-index: 5; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid #d3d5db; border-radius: 6px; background: #ffffff; box-shadow: 0 2px 6px rgba(17,19,24,0.06)">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#111318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"></path><path d="m12 19-7-7 7-7"></path></svg>
+  </div>
+
+  <div style="position: absolute; top: 26px; right: 24px; z-index: 5; display: flex; align-items: center; gap: 8px">
+    <span class="k" style="display: inline-flex; align-items: center; gap: 5px; color: #8a919e">
+      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"></path></svg>
+      Leer en simple
+    </span>
+    <span style="display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px; border: 1px solid #d3d5db; border-radius: 2px; font: 500 0.625rem/1.5 'IBM Plex Mono', monospace; color: #8a919e">
+      <span style="display: inline-flex; gap: 2px">
+        <i style="display: block; width: 3px; height: 9px; border-radius: 1px; background: #111318"></i>
+        <i style="display: block; width: 3px; height: 9px; border-radius: 1px; background: #111318"></i>
+        <i style="display: block; width: 3px; height: 9px; border-radius: 1px; background: #111318"></i>
+        <i style="display: block; width: 3px; height: 9px; border-radius: 1px; background: #111318"></i>
+        <i style="display: block; width: 3px; height: 9px; border-radius: 1px; background: #111318"></i>
+        <i style="display: block; width: 3px; height: 9px; border-radius: 1px; background: #111318"></i>
+        <i style="display: block; width: 3px; height: 9px; border-radius: 1px; background: #111318"></i>
+        <i style="display: block; width: 3px; height: 9px; border-radius: 1px; background: #d3d5db"></i>
+        <i style="display: block; width: 3px; height: 9px; border-radius: 1px; background: #d3d5db"></i>
+        <i style="display: block; width: 3px; height: 9px; border-radius: 1px; background: #d3d5db"></i>
+      </span>
+      {{ quotaLabel }}
+    </span>
+  </div>
+
+  <!-- Document + rail -->
+  <div style="display: flex; gap: 32px; justify-content: center; padding: 76px 24px 96px; height: 900px; overflow: hidden">
+
+    <article style="flex: 0 1 686px; min-width: 0">
+      <h1 class="serif" style="font-size: 2.1rem; font-weight: 600; line-height: 1.12; letter-spacing: -0.02em; margin: 0 0 12px">Correladores de la longitud propia de la línea de universo</h1>
+      <p style="font: 500 0.75rem/1.5 'IBM Plex Mono', monospace; letter-spacing: 0.02em; color: #5b6270; margin: 0 0 24px; padding-bottom: 20px; border-bottom: 3px double #111318">Allic Sivaramakrishnan · 2024</p>
+
+      <div style="display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px">
+        <span class="k" style="color: #111318">Resumen</span>
+        <span class="m" style="color: #8a919e">Abstract</span>
+      </div>
+      <h2 class="serif" style="font-size: 1.35rem; font-weight: 600; line-height: 1.25; margin: 0 0 16px">De qué va el paper</h2>
+
+      <p class="serif" style="font-size: 1.0625rem; line-height: 1.72; margin: 0 0 16px">
+        Los autores calculan cuánto tiempo propio transcurre a lo largo de la línea de universo de una partícula, y encuentran que <span class="pick" style="{{ passageAStyle }}" onClick="{{ openA }}">esa cantidad deja de ser un número y pasa a ser una distribución</span> en cuanto la gravedad cuántica entra en juego.
+      </p>
+
+      <p class="serif" style="font-size: 1.0625rem; line-height: 1.72; margin: 0 0 16px">
+        El resultado se apoya en un cálculo de dos puntos que ya era conocido, pero al que nadie había dado esta lectura: <mark style="{{ markBStyle }}">la anchura de la distribución crece con la energía</mark>, y esa anchura es exactamente lo que un reloj real mediría como ruido.
+      </p>
+
+      <p class="serif" style="font-size: 1.0625rem; line-height: 1.72; margin: 0 0 16px">
+        La parte técnica ocupa la segunda sección. <span class="pick" style="{{ passageCStyle }}" onClick="{{ openC }}">La inducción sobre el índice del submódulo cierra el hueco entre los dos recuentos</span>, y lo que queda del artículo es contabilidad alrededor de ese único paso.
+      </p>
+
+      <p class="serif" style="font-size: 1.0625rem; line-height: 1.72; margin: 0">
+        El mismo método vale para varias familias vecinas, aunque aquí solo se desarrolla una en detalle.
+      </p>
+    </article>
+
+    <!-- ── The rail: annotations in document order, yours and the model's ── -->
+    <aside style="{{ railStyle }}">
+      <div style="display: flex; align-items: center; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid #e6e7ea; margin-bottom: 14px">
+        <span class="k" style="display: inline-flex; align-items: center; gap: 5px; color: #111318">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+          Anotaciones
+        </span>
+        <span class="m" style="color: #8a919e">{{ countLabel }}</span>
+      </div>
+
+      <div style="display: flex; gap: 4px; margin-bottom: 12px">
+        <button style="{{ filterAllStyle }}" onClick="{{ filterAll }}">Todas</button>
+        <button style="{{ filterMineStyle }}" onClick="{{ filterMine }}">Tuyas</button>
+        <button style="{{ filterAiStyle }}" onClick="{{ filterAi }}">IA</button>
+      </div>
+
+      <sc-if value="{{ thinking }}" hint-placeholder-val="{{ true }}">
+        <div class="card" style="display: flex; flex-direction: column; gap: 9px; padding: 12px 12px 12px 14px; border: 1px solid #e6e7ea; border-left: 3px solid #111318; border-radius: 0 3px 3px 0; background: #fafafa; margin-bottom: 10px">
+          <span class="k" style="display: inline-flex; align-items: center; gap: 7px; color: #5b6270">
+            <span class="dots"><i></i><i></i><i></i></span>
+            Leyendo el pasaje
+          </span>
+          <span class="bar" style="display: block; height: 9px; width: 100%"></span>
+          <span class="bar" style="display: block; height: 9px; width: 72%; animation-delay: -140ms"></span>
+        </div>
+      </sc-if>
+
+      <sc-for list="{{ notes }}" as="n" hint-placeholder-count="2">
+        <div class="note card" style="{{ n.cardStyle }}">
+          <div style="display: flex; align-items: center; gap: 6px">
+            <span class="k" style="{{ n.originStyle }}">{{ n.origin }}</span>
+            <span class="m" style="color: #8a919e">{{ n.where }}</span>
+            <span style="margin-left: auto; display: block"></span>
+            <button class="del" onClick="{{ n.remove }}" title="Quitar">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"></path><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+          </div>
+          <p class="serif" style="font-size: 0.8125rem; line-height: 1.45; color: #8a919e; margin: 0; padding-left: 8px; border-left: 2px solid #e6e7ea">{{ n.quote }}</p>
+          <p style="{{ n.bodyStyle }}">{{ n.body }}</p>
+        </div>
+      </sc-for>
+
+      <sc-if value="{{ empty }}" hint-placeholder-val="{{ true }}">
+        <p style="font-size: 0.8125rem; line-height: 1.6; color: #8a919e; margin: 4px 0 0">Selecciona una frase del texto para escribir una nota, o para pedirle a la IA que te la explique.</p>
+      </sc-if>
+    </aside>
+  </div>
+
+  <!-- ── The selection popover, one node, placed where the passage is ── -->
+  <sc-if value="{{ popMenu }}" hint-placeholder-val="{{ true }}">
+    <div class="pop" style="{{ popPos }}">
+      <div style="width: 236px; padding: 4px; border: 1px solid #111318; border-radius: 6px; background: #ffffff; box-shadow: 0 8px 24px rgba(17,19,24,0.08)">
+        <button class="act" onClick="{{ justHighlight }}">
+          <span style="{{ penChipStyle }}"></span>
+          Subrayar
+        </button>
+        <button class="act" onClick="{{ startCompose }}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#111318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+          Escribir nota
+        </button>
+        <button class="act" onClick="{{ askAI }}">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#111318" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"></path></svg>
+          Que me lo explique
+          <small>1 uso</small>
+        </button>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{ popCompose }}" hint-placeholder-val="{{ true }}">
+    <div class="pop" style="{{ popPos }}">
+      <div style="width: 340px; padding: 11px; border: 1px solid #111318; border-radius: 6px; background: #ffffff; box-shadow: 0 8px 24px rgba(17,19,24,0.08)">
+        <div style="display: flex; align-items: center; gap: 7px; margin-bottom: 9px">
+          <span style="{{ penChipStyle }}"></span>
+          <span class="k" style="color: #8a919e">Tu nota</span>
+        </div>
+        <textarea
+          value="{{ draft }}"
+          onChange="{{ onDraft }}"
+          placeholder="Lo que quieras recordar de este pasaje…"
+          style="width: 100%; height: 78px; padding: 9px; border: 1px solid #d3d5db; border-radius: 3px; background: #ffffff; font: 400 0.8125rem/1.5 'Inter', sans-serif; color: #111318; resize: none; outline: none"
+        ></textarea>
+        <div style="display: flex; gap: 8px; margin-top: 9px">
+          <button onClick="{{ saveNote }}" style="{{ saveStyle }}">Guardar</button>
+          <button onClick="{{ cancel }}" style="min-height: 32px; padding: 0 13px; border: 1px solid #d3d5db; border-radius: 3px; background: #ffffff; color: #5b6270; font: 500 0.8125rem/1 'Inter', sans-serif; cursor: pointer">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- The floating control panel, now carrying the rail toggle. -->
+  <div style="position: absolute; bottom: 24px; left: 0; right: 0; margin-inline: auto; width: fit-content; z-index: 4; display: flex; align-items: flex-end; gap: 12px; padding: 12px 16px; border: 1px solid #d3d5db; border-radius: 6px; background: rgba(255,255,255,0.88); backdrop-filter: saturate(180%) blur(12px); box-shadow: 0 8px 24px rgba(17,19,24,0.08)">
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span class="k" style="color: #8a919e">Nivel</span>
+      <div style="display: flex; padding: 2px; border: 1px solid #d3d5db; border-radius: 4px; background: #f7f7f8">
+        <span style="padding: 6px 12px; border-radius: 3px; font: 500 0.8125rem/1 'Inter', sans-serif; color: #5b6270">Principiante</span>
+        <span style="padding: 6px 12px; border-radius: 3px; background: #ffd21e; font: 600 0.8125rem/1 'Inter', sans-serif; color: #111318">Universitario</span>
+        <span style="padding: 6px 12px; border-radius: 3px; font: 500 0.8125rem/1 'Inter', sans-serif; color: #5b6270">Investigador</span>
+      </div>
+    </div>
+    <div style="align-self: stretch; width: 1px; background: #d3d5db"></div>
+    <div style="display: flex; flex-direction: column; gap: 6px">
+      <span class="k" style="color: #8a919e">Anotaciones</span>
+      <button style="{{ railToggleStyle }}" onClick="{{ toggleRail }}">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"></path></svg>
+      </button>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":1440,"height":900},"pen":{"editor":"color","default":"#ffd21e","options":["#ffd21e","#a7f3d0","#bfdbfe","#fbcfe8"],"section":"Anotaciones"},"railOpen":{"editor":"boolean","default":true,"section":"Anotaciones"}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = {
+      open: null,
+      mode: 'menu',
+      draft: '',
+      thinking: false,
+      filter: 'all',
+      rail: null,
+      uses: 7,
+      notes: [
+        {
+          id: 'n1',
+          origin: 'Tuya',
+          where: 'Resumen · §2',
+          quote: 'la anchura de la distribución crece con la energía',
+          body: 'Esto es lo que hay que contarle a Marta: el ruido no lo pone el aparato, sale de la propia métrica.',
+          ai: false,
+          fresh: false,
+        },
+      ],
+    };
+  }
+
+  pen() { return this.props.pen ?? '#ffd21e'; }
+
+  railIsOpen() {
+    if (this.state.rail !== null) return this.state.rail;
+    return this.props.railOpen ?? true;
+  }
+
+  passage(which) {
+    return which === 'a'
+      ? { where: 'Resumen · §1', quote: 'esa cantidad deja de ser un número y pasa a ser una distribución' }
+      : { where: 'Resumen · §3', quote: 'La inducción sobre el índice del submódulo cierra el hueco entre los dos recuentos' };
+  }
+
+  addNote(note) {
+    this.setState({ notes: [note].concat(this.state.notes) });
+  }
+
+  filterStyle(value) {
+    var on = this.state.filter === value;
+    return 'padding: 4px 8px; border: 1px solid ' + (on ? '#111318' : '#e6e7ea')
+      + '; border-radius: 2px; background: ' + (on ? '#111318' : 'transparent')
+      + '; color: ' + (on ? '#ffffff' : '#8a919e')
+      + "; font: 500 0.625rem/1 'IBM Plex Mono', monospace; letter-spacing: 0.06em;"
+      + ' text-transform: uppercase; cursor: pointer;'
+      + ' transition: background 140ms ease, color 140ms ease, border-color 140ms ease;';
+  }
+
+  renderVals() {
+    var self = this;
+    var pen = this.pen();
+    var railOpen = this.railIsOpen();
+    var filter = this.state.filter;
+    var visible = this.state.notes.filter(function (n) {
+      return filter === 'all' || (filter === 'ai' ? n.ai : !n.ai);
+    });
+    // The popover is one node placed where the passage sits, rather than one
+    // node per passage: two copies of a menu drift apart the moment either
+    // changes.
+    var pos = this.state.open === 'a'
+      ? 'position: absolute; left: 322px; top: 382px; z-index: 30'
+      : 'position: absolute; left: 222px; top: 590px; z-index: 30';
+
+    return {
+      quotaLabel: this.state.uses + '/10 hoy',
+      countLabel: this.state.notes.length + (this.state.notes.length === 1 ? ' nota' : ' notas'),
+      thinking: this.state.thinking,
+      empty: visible.length === 0 && !this.state.thinking,
+
+      popMenu: this.state.open !== null && this.state.mode === 'menu',
+      popCompose: this.state.open !== null && this.state.mode === 'compose',
+      popPos: pos,
+      penChipStyle: 'display: inline-block; width: 13px; height: 13px; border-radius: 2px; background: ' + pen + '; border: 1px solid rgba(17,19,24,0.16)',
+
+      openA: function () { self.setState({ open: self.state.open === 'a' ? null : 'a', mode: 'menu' }); },
+      openC: function () { self.setState({ open: self.state.open === 'c' ? null : 'c', mode: 'menu' }); },
+      cancel: function () { self.setState({ open: null, mode: 'menu', draft: '' }); },
+      startCompose: function () { self.setState({ mode: 'compose' }); },
+      justHighlight: function () { self.setState({ open: null, mode: 'menu' }); },
+
+      draft: this.state.draft,
+      onDraft: function (event) { self.setState({ draft: event.target.value }); },
+      saveStyle: "flex: 1; min-height: 32px; border: 1px solid #111318; border-radius: 3px; background: #111318; color: #ffffff; font: 600 0.8125rem/1 'Inter', sans-serif; cursor: pointer",
+      saveNote: function () {
+        var text = (self.state.draft || '').trim();
+        if (!text) return;
+        var anchor = self.passage(self.state.open);
+        self.addNote({
+          id: 'u' + Math.random().toString(36).slice(2, 8),
+          origin: 'Tuya',
+          where: anchor.where,
+          quote: anchor.quote,
+          body: text,
+          ai: false,
+          fresh: true,
+        });
+        self.setState({ open: null, mode: 'menu', draft: '' });
+      },
+
+      askAI: function () {
+        var anchor = self.passage(self.state.open);
+        self.setState({ open: null, mode: 'menu', thinking: true, uses: self.state.uses - 1 });
+        // A beat, so both the wait and the arrival are visible.
+        setTimeout(function () {
+          self.setState({ thinking: false });
+          self.addNote({
+            id: 'ai' + Math.random().toString(36).slice(2, 8),
+            origin: 'IA',
+            where: anchor.where,
+            quote: anchor.quote,
+            body: 'Antes medías un tiempo y salía un valor. Aquí sale un abanico de valores, cada uno con su probabilidad, porque la propia geometría fluctúa. El número que llamabas «el tiempo» es ahora solo la media de ese abanico.',
+            ai: true,
+            fresh: true,
+          });
+        }, 1600);
+      },
+
+      passageAStyle: this.state.open === 'a' ? 'background: ' + pen + '; border-bottom-color: #111318' : '',
+      passageCStyle: this.state.open === 'c' ? 'background: ' + pen + '; border-bottom-color: #111318' : '',
+      markBStyle: 'background: ' + pen + '; color: inherit; padding: 0 1px; border-radius: 2px',
+
+      railStyle: railOpen
+        ? 'flex: 0 0 320px; align-self: flex-start; padding-left: 20px; border-left: 1px solid #e6e7ea'
+        : 'display: none',
+      railToggleStyle: 'display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid '
+        + (railOpen ? '#111318' : '#d3d5db') + '; border-radius: 3px; background: '
+        + (railOpen ? pen : '#ffffff') + '; color: #111318; cursor: pointer;'
+        + ' transition: background 160ms ease, border-color 160ms ease;',
+      toggleRail: function () { self.setState({ rail: !railOpen }); },
+
+      filterAllStyle: this.filterStyle('all'),
+      filterMineStyle: this.filterStyle('mine'),
+      filterAiStyle: this.filterStyle('ai'),
+      filterAll: function () { self.setState({ filter: 'all' }); },
+      filterMine: function () { self.setState({ filter: 'mine' }); },
+      filterAi: function () { self.setState({ filter: 'ai' }); },
+
+      notes: visible.map(function (n) {
+        return {
+          id: n.id,
+          origin: n.origin,
+          where: n.where,
+          quote: n.quote,
+          body: n.body,
+          cardStyle: 'display: flex; flex-direction: column; gap: 9px; padding: 12px 12px 12px 14px; margin-bottom: 10px;'
+            + ' border: 1px solid #e6e7ea; border-left: 3px solid ' + (n.ai ? '#111318' : pen)
+            + '; border-radius: 0 3px 3px 0; background: ' + (n.ai ? '#fafafa' : '#ffffff') + ';',
+          originStyle: 'display: inline-flex; align-items: center; gap: 4px; color: ' + (n.ai ? '#111318' : '#96650a') + ';',
+          bodyStyle: (n.fresh && n.ai ? 'animation: wipeIn 620ms cubic-bezier(0.16,1,0.3,1) backwards;' : '')
+            + " font: 400 0.8125rem/1.6 'Inter', sans-serif; color: #5b6270; margin: 0;",
+          remove: function () {
+            self.setState({ notes: self.state.notes.filter(function (x) { return x.id !== n.id; }) });
+          },
+        };
+      }),
+    };
+  }
+}
+</script>
+</body>
+</html>
