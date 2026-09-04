@@ -487,6 +487,15 @@ async function reserveSharedMinuteQuota(ceiling, env, origin) {
 // `reserveGates`, which gives every one of them back when this refuses -- the
 // beat used to refund the minute unit on its own and had no way to know the
 // identity unit existed.
+//
+// Its own seat is the one exception to "every gate returns what it took": an
+// accepted second never enters `held`. Giving it back would be meaningless --
+// it is wall-clock time already slept into, and `awaitUpstreamSlot` only ever
+// proposes the current second or a later one, so it would refuse to re-grant
+// one already elapsed. That is safe only because no gate runs after an
+// accepted beat today -- the paced routes, `/sources/s2` and `/related`,
+// never pass `openAlexCalls` -- but a route that combined both would leak
+// this seat, with nothing left downstream to catch it.
 async function awaitSharedPace(ceiling, env, origin) {
   if (!ceiling?.paced) return null;
   const slot = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, { namespace: ceiling.namespace });
@@ -506,10 +515,14 @@ async function awaitSharedPace(ceiling, env, origin) {
 }
 
 // Every unit an earlier gate took goes back when a later gate says no: the
-// caller made no provider call, and the ledger counts provider calls. Newest
-// first, so a refund that fails leaves the oldest -- and cheapest to lose --
-// unit as the leak. Same shape as `releaseAIQuota`: a refund that cannot be
-// delivered is a leak, not a reason to change the answer the caller is owed.
+// caller made no provider call, and the ledger counts provider calls. Each
+// release has its own try/catch, so a refund that fails leaks only its own
+// unit, whatever position it sits in -- the loop moves on regardless. Newest
+// first is insurance for a different case, the isolate being cut short
+// mid-loop: whatever the loop has not reached yet is what leaks, and
+// reversing means that is the oldest -- and cheapest to lose -- unit. Same
+// shape as `releaseAIQuota`: a refund that cannot be delivered is a leak, not
+// a reason to change the answer the caller is owed.
 async function releaseHeld(env, held) {
   for (const reservation of [...held].reverse()) {
     try {
@@ -556,6 +569,8 @@ async function cacheResponse(request, origin, env, ttl, fetcher, options = {}) {
   const cacheKey = canonicalCacheKey(request, options.canonicalParams);
   const cached = await caches.default.match(cacheKey);
   if (cached) return serveCached(cached, origin, env);
+  // Resolved once here and handed to both gates: the beat used to re-parse the
+  // URL to find the same ceiling the minute reservation had just looked up.
   const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
   const held = [];
   const refusal = await reserveGates(origin, env, options, ceiling, held);
