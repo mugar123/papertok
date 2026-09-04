@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import { HashRouter } from 'react-router-dom'
 import { registerSW } from 'virtual:pwa-register'
+import { applyReloadPolicy, markAppForcedReload } from './utils/appReload.js'
 import App from './App.jsx'
 import GlobalErrorBoundary from './GlobalErrorBoundary.jsx'
 
@@ -110,8 +111,30 @@ window.addEventListener('vite:preloadError', (event) => {
     return
   }
   event.preventDefault()
+  // Marked as ours, so the feed knows this reload was not asked for and keeps
+  // the reader's place (utils/appReload.js).
+  markAppForcedReload()
   window.location.reload()
 })
+
+// The service worker's reload is not ours to intercept -- the note above
+// explains why it is left to workbox -- but it is ours to RECOGNISE. Workbox
+// reloads from the new worker's `activated` event, and the page hears
+// `controllerchange` before that lands, which is early enough to leave the
+// mark. Without it, the reload a deploy forces would look like the reader's
+// and drop them at the top of a freshly ranked feed mid-session.
+try {
+  navigator.serviceWorker?.addEventListener('controllerchange', () => {
+    markAppForcedReload()
+  })
+} catch {
+  // No service worker (vite dev, or a browser without one): nothing to mark.
+}
+
+// Before React renders, because the feed reads both stores on its first
+// render: a reload the READER asked for starts fresh, one the app forced does
+// not.
+applyReloadPolicy()
 
 registerSW()
 

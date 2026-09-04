@@ -5,6 +5,7 @@ import FeedContainer from '../Feed/FeedContainer';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFollowingUpdates } from '../../context/FollowingUpdatesContext';
 import { useLanguage } from '../../context/LanguageContext';
+import { FOLLOWING_ORDER_STORAGE_KEY } from '../../utils/followingOrderStorage.js';
 import {
   followingFirstLoadPending,
   mergeOrderedPapers,
@@ -18,8 +19,9 @@ import './FollowingFeedPage.css';
 // of the tab (which it gives itself after a deploy, see main.jsx) keeps the
 // items in localStorage but loses `lastOrder` below with the module, and a
 // fresh ranking then moved the card the reader was on. sessionStorage, so a
-// new tab still ranks afresh.
-const ORDER_STORAGE_KEY = 'papertok_following_order';
+// new tab still ranks afresh — and a reload the READER asked for clears it,
+// which `utils/appReload.js` does before this module ever reads it.
+const ORDER_STORAGE_KEY = FOLLOWING_ORDER_STORAGE_KEY;
 
 function readStoredOrderKeys() {
   try {
