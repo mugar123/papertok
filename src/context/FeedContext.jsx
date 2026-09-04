@@ -688,14 +688,16 @@ export function FeedProvider({ children, feedRouteActive = true }) {
           
           // Insert them in the papers queue ahead of the user
           setPapers(current => {
-            const idx = current.findIndex(p => p.id === paper.id);
-            if (idx === -1) return current; // paper not found in current feed
-            
-            // Index up to idx + 3 are currently on screen or next, do not shift them
-            const safeSplit = Math.min(idx + 3, current.length);
-            const locked = current.slice(0, safeSplit);
-            const rest = current.slice(safeSplit);
-            
+            if (current.findIndex(p => p.id === paper.id) === -1) return current; // paper not found in current feed
+
+            // The OpenAlex fetch above is a network round trip: the reader may
+            // have swiped on while it was in flight, so the paper the
+            // interaction named is no longer where they are. Anchor on the
+            // deeper of the two (final review, 2026-09-04).
+            const { locked, queue: rest } = splitFeedForReRank(current, {
+              anchorPaperIds: [paper.id, visiblePaperIdRef.current],
+            });
+
             // Deduplicate against rest of the queue
             const restFiltered = rest.filter(rp => !newGraphPapers.some(ng => ng.id === rp.id));
             
@@ -1760,6 +1762,15 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     const newNotInterested = new Set(notInterestedIdsRef.current);
     newNotInterested.add(paper.id);
     setNotInterestedIds(newNotInterested);
+    // The card being removed is the one the reader is on: its successor slides
+    // into the viewport and is where they now are. Without it the re-rank below
+    // finds neither anchor — the removed id nor the ref that still names it —
+    // and falls back to the top, reshuffling everything under the reader
+    // (final review, 2026-09-04).
+    const removedIndex = papers.findIndex((p) => p.id === paper.id);
+    const successorId = removedIndex >= 0
+      ? (papers[removedIndex + 1]?.id ?? papers[removedIndex - 1]?.id ?? null)
+      : null;
     setPapers((prev) => prev.filter((p) => p.id !== paper.id));
 
     if (paper.primaryCategory) {
@@ -1767,7 +1778,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
        categoryCooldowns.current[paper.primaryCategory] = Date.now();
     }
     bumpConceptAffinities(conceptAffinities.current, paper, -2);
-    reRankFeed(paper.id);
+    reRankFeed(successorId || paper.id);
 
     if (IS_DEMO) {
       demoSet('notInterestedIds', Array.from(newNotInterested));
@@ -1790,7 +1801,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         console.error('Error saving not interested:', err);
       }
     }
-  }, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid]);
+  }, [withInteractionId, reRankFeed, recordProfileEvent, user?.uid, papers]);
 
   const markAsRead = useCallback(async (paperInput) => {
     const paper = withInteractionId(paperInput);

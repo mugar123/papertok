@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { growMountWindow, inMountWindow, initialMountWindow, mountWindowCovers } from './feedMountWindow.js';
 
+const stripComments = (source) => source.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '');
+
 test('a feed opens on the card it was on, one neighbour either side', () => {
   assert.deepEqual(initialMountWindow({ total: 30, anchorIndex: 0 }), { lo: 0, hi: 2 });
   assert.deepEqual(initialMountWindow({ total: 30, anchorIndex: 20 }), { lo: 19, hi: 22 });
@@ -72,7 +74,7 @@ test('a feed resumes on the paper it was on, wherever that paper is now', async 
 });
 
 test('SOURCE: the container saves the paper it is on and restores by that paper', async () => {
-  const code = await readFile(new URL('../components/Feed/FeedContainer.jsx', import.meta.url), 'utf8');
+  const code = stripComments(await readFile(new URL('../components/Feed/FeedContainer.jsx', import.meta.url), 'utf8'));
   // The place lives in utils/feedResumeMemory.js now (it survives the reload
   // the tab gives itself after a deploy); what is remembered is still the
   // paper's id, and what restores is still that paper.

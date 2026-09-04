@@ -35,6 +35,13 @@ test('anchors that are not in the list, null or undefined are ignored', () => {
   assert.deepEqual(ids(locked), ['p0', 'p1', 'p2', 'p3']);
 });
 
+test('anchorPaperIds itself can be an explicit null, not just contain one', () => {
+  // The destructuring default (`= []`) only covers undefined; a caller that
+  // passes null explicitly must not throw either.
+  const { anchorIndex } = splitFeedForReRank(papers(10), { anchorPaperIds: null });
+  assert.equal(anchorIndex, 0);
+});
+
 test('an anchor near the end locks everything and leaves an empty queue', () => {
   const { locked, queue } = splitFeedForReRank(papers(5), { anchorPaperIds: ['p4'] });
   assert.equal(locked.length, 5);

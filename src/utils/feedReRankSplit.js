@@ -15,7 +15,7 @@ export const RERANK_LOOKAHEAD = 3;
 export function splitFeedForReRank(papers, { anchorPaperIds = [], lookahead = RERANK_LOOKAHEAD } = {}) {
   const list = Array.isArray(papers) ? papers : [];
   let anchorIndex = 0;
-  for (const id of anchorPaperIds) {
+  for (const id of anchorPaperIds || []) {
     if (!id) continue;
     const found = list.findIndex(paper => paper?.id === id);
     if (found > anchorIndex) anchorIndex = found;

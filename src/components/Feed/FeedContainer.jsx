@@ -245,11 +245,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     if (restoreAttemptedRef.current || papers.length === 0) return;
     restoreAttemptedRef.current = true;
     const saved = resumeMemory.get(scrollKey);
-    // The paper the reader was on, wherever it is in this order; each snap
-    // item is one container height tall, so the card's index is its offset.
-    // Reported to the context here, not left to the scroll event the
-    // programmatic scrollTop fires later: the profile load's re-rank must
-    // find the anchor already set.
+    // The paper the reader was on, wherever it is in this order. Reported to
+    // the context here, not left to the scroll event the programmatic
+    // scrollTop fires later: the profile load's re-rank must find the anchor
+    // already set.
     const index = resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index });
     reportVisiblePaper?.(papers[index]?.id ?? null);
     // A place restored from storage after a reload has an index and no pixel
@@ -258,7 +257,8 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
       const el = feedRef.current;
       const prevBehavior = el.style.scrollBehavior;
       el.style.scrollBehavior = 'auto'; // Force instant jump
-      // The raw offset only stands in when the height is unknown.
+      // Each snap item is one container height tall, so the card's index is
+      // its offset; the raw offset only stands in when the height is unknown.
       el.scrollTop = el.clientHeight > 0 ? index * el.clientHeight : saved.scrollTop;
 
       requestAnimationFrame(() => {
