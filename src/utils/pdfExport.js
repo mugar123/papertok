@@ -142,23 +142,24 @@ const PAGE_CSS = `
 .pdfx-page * { box-sizing: border-box; margin: 0; }
 .pdfx-mast { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; font-weight: 500; line-height: 1; letter-spacing: 0.12em; text-transform: uppercase; color: #7b8290; }
 .pdfx-mast-b { color: #111318; }
-.pdfx-mast-rule { height: 1.3px; background: #111318; margin-top: 9px; }
+.pdfx-mast-rule { height: 1.3px; background: #111318; margin-top: 8px; }
 .pdfx-mast-rule--cont { height: 0.8px; background: #c9ccd4; margin-top: 9px; }
 .pdfx-hair { height: 0.8px; background: #dcdee4; }
-.pdfx-title { font-size: 30px; font-weight: 400; line-height: 1.14; letter-spacing: -0.006em; margin-top: 27px; text-wrap: pretty; }
-.pdfx-byline { font-size: 16px; line-height: 1.35; margin-top: 14px; }
-.pdfx-source { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; line-height: 1.5; letter-spacing: 0.035em; color: #7b8290; margin: 7px 0 21px; }
-.pdfx-notice { display: flex; gap: 22px; padding: 13px 0 14px; }
+.pdfx-title { font-size: 30px; font-weight: 400; line-height: 1.14; letter-spacing: -0.006em; margin-top: 23px; text-wrap: pretty; }
+.pdfx-byline { font-size: 16px; line-height: 1.35; margin-top: 12px; }
+.pdfx-source { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; line-height: 1.5; letter-spacing: 0.035em; color: #7b8290; margin: 6px 0 17px; }
+.pdfx-notice { display: flex; gap: 22px; padding: 11px 0 12px; }
 .pdfx-notice-l { flex: 0 0 58px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; font-weight: 500; line-height: 1.85; letter-spacing: 0.12em; text-transform: uppercase; color: #7b8290; }
 .pdfx-notice-t { flex: 1 1 auto; font-size: 13.5px; line-height: 1.52; color: #3a3e46; text-align: justify; }
 .pdfx-flow { flex: 1 1 auto; min-height: 0; overflow: hidden; }
-.pdfx-sec { display: flex; gap: 13px; margin: 25px 0 10px; }
+.pdfx-sec { display: flex; gap: 13px; margin: 21px 0 9px; }
+.pdfx-sec:first-child { margin-top: 12px; }
 .pdfx-sec-no { flex: 0 0 22px; font-size: 17px; font-weight: 600; line-height: 1.3; }
 .pdfx-sec-n { font-size: 17px; font-weight: 600; line-height: 1.3; }
 .pdfx-sec-o { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; line-height: 1.5; letter-spacing: 0.03em; color: #6b7280; margin-top: 3px; }
-.pdfx-para { font-size: 16px; line-height: 1.62; text-align: justify; }
+.pdfx-para { font-size: 16px; line-height: 1.6; text-align: justify; }
 .pdfx-para + .pdfx-para { text-indent: 1.4em; }
-.pdfx-mark { background: #ffe066; padding: 0 1px; }
+.pdfx-mark { background: #ffe066; color: inherit; padding: 0 1px; }
 .pdfx-mark--ai { background: none; border-bottom: 1.4px dotted #6b7280; }
 .pdfx-fnref { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; vertical-align: super; line-height: 0; padding-left: 1.5px; }
 .pdfx-colo { margin-top: 30px; border-top: 1.3px solid #111318; padding-top: 12px; }
@@ -166,12 +167,12 @@ const PAGE_CSS = `
 .pdfx-colo-g { display: grid; grid-template-columns: 116px 1fr; gap: 6px 18px; }
 .pdfx-colo-k { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 10px; line-height: 1.55; letter-spacing: 0.03em; color: #868d99; }
 .pdfx-colo-v { font-size: 13.5px; line-height: 1.42; }
-.pdfx-notes { flex: 0 0 auto; padding-top: 13px; }
+.pdfx-notes { flex: 0 0 auto; padding-top: 11px; }
 .pdfx-notes::before { content: ''; display: block; width: 132px; height: 0.8px; background: #111318; margin-bottom: 9px; }
 .pdfx-note { display: flex; gap: 8px; font-size: 12.5px; line-height: 1.46; color: #3a3e46; margin-bottom: 5px; }
 .pdfx-note-no { flex: 0 0 11px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; line-height: 1.95; color: #7b8290; }
 .pdfx-note-kind { font-variant: small-caps; letter-spacing: 0.045em; color: #111318; }
-.pdfx-foot { flex: 0 0 auto; padding-top: 14px; }
+.pdfx-foot { flex: 0 0 auto; padding-top: 12px; }
 .pdfx-foot-row { display: flex; align-items: baseline; gap: 14px; padding-top: 7px; }
 .pdfx-foot-s { flex: 1 1 auto; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; line-height: 1.5; letter-spacing: 0.03em; color: #868d99; }
 .pdfx-foot-n { font-size: 13px; }
