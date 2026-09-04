@@ -2129,8 +2129,7 @@ const IS_MINUTE = key => key.startsWith('s2:') && !key.endsWith(':pace');
 const IS_PACE = key => key.endsWith(':pace');
 const IS_IDENTITY = key => key.startsWith('provider:');
 const IS_OPENALEX_MINUTE = key => key.startsWith('openalex:') && !key.includes(':day:');
-// IS_OPENALEX_DAY is not needed until a later task's OpenAlex-day test reads
-// it; add it back there rather than carry it here unused (no-unused-vars).
+const IS_OPENALEX_DAY = key => key.startsWith('openalex:day:');
 
 const releasesOf = state => state.actions.filter(a => a.action === 'release');
 
@@ -2147,6 +2146,7 @@ function assertRefunded(state, isKey) {
 }
 
 const RELATED_URL = 'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345';
+const RELAY_WORKS_URL = 'https://papertok-report-api.example/openalex/works?filter=doi:10.1%2Fa&per-page=50';
 const relatedThrough = (ledger, upstream = async () => new Response(
   JSON.stringify({ recommendedPapers: [] }), { headers: { 'content-type': 'application/json' } },
 )) => withWorkerFetchMock(upstream, () => withCachedIdentity(() => reportApi.fetch(new Request(RELATED_URL, {
@@ -2189,6 +2189,42 @@ test('gives the identity unit back when the OpenAlex budget refuses after it', a
 
   assert.equal(response.status, 429);
   assertRefunded(state, IS_IDENTITY);
+  assert.equal(releasesOf(state).length, 1);
+});
+
+// L6: the OpenAlex day ceiling refuses after the minute ceiling accepted. The
+// function used to leave the minute unit to expire -- "the leak lives in the
+// minute bucket, which is thrown away sixty seconds later" -- as the lesser of
+// two leaks, before giving a unit back was a pattern in this file.
+test('gives the OpenAlex minute unit back when the day ceiling refuses after it', async () => {
+  const state = { actions: [] };
+  const response = await withWorkerFetchMock(trendsPage, () => withCachedIdentity(() => reportApi.fetch(
+    new Request(TRENDS_BASE, { headers: SIGNED_IN }),
+    { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_DAY }) },
+  )));
+
+  assert.equal(response.status, 429);
+  assert.equal(response.headers.get('retry-after'), '300', 'the day ceiling names its own wait');
+  assertRefunded(state, IS_OPENALEX_MINUTE);
+  // Trends also holds an identity unit, and `reserveGates` gives that back too.
+  assertRefunded(state, IS_IDENTITY);
+  assert.equal(releasesOf(state).length, 2);
+});
+
+// The relay reaches the budget without `cacheResponse`, so the refund inside
+// the function is the only one it gets.
+test('the /openalex relay gives the minute unit back when the day ceiling refuses', async () => {
+  const state = { actions: [] };
+  const response = await withWorkerFetchMock(
+    async () => new Response('{"results":[]}', { headers: { 'content-type': 'application/json' } }),
+    () => reportApi.fetch(new Request(
+      RELAY_WORKS_URL,
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { ...OPEN_ROUTE_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_DAY }) }),
+  );
+
+  assert.equal(response.status, 429);
+  assertRefunded(state, IS_OPENALEX_MINUTE);
   assert.equal(releasesOf(state).length, 1);
 });
 

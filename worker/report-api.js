@@ -538,8 +538,9 @@ async function reserveGates(origin, env, options, ceiling, held) {
     const paceError = await awaitSharedPace(ceiling, env, origin);
     if (paceError) return paceError;
     if (options.openAlexCalls) {
-      const budgetError = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
-      if (budgetError) return budgetError;
+      const budget = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
+      if (budget.error) return budget.error;
+      held.push(...budget.reservations);
     }
     return null;
   } catch (error) {
@@ -1985,9 +1986,11 @@ function openAlexTargetUrl(pathname, searchParams) {
 // is global rather than per user, and it is reserved only after a cache miss so
 // repeated queries cost nothing.
 //
-// Minute first, day second. Both orders can leave one bucket spent when the other
-// refuses; this way the leak lives in the minute bucket, which is thrown away
-// sixty seconds later, instead of in the day's.
+// Minute first, day second, and the minute given back if the day says no. This
+// used to leave the minute unit to expire as the lesser of two leaks, chosen
+// before giving a unit back was a pattern here; now nothing is left spent for
+// a call that was never made. What was taken travels back to the caller, the
+// same shape as every other gate, so whoever owns the refund can name it.
 async function reserveOpenAlexBudget(env, origin, amount) {
   const now = new Date().toISOString();
   const periods = [
@@ -2005,29 +2008,33 @@ async function reserveOpenAlexBudget(env, origin, amount) {
       1_000_000,
     ), '300'],
   ];
+  const taken = [];
   for (const [periodKey, limit, retryAfter] of periods) {
-    const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+    const ledgerRequest = {
       periodKey,
       subject: 'openalex:shared',
       subjectLimit: limit,
       globalLimit: limit,
       amount,
-    });
-    if (!reservation.accepted && reservation.code) {
-      return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
-        ...corsHeaders(origin, env),
-        'cache-control': 'no-store',
-      });
-    }
+    };
+    const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
     if (!reservation.accepted) {
-      return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+      await releaseHeld(env, taken);
+      if (reservation.code) {
+        return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+          ...corsHeaders(origin, env),
+          'cache-control': 'no-store',
+        }) };
+      }
+      return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
         ...corsHeaders(origin, env),
         'cache-control': 'no-store',
         'retry-after': retryAfter,
-      });
+      }) };
     }
+    taken.push(ledgerRequest);
   }
-  return null;
+  return { reservations: taken };
 }
 
 function openAlexResponseHeaders(upstream, origin, env) {
@@ -2061,8 +2068,8 @@ async function handleOpenAlex(request, env) {
   const cached = await caches.default.match(cacheKey);
   if (cached) return serveCached(cached, origin, env);
 
-  const quotaError = await reserveOpenAlexBudget(env, origin, OPENALEX_CALLS.relay);
-  if (quotaError) return quotaError;
+  const budget = await reserveOpenAlexBudget(env, origin, OPENALEX_CALLS.relay);
+  if (budget.error) return budget.error;
 
   const upstream = await fetchWithDeadline(addOpenAlexCredentials(target, env), {
     headers: { accept: 'application/json' },
