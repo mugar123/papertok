@@ -116,6 +116,10 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     [source, feed.refreshFeed],
   );
   const isRefreshing = source ? Boolean(source.isRefreshing) : feed.isRefreshing;
+  // Only the For You feed owns the context's list; Following and the guest
+  // feed render a `source` of their own and must not anchor For You's
+  // re-rank on a card it does not have.
+  const reportVisiblePaper = source ? null : feed.reportVisiblePaper;
   // Only once nothing more is coming: a page still loading or still pending
   // would put the ending in front of papers the guest has not seen yet.
   const endCard = source?.endCard ?? null;
@@ -241,23 +245,27 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     if (restoreAttemptedRef.current || papers.length === 0) return;
     restoreAttemptedRef.current = true;
     const saved = resumeMemory.get(scrollKey);
+    // The paper the reader was on, wherever it is in this order; each snap
+    // item is one container height tall, so the card's index is its offset.
+    // Reported to the context here, not left to the scroll event the
+    // programmatic scrollTop fires later: the profile load's re-rank must
+    // find the anchor already set.
+    const index = resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index });
+    reportVisiblePaper?.(papers[index]?.id ?? null);
     // A place restored from storage after a reload has an index and no pixel
     // offset; either says there is somewhere to go back to.
     if (feedRef.current && (saved.scrollTop > 0 || saved.index > 0)) {
       const el = feedRef.current;
       const prevBehavior = el.style.scrollBehavior;
       el.style.scrollBehavior = 'auto'; // Force instant jump
-      // The paper the reader was on, wherever it is in this order; each
-      // snap item is one container height tall, so the card's index is its
-      // offset. The raw offset only stands in when the height is unknown.
-      const index = resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index });
+      // The raw offset only stands in when the height is unknown.
       el.scrollTop = el.clientHeight > 0 ? index * el.clientHeight : saved.scrollTop;
 
       requestAnimationFrame(() => {
         el.style.scrollBehavior = prevBehavior;
       });
     }
-  }, [papers, scrollKey]);
+  }, [papers, reportVisiblePaper, scrollKey]);
 
   useEffect(() => {
     if (loading) initialLoadStartedRef.current = true;
@@ -389,11 +397,13 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     const index = container.clientHeight > 0
       ? Math.round(container.scrollTop / container.clientHeight)
       : 0;
+    const paperId = papersRef.current[index]?.id || resumeMemory.get(scrollKey).paperId;
     resumeMemory.remember(scrollKey, {
       scrollTop: container.scrollTop,
       index,
-      paperId: papersRef.current[index]?.id || resumeMemory.get(scrollKey).paperId,
+      paperId,
     });
+    reportVisiblePaper?.(paperId);
     if (!container.classList.contains('feed-container--scrolling')) {
       container.classList.add('feed-container--scrolling');
     }
@@ -408,7 +418,7 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     if (pendingSkippedPapersRef.current.size > 0) {
       schedulePendingSkipFlush();
     }
-  }, [schedulePendingSkipFlush, scrollKey]);
+  }, [reportVisiblePaper, schedulePendingSkipFlush, scrollKey]);
 
   const displayState = getFeedDisplayState({
     hasPapers: papers.length > 0,
