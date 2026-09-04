@@ -7,6 +7,10 @@ import { getUiErrorMessage } from '../../utils/errorMessages';
 import PaperCard from './PaperCard';
 import SkeletonCard from './SkeletonCard';
 import {
+  MOUNT_WINDOW_IDLE_TIMEOUT_MS,
+  MOUNT_WINDOW_RADIUS,
+  MOUNT_WINDOW_RESUME_RADIUS,
+  MOUNT_WINDOW_SETTLE_MS,
   growMountWindow,
   inMountWindow,
   initialMountWindow,
@@ -141,9 +145,18 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
       return initialMountWindow({
         total: papers.length,
         anchorIndex: resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index }),
+        radius: saved.paperId ? MOUNT_WINDOW_RESUME_RADIUS : MOUNT_WINDOW_RADIUS,
       });
     },
   );
+  // When this container mounted: the first growth of the window waits out the
+  // page transition from here (feedMountWindow.js says why). Stamped in an
+  // effect, not during render — the clock is not a pure read — so `null`
+  // means "this commit".
+  const mountedAtRef = useRef(null);
+  useEffect(() => {
+    mountedAtRef.current = performance.now();
+  }, []);
   // Papers that arrive after the first render (a first load, a source that
   // answers late) find an empty window: derive one anchored on the resumed
   // card, or it would grow from the top and leave that card a blank slot
@@ -155,20 +168,31 @@ export default function FeedContainer({ onOpenPdf, onSaveToList, onOpenComments 
     return initialMountWindow({
       total: papers.length,
       anchorIndex: resumeIndex({ papers, savedPaperId: saved.paperId, savedIndex: saved.index }),
+      radius: saved.paperId ? MOUNT_WINDOW_RESUME_RADIUS : MOUNT_WINDOW_RADIUS,
     });
   }, [mountWindow, papers, scrollKey]);
   useEffect(() => {
     if (mountWindowCovers(anchoredWindow, papers.length)) return undefined;
     // `requestIdleCallback` where it exists, so a chunk never lands inside a
-    // frame the transition or a scroll needs; a short timeout elsewhere.
+    // frame the transition or a scroll needs; a short timeout elsewhere. The
+    // idle wait itself starts once the page transition has had its time: a
+    // chunk scheduled straight after mount ran inside the entrance (idle, as
+    // the browser saw it) and froze it for the length of the task.
     const schedule = typeof window.requestIdleCallback === 'function'
-      ? (fn) => window.requestIdleCallback(fn, { timeout: 120 })
+      ? (fn) => window.requestIdleCallback(fn, { timeout: MOUNT_WINDOW_IDLE_TIMEOUT_MS })
       : (fn) => setTimeout(fn, 32);
     const cancel = typeof window.cancelIdleCallback === 'function'
       ? (id) => window.cancelIdleCallback(id)
       : (id) => clearTimeout(id);
-    const handle = schedule(() => setMountWindow(growMountWindow(anchoredWindow, papers.length)));
-    return () => cancel(handle);
+    const sinceMount = mountedAtRef.current === null ? 0 : performance.now() - mountedAtRef.current;
+    let handle = null;
+    const timer = setTimeout(() => {
+      handle = schedule(() => setMountWindow(growMountWindow(anchoredWindow, papers.length)));
+    }, Math.max(0, MOUNT_WINDOW_SETTLE_MS - sinceMount));
+    return () => {
+      clearTimeout(timer);
+      if (handle !== null) cancel(handle);
+    };
   }, [anchoredWindow, papers.length]);
   const initialLoadStartedRef = useRef(false);
   const scrollIdleTimerRef = useRef(null);

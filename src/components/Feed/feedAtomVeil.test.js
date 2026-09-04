@@ -47,5 +47,60 @@ test('the veil sits over the container and lets framer own its opacity', async (
 
 test('on the first entry the card composes under the veil instead of sitting at rest', async () => {
   const transition = await read('../Layout/PageTransition.jsx');
-  assert.match(transition, /directionForNavigationType\(useNavigationType\(\), \{\s*historyIndex: typeof window !== 'undefined' \? window\.history\.state\?\.idx : null,\s*\}\)/);
+  // The first index the page ever sees is an arrival (routeDirection.js).
+  assert.match(transition, /directionForHistoryIndex\(\s*typeof window !== 'undefined' \? window\.history\.state\?\.idx : null/);
+});
+
+/**
+ * The auth gate used to draw an atom of its own over the feed route
+ * (`InitialFeedLoading`, "PaperTok") and swap it for the veil the frame the
+ * session resolved: a new SVG (electrons back at the start of their orbits),
+ * a taller copy (the atom a step higher), and — measured with the CDP probe —
+ * nothing between the two, since `AnimatePresence initial={false}` keeps
+ * PageTransition from entering on the first render. One element now: the
+ * gate hands the feed route to its children while the session loads, and
+ * the veil is the boot screen until the first card composes under it.
+ */
+test('the auth gate hands the feed route to the veil instead of drawing an atom of its own', async () => {
+  const gate = await read('../Auth/ProtectedRoute.jsx');
+  assert.match(gate, /if \(loading\) \{\s*(?:\/\/[^\n]*\n\s*)*if \(location\.pathname === '\/'\) \{\s*return children;\s*\}/);
+  assert.doesNotMatch(gate, /InitialFeedLoading/);
+  assert.doesNotMatch(gate, /feed-empty--initial-loading/);
+  assert.doesNotMatch(gate, /FeedContainer\.css/);
+  const css = await read('./FeedContainer.css');
+  assert.doesNotMatch(css, /feed-empty--initial-loading/);
+});
+
+/**
+ * The bar popped in whole the same frame, above the veil. Its first mount in
+ * a session fades in; later mounts (back from a route without the bar) come
+ * in with the page, so the class leaves once the arrival has played and is
+ * not handed out again.
+ */
+test('the navbar fades in on its first mount of the session, and only then', async () => {
+  const jsx = await read('../Layout/Navbar.jsx');
+  assert.match(jsx, /let navbarHasArrived = false;/);
+  assert.match(jsx, /useState\(\(\) => !navbarHasArrived\)/);
+  assert.match(jsx, /className=\{arriving \? 'navbar navbar--arriving' : 'navbar'\}/);
+  assert.match(jsx, /onAnimationEnd=\{handleArrived\}/);
+  // Children animate too (the preferences sheet, the active rule): only the
+  // bar's own animationend may retire the class.
+  assert.match(jsx, /if \(event\.target !== event\.currentTarget\) return;/);
+  const css = await read('../Layout/Navbar.css');
+  assert.match(css, /\.navbar--arriving \{\s*animation: navbarArrive 0\.24s ease-out both;\s*\}/);
+  assert.match(css, /@keyframes navbarArrive \{\s*from \{ opacity: 0; \}\s*to \{ opacity: 1; \}\s*\}/);
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g) || [];
+  assert.ok(reduced.some((block) => /\.navbar--arriving[\s\S]*?animation: none;/.test(block)), 'reduced motion drops the arrival');
+});
+
+/**
+ * Measured on the bar (React Router 7.18, HashRouter): every navigation
+ * reports POP, with the history index climbing 1, 2 — so read through the
+ * type, both feeds entered from the left as a return and their cards sat at
+ * rest. The page reads the index now (utils/routeDirection.js).
+ */
+test('the page transition takes its direction from the history index', async () => {
+  const transition = await read('../Layout/PageTransition.jsx');
+  assert.match(transition, /directionForHistoryIndex\(\s*typeof window !== 'undefined' \? window\.history\.state\?\.idx : null,\s*undefined,\s*useNavigationType\(\),?\s*\)/);
+  assert.doesNotMatch(transition, /directionForNavigationType\(useNavigationType\(\)/);
 });

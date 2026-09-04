@@ -1,6 +1,6 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import { useLocation, useNavigationType } from 'react-router-dom';
-import { directionForNavigationType } from '../../utils/routeDirection.js';
+import { useNavigationType } from 'react-router-dom';
+import { directionForHistoryIndex } from '../../utils/routeDirection.js';
 
 /**
  * How far a page travels on its way in or out.
@@ -51,25 +51,35 @@ const EASE_LEAVING = [0.4, 0, 1, 1];
  * arrow reverses both, so returning retraces the step instead of looking like
  * another arrival. Before this, both directions slid the same way and coming
  * back felt like going somewhere new.
+ *
+ * Opacity and a slide, nothing else.
+ *
+ * The page used to arrive from `scale: 0.997` (0.995 for a project) and
+ * leave towards 0.999. At that size the scale is not a movement anyone sees —
+ * three thousandths of a 390px sheet is about a pixel — but it is a raster
+ * the browser has to redo: text on a layer scaled by a fraction is drawn at
+ * that fraction and drawn again, sharp, the frame the transform comes off.
+ * Measured on the production build (390×844, `open` probe): the wrapper
+ * settles to `transform: none` some 300ms after the page mounts, and that
+ * frame is a full re-raster of a 1300px page under an animated skeleton — the
+ * "small glitch" at the end of opening an author. A translate-only transform
+ * rasters once at the final size and only moves it.
  */
 const routeVariants = {
-  initial: ({ direction, isProject }) => ({
+  initial: ({ direction }) => ({
     opacity: 0,
     x: direction * TRAVEL_PX,
-    scale: isProject ? 0.995 : 0.997,
   }),
   enter: () => ({
     opacity: 1,
     x: 0,
-    scale: 1,
     transition: { duration: ENTER_MS, ease: EASE },
   }),
-  exit: ({ direction, isProject }) => ({
+  exit: ({ direction }) => ({
     opacity: 0,
     // Out the opposite side from the one the next page arrives on, which is
     // what makes the two look like one movement instead of two.
     x: direction * -TRAVEL_PX * 0.6,
-    scale: isProject ? 0.997 : 0.999,
     transition: { duration: EXIT_MS, ease: EASE_LEAVING },
   }),
 };
@@ -81,21 +91,23 @@ const reducedMotionVariants = {
 };
 
 export default function PageTransition({ children }) {
-  const location = useLocation();
   // The router already knows which way we are going, and it knows it without
   // any state of our own: `App` keys `<Routes>` on the pathname, so this
   // component is unmounted and remade on every navigation and could not
   // remember the previous route even if it tried. `handleBack` in the Explorer
   // calls `navigate(-1)` whenever there is history behind it, which is exactly
   // what makes this report POP.
-  // The index is what tells the first entry (0, an arrival) from a pop back
-  // through history: both report POP.
-  const direction = directionForNavigationType(useNavigationType(), {
-    historyIndex: typeof window !== 'undefined' ? window.history.state?.idx : null,
-  });
+  // The index, not the type: this router reports POP for every navigation
+  // (measured on the tab bar — a push arrived as POP with the index at 1),
+  // so the type alone made every page a return. The index grows on a push,
+  // shrinks on a step back, holds on a replace; the type only stands in
+  // where there is no index at all.
+  const direction = directionForHistoryIndex(
+    typeof window !== 'undefined' ? window.history.state?.idx : null,
+    undefined,
+    useNavigationType(),
+  );
   const prefersReducedMotion = useReducedMotion();
-
-  const isProject = location.pathname.startsWith('/explorer/project/');
 
   return (
     <motion.div
@@ -103,7 +115,7 @@ export default function PageTransition({ children }) {
       // return to something that was there, so the feed's cards resume at
       // rest instead of arriving again (PaperCard.css reads this).
       data-nav-direction={direction}
-      custom={{ direction, isProject }}
+      custom={{ direction }}
       initial="initial"
       animate="enter"
       exit="exit"
@@ -113,7 +125,6 @@ export default function PageTransition({ children }) {
         height: '100%',
         display: 'flex',
         flexDirection: 'column',
-        transformOrigin: '50% 35%',
       }}
     >
       {children}

@@ -12,6 +12,16 @@ test('a feed opens on the card it was on, one neighbour either side', () => {
   assert.deepEqual(initialMountWindow({ total: 2, anchorIndex: 0 }), { lo: 0, hi: 2 });
 });
 
+test('a resumed feed opens on its card alone; a fresh one keeps a neighbour', async () => {
+  const { MOUNT_WINDOW_RADIUS, MOUNT_WINDOW_RESUME_RADIUS, MOUNT_WINDOW_STEP, MOUNT_WINDOW_SETTLE_MS } = await import('./feedMountWindow.js');
+  assert.equal(MOUNT_WINDOW_RESUME_RADIUS, 0);
+  assert.equal(MOUNT_WINDOW_RADIUS, 1);
+  assert.deepEqual(initialMountWindow({ total: 30, anchorIndex: 20, radius: MOUNT_WINDOW_RESUME_RADIUS }), { lo: 20, hi: 21 });
+  assert.equal(MOUNT_WINDOW_STEP, 2, 'two cards a chunk: three were a 211 ms task at a quarter of the CPU');
+  assert.ok(MOUNT_WINDOW_SETTLE_MS >= 300, 'the first chunk waits out the page transition (0.3 s)');
+  assert.deepEqual(growMountWindow({ lo: 20, hi: 21 }, 30), { lo: 20, hi: 23 }, 'the default step');
+});
+
 test('the window grows outwards in steps, below first, until it covers the feed', () => {
   let window = initialMountWindow({ total: 10, anchorIndex: 4 });
   assert.deepEqual(window, { lo: 3, hi: 6 });
@@ -42,6 +52,10 @@ test('SOURCE: the container mounts a window and grows it off the critical path',
   assert.match(code, /initialMountWindow\(\{\s*total: papers\.length,\s*anchorIndex: resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\),/,
     'the first window is around the paper the feed was left on');
   assert.match(code, /growMountWindow\(anchoredWindow, papers\.length\)/, 'and grows in idle chunks');
+  assert.match(code, /radius: saved\.paperId \? MOUNT_WINDOW_RESUME_RADIUS : MOUNT_WINDOW_RADIUS,/, 'one card when resuming, a neighbour when fresh');
+  assert.match(code, /setTimeout\(\(\) => \{\s*handle = schedule\(\(\) => setMountWindow\(growMountWindow\(anchoredWindow, papers\.length\)\)\);\s*\}, Math\.max\(0, MOUNT_WINDOW_SETTLE_MS - sinceMount\)\);/,
+    'the first growth waits out the transition, measured from the mount');
+  assert.match(code, /requestIdleCallback\(fn, \{ timeout: MOUNT_WINDOW_IDLE_TIMEOUT_MS \}\)/);
   assert.match(code, /inMountWindow\(anchoredWindow, index\)[\s\S]*?feed-snap-item--pending/, 'cards outside it are full-height placeholders');
 });
 

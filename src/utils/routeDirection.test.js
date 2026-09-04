@@ -36,3 +36,36 @@ test('the first entry in history is an arrival, not a return', () => {
   assert.equal(directionForNavigationType('POP', { historyIndex: null }), -1);
   assert.equal(directionForNavigationType('POP', {}), -1);
 });
+
+import { directionForHistoryIndex } from './routeDirection.js';
+
+/**
+ * React Router 7.18's HashRouter reports POP for every navigation here —
+ * measured on the tab bar: a NavLink push and a `navigate('/')` both arrived
+ * as POP with the history index at 1 and 2. Read through the type, every
+ * page entered as a return and the cards never composed. The index is the
+ * signal the router cannot get wrong: it grows on a push, shrinks on a step
+ * back, and holds on a replace.
+ */
+test('the history index decides: up is forward, down is back, level is a replace', () => {
+  const memory = {};
+  assert.equal(directionForHistoryIndex(0, memory), 0, 'the first entry is an arrival');
+  assert.equal(directionForHistoryIndex(1, memory), 1, 'a push goes deeper');
+  assert.equal(directionForHistoryIndex(2, memory), 1);
+  assert.equal(directionForHistoryIndex(1, memory), -1, 'a step back returns');
+  assert.equal(directionForHistoryIndex(1, memory), -1, 'and stays put while the same entry re-renders');
+  assert.equal(directionForHistoryIndex(2, memory), 1, 'forward through history arrives again');
+});
+
+test('a reload deep in history is still an arrival, and a replace is not a step', () => {
+  const memory = {};
+  assert.equal(directionForHistoryIndex(3, memory), 0);
+  assert.equal(directionForHistoryIndex(3, memory), 0, 'a replace keeps the index and gets no travel');
+});
+
+test('without an index the navigation type still answers', () => {
+  const memory = {};
+  assert.equal(directionForHistoryIndex(null, memory, 'PUSH'), 1);
+  assert.equal(directionForHistoryIndex(undefined, memory, 'POP'), -1);
+  assert.equal(directionForHistoryIndex(undefined, memory), 0);
+});

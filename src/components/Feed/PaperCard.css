@@ -2499,7 +2499,13 @@ a.pc-citations {
     position: absolute;
     right: var(--space-2);
     top: 50%;
-    transform: translateY(-50%);
+    /* The individual `translate` property, not a `transform`: the arrival
+       (`pcArrive`, above) animates `transform`, and while it ran the
+       animation's value replaced this centring — the rail sat half its
+       height too low for 0.55 s and jumped up when the property was
+       released (measured on 390×844). `translate` composes with the
+       animated transform instead. */
+    translate: 0 -50%;
     gap: var(--space-3);
   }
 }
@@ -2728,6 +2734,32 @@ a.pc-citations {
   align-self: flex-start;
   text-decoration: underline;
   text-underline-offset: 2px;
+  transition: opacity 0.2s ease-out;
+}
+
+/* The button holds its place on every card, whether or not the panel turns
+   out to be hiding words. Whether it is hiding words is a measurement, and a
+   panel sized by the flex room its siblings leave has no height to measure in
+   the commit that mounts it — so the answer arrives a couple of frames later.
+   The sheet's column is bottom-anchored on a phone (`justify-content:
+   flex-end`, under 900px), and a button joining the layout then did not
+   appear under the abstract: it pushed the abstract, the authors, the title
+   and the kicker 25 px up in a single frame, while those pieces were still
+   fading in (measured at 390x844 through a tab switch: the title's top went
+   416 -> 383 between two frames, against 14-16 px of travel for the whole
+   arrival on a desktop). Reserved, the verdict only fades the label in, and
+   the panel's own room no longer depends on the answer. `visibility` rather
+   than `opacity` alone: an invisible button must be out of the tab order and
+   off the accessibility tree, not just transparent. */
+.pc-abstract-toggle--reserved {
+  opacity: 0;
+  visibility: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pc-abstract-toggle {
+    transition: none;
+  }
 }
 
 /* `.pc-author-names` clips with `overflow: hidden` + ellipsis, so the default

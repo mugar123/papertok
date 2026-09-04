@@ -9,13 +9,16 @@ import { getPapersByProject, getProjectDetails } from '../../services/openAireSe
 import { PaperBuilder } from '../../services/PaperBuilder';
 import { extractOrcid, getOrcidRecord } from '../../services/orcidService';
 import {
+  EXPLORER_ROW_CHUNK,
   entityPapersRequestKey,
   filterAndSortEntityPapers,
   getPaperCitationCount,
   hasKnownPaperCitationCount,
+  nextExplorerRowBudget,
   pinSourcePaper,
 } from '../../utils/entityExplorer';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { useHeightSettle } from '../../hooks/useHeightSettle';
 import { CATEGORIES } from '../../data/categories';
 import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.js';
@@ -166,6 +169,9 @@ export default function EntityExplorer({
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(false);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+  // How many rows of the list are mounted (utils/entityExplorer.js says why
+  // it is not all of them at once).
+  const [rowBudget, setRowBudget] = useState(EXPLORER_ROW_CHUNK);
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const observerRef = useRef(null);
   const papersRequestRef = useRef(null);
@@ -329,6 +335,24 @@ export default function EntityExplorer({
   const wikiDescription = visibleWikiInfo?.extract || topicFallbackDescription;
   const hasLoadedWikiImage = Boolean(
     visibleWikiInfo?.thumbnail && loadedWikiImageUrl === visibleWikiInfo.thumbnail,
+  );
+
+  // The hero's body settles between its sizes instead of snapping. What it
+  // holds arrives in pieces — the skeleton's reservation, the profile, the
+  // ORCID card, the Wikipedia paragraph, the impact score — and each one can
+  // change its height. Measured on an author opened from a card (390×844):
+  // the skeleton stood 550px tall and the live hero 400px, so the tabs and
+  // the list jumped 150px in one frame the moment the profile answered. The
+  // same ref rides on the skeleton's body and on the live one, so that
+  // handover is a settle like the rest. The body, not the whole hero: the tab
+  // strip sits inside the hero after the body, and with the outer box
+  // animated the strip snapped to its new place while the box closed over
+  // it (measured: tabs 515 → 451 in one frame under a 200 ms settle).
+  const heroBodyRef = useRef(null);
+  useHeightSettle(
+    heroBodyRef,
+    [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, wikiDescription, isWikiRequestPending, recentImpact, hasLoadedWikiImage],
+    { enabled: !prefersReducedMotion },
   );
   const getInteractionState = useCallback((paper) => ({
     isLiked: likedPaperIds.has(paper.id),
@@ -711,6 +735,7 @@ export default function EntityExplorer({
       if (page === 1) {
         setIsLoadingPapers(true);
         setPapersError(null);
+        setRowBudget(EXPLORER_ROW_CHUNK);
       }
       else setIsFetchingMore(true);
       
@@ -951,6 +976,38 @@ export default function EntityExplorer({
     return () => { isCancelled = true; };
   }, [type, id, entity, authorsPage, debouncedSearch, authorsOpened, authorsReloadKey]);
 
+
+  const filteredPapers = useMemo(() => {
+    const sortedPapers = filterAndSortEntityPapers(papers, { sortBy });
+    if (!entity?._queryTopic) return sortedPapers;
+    return [...sortedPapers].sort((left, right) => (
+      scoreQueryTopicPaper(right, entity) - scoreQueryTopicPaper(left, entity)
+    ));
+  }, [entity, papers, sortBy]);
+  // The rows on screen now, and the ones still to come in idle chunks. The
+  // "load more" sentinel waits for the whole page to be in, or it would sit
+  // right under the first chunk and ask for the next page at once.
+  const mountedPapers = useMemo(() => filteredPapers.slice(0, rowBudget), [filteredPapers, rowBudget]);
+  const rowsSettled = rowBudget >= filteredPapers.length;
+  useEffect(() => {
+    if (rowsSettled) return undefined;
+    const schedule = typeof window.requestIdleCallback === 'function'
+      ? (fn) => window.requestIdleCallback(fn, { timeout: 400 })
+      : (fn) => setTimeout(fn, 32);
+    const cancel = typeof window.cancelIdleCallback === 'function'
+      ? (id) => window.cancelIdleCallback(id)
+      : (id) => clearTimeout(id);
+    const handle = schedule(() => setRowBudget((budget) => nextExplorerRowBudget(budget, filteredPapers.length)));
+    return () => cancel(handle);
+  }, [rowsSettled, rowBudget, filteredPapers.length]);
+  // The field colour and label of each row, once per list rather than once
+  // per row per render: `areaKeyForCategory` was 27 ms of a throttled page
+  // load, re-derived every time the page re-rendered around the rows.
+  const rowAreas = useMemo(() => mountedPapers.map((paper) => ({
+    accent: areaAccentForPaper(paper),
+    label: areaLabelForPaper(paper, { english: isEnglish }) || (isEnglish ? 'Paper' : 'Artículo'),
+  })), [isEnglish, mountedPapers]);
+
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -967,15 +1024,7 @@ export default function EntityExplorer({
     if (activeTab === 'papers' && observerRef.current) observer.observe(observerRef.current);
     if (activeTab === 'authors' && observerAuthorsRef.current) observer.observe(observerAuthorsRef.current);
     return () => observer.disconnect();
-  }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab]);
-
-  const filteredPapers = useMemo(() => {
-    const sortedPapers = filterAndSortEntityPapers(papers, { sortBy });
-    if (!entity?._queryTopic) return sortedPapers;
-    return [...sortedPapers].sort((left, right) => (
-      scoreQueryTopicPaper(right, entity) - scoreQueryTopicPaper(left, entity)
-    ));
-  }, [entity, papers, sortBy]);
+  }, [hasMore, isLoadingPapers, isFetchingMore, hasMoreAuthors, isLoadingAuthors, isFetchingMoreAuthors, activeTab, rowsSettled]);
 
   const handleShare = async () => {
     if (!publicEntityUrl) return;
@@ -1134,7 +1183,7 @@ export default function EntityExplorer({
               header wraps main and aside, and the stats sit inside the aside.
               Flattening it let `.ehc-main` stretch down the whole hero and
               pushed the stats to the floor, with a screen of nothing between. */}
-          <div className="explorer-hero-content is-skeleton" aria-hidden="true">
+          <div className="explorer-hero-content is-skeleton" ref={heroBodyRef} aria-hidden="true">
             <div className="ehc-header">
               <div className="ehc-main">
                 <div className="ehc-visual-slot">
@@ -1330,7 +1379,7 @@ export default function EntityExplorer({
           </Button>
         </div>
         
-        <div className="explorer-hero-content">
+        <div className="explorer-hero-content" ref={heroBodyRef}>
           <div className="ehc-header">
           <div className="ehc-main">
             <div className="ehc-visual-slot">
@@ -2019,7 +2068,7 @@ export default function EntityExplorer({
 
             
             <div className="explorer-grid">
-              {(!isLoadingPapers || isFetchingMore) && filteredPapers.map((paper, idx) => (
+              {(!isLoadingPapers || isFetchingMore) && mountedPapers.map((paper, idx) => (
                 <div 
                   key={`${paper.id}-${idx}`} 
                   className="explorer-list-item"
@@ -2028,10 +2077,10 @@ export default function EntityExplorer({
                   role="button"
                   tabIndex={0}
                   aria-label={`${isEnglish ? 'Open publication' : 'Abrir publicación'}: ${normalizeScientificMarkup(paper.title) || (isEnglish ? 'Untitled' : 'Sin título')}`}
-                  style={{ '--i': Math.min(idx, 8), '--area-accent': areaAccentForPaper(paper) }}
+                  style={{ '--i': Math.min(idx, 8), '--area-accent': rowAreas[idx].accent }}
                 >
                   <div className="eli-header">
-                    <span className="eli-cat">{areaLabelForPaper(paper, { english: isEnglish }) || (isEnglish ? 'Paper' : 'Artículo')}</span>
+                    <span className="eli-cat">{rowAreas[idx].label}</span>
                     <div className="eli-metrics">
                       {hasKnownPaperCitationCount(paper) && (
                         paper.sources?.primary === 'scopus' && paper.scopusCitedByUrl ? (
@@ -2089,8 +2138,8 @@ export default function EntityExplorer({
                   </div>
                 ))}
 
-              {/* Infinite Scroll Sentinel */}
-              {hasMore && (
+              {/* Infinite Scroll Sentinel — once every row of this page is in */}
+              {hasMore && rowsSettled && (
                 <div ref={observerRef} className="ehc-sentinel">
                   <Loader2 className="ehc-spinner" size={24} />
                   <span>{isEnglish ? 'Loading more articles...' : 'Cargando más artículos...'}</span>

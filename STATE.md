@@ -1,5 +1,133 @@
 # Estado / pendientes
 
+## Abrir un autor (o un tema, un proyecto, una institución) sin glitch, y el feed más fluido en móvil (2026-09-04)
+
+**Cuatro cosas hacían glitch al tocar un autor desde una tarjeta, medidas en
+el build de producción a 390×844 con la sonda nueva `open`
+(`explorer-loading-probe.mjs`): el héroe encogía 150 px en un frame al llegar
+el perfil (el esqueleto reserva ORCID y temas que un autor por nombre no
+trae: pestañas 515 → 339 px de golpe), la tira de pestañas del esqueleto
+medía 16 px frente a 40 reales, la transición escalaba la página (`scale:
+0.997`) y forzaba un re-raster del texto al retirarse, y en el teléfono la
+hoja de autores —`position: fixed` dentro de una tarjeta con
+`content-visibility` y de un contenedor que recibe `transform` al irse—
+salía disparada con la página (505 → 805 px en 220 ms, con un frame
+congelado de 145 ms).** Ahora el cuerpo del héroe asienta entre alturas con
+`useHeightSettle` (FLIP con Web Animations, `src/hooks/useHeightSettle.js`,
+el mismo ref en el esqueleto y en el vivo; 576 → 400 px en 0,28 s con las
+pestañas siguiéndolo), la tira del esqueleto mide 40 px, la transición es
+opacidad y deslizamiento, y la hoja va por portal al `body` y al elegir un
+autor pasa a su pose de salida (24 px abajo y a cero en 0,18 s, en fase con
+la página) hasta que la página la desmonta. Con CPU ×4, volver al feed eran
+dos tareas de 222 y 211 ms (tres tarjetas montadas en el frame de la
+vuelta, y tres más en mitad de la entrada): la ventana de montaje reanuda
+con una sola tarjeta, crece de dos en dos y espera 400 ms desde el montaje
+antes del primer crecimiento. Lo que quedaba de la vuelta lo nombró el
+perfil CPU (flag `profile` de la sonda, sobre un build sin minificar):
+`readPersistent` en `openAlexClient.js` sacaba de `localStorage` y parseaba
+el blob entero de la caché persistente de OpenAlex en cada lectura, y el
+feed lo lee una vez por paper al montar — 92 ms en una corrida, 422 ms en
+otra, dentro de la entrada; ahora se lee y parsea una vez, se suelta cuando
+otra pestaña escribe la clave (evento `storage`) y las lecturas devuelven
+copias. Y el blob medía 3,5 M de caracteres porque las páginas de obras se
+guardaban crudas (treinta obras con abstracts en índice invertido) y cada
+escritura lo serializaba entero, sesenta veces por página de autor: las
+páginas de obras y autores se persisten ya mapeadas (`persistentSlim`, claves
+`-v2`), las escrituras se agrupan en una microtarea y el blob se recorta a
+1,2 M de caracteres. Lo que quedaba al llegar la lista de obras (tareas de
+140–220 ms con CPU ×4) era maquetar y pintar treinta filas de golpe: la lista
+monta ocho filas por tanda en idle, las filas llevan `content-visibility:
+auto`, y el centinela de «cargar más» espera a que la página esté entera. Cuatro
+deslizamientos de tarjeta con CPU ×4 no dejan frames >34 ms ni tareas
+largas. Plan, tablas y lo que queda en
+`docs/superpowers/plans/2026-09-04-explorador-entrada-y-movil.md`.
+
+Dos salvedades honestas. La sonda corre en Chrome headless con raster por
+software, no en un teléfono: lo que mide con fidelidad son frames perdidos,
+tareas largas y geometría por frame; el coste de GPU real queda por ver en
+un dispositivo. Y el sitio desplegado no se recarga solo al arrancar (una
+navegación, service worker en control): la recarga que la sonda veía en
+local era un `workbox-window` sin resolver tras un `pnpm install`
+accidental; el repo va con `npm ci`.
+
+## La entrada del feed en móvil deja de dar un salto (2026-09-03)
+
+**`pc-abstract-toggle` («Leer el abstract completo», 25 px) se montaba dos
+frames después de la tarjeta —el veredicto que lo enciende es una medida y el
+panel no tiene altura en el commit que lo monta— y bajo 900 px la columna de
+la hoja está anclada abajo, así que no aparecía debajo del abstract: empujaba
+25 px hacia arriba el abstract, los autores, el título y el antetítulo, en un
+solo frame, con las piezas a media opacidad.** Medido sobre el build de
+producción: el título recorría 40 px en móvil con un salto de 28 px en un
+frame, frente a 14–16 px suaves en escritorio, donde la columna más ancha deja
+el abstract sin recortar y el botón no llega a existir. Ahora el botón reserva
+su caja siempre y el veredicto solo enciende su etiqueta
+(`pc-abstract-toggle--reserved`, fundido de 0,2 s): móvil 17 px de recorrido y
+5 px de salto máximo, igual que escritorio (18–19 px / 5 px), en los dos
+sentidos de la barra. Se descartó medir antes de pintar
+(`useLayoutEffect`): quitaba el salto pero forzaba un layout síncrono por
+tarjeta montada, tres tareas de 50–56 ms con CPU ×4 al volver a Para ti.
+Detalle y tablas en `docs/superpowers/plans/2026-09-03-feed-entrada-movil.md`.
+
+
+## La dirección de las páginas sale del índice del historial (2026-09-03)
+
+**React Router 7.18 con `HashRouter` informa `POP` en todas las navegaciones
+(medido en la barra: el NavLink a Siguiendo y el `navigate('/')` de Para ti
+llegan como POP con `history.state.idx` en 1 y 2). Leída por el tipo, cada
+página entraba desde la izquierda «como una vuelta» y las tarjetas del feed
+nunca componían al cambiar de pestaña: la llegada coreografiada de la
+tarjeta solo se veía en el arranque.** `directionForHistoryIndex`
+(utils/routeDirection.js) deriva ahora la dirección del índice — sube =
+avance, baja = vuelta, igual = reemplazo, primer índice = llegada — con una
+memoria de módulo para que los muchos renders de una navegación lean lo
+mismo; el tipo del router solo queda de reserva cuando no hay índice.
+Medido sobre el build de producción en 390×844: Para ti → Siguiendo y
+Siguiendo → Para ti entran desde la derecha con el título 0 → 1 y el carril
+0 → 1; `history.back()` entra desde la izquierda con la tarjeta en reposo.
+Con CPU ×4 no hay tareas largas ni frames >34 ms en la entrada (las tareas
+de 90–135 ms que se vieron primero eran del modo desarrollo de Vite/React,
+no del build). La sonda gana el modo `tabswitch` (`demo,mobile,slow,late`;
+siembra un autor seguido para que Siguiendo tenga tarjetas).
+
+
+## El carril de botones ya no salta al llegar en móvil (2026-09-03)
+
+**Bajo 900 px el carril de Me gusta/Guardar/… se centraba con
+`transform: translateY(-50%)`, y la llegada de cada pieza de la tarjeta
+(`pcArrive`) anima `transform`: durante los 0,55 s de la llegada el valor de
+la animación sustituía el centrado, el carril quedaba media altura más abajo
+(medido en 390×844: top 456 → 448, y 288 el frame en que soltaba la
+propiedad) y saltaba arriba al terminar.** Visible desde que la primera
+entrada compone (`1c01d24`, esta mañana); antes la regla
+`[data-nav-direction="-1"]` apagaba la llegada en el arranque y lo
+escondía. El centrado es ahora la propiedad individual `translate`, que
+compone con el `transform` animado en vez de sustituirlo: medido después,
+el carril solo asienta los 8 px de la coreografía (296 → 288). Test de
+fuente en `paperCardArrival.test.js`; la sonda `bootload` muestrea también
+el carril (`rail`).
+
+## Un solo átomo del arranque a la primera tarjeta (2026-09-03)
+
+**La puerta de auth ya no pinta un átomo propio sobre `/`: mientras carga la
+sesión entrega el árbol del feed, cuyo veil (`.feed-empty--veil`) es la
+pantalla de arranque desde el primer pintado y recede sobre la primera
+tarjeta como ya hacía. La barra se funde en 0,24 s en su primer montaje de la
+sesión (`navbar--arriving`).** Lo que había: dos SVG distintos sustituidos en
+un frame (electrones reiniciados, otro texto, otra altura), sin nada que lo
+tapara porque `AnimatePresence initial={false}` anula la entrada de
+`PageTransition` en el primer render, y con snapshot un veil de un frame que
+salía en 0,42 s: un átomo fantasma tras el sólido. Medido antes y después con
+`explorer-loading-probe.mjs bootload` (nuevo modo; flags `demo`, `mobile`,
+`hold`, `shots`, y `PROFILE_DIR`/`ORIGIN` por entorno) en escritorio y móvil:
+cero frames sin veil ni tarjeta en los cuatro casos. Plan y tabla en
+`docs/superpowers/plans/2026-09-03-feed-arranque-un-atomo.md`.
+
+Salvedad honesta: la medición con sesión se hizo en modo demo (la única
+sesión disponible sin pedir credenciales); en la app real la puerta dura lo
+que tarde Firebase (90 ms de invitado en producción; más con perfil), y ese
+tramo lo cubre el mismo veil por construcción, no por medida.
+
 ## Semantic Scholar sobrevive a su segundo (2026-09-03)
 
 **Las dos rutas de S2 llevan ahora un compás de una petición por segundo

@@ -295,6 +295,14 @@ const PaperCard = memo(function PaperCard({
     [onOpenComments, paper],
   );
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
+  // The sheet is leaving with the page: an author was picked from it. It
+  // stays mounted and moves to its leaving pose — a short drop and a fade on
+  // the page's own leaving curve, 0.18 s against the page's 0.2 s — and the
+  // page's unmount takes it away. Not an AnimatePresence exit: a spring back
+  // down the screen (~0.6 s) was cut off part-way when the card went, and
+  // the reason for a close does not reach an exit reliably enough to pick a
+  // shorter one.
+  const [authorsSheetLeaving, setAuthorsSheetLeaving] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
   const [showReader, setShowReader] = useState(false);
   /* Where the reader should grow from. The rewrite button's rectangle at the
@@ -1448,13 +1456,19 @@ const PaperCard = memo(function PaperCard({
           </AnimatePresence>
         </div>
 
-        {/* Only where there is something to reveal. `expanded` keeps it on
-            screen once opened, since an open panel clips nothing and would
-            otherwise take away the control that closes it. */}
-        {abstractText && (abstractClipped === true || expanded) && (
+        {/* Its box is on the card from the first frame; the verdict only
+            decides whether the label is on. Shown when the panel is hiding
+            words, and kept on once opened, since an open panel clips nothing
+            and would otherwise take away the control that closes it. It used
+            to be mounted by that verdict, which is a measurement and cannot
+            be taken before the panel has a height: on a phone, where the
+            column is bottom-anchored, the button joining the layout two
+            frames in pushed the abstract, the authors and the title 25 px up
+            in one frame, in the middle of their arrival. */}
+        {abstractText && (
         <button
           type="button"
-          className="pc-abstract-toggle"
+          className={`pc-abstract-toggle${abstractClipped === true || expanded ? '' : ' pc-abstract-toggle--reserved'}`}
           aria-expanded={expanded}
           aria-controls={abstractId}
           onClick={(e) => toggleExpanded(e, !expanded)}
@@ -1719,6 +1733,15 @@ const PaperCard = memo(function PaperCard({
         </div>
       )}
 
+      {/* On `document.body`, not in the card. The overlay is `position:
+          fixed`, and a fixed box inside an ancestor with a transform is fixed
+          to that ancestor: the page wrapper takes one the frame a navigation
+          starts (PageTransition slides and fades it), so a sheet still on
+          screen while an author opened from it — the phone's path to every
+          author — snapped to the page's box and slid off with it. Outside
+          the routed tree it stays where the viewport is; the related sheet
+          and the reader already live here for the same reason. */}
+      {createPortal(
       <AnimatePresence>
         {showAuthorsModal && (
           <motion.div 
@@ -1729,17 +1752,24 @@ const PaperCard = memo(function PaperCard({
             aria-labelledby="pc-authors-dialog-title"
             tabIndex={-1}
             initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
+            animate={{ opacity: authorsSheetLeaving ? 0 : 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: prefersReducedMotion ? 0.1 : 0.2, ease: 'easeOut' }}
+            transition={{ duration: prefersReducedMotion ? 0.1 : (authorsSheetLeaving ? 0.18 : 0.2), ease: authorsSheetLeaving ? [0.4, 0, 1, 1] : 'easeOut' }}
+            style={authorsSheetLeaving ? { pointerEvents: 'none' } : undefined}
             onClick={(e) => { e.stopPropagation(); setShowAuthorsModal(false); }}
           >
             <motion.div 
               className="pc-authors-modal-sheet"
               initial={prefersReducedMotion ? false : { y: '100%' }}
-              animate={{ y: 0 }}
+              animate={authorsSheetLeaving
+                ? (prefersReducedMotion ? { opacity: 0 } : { y: 24, opacity: 0 })
+                : { y: 0, opacity: 1 }}
               exit={prefersReducedMotion ? { opacity: 0 } : { y: '100%' }}
-              transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', damping: 25, stiffness: 200 }}
+              transition={prefersReducedMotion
+                ? { duration: 0 }
+                : authorsSheetLeaving
+                  ? { duration: 0.18, ease: [0.4, 0, 1, 1] }
+                  : { type: 'spring', damping: 25, stiffness: 200 }}
               onClick={(e) => e.stopPropagation()}
             >
               <div className="pc-authors-modal-header">
@@ -1755,8 +1785,11 @@ const PaperCard = memo(function PaperCard({
                     type="button"
                     className="pc-authors-modal-item"
                     onClick={() => {
-                      setShowAuthorsModal(false);
                       const path = authorExplorerPath(author, paper.arxivId || paper.id, { publicMode });
+                      // With somewhere to go the sheet leaves with the page;
+                      // without, it is dismissed as if by the scrim.
+                      if (path) setAuthorsSheetLeaving(true);
+                      else setShowAuthorsModal(false);
                       trackEvent('select_content', {
                         content_type: 'author',
                         surface: analyticsSurface,
@@ -1775,7 +1808,10 @@ const PaperCard = memo(function PaperCard({
             </motion.div>
           </motion.div>
         )}
-      </AnimatePresence>
+      </AnimatePresence>,
+      document.body,
+      'papertok-authors-sheet',
+      )}
       {showRelated && createPortal(
         <Suspense fallback={null}>
           <RelatedPapersSheet
