@@ -18,6 +18,7 @@ nothing from the conversation that produced them.
 | [002](002-wiki-absent-fold.md) | Stop the fold yanking the page up when no explanation arrives | HIGH | Easing & duration | 1 source, 1 test | **DONE** (values differ, see below) |
 | [003](003-lateral-feed-switch.md) | Make the navbar tabs switch sideways instead of descending | HIGH | Purpose, duration, spatial consistency | 3 source, 2 test | **DONE** (scope grew, see below) |
 | [004](004-institution-portrait-crossfade.md) | Make the institution's portrait cross-fade without dimming | LOW | Cohesion | 1 source | **DONE** |
+| [005](005-explorer-what-the-skeleton-promises.md) | The Explorer's skeleton promises things that never arrive | HIGH | Missed opportunities | 3-4 source | TODO |
 
 ## What was actually implemented, 2026-09-04
 
