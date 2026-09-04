@@ -297,15 +297,34 @@ function corsHeaders(origin, env) {
 // The contract this puts on callers is the reverse of the old parameter
 // allowlist, and stricter: whatever affects the answer must appear here, because
 // nothing else does. Anything absent is not merely un-keyed, it is shared.
-function canonicalCacheKey(request, origin, canonicalParams = {}) {
+//
+// The origin is deliberately not in the key. It used to be, because the stored
+// response carries `access-control-allow-origin` and the Cache API ignores
+// `Vary`, so an entry stored under one origin's header would have been served,
+// header and all, to the next. That protected one header at the price of one
+// upstream call per origin -- and for `/health/scopus`, cached precisely to
+// guard a weekly allowance, a monitor with no `Origin` and a browser with one
+// were two calls for one answer. `serveCached` rebuilds the header instead.
+function canonicalCacheKey(request, canonicalParams = {}) {
   const cacheUrl = new URL(`https://papertok.internal/cache${new URL(request.url).pathname}`);
   for (const [name, value] of Object.entries(canonicalParams)) {
     if (value !== null && value !== undefined && value !== '') {
       cacheUrl.searchParams.set(name, String(value));
     }
   }
-  cacheUrl.searchParams.set('_origin', origin || 'no-origin');
   return new Request(cacheUrl.toString(), { method: 'GET' });
+}
+
+// One stored body for every origin, with the one origin-dependent header put
+// back for whoever is asking now. `vary: Origin` travels with it so the caches
+// downstream of this one -- the browser's, any intermediary's -- do not
+// cross-serve what this one no longer needs to keep apart.
+function serveCached(cached, origin, env) {
+  const headers = new Headers(cached.headers);
+  headers.delete('access-control-allow-origin');
+  headers.delete('vary');
+  for (const [name, value] of Object.entries(corsHeaders(origin, env))) headers.set(name, value);
+  return new Response(cached.body, { status: cached.status, headers });
 }
 
 function boundedLimit(value, fallback, maximum) {
@@ -491,9 +510,9 @@ async function awaitSharedPace(ceiling, env, origin, minuteReservation) {
 // full TTL is something only the fetcher's result can say: a 200 assembled from a
 // fallback after the real provider refused is not worth six hours.
 async function cacheResponse(request, origin, env, ttl, fetcher, options = {}) {
-  const cacheKey = canonicalCacheKey(request, origin, options.canonicalParams);
+  const cacheKey = canonicalCacheKey(request, options.canonicalParams);
   const cached = await caches.default.match(cacheKey);
-  if (cached) return cached;
+  if (cached) return serveCached(cached, origin, env);
   // Resolved once here and handed to both gates: the beat used to re-parse the
   // URL to find the same ceiling the minute reservation had just looked up.
   const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
@@ -968,9 +987,9 @@ async function handleArxiv(request, env) {
 
   // Keyed on the URL that was actually built, which is the only way the two
   // cannot drift apart.
-  const cacheKey = canonicalCacheKey(request, origin, Object.fromEntries(upstreamUrl.searchParams));
+  const cacheKey = canonicalCacheKey(request, Object.fromEntries(upstreamUrl.searchParams));
   const cached = await caches.default.match(cacheKey);
-  if (cached) return cached;
+  if (cached) return serveCached(cached, origin, env);
 
   const response = await fetchWithDeadline(upstreamUrl.toString(), {
     headers: {
@@ -2002,9 +2021,9 @@ async function handleOpenAlex(request, env) {
   const target = openAlexTargetUrl(requestUrl.pathname, requestUrl.searchParams);
   if (!target) return json({ code: 'INVALID_OPENALEX_REQUEST' }, 400, corsHeaders(origin, env));
 
-  const cacheKey = canonicalCacheKey(request, origin, Object.fromEntries(target.searchParams));
+  const cacheKey = canonicalCacheKey(request, Object.fromEntries(target.searchParams));
   const cached = await caches.default.match(cacheKey);
-  if (cached) return cached;
+  if (cached) return serveCached(cached, origin, env);
 
   const quotaError = await reserveOpenAlexBudget(env, origin, OPENALEX_CALLS.relay);
   if (quotaError) return quotaError;
@@ -2346,9 +2365,9 @@ export default {
       // Brevo shares one rate limit between this probe and real delivery, so the
       // answer is served from the edge cache like its Scopus and OpenAlex
       // siblings: hammering the route cannot make the digests fail.
-      const cacheKey = canonicalCacheKey(request, origin);
+      const cacheKey = canonicalCacheKey(request);
       const cached = await caches.default.match(cacheKey);
-      if (cached) return cached;
+      if (cached) return serveCached(cached, origin, env);
       const [health, schedule] = await Promise.all([
         checkEmailProviderHealth(env),
         getEmailScheduleHealth(env),
@@ -2383,9 +2402,9 @@ export default {
     }
     if (url.pathname === '/health/openalex') {
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
-      const cacheKey = canonicalCacheKey(request, origin);
+      const cacheKey = canonicalCacheKey(request);
       const cached = await caches.default.match(cacheKey);
-      if (cached) return cached;
+      if (cached) return serveCached(cached, origin, env);
       const health = await checkOpenAlexHealth(env);
       const response = json(health, health.available ? 200 : 503, {
         ...corsHeaders(origin, env),
@@ -2402,9 +2421,9 @@ export default {
       if (origin && !allowedOrigins(env).has(origin)) return json({ error: 'Origin not allowed' }, 403);
       // The probe costs one upstream Scopus call, so it is served from the edge
       // cache: hammering the route cannot drain the weekly provider allowance.
-      const cacheKey = canonicalCacheKey(request, origin);
+      const cacheKey = canonicalCacheKey(request);
       const cached = await caches.default.match(cacheKey);
-      if (cached) return cached;
+      if (cached) return serveCached(cached, origin, env);
       const health = await checkScopusHealth(env);
       const response = json(health, health.available ? 200 : 503, {
         ...corsHeaders(origin, env),

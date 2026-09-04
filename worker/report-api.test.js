@@ -2149,6 +2149,50 @@ test('keeps two different PubMed queries in two different cache entries', async 
   }
 });
 
+// The body of a cached answer is the same whoever asks -- same upstream URL,
+// same canonical parameters -- and the only thing that ever differed by origin
+// was the CORS header stored with it. Keying on the origin protected that
+// header at the price of one upstream call per origin: for `/health/scopus`,
+// which is cached precisely to guard a weekly provider allowance, a monitor
+// without an `Origin` and a browser with one were two calls for one answer.
+test('one cached answer serves every allowed origin, each with its own CORS header', async () => {
+  const stored = new Map();
+  let upstreamCalls = 0;
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.fetch = async () => {
+    upstreamCalls += 1;
+    return new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } });
+  };
+  globalThis.caches = {
+    default: {
+      match: async request => stored.get(request.url)?.clone() || null,
+      put: async (request, response) => stored.set(request.url, response.clone()),
+    },
+  };
+  try {
+    const url = 'https://papertok-report-api.example/sources/s2?q=malaria';
+    const ask = headers => reportApi.fetch(new Request(url, { headers }), OPEN_ROUTE_ENV);
+
+    const bare = await ask({});
+    const apex = await ask({ origin: 'https://papertok.app' });
+    const www = await ask({ origin: 'https://www.papertok.app' });
+
+    assert.equal(upstreamCalls, 1, 'three askers, one provider call');
+    assert.equal(stored.size, 1, 'three askers, one entry');
+    assert.equal(bare.headers.get('access-control-allow-origin'), null, 'no Origin, no CORS header');
+    assert.equal(apex.headers.get('access-control-allow-origin'), 'https://papertok.app');
+    assert.equal(www.headers.get('access-control-allow-origin'), 'https://www.papertok.app');
+    // Intermediate and browser caches must not cross-serve either.
+    assert.equal(www.headers.get('vary'), 'Origin');
+    assert.deepEqual(await www.json(), { data: [] }, 'the shared body is the body');
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
 test('relays an upstream refusal as a refusal instead of flattening it to 502', async () => {
   const response = await withWorkerFetchMock(
     async () => new Response(JSON.stringify({ message: 'Too Many Requests' }), {
