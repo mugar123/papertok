@@ -2193,6 +2193,61 @@ test('one cached answer serves every allowed origin, each with its own CORS head
   }
 });
 
+// `serveCached` carries `status: cached.status` forward explicitly (:327) --
+// every other cached route always stores a 200, so nothing about them can tell
+// a real status passthrough apart from a hardcoded one. Only these three
+// health routes cache a status that varies with provider health, and this is
+// the route the whole task is about: `/health/scopus` is cached to protect a
+// *weekly* Elsevier allowance, so a cached unhealthy result silently becoming
+// a false-positive 200 for the next caller would misreport provider health
+// with nothing to catch it. Scopus left unconfigured is the cleanest way to
+// make the probe report unhealthy -- `checkScopusHealth` returns before it
+// ever reaches the network, so this needs no fetch mock to fake a bad answer.
+test('serves a cached unhealthy Scopus probe as 503, not a false-positive 200, to a different origin', async () => {
+  const stored = new Map();
+  const originalFetch = globalThis.fetch;
+  const originalCaches = globalThis.caches;
+  globalThis.caches = {
+    default: {
+      async match(key) {
+        const hit = stored.get(String(key.url));
+        return hit ? hit.clone() : null;
+      },
+      async put(key, response) {
+        stored.set(String(key.url), response.clone());
+      },
+    },
+  };
+  // Canary: an unconfigured Scopus egress must answer without ever reaching
+  // the network. If it did, this would throw instead of silently agreeing.
+  globalThis.fetch = async () => {
+    throw new Error('unexpected upstream call for an unconfigured Scopus egress');
+  };
+  try {
+    const scopusHealthRequest = origin => new Request(
+      'https://papertok-report-api.example/health/scopus',
+      { headers: { origin } },
+    );
+    const first = await reportApi.fetch(scopusHealthRequest('https://papertok.app'), {});
+    const second = await reportApi.fetch(scopusHealthRequest('https://www.papertok.app'), {});
+
+    assert.equal(first.status, 503, 'unconfigured Scopus is unhealthy on the miss');
+    assert.equal(stored.size, 1, 'one entry for the one path, regardless of origin');
+    assert.equal(second.status, 503, 'still 503 on the cache hit -- not defaulted to 200');
+    assert.equal(first.headers.get('access-control-allow-origin'), 'https://papertok.app');
+    assert.equal(
+      second.headers.get('access-control-allow-origin'),
+      'https://www.papertok.app',
+      "the second, different origin gets its own header, not the first caller's",
+    );
+    assert.equal((await second.json()).code, 'SCOPUS_NOT_CONFIGURED');
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) delete globalThis.caches;
+    else globalThis.caches = originalCaches;
+  }
+});
+
 test('relays an upstream refusal as a refusal instead of flattening it to 502', async () => {
   const response = await withWorkerFetchMock(
     async () => new Response(JSON.stringify({ message: 'Too Many Requests' }), {
