@@ -2202,6 +2202,63 @@ test('gives nothing back when every gate accepts', async () => {
   assert.equal(releasesOf(state).length, 0, JSON.stringify(state.actions));
 });
 
+// L2a: the identity gate's Durable Object cannot be reached, with the minute
+// unit already taken. The throw reaches the router's catch and becomes a 502;
+// the unit has to come back on the way.
+test('gives the minute unit back when the identity ledger throws after it', async () => {
+  const state = { actions: [] };
+  const response = await relatedThrough(scriptedQuotaLedger(state, { broken: IS_IDENTITY }));
+
+  assert.equal(response.status, 502);
+  assertRefunded(state, IS_MINUTE);
+  assert.equal(releasesOf(state).length, 1);
+});
+
+// L2b: the beat's Durable Object cannot be reached, with both units taken.
+test('gives both units back when the pace ledger throws after them', async () => {
+  const state = { actions: [] };
+  const response = await relatedThrough(scriptedQuotaLedger(state, { broken: IS_PACE }));
+
+  assert.equal(response.status, 502);
+  assertRefunded(state, IS_MINUTE);
+  assertRefunded(state, IS_IDENTITY);
+  assert.equal(releasesOf(state).length, 2);
+});
+
+// L3: the beat's Durable Object answers but not-ok -- QUOTA_LEDGER_UNAVAILABLE
+// -- which `awaitSharedPace` reports as a 503. `s2:pace` is a different object
+// from `s2:<minute>`, so it can fail with the minute unit already accepted.
+test('gives both units back when the pace ledger is unavailable after them', async () => {
+  const state = { actions: [] };
+  const response = await relatedThrough(scriptedQuotaLedger(state, { unavailable: IS_PACE }));
+
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, 'PROVIDER_QUOTA_NOT_CONFIGURED');
+  assertRefunded(state, IS_MINUTE);
+  assertRefunded(state, IS_IDENTITY);
+  assert.equal(releasesOf(state).length, 2);
+});
+
+// Not a leak: a fetch that fails may still have reached the provider -- a
+// timeout is a send that got no answer, a 429 is a send that counted -- and the
+// ledger counts sends. Refunding here would let it count fewer sends than were
+// made, and under sustained pressure exceed the one-a-second the beat exists
+// to keep. So the units stay spent. This test is the decision, pinned.
+test('gives nothing back when the fetcher fails, because the send may have happened', async () => {
+  const state = { actions: [] };
+  const response = await withWorkerFetchMock(
+    async () => { throw new Error('provider hung up'); },
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/s2?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state) }),
+  );
+
+  assert.equal(response.status, 502);
+  assert.ok(state.actions.some(a => a.action === 'reserve' && IS_MINUTE(a.periodKey)), 'the minute unit was taken');
+  assert.equal(releasesOf(state).length, 0, `a refund after the fetcher: ${JSON.stringify(releasesOf(state))}`);
+});
+
 test('does not put PubMed on the Semantic Scholar beat', async () => {
   const state = { periodKeys: [], reservations: 0 };
   await withWorkerFetchMock(

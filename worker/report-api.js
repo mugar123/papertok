@@ -521,22 +521,31 @@ async function releaseHeld(env, held) {
 }
 
 // The reserving gates, in order, each pushing what it took onto `held`. Returns
-// the first refusal, or null when every gate accepted. The caller owns `held`
-// and owns the refund; this function only knows what was taken.
+// the first refusal, or null when every gate accepted; throws when a ledger
+// cannot be reached, after giving back whatever was taken before it -- each
+// gate is a different Durable Object, and any of them can fail with the
+// earlier ones already spent. The fetcher is deliberately not inside this: a
+// fetch that fails may still have reached the provider, and the ledger counts
+// provider calls, not answers.
 async function reserveGates(origin, env, options, ceiling, held) {
-  const minute = ceiling ? await reserveSharedMinuteQuota(ceiling, env, origin) : {};
-  if (minute.error) return minute.error;
-  if (minute.reservation) held.push(minute.reservation);
-  const identity = await reserveProtectedProviderQuota(options.identity || null, env, origin);
-  if (identity.error) return identity.error;
-  if (identity.reservation) held.push(identity.reservation);
-  const paceError = await awaitSharedPace(ceiling, env, origin);
-  if (paceError) return paceError;
-  if (options.openAlexCalls) {
-    const budgetError = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
-    if (budgetError) return budgetError;
+  try {
+    const minute = ceiling ? await reserveSharedMinuteQuota(ceiling, env, origin) : {};
+    if (minute.error) return minute.error;
+    if (minute.reservation) held.push(minute.reservation);
+    const identity = await reserveProtectedProviderQuota(options.identity || null, env, origin);
+    if (identity.error) return identity.error;
+    if (identity.reservation) held.push(identity.reservation);
+    const paceError = await awaitSharedPace(ceiling, env, origin);
+    if (paceError) return paceError;
+    if (options.openAlexCalls) {
+      const budgetError = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
+      if (budgetError) return budgetError;
+    }
+    return null;
+  } catch (error) {
+    await releaseHeld(env, held);
+    throw error;
   }
-  return null;
 }
 
 // `ttl` may be a function of the payload, because whether an answer deserves its
