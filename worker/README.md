@@ -86,9 +86,13 @@ the same average and no say over which second, so under it both routes keep a on
 (`worker/upstream-pace.js`): a caller takes the first free second in the shared ledger and sleeps
 for it — at most 2.5 s of sleep, which does not count the handful of ledger round trips around it —
 and is refused here with `retry-after: 3` rather than upstream when none is free within that budget.
-That local refusal also gives back the minute unit this request had already spent against
-`S2_GLOBAL_MINUTE_LIMIT` — the beat runs after that reservation on purpose, so a caller it turns away
-no longer forfeits the unit to a request that never reached the provider.
+Any gate that refuses -- the minute ceiling, the identity quota, the beat, the OpenAlex
+budget -- gives back every unit an earlier gate had already taken for this request:
+`reserveGates` accumulates what each gate takes, and `cacheResponse` refunds all of it on a
+refusal. A ledger that cannot be reached between two gates refunds the same units from inside
+`reserveGates` itself, which then re-throws so the router still answers with a 502. What is
+never refunded is a failed fetch: a timeout is a send the provider received and did not
+answer, and the ledger counts sends, not answers.
 Derived from the beat's own 2.5 s wait budget rather than written beside it, so the two cannot drift
 apart; the router's separate fallback of 2 s for a refusal Semantic Scholar itself sends speaks for
 the provider's one-second window and stays as it is.
@@ -115,6 +119,7 @@ refusal is relayed with its own status and `retry-after` rather than flattened i
 rate-limit headers are named in `access-control-expose-headers` so the browser can actually read
 them; otherwise the client's backoff falls back to guessing, and since the budget resets at midnight
 UTC that guess can be hours wrong. `/health/openalex` reports the remaining daily budget in dollars.
+Minute first, day second, and the minute is given back when the day refuses.
 
 `/sources/scopus` does not call Elsevier. `api.elsevier.com` is served by Cloudflare and so is this
 Worker, so a subrequest never leaves Cloudflare's network and Elsevier answers it with
@@ -128,7 +133,9 @@ error code, the view that answered, whether that view carried an abstract, and t
 provider quota — never a key or a token. It tries `COMPLETE`, then `STANDARD`, then the endpoint
 default, and records what each one answered, so a failure names which view was refused and why. The
 probe costs one upstream call, so it is served from the edge cache for ten minutes: hammering the
-route cannot drain the weekly Scopus allowance. Only `COMPLETE` returns `dc:description`, so an
+route cannot drain the weekly Scopus allowance. One cached entry serves every allowed origin; the
+CORS header is put back for whoever is asking, so a monitor without an `Origin` and a browser with
+one no longer cost two provider calls for one answer. Only `COMPLETE` returns `dc:description`, so an
 account limited to `STANDARD` produces papers without abstracts.
 
 The AI route requires a valid PaperTok Firebase ID token and keeps provider credentials exclusively in the Worker. Gemini 3.5 Flash remains the primary provider. PDF acquisition and Gemini model attempts use bounded latency budgets; a slow open PDF degrades to the available abstract, and malformed structured output can retry once with Gemini Flash Lite without exceeding the browser deadline. The response parser preserves LaTeX commands even when a provider returns raw JSON backslashes. When Gemini explicitly reports that its daily provider quota is exhausted, `AI_FALLBACK_PROVIDER = "nvidia-deepseek,modal-kimi"` walks the fallback chain in cost order for abstract-based explanations: first DeepSeek V4 Flash on NVIDIA's free OpenAI-compatible API (`NVIDIA_API_KEY`, an `nvapi-...` key), then — only when NVIDIA could not answer — Modal's OpenAI-compatible Kimi K3 Shared API. Modal authentication requires the complete proxy-token pair (`wk-...` ID plus `ws-...` secret) and the Shared API base URL shown in the Modal dashboard.

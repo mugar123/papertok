@@ -1,5 +1,42 @@
 # Estado / pendientes
 
+## Caché compartida y un solo dueño de las devoluciones (2026-09-03)
+
+**Cerrado S6 y cinco de las «seis fugas» — plan en
+`docs/superpowers/plans/2026-09-03-s2-abiertos.md`, auditoría en
+`docs/AUDITORIA-S2-ABIERTOS-2026-09-03.md`.** La caché de borde ya no se parte
+por origen: la clave pierde `_origin` y `serveCached` reconstruye al servir la
+única cabecera que variaba, con `vary: Origin` para que las cachés de abajo
+tampoco crucen; seis sitios, un helper. Donde dolía: `/health/scopus`,
+cacheada para proteger el cupo semanal, costaba una llamada por origen. Y las
+puertas cambian de contrato: cada una devuelve *lo que reservó* y
+`reserveGates` acumula. Ante el rechazo de una puerta posterior,
+`cacheResponse` devuelve todo lo acumulado; ante un `throw` entre dos
+puertas —el ledger inalcanzable— lo devuelve el propio `reserveGates`, que
+relanza para que el router siga respondiendo 502 — el mismo asiento, no uno
+recalculado — y `awaitSharedPace` deja de devolver por su cuenta.
+`reserveOpenAlexBudget` devuelve el minuto cuando el día rechaza, en vez de
+elegir «la fuga menos mala» como decía su comentario. Ningún número que vea
+un cliente cambia.
+
+**Una de las seis no era fuga, y hay un test que lo dice.** Un `throw` del
+fetcher llega después de enviar, o intentar enviar, al proveedor: un timeout es
+un envío sin respuesta. El ledger cuenta envíos; devolver ahí contaría de
+menos y, bajo presión, superaría el 1 RPS que el compás administra. El `try`
+que devuelve asientos termina antes del fetcher, y `gives nothing back when
+the fetcher fails, because the send may have happened` pincha esa decisión
+para que nadie la «arregle».
+
+Implementado, probado (suite entera 1989/1989, cero `cancelled`) y revisado —
+no desplegado todavía. Solo cambia el Worker. Sigue abierto, y no es código:
+la solicitud a Semantic Scholar de un límite mayor que 1 RPS, pendiente de
+@mugar. Y un residuo previo a este plan, no introducido por él: si el ledger
+lanza al reservar el día de OpenAlex después de aceptar el minuto, ese asiento
+de minuto no lo devuelve nadie —`reserveOpenAlexBudget` no tiene `try` propio
+y sus asientos solo llegan al `held` de `reserveGates` por la vía normal de
+retorno—; ya se perdía igual antes de este plan, cuando el asiento de OpenAlex
+no se rastreaba en absoluto.
+
 ## Deuda diferida de Semantic Scholar, cerrada (2026-09-03)
 
 **Los diez hallazgos que las revisiones del endurecimiento dejaron diferidos,
