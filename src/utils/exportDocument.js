@@ -142,17 +142,57 @@ export function bylineText(paper, limit = 12) {
  * luego honestidad — el mismo trato que ya recibe la autoría, arriba.
  *
  * Solo esta fila lo necesita. El título de portada (`documentMeta`'s
- * `title`, que además hace de `runningTitle` en la cabecera de cada página)
- * se queda sin tope a propósito: ese título es un párrafo normal y una
- * página normal SÍ se parte donde haga falta. La fila del colofón no: vive
- * dentro de un `\minipage` que no puede partirse por dentro (LaTeX exporter,
- * Task 6), así que un título sin límite ahí no se ve feo — deja de caber en
- * ninguna página, capadas o no, y compilado eso salió como texto solapado e
- * ilegible mucho antes de que un título real pudiera acercarse al límite.
- * Ningún título de paper de verdad se acerca a los 500 caracteres; esto es
- * una defensa para el caso patológico, no un recorte pensado para verse.
+ * `title`) se queda sin tope a propósito: ese título es un párrafo normal y
+ * una página normal SÍ se parte donde haga falta. La fila del colofón no:
+ * vive dentro de un `\minipage` que no puede partirse por dentro (LaTeX
+ * exporter, Task 6), así que un título sin límite ahí no se ve feo — deja de
+ * caber en ninguna página, capadas o no, y compilado eso salió como texto
+ * solapado e ilegible mucho antes de que un título real pudiera acercarse al
+ * límite. Ningún título de paper de verdad se acerca a los 500 caracteres;
+ * esto es una defensa para el caso patológico, no un recorte pensado para
+ * verse.
+ *
+ * `runningTitle`, más abajo, es distinto: ese SÍ se ve recortado en el uso
+ * normal, por una razón distinta — ver su propio comentario.
  */
 export function colophonTitleText(paper, limit = 500) {
+  const title = String(paper?.title || '');
+  return title.length > limit ? `${title.slice(0, limit).trimEnd()}…` : title;
+}
+
+/**
+ * El título tal como va a la cabecera de cada página de continuación
+ * (`\fancyhead[L]`, latexExport.js): hasta `limit` caracteres, luego
+ * honestidad — el mismo mecanismo que `colophonTitleText`, arriba, un límite
+ * distinto porque el motivo es distinto.
+ *
+ * `\fancyhead[L]` (este título) y `\fancyhead[R]` (`\leftmark`, que lleva el
+ * número de sección y su encabezado — ver `sectionMarkText`, latexExport.js)
+ * son dos zonas sin ajuste de línea ni control de colisión: cuando sus
+ * anchuras naturales suman más que el hueco entre ellas, se IMPRIMEN UNA
+ * ENCIMA DE LA OTRA en vez de truncarse — compilado con un título de 102
+ * caracteres (no especialmente largo) y mirada la página, resultó
+ * ilegible, sin un solo aviso de `Overfull`/`Underfull`. Un caso más suave
+ * —el título envolviendo a dos líneas— sí avisa (`fancyhdr Warning:
+ * \headheight is too small`), pero tampoco es el resultado que se quiere.
+ *
+ * El límite se midió, no se adivinó: `\ptmono\scriptsize` (la tipografía de
+ * esta cabecera) es monoespaciada de verdad a este tamaño — confirmado
+ * imprimiendo el ancho de letras, dígitos y cada comando de `PUNCTUATION`
+ * (incluidos los que este mismo cambio corrige) con `\settowidth`: los
+ * 4,25pt exactos, sin excepción. El `\textwidth` de esta separata
+ * (`preamble()`'s `geometry`) mide 441,02pt, es decir, unas 103 celdas de
+ * ese ancho. De esas 103: 6 se reservan para el prefijo de la zona derecha
+ * en el peor caso (`999\ \textperiodcentered\ `, tres dígitos de sección),
+ * 45 para este título y 30 para `sectionMarkText` — quedan unas 22 celdas
+ * (~97pt) de hueco garantizado entre las dos zonas aun cuando las dos
+ * lleguen a su tope a la vez, muchas veces el ancho de un solo carácter:
+ * las dos zonas no pueden tocarse. El título recibe algo más de presupuesto
+ * que el encabezado de sección porque es el elemento más importante de las
+ * dos cabeceras —de qué paper es esto— mientras que la de sección es una
+ * ayuda de orientación más corta por naturaleza.
+ */
+export function runningTitleText(paper, limit = 45) {
   const title = String(paper?.title || '');
   return title.length > limit ? `${title.slice(0, limit).trimEnd()}…` : title;
 }
@@ -195,7 +235,7 @@ export function documentMeta({
     noticeLabel: copy.noticeLabel,
     notice: copy.abstract,
     provenance: copy.provenance,
-    runningTitle: title,
+    runningTitle: runningTitleText(paper),
     colophon: { heading: copy.colophonHeading, rows },
   };
 }

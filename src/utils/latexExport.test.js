@@ -7,6 +7,7 @@ import {
   escapeUrlForLatex,
   isSafeMath,
   renderParagraph,
+  sectionMarkText,
 } from './latexExport.js';
 
 /**
@@ -349,15 +350,37 @@ test('typographic punctuation survives pdflatex', () => {
   // solved. These do not: `\u00b7` compiled to `\u00fb` and a curly apostrophe
   // silently vanished from the middle of a word.
   assert.equal(escapeLatexText('un \u00b7 dos'), 'un \\textperiodcentered{} dos');
-  assert.equal(escapeLatexText('the article\u2019s author'), "the article's author");
-  assert.equal(escapeLatexText('a \u2014 b \u2013 c'), 'a --- b -- c');
-  assert.equal(escapeLatexText('\u201cquoted\u201d'), "``quoted''");
   assert.equal(escapeLatexText('and so on\u2026'), 'and so on\\ldots{}');
   assert.equal(escapeLatexText('7\u00d78'), '7\\texttimes{}8');
   // A non-breaking space is invisible in the source and would be dropped.
   assert.equal(escapeLatexText('5\u00a0km'), '5~km');
+});
+
+test('dashes and curly quotes become commands, not ligature sequences', () => {
+  // `---`/`--` and `` ` ``/`''` are what an em dash and curly quotes look
+  // like as LaTeX SOURCE, and that is what this map used to emit — but a
+  // ligature is a font behaviour, not a character, and Latin Modern
+  // Typewriter (`\ptmono`, latexExport.js's `\ttfamily`) deliberately does
+  // not have it: compiled and rasterized, `a---b` printed as two visibly
+  // separate hyphens, not one em dash, with no compiler warning either time.
+  // `\textemdash{}` and friends name the character instead of hoping a
+  // ligature table catches the source spelling, so they render correctly
+  // regardless of font or engine — confirmed by compiling both shapes under
+  // both pdfLaTeX and XeLaTeX (task-7-fix-report.md).
+  assert.equal(escapeLatexText('the article\u2019s author'), 'the article\\textquoteright{}s author');
+  assert.equal(escapeLatexText('a \u2014 b \u2013 c'), 'a \\textemdash{} b \\textendash{} c');
+  assert.equal(escapeLatexText('\u201cquoted\u201d'), '\\textquotedblleft{}quoted\\textquotedblright{}');
+  assert.equal(escapeLatexText('\u2018single\u2019'), '\\textquoteleft{}single\\textquoteright{}');
   // Escaping still runs first: the mapping must not re-open an escape hatch.
-  assert.equal(escapeLatexText('\u2014$x$'), '---\\$x\\$');
+  assert.equal(escapeLatexText('\u2014$x$'), '\\textemdash{}\\$x\\$');
+});
+
+test('a section sign becomes \\S{}, not the raw character', () => {
+  // XeLaTeX only, same `\ptmono` call sites as the dashes and quotes above:
+  // a raw `§` resolved to a Turkish dotted-g (`ğ`) — `exit=0`, nothing in the
+  // log, wrong on the rasterized page. `\S{}` is a plain LaTeX command, so it
+  // does not depend on the engine's own glyph resolution for that character.
+  assert.equal(escapeLatexText('\u00a71 Introduction'), '\\S{}1 Introduction');
 });
 
 // ---------------------------------------------------------------------------
@@ -493,6 +516,29 @@ test('una sección sin encabezado original no deja un ptorig vacío', () => {
 test('el byline es una línea de texto, no una caja centrada', () => {
   assert.equal(authorLine({ authors: [{ name: 'A. Perez' }, { name: 'B. Ruiz' }] }), 'A. Perez, B. Ruiz');
   assert.doesNotMatch(authorLine({ authors: [{ name: 'A' }] }), /parbox/);
+});
+
+test('sectionMarkText: un rótulo corriente no se toca', () => {
+  assert.equal(sectionMarkText('Qué significa'), 'Qué significa');
+  assert.equal(sectionMarkText(''), '');
+  assert.equal(sectionMarkText(undefined), '');
+});
+
+test('sectionMarkText: pasado el tope, se recorta con honestidad — el mismo mecanismo que runningTitleText', () => {
+  const long = 'x'.repeat(60);
+  const capped = sectionMarkText(long);
+  assert.equal(capped, `${'x'.repeat(30)}…`);
+  assert.equal(capped.length, 31);
+});
+
+test('sectionMarkText: el límite es exacto — justo en 30 no hay elipsis, en 31 sí', () => {
+  assert.equal(sectionMarkText('x'.repeat(30)), 'x'.repeat(30));
+  assert.doesNotMatch(sectionMarkText('x'.repeat(30)), /…/);
+  assert.match(sectionMarkText('x'.repeat(31)), /…$/);
+});
+
+test('sectionMarkText: el límite se puede ajustar, como el de runningTitleText', () => {
+  assert.equal(sectionMarkText('abcdef', 5), 'abcde…');
 });
 
 // ---------------------------------------------------------------------------
@@ -693,4 +739,52 @@ test('un título desmesurado se recorta solo en el colofón; la portada conserva
 
 test('un título corriente no lleva elipsis en ningún sitio del documento', () => {
   assert.doesNotMatch(build().source, /…/);
+});
+
+// ---------------------------------------------------------------------------
+// La cabecera de las páginas de continuación no puede chocar consigo misma
+// (hallazgo de compilar: `\fancyhead[L]` y `\fancyhead[R]` — pageStyles(),
+// arriba — no tienen ajuste de línea ni control de colisión propio; con un
+// título de portada de 102 caracteres, ni siquiera especialmente largo, se
+// imprimieron uno encima del otro, ilegibles, sin un solo aviso de
+// compilación. Un caso más suave —el título envolviendo a dos líneas— sí
+// avisa, con `fancyhdr Warning: \headheight is too small`, pero tampoco es
+// el resultado que se quiere. `runningTitleText` (exportDocument.js) y
+// `sectionMarkText` (arriba) acotan cada zona por separado; ver sus propios
+// comentarios para de dónde salen 45 y 30)
+// ---------------------------------------------------------------------------
+
+test('un título largo llega recortado a \\fancyhead[L], no entero', () => {
+  const long = 'x'.repeat(90);
+  const { source } = buildLatexDocument({
+    paper: { title: long, authors: [] }, sections: SECTIONS, annotations: [],
+  });
+  assert.ok(source.includes(`\\fancyhead[L]{\\ptmono\\scriptsize ${'x'.repeat(45)}\\ldots{}}`));
+  // Ni un carácter más allá del tope: si el recorte fallara y dejara pasar
+  // el título entero (u otro recorte distinto), esta cadena de 46 x's no
+  // aparecería en la línea de \fancyhead[L].
+  assert.ok(!source.includes(`\\fancyhead[L]{\\ptmono\\scriptsize ${'x'.repeat(46)}`));
+});
+
+test('un encabezado de sección largo llega recortado al argumento corto de \\section; el completo se queda intacto en el cuerpo', () => {
+  const longHeading = 'x'.repeat(60);
+  const { source } = buildLatexDocument({
+    paper: PAPER,
+    sections: [{ ...SECTIONS[0], heading: longHeading }],
+    annotations: [],
+  });
+  // El argumento CORTO (entre corchetes) es el que alimenta \sectionmark y,
+  // de ahí, \leftmark en \fancyhead[R] — el completo (entre llaves) es el
+  // título tal cual lo escribió el modelo, y sigue imprimiéndose entero en
+  // el cuerpo del documento: nada en el hallazgo pide acortar ESE.
+  assert.ok(source.includes(`\\section[${'x'.repeat(30)}\\ldots{}]{${longHeading}}`));
+});
+
+test('un encabezado de sección corriente sigue usando \\section{...}, sin el argumento corto', () => {
+  // Por debajo del tope, el argumento corto sería idéntico al completo, así
+  // que `buildLatexDocument` no lo añade: el documento común (la inmensa
+  // mayoría) no cambia de forma por este arreglo.
+  const { source } = build();
+  assert.doesNotMatch(source, /\\section\[/);
+  assert.match(source, /\\section\{De qué va\}/);
 });

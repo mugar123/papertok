@@ -65,17 +65,34 @@ const LATEX_ESCAPE = {
  * writes em dashes and curly quotes constantly and paper titles are full of
  * them, so this is not an edge case — it is most exports.
  *
- * Mapped rather than stripped: `---` is what an em dash is in LaTeX, and the
- * page should read the way the reader read it.
+ * Mapped rather than stripped: an em dash should still read as an em dash on
+ * the page. The dash and quote entries map to commands (`\textemdash{}`,
+ * `\textquoteleft{}` and so on), not to the `---`/`` ` ``/`''` ligature
+ * sequences that are the more obvious way to spell those characters in
+ * LaTeX. That distinction is not cosmetic: compiled inside `\ptmono`
+ * (`\ttfamily`, used by the running header and by `\ptorig`'s
+ * original-heading line) and looked at, Latin Modern Typewriter deliberately
+ * suppresses TeX's ligatures for `--`/`---` and `` ` ``/`''` — a typewriter
+ * face is supposed to show the input verbatim, character for character — so
+ * `Chen--` (two literal hyphens) printed instead of an em dash, and a
+ * straight `"` instead of a curly quote, with nothing in the log either
+ * time. A command has no such font dependence: it names the character
+ * instead of hoping the active font ligates its way there, so it renders
+ * correctly in both the roman and the typewriter shape, under both pdfLaTeX
+ * and XeLaTeX — all four confirmed by compiling. `\S{}`, added for the same
+ * reason, sidesteps a XeLaTeX-only defect one call site over: the raw `§`
+ * character resolved to a Turkish dotted-g (`ğ`) inside `\ptmono` under
+ * XeLaTeX specifically — again `exit=0`, nothing in the log, visible only by
+ * rasterizing the page.
  */
 const PUNCTUATION = {
   '\u00b7': '\\textperiodcentered{}',
-  '\u2014': '---',
-  '\u2013': '--',
-  '\u2018': '`',
-  '\u2019': "'",
-  '\u201c': '``',
-  '\u201d': "''",
+  '\u2014': '\\textemdash{}',
+  '\u2013': '\\textendash{}',
+  '\u2018': '\\textquoteleft{}',
+  '\u2019': '\\textquoteright{}',
+  '\u201c': '\\textquotedblleft{}',
+  '\u201d': '\\textquotedblright{}',
   '\u2026': '\\ldots{}',
   '\u2212': '-',
   '\u00d7': '\\texttimes{}',
@@ -84,6 +101,7 @@ const PUNCTUATION = {
   '\u00a0': '~',
   '\u2009': '\\,',
   '\u2192': '\\textrightarrow{}',
+  '\u00a7': '\\S{}',
 };
 const PUNCTUATION_RE = new RegExp(`[${Object.keys(PUNCTUATION).join('')}]`, 'g');
 
@@ -210,6 +228,25 @@ export function authorLine(paper, limit = 12) {
   return names.length > limit ? `${shown} et al.` : shown;
 }
 
+/**
+ * El rótulo de una sección, hasta `limit` caracteres, luego honestidad — el
+ * mismo mecanismo que `runningTitleText` (exportDocument.js), un límite
+ * distinto para la otra mitad de la misma colisión. Ver el comentario de
+ * `runningTitleText` para de dónde sale el número: entre las dos, dejan hueco
+ * de sobra en `\textwidth` aun en el peor caso.
+ *
+ * Solo alimenta el argumento CORTO de `\section[corto]{completo}` — el
+ * mecanismo nativo de LaTeX para separar "lo que se ve en el texto" de "lo
+ * que llega a `\sectionmark`" (y de ahí a `\leftmark`, la cabecera). El
+ * título de la sección tal cual lo escribió el modelo se queda intacto en el
+ * cuerpo del documento: nada en el hallazgo señala el título en pantalla,
+ * solo la cabecera que arma `\leftmark` con él.
+ */
+export function sectionMarkText(label, limit = 30) {
+  const text = String(label || '');
+  return text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text;
+}
+
 function preamble(copy, hasHighlights) {
   return [
     `% ${copy.generated}`,
@@ -280,6 +317,14 @@ function preamble(copy, hasHighlights) {
  * navegan: a la izquierda el artículo, a la derecha la sección en la que vas.
  * `\leftmark` da la ÚLTIMA sección abierta en la página, que es lo que quiere
  * decir «dónde estoy» cuando una sección viene de la página anterior.
+ *
+ * `\fancyhead[L]`/`[R]`, en el `\pagestyle{fancy}` de abajo, son dos zonas
+ * sin ajuste de línea ni control de colisión propio: si lo que llevan no
+ * cupiera en `\textwidth`, se imprimirían una encima de la otra sin aviso de
+ * compilación. Lo que las mantiene separadas es que `meta.runningTitle`
+ * (`runningTitleText`, exportDocument.js) y el argumento corto de
+ * `\section[corto]{...}` (`sectionMarkText`, arriba) llegan aquí ya acotados
+ * — compilado y medido, ver esas dos funciones.
  *
  * La procedencia no se mueve al colofón: sigue al pie de CADA página, fuera de
  * la numeración de las notas, porque el fichero puede acabar lejos de aquí.
@@ -478,7 +523,13 @@ export function buildLatexDocument({
     const label = section?.heading
       || kindLabels[section?.kind]
       || SECTION_FALLBACK[language === 'en' ? 'en' : 'es'];
-    lines.push(`\\section{${escapeLatexText(label)}}`);
+    // `\section[corto]{label}` solo cuando `label` pasa el tope de
+    // `sectionMarkText`: por debajo, el argumento corto sería idéntico al
+    // completo y `\section{label}` de siempre ya es exactamente ese caso.
+    const shortLabel = sectionMarkText(label);
+    lines.push(shortLabel === label
+      ? `\\section{${escapeLatexText(label)}}`
+      : `\\section[${escapeLatexText(shortLabel)}]{${escapeLatexText(label)}}`);
     // El encabezado tal como está impreso en el paper. Lo devuelve el modelo
     // (`originalHeading`) y hasta ahora los dos exports lo tiraban: es lo que
     // deja volver al sitio exacto del PDF original.

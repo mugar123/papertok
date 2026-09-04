@@ -7,6 +7,7 @@ import {
   exportFileName,
   formatExportDate,
   numberAnnotations,
+  runningTitleText,
   summarizeExport,
 } from './exportDocument.js';
 
@@ -167,12 +168,16 @@ test('colophonTitleText: el límite se puede ajustar, como el de bylineText', ()
   assert.equal(colophonTitleText({ title: 'abcdef' }, 5), 'abcde…');
 });
 
-test('el título del colofón se recorta en la fila; el de portada y el de cabecera no', () => {
+test('el título del colofón y el de la cabecera se recortan cada uno a su propio tope; el de portada no', () => {
   // `meta.title` alimenta la portada (`{\LARGE ...}`, un párrafo corriente
-  // que sí se parte entre páginas) y `meta.runningTitle` la cabecera de cada
-  // página — ninguno de los dos vive dentro del `\minipage` que no puede
-  // partirse, así que ninguno de los dos necesita el tope. Solo la fila del
-  // colofón lo necesita.
+  // que sí se parte entre páginas) y se queda sin tope. La fila del colofón
+  // vive dentro de un `\minipage` que no puede partirse (Task 6) y se recorta
+  // a 500. `meta.runningTitle` es el tercer caso, distinto de los otros dos:
+  // alimenta `\fancyhead[L]` (latexExport.js), una cabecera de una sola línea
+  // sin ajuste compartida con `\leftmark` a la derecha — sin tope, un título
+  // largo choca contra la sección en vez de partirse donde haga falta
+  // (hallazgo de compilar, `runningTitleText` más abajo). Se recorta a 45,
+  // no a 500: ningún parecido con el tope del colofón más allá del mecanismo.
   const long = 'Y'.repeat(600);
   const meta = documentMeta({
     paper: { title: long, authors: [] },
@@ -180,7 +185,42 @@ test('el título del colofón se recorta en la fila; el de portada y el de cabec
     generatedAt: new Date(Date.UTC(2026, 8, 4)),
   });
   assert.equal(meta.title, long);
-  assert.equal(meta.runningTitle, long);
+  assert.equal(meta.runningTitle, `${'Y'.repeat(45)}…`);
   const titleRow = meta.colophon.rows.find(row => row.key === 'Artículo original');
   assert.equal(titleRow.value, `${long.slice(0, 500)}…`);
+});
+
+// ---------------------------------------------------------------------------
+// El título de la cabecera de página (hallazgo de compilar, no de los tests:
+// `\fancyhead[L]` (este título) y `\fancyhead[R]` (`\leftmark`, el número de
+// sección — ver `sectionMarkText`, latexExport.js) son dos zonas sin ajuste
+// de línea ni control de colisión — latexExport.js — que compiladas con un
+// título de 102 caracteres, ni siquiera especialmente largo, se imprimieron
+// una encima de la otra, ilegibles, sin un solo aviso de compilación)
+// ---------------------------------------------------------------------------
+
+test('runningTitleText: un título corriente no se toca', () => {
+  assert.equal(
+    runningTitleText({ title: 'Worldline proper length correlators' }),
+    'Worldline proper length correlators',
+  );
+  assert.equal(runningTitleText({}), '');
+  assert.equal(runningTitleText({ title: '' }), '');
+});
+
+test('runningTitleText: pasado el tope, se recorta con honestidad — el mismo mecanismo que colophonTitleText', () => {
+  const long = 'x'.repeat(90);
+  const capped = runningTitleText({ title: long });
+  assert.equal(capped, `${'x'.repeat(45)}…`);
+  assert.equal(capped.length, 46);
+});
+
+test('runningTitleText: el límite es exacto — justo en 45 no hay elipsis, en 46 sí', () => {
+  assert.equal(runningTitleText({ title: 'x'.repeat(45) }), 'x'.repeat(45));
+  assert.doesNotMatch(runningTitleText({ title: 'x'.repeat(45) }), /…/);
+  assert.match(runningTitleText({ title: 'x'.repeat(46) }), /…$/);
+});
+
+test('runningTitleText: el límite se puede ajustar, como el de colophonTitleText', () => {
+  assert.equal(runningTitleText({ title: 'abcdef' }, 5), 'abcde…');
 });
