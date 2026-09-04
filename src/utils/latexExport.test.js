@@ -16,6 +16,11 @@ import {
 
 const LABELS = { mine: 'Tuya', ai: 'IA' };
 
+const MARK = {
+  id: 'a1', sectionId: 's1', paragraphIndex: 0, kind: 'user',
+  quote: 'Los autores calculan', note: 'Una nota.',
+};
+
 // ---------------------------------------------------------------------------
 // Escaping
 // ---------------------------------------------------------------------------
@@ -363,4 +368,39 @@ test('an annotation with no level recorded is kept, not guessed at', () => {
     ],
   });
   assert.match(source, /antigua/);
+});
+
+// ---------------------------------------------------------------------------
+// The preamble and the page styles (the separata)
+// ---------------------------------------------------------------------------
+
+test('el preámbulo declara los paquetes que la separata necesita', () => {
+  const { source } = buildLatexDocument({ paper: PAPER, sections: SECTIONS, annotations: [] });
+  assert.match(source, /\\usepackage\{titlesec\}/);
+  assert.match(source, /\\usepackage\[normalem\]\{ulem\}/);
+  assert.match(source, /\\usepackage\{fancyhdr\}/);
+  assert.match(source, /headheight=14pt/);
+});
+
+test('ulem se carga normalem o se lleva por delante toda la cursiva', () => {
+  // Sin [normalem], ulem redefine \emph como subrayado. Compilado y mirado.
+  const { source } = buildLatexDocument({ paper: PAPER, sections: SECTIONS, annotations: [] });
+  assert.doesNotMatch(source, /\\usepackage\{ulem\}/);
+});
+
+test('el amarillo del documento es el lavado, no el de la marca en pantalla', () => {
+  const { source } = buildLatexDocument({
+    paper: PAPER, sections: SECTIONS, annotations: [MARK],
+  });
+  assert.match(source, /\\definecolor\{ptWash\}\{HTML\}\{FFE066\}/);
+  assert.doesNotMatch(source, /FFD21E/);
+});
+
+test('la primera página lleva cabecera de identidad y las demás titulillo', () => {
+  const { source } = buildLatexDocument({
+    paper: PAPER, sections: SECTIONS, annotations: [], originalUrl: 'https://arxiv.org/abs/2405.04331',
+  });
+  assert.match(source, /\\fancypagestyle\{ptfirst\}/);
+  assert.match(source, /\\renewcommand\{\\sectionmark\}/);
+  assert.match(source, /\\leftmark/);
 });

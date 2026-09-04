@@ -2,9 +2,11 @@ import { normalizeLatexText, splitLatexText } from './latex.js';
 import { buildHighlightPlan } from './textHighlights.js';
 import {
   documentCopy,
+  documentMeta,
   exportFileName,
   exportableAnnotations,
   numberAnnotations,
+  summarizeExport,
 } from './exportDocument.js';
 
 /**
@@ -215,36 +217,84 @@ function preamble(copy, hasHighlights) {
     '% \\usepackage{fontspec}',
     '% \\setmainfont{Newsreader}',
     `\\usepackage[${copy.babel}]{babel}`,
-    '\\usepackage[a4paper,margin=28mm,bottom=34mm]{geometry}',
-    ...(hasHighlights ? ['\\usepackage{soul}', '\\usepackage{xcolor}'] : []),
-    '\\usepackage[hidelinks]{hyperref}',
+    // Márgenes de 27,5 mm: la medida cae en unos 72 caracteres a 11 pt, que es
+    // medida de lectura. La de antes (28 mm con cuerpo menor) iba por 79.
+    '\\usepackage[a4paper,top=22mm,bottom=20mm,left=27.5mm,right=27.5mm,'
+      + 'headheight=14pt,headsep=10pt,footskip=22pt]{geometry}',
+    '\\usepackage{xcolor}',
+    ...(hasHighlights ? ['\\usepackage{soul}'] : []),
+    // `normalem` no es opcional: sin él ulem redefine \emph como subrayado y
+    // toda la cursiva del documento —incluidos los títulos originales— sale
+    // subrayada. Compilado y mirado.
+    '\\usepackage[normalem]{ulem}',
+    '\\usepackage{titlesec}',
     '\\usepackage{fancyhdr}',
+    '\\usepackage[hidelinks]{hyperref}',
     '',
-    ...(hasHighlights
-      ? [
-        '\\definecolor{ptYellow}{HTML}{FFD21E}',
-        '\\definecolor{ptGrey}{HTML}{F0F0F1}',
-        '\\sethlcolor{ptYellow}',
-        '',
-      ]
-      : []),
+    // El amarillo de pantalla (#FFD21E) a plena saturación detrás del texto lee
+    // como una fotocopia repasada a rotulador. El lavado conserva la marca y
+    // deja de gritar; la de la IA pierde el fondo y pasa a punteado, que es lo
+    // que las distingue también impresas en blanco y negro.
+    '\\definecolor{ptWash}{HTML}{FFE066}',
+    '\\definecolor{ptGrey}{HTML}{6B7280}',
+    '\\definecolor{ptRule}{HTML}{C9CCD4}',
+    ...(hasHighlights ? ['\\sethlcolor{ptWash}'] : []),
+    '',
     ...copy.kindNote.map(line => `% ${line}`),
-    '\\newcommand{\\ptkind}[1]{\\texttt{\\footnotesize #1}}',
+    '\\newcommand{\\ptmono}{\\ttfamily}',
+    '\\newcommand{\\ptkind}[1]{\\textsc{#1}}',
+    // El encabezado tal como está impreso en el paper. Termina en \noindent
+    // \ignorespaces porque abre párrafo y, con babel español, el siguiente
+    // saldría sangrado: el primer párrafo de una sección va a bandera.
+    '\\newcommand{\\ptorig}[1]{\\vspace{-5pt}\\par\\noindent'
+      + '{\\ptmono\\scriptsize\\color{ptGrey}#1}\\par\\vspace{3pt}\\noindent\\ignorespaces}',
+    '\\newcommand{\\ptrule}{\\noindent\\textcolor{ptRule}{\\rule{\\textwidth}{0.4pt}}}',
+    '',
+    // {0.62em}: con \large\bfseries, 1em deja el número descolgado del título.
+    '\\titleformat{\\section}[hang]{\\normalfont\\bfseries\\large}{\\thesection}{0.62em}{}',
+    '\\titlespacing*{\\section}{0pt}{18pt}{5pt}',
     '',
   ];
 }
 
-function footer(copy, originalUrl) {
-  const link = originalUrl
-    ? ` \\textperiodcentered{} \\url{${originalUrl.replace(/([%#&_{}$])/g, '\\$1')}}`
-    : '';
+/**
+ * Las dos páginas que tiene este documento.
+ *
+ * La primera se presenta —quién compuso esto y a qué nivel— y las demás
+ * navegan: a la izquierda el artículo, a la derecha la sección en la que vas.
+ * `\leftmark` da la ÚLTIMA sección abierta en la página, que es lo que quiere
+ * decir «dónde estoy» cuando una sección viene de la página anterior.
+ *
+ * La procedencia no se mueve al colofón: sigue al pie de CADA página, fuera de
+ * la numeración de las notas, porque el fichero puede acabar lejos de aquí.
+ */
+function pageStyles(meta) {
+  const foot = escapeLatexText(meta.provenance);
   return [
-    ...copy.footerNote.map(line => `% ${line}`),
+    '\\renewcommand{\\sectionmark}[1]'
+      + '{\\markboth{\\thesection\\ \\textperiodcentered\\ #1}{}}',
+    '\\renewcommand{\\headrule}{\\color{ptRule}\\hrule height \\headrulewidth}',
+    '\\renewcommand{\\footrule}{\\color{ptRule}\\hrule height \\footrulewidth}',
+    '',
+    '\\fancypagestyle{ptfirst}{%',
+    '  \\fancyhf{}%',
+    `  \\fancyhead[L]{\\ptmono\\scriptsize ${escapeLatexText(meta.masthead)}}%`,
+    `  \\fancyhead[R]{\\ptmono\\scriptsize ${escapeLatexText(meta.level)}}%`,
+    `  \\fancyfoot[L]{\\ptmono\\scriptsize ${foot}}%`,
+    '  \\fancyfoot[R]{\\thepage}%',
+    '  \\renewcommand{\\headrulewidth}{1.3pt}%',
+    '  \\renewcommand{\\headrule}{\\hrule height \\headrulewidth}%',
+    '  \\renewcommand{\\footrulewidth}{0.4pt}%',
+    '}',
+    '',
     '\\pagestyle{fancy}',
     '\\fancyhf{}',
-    `\\fancyfoot[L]{\\footnotesize ${escapeLatexText(copy.provenance)}${link}}`,
+    `\\fancyhead[L]{\\ptmono\\scriptsize ${escapeLatexText(meta.runningTitle)}}`,
+    '\\fancyhead[R]{\\ptmono\\scriptsize\\leftmark}',
+    `\\fancyfoot[L]{\\ptmono\\scriptsize ${foot}}`,
     '\\fancyfoot[R]{\\thepage}',
-    '\\renewcommand{\\headrulewidth}{0pt}',
+    '\\renewcommand{\\headrulewidth}{0.4pt}',
+    '\\renewcommand{\\footrulewidth}{0.4pt}',
     '',
   ];
 }
@@ -260,6 +310,7 @@ export function buildLatexDocument({
   level = 'university',
   kindLabels = {},
   originalUrl = '',
+  generatedAt = new Date(),
   include = {},
 } = {}) {
   const copy = documentCopy(language);
@@ -278,9 +329,14 @@ export function buildLatexDocument({
   const { byParagraph, numbered } = numberAnnotations(sections, kept);
   const hasHighlights = kept.length > 0;
 
+  const meta = documentMeta({
+    paper, language, level, originalUrl, generatedAt,
+    counts: summarizeExport(kept),
+  });
+
   const lines = [
     ...preamble(copy, hasHighlights),
-    ...footer(copy, originalUrl),
+    ...pageStyles(meta),
     `\\title{${escapeLatexText(paper?.title || '')}}`,
     `\\author{${authorLine(paper)}}`,
     `\\date{${escapeLatexText(copy.stamp(copy.levels[level] || level))}}`,
