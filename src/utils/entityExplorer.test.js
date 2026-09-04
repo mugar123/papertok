@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  EXPLORER_ROW_CHUNK,
+  nextExplorerRowBudget,
   entityPapersRequestKey,
   filterAndSortEntityPapers,
   getPaperCitationCount,
@@ -130,3 +132,13 @@ test('every input the papers request reads changes its key', () => {
   }
   assert.equal(entityPapersRequestKey({ ...authorRequest, entity: { ...authorRequest.entity } }), base);
 });
+
+test('the list mounts eight rows at a time and never more than it has', () => {
+  assert.equal(EXPLORER_ROW_CHUNK, 8);
+  assert.equal(nextExplorerRowBudget(8, 30), 16);
+  assert.equal(nextExplorerRowBudget(24, 30), 30);
+  assert.equal(nextExplorerRowBudget(30, 30), 30);
+  assert.equal(nextExplorerRowBudget(8, 5), 5);
+  assert.equal(nextExplorerRowBudget(-1, 0), 0);
+});
+

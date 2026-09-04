@@ -135,3 +135,22 @@ export function entityPapersRequestKey({
     entityReloadKey,
   ]);
 }
+
+/**
+ * How many rows the Explorer's list mounts at a time.
+ *
+ * A works page is thirty papers, each row a title and an abstract through the
+ * LaTeX splitter and KaTeX, and the page they make is thirteen thousand
+ * pixels tall. Mounted in one commit on a phone with the CPU at a quarter
+ * speed, that was tasks of 140–220 ms the moment the page answered, with
+ * two screens of rows visible and the rest below the fold. Eight rows is two
+ * screens; the rest follow in idle chunks, and the "load more" sentinel
+ * waits until every row the page already has is in.
+ */
+export const EXPLORER_ROW_CHUNK = 8;
+
+/** The next row budget: `chunk` more rows, never past what the list has. */
+export function nextExplorerRowBudget(budget, total, chunk = EXPLORER_ROW_CHUNK) {
+  return Math.min(Math.max(0, total), Math.max(0, budget) + chunk);
+}
+

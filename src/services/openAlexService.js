@@ -1511,7 +1511,9 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
   if (searchQuery) {
      url += `&search=${encodeURIComponent(searchQuery)}`;
   }
-  const worksCacheKey = `entity-works:${type}:${cleanId}:${sortBy}:${page}:${searchQuery}:${JSON.stringify(filters)}`;
+  // `v2`: the page is persisted as the papers it became, not as the raw
+  // response (openAlexClient.js says why); the old key's raw pages age out.
+  const worksCacheKey = `entity-works-v2:${type}:${cleanId}:${sortBy}:${page}:${searchQuery}:${JSON.stringify(filters)}`;
   
   try {
     const data = await openAlexJson(url, {
@@ -1521,10 +1523,10 @@ export async function getWorksByEntity(type, id, sortBy = 'cited_by_count:desc',
       persistentKey: worksCacheKey,
       persistentTtlMs: ENTITY_WORKS_CACHE_TTL_MS,
       staleIfError: true,
+      persistentSlim: slimWorksPage,
     });
-    if (data && data.results) {
-       const papers = data.results.map(formatOpenAlexWorkAsPaper).filter(Boolean);
-       return { papers, total: data.meta ? data.meta.count : 0 };
+    if (data && data.papers) {
+       return { papers: data.papers, total: data.total || 0 };
     }
   } catch (err) {
     console.error(`OpenAlex getWorksByEntity failed for ${type} ${id}`, err);
@@ -1571,7 +1573,7 @@ export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '', e
   });
   if (searchQuery) params.set('search', searchQuery);
   const url = `https://api.openalex.org/authors?${params}`;
-  const authorsCacheKey = `entity-authors:${type}:${cleanId}:${page}:${searchQuery.trim().toLowerCase()}`;
+  const authorsCacheKey = `entity-authors-v2:${type}:${cleanId}:${page}:${searchQuery.trim().toLowerCase()}`;
   
   try {
     const data = await openAlexJson(url, {
@@ -1581,20 +1583,10 @@ export async function getAuthorsByEntity(type, id, page = 1, searchQuery = '', e
       persistentKey: authorsCacheKey,
       persistentTtlMs: ENTITY_WORKS_CACHE_TTL_MS,
       staleIfError: true,
+      persistentSlim: slimAuthorsPage,
     });
-    if (data && data.results) {
-       const authors = data.results.map(author => ({
-          id: author.id,
-          display_name: author.display_name,
-          works_count: author.works_count || 0,
-          cited_by_count: author.cited_by_count || 0,
-          h_index: author.summary_stats ? author.summary_stats.h_index : 0,
-          institution: (author.last_known_institutions && author.last_known_institutions.length > 0) 
-              ? author.last_known_institutions[0].display_name 
-              : null,
-          concepts: author.x_concepts ? author.x_concepts.slice(0, 3) : []
-       }));
-       return { authors, total: data.meta ? data.meta.count : 0 };
+    if (data && data.authors) {
+       return { authors: data.authors, total: data.total || 0 };
     }
   } catch (err) {
     console.error(`OpenAlex getAuthorsByEntity failed for ${type} ${id}`, err);
@@ -1655,6 +1647,33 @@ export async function fetchPapersByDois(dois, options = {}) {
   return results.map(work => {
     return formatOpenAlexWorkAsPaper(work);
   });
+}
+
+/**
+ * A works page as the Explorer keeps it: the papers, not the works. A raw
+ * page of thirty works ran to over a million characters (inverted-index
+ * abstracts, authorships, locations); the papers made from it are a tenth of
+ * that, and are all the page ever reads.
+ */
+export function slimWorksPage(data) {
+  const papers = Array.isArray(data?.results) ? data.results.map(formatOpenAlexWorkAsPaper).filter(Boolean) : [];
+  return { papers, total: data?.meta?.count || 0 };
+}
+
+/** An authors page as the Explorer keeps it: the seven fields its cards show. */
+export function slimAuthorsPage(data) {
+  const authors = Array.isArray(data?.results) ? data.results.map(author => ({
+    id: author.id,
+    display_name: author.display_name,
+    works_count: author.works_count || 0,
+    cited_by_count: author.cited_by_count || 0,
+    h_index: author.summary_stats ? author.summary_stats.h_index : 0,
+    institution: (author.last_known_institutions && author.last_known_institutions.length > 0)
+      ? author.last_known_institutions[0].display_name
+      : null,
+    concepts: author.x_concepts ? author.x_concepts.slice(0, 3) : [],
+  })) : [];
+  return { authors, total: data?.meta?.count || 0 };
 }
 
 function formatOpenAlexWorkAsPaper(work) {

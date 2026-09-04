@@ -131,3 +131,17 @@ test('the Wikipedia block folds inside a wrapper that also absorbs the stack gap
   assert.match(tokens, /--space-4: 1rem;/);
   assert.match(css, /\.explorer-hero-content \{[^}]*gap: var\(--space-4\);/);
 });
+
+test('the list mounts in idle chunks, rows below the fold are skipped, and the sentinel waits for the page', async () => {
+  const jsx = await read('./EntityExplorer.jsx');
+  assert.match(jsx, /const \[rowBudget, setRowBudget\] = useState\(EXPLORER_ROW_CHUNK\);/);
+  assert.match(jsx, /const mountedPapers = useMemo\(\(\) => filteredPapers\.slice\(0, rowBudget\), \[filteredPapers, rowBudget\]\);/);
+  assert.match(jsx, /const rowsSettled = rowBudget >= filteredPapers\.length;/);
+  assert.match(jsx, /setRowBudget\(\(budget\) => nextExplorerRowBudget\(budget, filteredPapers\.length\)\)/);
+  assert.match(jsx, /if \(page === 1\) \{\s*setIsLoadingPapers\(true\);\s*setPapersError\(null\);\s*setRowBudget\(EXPLORER_ROW_CHUNK\);/, 'a fresh page starts over at one chunk');
+  assert.match(jsx, /\{hasMore && rowsSettled && \(\s*<div ref=\{observerRef\} className="ehc-sentinel">/);
+  assert.match(jsx, /mountedPapers\.map\(\(paper, idx\) => \(/);
+  assert.match(jsx, /'--area-accent': rowAreas\[idx\]\.accent/, 'the field colour is derived once per list');
+  const css = await read('./EntityExplorer.css');
+  assert.match(css, /\.explorer-list-item \{[^}]*content-visibility: auto;\s*contain-intrinsic-size: auto 200px;[^}]*\}/);
+});
