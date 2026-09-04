@@ -1,6 +1,5 @@
 import { motion, useReducedMotion } from 'framer-motion';
-import { useNavigationType } from 'react-router-dom';
-import { directionForHistoryIndex } from '../../utils/routeDirection.js';
+import { usePageTransitionCustomValue } from '../../hooks/usePageTransitionCustom.js';
 
 /**
  * How far a page travels on its way in or out.
@@ -25,6 +24,20 @@ const TRAVEL_PX = 18;
 const ENTER_MS = 0.3;
 const EXIT_MS = 0.2;
 const EASE = [0.16, 1, 0.3, 1];
+
+/**
+ * A step sideways is shorter than a step down.
+ *
+ * The pair above is the budget for entering a hierarchy — opening an author
+ * from a card is a place you have not been, and it can afford half a second.
+ * Two tabs of one bar are not that. Measured before this, on a signed-in
+ * session: the outgoing page was gone at 250ms and the incoming one did not
+ * reach full opacity until ~549ms, because `AnimatePresence mode="wait"` makes
+ * the two strictly sequential — 0 frames ever carried both pages. Over half a
+ * second to change tab, on a control the reader presses dozens of times a day.
+ */
+const LATERAL_ENTER_MS = 0.2;
+const LATERAL_EXIT_MS = 0.14;
 
 /**
  * Leaving is not arriving reversed.
@@ -70,17 +83,17 @@ const routeVariants = {
     opacity: 0,
     x: direction * TRAVEL_PX,
   }),
-  enter: () => ({
+  enter: ({ lateral }) => ({
     opacity: 1,
     x: 0,
-    transition: { duration: ENTER_MS, ease: EASE },
+    transition: { duration: lateral ? LATERAL_ENTER_MS : ENTER_MS, ease: EASE },
   }),
-  exit: ({ direction }) => ({
+  exit: ({ direction, lateral }) => ({
     opacity: 0,
     // Out the opposite side from the one the next page arrives on, which is
     // what makes the two look like one movement instead of two.
     x: direction * -TRAVEL_PX * 0.6,
-    transition: { duration: EXIT_MS, ease: EASE_LEAVING },
+    transition: { duration: lateral ? LATERAL_EXIT_MS : EXIT_MS, ease: EASE_LEAVING },
   }),
 };
 
@@ -91,22 +104,14 @@ const reducedMotionVariants = {
 };
 
 export default function PageTransition({ children }) {
-  // The router already knows which way we are going, and it knows it without
-  // any state of our own: `App` keys `<Routes>` on the pathname, so this
-  // component is unmounted and remade on every navigation and could not
-  // remember the previous route even if it tried. `handleBack` in the Explorer
-  // calls `navigate(-1)` whenever there is history behind it, which is exactly
-  // what makes this report POP.
-  // The index, not the type: this router reports POP for every navigation
-  // (measured on the tab bar — a push arrived as POP with the index at 1),
-  // so the type alone made every page a return. The index grows on a push,
-  // shrinks on a step back, holds on a replace; the type only stands in
-  // where there is no index at all.
-  const direction = directionForHistoryIndex(
-    typeof window !== 'undefined' ? window.history.state?.idx : null,
-    undefined,
-    useNavigationType(),
-  );
+  // Which way we are going, and whether it was a step along the navbar rather
+  // than into a hierarchy — handed down from `App`, never computed here. This
+  // component must not ask for itself: the page on its way out is kept mounted
+  // by `AnimatePresence` inside a `<Routes location={…}>` that still provides
+  // the location it was rendered for, so asking would answer for the tab being
+  // left rather than the one being entered (see the note on the context).
+  const custom = usePageTransitionCustomValue();
+  const { direction } = custom;
   const prefersReducedMotion = useReducedMotion();
 
   return (
@@ -115,7 +120,7 @@ export default function PageTransition({ children }) {
       // return to something that was there, so the feed's cards resume at
       // rest instead of arriving again (PaperCard.css reads this).
       data-nav-direction={direction}
-      custom={{ direction }}
+      custom={custom}
       initial="initial"
       animate="enter"
       exit="exit"

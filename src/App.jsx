@@ -2,6 +2,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react'
 import { Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { AnimatePresence } from 'framer-motion'
 import PageTransition from './components/Layout/PageTransition'
+import { PageTransitionCustomProvider, usePageTransitionCustom } from './hooks/usePageTransitionCustom'
 import { safeExternalUrl } from './utils/externalUrl.js'
 import RouteFallback from './components/Layout/RouteFallback'
 import RouteAnnouncer from './components/Layout/RouteAnnouncer'
@@ -105,6 +106,11 @@ function AppContent() {
     setSearchOpen(true)
   }, [])
   const location = useLocation()
+  // The ONE place this is computed. Every PageTransition reads it from the
+  // provider below, and AnimatePresence hands it to the page on its way out —
+  // which cannot work it out for itself, because it is kept mounted inside a
+  // <Routes> still providing the location it was rendered for.
+  const pageTransitionCustom = usePageTransitionCustom()
   const { user, loading: authLoading, onboardingComplete, profileLoadError } = useAuth()
   const { isEnglish } = useLanguage()
   const normalizedPathname = location.pathname === '/' ? '/' : location.pathname.replace(/\/+$/, '')
@@ -194,7 +200,13 @@ function AppContent() {
           A div, not <main>: several routes render their own <main> inside. */}
       <div id="main-content" tabIndex={-1}>
       <Suspense fallback={<RouteFallback />}>
-      <AnimatePresence mode="wait" initial={false}>
+      {/* `custom` so the page on its way OUT resolves its exit against this
+          navigation rather than the one that mounted it: AnimatePresence keeps
+          the previous <Routes> element itself, so the outgoing PageTransition
+          never re-renders and would otherwise leave in the direction, and on
+          the clock, it arrived with. */}
+      <PageTransitionCustomProvider value={pageTransitionCustom}>
+      <AnimatePresence mode="wait" initial={false} custom={pageTransitionCustom}>
         <Routes location={location} key={location.pathname}>
           <Route path="/login" element={<PageTransition><LoginPage /></PageTransition>} />
           <Route
@@ -417,6 +429,7 @@ function AppContent() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </AnimatePresence>
+      </PageTransitionCustomProvider>
       </Suspense>
       </div>
 

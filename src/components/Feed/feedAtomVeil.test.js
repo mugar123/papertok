@@ -46,9 +46,13 @@ test('the veil sits over the container and lets framer own its opacity', async (
 });
 
 test('on the first entry the card composes under the veil instead of sitting at rest', async () => {
-  const transition = await read('../Layout/PageTransition.jsx');
+  // The direction moved out of PageTransition.jsx and into the hook `App`
+  // calls, so that the page LEAVING is told about the navigation too — it is
+  // kept mounted under a location context that still names the route it came
+  // from, and asking for itself answered for the wrong one.
+  const source = await read('../../hooks/usePageTransitionCustom.js');
   // The first index the page ever sees is an arrival (routeDirection.js).
-  assert.match(transition, /directionForHistoryIndex\(\s*typeof window !== 'undefined' \? window\.history\.state\?\.idx : null/);
+  assert.match(source, /directionForHistoryIndex\(\s*typeof window !== 'undefined' \? window\.history\.state\?\.idx : null/);
 });
 
 /**
@@ -100,7 +104,10 @@ test('the navbar fades in on its first mount of the session, and only then', asy
  * rest. The page reads the index now (utils/routeDirection.js).
  */
 test('the page transition takes its direction from the history index', async () => {
-  const transition = await read('../Layout/PageTransition.jsx');
-  assert.match(transition, /directionForHistoryIndex\(\s*typeof window !== 'undefined' \? window\.history\.state\?\.idx : null,\s*undefined,\s*useNavigationType\(\),?\s*\)/);
-  assert.doesNotMatch(transition, /directionForNavigationType\(useNavigationType\(\)/);
+  const source = await read('../../hooks/usePageTransitionCustom.js');
+  assert.match(source, /directionForHistoryIndex\(\s*typeof window !== 'undefined' \? window\.history\.state\?\.idx : null,\s*undefined,\s*useNavigationType\(\),?\s*\)/);
+  assert.doesNotMatch(source, /directionForNavigationType\(useNavigationType\(\)/);
+  // ...except between the navbar's tabs, where the index only ever grows and
+  // cannot tell going from coming back (utils/tabDirection.js).
+  assert.match(source, /const lateral = lateralTabDirection\(useLocation\(\)\.pathname\);/);
 });
