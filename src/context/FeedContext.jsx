@@ -21,6 +21,7 @@ import {
   logRankingBatch,
   readRecommendationWeights,
 } from '../utils/recommendationEngine';
+import { splitFeedForReRank } from '../utils/feedReRankSplit.js';
 import {
   readProfileDriftCheckedAt,
   readSeenPaperIds,
@@ -521,30 +522,35 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     });
   }, [userPreferences, followedEntities]);
 
+  // The card the reader is on, as FeedContainer reports it (on the restore
+  // after a reload and on every scroll). A ref, not state: it moves on every
+  // scroll event and nothing needs to re-render for it — reRankFeed reads it
+  // inside its functional setPapers.
+  const visiblePaperIdRef = useRef(null);
+  const reportVisiblePaper = useCallback((paperId) => {
+    visiblePaperIdRef.current = paperId || null;
+  }, []);
+
   const reRankFeed = useCallback((sourcePaperId = null) => {
     setPapers(prevPapers => {
-       if (!prevPapers || prevPapers.length <= 1) return prevPapers;
-       
-       let splitIndex = 0;
-       if (sourcePaperId) {
-         const idx = prevPapers.findIndex(p => p.id === sourcePaperId);
-         if (idx !== -1) splitIndex = idx;
-       }
-       
-       // Index up to splitIndex + 3 are currently on screen or next, do not shift them under the user's feet
-       const safeSplit = Math.min(splitIndex + 3, prevPapers.length);
-       const lockedPapers = prevPapers.slice(0, safeSplit);
-       const queue = [...prevPapers.slice(safeSplit)];
-        if (queue.length === 0) return prevPapers;
+      if (!prevPapers || prevPapers.length <= 1) return prevPapers;
+      // Lock the cards the reader is on or about to reach: the interacted
+      // paper when there is one, and the visible one always — a reload puts
+      // the reader deep in the list, and the profile load's anchorless
+      // re-rank used to shuffle that card away (2026-09-04).
+      const { locked, queue } = splitFeedForReRank(prevPapers, {
+        anchorPaperIds: [sourcePaperId, visiblePaperIdRef.current],
+      });
+      if (queue.length === 0) return prevPapers;
 
-       const newQueue = diversifiedWeightedShuffle(queue, {
-         scorePaper: calculateAndAttachScore,
-         weights: recommendationWeights.current,
-         initialPapers: lockedPapers,
-       });
-       logRankingBatch('rerank queue', newQueue);
-       
-       return [...lockedPapers, ...newQueue];
+      const newQueue = diversifiedWeightedShuffle(queue, {
+        scorePaper: calculateAndAttachScore,
+        weights: recommendationWeights.current,
+        initialPapers: locked,
+      });
+      logRankingBatch('rerank queue', newQueue);
+
+      return [...locked, ...newQueue];
     });
   }, [calculateAndAttachScore]);
 
@@ -2236,6 +2242,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     feedMode, setFeedMode: handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
+    reportVisiblePaper,
     toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce
@@ -2248,6 +2255,7 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     feedMode, handleSetFeedMode,
     loadPapers, loadMore, refreshFeed,
     getRecommendationProfileSnapshot,
+    reportVisiblePaper,
     toggleLike, markNotInterested, markSaved, markAsRead, unmarkAsRead,
     toggleReadLater, saveReadingMetadata,
     trackViewTime, trackPdfOpened, trackSkip, trackSkips, trackPdfBounce,
