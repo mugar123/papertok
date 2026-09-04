@@ -3,7 +3,7 @@ import {
   exportFileName,
   exportableAnnotations,
   numberAnnotations,
-} from './latexExport.js';
+} from './exportDocument.js';
 import { displayProse } from './latex.js';
 import { buildHighlightPlan } from './textHighlights.js';
 import { loadKatex } from './katexLoader.js';

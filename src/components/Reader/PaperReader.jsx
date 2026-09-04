@@ -33,12 +33,12 @@ import {
 } from '../../utils/panelReveal.js';
 import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.js';
 import { buildRangeAnchor, buildSelectionAnchor } from '../../utils/textHighlights.js';
+import { buildLatexDocument } from '../../utils/latexExport.js';
 import {
-  buildLatexDocument,
-  exportableAnnotations,
   exportFileName,
+  exportableAnnotations,
   summarizeExport,
-} from '../../utils/latexExport.js';
+} from '../../utils/exportDocument.js';
 import { buildPdfModel, downloadPdfDocument } from '../../utils/pdfExport.js';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
