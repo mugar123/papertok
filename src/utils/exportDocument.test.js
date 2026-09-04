@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  bylineText,
   colophonTitleText,
   documentCopy,
   documentMeta,
@@ -76,6 +77,20 @@ test('una fecha que no lo es no rompe el documento', () => {
   // El export no puede caerse por esto: si la fecha falta, la línea la pierde.
   assert.equal(formatExportDate(new Date('nada'), 'es'), '');
   assert.equal(formatExportDate(null, 'es'), '');
+});
+
+test('bylineText: pasados doce autores, la línea lo dice en vez de listarlos', () => {
+  // Esta rama vivía probada solo en `plainAuthorLine` (pdfExport.js, borrado:
+  // ahora `bylineText` hace ese trabajo para los dos formatos). Al borrar
+  // aquel test junto con la función, la rama de "et al." se quedaba sin
+  // ningún test que la vigilara — la única que tenía cobertura, porque el
+  // resto del comportamiento de `bylineText` ya lo cubre `documentMeta` más
+  // abajo (lista vacía, un único autor).
+  const many = { authors: Array.from({ length: 30 }, (_, i) => ({ name: `Autor ${i}` })) };
+  const line = bylineText(many);
+  assert.match(line, / et al\.$/);
+  assert.match(line, /Autor 11/);
+  assert.doesNotMatch(line, /Autor 12/);
 });
 
 test('los metadatos salen montados y en los dos idiomas', () => {
