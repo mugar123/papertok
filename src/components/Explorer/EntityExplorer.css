@@ -246,7 +246,7 @@
   background: var(--bg-card);
   color: var(--text-secondary);
   cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast), transform 0.16s ease-out;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -615,8 +615,14 @@
   animation: wikiProseIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
+/* From 0.35, like `slideUpFade`, `staggerFadeUp` and `statSettle`, and for
+   their reason: the paragraph takes the place of five grey bars measured to
+   its own line box, so it resolves where they were instead of arriving from
+   nothing. Written from 0 first, which is the one case in the hero where that
+   reads worst — the bars are removed in the same commit, so the block would be
+   genuinely blank for the first frames rather than grey turning into type. */
 @keyframes wikiProseIn {
-  from { opacity: 0; }
+  from { opacity: 0.35; }
   to { opacity: 1; }
 }
 
@@ -1306,7 +1312,7 @@
   padding: 10px 2px;
   margin-bottom: -1px;
   cursor: pointer;
-  transition: color var(--transition-fast), border-color var(--transition-fast);
+  transition: color var(--transition-fast), border-color var(--transition-fast), transform 0.16s ease-out;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -1416,7 +1422,7 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-medium);
   cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast), transform 0.16s ease-out;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -1622,7 +1628,7 @@
   font-size: var(--fs-sm);
   font-weight: var(--fw-semibold);
   cursor: pointer;
-  transition: border-color var(--transition-fast), background var(--transition-fast);
+  transition: border-color var(--transition-fast), background var(--transition-fast), transform 0.16s ease-out;
 }
 
 .project-links-trigger.is-open,
@@ -2270,9 +2276,59 @@
   }
 }
 
+/* ── The press ──
+   Every feedback rule in this file sits inside `@media (hover: hover)`, which
+   is correct for a hover and useless for a thumb: on a phone, tapping a paper
+   row, a tab, a filter chip or a participant card produced nothing at all
+   until the next screen arrived. These are the most-touched targets on the
+   page and they were the only surface in the app with no acknowledgement —
+   `ProfilePage.css`, `ListsPage.css` and `PaperCard.css` all already do this.
+
+   Two groups, because they are not the same kind of surface. Compact controls
+   take the scale: 0.97 is the catalog's value and it is cheap on a 26-40px
+   box. Full-bleed rows take the background their own hover already uses,
+   lifted out of the pointer gate — a 776px serif row scaled by 3% re-rasters
+   two lines of type for a tap, which is the cost `PageTransition.jsx` argues
+   at length about for a page. */
+.entity-follow-btn:active:not(:disabled),
+.ehc-name-toggle:active:not(:disabled),
+.ehc-wiki-toggle:active:not(:disabled),
+.ehc-ror-relations button:active:not(:disabled),
+.project-links-trigger:active:not(:disabled),
+.project-summary-toggle:active:not(:disabled),
+.project-show-more:active:not(:disabled),
+.ee-filter-chip:active:not(:disabled),
+.ee-filter-reset:active:not(:disabled),
+.ee-filter-apply:active:not(:disabled),
+.ee-tab:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+/* `transform` is APPENDED to the lists these controls already declare, never
+   given as a fresh shorthand: `transition` is a shorthand, so a later rule
+   naming only `transform` would silently drop their colour fades. That trap is
+   documented in `Layout/ThemeToggle.css`. Only the controls that declare no
+   transition at all get one of their own, below. */
+.entity-follow-btn,
+.ehc-wiki-toggle,
+.ehc-ror-relations button,
+.project-summary-toggle,
+.project-show-more,
+.ee-filter-reset,
+.ee-filter-apply {
+  transition: transform 0.16s ease-out;
+}
+
+/* The rows: the same value their own hover uses (`:888`, `:1511`, `:1825`),
+   out from behind the pointer gate so a thumb gets it too. */
+.explorer-list-item:active,
+.ee-author-card:active,
+.project-participant-card:active:not(:disabled) {
+  background: var(--bg-secondary);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .explorer-hero-content,
-  .explorer-list-item,
   .explorer-error,
   .ehc-wiki p,
   .ehc-wiki-skeleton span::after,
@@ -2287,16 +2343,39 @@
   .skel,
   .orcid-career-section--animate > *,
   .ehc-spinner,
-  .ee-tab,
   .ehc-bg-blur {
     animation: none;
     transition: none;
   }
 
+  /* Reduced motion means less movement, not less feedback. `.ee-tab` and
+     `.explorer-list-item` used to sit in the list above, and `transition: none`
+     there took their colour and background fades with the movement — the tab
+     strip stopped saying which tab was active gently, and a row stopped
+     acknowledging a pointer at all. Nothing about a colour moves. So they keep
+     their transitions and lose only the travel. */
   .explorer-list-item,
   .ee-author-card.staggerFadeUp,
   .orcid-career-section--animate > * {
+    animation: none;
     opacity: 1;
+    transform: none;
+  }
+
+  /* The press stays as a colour change; the squeeze is movement and goes.
+     The rows' `:active` background is untouched — it is the whole point of
+     keeping feedback here. */
+  .entity-follow-btn:active:not(:disabled),
+  .ehc-name-toggle:active:not(:disabled),
+  .ehc-wiki-toggle:active:not(:disabled),
+  .ehc-ror-relations button:active:not(:disabled),
+  .project-links-trigger:active:not(:disabled),
+  .project-summary-toggle:active:not(:disabled),
+  .project-show-more:active:not(:disabled),
+  .ee-filter-chip:active:not(:disabled),
+  .ee-filter-reset:active:not(:disabled),
+  .ee-filter-apply:active:not(:disabled),
+  .ee-tab:active:not(:disabled) {
     transform: none;
   }
 }

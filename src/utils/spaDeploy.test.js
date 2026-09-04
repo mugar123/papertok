@@ -72,10 +72,19 @@ test('SOURCE: a failed chunk load reloads the tab once a minute at most', async 
   assert.ok(handler, 'the vite:preloadError listener is gone');
   // The real listener is well under twenty lines. A much longer capture
   // means the regex ran past it into unrelated code below.
-  const handlerLines = handler[0].split('\n');
-  assert.ok(handlerLines.length <= 16, `listener capture spans ${handlerLines.length} lines, past the real handler`);
+  //
+  // Counted as CODE lines, not raw ones: stripping a comment above leaves the
+  // blank line behind, so a comment added to the handler used to spend the
+  // budget this guard exists to protect. What it is watching for is a capture
+  // that ran into unrelated statements, and blank lines are not statements.
+  const handlerLines = handler[0].split('\n').filter((line) => line.trim() !== '');
+  assert.ok(handlerLines.length <= 16, `listener capture spans ${handlerLines.length} code lines, past the real handler`);
 
   const body = handler[0];
+  // `markAppForcedReload()` is part of the sequence, not incidental: a reload
+  // this handler performs is one the reader did not ask for, and an unmarked
+  // one would make the feed start fresh underneath them (utils/appReload.js).
+  //
   // A handler that reloads on every failure, with no brake, used to satisfy
   // this test too: the three substrings it checked for all still appear
   // somewhere in a handler like that, and an unbraked reload loop is exactly
@@ -84,8 +93,8 @@ test('SOURCE: a failed chunk load reloads the tab once a minute at most', async 
   // match inside the SAME handler, in that order.
   assert.match(
     body,
-    /if \(now - last < 60_000\) return\s*sessionStorage\.setItem\(PRELOAD_RELOAD_KEY, String\(now\)\)\s*\}[\s\S]*?event\.preventDefault\(\)\s*window\.location\.reload\(\)/,
-    'a reload must be gated by the 60s threshold and follow the recorded attempt',
+    /if \(now - last < 60_000\) return\s*sessionStorage\.setItem\(PRELOAD_RELOAD_KEY, String\(now\)\)\s*\}[\s\S]*?event\.preventDefault\(\)\s*markAppForcedReload\(\)\s*window\.location\.reload\(\)/,
+    'a reload must be gated by the 60s threshold, follow the recorded attempt, and be marked as the app\'s own',
   );
   // ...and that the guarded pair is not ALSO reachable earlier, unconditionally:
   // tying the order proves a guarded path exists, not that it is the only one.

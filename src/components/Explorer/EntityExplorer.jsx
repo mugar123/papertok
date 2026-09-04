@@ -88,6 +88,16 @@ const HERO_STACK_GAP_PX = 16;
 // may now report a POSITIVE move in the first frames. That is the hero settling
 // as content arrives, not the fold — the fold is the negative run, and it is
 // the one to compare.
+// The ORCID experience panel's collapse. Same reasoning as WIKI_FOLD_OUT
+// below: what travels is the page under the panel, and it has to land, so the
+// space rides a gentle ease-in-out while the contents leave on the house exit
+// curve. Shorter than the wiki fold's 480ms because this one is a click's
+// answer, not a network response resolving — the reader is waiting on it.
+const EXPERIENCE_FOLD_OUT = {
+  opacity: { duration: 0.16, ease: [0.4, 0, 1, 1] },
+  height: { duration: 0.3, ease: [0.4, 0, 0.2, 1] },
+};
+
 const WIKI_FOLD_OUT = {
   // The block itself really is leaving, so its fade takes the house exit curve.
   // Tracking the space rather than racing it: at 240ms against a 480ms collapse
@@ -1401,10 +1411,20 @@ export default function EntityExplorer({
               // beat and then corrected itself: whichever won the first frames
               // decided how much of the photograph you saw. The keyframe is
               // gone; 0.1 is the intended weight and is now stated once.
+              // One event, one clock. This fades off the same `hasLoadedWikiImage`
+              // flip as the photograph in the visual slot, and that cross-fade
+              // takes 280ms — so a second of ease-in-out here left the wash
+              // still deepening 720ms after the picture it is made of had
+              // settled. It also had no `ease`, which in framer means the
+              // built-in `easeInOut`: the one unnamed curve in a hero of ~85
+              // hand-typed arrivals. It is a 10% wash; it does not need a
+              // second to arrive, it needs to arrive WITH its photograph.
               initial={{ opacity: 0 }}
               animate={{ opacity: 0.1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: prefersReducedMotion ? 0 : 1 }}
+              transition={prefersReducedMotion
+                ? { duration: 0 }
+                : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
               className="ehc-bg-blur"
               style={{ backgroundImage: `url(${visibleWikiInfo.thumbnail})` }}
             ></motion.div>
@@ -1710,14 +1730,24 @@ export default function EntityExplorer({
                   // box, opacity fills it, and nothing else moves.
                   initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
-                  exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                  // Closing is not opening reversed, and framer would make it
+                  // so: without a transition of its own the exit inherits the
+                  // component's, which is the arrival's expo-out. That is the
+                  // same mistake the Wikipedia fold was measured making — the
+                  // curve is front-loaded, so everything below the panel leapt
+                  // and then crawled (-31.9px in one frame, there). This is the
+                  // taller of the hero's two folds AND the only one a click
+                  // closes, so it is the one a reader watches.
+                  exit={prefersReducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, height: 0, transition: EXPERIENCE_FOLD_OUT }}
                   transition={prefersReducedMotion
                     ? { duration: 0 }
                     : {
                       // The contents clear a little before the box finishes
                       // closing, so the last thing seen is an empty fold
                       // rather than text being guillotined by the clip.
-                      opacity: { duration: 0.2 },
+                      opacity: { duration: 0.2, ease: [0.16, 1, 0.3, 1] },
                       height: { duration: 0.34, ease: [0.16, 1, 0.3, 1] },
                     }}
                 >
@@ -2223,11 +2253,20 @@ export default function EntityExplorer({
                   </div>
                 ))}
 
-              {/* Infinite Scroll Sentinel — once every row of this page is in */}
+              {/* Infinite Scroll Sentinel — once every row of this page is in.
+                  The box always mounts, because it IS the observer's target and
+                  gating it on the fetch would leave nothing to observe. What is
+                  gated is the spinner and the claim: `hasMore` only says there
+                  is a next page, so an ungated `spin 1s infinite` sat at the
+                  foot of every list announcing a request that had not started.
+                  A spinner that spins when nothing is loading is the one kind
+                  of motion with no state to indicate. */}
               {hasMore && rowsSettled && (
                 <div ref={observerRef} className="ehc-sentinel">
-                  <Loader2 className="ehc-spinner" size={24} />
-                  <span>{isEnglish ? 'Loading more articles...' : 'Cargando más artículos...'}</span>
+                  {isFetchingMore && <Loader2 className="ehc-spinner" size={24} />}
+                  <span>{isFetchingMore
+                    ? (isEnglish ? 'Loading more articles...' : 'Cargando más artículos...')
+                    : (isEnglish ? 'Scroll for more' : 'Sigue bajando para ver más')}</span>
                 </div>
               )}
             </div>
@@ -2295,8 +2334,10 @@ export default function EntityExplorer({
             
             {hasMoreAuthors && (
               <div ref={observerAuthorsRef} className="ehc-sentinel">
-                <Loader2 className="ehc-spinner" size={24} />
-                <span>{isEnglish ? 'Loading more authors...' : 'Cargando más autores...'}</span>
+                {isFetchingMoreAuthors && <Loader2 className="ehc-spinner" size={24} />}
+                <span>{isFetchingMoreAuthors
+                  ? (isEnglish ? 'Loading more authors...' : 'Cargando más autores...')
+                  : (isEnglish ? 'Scroll for more' : 'Sigue bajando para ver más')}</span>
               </div>
             )}
             {!isLoadingAuthors && entityAuthors.length === 0 && (
