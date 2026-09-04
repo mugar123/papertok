@@ -56,6 +56,20 @@ test('the layout waits for a measured box instead of dividing by zero', () => {
   assert.ok(Number.isFinite(pending.centerX));
 });
 
+test('before the box is measured, nothing is trimmed for space yet', () => {
+  // Capacity depends on a band height that only exists once the plot has
+  // been measured. Trimming for space before then would flash a wrong
+  // omitted count for one frame, ahead of the real one.
+  const pending = layout({
+    width: 0,
+    height: 0,
+    references: series(10, index => paper({ id: `r${index}`, year: 2000 + index })),
+  });
+  assert.equal(pending.ready, false);
+  assert.equal(pending.shown.references, 10);
+  assert.equal(pending.omitted.references, 0);
+});
+
 test('every node stays inside the band it belongs to', () => {
   const result = layout({
     references: series(8, index => paper({ id: `r${index}`, year: 1997 + index * 2, citationCount: 500 * (index + 1) })),
@@ -91,13 +105,61 @@ test('hit rows tile without ever sharing a pixel', () => {
   }
 });
 
-test('the row height gives way before the band does', () => {
+test('a realistic short mobile plot never overlaps two nodes, and counts what it could not fit', () => {
+  // 345x198.58 is the real, measured `.graph-plot` box on a 375x667 viewport
+  // (iPhone SE-class) with the sheet's actual CSS -- the shortest realistic
+  // case, and shorter than the 396px-tall BOX every other test in this file
+  // uses, which is roomy enough to never have exercised this band's true
+  // floor. 8 references is the service's default fetch cap per band, and
+  // the common case for anything with a resolvable citation graph: most
+  // papers cite at least eight references outright.
+  const result = layout({
+    width: 345,
+    height: 198.58,
+    references: series(8, index => paper({ id: `r${index}`, year: 2010 + index, citationCount: 50 * (index + 1) })),
+  });
+
+  const rows = band(result, 'reference').slice().sort((a, b) => a.y - b.y);
+  assert.equal(rows.length, 2);
+  assert.equal(result.shown.references, 2);
+  assert.equal(result.omitted.references, 6);
+  for (const node of rows) assert.equal(node.rowHeight, 24);
+  for (let index = 1; index < rows.length; index += 1) {
+    const previousBottom = rows[index - 1].y + rows[index - 1].rowHeight / 2;
+    const currentTop = rows[index].y - rows[index].rowHeight / 2;
+    assert.ok(currentTop >= previousBottom - 0.001, `row ${index} overlaps the one above`);
+  }
+});
+
+test('omitted counts both unmappable papers and mappable ones a full band has no room for', () => {
+  const result = layout({
+    height: 120, // one 24px slot in the reference band
+    references: [
+      paper({ id: 'no-year', year: undefined, citationCount: 10 }),
+      ...series(3, index => paper({ id: `r${index}`, year: 2000 + index })),
+    ],
+  });
+
+  // 1 unmappable + 2 mappable-but-unfit (3 mappable, 1 slot) = 3 omitted.
+  assert.equal(result.shown.references, 1);
+  assert.equal(result.omitted.references, 3);
+  assert.equal(result.shown.references + result.omitted.references, 4);
+});
+
+test('crowding drops nodes now, not their row height', () => {
   const roomy = layout({ references: series(4, index => paper({ id: `r${index}`, year: 2000 + index * 4 })) });
   const crowded = layout({ references: series(10, index => paper({ id: `r${index}`, year: 2000 + index })) });
 
   assert.equal(roomy.nodes[0].rowHeight, CITATION_MAP_GEOMETRY.minGap);
-  assert.ok(crowded.nodes[0].rowHeight < CITATION_MAP_GEOMETRY.minGap);
-  assert.ok(crowded.nodes[0].rowHeight >= CITATION_MAP_GEOMETRY.minRowHeight);
+  assert.equal(roomy.nodes.length, 4);
+  assert.equal(roomy.omitted.references, 0);
+
+  // This BOX gives the reference band 162px (height/2 - ruleGap - bandPadding),
+  // room for six 24px slots -- so four of the ten crowded references are left
+  // out of the map, not squeezed into a row smaller than the WCAG floor.
+  assert.equal(crowded.nodes.length, 6);
+  assert.equal(crowded.omitted.references, 4);
+  for (const node of crowded.nodes) assert.equal(node.rowHeight, CITATION_MAP_GEOMETRY.minGap);
 });
 
 test('spreading crowded nodes never reorders them in time', () => {
@@ -237,18 +299,33 @@ test('the stagger restarts on each band so sixteen nodes do not queue up', () =>
   assert.deepEqual(references.map(node => node.edgeDelay), [0, 1, 2].map(i => edgeDelayBase + i * edgeDelayStep));
 });
 
-test('a sheet too short for a band keeps its nodes on the plot', () => {
+test('a band too short for every node omits the rest instead of shrinking below the floor', () => {
   const cramped = layout({
     height: 120,
     references: series(4, index => paper({ id: `r${index}`, year: 2000 + index })),
     citations: series(4, index => paper({ id: `c${index}`, year: 2020 + index })),
   });
 
-  assert.equal(cramped.nodes.length, 8);
+  // Each band is exactly 24px tall at this height -- room for one node, not
+  // the four offered on either side of the rule.
+  assert.equal(cramped.nodes.length, 2);
+  assert.equal(cramped.omitted.references, 3);
+  assert.equal(cramped.omitted.citations, 3);
   for (const node of cramped.nodes) {
+    assert.equal(node.rowHeight, CITATION_MAP_GEOMETRY.minGap);
     assert.ok(Number.isFinite(node.y), 'a node landed nowhere');
     assert.ok(node.y >= 0 && node.y <= 120, `a node left the plot at ${node.y}`);
   }
+});
+
+test('a band with no room at all omits every node rather than drawing one that overlaps its neighbour', () => {
+  const nothing = layout({
+    height: 40, // half-height 20, minus ruleGap alone already clears the band's top past its bottom
+    references: series(3, index => paper({ id: `r${index}`, year: 2000 + index })),
+  });
+
+  assert.equal(nothing.nodes.length, 0);
+  assert.equal(nothing.omitted.references, 3);
 });
 
 test('an empty neighbourhood still draws a rule and a marker', () => {

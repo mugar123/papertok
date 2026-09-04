@@ -393,11 +393,21 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
   // its frame, because the frame is what the loading state is made of.
   const sheetStatus = visibleStatus === 'loading' && mode === 'graph' ? 'ready' : visibleStatus;
 
-  const bandCaption = (relation) => {
+  /**
+   * The list shows every paper the sheet fetched; the map can only show as
+   * many as its band has 24px slots for (`citationMap.js`). Sharing one
+   * headline number between them would make one of the two views lie, so
+   * `context` picks which count `shown` reports — the fetch, for the list
+   * that draws all of it, or `layout.shown`, for the map that may not.
+   */
+  const bandCaption = (relation, context = 'map') => {
     // Nothing is known until the neighbourhood lands, and "0 of 0" on both
     // bands is how a sheet that is merely waiting looks broken.
     if (graphStatus !== 'ready') return '—';
-    const shown = relation === 'reference' ? graph.references.length : graph.citations.length;
+    const fetched = relation === 'reference' ? graph.references.length : graph.citations.length;
+    const shown = context === 'list'
+      ? fetched
+      : (relation === 'reference' ? layout.shown.references : layout.shown.citations);
     const total = relation === 'reference' ? graph.counts.references : graph.counts.citations;
     const totalLabel = formatCount(Math.max(total, shown), locale);
     if (relation === 'reference') {
@@ -529,7 +539,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
           {bandCaption('reference')}
           {layout.omitted.references > 0 && (
             <button type="button" className="graph-omitted" onClick={() => setView('list')}>
-              {isEnglish ? `+${layout.omitted.references} without data` : `+${layout.omitted.references} sin dato`}
+              {isEnglish ? `+${layout.omitted.references} in the list` : `+${layout.omitted.references} en la lista`}
             </button>
           )}
         </span>
@@ -619,7 +629,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
           {bandCaption('citation')}
           {layout.omitted.citations > 0 && (
             <button type="button" className="graph-omitted" onClick={() => setView('list')}>
-              {isEnglish ? `+${layout.omitted.citations} without data` : `+${layout.omitted.citations} sin dato`}
+              {isEnglish ? `+${layout.omitted.citations} in the list` : `+${layout.omitted.citations} en la lista`}
             </button>
           )}
         </span>
@@ -649,7 +659,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                 ? (isEnglish ? 'Before · what it cites' : 'Antes · lo que cita')
                 : (isEnglish ? 'After · what cites it' : 'Después · quien lo cita')}
             </span>
-            <span className="graph-band-count">{bandCaption(relation)}</span>
+            <span className="graph-band-count">{bandCaption(relation, 'list')}</span>
           </div>
           {entries.map(({ paper: related, key }, index) => {
             const listKey = `list:${key}`;

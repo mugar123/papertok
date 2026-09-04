@@ -1531,9 +1531,12 @@ a.pc-citations {
   transition: opacity 160ms ease-out;
 }
 
-/* The dot is 11px because it is typography. The target is the whole row --
-   dot and label -- and it is as tall as the gap its band could afford, so two
-   neighbours never share a pixel. The 44px path is the list view. */
+/* The dot is 11px because it is typography. The target is the whole row —
+   dot and label — and it is fixed at 24px, the WCAG 2.5.8 floor: a band that
+   cannot fit every neighbour at that height omits the surplus instead of
+   shrinking rows below it (see `bandCapacity` in citationMap.js). The list
+   view shows every neighbour the sheet fetched, whether or not the map had
+   room to draw it. */
 .graph-node {
   position: absolute;
   z-index: 3;
