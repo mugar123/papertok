@@ -308,3 +308,36 @@ test('the handle is one box with the @ inside it, not a box within a box', async
   // app's own focus treatment.
   assert.doesNotMatch(css, /\.profile-handle-input input:focus/);
 });
+
+/**
+ * The handle field's hint paragraph doubles as its error message: when the
+ * draft is invalid the same node swaps the hint for the reason. Without a live
+ * region that swap is silent, so a screen-reader user typing a taken handle
+ * hears nothing until they leave the field and come back — the error is
+ * identified programmatically (`aria-invalid` + `aria-describedby`) but never
+ * announced, which is two thirds of WCAG 3.3.1 rather than all of it.
+ *
+ * The onboarding flow already got this right on the identical pattern; this
+ * pins the pair together so the two cannot drift apart again.
+ */
+test('the handle hint announces itself when it turns into an error', async () => {
+  const pairs = [
+    ['src/components/Profile/ProfilePage.jsx', 'profile-handle-hint'],
+    ['src/components/Onboarding/OnboardingFlow.jsx', 'onboarding-handle-hint'],
+  ];
+
+  for (const [path, hintId] of pairs) {
+    const jsx = await readFile(new URL(`../../../${path}`, import.meta.url), 'utf8');
+    const opening = jsx.match(new RegExp(`<p[^>]*id="${hintId}"[^>]*>`, 's'));
+    assert.ok(
+      opening,
+      `${path}: expected a <p> carrying id="${hintId}" — the field's aria-describedby points at it`,
+    );
+    assert.match(
+      opening[0],
+      /aria-live="polite"/,
+      `${path}: #${hintId} alternates between hint and error text in one node, so it needs `
+        + 'aria-live="polite" or the error is never announced while the user types (WCAG 3.3.1)',
+    );
+  }
+});

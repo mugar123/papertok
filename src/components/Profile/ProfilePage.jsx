@@ -955,7 +955,7 @@ export default function ProfilePage() {
                         aria-describedby="profile-handle-hint"
                       />
                     </div>
-                    <p id="profile-handle-hint" className={`profile-hint${handleError ? ' is-error' : ''}`}>
+                    <p id="profile-handle-hint" className={`profile-hint${handleError ? ' is-error' : ''}`} aria-live="polite">
                       {handleError || copy.handleHint}
                     </p>
                   </div>
