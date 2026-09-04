@@ -316,6 +316,70 @@ function pageStyles(meta) {
 }
 
 /**
+ * De dónde salió esto, en una tabla que se lee de un vistazo seis meses después
+ * con el fichero suelto en una carpeta. Ningún campo es nuevo: todos salen del
+ * modelo que ya viaja al export.
+ *
+ * La fila de la fuente es la excepción a `escapeLatexText`: es la única fila
+ * que trae la URL cruda en vez de compuesta dentro de una frase (`meta.source`,
+ * en la portada, ya la lleva metida en una oración), y por eso es aquí donde
+ * vuelve el único enlace clicable que le queda al documento. La Task 3 se
+ * llevó el `\url{}` que antes vivía en el pie de página; desde entonces
+ * `hyperref` se cargaba sin que nada lo usara. `\url` tiene sus propias
+ * reglas de escape — no son las de la prosa — y son las mismas que usaba
+ * aquel pie: solo los siete caracteres que rompen su lectura (`%#&_{}$`),
+ * cada uno con una contrabarra delante; una `~` de la URL, por ejemplo, se
+ * queda tal cual, mientras que `escapeLatexText` la habría convertido en
+ * `\textasciitilde{}` e imprimido el comando en vez del carácter. La fila se
+ * identifica comparando su clave contra `copy.colophonKeys.source`, nunca
+ * contra "Fuente" a pelo ni contra su posición en el array: el documento
+ * existe en inglés también, y allí esa misma clave es "Source".
+ */
+function colophon(meta, copy) {
+  if (meta.colophon.rows.length === 0) return [];
+  return [
+    // Todo el bloque —desde el filete hasta la última fila de la tabla— va
+    // dentro de un \minipage. Compilado un documento cuyo cuerpo termina
+    // cerca del margen inferior y mirada la página: sin esto, el filete y el
+    // título «Procedencia» se quedaban solos al pie de una página mientras la
+    // tabla entera aparecía huérfana al principio de la siguiente, sin su
+    // encabezado. Un \minipage es una caja que LaTeX nunca parte por dentro,
+    // así que si el bloque completo no cabe en lo que queda de página se
+    // empuja entero a la siguiente, en vez de partirse por cualquier punto
+    // intermedio. `\textwidth` dentro del \minipage sigue siendo el
+    // `\textwidth` de la página (un \minipage no lo redefine, solo redefine
+    // `\linewidth`), así que el filete y la tabla miden exactamente lo mismo
+    // que medían sin la caja alrededor.
+    //
+    // `\noindent` delante del `\minipage` no es cosmético: sin él, LaTeX abre
+    // un párrafo nuevo para la caja y le suma la sangría de primera línea al
+    // ancho de `\textwidth` que ya tiene la propia caja — compilado, eso
+    // salió como «Overfull \hbox (17.0pt too wide)», los 17pt exactos de esa
+    // sangría. El resto de líneas de este bloque ya llevaban su propio
+    // `\noindent`; a esta le faltaba.
+    '\\noindent\\begin{minipage}{\\textwidth}',
+    '\\vspace{24pt}',
+    '\\noindent\\rule{\\textwidth}{1.3pt}',
+    '\\vspace{6pt}',
+    '',
+    `\\noindent{\\ptmono\\scriptsize ${escapeLatexText(meta.colophon.heading)}}`,
+    '\\vspace{6pt}',
+    '',
+    '\\noindent\\begin{tabular}{@{}p{92pt}p{\\dimexpr\\textwidth-104pt\\relax}@{}}',
+    ...meta.colophon.rows.map(row => {
+      const isSource = row.key === copy.colophonKeys.source;
+      const value = isSource
+        ? `\\url{${row.value.replace(/([%#&_{}$])/g, '\\$1')}}`
+        : escapeLatexText(row.value);
+      return `{\\ptmono\\scriptsize\\color{ptGrey}${escapeLatexText(row.key)}} & ${value} \\\\[3pt]`;
+    }),
+    '\\end{tabular}',
+    '\\end{minipage}',
+    '',
+  ];
+}
+
+/**
  * @returns {{ source: string, fileName: string, noteCount: number }}
  */
 export function buildLatexDocument({
@@ -401,6 +465,7 @@ export function buildLatexDocument({
     });
   }
 
+  lines.push(...colophon(meta, copy));
   lines.push('\\end{document}');
   lines.push('');
 

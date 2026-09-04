@@ -539,3 +539,67 @@ test('el tramo que apaga la sangría es el mismo con o sin encabezado original',
   assert.equal(withoutOrigin[1], withOrigin[1], 'el after-sep cancelado debe ser el mismo número');
   assert.equal(withoutOrigin[2], withOrigin[2], 'el hueco antes del párrafo debe ser el mismo número');
 });
+
+// ---------------------------------------------------------------------------
+// El colofón de procedencia
+// ---------------------------------------------------------------------------
+
+test('el documento cierra con un colofón de procedencia', () => {
+  const { source } = buildLatexDocument({
+    paper: PAPER, sections: SECTIONS, annotations: [MARK],
+    originalUrl: 'https://arxiv.org/abs/2405.04331',
+    generatedAt: new Date(Date.UTC(2026, 8, 4)),
+  });
+  assert.match(source, /Procedencia/);
+  assert.match(source, /Artículo original/);
+  assert.match(source, /4 de septiembre de 2026/);
+  // Va al final, después de la última sección y antes de cerrar el documento.
+  assert.ok(source.indexOf('Procedencia') > source.lastIndexOf('\\section{'));
+});
+
+test('el colofón no imprime filas sin dato', () => {
+  const { source } = buildLatexDocument({
+    paper: { title: 'T', authors: [] }, sections: SECTIONS, annotations: [], originalUrl: '',
+  });
+  assert.doesNotMatch(source, /Autoría/);
+  assert.doesNotMatch(source, /Fuente/);
+});
+
+test('la fila de fuente lleva la URL como \\url{} clicable, no como texto escapado', () => {
+  // Es el único enlace que le queda al documento: la Task 3 se llevó el
+  // \url{} que vivía en el pie de página, y desde entonces hyperref se
+  // cargaba sin que nada lo usara. Esta fila es la única que trae la URL
+  // cruda (`meta.source`, en la portada, ya la lleva compuesta dentro de una
+  // frase), así que es aquí donde el enlace clicable vuelve.
+  const { source } = build({ originalUrl: 'https://arxiv.org/abs/2405.04331' });
+  assert.match(source, /\\url\{https:\/\/arxiv\.org\/abs\/2405\.04331\}/);
+});
+
+test('sin URL original no queda ningún \\url{ suelto ni fila de fuente', () => {
+  const { source } = build({ originalUrl: '' });
+  assert.doesNotMatch(source, /\\url\{/);
+  assert.doesNotMatch(source, /Fuente/);
+});
+
+test('la URL del colofón se escapa con las reglas de \\url, no con las de la prosa', () => {
+  // `escapeLatexText` convertiría una `~` en `\textasciitilde{}`, que dentro
+  // de `\url{}` imprimiría el comando en vez de una tilde. El regex que
+  // escapa esta fila es el que traía el pie de página que la Task 3 quitó:
+  // solo `%#&_{}$`, la `~` se queda tal cual. La portada compone la misma URL
+  // dentro de una frase (`meta.source`) y esa sí pasa por `escapeLatexText`
+  // legítimamente — por eso la comprobación de ausencia se acota al colofón,
+  // que empieza después de la última sección.
+  const { source } = build({ originalUrl: 'https://example.org/~user' });
+  const colophonBlock = source.slice(source.lastIndexOf('\\section{'));
+  assert.match(colophonBlock, /\\url\{https:\/\/example\.org\/~user\}/);
+  assert.doesNotMatch(colophonBlock, /textasciitilde/);
+});
+
+test('en inglés la fila de fuente se identifica por clave, no por el texto "Fuente"', () => {
+  // `colophonKeys.source` es "Source" en inglés. Si el código comparase
+  // contra la cadena española "Fuente" a pelo, este documento no tendría
+  // nunca un \url{} clicable.
+  const { source } = build({ language: 'en', originalUrl: 'https://arxiv.org/abs/2405.04331' });
+  assert.match(source, /Source/);
+  assert.match(source, /\\url\{https:\/\/arxiv\.org\/abs\/2405\.04331\}/);
+});
