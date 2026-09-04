@@ -1,5 +1,55 @@
 # Estado / pendientes
 
+## Abrir un autor (o un tema, un proyecto, una institución) sin glitch, y el feed más fluido en móvil (2026-09-04)
+
+**Cuatro cosas hacían glitch al tocar un autor desde una tarjeta, medidas en
+el build de producción a 390×844 con la sonda nueva `open`
+(`explorer-loading-probe.mjs`): el héroe encogía 150 px en un frame al llegar
+el perfil (el esqueleto reserva ORCID y temas que un autor por nombre no
+trae: pestañas 515 → 339 px de golpe), la tira de pestañas del esqueleto
+medía 16 px frente a 40 reales, la transición escalaba la página (`scale:
+0.997`) y forzaba un re-raster del texto al retirarse, y en el teléfono la
+hoja de autores —`position: fixed` dentro de una tarjeta con
+`content-visibility` y de un contenedor que recibe `transform` al irse—
+salía disparada con la página (505 → 805 px en 220 ms, con un frame
+congelado de 145 ms).** Ahora el cuerpo del héroe asienta entre alturas con
+`useHeightSettle` (FLIP con Web Animations, `src/hooks/useHeightSettle.js`,
+el mismo ref en el esqueleto y en el vivo; 576 → 400 px en 0,28 s con las
+pestañas siguiéndolo), la tira del esqueleto mide 40 px, la transición es
+opacidad y deslizamiento, y la hoja va por portal al `body` y al elegir un
+autor pasa a su pose de salida (24 px abajo y a cero en 0,18 s, en fase con
+la página) hasta que la página la desmonta. Con CPU ×4, volver al feed eran
+dos tareas de 222 y 211 ms (tres tarjetas montadas en el frame de la
+vuelta, y tres más en mitad de la entrada): la ventana de montaje reanuda
+con una sola tarjeta, crece de dos en dos y espera 400 ms desde el montaje
+antes del primer crecimiento. Lo que quedaba de la vuelta lo nombró el
+perfil CPU (flag `profile` de la sonda, sobre un build sin minificar):
+`readPersistent` en `openAlexClient.js` sacaba de `localStorage` y parseaba
+el blob entero de la caché persistente de OpenAlex en cada lectura, y el
+feed lo lee una vez por paper al montar — 92 ms en una corrida, 422 ms en
+otra, dentro de la entrada; ahora se lee y parsea una vez, se suelta cuando
+otra pestaña escribe la clave (evento `storage`) y las lecturas devuelven
+copias. Y el blob medía 3,5 M de caracteres porque las páginas de obras se
+guardaban crudas (treinta obras con abstracts en índice invertido) y cada
+escritura lo serializaba entero, sesenta veces por página de autor: las
+páginas de obras y autores se persisten ya mapeadas (`persistentSlim`, claves
+`-v2`), las escrituras se agrupan en una microtarea y el blob se recorta a
+1,2 M de caracteres. Lo que quedaba al llegar la lista de obras (tareas de
+140–220 ms con CPU ×4) era maquetar y pintar treinta filas de golpe: la lista
+monta ocho filas por tanda en idle, las filas llevan `content-visibility:
+auto`, y el centinela de «cargar más» espera a que la página esté entera. Cuatro
+deslizamientos de tarjeta con CPU ×4 no dejan frames >34 ms ni tareas
+largas. Plan, tablas y lo que queda en
+`docs/superpowers/plans/2026-09-04-explorador-entrada-y-movil.md`.
+
+Dos salvedades honestas. La sonda corre en Chrome headless con raster por
+software, no en un teléfono: lo que mide con fidelidad son frames perdidos,
+tareas largas y geometría por frame; el coste de GPU real queda por ver en
+un dispositivo. Y el sitio desplegado no se recarga solo al arrancar (una
+navegación, service worker en control): la recarga que la sonda veía en
+local era un `workbox-window` sin resolver tras un `pnpm install`
+accidental; el repo va con `npm ci`.
+
 ## Caché compartida y un solo dueño de las devoluciones (2026-09-03)
 
 **Cerrado S6 y cinco de las «seis fugas» — plan en

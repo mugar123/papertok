@@ -849,6 +849,15 @@
      yet is already sitting at 0.35 where its skeleton shape was. */
   animation: staggerFadeUp 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
   animation-delay: calc(var(--i, 0) * 0.035s);
+  /* Rows below the fold are neither laid out nor painted until they are
+     near it: a works page is thirty rows and thirteen thousand pixels, and
+     laying all of it out was most of the native cost of the page answering
+     (profiled with the CPU at a quarter speed). The intrinsic size is a
+     row's usual height, so the scroll extent is right before a row is. A
+     row's entrance plays when it first comes near the screen, which is
+     where it is first seen anyway. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 200px;
 }
 
 .explorer-list-item::before {
@@ -1069,6 +1078,14 @@
    below does not move when it does. */
 .ex-skel-meta { width: 34%; height: 13px; }
 .ex-skel-tab { width: 58px; height: 15px; }
+/* The strip stands as tall as the live one — 40px, a tab's 10px of padding
+   either side of its label plus the 3px rule — with the shapes in its middle.
+   Measured on the handover (390×844): it used to be 16px tall, and the
+   toolbar and the list under it jumped 24px the frame the real tabs arrived. */
+.explorer-skeleton .ee-tabs {
+  min-height: 40px;
+  align-items: center;
+}
 .ex-skel-search { width: 100%; height: 38px; border-radius: var(--radius-md); }
 
 /* Header shapes, so the hero does not jump either. */

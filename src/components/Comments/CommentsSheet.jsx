@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import { CornerDownRight, Flag, MessageCircle, Pencil, Trash2, X } from 'lucide-react';
@@ -84,6 +84,9 @@ const COPY = {
   retry: { es: 'Reintentar', en: 'Try again' },
   more: { es: 'Cargar más', en: 'Load more' },
   placeholder: { es: 'Añade un comentario...', en: 'Add a comment...' },
+  // The visible placeholder vanishes once the composer holds any text, so the
+  // field needs a real accessible name of its own.
+  composerLabel: { es: 'Comentario', en: 'Comment' },
   replyingTo: { es: 'Respondiendo a', en: 'Replying to' },
   editing: { es: 'Editando tu comentario', en: 'Editing your comment' },
   cancel: { es: 'Cancelar', en: 'Cancel' },
@@ -95,6 +98,9 @@ const COPY = {
   deleteConfirm: { es: '¿Borrar? Sus respuestas se borran también.', en: 'Delete? Its replies go too.' },
   deleteReplyConfirm: { es: '¿Borrar esta respuesta?', en: 'Delete this reply?' },
   confirm: { es: 'Sí, borrar', en: 'Yes, delete' },
+  posted: { es: 'Comentario publicado.', en: 'Comment posted.' },
+  saved: { es: 'Cambios guardados.', en: 'Changes saved.' },
+  deleted: { es: 'Comentario borrado.', en: 'Comment deleted.' },
   report: { es: 'Reportar', en: 'Report' },
   reportWhy: { es: 'Motivo del reporte', en: 'Reason' },
   reportSpam: { es: 'Spam', en: 'Spam' },
@@ -387,8 +393,17 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   const [hiddenLocally, setHiddenLocally] = useState(() => locallyHiddenCommentIds());
   const [paging, setPaging] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState(null);
+  // { tone: 'status' | 'success' | 'error', text }. The render below only
+  // branches on `tone === 'error'` (role="alert") vs. everything else
+  // (role="status") -- 'status' and 'success' render identically, the
+  // distinction is for readability at each call site (an empty/idle clear
+  // vs. an actual confirmation). Rendered persistently below (empty by
+  // default) so the region exists before an action runs, not only once it has
+  // something to say — a live region announces changes to its content, and a
+  // node created at the same moment as its message is frequently missed.
+  const [notice, setNotice] = useState({ tone: 'status', text: '' });
   const [composerError, setComposerError] = useState(null);
+  const composerErrorId = useId();
   const [draft, setDraft] = useState('');
   const [replyTarget, setReplyTarget] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
@@ -634,7 +649,20 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     if (busy || !anchor || !draft.trim()) return;
     setBusy(true);
     setComposerError(null);
-    setNotice(null);
+    // Cleared here, before the network call below -- not merely "before
+    // setting the new text". Clearing and setting in the very same tick is
+    // NOT enough on its own: React batches synchronous updates from one
+    // event into a single commit, and if the batch's net result is the same
+    // string the DOM already shows, react-dom's diffing skips the write
+    // entirely (confirmed against react-dom-client and with a jsdom +
+    // MutationObserver repro elsewhere in this same delivery -- see
+    // EditInterestsModal.jsx). What actually guarantees two real commits
+    // here is the `await` a few lines down: it forces the eventual
+    // `setNotice` below onto a later commit than this one, so an identical
+    // confirmation twice in a row (post, then edit that same comment right
+    // back to wording that also says "Comment posted.") still lands as a
+    // genuine '' -> text transition each time, not a same-string no-op.
+    setNotice({ tone: 'status', text: '' });
     try {
       if (editTarget) {
         const trimmed = draft.trim();
@@ -643,6 +671,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
           row.id === editTarget.id ? { ...row, text: trimmed, editedAt: new Date() } : row
         )));
         void invalidateThreadAnchor([editTarget.paperKey ?? anchor.key]);
+        setNotice({ tone: 'success', text: text(COPY.saved) });
       } else {
         const result = await createComment({
           anchor,
@@ -657,6 +686,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         setCount(previous => (previous ? { ...previous, count: previous.count + 1 } : previous));
         if (!anchor.stubExists) setAnchor(previous => ({ ...previous, stubExists: true }));
         void invalidateThreadAnchor([anchor.key, ...localThreadKeys(paper)]);
+        setNotice({ tone: 'success', text: text(COPY.posted) });
       }
       resetComposer();
     } catch (error) {
@@ -668,7 +698,10 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
 
   const remove = async (comment) => {
     setBusy(true);
-    setNotice(null);
+    // See the longer note in submit() above: this only reaches a distinct
+    // commit from the setNotice calls below because of the await a few
+    // lines down, not merely because it runs first.
+    setNotice({ tone: 'status', text: '' });
     try {
       await deleteComment({
         paperKey: comment.paperKey ?? anchor.key,
@@ -686,9 +719,10 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         ? { ...previous, count: Math.max(0, previous.count - droppedIds.size) }
         : previous));
       void invalidateThreadAnchor([comment.paperKey ?? anchor.key, anchor.key]);
+      setNotice({ tone: 'success', text: text(COPY.deleted) });
     } catch (error) {
       console.error('The comment could not be deleted', error);
-      setNotice(text(COPY.deleteError));
+      setNotice({ tone: 'error', text: text(COPY.deleteError) });
     } finally {
       setBusy(false);
     }
@@ -696,7 +730,9 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
 
   const report = async (comment, reason) => {
     setBusy(true);
-    setNotice(null);
+    // Same reasoning as submit() and remove(): the await below is what
+    // actually separates this clear from either setNotice outcome.
+    setNotice({ tone: 'status', text: '' });
     try {
       await submitReport({
         targetPath: commentTargetPath(comment.paperKey ?? anchor.key, comment.id),
@@ -705,9 +741,15 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       });
       hideCommentLocally(comment.id);
       setHiddenLocally(locallyHiddenCommentIds());
-      setNotice(text(COPY.reported));
+      setNotice({ tone: 'success', text: text(COPY.reported) });
     } catch (error) {
-      setNotice(error?.code === 'permission-denied' ? text(COPY.reportThrottled) : text(COPY.writeError));
+      // A real failure (an error thrown by the write itself) is the only
+      // thing that becomes `role="alert"` below; both of these are genuine
+      // refusals, never a success dressed up as one.
+      setNotice({
+        tone: 'error',
+        text: error?.code === 'permission-denied' ? text(COPY.reportThrottled) : text(COPY.writeError),
+      });
     } finally {
       setBusy(false);
     }
@@ -982,7 +1024,19 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               {paging ? text(COPY.loading) : text(COPY.more)}
             </Button>
           )}
-          {notice && <p className="comments-sheet-notice" role="status">{notice}</p>}
+          {/* Persistent rather than mounted only when there is something to
+              say: the node has to exist before an action runs for its later
+              text to be announced at all. `has-text` (CSS) is what keeps the
+              chip's border/background from showing up empty; the role is
+              `alert` only for a genuine failure, `status` (polite) for a
+              success confirmation or the wait it is standing in for. */}
+          <p
+            className={`comments-sheet-notice ${notice.text ? 'has-text' : ''}`}
+            role={notice.tone === 'error' ? 'alert' : 'status'}
+            aria-live={notice.tone === 'error' ? 'assertive' : 'polite'}
+          >
+            {notice.text}
+          </p>
         </div>
 
         <footer className="comments-sheet-footer">
@@ -1050,6 +1104,9 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                   maxLength={4000}
                   rows={1}
                   placeholder={text(COPY.placeholder)}
+                  aria-label={text(COPY.composerLabel)}
+                  aria-invalid={composerError ? 'true' : undefined}
+                  aria-describedby={composerError ? composerErrorId : undefined}
                   onChange={event => setDraft(event.target.value)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter' && !event.shiftKey) {
@@ -1073,7 +1130,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               <AnimatePresence initial={false}>
                 {composerError && (
                   <ThreadSlot key="error" reduced={prefersReducedMotion}>
-                    <p className="comments-composer-error" role="alert">
+                    <p id={composerErrorId} className="comments-composer-error" role="alert">
                       {composerError}
                     </p>
                   </ThreadSlot>

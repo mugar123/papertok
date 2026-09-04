@@ -17,7 +17,23 @@
  * anchor on both sides, never top-down past a reader who is at card twenty.
  */
 export const MOUNT_WINDOW_RADIUS = 1;
-export const MOUNT_WINDOW_STEP = 3;
+/**
+ * Coming back is the case that hurts. Measured on the production build with
+ * the CPU at a quarter speed (390×844, `open` probe, back from an author):
+ * the three cards of a resumed window were one 222 ms task the frame the feed
+ * mounted — a blank beat between the page leaving and the feed arriving — and
+ * the first growth, three more cards, was a 211 ms task that landed inside the
+ * entrance and froze it. A resumed feed now mounts the card it was left on and
+ * nothing else (`MOUNT_WINDOW_RESUME_RADIUS`), grows by two, and waits out the
+ * page transition before the first growth (`MOUNT_WINDOW_SETTLE_MS`, the
+ * entrance's 300 ms and a beat). A fresh feed keeps its neighbour: it opens
+ * under the veil, with no transition to protect.
+ */
+export const MOUNT_WINDOW_RESUME_RADIUS = 0;
+export const MOUNT_WINDOW_STEP = 2;
+export const MOUNT_WINDOW_SETTLE_MS = 400;
+/** How long an idle callback may be put off before it runs regardless. */
+export const MOUNT_WINDOW_IDLE_TIMEOUT_MS = 600;
 
 export function initialMountWindow({ total = 0, anchorIndex = 0, radius = MOUNT_WINDOW_RADIUS } = {}) {
   if (total <= 0) return { lo: 0, hi: 0 };

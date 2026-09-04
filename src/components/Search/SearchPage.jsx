@@ -210,7 +210,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   const [searchIntent, setSearchIntent] = useState(null);
   const [activeSearchFilter, setActiveSearchFilter] = useState('all');
   const [searchIssue, setSearchIssue] = useState(null);
-  
+
   const [paperResults, setPaperResults] = useState([]);
   const [authorResults, setAuthorResults] = useState([]);
   const [institutionResults, setInstitutionResults] = useState([]);
@@ -550,6 +550,25 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   const activeFilterOption = SEARCH_FILTER_OPTIONS.find(option => option.id === activeSearchFilter)
     || SEARCH_FILTER_OPTIONS[0];
 
+  // The count this filter is actually showing, mirroring `hasVisibleResults`
+  // above but as a number: the live region below reads exactly what is on
+  // screen, so it can never disagree with a filtered "No X found".
+  const visibleResultCount = activeSearchFilter === 'all'
+    ? paperResults.length + authorResults.length + institutionResults.length
+      + conceptResults.length + projectResults.length + userResults.length
+      + (cleanOrcid ? 1 : 0)
+    : activeSearchFilter === 'users'
+      ? userResults.length
+      : activeSearchFilter === 'papers'
+        ? paperResults.length
+        : activeSearchFilter === 'institutions'
+          ? institutionResults.length
+          : activeSearchFilter === 'authors'
+            ? authorResults.length + (cleanOrcid ? 1 : 0)
+            : activeSearchFilter === 'projects'
+              ? projectResults.length
+              : conceptResults.length;
+
   /**
    * Is the page still waiting for something it is going to show?
    *
@@ -575,6 +594,57 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   const peoplePending = peopleWillRun && (userStatus === 'idle' || userStatus === 'searching');
   const externalPending = activeSearchFilter !== 'users' && isSearching;
   const searchPending = Boolean(query.trim()) && (externalPending || peoplePending);
+
+  // The exact copy the visible empty state renders below, shared with the
+  // hidden live region so the two can never say different things.
+  const emptyResultsMessage = hasResults && activeSearchFilter !== 'all'
+    ? (isEnglish
+      ? `No ${activeFilterOption.labelEn.toLowerCase()} found for "${query}"`
+      : `No se encontraron ${activeFilterOption.labelEs.toLowerCase()} para "${query}"`)
+    : (isEnglish ? `No results found for "${query}"` : `No se encontraron resultados para "${query}"`);
+
+  /**
+   * The settled outcome of a search: how many results this filter is
+   * showing, or that it found none. Derived fresh on every render — not
+   * stored in state — so it reads '' for the entire time a search is
+   * pending (`searchPending`) and only becomes real text once one lands.
+   *
+   * That '' in between is what lets two searches that land on the exact same
+   * count still both be heard. It only works because `searchPending` flips
+   * true and back to false around real network I/O (`performSearch`'s
+   * `await Promise.all(tasks)`): that is a genuine elapsed period, so React
+   * commits (and paints) the '' on its own before the eventual count ever
+   * gets computed, rather than the two collapsing into one batched update.
+   * Clearing and setting in the very same tick would not be enough on its
+   * own — confirmed the hard way elsewhere in this delivery, in
+   * EditInterestsModal.jsx.
+   *
+   * The Users pill — and the "PaperTok users" section under "all" — already
+   * narrates every one of its own states for real (see the `search-users-note`
+   * blocks below: sign-in required, term too short, still searching, failed,
+   * nobody found). A successful people list is the only one of those states
+   * with no voice of its own, so this only speaks for the Users pill there —
+   * never on top of an announcement that already ran.
+   *
+   * Switching filter tabs never forces a re-announcement (that would be the
+   * chattiness this whole region exists to avoid), but the count alone can
+   * coincidentally repeat across tabs -- 12 papers, then 12 institutions --
+   * which would otherwise read as the tab switch having done nothing. The
+   * active filter's own name is folded into the non-empty text for exactly
+   * that reason: the string itself changes on every tab switch, with no
+   * extra firing and no special-casing of "did the count change".
+   */
+  const resultAnnouncement = (!query.trim() || !hasSearched || searchPending)
+    ? ''
+    : outageAffectsFilter(searchIssue, activeSearchFilter)
+      ? ''
+      : (activeSearchFilter === 'users' && !(userStatus === 'done' && userResults.length > 0))
+        ? ''
+        : visibleResultCount > 0
+          ? (isEnglish
+            ? `${visibleResultCount} ${visibleResultCount === 1 ? 'result' : 'results'} found${activeSearchFilter !== 'all' ? ` in ${activeFilterOption.labelEn}` : ''} for "${query}"`
+            : `${visibleResultCount} ${visibleResultCount === 1 ? 'resultado encontrado' : 'resultados encontrados'}${activeSearchFilter !== 'all' ? ` en ${activeFilterOption.labelEs}` : ''} para "${query}"`)
+          : emptyResultsMessage;
 
   // Memoised so the order is recomputed only when the results themselves
   // change, not on every render. With the whole page landing in one commit,
@@ -756,6 +826,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
               type="search"
               className="search-input"
               placeholder={isEnglish ? 'Search PaperTok...' : 'Buscar en PaperTok...'}
+              aria-label={isEnglish ? 'Search PaperTok' : 'Buscar en PaperTok'}
               value={query}
               onChange={(event) => updateQuery(event.target.value)}
               onKeyDown={(event) => {
@@ -765,12 +836,9 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
               autoFocus
             />
             {searchPending && (
-              <span
-                className="search-input-loader"
-                role="status"
-                aria-label={isEnglish ? 'Searching' : 'Buscando'}
-              >
+              <span className="search-input-loader" role="status" aria-live="polite">
                 <LoaderCircle size={17} aria-hidden="true" />
+                <span className="visually-hidden">{isEnglish ? 'Searching' : 'Buscando'}</span>
               </span>
             )}
           </div>
@@ -806,6 +874,9 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
 
       <div className="search-results custom-scrollbar">
         <div id="search-results-panel" className="search-results-list" aria-busy={searchPending}>
+            {/* Persistent: mounted before any search ever runs, so only its
+                text changes and a screen reader actually hears the outcome. */}
+            <p className="visually-hidden" role="status" aria-live="polite">{resultAnnouncement}</p>
             {!query.trim() && !isSearching && (
               <div className="search-initial-state">
                 <div className="search-initial-hero">
@@ -892,11 +963,10 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
             )}
 
             {searchPending && (
-              <div
-                className="search-loading-state"
-                role="status"
-                aria-label={isEnglish ? 'Preparing search results' : 'Preparando resultados de búsqueda'}
-              >
+              // Decorative: the input's own status region above already
+              // announces "Searching" for assistive technology, so this
+              // skeleton does not need to repeat it as a second live region.
+              <div className="search-loading-state" aria-hidden="true">
                 {[0, 1, 2].map(index => (
                   <div className="search-loading-row" key={index} style={{ '--loading-row-index': index }}>
                     <span className="search-loading-icon" />
@@ -918,11 +988,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
               && !outageAffectsFilter(searchIssue, activeSearchFilter) && (
               <div className="search-empty">
                 <Search size={40} className="search-empty-icon" />
-                <p>{hasResults && activeSearchFilter !== 'all'
-                  ? (isEnglish
-                    ? `No ${activeFilterOption.labelEn.toLowerCase()} found for "${query}"`
-                    : `No se encontraron ${activeFilterOption.labelEs.toLowerCase()} para "${query}"`)
-                  : (isEnglish ? `No results found for "${query}"` : `No se encontraron resultados para "${query}"`)}</p>
+                <p>{emptyResultsMessage}</p>
                 <span>{hasResults && activeSearchFilter !== 'all'
                   ? (isEnglish ? 'Try another filter or search term' : 'Prueba otro filtro o término de búsqueda')
                   : (isEnglish ? 'Try a different search term' : 'Intenta con otros términos o busca en inglés')}</span>

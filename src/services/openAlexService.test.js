@@ -520,3 +520,32 @@ test('a work OpenAlex does not have is not found; a provider failure is an error
     down,
   );
 });
+
+test('a works page and an authors page persist as what the Explorer shows, not as raw OpenAlex objects', async () => {
+  const { slimWorksPage, slimAuthorsPage } = await import('./openAlexService.js');
+  const work = {
+    id: 'https://openalex.org/W1', title: 'A paper', publication_date: '2024-02-01', cited_by_count: 3,
+    abstract_inverted_index: { Two: [0], words: [1] },
+    authorships: [{ author: { id: 'https://openalex.org/A1', display_name: 'Ada' }, institutions: [{ id: 'I1', display_name: 'Uni' }] }],
+    concepts: [{ display_name: 'Physics' }], primary_location: { source: { type: 'journal', display_name: 'J' }, is_published: true },
+  };
+  const page = slimWorksPage({ results: [work], meta: { count: 42 } });
+  assert.equal(page.total, 42);
+  assert.equal(page.papers.length, 1);
+  assert.equal(page.papers[0].title, 'A paper');
+  assert.equal(page.papers[0].abstract, 'Two words');
+  assert.ok(!('abstract_inverted_index' in page.papers[0]));
+  assert.deepEqual(slimWorksPage(null), { papers: [], total: 0 });
+
+  const authors = slimAuthorsPage({ results: [{ id: 'A1', display_name: 'Ada', works_count: 2, summary_stats: { h_index: 5 }, last_known_institutions: [{ display_name: 'Uni' }], x_concepts: [1, 2, 3, 4] }], meta: { count: 9 } });
+  assert.deepEqual(authors, { authors: [{ id: 'A1', display_name: 'Ada', works_count: 2, cited_by_count: 0, h_index: 5, institution: 'Uni', concepts: [1, 2, 3] }], total: 9 });
+});
+
+test('SOURCE: the works and authors requests persist through persistentSlim under v2 keys', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const code = await readFile(new URL('./openAlexService.js', import.meta.url), 'utf8');
+  assert.match(code, /const worksCacheKey = `entity-works-v2:/);
+  assert.match(code, /persistentKey: worksCacheKey,[\s\S]*?persistentSlim: slimWorksPage,/);
+  assert.match(code, /const authorsCacheKey = `entity-authors-v2:/);
+  assert.match(code, /persistentKey: authorsCacheKey,[\s\S]*?persistentSlim: slimAuthorsPage,/);
+});

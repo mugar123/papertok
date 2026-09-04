@@ -347,3 +347,111 @@ test('cuts a response whose headers arrive and whose body never finishes', async
   assert.notEqual(outcome, hung, 'the request was still hanging after 2000ms');
   assert.equal(outcome, 'timeout');
 });
+
+test('the persistent store is read from storage once, and reads hand out copies', () => {
+  const values = new Map();
+  let reads = 0;
+  const storage = {
+    getItem: (key) => { reads += 1; return values.has(key) ? values.get(key) : null; },
+    setItem: (key, value) => values.set(key, value),
+  };
+  let parses = 0;
+  const originalParse = JSON.parse;
+  JSON.parse = function countedParse(...args) { parses += 1; return originalParse.apply(this, args); };
+  try {
+    const client = new OpenAlexClient({ storage, now: () => 1000 });
+    client.writePersistent('enrichment:a', { citations: 3, concepts: ['x'] });
+    client.writePersistent('enrichment:b', { citations: 5 });
+    assert.equal(reads, 1, 'the first write read the blob; the second found it in memory');
+    const [readsAfterWrites, parsesAfterWrites] = [reads, parses];
+    // The feed reads once per paper: thirteen reads, no trip to storage.
+    for (let i = 0; i < 13; i++) client.readPersistent('enrichment:a');
+    assert.equal(reads, readsAfterWrites, 'reads do not copy the blob out of storage again');
+    assert.equal(parses, parsesAfterWrites, 'nor parse it');
+    assert.deepEqual(client.readPersistent('enrichment:b').data, { citations: 5 });
+
+    // A caller that edits what it got does not edit the cache.
+    const read = client.readPersistent('enrichment:a');
+    read.data.concepts.push('y');
+    read.data.citations = 99;
+    assert.deepEqual(client.readPersistent('enrichment:a').data, { citations: 3, concepts: ['x'] });
+
+    // Another tab writes (the `storage` event, in the browser): the store is
+    // let go of, and the next read finds what that tab wrote.
+    values.set('papertok_openalex_cache_v1', JSON.stringify({ 'enrichment:a': { data: { citations: 7 }, savedAt: 900 } }));
+    client.forgetPersistentStore();
+    assert.deepEqual(client.readPersistent('enrichment:a').data, { citations: 7 });
+    assert.equal(client.readPersistent('enrichment:b'), null, 'and what that tab dropped is gone');
+    assert.equal(reads, readsAfterWrites + 1);
+  } finally {
+    JSON.parse = originalParse;
+  }
+});
+
+test('SOURCE: a write from another tab lets go of the remembered store', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const code = await readFile(new URL('./openAlexClient.js', import.meta.url), 'utf8');
+  assert.match(code, /window\.addEventListener\('storage', \(event\) => \{\s*if \(event\.key === null \|\| event\.key === STORAGE_KEY\) this\.forgetPersistentStore\(\);/);
+  assert.match(code, /this\.storage === window\.localStorage/, 'only the real localStorage has other tabs');
+});
+
+test('a burst of writes reaches storage once, on the next microtask', async () => {
+  const values = new Map();
+  let writes = 0;
+  const storage = {
+    getItem: (key) => (values.has(key) ? values.get(key) : null),
+    setItem: (key, value) => { writes += 1; values.set(key, value); },
+  };
+  const client = new OpenAlexClient({ storage, now: () => 1000 });
+  // The enrichment batch: two keys per work, thirty works.
+  for (let i = 0; i < 30; i++) {
+    client.writePersistent(`enrichment:${i}`, { citations: i });
+    client.writePersistent(`enrichment:openalex:W${i}`, { citations: i });
+  }
+  assert.equal(writes, 0, 'nothing serialised yet');
+  assert.deepEqual(client.readPersistent('enrichment:7').data, { citations: 7 }, 'but every write is already readable');
+  await Promise.resolve();
+  assert.equal(writes, 1, 'one serialisation for the sixty writes');
+  assert.equal(Object.keys(JSON.parse(values.get('papertok_openalex_cache_v1'))).length, 60);
+  client.writePersistent('enrichment:late', { citations: 1 });
+  client.flushPersistent();
+  assert.equal(writes, 2, 'flushing on demand writes at once');
+  await Promise.resolve();
+  assert.equal(writes, 2, 'and the scheduled flush finds nothing pending');
+});
+
+test('the store keeps to its caps: no entry over 150k characters, and the blob under 1.2M', () => {
+  const values = new Map();
+  const storage = { getItem: (key) => (values.has(key) ? values.get(key) : null), setItem: (key, value) => values.set(key, value) };
+  let now = 1000;
+  const client = new OpenAlexClient({ storage, now: () => now });
+  client.writePersistent('entity-works-v2:huge', { blob: 'x'.repeat(200_000) });
+  assert.equal(client.readPersistent('entity-works-v2:huge'), null, 'an entry that alone would crowd the store is not kept');
+  // Twelve entries of ~110k characters: the twelfth pushes the blob past the cap,
+  // and the oldest low-priority entry goes.
+  for (let i = 0; i < 12; i++) {
+    now += 1;
+    client.writePersistent(`entity-works-v2:${i}`, { blob: 'y'.repeat(110_000) });
+  }
+  assert.equal(client.readPersistent('entity-works-v2:0'), null, 'the oldest works page was evicted');
+  assert.ok(client.readPersistent('entity-works-v2:11'), 'the newest stays');
+  client.flushPersistent();
+  assert.ok(values.get('papertok_openalex_cache_v1').length <= 1_200_000);
+});
+
+test('a persistentSlim response is what is kept, and what a cache hit returns', async () => {
+  const storage = createStorage();
+  let fetches = 0;
+  const client = new OpenAlexClient({
+    storage,
+    now: () => 1000,
+    fetchImpl: async () => { fetches += 1; return new Response(JSON.stringify({ results: [{ id: 'W1', big: 'x'.repeat(1000) }], meta: { count: 1 } }), { status: 200 }); },
+  });
+  const slim = (data) => ({ ids: data.results.map((w) => w.id), total: data.meta.count });
+  const first = await client.json('https://api.openalex.org/works?filter=a', { persistentKey: 'entity-works-v2:a', persistentSlim: slim });
+  assert.deepEqual(first, { ids: ['W1'], total: 1 });
+  const again = await client.json('https://api.openalex.org/works?filter=a', { persistentKey: 'entity-works-v2:a', persistentSlim: slim });
+  assert.deepEqual(again, { ids: ['W1'], total: 1 });
+  assert.equal(fetches, 1);
+  assert.doesNotMatch(storage.getItem('papertok_openalex_cache_v1'), /xxxx/, 'the raw work never reached storage');
+});

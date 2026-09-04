@@ -1035,17 +1035,26 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
   // Rows that have not been heard about yet, in the panel's own shape. The
   // tile skeleton above belongs to the lists grid; under Saved and Liked it
   // read as four blank slabs where rows were promised.
+  // Both skeletons carry the loading word as real (hidden) text rather than
+  // only an `aria-label`: their own rows are either `aria-hidden` or plain
+  // decorative divs, so an aria-label with nothing else in the region would
+  // never be announced as a status change. Kept AFTER the rows in both, not
+  // before: `profile-row-list > :nth-child(2n)` (PublicProfilePage.css)
+  // staggers every other row's pulse, and a leading sibling would shift each
+  // row's position by one and flip which rows carry the offset.
   const loadingRowList = (
-    <div className="profile-row-list" role="status" aria-label={copy.loadingRows} aria-busy="true">
+    <div className="profile-row-list" role="status" aria-busy="true">
       {[0, 1, 2, 3].map(index => <RowSkeleton key={index} index={index} />)}
+      <span className="visually-hidden">{copy.loadingRows}</span>
     </div>
   );
 
   const loadingRows = (
-    <div className="profile-skeleton-rows" role="status" aria-label={copy.loadingRows} aria-busy="true">
+    <div className="profile-skeleton-rows" role="status" aria-busy="true">
       <div className="public-profile-skeleton public-profile-skeleton--row" />
       <div className="public-profile-skeleton public-profile-skeleton--row" />
       <div className="public-profile-skeleton public-profile-skeleton--row" />
+      <span className="visually-hidden">{copy.loadingRows}</span>
     </div>
   );
 

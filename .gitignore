@@ -21,6 +21,10 @@ lint_output.txt
 firestore-debug.log
 firebase-debug.log
 
+# Vídeo promocional (proyecto Remotion aislado)
+video/node_modules/
+video/out/
+
 # Espacio de trabajo de subagent-driven-development (scratch, no versionado)
 .superpowers/
 

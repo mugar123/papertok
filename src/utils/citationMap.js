@@ -11,19 +11,31 @@
  * a linear axis one heavily cited neighbour pins every other node against the
  * left margin and the axis stops saying anything.
  *
- * A node is placed only when both coordinates are known. A paper resolved from
- * OpenCitations metadata rather than OpenAlex arrives with `citationCountKnown:
- * false` and sometimes without a year, and an unknown count is not a count of
- * zero — placing it would be an invention. Those are counted in `omitted` and
- * belong to the list view, which shows everything.
+ * A node is placed only when both coordinates are known, and only while its
+ * band still has a 24px slot for it. WCAG 2.2 SC 2.5.8 (Target Size Minimum)
+ * needs every node to be a real pointer target, so a row never gets shorter
+ * than that to fit one more in — a band that runs out of slots omits the
+ * surplus instead. A paper resolved from OpenCitations metadata rather than
+ * OpenAlex arrives with `citationCountKnown: false` and sometimes without a
+ * year, and an unknown count is not a count of zero — placing it would be an
+ * invention. Both kinds of leftover — unmappable and unfit — are counted in
+ * `omitted` and belong to the list view, which shows everything the map
+ * fetched, whether or not it could draw it.
  */
 
 export const CITATION_MAP_GEOMETRY = {
   sidePadding: 26,
   bandPadding: 10,
   ruleGap: 26,
-  minGap: 20,
-  minRowHeight: 14,
+  /**
+   * WCAG 2.2 SC 2.5.8 (Target Size Minimum) floor: every node is a real
+   * pointer target, so this is both the row's own height and the minimum
+   * centre-to-centre pitch between rows — one fixed number keeps two 24px
+   * hit boxes from ever touching. It no longer shrinks under crowding; a
+   * band that cannot fit every neighbour at this pitch omits the surplus
+   * instead (`bandCapacity`, `omitted`).
+   */
+  minGap: 24,
   labelWidth: 104,
   flipMargin: 60,
   nodeDelayBase: 220,
@@ -99,6 +111,17 @@ function spreadWithinBand(positions, spacing, minY, maxY) {
   return ys.map(y => Math.min(Math.max(y, minY), maxY));
 }
 
+/**
+ * How many 24px slots a band has room for. The caller trims its papers to
+ * this before `placeBand` ever sees them, so `placeBand` itself never has to
+ * choose between shrinking a row and overlapping one — it always gets a
+ * list that already fits at the fixed pitch.
+ */
+function bandCapacity(bounds, geometry) {
+  const bandHeight = Math.max(0, bounds.bottom - bounds.top);
+  return Math.max(0, Math.floor(bandHeight / geometry.minGap));
+}
+
 function placeBand(papers, relation, bounds, geometry, xOf, width) {
   if (!papers.length) return [];
 
@@ -107,9 +130,10 @@ function placeBand(papers, relation, bounds, geometry, xOf, width) {
     .sort((a, b) => (Number(a.paper.year) - Number(b.paper.year))
       || sortKey(a.paper, a.index).localeCompare(sortKey(b.paper, b.index)));
 
-  const bandHeight = Math.max(0, bounds.bottom - bounds.top);
-  const spacing = Math.min(geometry.minGap, bandHeight / ordered.length);
-  const rowHeight = Math.max(geometry.minRowHeight, spacing);
+  // Fixed, not fitted: the caller (`buildCitationMapLayout`) already trimmed
+  // `papers` to `bandCapacity`, so this pitch always has room to spare.
+  const spacing = geometry.minGap;
+  const rowHeight = geometry.minGap;
   const minY = bounds.top + rowHeight / 2;
   // A sheet short enough to leave the band thinner than one row would put the
   // bottom of the band above its top, and every node off the plot entirely.
@@ -147,6 +171,7 @@ export function buildCitationMapLayout({
   citations = [],
   geometry = CITATION_MAP_GEOMETRY,
 } = {}) {
+  const ready = width > 0 && height > 0;
   const ruleY = height / 2;
   const bands = height > 0
     ? {
@@ -157,9 +182,24 @@ export function buildCitationMapLayout({
 
   const mappableReferences = references.filter(isMappableCitationPaper);
   const mappableCitations = citations.filter(isMappableCitationPaper);
+
+  // A band only turns away mappable neighbours for lack of room once its
+  // real height is known — before that (`ready` false) there is nothing to
+  // measure a slot count against, so nothing is trimmed for space yet and
+  // `omitted` reflects only what could never be mapped, same as always.
+  // The slice keeps array order, which is the order the two neighbourhoods
+  // already arrive in (most cited first for references, most recent first
+  // for citations, per the Worker route) — so a band that cannot fit
+  // everything keeps the papers its caller already ranked highest.
+  const referenceCapacity = ready ? bandCapacity(bands.references, geometry) : mappableReferences.length;
+  const citationCapacity = ready ? bandCapacity(bands.citations, geometry) : mappableCitations.length;
+  const drawnReferences = mappableReferences.slice(0, referenceCapacity);
+  const drawnCitations = mappableCitations.slice(0, citationCapacity);
+
+  const shown = { references: drawnReferences.length, citations: drawnCitations.length };
   const omitted = {
-    references: references.length - mappableReferences.length,
-    citations: citations.length - mappableCitations.length,
+    references: references.length - drawnReferences.length,
+    citations: citations.length - drawnCitations.length,
   };
 
   const centerImpactKnown = Boolean(center?.citationCountKnown);
@@ -174,7 +214,6 @@ export function buildCitationMapLayout({
   };
   const xOf = paper => xForImpact(impactOf(paper));
 
-  const ready = width > 0 && height > 0;
   const centerX = centerImpactKnown && ready
     ? xOf(center)
     : geometry.sidePadding + plotWidth / 2;
@@ -189,10 +228,10 @@ export function buildCitationMapLayout({
 
   const nodes = ready
     ? [
-      ...placeBand(mappableReferences, 'reference', bands.references, geometry, xOf, width),
-      ...placeBand(mappableCitations, 'citation', bands.citations, geometry, xOf, width),
+      ...placeBand(drawnReferences, 'reference', bands.references, geometry, xOf, width),
+      ...placeBand(drawnCitations, 'citation', bands.citations, geometry, xOf, width),
     ]
     : [];
 
-  return { ready, centerX, centerImpactKnown, ruleY, bands, ticks, nodes, omitted };
+  return { ready, centerX, centerImpactKnown, ruleY, bands, ticks, nodes, shown, omitted };
 }

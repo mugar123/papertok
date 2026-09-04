@@ -6,7 +6,60 @@ const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_AUTO_RETRY_DELAY_MS = 5000;
 const STORAGE_KEY = 'papertok_openalex_cache_v1';
 const MAX_PERSISTENT_ENTRIES = 200;
+/**
+ * How big the blob may grow, and how big one entry may be, in characters.
+ *
+ * Measured after one author page on the production build: 3.5 million
+ * characters, most of it two raw OpenAlex works pages — thirty works each,
+ * with inverted-index abstracts, authorships and locations — against a
+ * localStorage quota of about five million. At that size every read was a
+ * copy and every write a serialisation of the lot. The works and authors
+ * pages now persist what the app made of them (`persistentSlim`, below), and
+ * these caps keep the blob within a size a phone reads in a few
+ * milliseconds: the lowest-priority, oldest entries go first, and an entry
+ * that alone would not fit is not persisted at all.
+ */
+const MAX_PERSISTENT_CHARS = 1_200_000;
+const MAX_PERSISTENT_ENTRY_CHARS = 150_000;
 const MAX_RESPONSE_CACHE_ENTRIES = 40;
+
+const clonePersistentData = (data) => {
+  if (data === null || typeof data !== 'object') return data;
+  if (typeof structuredClone === 'function') return structuredClone(data);
+  return JSON.parse(JSON.stringify(data));
+};
+
+const persistentPriority = (key) => (key.startsWith('recent-impact:') || key.startsWith('institution-impact:')
+  ? 2
+  : key.startsWith('entity:') ? 1 : 0);
+
+/**
+ * The store cut down to its caps: at most `MAX_PERSISTENT_ENTRIES` entries
+ * and `MAX_PERSISTENT_CHARS` characters, the lowest-priority, oldest entries
+ * dropped first. `sizes` remembers each entry's serialised length by key so
+ * the cap is kept without serialising the blob to measure it; `newSize` is
+ * the entry just written.
+ */
+function trimPersistentStore(store, sizes) {
+  const entries = Object.entries(store).sort(([keyA, a], [keyB, b]) =>
+    persistentPriority(keyB) - persistentPriority(keyA) || (b.savedAt || 0) - (a.savedAt || 0));
+  const kept = [];
+  let total = 0;
+  for (const [key, entry] of entries) {
+    let size = sizes.get(key);
+    if (size === undefined) {
+      size = JSON.stringify(entry).length;
+      sizes.set(key, size);
+    }
+    if (kept.length >= MAX_PERSISTENT_ENTRIES || total + size > MAX_PERSISTENT_CHARS) {
+      sizes.delete(key);
+      continue;
+    }
+    kept.push([key, entry]);
+    total += size;
+  }
+  return Object.fromEntries(kept);
+}
 
 const getDefaultStorage = () => {
   try {
@@ -137,6 +190,18 @@ export class OpenAlexClient {
     this.inFlight = new Map();
     this.responseCache = new Map();
     this.rateLimitedUntil = 0;
+    this.persistentStore = null;
+    this.persistentSizes = new Map();
+    this.persistentFlush = null;
+    this.persistentDirty = false;
+    // Another tab's write to the key is the one way the blob changes behind
+    // this tab's back; the event does not fire for this tab's own writes.
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function'
+      && this.storage && this.storage === window.localStorage) {
+      window.addEventListener('storage', (event) => {
+        if (event.key === null || event.key === STORAGE_KEY) this.forgetPersistentStore();
+      });
+    }
   }
 
   getHealth() {
@@ -154,15 +219,45 @@ export class OpenAlexClient {
     this.responseCache.clear();
   }
 
+  /**
+   * The persistent store, read and parsed once, not once per read.
+   *
+   * Every read used to `getItem` the whole blob — two hundred entries, among
+   * them works pages and search responses — and `JSON.parse` it, and the feed
+   * reads it once per paper (`enrichment:<id>`, openAlexService.js) each time
+   * it mounts. Profiled on the production build with the CPU at a quarter
+   * speed (390×844, back from an author to a thirteen-card feed):
+   * `readPersistent` was the largest JavaScript cost of the return, 92 ms in
+   * one run and 422 ms in another, most of it inside the entrance animation.
+   * Parsing once and still fetching the string each time left 115 ms: at that
+   * size the copy out of storage is the cost. So the parsed store is kept,
+   * and let go of when another tab writes the key (the `storage` event, which
+   * fires only in the tabs that did not write) or when asked
+   * (`forgetPersistentStore`).
+   */
+  readPersistentStore() {
+    if (this.persistentStore) return this.persistentStore;
+    this.persistentStore = JSON.parse(this.storage.getItem(STORAGE_KEY) || '{}');
+    return this.persistentStore;
+  }
+
+  forgetPersistentStore() {
+    this.persistentStore = null;
+    this.persistentSizes = new Map();
+  }
+
   readPersistent(key, maxAgeMs = Number.POSITIVE_INFINITY) {
     if (!this.storage || !key) return null;
     try {
-      const store = JSON.parse(this.storage.getItem(STORAGE_KEY) || '{}');
+      const store = this.readPersistentStore();
       const entry = store[key];
       if (!entry || !Number.isFinite(entry.savedAt)) return null;
       const ageMs = Math.max(0, this.now() - entry.savedAt);
       return {
-        data: entry.data,
+        // A copy, as a fresh parse used to hand out: the store is shared
+        // across reads now, and a caller that edits what it got must not
+        // edit the cache.
+        data: clonePersistentData(entry.data),
         savedAt: entry.savedAt,
         ageMs,
         stale: ageMs > maxAgeMs,
@@ -172,23 +267,40 @@ export class OpenAlexClient {
     }
   }
 
+  /**
+   * A write lands in the remembered store at once and reaches storage on the
+   * next microtask, so a burst of writes — the enrichment batch writes two
+   * keys per work, sixty in a row for a works page — serialises the blob
+   * once instead of sixty times. Reads in between see the writes: they read
+   * the memory, not the storage.
+   */
   writePersistent(key, data) {
     if (!this.storage || !key) return;
     try {
-      const store = JSON.parse(this.storage.getItem(STORAGE_KEY) || '{}');
-      store[key] = { data, savedAt: this.now() };
-
-      const entries = Object.entries(store)
-        .sort(([keyA, a], [keyB, b]) => {
-          const priority = key => key.startsWith('recent-impact:') || key.startsWith('institution-impact:')
-            ? 2
-            : key.startsWith('entity:') ? 1 : 0;
-          return priority(keyB) - priority(keyA) || (b.savedAt || 0) - (a.savedAt || 0);
-        })
-        .slice(0, MAX_PERSISTENT_ENTRIES);
-      this.storage.setItem(STORAGE_KEY, JSON.stringify(Object.fromEntries(entries)));
+      const entry = { data, savedAt: this.now() };
+      const size = JSON.stringify(entry).length;
+      if (size > MAX_PERSISTENT_ENTRY_CHARS) return;
+      const store = { ...this.readPersistentStore(), [key]: entry };
+      this.persistentSizes.set(key, size);
+      this.persistentStore = trimPersistentStore(store, this.persistentSizes);
+      this.persistentDirty = true;
+      if (!this.persistentFlush) {
+        this.persistentFlush = Promise.resolve().then(() => this.flushPersistent());
+      }
     } catch {
       // Storage can be unavailable or full; network behavior must remain unaffected.
+    }
+  }
+
+  /** Writes the remembered store to storage now. */
+  flushPersistent() {
+    this.persistentFlush = null;
+    if (!this.storage || !this.persistentStore || !this.persistentDirty) return;
+    this.persistentDirty = false;
+    try {
+      this.storage.setItem(STORAGE_KEY, JSON.stringify(this.persistentStore));
+    } catch {
+      // Storage can be unavailable or full; the memory copy still serves this tab.
     }
   }
 
@@ -266,7 +378,14 @@ export class OpenAlexClient {
           status: response.status,
         });
       }
-      const data = await response.json();
+      const fetched = await response.json();
+      // `persistentSlim` turns the response into what is worth keeping — a
+      // works page as the papers the app made of it, not the raw work objects
+      // with their inverted-index abstracts — and what a cache hit returns is
+      // that same shape, so the caller sees one shape either way.
+      const data = persistentKey && typeof options.persistentSlim === 'function'
+        ? options.persistentSlim(fetched)
+        : fetched;
       if (persistentKey) this.writePersistent(persistentKey, data);
       return options.returnMeta
         ? { data, meta: { source: 'network', stale: false, savedAt: this.now() } }

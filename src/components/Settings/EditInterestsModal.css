@@ -259,6 +259,14 @@
   flex-shrink: 0;
 }
 
+.eim-form-error {
+  margin: 0;
+  padding: 0 var(--space-6);
+  color: var(--accent-danger);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+}
+
 .eim-footer {
   padding: var(--space-4) var(--space-6);
   border-top: 1px solid var(--border-subtle);
@@ -334,5 +342,8 @@
   }
   .eim-header {
     padding: var(--space-4);
+  }
+  .eim-form-error {
+    padding: 0 var(--space-4);
   }
 }

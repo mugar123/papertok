@@ -228,6 +228,7 @@
 }
 
 .rd-rail-filter {
+  position: relative;
   padding: 4px 8px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -240,6 +241,23 @@
   /* Deliberately fast and unanimated in position: a filter is a switch, and
      animating a switch makes it feel slower than it is. */
   transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+/* The chip draws at ~20px; WCAG 2.5.8 needs a 24px pointer target, and the
+   sheet variant below 1100px — a touch surface, no `.rd-rail-filters`
+   override of its own — is exactly where that gap matters most. Same
+   technique as `.theme-toggle::after`: an out-of-flow pseudo-element grows
+   the hit area without touching the drawn chip. It only grows vertically,
+   staying within the button's own width, so the 4px gap between filters
+   never becomes an overlap between two touch areas. */
+.rd-rail-filter::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  height: 24px;
+  transform: translateY(-50%);
 }
 
 .rd-rail-filter[data-on] {

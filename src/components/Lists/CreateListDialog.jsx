@@ -25,7 +25,7 @@
  * as long as the cancel and close events stop propagating, which React would
  * otherwise carry up the component tree to the parent dialog's handlers.
  */
-import { useEffect, useReducer, useRef, useState } from 'react';
+import { useEffect, useId, useReducer, useRef, useState } from 'react';
 import { useReducedMotion } from 'framer-motion';
 import { Check, X } from 'lucide-react';
 import { AVAILABLE_ICONS, getIcon } from '../../utils/icons.js';
@@ -121,6 +121,7 @@ export default function CreateListDialog({
   const [state, dispatch] = useReducer(createListFormReducer, CREATE_LIST_FORM_INITIAL);
   const [closing, setClosing] = useState(false);
   const prefersReducedMotion = useReducedMotion();
+  const nameErrorId = useId();
   const dialogRef = useRef(null);
   const inputRef = useRef(null);
   const closeTimer = useRef(null);
@@ -258,6 +259,8 @@ export default function CreateListDialog({
             ref={inputRef}
             value={state.name}
             maxLength={80}
+            aria-invalid={state.error ? 'true' : undefined}
+            aria-describedby={state.error ? nameErrorId : undefined}
             onChange={(event) => dispatch({ type: 'name', value: event.target.value })}
             onKeyDown={(event) => { if (event.key === 'Enter') submit(); }}
           />
@@ -318,7 +321,9 @@ export default function CreateListDialog({
         {!editing && <p className="create-list-note">{copy.privacyNote}</p>}
 
         {state.error && (
-          <p className="create-list-error" role="alert">{editing ? copy.editError : copy.error}</p>
+          <p id={nameErrorId} className="create-list-error" role="alert">
+            {editing ? copy.editError : copy.error}
+          </p>
         )}
 
         <div className="create-list-actions">
