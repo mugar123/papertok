@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,600&family=IBM+Plex+Mono:wght@400&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; }
+    * { box-sizing: border-box; }
+    a { color: #4a4d55; text-decoration: none; }
+    a:hover { color: #1a5fd0; }
+
+    /* Reproduce PAGE_CSS de src/utils/pdfExport.js al pixel: A4 a 96 ppp,
+       margen 106 px, pie de 129 px, cuerpo 15 px/1.55 en Newsreader. */
+    .cur { width: 794px; height: 1123px; background: #ffffff; padding: 106px 106px 0;
+           display: flex; flex-direction: column;
+           font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif;
+           color: #111318; font-size: 15px; line-height: 1.55; }
+    .cur * { margin: 0; }
+    .flow { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+    .t { font-size: 27px; line-height: 1.22; font-weight: 600; text-align: center; margin-bottom: 18px; }
+    .by { text-align: center; font-size: 14px; margin: 0 32px 10px; }
+    .st { text-align: center; font-size: 13px; color: #4a4d55; margin-bottom: 26px; }
+    .ab { margin: 0 44px 26px; font-size: 13.5px; line-height: 1.5; text-align: justify; color: #33363d; }
+    .h { font-size: 18px; font-weight: 600; margin: 22px 0 10px; }
+    .p { text-align: justify; margin-bottom: 12px; }
+    .mk { background: #ffd21e; color: inherit; padding: 1px 0; }
+    .mk-ai { background: #f0f0f1; border-bottom: 2px solid #111318; }
+    .fn { font-size: 10px; vertical-align: super; line-height: 0; font-weight: 600; }
+    .math { font-style: italic; }
+    .notes { flex: 0 0 auto; padding: 8px 0 10px; }
+    .notes-rule { width: 150px; height: 1px; background: #111318; margin-bottom: 8px; }
+    .n { font-size: 11.5px; line-height: 1.45; color: #33363d; margin-bottom: 4px; }
+    .n-kind { font-family: 'IBM Plex Mono', monospace; font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em; color: #4a4d55; margin-right: 7px; }
+    .foot { flex: 0 0 auto; height: 129px; display: flex; align-items: center; gap: 12px; padding-top: 6px;
+            font-family: 'IBM Plex Mono', monospace; font-size: 10px; color: #4a4d55; }
+    .foot-no { margin-left: auto; color: #111318; }
+  </style>
+</helmet>
+
+<div class="cur">
+  <div class="flow">
+    <h1 class="t">Worldline proper length correlators</h1>
+    <div class="by">Allic Sivaramakrishnan</div>
+    <div class="st">Versión en lenguaje sencillo · nivel universitario</div>
+    <div class="ab">Reescritura en lenguaje sencillo del artículo original, generada automáticamente y anotada por el lector. El texto de abajo no es obra del autor del artículo: parafrasea sus resultados y no los sustituye.</div>
+
+    <h2 class="h">1&#8194;De qué va el paper</h2>
+    <p class="p">Los autores calculan cuánto tiempo propio transcurre a lo largo de la línea de universo de una partícula y encuentran que <mark class="mk">esa cantidad deja de ser un número y pasa a ser una distribución</mark><sup class="fn">1</sup> en cuanto la gravedad cuántica entra en juego. Lo que era un reloj que marcaba un valor pasa a ser un reloj que marca un abanico de valores, cada uno con su probabilidad.</p>
+    <p class="p">El resultado se apoya en un cálculo de dos puntos que ya era conocido, pero al que nadie había dado esta lectura: la varianza <span class="math">⟨τ²⟩ − ⟨τ⟩²</span> deja de anularse y <mark class="mk mk-ai">la anchura de la distribución crece con la energía</mark><sup class="fn">2</sup> del sistema estudiado.</p>
+
+    <h2 class="h">2&#8194;Cómo lo hicieron</h2>
+    <p class="p">La parte técnica ocupa la segunda mitad del artículo. Una inducción sobre el índice <span class="math">[M : N]</span> del submódulo cierra el hueco entre los dos recuentos, y lo que queda es contabilidad alrededor de ese único paso.</p>
+
+  </div>
+
+  <div class="notes">
+    <div class="notes-rule"></div>
+    <div class="n"><sup class="fn">1</sup> <span class="n-kind">Tuya</span>El ruido no lo pone el aparato: sale de la propia métrica. Contárselo a Marta.</div>
+    <div class="n"><sup class="fn">2</sup> <span class="n-kind">IA</span>Cuanta más energía tiene la partícula, más se abre el abanico de tiempos posibles: la anchura crece como la raíz de la energía.</div>
+  </div>
+
+  <div class="foot">
+    <span>Reescrito por PaperTok. No es obra de sus autores</span>
+    <span>·</span>
+    <span>arxiv.org/abs/2405.04331</span>
+    <span class="foot-no">1</span>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":794,"height":1123}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

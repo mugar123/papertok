@@ -1,0 +1,64 @@
+{
+  "pages": [
+    { "id": "page-1", "name": "Separata" },
+    { "id": "page-2", "name": "Direcciones descartadas" }
+  ],
+  "artboards": [
+    { "file": "Actual.dc.html", "page": "page-1", "x": 0, "y": 0, "w": 794, "h": 1123, "title": "Ahora mismo — referencia", "print": "fixed" },
+    { "file": "Main.dc.html", "page": "page-1", "x": 914, "y": 0, "w": 794, "h": 1123, "title": "Separata — página 1", "print": "fixed" },
+    { "file": "Main2.dc.html", "page": "page-1", "x": 1828, "y": 0, "w": 794, "h": 1123, "title": "Separata — página 2", "print": "fixed" },
+    { "file": "DirectionB.dc.html", "page": "page-2", "x": 0, "y": 0, "w": 794, "h": 1123, "title": "B · Informe (descartada)", "print": "fixed" },
+    { "file": "DirectionC.dc.html", "page": "page-2", "x": 914, "y": 0, "w": 794, "h": 1123, "title": "C · Edición (descartada)", "print": "fixed" }
+  ],
+  "annotations": [
+    {
+      "id": "lectura",
+      "page": "page-1",
+      "x": 0,
+      "y": -470,
+      "w": 800,
+      "text": "Elegiste la separata. Aquí está, en sus dos páginas, con la salida de hoy al lado para comparar. Las otras dos direcciones siguen en la página «Direcciones descartadas», por si hay que volver a mirarlas.\n\nQué falla hoy, en la página de la izquierda:\n\n· El cuerpo va a 15 px (11,3 pt) en una medida de 79 caracteres. Para papel el suelo son 12 pt, y la medida cómoda, 65-75.\n· Título centrado con autor y fecha debajo: es el maketitle de fábrica de LaTeX, exactamente lo que compone un trabajo de clase.\n· El amarillo #FFD21E a plena saturación detrás del texto lee como una fotocopia repasada a rotulador.\n· Nada en la página dice de dónde salió hasta el pie, en mono a 10 px.\n· originalHeading —el encabezado tal como está impreso en el paper— lo devuelve el modelo, llega al cliente y el lector ya lo pinta en pantalla; los dos exports lo tiran.\n\nEsa página muestra DOS secciones y no tres a propósito: es lo que el paginador real deja en la página 1 con este texto. La tercera sección y su nota se van a la página 2. Que hoy quepa menos por página también es parte del diagnóstico."
+    },
+    {
+      "id": "direccion-a",
+      "page": "page-1",
+      "x": 914,
+      "y": -470,
+      "w": 800,
+      "text": "La separata, página 1\n\nCabecera de identidad arriba con filete grueso, título en bandera, ficha de origen en mono, y el aviso de procedencia con su etiqueta al margen en lugar de un abstract centrado.\n\nBajo cada título de sección, el encabezado original del paper (§2 Proper length from the two-point function), en mono gris y con el mismo tratamiento que ya tiene en el lector (.rd-section-origin). Es lo que te deja volver al sitio exacto del PDF.\n\nLa página 2, a la derecha, enseña el sistema entero: titulillo que lleva la sección en la que vas, fórmula numerada y citable, y colofón de procedencia al final.\n\nEl preámbulo LaTeX de todo esto está compilado con pdflatex y mirado en la página, no razonado: cuatro detalles cambiaron después de verlo impreso, y están recogidos en el plan."
+    },
+    {
+      "id": "coste",
+      "page": "page-1",
+      "x": 1828,
+      "y": -470,
+      "w": 800,
+      "text": "El plan de implementación\n\nEstá en docs/superpowers/plans/2026-09-04-export-separata.md: doce tareas, once obligatorias y una separable.\n\nLos dos formatos comparten modelo, así que la primera tarea saca a exportDocument.js lo que hoy vive dentro del emisor de LaTeX sin ser de LaTeX (copys, filtrado, numeración). A partir de ahí, las palabras del documento se montan una sola vez y los dos formatos las colocan: es lo único que impide que el PDF y el .tex acaben diciendo cosas distintas.\n\nLa marca cambia de mecanismo: lavado amarillo con soul para la tuya, punteado con \\dotuline de ulem para la de la IA. Comprobado que \\dotuline admite fórmulas dentro y parte entre líneas.\n\nLa tarea 7 no toca el repo: genera el .tex desde el código, lo compila y obliga a MIRAR la página. Es la única que dice si el documento existe — los tests solo comprueban que la cadena contiene lo que debe."
+    },
+    {
+      "id": "decisiones",
+      "page": "page-1",
+      "x": 0,
+      "y": 1263,
+      "w": 800,
+      "text": "Dos cosas que decidí por ti\n\n· El título sigue siendo el del artículo original, en su idioma, porque es lo que emite el código hoy: paper.title, y la reescritura no genera título propio. Un documento en español con el título en inglés chirría, pero inventar una traducción es peor. Si lo quieres traducido hay que pedirle ese campo al modelo.\n\n· El aviso de procedencia deja de ser un abstract. No resume el paper, advierte de algo, y componerlo como abstract lo disfraza de lo que no es.\n\nY una corrección a lo que te dije la primera vez: la fecha del colofón NO estaba ya en el modelo del export. originalHeading sí —llega al cliente y el lector lo pinta—, pero la fecha es un campo nuevo. En el plan entra como parámetro generatedAt con valor por defecto, para que los tests puedan fijarla y el documento no dependa del reloj de la máquina."
+    },
+    {
+      "id": "gris",
+      "page": "page-1",
+      "x": 914,
+      "y": 1263,
+      "w": 800,
+      "text": "El amarillo, con los números delante\n\nEn escala de grises, el amarillo de hoy (#FFD21E) cae en 203 sobre papel 255, y el gris de la IA (#F0F0F1) en 240. Los dos FONDOS sí se confunden entre sí; las dos MARCAS no, porque la de la IA lleva un filete de tinta que sobrevive intacto. Así que lo que gana el rediseño no es distinguirlas —ya se distinguían—: es que las dos dejen de leerse como fotocopia repasada a rotulador.\n\nEl lavado que dibujé primero (#FFF1BD) cae en 239 y desaparece al fotocopiar. Lo he subido a #FFE066, que cae en 219: 36 niveles por debajo del papel, contra los 52 del amarillo de hoy. Sigue siendo un lavado y sobrevive al blanco y negro.\n\nSi alguna vez la fotocopia importa más que la calma en pantalla, lo que hay que tocar es una sola línea \\definecolor."
+    },
+    {
+      "id": "descartadas",
+      "page": "page-2",
+      "x": 0,
+      "y": -430,
+      "w": 800,
+      "text": "Las dos que no elegiste, tal como estaban cuando decidiste.\n\nB · Informe — calle a la izquierda con los números de sección, la ficha del artículo y las notas al margen, a la altura del párrafo que las provocó. En contra: las notas al margen son lo más caro de sostener en los dos formatos. Y una cosa que salió al revisarla: su composición parte un párrafo del original en dos trozos para hacer sitio a la calle de notas, y ni el modelo del PDF ni el del .tex saben partir un párrafo. Tal como está dibujada no es alcanzable sin un paso nuevo.\n\nC · Edición — una sola voz tipográfica, márgenes anchos, papel hueso, secciones sin numerar en versalitas. La más bonita y la que peor se navega.\n\nLas dos dibujaban la marca del lector con box-shadow, que html2canvas no rasteriza: en el PDF el subrayado habría desaparecido sin dar error. Aquí ya está corregido a background, que es lo que sí se dibuja."
+    }
+  ],
+  "launch": { "view": "canvas", "page": "page-1" }
+}

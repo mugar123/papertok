@@ -1,0 +1,135 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; }
+    * { box-sizing: border-box; }
+    a { color: #111318; text-decoration: none; }
+    a:hover { color: #1a5fd0; }
+
+    .sep { width: 794px; height: 1123px; background: #ffffff; padding: 62px 104px 46px;
+           display: flex; flex-direction: column;
+           font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; color: #111318; }
+
+    /* En las páginas de continuación el titulillo cambia de trabajo: a la
+       izquierda el artículo, a la derecha la sección en la que vas. Es lo que
+       hace navegable un documento de seis páginas impreso y grapado. */
+    .mast { display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+            font: 500 9px/1 'IBM Plex Mono', monospace; letter-spacing: 0.12em;
+            text-transform: uppercase; color: #7b8290; }
+    .mast-b { color: #111318; }
+    .rule-hair { flex: 0 0 auto; height: 0.8px; background: #dcdee4; }
+    .rule-head { flex: 0 0 auto; height: 0.8px; background: #c9ccd4; margin-top: 9px; }
+
+    .flow { flex: 1 1 auto; min-height: 0; overflow: hidden; padding-top: 24px; }
+
+    .sec { display: flex; gap: 13px; margin: 21px 0 9px; }
+    .sec-no { flex: 0 0 22px; font-size: 17px; font-weight: 600; line-height: 1.3; }
+    .sec-n { font-size: 17px; font-weight: 600; line-height: 1.3; margin: 0; }
+    .sec-o { font: 400 9.5px/1.5 'IBM Plex Mono', monospace; letter-spacing: 0.03em;
+             color: #6b7280; margin: 3px 0 0; }
+
+    .p { font-size: 16px; line-height: 1.6; text-align: justify; margin: 0; }
+    .p + .p { text-indent: 1.4em; }
+
+    /* Fórmula destacada con su número a la derecha: hoy sale centrada y muda,
+       así se puede citar («como en (1)»). */
+    .eq { display: flex; align-items: baseline; gap: 16px; margin: 15px 0 16px; }
+    .eq-b { flex: 1 1 auto; text-align: center; font-size: 17px; font-style: italic; }
+    .eq-n { flex: 0 0 auto; font-size: 15px; }
+
+    .ai { border-bottom: 1.4px dotted #6b7280; }
+    .ref { font: 500 9.5px/0 'IBM Plex Mono', monospace; vertical-align: super; padding-left: 1.5px; }
+
+    /* Colofón: de dónde salió esto, en una tabla que se lee de un vistazo seis
+       meses después, cuando el fichero está suelto en una carpeta. Todos los
+       campos existen ya en el modelo del export; ninguno es nuevo. */
+    .colo { margin-top: 30px; border-top: 1.3px solid #111318; padding-top: 12px; }
+    .colo-h { font: 500 9px/1 'IBM Plex Mono', monospace; letter-spacing: 0.12em;
+              text-transform: uppercase; color: #7b8290; margin: 0 0 10px; }
+    .colo-g { display: grid; grid-template-columns: 116px 1fr; gap: 6px 18px; }
+    .colo-k { font: 400 10px/1.55 'IBM Plex Mono', monospace; letter-spacing: 0.03em; color: #868d99; }
+    .colo-v { font-size: 13.5px; line-height: 1.42; margin: 0; }
+
+    .notes { flex: 0 0 auto; padding-top: 13px; }
+    .notes-rule { width: 132px; height: 0.8px; background: #111318; margin-bottom: 9px; }
+    .n { display: flex; gap: 8px; font-size: 12.5px; line-height: 1.46; color: #3a3e46; margin: 0 0 5px; }
+    .n-no { flex: 0 0 11px; font: 500 9.5px/1.95 'IBM Plex Mono', monospace; color: #7b8290; }
+    .n-k { font-variant: small-caps; letter-spacing: 0.045em; color: #111318; }
+
+    .foot { flex: 0 0 auto; padding-top: 14px; }
+    .foot-row { display: flex; align-items: baseline; gap: 14px; padding-top: 7px; }
+    .foot-s { flex: 1 1 auto; font: 400 9px/1.5 'IBM Plex Mono', monospace;
+              letter-spacing: 0.03em; color: #868d99; margin: 0; }
+    .foot-n { font-size: 13px; }
+  </style>
+</helmet>
+
+<div class="sep">
+  <div class="mast">
+    <span class="mast-b">Worldline proper length correlators</span>
+    <span>3 &#8194;·&#8194; Qué se saca de aquí</span>
+  </div>
+  <div class="rule-head"></div>
+
+  <div class="flow">
+    <p class="p">Puesto en números, lo que crece con la energía no es el valor medio sino la anchura, y lo hace despacio: como su raíz cuadrada. Esa lentitud es la mala noticia del artículo, porque empuja el efecto a energías que ningún laboratorio alcanza todavía.</p>
+    <div class="eq">
+      <span class="eq-b">Var(τ) = ⟨τ²⟩ − ⟨τ⟩² ≈ (ℓ<sub>P</sub>/L)² · E/E₀</span>
+      <span class="eq-n">(1)</span>
+    </div>
+    <p class="p">La expresión (1) es la que hay que mirar: el prefactor es minúsculo, pero <span class="ai">no se anula para ningún valor de la energía</span><sup class="ref">4</sup>, y ahí está la afirmación fuerte del artículo.</p>
+
+    <div class="sec">
+      <span class="sec-no">4</span>
+      <div>
+        <h2 class="sec-n">Lo que queda abierto</h2>
+        <p class="sec-o">§5 Outlook</p>
+      </div>
+    </div>
+    <p class="p">Los autores no calculan qué pasa cuando la línea de universo deja de ser estacionaria, y admiten que su argumento no cubre ese caso. Tampoco dicen qué experimento concreto podría verlo: la sección se cierra con una lista de familias vecinas donde el mismo cálculo debería funcionar.</p>
+
+    <div class="colo">
+      <p class="colo-h">Procedencia</p>
+      <div class="colo-g">
+        <span class="colo-k">Artículo original</span>
+        <p class="colo-v">Worldline proper length correlators</p>
+        <span class="colo-k">Autoría</span>
+        <p class="colo-v">Allic Sivaramakrishnan</p>
+        <span class="colo-k">Fuente</span>
+        <p class="colo-v"><a href="https://arxiv.org/abs/2405.04331">arxiv.org/abs/2405.04331</a></p>
+        <span class="colo-k">Esta versión</span>
+        <p class="colo-v">Lenguaje sencillo, nivel universitario &#8194;·&#8194; 4 de septiembre de 2026</p>
+        <span class="colo-k">Anotado con</span>
+        <p class="colo-v">4 notas: 2 del lector, 2 de la IA</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="notes">
+    <div class="notes-rule"></div>
+    <p class="n"><span class="n-no">4</span><span><span class="n-k">IA</span> &#8194;El prefactor va como el cuadrado de la longitud de Planck dividida por la escala del sistema: pequeñísimo, pero distinto de cero.</span></p>
+  </div>
+
+  <div class="foot">
+    <div class="rule-hair"></div>
+    <div class="foot-row">
+      <p class="foot-s">Reescrito por PaperTok. No es obra de sus autores &#8194;·&#8194; <a href="https://arxiv.org/abs/2405.04331">arxiv.org/abs/2405.04331</a></p>
+      <span class="foot-n">2</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":794,"height":1123}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

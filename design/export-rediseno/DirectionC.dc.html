@@ -1,0 +1,108 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;1,6..72,400;1,6..72,500&family=IBM+Plex+Mono:wght@400&display=swap">
+  <style>
+    body { margin: 0; background: #fdfcfa; }
+    * { box-sizing: border-box; }
+    a { color: #111318; text-decoration: none; }
+    a:hover { color: #1a5fd0; }
+
+    /* Márgenes anchos y una sola voz tipográfica. La medida cae en 538 px —
+       unos 64 caracteres a 16,5 px — que es medida de libro, no de informe.
+       El papel es hueso, no blanco puro: en pantalla y en papel barato el
+       #ffffff a plena página deslumbra. */
+    .ed { width: 794px; height: 1123px; background: #fdfcfa; padding: 72px 128px 52px;
+          display: flex; flex-direction: column;
+          font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; color: #16181d; }
+
+    .t { font-size: 38px; font-weight: 400; line-height: 1.06; letter-spacing: -0.018em;
+         margin: 0; text-wrap: pretty; }
+    .by { font-size: 15px; line-height: 1.4; margin: 14px 0 0; }
+    .aviso { font-size: 13px; line-height: 1.45; font-style: italic; color: #5f6572;
+             margin: 15px 0 0; padding-top: 12px; border-top: 0.8px solid #ded9d1; }
+
+    .flow { flex: 1 1 auto; min-height: 0; overflow: hidden; padding-top: 0; }
+
+    /* Sin numeración y sin negrita: versalitas espaciadas. El documento deja de
+       parecer un informe con apartados y empieza a parecer un capítulo. */
+    .sec-n { font-size: 12px; font-weight: 500; font-variant: small-caps;
+             letter-spacing: 0.17em; line-height: 1; margin: 26px 0 0; }
+    .sec-o { font: italic 400 11px/1.5 'Newsreader', Georgia, serif; color: #8a857c; margin: 5px 0 10px; }
+
+    .p { font-size: 16px; line-height: 1.64; text-align: justify; margin: 0; }
+    .p + .p { text-indent: 1.5em; }
+
+    /* La marca no invade el fondo: es un trazo amarillo bajo la línea, del
+       grosor de un rotulador fino. La de la IA, punteada y gris — se distinguen
+       incluso impreso en blanco y negro. */
+    .hl { background: #ffe066; color: inherit; padding: 0 1px; }
+    .ai { border-bottom: 1.2px dotted #9a958c; }
+    .ref { font-size: 10px; vertical-align: super; line-height: 0; padding-left: 1px; }
+    .math { font-style: italic; }
+
+    /* Las notas al pie, a dos columnas y en cuerpo pequeño, como en un libro:
+       ocupan la mitad de alto y no compiten con el texto. */
+    .notes { flex: 0 0 auto; padding-top: 11px; }
+    .notes-rule { width: 96px; height: 0.8px; background: #16181d; margin-bottom: 10px; }
+    .notes-cols { column-count: 2; column-gap: 28px; }
+    .n { font-size: 11.5px; line-height: 1.44; color: #4a4f59; margin: 0 0 7px;
+         break-inside: avoid; }
+    .n-no { font-size: 8.5px; vertical-align: super; line-height: 0; }
+    .n-k { font-variant: small-caps; letter-spacing: 0.06em; color: #16181d; }
+
+    /* Folio centrado y, debajo, la procedencia en una línea que no pide turno. */
+    .foot { flex: 0 0 auto; padding-top: 12px; text-align: center; }
+    .foot-n { font-size: 13px; margin: 0; }
+    .foot-s { font: 400 8.5px/1.6 'IBM Plex Mono', monospace; letter-spacing: 0.05em;
+              color: #9a958c; margin: 5px 0 0; }
+  </style>
+</helmet>
+
+<div class="ed">
+  <h1 class="t">Worldline proper length correlators</h1>
+  <p class="by">Allic Sivaramakrishnan &#8194;·&#8194; arXiv:2405.04331</p>
+  <p class="aviso">Reescritura en lenguaje sencillo del artículo original, generada automáticamente y anotada por el lector. El texto de abajo no es obra del autor del artículo: parafrasea sus resultados y no los sustituye. Nivel universitario, 4 de septiembre de 2026.</p>
+
+  <div class="flow">
+    <h2 class="sec-n">De qué va el paper</h2>
+    <p class="sec-o">§1 Introduction</p>
+    <p class="p">Los autores calculan cuánto tiempo propio transcurre a lo largo de la línea de universo de una partícula y encuentran que <span class="hl">esa cantidad deja de ser un número y pasa a ser una distribución</span><sup class="ref">1</sup> en cuanto la gravedad cuántica entra en juego. Lo que era un reloj que marcaba un valor pasa a ser un reloj que marca un abanico de valores, cada uno con su probabilidad.</p>
+    <p class="p">El resultado se apoya en un cálculo de dos puntos que ya era conocido, pero al que nadie había dado esta lectura: la varianza <span class="math">⟨τ²⟩ − ⟨τ⟩²</span> deja de anularse y <span class="ai">la anchura de la distribución crece con la energía</span><sup class="ref">2</sup> del sistema estudiado.</p>
+
+    <h2 class="sec-n">Cómo lo hicieron</h2>
+    <p class="sec-o">§2 Proper length from the two-point function</p>
+    <p class="p">La parte técnica ocupa la segunda mitad del artículo. Una inducción sobre el índice <span class="math">[M : N]</span> del submódulo cierra el hueco entre los dos recuentos, y lo que queda es contabilidad alrededor de ese único paso.</p>
+
+    <h2 class="sec-n">Qué se saca de aquí</h2>
+    <p class="sec-o">§4 Discussion</p>
+    <p class="p">La consecuencia medible es que un reloj ideal colocado sobre esa línea de universo no daría siempre la misma lectura: <span class="hl">el ruido que registraría no vendría del aparato, sino de la propia geometría</span><sup class="ref">3</sup>. La magnitud del efecto crece con la energía, lo que en principio lo hace buscable.</p>
+  </div>
+
+  <div class="notes">
+    <div class="notes-rule"></div>
+    <div class="notes-cols">
+      <p class="n"><sup class="n-no">1</sup> <span class="n-k">Tuya</span> &#8202;El ruido no lo pone el aparato: sale de la propia métrica. Contárselo a Marta.</p>
+      <p class="n"><sup class="n-no">2</sup> <span class="n-k">IA</span> &#8202;Cuanta más energía tiene la partícula, más se abre el abanico de tiempos posibles: la anchura crece como la raíz de la energía.</p>
+      <p class="n"><sup class="n-no">3</sup> <span class="n-k">Tuya</span> &#8202;Esto es lo que habría que medir. Preguntar si alguien lo ha intentado con relojes ópticos.</p>
+    </div>
+  </div>
+
+  <div class="foot">
+    <p class="foot-n">1</p>
+    <p class="foot-s">Reescrito por PaperTok. No es obra de sus autores · arxiv.org/abs/2405.04331</p>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":794,"height":1123}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>
