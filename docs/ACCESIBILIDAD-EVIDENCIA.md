@@ -181,16 +181,141 @@ los que había antes de esta tarea.
 Cada aserción se comprobó rompiendo a propósito lo que vigila, sobre una copia
 del árbol: las once fallan cuando deben, con su mensaje.
 
-## Lo que las fases 3-6 siguen debiendo
+## Entrega: fase 3 (verificación ejecutada el 2026-09-04)
+
+Fase 3 cerró seis diálogos caseros o sin gestión de foco (todos migrados al
+hook compartido `useDialogFocus`), los anuncios de estado que faltaban en
+búsqueda y comentarios, un barrido de regiones vivas que nacían vacías con
+solo un `aria-label`, y cuatro campos sin nombre accesible propio o con su
+error sin asociar. El detalle de cada arreglo está en
+`.superpowers/sdd/fase-3/lote-1-report.md`, `lote-2-report.md` y
+`lote-3-report.md`; esta entrada registra qué de eso se pudo comprobar
+funcionando en un navegador real, y por qué el resto no se pudo alcanzar.
+
+### Cómo se comprobó
+
+- **Servidor**: `npm run dev` de este worktree, `VITE_PAPER_API_BASE_URL`
+  apuntando al mismo Worker de producción que usaron las fases 1-2, así que
+  el feed de invitado y las páginas públicas muestran papers y perfiles
+  reales.
+- **Sin sesión, otra vez**: el usuario se autentica él; nunca se le pidieron
+  credenciales. A diferencia de las fases 1-2 — que solo tenían `/` para
+  cubrir casi todo lo suyo — la fase 3 toca sobre todo superficies que
+  **exigen sesión por diseño** (Ajustes, Búsqueda, el lector con IA, Listas,
+  Research): de los defectos que tocó esta fase, solo tres viven en una
+  ruta pública: el cajón de filtros avanzados y el esqueleto de carga del
+  Explorer (`/public/entity/:type/:id`, con `publicMode` cuando no hay
+  usuario), y la hoja de seguidores de un perfil público
+  (`/public/user/:handle`). Se comprobaron los tres. El resto — los otros
+  cuatro diálogos y campos, y todas las regiones vivas salvo la de
+  `PublicPaperPage` y la de `CommentsSheet` — se registra como no
+  verificado, con la ruta protegida exacta que lo bloquea.
+- **La frontera de sesión se comprobó, no se asumió**: navegar a `#/search`
+  sin sesión redirige de verdad a `#/login` (mismo componente
+  `<ProtectedRoute>` que envuelve `/settings`, `/settings/profile`,
+  `/settings/following`, `/research`, `/lists`, `/following`, `/profile`,
+  `/admin/moderation` y `/onboarding` — una sola comprobación en vivo basta
+  para las diez). El botón "Read in plain words" de una tarjeta, el icono
+  "Search" de la cabecera de invitado y el icono "Save" de una tarjeta
+  abren los tres `AuthPrompt` en vez de `PaperReader`, `SearchCommand` o
+  `SaveToListModal` — confirmado con capturas, no solo leído en el código.
+- **Un hallazgo que corrige la propia expectativa del encargo**: las dos
+  regiones vivas que el lote 2 arregló en `PublicProfilePage`
+  (`loadingRows`, `loadingRowList`) viven en la pestaña
+  "Lists/Saved/Liked" del perfil, que solo se monta cuando
+  `view.isOwner` es cierto — es decir, exigen sesión igual que si vivieran
+  en `/settings`, aunque la página en sí (`/public/user/:handle`) sea
+  pública. Un visitante anónimo en el perfil de `@nick_mugar` ve una
+  sección "Lists" sin pestañas, sin esas dos regiones. Se creyeron
+  alcanzables al planificar esta verificación y no lo son.
+- Detalle completo, con las lecturas exactas de `document.activeElement`,
+  `role`, `aria-*` y los recorridos de `Tab`/`Escape`, en
+  `.superpowers/sdd/fase-3/verificacion-report.md`.
+
+### Matriz
+
+| Página o flujo | Componente | Criterio WCAG | Resultado | Evidencia | Defecto o limitación | Reprueba |
+|---|---|---|---|---|---|---|
+| Explorer público (`/public/entity/institution/...`) | Cajón de filtros avanzados | 2.1.2, 2.4.3, 4.1.2 | Cumple | `role="dialog"` `aria-modal="true"` `aria-labelledby` → "Advanced filters"; foco inicial en "Close filters" (`data-dialog-initial-focus`); `Shift+Tab` desde el primero salta a "Apply filters" (el último) y `Tab` vuelve a cerrar el ciclo; `Escape` desmonta el diálogo y el foco vuelve al botón "Open filters" que lo abrió | — | `verificacion-report.md` §1 |
+| Perfil público (`/public/user/:handle`) | Hoja de seguidores (`FollowSheet`) | 2.1.2, 2.4.3, 4.1.2 | Cumple | Mismo patrón: foco inicial en "Close", `Tab` desde "Close" llega al enlace del último seguidor y vuelve a envolver a la primera pestaña, `Escape` devuelve el foco al botón "See followers" | — | `verificacion-report.md` §2 |
+| Explorer público | Esqueleto de carga — botón "Volver" | 4.1.2, 1.3.1 | Cumple | `aria-label="Back"` sin ancestro `aria-hidden="true"` (`backBtnInsideAriaHiddenAncestor: false`), `.explorer-hero` sin `aria-hidden` propio; captura con el nombre de la entidad ya pintado junto a los bloques de esqueleto | — | `verificacion-report.md` §3 |
+| Explorer público | Esqueleto de carga — contenedor (`.explorer-container.explorer-skeleton`) | 4.1.3 | No cumple | `{"role":"status","ariaBusy":"true","ariaLabel":"Loading","hasVisuallyHiddenTextInside":false}`, comprobado en vivo el 2026-09-04 sobre una segunda entidad | **No es un defecto nuevo**: `lote-2-report.md` (sección 3) ya lo dejó fuera a propósito por vivir en un fichero que otra sesión tenía reservado. Sigue exactamente así nueve días después | Cuando alguien retome `EntityExplorer.jsx` para otra cosa |
+| Página de paper público (`/public/paper/:paperKey`) | Esqueleto de carga | 4.1.3 | Cumple | `.public-paper-skeleton` con `role="status"` y `<span class="visually-hidden">Loading paper...</span>` real desde el instante en que se monta | Patrón *mount-with-content*: el nodo nace con su texto puesto en vez de nacer vacío y rellenarse — más débil que el patrón persistente-y-vacío, pendiente de confirmación con lector de pantalla real | Lector de pantalla real (fase 6) |
+| Feed de invitado / paper público | `CommentsSheet` — región de aviso (`comments-sheet-notice`) | 4.1.3 | Cumple | Presente para cualquier visitante, `role="status"` `aria-live="polite"` `textContent === ''`, sin la clase `has-text` | Solo se verificó la mitad "nace vacía"; el relleno real al publicar/editar/borrar/reportar exige `isAuthenticated` y no se pudo provocar | Verificación con sesión |
+| Feed de invitado | `CommentsSheet` — nombre del campo del composer | 3.3.2 | No verificado | — | El `<textarea>` no se monta sin sesión: `composerState === 'signed-out'` lo sustituye por "Sign in to join the conversation." (confirmado: `hasComposerTextarea:false`, `hasSignInGate:true`) | Verificación con sesión |
+| Feed de invitado | `CommentsSheet` — anuncios de publicar/editar/borrar | 4.1.3 | No verificado | — | Misma razón que la fila anterior: exigen estar autenticado | Verificación con sesión |
+| Búsqueda | Anuncio de resultados y nombre del campo principal | 3.3.2, 4.1.3 | No verificado | Razonado por lectura de código en `lote-2-report.md` y `lote-3-report.md`; la redirección de `/search` a `/login` sin sesión sí se confirmó en vivo | **Justificación**: `/search` exige sesión | Verificación con sesión |
+| Búsqueda | Indicador "aún buscando" (`search-input-loader`) | 4.1.3 | No verificado | Declarado en `lote-2-report.md` ("Ronda de arreglos 1"): se monta bajo demanda con el texto ya dentro | **Patrón mount-with-content, aceptado como convención del repo desde la revisión del lote 1** — no reverificado en vivo por la misma razón que la fila anterior | Verificación con sesión + lector de pantalla real |
+| Ajustes | `EditInterestsModal` (diálogo) | 2.1.2, 2.4.3, 4.1.2 | No verificado | Razonado por lectura de código en `lote-1-report.md` | **Justificación**: `/settings` exige sesión | Verificación con sesión |
+| Siguiendo / Ajustes | `EmailNotificationModal` (diálogo) | 2.1.2, 2.4.3, 4.1.2 | No verificado | Ídem | **Justificación**: `/settings/following` exige sesión | Verificación con sesión |
+| Perfil | `VisibilityPrompt` (diálogo) | 2.1.2, 2.4.3, 4.1.2 | No verificado | Ídem | **Justificación**: solo se monta si `view.isOwner`, que exige sesión — incluso desde una página por lo demás pública | Verificación con sesión |
+| Lector | `ReaderBar` — indicador de reescritura (`rd-bar-streaming`) | 4.1.3 | No verificado | — | **Justificación, confirmada en vivo**: "Read in plain words" abre `AuthPrompt` en vez de `PaperReader` cuando no hay sesión | Verificación con sesión |
+| Lector | `SelectionMenu` — nombre del campo de nota | 3.3.2 | No verificado | — | **Justificación**: misma que la fila anterior — sin `PaperReader` no hay anotación | Verificación con sesión |
+| Research | `ScientificReport` — esqueleto de tendencias | 4.1.3 | No verificado | — | **Justificación**: `/research` exige sesión | Verificación con sesión |
+| Global | `SearchCommand` — esqueleto de la paleta | 4.1.3 | No verificado | — | **Justificación, confirmada en vivo**: el icono de búsqueda de invitado abre `AuthPrompt`; la paleta solo se monta con `user` (`App.jsx`) | Verificación con sesión |
+| Perfil público | `PublicProfilePage` — `loadingRows` / `loadingRowList` | 4.1.3 | No verificado | Página visitada en vivo sin sesión; sin pestañas "Lists/Saved/Liked" visibles | **Justificación**: ambas regiones viven dentro de la interfaz de propietario (`view.isOwner`), invisible para un visitante aunque la ruta sea pública — ver nota más arriba | Verificación con sesión |
+| Listas | `CreateListDialog` — error asociado al campo del nombre | 3.3.1 | No verificado | — | **Justificación, confirmada en vivo**: "Save" en una tarjeta de invitado abre `AuthPrompt`; `/lists` exige sesión | Verificación con sesión |
+| Ajustes | `ProfilePage` — `aria-live` del hint/error del handle | 3.3.1 | No verificado | — | **Justificación**: `/settings/profile` exige sesión | Verificación con sesión |
+| Navegación | `RouteFallback` — deja de anunciarse como región viva | 4.1.3 | No verificado (comportamiento) | Lectura directa: `<div className="route-fallback" aria-hidden="true" />`, sin `role`, sin contenido condicional | **No se pudo capturar en el DOM en ningún intento**: en desarrollo local los módulos se sirven desde disco y la ventana de `Suspense` es sistemáticamente más corta que un fotograma. Una lectura de código, por sencilla que sea, no es una observación de comportamiento | Recorrido con red real limitada (3G lento) o en producción |
+| Global | Nombre accesible calculado por el navegador (control de método) | 4.1.2 | Cumple | El árbol de accesibilidad real de Chrome (`read_page`) informa el buscador de `EntityExplorer` como `textbox "Search publications in this entity"` — el `aria-label`, no el `placeholder` visible | Campo ya correcto antes de la fase 3, sin relación con sus cuatro arreglos; confirma que el método (computar, no leer el atributo) funciona en este árbol antes de declarar los cuatro campos reales no verificados | `verificacion-report.md`, sección de campos |
+
+### Lo que esta entrega no intentó
+
+- No se aplicó ningún arreglo de código: el único defecto confirmado en vivo
+  (el contenedor de esqueleto del Explorer sin texto real) ya estaba
+  declarado como deuda fuera de alcance antes de empezar esta tarea.
+- No se repitió el recorrido de teclado completo de las fases 1-2 sobre `/`;
+  esta entrega se centró en lo que la fase 3 tocó.
+- Ningún lector de pantalla real, otra vez. Sigue sin ejecutarse en ninguna
+  fase.
+
+## Lo que las fases 4-6 siguen debiendo
 
 Esta matriz es un registro vivo. Lo que sigue abierto, para que la próxima
 entrega lo amplíe en lugar de volver a descubrirlo:
 
-- **Fase 3 — diálogos y anuncios de estado**: C7 (`EditInterestsModal` sin
-  `role="dialog"`, sin foco gestionado y sin `Escape`), C8 (`AuthPrompt`), C6
-  (resultados de búsqueda sin anunciar), A4, M3, M4, A6, C10, M8, M24, A5, y los
-  landmarks que faltan: las tres ramas `.feed-empty` y `/following` con su
-  propio `h1`.
+- **Fase 3, cerrada**: C7, C6, A4, M3, A6, A5 y M8 (investigado a fondo:
+  los tres `aria-invalid` originales eran genuinos, y ahora hay cinco)
+  están implementados — ver la entrada de fase 3 arriba para lo que de
+  todo eso se pudo comprobar en vivo y lo que sigue sin sesión. C8
+  (`AuthPrompt`) y C10 (`OnboardingFlow`) ya estaban resueltos antes de que
+  empezara esta fase (`.superpowers/sdd/fase-3/progress.md`, "Sondeo del
+  estado REAL"); no eran trabajo suyo, pero tampoco quedan pendientes. M4 y
+  M24 no aparecen mencionados en ningún informe de lote — ningún lote los
+  tocó, y esta entrega no tenía forma de confirmar qué son sin el documento
+  de auditoría original, así que siguen abiertos sin más información que la
+  que ya había. Los landmarks que faltan — las tres ramas `.feed-empty` y
+  `/following` sin su propio `h1` — se releyeron el 2026-09-04
+  (`FeedContainer.jsx`, `FollowingFeedPage.jsx`) y siguen exactamente como
+  las dejaron las fases 1-2: **siguen debiendo**.
+- **Lo que la fase 3 deja debiendo, además de lo anterior**:
+  - Dos regiones vivas de `EntityExplorer` con el mismo antipatrón que el
+    lote 2 barrió en otros siete sitios (`.explorer-container.explorer-skeleton`
+    sin texto real, y `.ehc-wiki-skeleton`) — declaradas fuera de alcance en
+    `lote-2-report.md` por vivir en un fichero reservado, confirmadas en vivo
+    que la primera sigue exactamente así el 2026-09-04.
+  - **Casi todo lo que implementó la fase 3 vive detrás de una sesión y
+    sigue sin observarse funcionando**: los tres diálogos que no son el
+    cajón de filtros ni la hoja de seguidores (`EditInterestsModal`,
+    `EmailNotificationModal`, `VisibilityPrompt`), el anuncio de resultados
+    y el campo de `SearchPage`, el indicador de reescritura de `ReaderBar`,
+    el nombre del campo de `SelectionMenu`, el esqueleto de
+    `ScientificReport`, el de `SearchCommand`, las dos regiones de
+    `PublicProfilePage` que resultaron ser de propietario y no de visitante,
+    `CreateListDialog` y el `aria-live` del handle en `ProfilePage`. La
+    entrega de fase 3 en la matriz de arriba lista la razón exacta de cada
+    uno; la primera verificación que cuente con una sesión debería empezar
+    por esta lista antes que por nada nuevo.
+  - El patrón *mount-with-content* (la región nace ya con su mensaje dentro,
+    en vez de nacer vacía y rellenarse) quedó como el mecanismo de facto de
+    casi todos los esqueletos de carga que tocó esta fase
+    (`PublicPaperPage`, y por lectura de código `ReaderBar`,
+    `ScientificReport`, `SearchCommand`, las dos de `PublicProfilePage`, y
+    el `search-input-loader` ya existente de `SearchPage`) — es la
+    convención que ya usaba el repo y la que aceptó la revisión del lote 1,
+    pero sigue siendo el patrón más débil que el persistente-y-vacío de
+    `CommentsSheet` y el propio anuncio de resultados de `SearchPage`. Ni
+    uno ni otro patrón se ha confirmado con un lector de pantalla real.
 - **Fase 4 — formularios y nombres**: A10 (botones con `title` y sin
   `aria-label`), A11, M21, M25, B2-B4 y los temporizadores M7.
 - **Sin fase asignada, comprobado y descartado**: los dos `outline-none` de
