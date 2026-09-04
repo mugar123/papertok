@@ -605,6 +605,19 @@
   max-height: 4.8em;
   overflow: hidden;
   transition: max-height 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+  /* The words arrive rather than appear. On mount only — the paragraph is not
+     remounted by expanding it, only reclassed — and deliberately an animation
+     on the element itself rather than a presence wrapper around the swap: the
+     wrapper cost a React commit boundary, and that defeated the `layout`
+     projection on `.ehc-wiki-fold` (the block stopped animating its height and
+     the list flashed 40px). The reduced-motion block below already names
+     `.ehc-wiki p`, so this is switched off there with everything else. */
+  animation: wikiProseIn 0.26s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes wikiProseIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .ehc-wiki p.expanded {

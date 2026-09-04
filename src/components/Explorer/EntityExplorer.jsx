@@ -1941,25 +1941,22 @@ export default function EntityExplorer({
                   className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''} ${isWikiRequestPending && !wikiDescription ? 'is-loading' : ''}`}
                   aria-busy={isWikiRequestPending && !wikiDescription}
                 >
-                {/* The shapes hand over to the prose rather than being cut
-                    away by it. Measured before this: not one frame carried
-                    both, and the paragraph's very first painted frame was
-                    already at opacity 1 — a hard cut inside a box whose height
-                    was easing around it. `mode="wait"` keeps them from ever
-                    double-exposing: the shapes leave on the house exit curve
-                    and the words arrive on the house arrival curve, 140 + 260ms,
-                    which lands with the 420ms fold around them. */}
-                <AnimatePresence mode="wait" initial={false}>
+                {/* The shapes hand over to the prose in ONE React commit, and
+                    the fade is the paragraph's own CSS (`wikiProseIn`), not a
+                    presence wrapper.
+
+                    Measured with an `AnimatePresence mode="wait"` here, which
+                    is what this replaces: splitting the swap across two commits
+                    defeated the `layout` projection on the fold above. The
+                    block stopped animating its height at all — 168.4px to
+                    128.4px in a single frame, against a smooth 168.4 → 157.8
+                    before — and the list below flashed 40px up and back down on
+                    consecutive frames, four times the 10.5px it moved without
+                    it. A cross-fade is not worth a commit boundary here: the
+                    height animation IS the handover, and the words only need to
+                    arrive rather than appear. */}
                 {isWikiRequestPending && !wikiDescription ? (
-                  <motion.div
-                    key="wiki-shapes"
-                    className="ehc-wiki-skeleton"
-                    role="status"
-                    aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}
-                    initial={false}
-                    exit={{ opacity: 0 }}
-                    transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.14, ease: [0.4, 0, 1, 1] }}
-                  >
+                  <div className="ehc-wiki-skeleton" role="status" aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}>
                     {/* Three lines because the collapsed paragraph is clamped
                         to exactly three, then the show-more toggle, then the
                         source links. Measured against a settled block: these
@@ -1976,21 +1973,16 @@ export default function EntityExplorer({
                     <span />
                     <span className="ehc-wiki-skeleton-toggle" />
                     <span className="ehc-wiki-skeleton-links" />
-                  </motion.div>
+                  </div>
                 ) : wikiDescription ? (
-                  <motion.p
-                    key="wiki-prose"
+                  <p
                     ref={wikiDescriptionTextRef}
                     className={isWikiDescriptionExpanded ? 'expanded' : 'collapsed'}
                     style={wikiDescriptionExpandedHeight ? { '--wiki-description-expanded-height': `${wikiDescriptionExpandedHeight}px` } : undefined}
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
                   >
                     {wikiDescription}
-                  </motion.p>
+                  </p>
                 ) : null}
-                </AnimatePresence>
                 {isWikiDescriptionExpandable && (
                   <button
                     type="button"
