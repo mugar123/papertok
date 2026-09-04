@@ -122,8 +122,29 @@ test('the Wikipedia block folds inside a wrapper that also absorbs the stack gap
   assert.ok(fold, 'the motion wrapper is a box of its own around the padded `.ehc-wiki`');
   assert.match(fold[0], /initial=\{prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -8 \}\}/);
   assert.match(fold[0], /animate=\{\{ opacity: 1, height: 'auto', marginTop: 0, y: 0 \}\}/);
-  assert.match(fold[0], /exit=\{prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6 \}\}/);
+  assert.match(fold[0], /exit=\{prefersReducedMotion\s*\?\s*\{ opacity: 0 \}\s*:\s*\{ opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6, transition: WIKI_FOLD_OUT \}\}/);
   assert.match(fold[0], /marginTop: \{ duration: 0\.42, ease: \[0\.16, 1, 0\.3, 1\] \}/);
+  // The collapse is not the arrival reversed: what moves is the list below,
+  // and it has to land. What this pins is the worst single frame, because that
+  // is the jolt. Measured on `explorer-loading-probe.mjs wikiexit`: the
+  // arrival's expo-out at 420ms gave -31.9px, the catalog's steep ease-in-out
+  // at 280ms gave -39.7px (right shape, too few frames to spend the peak over),
+  // and this pair gives -16.0px. The fade keeps the house exit curve, and it
+  // tracks the collapse rather than racing it: 400 against 480 is an 80ms tail,
+  // where every earlier version left the list moving under an invisible block
+  // for 120ms or more.
+  const foldOut = jsx.match(/const WIKI_FOLD_OUT = \{[\s\S]*?\n\};/);
+  assert.ok(foldOut, 'the fold has a closing transition of its own');
+  assert.match(foldOut[0], /opacity: \{ duration: 0\.4, ease: \[0\.4, 0, 1, 1\] \}/);
+  assert.match(foldOut[0], /height: \{ duration: 0\.48, ease: \[0\.4, 0, 0\.2, 1\] \}/);
+  assert.match(foldOut[0], /marginTop: \{ duration: 0\.48, ease: \[0\.4, 0, 0\.2, 1\] \}/);
+  assert.match(foldOut[0], /y: \{ duration: 0\.48, ease: \[0\.4, 0, 0\.2, 1\] \}/);
+  // The space must not finish before the block it is vacating has faded.
+  const seconds = (name) => Number(foldOut[0].match(new RegExp(`${name}: \\{ duration: ([\\d.]+)`))[1]);
+  assert.ok(seconds('opacity') < seconds('height'), 'the fade lands before the space closes');
+  assert.ok(seconds('height') - seconds('opacity') <= 0.1, 'and no more than 100ms before it');
+  assert.doesNotMatch(foldOut[0], /\[0\.16, 1, 0\.3, 1\]/, 'the collapse must not ride the arrival curve');
+  assert.doesNotMatch(foldOut[0], /\[0\.77, 0, 0\.175, 1\]/, 'nor the steep ease-in-out that peaked worse than what it replaced');
   const css = await read('./EntityExplorer.css');
   assert.match(css, /\.ehc-wiki-fold \{\s*overflow: hidden;\s*\}/);
   // The constant stands for `--space-4`, the gap `.explorer-hero-content` stacks with.

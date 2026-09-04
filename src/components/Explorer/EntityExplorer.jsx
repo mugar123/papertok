@@ -56,6 +56,50 @@ const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
 // it unmounts, and nothing below it moves at unmount.
 const HERO_STACK_GAP_PX = 16;
 
+// How the Wikipedia block's fold CLOSES (its opening stays on the arrival
+// curve, inline on the element).
+//
+// The number that matters here is not the duration, it is the worst single
+// frame: the block is ~160px tall and everything below it travels that far, so
+// whatever the curve does at its steepest is what the reader sees as a jolt.
+// Four measurements, same probe (`explorer-loading-probe.mjs wikiexit`), same
+// topic, reading the fold's own frames:
+//
+//   [0.16, 1, 0.3, 1]   @ 420ms -> -31.9px  the arrival curve, front-loaded:
+//                                           43% of the travel in three frames,
+//                                           then 20px crawling over 300ms
+//   [0.77, 0, 0.175, 1] @ 280ms -> -39.7px  right shape, wrong arithmetic — it
+//                                           holds and settles, but the catalog's
+//                                           ease-in-out has a very steep middle
+//                                           and 280ms leaves too few frames to
+//                                           spend the peak over. WORSE than what
+//                                           it replaced.
+//   [0.4, 0, 0.2, 1]    @ 400ms -> -20.9px  gentler peak, 28 frames
+//   [0.4, 0, 0.2, 1]    @ 480ms -> -16.0px  what is here
+//
+// So: an ease-in-out, because what moves is the list below and it has to LAND
+// (the house exit curve would back-load it and end at full speed — right for a
+// page that is gone by then, wrong here); a gentle one, because the peak IS the
+// problem; and long enough that the peak has somewhere to go. 480ms is the top
+// of the catalog's drawer budget, which is the right bracket for a 160px block
+// — 60ms slower than before for half the jolt.
+//
+// Reading the probe after this change: its headline `biggestSingleFrameMove`
+// may now report a POSITIVE move in the first frames. That is the hero settling
+// as content arrives, not the fold — the fold is the negative run, and it is
+// the one to compare.
+const WIKI_FOLD_OUT = {
+  // The block itself really is leaving, so its fade takes the house exit curve.
+  // Tracking the space rather than racing it: at 240ms against a 480ms collapse
+  // the list spent half the fold sliding up underneath something already
+  // invisible, which is the same complaint as the 420/300 pair this replaced.
+  // 400ms leaves an 80ms tail, the shortest of any version measured.
+  opacity: { duration: 0.4, ease: [0.4, 0, 1, 1] },
+  height: { duration: 0.48, ease: [0.4, 0, 0.2, 1] },
+  marginTop: { duration: 0.48, ease: [0.4, 0, 0.2, 1] },
+  y: { duration: 0.48, ease: [0.4, 0, 0.2, 1] },
+};
+
 
 /**
  * The ORCID card before it has a name in it.
@@ -1382,12 +1426,20 @@ export default function EntityExplorer({
         <div className="explorer-hero-content" ref={heroBodyRef}>
           <div className="ehc-header">
           <div className="ehc-main">
+            {/* The tile and the photograph share one box and one clock.
+                Measured with 0.32s on the tile against 0.42s on the photo:
+                their opacities summed to 0.912 at the crossing point, so the
+                card showed through both for two frames and the slot flickered,
+                then sat 66ms with the tile gone and the photo not yet opaque.
+                On one duration the sum is exactly 1 at every instant — 1 − e(t)
+                and e(t) — whatever the curve. The scales still differ on
+                purpose: one shrinks away as the other grows in. */}
             <div className="ehc-visual-slot">
               <motion.div
                 className="ehc-icon"
                 initial={false}
                 animate={{ opacity: hasLoadedWikiImage ? 0 : 1, scale: hasLoadedWikiImage ? 0.96 : 1 }}
-                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
                 aria-hidden={hasLoadedWikiImage}
               >
                 {renderIcon()}
@@ -1399,7 +1451,7 @@ export default function EntityExplorer({
                     initial={{ opacity: 0, scale: 0.96 }}
                     animate={{ opacity: hasLoadedWikiImage ? 1 : 0, scale: hasLoadedWikiImage ? 1 : 0.96 }}
                     exit={{ opacity: 0, scale: 0.97 }}
-                    transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.42, ease: [0.16, 1, 0.3, 1] }}
+                    transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
                     className="ehc-wiki-image"
                   >
                     <img
@@ -1855,7 +1907,26 @@ export default function EntityExplorer({
                 // frame the block unmounted.
                 initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -8 }}
                 animate={{ opacity: 1, height: 'auto', marginTop: 0, y: 0 }}
-                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6 }}
+                // Leaving is not arriving reversed, and it is not the house
+                // exit either. Measured before this: the fold ran the
+                // arrival's expo-out, so the list below leapt 31.9px in one
+                // frame and then crawled the last 20px over 300ms. The house
+                // exit curve ([0.4, 0, 1, 1], PageTransition.jsx) would
+                // back-load it instead and end at full speed — right for a
+                // page that is gone by then, wrong for a list that has to
+                // land. An ease-in-out holds the list still, spreads the
+                // travel and brings it to rest; the block's own fade keeps
+                // the house exit curve, because the block really is leaving.
+                //
+                // The timings ride inside `exit` rather than in a
+                // `transition.exit` key: framer resolves `transition[key]` by
+                // the name of the animated value, so a nested `exit` would
+                // only ever match a value called "exit". A `transition` on a
+                // variant object is the supported form — `resolveVariant`
+                // destructures it out (motion/features/animation/exit.mjs).
+                exit={prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -6, transition: WIKI_FOLD_OUT }}
                 transition={prefersReducedMotion
                   ? { duration: 0 }
                   : {
@@ -1870,8 +1941,25 @@ export default function EntityExplorer({
                   className={`ehc-wiki ${isWikiDescriptionExpanded ? 'is-expanded' : ''} ${isWikiRequestPending && !wikiDescription ? 'is-loading' : ''}`}
                   aria-busy={isWikiRequestPending && !wikiDescription}
                 >
+                {/* The shapes hand over to the prose rather than being cut
+                    away by it. Measured before this: not one frame carried
+                    both, and the paragraph's very first painted frame was
+                    already at opacity 1 — a hard cut inside a box whose height
+                    was easing around it. `mode="wait"` keeps them from ever
+                    double-exposing: the shapes leave on the house exit curve
+                    and the words arrive on the house arrival curve, 140 + 260ms,
+                    which lands with the 420ms fold around them. */}
+                <AnimatePresence mode="wait" initial={false}>
                 {isWikiRequestPending && !wikiDescription ? (
-                  <div className="ehc-wiki-skeleton" role="status" aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}>
+                  <motion.div
+                    key="wiki-shapes"
+                    className="ehc-wiki-skeleton"
+                    role="status"
+                    aria-label={isEnglish ? 'Loading topic details' : 'Cargando información del tema'}
+                    initial={false}
+                    exit={{ opacity: 0 }}
+                    transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.14, ease: [0.4, 0, 1, 1] }}
+                  >
                     {/* Three lines because the collapsed paragraph is clamped
                         to exactly three, then the show-more toggle, then the
                         source links. Measured against a settled block: these
@@ -1888,16 +1976,21 @@ export default function EntityExplorer({
                     <span />
                     <span className="ehc-wiki-skeleton-toggle" />
                     <span className="ehc-wiki-skeleton-links" />
-                  </div>
+                  </motion.div>
                 ) : wikiDescription ? (
-                  <p
+                  <motion.p
+                    key="wiki-prose"
                     ref={wikiDescriptionTextRef}
                     className={isWikiDescriptionExpanded ? 'expanded' : 'collapsed'}
                     style={wikiDescriptionExpandedHeight ? { '--wiki-description-expanded-height': `${wikiDescriptionExpandedHeight}px` } : undefined}
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
                   >
                     {wikiDescription}
-                  </p>
+                  </motion.p>
                 ) : null}
+                </AnimatePresence>
                 {isWikiDescriptionExpandable && (
                   <button
                     type="button"
