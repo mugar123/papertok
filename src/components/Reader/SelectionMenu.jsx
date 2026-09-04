@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from 'framer-motion';
 import { Highlighter, Loader2, PenLine, Sparkles } from 'lucide-react';
 import { MAX_NOTE_LENGTH } from '../../services/userHighlightService.js';
 import { placeSelectionMenu } from '../../utils/selectionMenuPlacement.js';
+import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 
 /**
  * What to do with the passage you just selected.
@@ -34,28 +35,26 @@ export default function SelectionMenu({
   const noteFieldId = useId();
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState('');
-  const rootRef = useRef(null);
+  // The shared hook owns focus and Escape, the same way every other dialog in
+  // the app does. It matters more here than it looks: the keyboard route into
+  // this menu (Enter on a focused paragraph) leaves focus on the paragraph,
+  // so without this the menu opened and the reader could not reach it. The
+  // hook also keeps a stack, so Escape closes this menu and not the reader
+  // behind it — which is what the hand-rolled `stopPropagation` used to buy.
+  const dialogRef = useDialogFocus(true, onClose);
   const textareaRef = useRef(null);
 
   useEffect(() => {
-    const handleKey = (event) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        onClose();
-      }
-    };
     const handlePointer = (event) => {
-      if (!rootRef.current?.contains(event.target)) onClose();
+      if (!dialogRef.current?.contains(event.target)) onClose();
     };
     // Capture, so a click on the document behind closes the menu before that
     // click can start a new selection underneath it.
-    document.addEventListener('keydown', handleKey, true);
     document.addEventListener('mousedown', handlePointer, true);
     return () => {
-      document.removeEventListener('keydown', handleKey, true);
       document.removeEventListener('mousedown', handlePointer, true);
     };
-  }, [onClose]);
+  }, [onClose, dialogRef]);
 
   useEffect(() => {
     if (composing) textareaRef.current?.focus();
@@ -74,7 +73,7 @@ export default function SelectionMenu({
 
   return (
     <motion.div
-      ref={rootRef}
+      ref={dialogRef}
       className="rd-menu"
       role="dialog"
       aria-label={copy.selectionTitle}
@@ -121,7 +120,7 @@ export default function SelectionMenu({
         </motion.form>
       ) : (
         <motion.div layout={prefersReducedMotion ? false : 'position'} className="rd-menu-list">
-          <button type="button" className="rd-menu-item" onClick={onHighlight}>
+          <button type="button" className="rd-menu-item" data-dialog-initial-focus onClick={onHighlight}>
             <Highlighter size={15} />
             {copy.justHighlight}
           </button>

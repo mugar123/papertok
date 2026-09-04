@@ -349,6 +349,35 @@
   margin-bottom: var(--space-4);
 }
 
+/* The keyboard route into the annotation menu (WCAG 2.1.1): there is no
+   caret to select a *phrase* with on a page that is not editable, so a
+   focused paragraph opens the same menu the mouse does, over the whole
+   paragraph -- see `handleParagraphKeyDown` in PaperReader.jsx.
+   `:focus-visible` rather than `:focus`: clicking to select text focuses the
+   now-tabbable paragraph too, and `:focus-visible` is what keeps that click
+   from painting anything a mouse-only reader would see (global.css draws the
+   same line for text fields, the other way round -- focus-visible fires for
+   their mouse click precisely because typing is assumed to follow; nothing
+   follows a click into a paragraph here). */
+.rd-p[data-annotatable] {
+  position: relative;
+  border-radius: var(--radius-sm);
+}
+
+.rd-p[data-annotatable]:focus-visible::after {
+  content: attr(data-hint);
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  padding: 2px 7px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  color: var(--text-tertiary);
+  font: 500 0.625rem/1.5 var(--font-mono);
+  pointer-events: none;
+}
+
 /* ── Marks ── */
 .rd-mark {
   background: var(--brand-yellow-soft);

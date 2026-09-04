@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   AlertCircle,
@@ -112,6 +112,16 @@ const COPY = {
     toggleAnnotations: 'Ver anotaciones',
     settings: 'Ajustes',
     selectionTitle: 'Qué hacer con la selección',
+    // Read by `aria-describedby` on every paragraph on the desktop route
+    // (`paragraphHintId`), not shown: the keyboard route's own instructions,
+    // for the audience that cannot see a hint that only paints on focus.
+    annotateParagraphInstructions: 'Pulsa Intro para abrir las opciones de anotación de este párrafo: subrayarlo, escribirle una nota o pedirle a la IA que lo explique.',
+    // The same instructions, compressed to what fits in a small tag that
+    // paints over the paragraph's own corner on keyboard focus (CSS
+    // `content: attr(data-hint)` in PaperReader.css) -- for the reader who
+    // can see the screen but has no mouse and no screen reader to read the
+    // sentence above out loud.
+    annotateParagraphBadge: 'Intro: anotar',
     justHighlight: 'Subrayar',
     writeNote: 'Escribir nota',
     explainThis: 'Que me lo explique',
@@ -189,6 +199,8 @@ const COPY = {
     toggleAnnotations: 'Show annotations',
     settings: 'Settings',
     selectionTitle: 'What to do with the selection',
+    annotateParagraphInstructions: 'Press Enter to open annotation options for this paragraph: highlight it, write a note on it, or ask the AI to explain it.',
+    annotateParagraphBadge: 'Enter: annotate',
     justHighlight: 'Highlight',
     writeNote: 'Write a note',
     explainThis: 'Explain this to me',
@@ -669,6 +681,10 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   const prefersReducedMotion = useReducedMotion();
   const copy = COPY[isEnglish ? 'en' : 'es'];
   const kindLabels = KIND_LABELS[isEnglish ? 'en' : 'es'];
+  // One shared id: every paragraph's `aria-describedby` on the keyboard
+  // route points at the same hidden sentence rather than each rendering its
+  // own copy of it.
+  const paragraphHintId = useId();
 
   const [level, setLevel] = useState('university');
   const [sections, setSections] = useState([]);
@@ -965,6 +981,43 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
       quote: anchor.quote,
       quoteStart: anchor.start,
       quoteEnd: anchor.end,
+      context: paragraphText,
+      anchor: {
+        left: rect.left,
+        top: rect.top,
+        bottom: rect.bottom,
+        right: rect.right,
+      },
+    });
+  }, [beginAnnotation, uid]);
+
+  /**
+   * The keyboard route into the same fork `handleSelection` opens from a
+   * mouse selection.
+   *
+   * There is no caret to select a phrase with here: paragraphs are not
+   * editable, and the one browser feature that would hand a keyboard a caret
+   * on plain text -- caret browsing -- defaults to off, needs a manual
+   * toggle (F7 on Windows) this page cannot invoke, and does not exist on
+   * macOS at all. So the keyboard's unit is the whole paragraph rather than
+   * a phrase: WCAG does not require matching the mouse route's granularity,
+   * only that the function itself stays reachable (2.1.1). Wired only where
+   * `handleSelection` is -- the 'menu' route, fine pointers, desktop -- for
+   * the same reason its own comment gives.
+   */
+  const handleParagraphKeyDown = useCallback((event, sectionId, paragraphIndex, paragraphText) => {
+    if (event.key !== 'Enter' || !uid) return;
+    event.preventDefault();
+    const normalized = normalizeLatexText(paragraphText);
+    const anchor = buildRangeAnchor(paragraphText, 0, normalized.length);
+    if (!anchor) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    beginAnnotation({
+      sectionId,
+      paragraphIndex,
+      quote: anchor.quote,
+      quoteStart: 0,
+      quoteEnd: normalized.length,
       context: paragraphText,
       anchor: {
         left: rect.left,
@@ -1381,6 +1434,14 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
               {paper?.year ? ` · ${paper.year}` : ''}
             </p>
 
+            {/* Pointed at by every paragraph's `aria-describedby` below,
+                never read on its own: the keyboard route's instructions, for
+                the one audience that cannot see a hint that only paints on
+                focus. */}
+            {selectionRoute === 'menu' && (
+              <p id={paragraphHintId} className="visually-hidden">{copy.annotateParagraphInstructions}</p>
+            )}
+
             {shownStatus === 'error' ? (
               /* A failure is a block on the page, not a note left in the middle of
                  an empty one: a rule down the side in the colour of what went
@@ -1438,8 +1499,17 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
                           className="rd-p"
                           data-section={section.id}
                           data-paragraph={paragraphIndex}
+                          data-annotatable={selectionRoute === 'menu' ? '' : undefined}
+                          data-hint={selectionRoute === 'menu' ? copy.annotateParagraphBadge : undefined}
                           style={{ '--i': Math.min(paragraphIndex, MAX_STAGGER_STEPS) }}
+                          // Keyboard route into the same menu the mouse opens on
+                          // mouse-up (WCAG 2.1.1) -- see `handleParagraphKeyDown`.
+                          tabIndex={selectionRoute === 'menu' ? 0 : undefined}
+                          aria-describedby={selectionRoute === 'menu' ? paragraphHintId : undefined}
                           onMouseUp={(event) => handleSelection(section.id, paragraphIndex, paragraph, event.currentTarget)}
+                          onKeyDown={selectionRoute === 'menu'
+                            ? (event) => handleParagraphKeyDown(event, section.id, paragraphIndex, paragraph)
+                            : undefined}
                         >
                           <HighlightedScientificText highlights={[...stored, ...aiHighlights]}>
                             {paragraph}
