@@ -2097,6 +2097,111 @@ test('gives the minute back when the beat refuses, to the same minute it was tak
   assert.equal(releases[0].subjectKey, minuteReserve.subjectKey);
 });
 
+// One fake ledger for every quota-accounting test. It is told, per period key,
+// what to do -- `refuse` answers not-accepted, `unavailable` answers non-2xx
+// (what `callRequestQuotaLedger` reports as QUOTA_LEDGER_UNAVAILABLE), `broken`
+// throws (a Durable Object that cannot be reached at all) -- and it records
+// every reserve and every release with the key it was aimed at, so a test can
+// assert that a refund names exactly the key and subject the reserve named.
+function scriptedQuotaLedger(state, { refuse = () => false, unavailable = () => false, broken = () => false } = {}) {
+  let lastName = '';
+  return {
+    idFromName: name => { lastName = String(name); return `quota-${lastName}`; },
+    get: () => ({
+      fetch: async (url, options) => {
+        const action = String(url).split('/').pop();
+        const body = JSON.parse(options.body);
+        state.actions.push({ action, periodKey: lastName, subjectKey: body.subjectKey });
+        if (action === 'release') return new Response(JSON.stringify({ released: true }));
+        if (broken(lastName)) throw new Error(`ledger unreachable: ${lastName}`);
+        if (unavailable(lastName)) return new Response('down', { status: 500 });
+        if (refuse(lastName)) return new Response(JSON.stringify({ accepted: false, scope: 'user' }));
+        return new Response(JSON.stringify({ accepted: true }));
+      },
+    }),
+  };
+}
+
+// The period keys the gates use, as predicates: the minute ceiling is
+// `s2:<minute>`, the beat is `s2:pace`, identity is `provider:<minute>`, and
+// OpenAlex is `openalex:<minute>` then `openalex:day:<date>`.
+const IS_MINUTE = key => key.startsWith('s2:') && !key.endsWith(':pace');
+const IS_PACE = key => key.endsWith(':pace');
+const IS_IDENTITY = key => key.startsWith('provider:');
+const IS_OPENALEX_MINUTE = key => key.startsWith('openalex:') && !key.includes(':day:');
+// IS_OPENALEX_DAY is not needed until a later task's OpenAlex-day test reads
+// it; add it back there rather than carry it here unused (no-unused-vars).
+
+const releasesOf = state => state.actions.filter(a => a.action === 'release');
+
+// A refund is a refund only if it names the key and the subject the reserve
+// named: a recomputed key credits the next period, a different subject credits
+// somebody else.
+function assertRefunded(state, isKey) {
+  const reserve = state.actions.find(a => a.action === 'reserve' && isKey(a.periodKey));
+  const release = releasesOf(state).find(a => isKey(a.periodKey));
+  assert.ok(reserve, `no reserve matched: ${JSON.stringify(state.actions)}`);
+  assert.ok(release, `no release matched: ${JSON.stringify(state.actions)}`);
+  assert.equal(release.periodKey, reserve.periodKey);
+  assert.equal(release.subjectKey, reserve.subjectKey);
+}
+
+const RELATED_URL = 'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345';
+const relatedThrough = (ledger, upstream = async () => new Response(
+  JSON.stringify({ recommendedPapers: [] }), { headers: { 'content-type': 'application/json' } },
+)) => withWorkerFetchMock(upstream, () => withCachedIdentity(() => reportApi.fetch(new Request(RELATED_URL, {
+  headers: { origin: 'https://mugar123.github.io', authorization: 'Bearer test-token' },
+}), { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: ledger })));
+
+// L1: the identity gate refuses after the minute unit was already taken.
+test('gives the minute unit back when the identity quota refuses after it', async () => {
+  const state = { actions: [] };
+  const response = await relatedThrough(scriptedQuotaLedger(state, { refuse: IS_IDENTITY }));
+
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+  assertRefunded(state, IS_MINUTE);
+  assert.equal(releasesOf(state).length, 1, 'only the minute unit was held');
+});
+
+// L4: the beat refuses after both the minute unit and the identity unit were
+// taken. The beat used to refund the minute on its own and had no way to know
+// the identity unit existed; now the owner of both refunds both.
+test('gives the minute unit and the identity unit back when the beat refuses after them', async () => {
+  const state = { actions: [] };
+  const response = await relatedThrough(scriptedQuotaLedger(state, { refuse: IS_PACE }));
+
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+  assertRefunded(state, IS_MINUTE);
+  assertRefunded(state, IS_IDENTITY);
+  assert.equal(releasesOf(state).length, 2);
+});
+
+// L5: the OpenAlex budget refuses after the identity unit was taken. Trends has
+// no minute ceiling entry, so the identity unit is the only thing at risk.
+test('gives the identity unit back when the OpenAlex budget refuses after it', async () => {
+  const state = { actions: [] };
+  const response = await withWorkerFetchMock(trendsPage, () => withCachedIdentity(() => reportApi.fetch(
+    new Request(TRENDS_BASE, { headers: SIGNED_IN }),
+    { ...AUTHENTICATED_ENV, REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_OPENALEX_MINUTE }) },
+  )));
+
+  assert.equal(response.status, 429);
+  assertRefunded(state, IS_IDENTITY);
+  assert.equal(releasesOf(state).length, 1);
+});
+
+// The accepted path gives nothing back: every unit taken was spent on a real
+// provider call. A refund here would mint quota out of nothing.
+test('gives nothing back when every gate accepts', async () => {
+  const state = { actions: [] };
+  const response = await relatedThrough(scriptedQuotaLedger(state));
+
+  assert.equal(response.status, 200);
+  assert.equal(releasesOf(state).length, 0, JSON.stringify(state.actions));
+});
+
 test('does not put PubMed on the Semantic Scholar beat', async () => {
   const state = { periodKeys: [], reservations: 0 };
   await withWorkerFetchMock(

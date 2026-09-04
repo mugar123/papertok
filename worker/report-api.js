@@ -337,10 +337,13 @@ async function authenticateProtectedProviderRequest(request, env, pathname) {
   return verifyFirebaseIdentity(request, env);
 }
 
+// Returns the ledger request it reserved with, not just a verdict: a later gate
+// may refuse this caller after this unit is spent, and the refund has to name
+// this unit -- this minute, this user -- rather than one recomputed later.
 async function reserveProtectedProviderQuota(identity, env, origin) {
-  if (!identity) return null;
+  if (!identity) return {};
   const minute = new Date().toISOString().slice(0, 16);
-  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, {
+  const ledgerRequest = {
     periodKey: `provider:${minute}`,
     subject: `provider:${identity.uid}`,
     subjectLimit: boundedLimit(
@@ -353,21 +356,22 @@ async function reserveProtectedProviderQuota(identity, env, origin) {
       DEFAULT_PROVIDER_GLOBAL_MINUTE_LIMIT,
       100_000,
     ),
-  });
+  };
+  const reservation = await reserveRequestQuota(env.REQUEST_QUOTA_LEDGER, ledgerRequest);
   if (!reservation.accepted && reservation.code) {
-    return json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
+    return { error: json({ code: 'PROVIDER_QUOTA_NOT_CONFIGURED' }, 503, {
       ...corsHeaders(origin, env),
       'cache-control': 'no-store',
-    });
+    }) };
   }
   if (!reservation.accepted) {
-    return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
+    return { error: json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
       ...corsHeaders(origin, env),
       'cache-control': 'no-store',
       'retry-after': '60',
-    });
+    }) };
   }
-  return null;
+  return { reservation: ledgerRequest };
 }
 
 async function fetchOpenAlexPeriod(period, filters, env) {
@@ -475,15 +479,15 @@ async function reserveSharedMinuteQuota(ceiling, env, origin) {
 }
 
 // The beat under the ceiling, for the providers that count per second. It runs
-// last of the three gates because it is the only one that costs wall-clock: a
-// caller the minute ceiling or the identity quota is about to turn away must not
-// first take a second away from somebody who would have used it.
+// last of the reserving gates because it is the only one that costs wall-clock:
+// a caller the minute ceiling or the identity quota is about to turn away must
+// not first take a second away from somebody who would have used it.
 //
-// The price of running last is that the minute unit is already spent when this
-// refuses, so the refusal gives it back -- the exact unit, via the request the
-// reserve was made with. Same shape as `releaseAIQuota`: a refund that cannot be
-// delivered must not replace the answer the caller is owed.
-async function awaitSharedPace(ceiling, env, origin, minuteReservation) {
+// It refunds nothing itself. The units the gates before it took are held by
+// `reserveGates`, which gives every one of them back when this refuses -- the
+// beat used to refund the minute unit on its own and had no way to know the
+// identity unit existed.
+async function awaitSharedPace(ceiling, env, origin) {
   if (!ceiling?.paced) return null;
   const slot = await awaitUpstreamSlot(env.REQUEST_QUOTA_LEDGER, { namespace: ceiling.namespace });
   if (slot.accepted) return null;
@@ -493,17 +497,46 @@ async function awaitSharedPace(ceiling, env, origin, minuteReservation) {
       'cache-control': 'no-store',
     });
   }
-  try {
-    await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, minuteReservation);
-  } catch {
-    // The caller is owed a 429 either way; a failed refund is a leak, not an error.
-  }
   // The beat's own window, not a literal next to a comment that promised it.
   return json({ code: 'PROVIDER_RATE_LIMITED' }, 429, {
     ...corsHeaders(origin, env),
     'cache-control': 'no-store',
     'retry-after': PACE_RETRY_AFTER_SECONDS,
   });
+}
+
+// Every unit an earlier gate took goes back when a later gate says no: the
+// caller made no provider call, and the ledger counts provider calls. Newest
+// first, so a refund that fails leaves the oldest -- and cheapest to lose --
+// unit as the leak. Same shape as `releaseAIQuota`: a refund that cannot be
+// delivered is a leak, not a reason to change the answer the caller is owed.
+async function releaseHeld(env, held) {
+  for (const reservation of [...held].reverse()) {
+    try {
+      await releaseRequestQuota(env.REQUEST_QUOTA_LEDGER, reservation);
+    } catch {
+      // Leak, not error.
+    }
+  }
+}
+
+// The reserving gates, in order, each pushing what it took onto `held`. Returns
+// the first refusal, or null when every gate accepted. The caller owns `held`
+// and owns the refund; this function only knows what was taken.
+async function reserveGates(origin, env, options, ceiling, held) {
+  const minute = ceiling ? await reserveSharedMinuteQuota(ceiling, env, origin) : {};
+  if (minute.error) return minute.error;
+  if (minute.reservation) held.push(minute.reservation);
+  const identity = await reserveProtectedProviderQuota(options.identity || null, env, origin);
+  if (identity.error) return identity.error;
+  if (identity.reservation) held.push(identity.reservation);
+  const paceError = await awaitSharedPace(ceiling, env, origin);
+  if (paceError) return paceError;
+  if (options.openAlexCalls) {
+    const budgetError = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
+    if (budgetError) return budgetError;
+  }
+  return null;
 }
 
 // `ttl` may be a function of the payload, because whether an answer deserves its
@@ -513,18 +546,12 @@ async function cacheResponse(request, origin, env, ttl, fetcher, options = {}) {
   const cacheKey = canonicalCacheKey(request, options.canonicalParams);
   const cached = await caches.default.match(cacheKey);
   if (cached) return serveCached(cached, origin, env);
-  // Resolved once here and handed to both gates: the beat used to re-parse the
-  // URL to find the same ceiling the minute reservation had just looked up.
   const ceiling = SHARED_MINUTE_CEILINGS[new URL(request.url).pathname];
-  const minute = ceiling ? await reserveSharedMinuteQuota(ceiling, env, origin) : {};
-  if (minute.error) return minute.error;
-  const quotaError = await reserveProtectedProviderQuota(options.identity || null, env, origin);
-  if (quotaError) return quotaError;
-  const paceError = await awaitSharedPace(ceiling, env, origin, minute.reservation);
-  if (paceError) return paceError;
-  if (options.openAlexCalls) {
-    const budgetError = await reserveOpenAlexBudget(env, origin, options.openAlexCalls);
-    if (budgetError) return budgetError;
+  const held = [];
+  const refusal = await reserveGates(origin, env, options, ceiling, held);
+  if (refusal) {
+    await releaseHeld(env, held);
+    return refusal;
   }
   const payload = await fetcher();
   const seconds = typeof ttl === 'function' ? ttl(payload) : ttl;
