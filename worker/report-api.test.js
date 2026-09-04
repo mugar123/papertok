@@ -2050,53 +2050,6 @@ test('refuses a Semantic Scholar search itself when no second is free, without s
   assert.ok(state.periodKeys.includes('s2:pace'), `the beat was never consulted: ${JSON.stringify(state.periodKeys)}`);
 });
 
-// Like `paceRefusingLedger`, but it also remembers every action with the period
-// key it was aimed at, so a test can see a release land on exactly the minute
-// the reserve took -- and not on a minute recomputed later.
-function actionRecordingLedger(state) {
-  let lastName = '';
-  return {
-    idFromName: name => {
-      lastName = String(name);
-      return `quota-${lastName}`;
-    },
-    get: () => ({
-      fetch: async (url, options) => {
-        const action = String(url).split('/').pop();
-        const body = JSON.parse(options.body);
-        state.actions.push({ action, periodKey: lastName, subjectKey: body.subjectKey });
-        if (action === 'release') return new Response(JSON.stringify({ released: true }));
-        return new Response(JSON.stringify(
-          lastName.endsWith(':pace') ? { accepted: false, scope: 'user' } : { accepted: true },
-        ));
-      },
-    }),
-  };
-}
-
-test('gives the minute back when the beat refuses, to the same minute it was taken from', async () => {
-  const state = { actions: [] };
-  const response = await withWorkerFetchMock(
-    async () => new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } }),
-    () => reportApi.fetch(new Request(
-      'https://papertok-report-api.example/sources/s2?q=malaria',
-      { headers: { origin: 'https://mugar123.github.io' } },
-    ), { REQUEST_QUOTA_LEDGER: actionRecordingLedger(state) }),
-  );
-
-  assert.equal(response.status, 429);
-  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
-  const minuteReserve = state.actions.find(a => a.action === 'reserve' && !a.periodKey.endsWith(':pace'));
-  const releases = state.actions.filter(a => a.action === 'release');
-  assert.ok(minuteReserve, `no minute reservation seen: ${JSON.stringify(state.actions)}`);
-  assert.equal(releases.length, 1, `expected exactly one release, saw ${JSON.stringify(releases)}`);
-  // The refund has to name the minute the reserve named, and the same subject:
-  // a minute recomputed at release time credits the next one when the request
-  // straddled the boundary, and a different subject credits somebody else.
-  assert.equal(releases[0].periodKey, minuteReserve.periodKey);
-  assert.equal(releases[0].subjectKey, minuteReserve.subjectKey);
-});
-
 // One fake ledger for every quota-accounting test. It is told, per period key,
 // what to do -- `refuse` answers not-accepted, `unavailable` answers non-2xx
 // (what `callRequestQuotaLedger` reports as QUOTA_LEDGER_UNAVAILABLE), `broken`
@@ -2145,6 +2098,29 @@ function assertRefunded(state, isKey) {
   assert.equal(release.subjectKey, reserve.subjectKey);
 }
 
+test('gives the minute back when the beat refuses, to the same minute it was taken from', async () => {
+  const state = { actions: [] };
+  const response = await withWorkerFetchMock(
+    async () => new Response('{"data":[]}', { headers: { 'content-type': 'application/json' } }),
+    () => reportApi.fetch(new Request(
+      'https://papertok-report-api.example/sources/s2?q=malaria',
+      { headers: { origin: 'https://mugar123.github.io' } },
+    ), { REQUEST_QUOTA_LEDGER: scriptedQuotaLedger(state, { refuse: IS_PACE }) }),
+  );
+
+  assert.equal(response.status, 429);
+  assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
+  const minuteReserve = state.actions.find(a => a.action === 'reserve' && !a.periodKey.endsWith(':pace'));
+  const releases = state.actions.filter(a => a.action === 'release');
+  assert.ok(minuteReserve, `no minute reservation seen: ${JSON.stringify(state.actions)}`);
+  assert.equal(releases.length, 1, `expected exactly one release, saw ${JSON.stringify(releases)}`);
+  // The refund has to name the minute the reserve named, and the same subject:
+  // a minute recomputed at release time credits the next one when the request
+  // straddled the boundary, and a different subject credits somebody else.
+  assert.equal(releases[0].periodKey, minuteReserve.periodKey);
+  assert.equal(releases[0].subjectKey, minuteReserve.subjectKey);
+});
+
 const RELATED_URL = 'https://papertok-report-api.example/related?paper_id=ARXIV:2607.12345';
 const RELAY_WORKS_URL = 'https://papertok-report-api.example/openalex/works?filter=doi:10.1%2Fa&per-page=50';
 const relatedThrough = (ledger, upstream = async () => new Response(
@@ -2175,7 +2151,7 @@ test('gives the minute unit and the identity unit back when the beat refuses aft
   assert.equal((await response.json()).code, 'PROVIDER_RATE_LIMITED');
   assertRefunded(state, IS_MINUTE);
   assertRefunded(state, IS_IDENTITY);
-  assert.equal(releasesOf(state).length, 2);
+  assert.equal(releasesOf(state).length, 2, 'the minute and identity units were held');
 });
 
 // L5: the OpenAlex budget refuses after the identity unit was taken. Trends has
@@ -2188,8 +2164,9 @@ test('gives the identity unit back when the OpenAlex budget refuses after it', a
   )));
 
   assert.equal(response.status, 429);
+  assert.equal(response.headers.get('retry-after'), '60', 'the OpenAlex minute ceiling names its own wait');
   assertRefunded(state, IS_IDENTITY);
-  assert.equal(releasesOf(state).length, 1);
+  assert.equal(releasesOf(state).length, 1, 'only the identity unit was held');
 });
 
 // L6: the OpenAlex day ceiling refuses after the minute ceiling accepted. The
@@ -2208,7 +2185,7 @@ test('gives the OpenAlex minute unit back when the day ceiling refuses after it'
   assertRefunded(state, IS_OPENALEX_MINUTE);
   // Trends also holds an identity unit, and `reserveGates` gives that back too.
   assertRefunded(state, IS_IDENTITY);
-  assert.equal(releasesOf(state).length, 2);
+  assert.equal(releasesOf(state).length, 2, 'the OpenAlex minute unit and the identity unit were held');
 });
 
 // The relay reaches the budget without `cacheResponse`, so the refund inside
@@ -2225,7 +2202,7 @@ test('the /openalex relay gives the minute unit back when the day ceiling refuse
 
   assert.equal(response.status, 429);
   assertRefunded(state, IS_OPENALEX_MINUTE);
-  assert.equal(releasesOf(state).length, 1);
+  assert.equal(releasesOf(state).length, 1, 'only the OpenAlex minute unit was held');
 });
 
 // The accepted path gives nothing back: every unit taken was spent on a real
@@ -2247,7 +2224,7 @@ test('gives the minute unit back when the identity ledger throws after it', asyn
 
   assert.equal(response.status, 502);
   assertRefunded(state, IS_MINUTE);
-  assert.equal(releasesOf(state).length, 1);
+  assert.equal(releasesOf(state).length, 1, 'only the minute unit was held before the identity ledger threw');
 });
 
 // L2b: the beat's Durable Object cannot be reached, with both units taken.
@@ -2258,7 +2235,7 @@ test('gives both units back when the pace ledger throws after them', async () =>
   assert.equal(response.status, 502);
   assertRefunded(state, IS_MINUTE);
   assertRefunded(state, IS_IDENTITY);
-  assert.equal(releasesOf(state).length, 2);
+  assert.equal(releasesOf(state).length, 2, 'the minute and identity units were held before the pace ledger threw');
 });
 
 // L3: the beat's Durable Object answers but not-ok -- QUOTA_LEDGER_UNAVAILABLE
@@ -2272,7 +2249,7 @@ test('gives both units back when the pace ledger is unavailable after them', asy
   assert.equal((await response.json()).code, 'PROVIDER_QUOTA_NOT_CONFIGURED');
   assertRefunded(state, IS_MINUTE);
   assertRefunded(state, IS_IDENTITY);
-  assert.equal(releasesOf(state).length, 2);
+  assert.equal(releasesOf(state).length, 2, 'the minute and identity units were held before the pace ledger was unavailable');
 });
 
 // Not a leak: a fetch that fails may still have reached the provider -- a

@@ -86,8 +86,8 @@ the same average and no say over which second, so under it both routes keep a on
 (`worker/upstream-pace.js`): a caller takes the first free second in the shared ledger and sleeps
 for it — at most 2.5 s of sleep, which does not count the handful of ledger round trips around it —
 and is refused here with `retry-after: 3` rather than upstream when none is free within that budget.
-Any gate that refuses -- the minute ceiling, the identity quota, the beat, the OpenAlex
-budget -- gives back every unit an earlier gate had already taken for this request:
+Any gate that refuses — the minute ceiling, the identity quota, the beat, the OpenAlex
+budget — gives back every unit an earlier gate had already taken for this request:
 `reserveGates` accumulates what each gate takes, and `cacheResponse` refunds all of it on a
 refusal. A ledger that cannot be reached between two gates refunds the same units from inside
 `reserveGates` itself, which then re-throws so the router still answers with a 502. What is
