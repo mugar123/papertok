@@ -76,7 +76,8 @@ test('SOURCE: the container saves the paper it is on and restores by that paper'
   // The place lives in utils/feedResumeMemory.js now (it survives the reload
   // the tab gives itself after a deploy); what is remembered is still the
   // paper's id, and what restores is still that paper.
-  assert.match(code, /paperId: papersRef\.current\[index\]\?\.id \|\| resumeMemory\.get\(scrollKey\)\.paperId/);
+  assert.match(code, /const paperId = papersRef\.current\[index\]\?\.id \|\| resumeMemory\.get\(scrollKey\)\.paperId;/);
+  assert.match(code, /resumeMemory\.remember\(scrollKey, \{\s*scrollTop: container\.scrollTop,\s*index,\s*paperId,\s*\}\)/, 'the id that was just resolved is what the memory receives');
   assert.match(code, /const index = resumeIndex\(\{ papers, savedPaperId: saved\.paperId, savedIndex: saved\.index \}\)/);
   assert.match(code, /el\.scrollTop = el\.clientHeight > 0 \? index \* el\.clientHeight/, 'restored to the card, not to a pixel offset from another order');
 });
