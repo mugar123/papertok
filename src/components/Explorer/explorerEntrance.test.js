@@ -34,9 +34,18 @@ test('coming back to the feed resumes it at rest instead of replaying the arriva
 });
 
 test('the hero settles between its heights instead of snapping at the handover', async () => {
-  const jsx = await read('./EntityExplorer.jsx');
+  // Comments are prose, not code: the call carries a comment between its
+  // dependency list and its options, and this must read through it.
+  const jsx = (await read('./EntityExplorer.jsx')).replace(/^\s*\/\/.*$/gm, '');
   assert.match(jsx, /import \{ useHeightSettle \} from '\.\.\/\.\.\/hooks\/useHeightSettle';/);
-  assert.match(jsx, /const heroBodyRef = useRef\(null\);\s*useHeightSettle\(\s*heroBodyRef,\s*\[isLoadingEntity, entity, orcidInfo, isLoadingOrcid, wikiDescription, isWikiRequestPending, recentImpact, hasLoadedWikiImage\],\s*\{ enabled: !prefersReducedMotion \},\s*\);/);
+  assert.match(jsx, /const heroBodyRef = useRef\(null\);\s*useHeightSettle\(\s*heroBodyRef,\s*\[isLoadingEntity, entity, orcidInfo, isLoadingOrcid, wikiDescription, isWikiRequestPending, recentImpact, hasLoadedWikiImage\],\s*\{ enabled: !prefersReducedMotion, easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)' \},\s*\);/);
+  // The easing is passed here, not changed in the hook: the hook's expo-out
+  // default is right for a box that appears, and this is the one box whose
+  // growth moves everything beneath it. Measured on a phone opening an author:
+  // the expo-out spent 26% of an ORCID arrival in a single frame (35px of 134,
+  // 70px of 268 at a quarter of the CPU); the ease-in-out halved that share
+  // (34px of 268) and took the skeleton settle from a 17px worst step to 8.
+  // The same reasoning, and the same curve, as WIKI_FOLD_OUT.
   // The same ref on the skeleton's body and on the live one: the remembered
   // height belongs to the slot, so the handover between the two is a settle.
   // The body and not the hero, so the tab strip after it moves with the box

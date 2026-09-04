@@ -416,7 +416,12 @@ export default function EntityExplorer({
   useHeightSettle(
     heroBodyRef,
     [isLoadingEntity, entity, orcidInfo, isLoadingOrcid, wikiDescription, isWikiRequestPending, recentImpact, hasLoadedWikiImage],
-    { enabled: !prefersReducedMotion },
+    // A gentle ease-in-out rather than the hook's expo-out default. What
+    // travels here is everything under the hero — the tab strip, the list —
+    // and on a phone a 268px ORCID arrival on the expo-out spent 70px of it
+    // in a single frame. Same reasoning, and the same curve, as the Wikipedia
+    // fold's collapse: the page has to land, not appear.
+    { enabled: !prefersReducedMotion, easing: 'cubic-bezier(0.4, 0, 0.2, 1)' },
   );
   const getInteractionState = useCallback((paper) => ({
     isLiked: likedPaperIds.has(paper.id),

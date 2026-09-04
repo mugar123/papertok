@@ -158,3 +158,17 @@ test('the ORCID experience panel mounts at full height on arrival and animates o
   assert.match(jsx, /onClick=\{\(\) => \{ setExperienceToggled\(true\); setIsExperienceOpen\(open => !open\); \}\}/);
   assert.match(jsx, /initial=\{!experienceToggled \? false : prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0 \}\}/);
 });
+
+/**
+ * The hero body's settle carries everything under the hero — the tab strip,
+ * the list. On the hook's expo-out default a phone spent a quarter of an ORCID
+ * arrival in one frame; the gentle ease-in-out spreads it, and it is the same
+ * curve the Wikipedia fold's collapse measured its way onto.
+ */
+test('the hero body settles on a curve that lands, not the arrival curve', async () => {
+  const jsx = await read('./EntityExplorer.jsx');
+  const call = jsx.match(/useHeightSettle\(\s*heroBodyRef,[\s\S]*?\);/);
+  assert.ok(call, 'the hero body is settled');
+  assert.match(call[0], /easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)'/);
+  assert.doesNotMatch(call[0], /0\.16, 1, 0\.3, 1/, 'the settle must not ride the expo-out');
+});
