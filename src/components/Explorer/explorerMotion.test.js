@@ -137,3 +137,24 @@ test('reduced motion drops the movement and keeps the colour', async () => {
   // And the rows' press background is NOT switched off — it is the point.
   assert.doesNotMatch(block[0], /\.explorer-list-item:active/);
 });
+
+/**
+ * The ORCID experience panel opens BY DEFAULT when a record lands, and it used
+ * to mount at `height: 0` under framer's entrance — inside a hero body whose
+ * `useHeightSettle` had just measured its `to` in the same commit, 130px
+ * short. WAAPI clamped the box for 360ms while framer grew the panel within it,
+ * and the box snapped +130px the frame the settle let go. Measured on a phone
+ * opening an author from the feed: the hero went up 64, down 138, then jumped
+ * 130 in a single frame. One box, one owner: on arrival the panel mounts at
+ * full height and the settle carries it; framer's entrance is for the toggle.
+ */
+test('the ORCID experience panel mounts at full height on arrival and animates only for the toggle', async () => {
+  const jsx = await read('./EntityExplorer.jsx');
+  assert.match(jsx, /const \[experienceToggled, setExperienceToggled\] = useState\(false\);/);
+  // Both places a new entity re-opens the panel also forget the toggle.
+  assert.match(jsx, /setAuthorsOpened\(false\);\s*setIsExperienceOpen\(true\);\s*setExperienceToggled\(false\);/);
+  assert.match(jsx, /setIsLoadingOrcid\(false\);\s*setIsExperienceOpen\(true\);\s*setExperienceToggled\(false\);/);
+  // The reader's own press is what earns the entrance.
+  assert.match(jsx, /onClick=\{\(\) => \{ setExperienceToggled\(true\); setIsExperienceOpen\(open => !open\); \}\}/);
+  assert.match(jsx, /initial=\{!experienceToggled \? false : prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0 \}\}/);
+});

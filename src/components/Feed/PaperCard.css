@@ -608,7 +608,11 @@ a.pc-citations {
   cursor: pointer;
   text-align: left;
   transform-origin: left center;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
+  transition: background var(--transition-fast), border-color var(--transition-fast), transform 0.16s ease-out;
+}
+
+.pc-project-badge:active {
+  transform: scale(0.97);
 }
 
 .pc-project-badge:focus-visible:not(:disabled) {
@@ -639,7 +643,11 @@ a.pc-citations {
 /* ── Clickable topics ── */
 .pc-topic-link {
   cursor: pointer;
-  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+  transition: border-color var(--transition-fast), color var(--transition-fast), background var(--transition-fast), transform 0.16s ease-out;
+}
+
+.pc-topic-link:active {
+  transform: scale(0.97);
 }
 
 .pc-topic-link:focus-visible,
@@ -725,6 +733,19 @@ a.pc-citations {
 
 .pc-author-link {
   cursor: pointer;
+  transition: opacity 0.12s ease-out;
+}
+
+/* The press. These three are the triggers that open an entity from a card,
+   and none of them answered a thumb: their hover sits behind
+   `@media (hover: hover)`, which never fires on a phone, and the page they
+   open does not mount until the feed's 200ms exit has finished — so for the
+   first beat after a tap nothing at all happened. A name mid-sentence dips
+   rather than scales (a scaled word reads as a glitch); the chip and the
+   badge take the catalog's 0.97. `transform` is APPENDED to the lists those
+   two already declare, never given as a fresh shorthand (ThemeToggle.css). */
+.pc-author-link:active {
+  opacity: 0.55;
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -2627,6 +2648,14 @@ a.pc-citations {
   .graph-peek-doi { display: none; }
   .related-header .graph-view-button { width: 40px; height: 40px; }
   .knowledge-source { padding-inline: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* The press keeps its colour and its dip; the squeeze is movement. */
+  .pc-topic-link:active,
+  .pc-project-badge:active {
+    transform: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

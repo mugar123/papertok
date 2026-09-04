@@ -241,6 +241,16 @@ export default function EntityExplorer({
   // on numbers alone and left the one human fact a click away. The toggle stays,
   // so it can still be folded out of the way.
   const [isExperienceOpen, setIsExperienceOpen] = useState(true);
+  // Whether the reader has toggled the panel since this ORCID record arrived.
+  // On arrival the panel mounts already open, and it must mount at its full
+  // height: the hero body's `useHeightSettle` measures its `to` in that same
+  // commit, and a panel still at `height: 0` under framer's entrance made it
+  // measure 130px short — WAAPI then clamped the box for 360ms while framer
+  // grew the panel inside it, and the box snapped +130px the frame the settle
+  // released (measured on a phone: 650 → 780 in one frame, after two settles
+  // in opposite directions). One box, one owner: the settle carries arrival;
+  // framer's entrance is for the reader's own toggle.
+  const [experienceToggled, setExperienceToggled] = useState(false);
   const [expandedSummary, setExpandedSummary] = useState(false);
   const [participantsExpanded, setParticipantsExpanded] = useState(false);
   const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(false);
@@ -517,6 +527,7 @@ export default function EntityExplorer({
       setActiveTab('papers');
       setAuthorsOpened(false);
       setIsExperienceOpen(true);
+      setExperienceToggled(false);
       setExpandedSummary(false);
       setParticipantsExpanded(false);
     }, 0);
@@ -553,6 +564,7 @@ export default function EntityExplorer({
       setOrcidInfo(null);
       setIsLoadingOrcid(false);
       setIsExperienceOpen(true);
+      setExperienceToggled(false);
       setExpandedSummary(false);
       setIsWikiDescriptionExpanded(false);
       setIsProjectLinksMenuOpen(false);
@@ -1491,7 +1503,7 @@ export default function EntityExplorer({
                   <button
                     type="button"
                     className={`ehc-name-toggle ${isExperienceOpen ? 'is-open' : ''}`}
-                    onClick={() => setIsExperienceOpen(open => !open)}
+                    onClick={() => { setExperienceToggled(true); setIsExperienceOpen(open => !open); }}
                     aria-expanded={isExperienceOpen}
                     aria-controls="ehc-experience-panel"
                     aria-label={isEnglish ? 'Professional experience' : 'Experiencia profesional'}
@@ -1728,7 +1740,12 @@ export default function EntityExplorer({
                   // now that it can, a slide on top of the collapse is a
                   // second motion arguing with the first. Height opens the
                   // box, opacity fills it, and nothing else moves.
-                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                  // `initial={false}` on arrival: the panel is already open when
+                  // the record lands, so it mounts at full height and the hero
+                  // body's settle is the one animation that carries it (see
+                  // `experienceToggled`). The entrance from 0 is the reader's
+                  // toggle, where the box is at rest and there is one owner.
+                  initial={!experienceToggled ? false : prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   // Closing is not opening reversed, and framer would make it
                   // so: without a transition of its own the exit inherits the
