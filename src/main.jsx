@@ -140,7 +140,18 @@ registerSW()
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <HashRouter>
+    {/* Not a React transition. React Router 7 wraps each navigation's state
+        update in `startTransition`, which renders in the background at low
+        priority — and the feed's per-frame work starves it. Measured on the
+        tab bar (scripts/diagnostics/explorer-loading-probe.mjs tabswitch,
+        mobile emulation, 2026-09-05): a tap on Following showed nothing —
+        no underline, no exit — for 168 ms on a desktop CPU and 699 ms at
+        CPU ×4, chunk warm, because the bar and PageTransition both read
+        `useLocation()` and wait for that commit. Synchronous, the exit
+        starts 3 ms / 11 ms after the tap. Lazy routes are unaffected:
+        AnimatePresence mode="wait" mounts the incoming page after the exit,
+        outside the router's update either way (utils/lazyPreload.js). */}
+    <HashRouter useTransitions={false}>
       <GlobalErrorBoundary>
         <App />
       </GlobalErrorBoundary>
