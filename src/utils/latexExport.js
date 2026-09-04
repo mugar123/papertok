@@ -316,6 +316,38 @@ function pageStyles(meta) {
 }
 
 /**
+ * Los siete caracteres que `\url` no deja pasar tal cual, escapados a la
+ * manera de `\url` — que no es la manera de la prosa.
+ *
+ * La premisa heredada del pie de página que la Task 3 quitó era que una
+ * contrabarra delante de los siete (`%#&_{}$`) bastaba. Compilado un
+ * documento por carácter y mirada la página, eso es cierto solo para cuatro:
+ * `%`, `#`, `&` y `_` se leen bien con `\%`, `\#`, `\&`, `\_` — es la única
+ * regla que trae `url.sty` para ellos. Los otros tres, con la misma
+ * contrabarra, salen mal de tres formas distintas, ninguna con aviso de
+ * compilación:
+ *   - `\{` imprime una contrabarra visible seguida de la llave: `\url` la
+ *     lee en modo casi verbatim, así que la contrabarra no escapa nada, es
+ *     un carácter más de la página.
+ *   - `\}` igual.
+ *   - `\$` es el peor: no imprime un signo de dólar ni una contrabarra, sino
+ *     `\protect\T1\textdollar` — el mecanismo interno de hyperref para las
+ *     cadenas del PDF, filtrado a la página como si fuera texto del lector.
+ * Los tres se codifican en porcentaje en su lugar (`%7B`, `%7D`, `%24`): es
+ * la forma canónica de escribir esos caracteres en una URL, así que el
+ * enlace sigue resolviendo exactamente igual y ahora se ve bien. El `%` que
+ * la codificación introduce —y cualquier `%` que ya trajera la URL— pasa
+ * después por la misma regla de contrabarra que ya vale para `%`, `#`, `&`
+ * y `_`.
+ */
+const URL_PERCENT_ENCODE = { '{': '%7B', '}': '%7D', $: '%24' };
+export function escapeUrlForLatex(value) {
+  return String(value ?? '')
+    .replace(/[{}$]/g, character => URL_PERCENT_ENCODE[character])
+    .replace(/([%#&_])/g, '\\$1');
+}
+
+/**
  * De dónde salió esto, en una tabla que se lee de un vistazo seis meses después
  * con el fichero suelto en una carpeta. Ningún campo es nuevo: todos salen del
  * modelo que ya viaja al export.
@@ -326,14 +358,13 @@ function pageStyles(meta) {
  * vuelve el único enlace clicable que le queda al documento. La Task 3 se
  * llevó el `\url{}` que antes vivía en el pie de página; desde entonces
  * `hyperref` se cargaba sin que nada lo usara. `\url` tiene sus propias
- * reglas de escape — no son las de la prosa — y son las mismas que usaba
- * aquel pie: solo los siete caracteres que rompen su lectura (`%#&_{}$`),
- * cada uno con una contrabarra delante; una `~` de la URL, por ejemplo, se
- * queda tal cual, mientras que `escapeLatexText` la habría convertido en
- * `\textasciitilde{}` e imprimido el comando en vez del carácter. La fila se
- * identifica comparando su clave contra `copy.colophonKeys.source`, nunca
- * contra "Fuente" a pelo ni contra su posición en el array: el documento
- * existe en inglés también, y allí esa misma clave es "Source".
+ * reglas de escape — no son las de la prosa — y las da `escapeUrlForLatex`
+ * arriba; una `~` de la URL, por ejemplo, se queda tal cual, mientras que
+ * `escapeLatexText` la habría convertido en `\textasciitilde{}` e impreso el
+ * comando en vez del carácter. La fila se identifica comparando su clave
+ * contra `copy.colophonKeys.source`, nunca contra "Fuente" a pelo ni contra
+ * su posición en el array: el documento existe en inglés también, y allí esa
+ * misma clave es "Source".
  */
 function colophon(meta, copy) {
   if (meta.colophon.rows.length === 0) return [];
@@ -369,7 +400,7 @@ function colophon(meta, copy) {
     ...meta.colophon.rows.map(row => {
       const isSource = row.key === copy.colophonKeys.source;
       const value = isSource
-        ? `\\url{${row.value.replace(/([%#&_{}$])/g, '\\$1')}}`
+        ? `\\url{${escapeUrlForLatex(row.value)}}`
         : escapeLatexText(row.value);
       return `{\\ptmono\\scriptsize\\color{ptGrey}${escapeLatexText(row.key)}} & ${value} \\\\[3pt]`;
     }),

@@ -138,6 +138,26 @@ export function bylineText(paper, limit = 12) {
 }
 
 /**
+ * El título tal como va a la fila del colofón: hasta `limit` caracteres,
+ * luego honestidad — el mismo trato que ya recibe la autoría, arriba.
+ *
+ * Solo esta fila lo necesita. El título de portada (`documentMeta`'s
+ * `title`, que además hace de `runningTitle` en la cabecera de cada página)
+ * se queda sin tope a propósito: ese título es un párrafo normal y una
+ * página normal SÍ se parte donde haga falta. La fila del colofón no: vive
+ * dentro de un `\minipage` que no puede partirse por dentro (LaTeX exporter,
+ * Task 6), así que un título sin límite ahí no se ve feo — deja de caber en
+ * ninguna página, capadas o no, y compilado eso salió como texto solapado e
+ * ilegible mucho antes de que un título real pudiera acercarse al límite.
+ * Ningún título de paper de verdad se acerca a los 500 caracteres; esto es
+ * una defensa para el caso patológico, no un recorte pensado para verse.
+ */
+export function colophonTitleText(paper, limit = 500) {
+  const title = String(paper?.title || '');
+  return title.length > limit ? `${title.slice(0, limit).trimEnd()}…` : title;
+}
+
+/**
  * Todo lo que el documento dice de sí mismo, ya montado en frases.
  *
  * Es el sitio donde los dos formatos no pueden divergir: el emisor de LaTeX y
@@ -159,7 +179,7 @@ export function documentMeta({
   const source = [url && `${copy.sourcePrefix}: ${url}`, date].filter(Boolean).join(' · ');
 
   const rows = [
-    { key: copy.colophonKeys.title, value: title },
+    { key: copy.colophonKeys.title, value: colophonTitleText(paper) },
     { key: copy.colophonKeys.authors, value: byline },
     { key: copy.colophonKeys.source, value: url },
     { key: copy.colophonKeys.version, value: copy.versionValue(levelName, date) },

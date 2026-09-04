@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  colophonTitleText,
   documentCopy,
   documentMeta,
   exportFileName,
@@ -132,4 +133,54 @@ test('en inglés cambia todo, no solo el título', () => {
   assert.equal(meta.noticeLabel, 'Notice');
   assert.equal(meta.colophon.heading, 'Provenance');
   assert.equal(meta.colophon.rows.at(-1).value, '1 highlight and 2 notes: 0 yours, 2 from the AI');
+});
+
+// ---------------------------------------------------------------------------
+// El título del colofón (hallazgo de compilar, no de los tests: un título
+// sin tope deja de caber en el `\minipage` del colofón — latexExport.js —
+// mucho antes de que un título de paper real pudiera acercarse al límite)
+// ---------------------------------------------------------------------------
+
+test('colophonTitleText: un título corriente no se toca', () => {
+  assert.equal(
+    colophonTitleText({ title: 'Worldline proper length correlators' }),
+    'Worldline proper length correlators',
+  );
+  assert.equal(colophonTitleText({}), '');
+  assert.equal(colophonTitleText({ title: '' }), '');
+});
+
+test('colophonTitleText: pasado el tope, se recorta con honestidad — como bylineText hace con "et al."', () => {
+  const long = 'x'.repeat(600);
+  const capped = colophonTitleText({ title: long });
+  assert.equal(capped, `${'x'.repeat(500)}…`);
+  assert.equal(capped.length, 501);
+});
+
+test('colophonTitleText: el límite es exacto — justo en 500 no hay elipsis, en 501 sí', () => {
+  assert.equal(colophonTitleText({ title: 'x'.repeat(500) }), 'x'.repeat(500));
+  assert.doesNotMatch(colophonTitleText({ title: 'x'.repeat(500) }), /…/);
+  assert.match(colophonTitleText({ title: 'x'.repeat(501) }), /…$/);
+});
+
+test('colophonTitleText: el límite se puede ajustar, como el de bylineText', () => {
+  assert.equal(colophonTitleText({ title: 'abcdef' }, 5), 'abcde…');
+});
+
+test('el título del colofón se recorta en la fila; el de portada y el de cabecera no', () => {
+  // `meta.title` alimenta la portada (`{\LARGE ...}`, un párrafo corriente
+  // que sí se parte entre páginas) y `meta.runningTitle` la cabecera de cada
+  // página — ninguno de los dos vive dentro del `\minipage` que no puede
+  // partirse, así que ninguno de los dos necesita el tope. Solo la fila del
+  // colofón lo necesita.
+  const long = 'Y'.repeat(600);
+  const meta = documentMeta({
+    paper: { title: long, authors: [] },
+    language: 'es', level: 'university', originalUrl: '',
+    generatedAt: new Date(Date.UTC(2026, 8, 4)),
+  });
+  assert.equal(meta.title, long);
+  assert.equal(meta.runningTitle, long);
+  const titleRow = meta.colophon.rows.find(row => row.key === 'Artículo original');
+  assert.equal(titleRow.value, `${long.slice(0, 500)}…`);
 });

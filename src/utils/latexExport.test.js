@@ -4,6 +4,7 @@ import {
   authorLine,
   buildLatexDocument,
   escapeLatexText,
+  escapeUrlForLatex,
   isSafeMath,
   renderParagraph,
 } from './latexExport.js';
@@ -602,4 +603,94 @@ test('en inglés la fila de fuente se identifica por clave, no por el texto "Fue
   const { source } = build({ language: 'en', originalUrl: 'https://arxiv.org/abs/2405.04331' });
   assert.match(source, /Source/);
   assert.match(source, /\\url\{https:\/\/arxiv\.org\/abs\/2405\.04331\}/);
+});
+
+// ---------------------------------------------------------------------------
+// Dos hallazgos que solo compilar reveló — ningún test de regex los había visto
+// ---------------------------------------------------------------------------
+
+test('escapeUrlForLatex: los cuatro que \\url sí entiende con una contrabarra delante', () => {
+  // Compilado un documento por carácter y mirada la página: `%`, `#`, `&` y
+  // `_` se leen bien con la contrabarra que trae url.sty. Es la única parte
+  // de la regla heredada del pie de página que la Task 3 quitó (y que este
+  // colofón resucitó en la Task 6) que seguía siendo cierta.
+  assert.equal(escapeUrlForLatex('a%b#c&d_e'), 'a\\%b\\#c\\&d\\_e');
+});
+
+test('escapeUrlForLatex: llaves y dólar se codifican en porcentaje, no se escapan', () => {
+  // Compilado un documento por carácter: con la contrabarra heredada, `{` y
+  // `}` imprimían una contrabarra suelta y visible en la página («\{», «\}»
+  // tal cual, dos caracteres) y `$` imprimía `\protect\T1\textdollar` — el
+  // mecanismo interno de hyperref para las cadenas del PDF, filtrado a la
+  // página como si fuera texto del lector. Ninguno de los tres avisaba al
+  // compilar. `%7B`/`%7D`/`%24` es la forma canónica de escribir esos tres
+  // caracteres en una URL: el enlace resuelve exactamente igual y ahora se
+  // ve bien. El `%` que la propia codificación introduce se escapa después
+  // con la misma regla que cualquier otro `%` de la URL — de ahí la
+  // contrabarra delante de cada `%7B`/`%7D`/`%24`.
+  assert.equal(escapeUrlForLatex('a{b}c$d'), 'a\\%7Bb\\%7Dc\\%24d');
+});
+
+test('escapeUrlForLatex: los siete caracteres del conjunto original a la vez', () => {
+  assert.equal(
+    escapeUrlForLatex('a%b#c&d_e{f}g$h'),
+    'a\\%b\\#c\\&d\\_e\\%7Bf\\%7Dg\\%24h',
+  );
+});
+
+test('la fila de fuente conserva % # & _ escapados con contrabarra, en un documento real', () => {
+  const { source } = build({ originalUrl: 'https://example.org/a%b#c&d_e' });
+  const colophonBlock = source.slice(source.lastIndexOf('\\section{'));
+  assert.ok(colophonBlock.includes('\\url{https://example.org/a\\%b\\#c\\&d\\_e}'));
+});
+
+test('la fila de fuente codifica en porcentaje las llaves y el dólar de una URL real', () => {
+  const { source } = build({ originalUrl: 'https://example.org/{a}$b' });
+  const colophonBlock = source.slice(source.lastIndexOf('\\section{'));
+  assert.ok(
+    colophonBlock.includes('\\url{https://example.org/\\%7Ba\\%7D\\%24b}'),
+    'la fila de fuente debe llevar la URL codificada en porcentaje dentro de \\url{}',
+  );
+});
+
+test('el dólar de la URL nunca filtra el mecanismo interno de hyperref a la página', () => {
+  // El hallazgo más grave de los tres: con la contrabarra heredada, un `$`
+  // en la URL no imprimía un carácter equivocado, imprimía la maquinaria
+  // interna de hyperref como si fuera texto del documento, sin ningún aviso
+  // de compilación. Comprobado compilando y mirando la página rasterizada.
+  const { source } = build({ originalUrl: 'https://example.org/a$b' });
+  assert.doesNotMatch(source, /textdollar/);
+  assert.doesNotMatch(source, /\\protect/);
+});
+
+test('un título desmesurado se recorta solo en el colofón; la portada conserva el título entero', () => {
+  // Compilado: sin tope, este título puede crecer tanto que el \minipage del
+  // colofón (Task 6, no puede partirse entre páginas) deja de caber en
+  // NINGUNA página — ni siquiera una en blanco — y la página sale con texto
+  // solapado e ilegible: peor que el encabezado huérfano que el propio
+  // \minipage vino a arreglar. La portada es un campo aparte y sigue sin
+  // tope a propósito (`colophonTitleText`, exportDocument.js): es un párrafo
+  // corriente y una página corriente sí se parte donde haga falta.
+  const long = 'palabra '.repeat(90).trim();
+  assert.ok(long.length > 500, 'la prueba necesita un título más largo que el tope de 500');
+  const { source } = buildLatexDocument({
+    paper: { title: long, authors: [] }, sections: SECTIONS, annotations: [], originalUrl: '',
+  });
+  assert.ok(source.includes(`{\\LARGE ${long}\\par}`), 'la portada debe conservar el título entero, sin recortar');
+  const colophonBlock = source.slice(source.lastIndexOf('\\section{'));
+  assert.ok(!colophonBlock.includes(long), 'el colofón no debe llevar el título entero');
+  // La fila del título (a diferencia de la de fuente) pasa por
+  // `escapeLatexText` como cualquier otra: la elipsis que añade
+  // `colophonTitleText` es el mismo carácter Unicode `…` que ya usa el resto
+  // del documento, así que llega aquí convertida en `\ldots{}` — la misma
+  // regla que ya vale para una elipsis escrita por el modelo en cualquier
+  // párrafo, no un mecanismo nuevo.
+  assert.ok(
+    colophonBlock.includes(`${long.slice(0, 500)}\\ldots{}`),
+    'el colofón debe llevar el título recortado a 500 caracteres con una elipsis visible',
+  );
+});
+
+test('un título corriente no lleva elipsis en ningún sitio del documento', () => {
+  assert.doesNotMatch(build().source, /…/);
 });
