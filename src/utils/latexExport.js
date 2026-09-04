@@ -192,18 +192,17 @@ export function renderParagraph(text, annotations = [], labels = {}) {
 
 const SECTION_FALLBACK = { es: 'Sección', en: 'Section' };
 
+/**
+ * El byline, escapado. Ya no es un `\parbox` centrado: la portada va en
+ * bandera y `flushleft` parte la línea sola cuando hay nueve autores.
+ */
 export function authorLine(paper, limit = 12) {
-  const authors = Array.isArray(paper?.authors) ? paper.authors : [];
-  const names = authors
+  const names = (Array.isArray(paper?.authors) ? paper.authors : [])
     .map(author => String(author?.name || author || '').trim())
     .filter(Boolean);
   if (names.length === 0) return '';
-  const shown = names.slice(0, limit).map(escapeLatexText);
-  const line = names.length > limit ? `${shown.join(', ')} et al.` : shown.join(', ');
-  // `\and` would set them in columns and `\author` alone sets them on one line
-  // that runs off the page — nine names is an ordinary paper. A centred parbox
-  // at 90% of the measure wraps them and keeps the byline a byline.
-  return `\\parbox{0.9\\textwidth}{\\centering ${line}}`;
+  const shown = names.slice(0, limit).map(escapeLatexText).join(', ');
+  return names.length > limit ? `${shown} et al.` : shown;
 }
 
 function preamble(copy, hasHighlights) {
@@ -337,16 +336,24 @@ export function buildLatexDocument({
   const lines = [
     ...preamble(copy, hasHighlights),
     ...pageStyles(meta),
-    `\\title{${escapeLatexText(paper?.title || '')}}`,
-    `\\author{${authorLine(paper)}}`,
-    `\\date{${escapeLatexText(copy.stamp(copy.levels[level] || level))}}`,
-    '',
     '\\begin{document}',
-    '\\maketitle',
+    '\\thispagestyle{ptfirst}',
     '',
-    '\\begin{abstract}',
-    escapeLatexText(copy.abstract),
-    '\\end{abstract}',
+    '\\begin{flushleft}',
+    `{\\LARGE ${escapeLatexText(meta.title)}\\par}`,
+    ...(meta.byline ? ['\\vspace{10pt}', `{\\large ${authorLine(paper)}\\par}`] : []),
+    ...(meta.source ? ['\\vspace{5pt}', `{\\ptmono\\small ${escapeLatexText(meta.source)}\\par}`] : []),
+    '\\end{flushleft}',
+    '',
+    // El aviso no es un abstract: no resume el paper, advierte de algo. Etiqueta
+    // al margen y texto a la derecha, entre dos filetes finos.
+    '\\vspace{6pt}\\ptrule\\vspace{6pt}',
+    '',
+    `\\noindent\\begin{minipage}[t]{58pt}\\ptmono\\scriptsize ${escapeLatexText(meta.noticeLabel)}\\end{minipage}%`,
+    '\\hspace{22pt}%',
+    `\\begin{minipage}[t]{\\dimexpr\\textwidth-80pt\\relax}\\small ${escapeLatexText(meta.notice)}\\end{minipage}`,
+    '',
+    '\\vspace{6pt}\\ptrule\\vspace{4pt}',
     '',
   ];
 
@@ -355,6 +362,11 @@ export function buildLatexDocument({
       || kindLabels[section?.kind]
       || SECTION_FALLBACK[language === 'en' ? 'en' : 'es'];
     lines.push(`\\section{${escapeLatexText(label)}}`);
+    // El encabezado tal como está impreso en el paper. Lo devuelve el modelo
+    // (`originalHeading`) y hasta ahora los dos exports lo tiraban: es lo que
+    // deja volver al sitio exacto del PDF original.
+    const origin = String(section?.originalHeading || '').trim();
+    if (origin) lines.push(`\\ptorig{${escapeLatexText(origin)}}`);
     const paragraphs = Array.isArray(section?.paragraphs) ? section.paragraphs : [];
     paragraphs.forEach((paragraph, index) => {
       const key = `${section?.id}:${index}`;

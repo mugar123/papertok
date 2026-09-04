@@ -216,16 +216,19 @@ test('Spanish keeps the decimal point inside maths', () => {
 
 test('the title, the authors and the level travel with the file', () => {
   const { source } = build();
-  assert.match(source, /\\title\{Correladores \\& el 100\\% del ruido\\_medido\}/);
-  assert.match(source, /\\author\{\\parbox\{0\.9\\textwidth\}\{\\centering Allic Sivaramakrishnan, M\. Ángeles Pérez\}\}/);
-  assert.match(source, /nivel universitario/);
+  assert.match(source, /\{\\LARGE Correladores \\& el 100\\% del ruido\\_medido\\par\}/);
+  assert.match(source, /\{\\large Allic Sivaramakrishnan, M\. Ángeles Pérez\\par\}/);
+  assert.match(source, /Nivel universitario/);
 });
 
 test('provenance is a page footer, not one of the notes', () => {
   const { source } = build();
   assert.match(source, /\\fancyfoot\[L\]/);
   assert.match(source, /No es obra de sus autores/);
-  assert.match(source, /\\url\{https:\/\/arxiv\.org\/abs\/2405\.04331\}/);
+  // The cover prints the source URL as escaped text in its source line now,
+  // not as a clickable \url{} — that comes back later, in the colophon's
+  // "Fuente" row, which this task does not build.
+  assert.match(source, /https:\/\/arxiv\.org\/abs\/2405\.04331/);
   // It must never be a numbered footnote: those belong to the reader's notes.
   assert.doesNotMatch(source, /\\footnote\{[^}]*No es obra/);
 });
@@ -284,7 +287,7 @@ test('a section with no heading falls back to its kind, then to a generic word',
 
 test('a long byline is cut with et al. rather than run on for a page', () => {
   const many = { authors: Array.from({ length: 30 }, (_, i) => ({ name: `Autor ${i}` })) };
-  assert.match(authorLine(many), /Autor 11 et al\.\}$/);
+  assert.match(authorLine(many), /Autor 11 et al\.$/);
   assert.equal(authorLine({ authors: [] }), '');
   assert.equal(authorLine({}), '');
   // Authors sometimes arrive as bare strings rather than objects.
@@ -292,10 +295,13 @@ test('a long byline is cut with et al. rather than run on for a page', () => {
 });
 
 test('the byline wraps instead of running off the page', () => {
-  // Nine authors is an ordinary paper. Compiled and looked at: bare `\\author`
-  // set them on one line and the last two names were off the paper.
-  const nine = { authors: Array.from({ length: 9 }, (_, i) => `Autor Apellido ${i}`) };
-  assert.match(authorLine(nine), /^\\parbox\{0\.9\\textwidth\}\{\\centering /);
+  // Nine authors is an ordinary paper. Compiled and looked at: bare `\author`
+  // set them on one line and the last two names ran off the page. A centred
+  // `\parbox` fixed that once, but the cover is flush left now and `flushleft`
+  // wraps ordinary text on its own — so nine names come back as one plain,
+  // comma-joined line, not a manually wrapped box.
+  const names = Array.from({ length: 9 }, (_, i) => `Autor Apellido ${i}`);
+  assert.equal(authorLine({ authors: names }), names.join(', '));
 });
 
 test('typographic punctuation survives pdflatex', () => {
@@ -403,4 +409,48 @@ test('la primera página lleva cabecera de identidad y las demás titulillo', ()
   assert.match(source, /\\fancypagestyle\{ptfirst\}/);
   assert.match(source, /\\renewcommand\{\\sectionmark\}/);
   assert.match(source, /\\leftmark/);
+});
+
+// ---------------------------------------------------------------------------
+// El cuerpo del documento (la separata): portada, aviso y secciones
+// ---------------------------------------------------------------------------
+
+test('la portada va en bandera: ni maketitle ni abstract', () => {
+  const { source } = buildLatexDocument({ paper: PAPER, sections: SECTIONS, annotations: [] });
+  // `\thispagestyle{ptfirst}` se emite aquí, en el cuerpo — la Task 3 solo
+  // DEFINE el estilo; quien lo aplica a la página 1 es esta portada.
+  assert.match(source, /\\begin\{document\}\n\\thispagestyle\{ptfirst\}/);
+  assert.doesNotMatch(source, /\\maketitle/);
+  assert.doesNotMatch(source, /begin\{abstract\}/);
+  assert.match(source, /\\begin\{flushleft\}/);
+});
+
+test('el aviso lleva su etiqueta al margen y no es un resumen', () => {
+  const { source } = buildLatexDocument({ paper: PAPER, sections: SECTIONS, annotations: [] });
+  assert.match(source, /\\begin\{minipage\}\[t\]\{58pt\}\\ptmono\\scriptsize Aviso/);
+});
+
+test('el encabezado original del paper se imprime bajo el título de sección', () => {
+  const { source } = buildLatexDocument({
+    paper: PAPER,
+    sections: [{ ...SECTIONS[0], originalHeading: '2. Methods & results' }],
+    annotations: [],
+  });
+  assert.match(source, /\\ptorig\{2\. Methods \\& results\}/);
+});
+
+test('una sección sin encabezado original no deja un ptorig vacío', () => {
+  const { source } = buildLatexDocument({
+    paper: PAPER, sections: [{ ...SECTIONS[0], originalHeading: '' }], annotations: [],
+  });
+  // El preámbulo define `\ptorig` sin condición (`\newcommand{\ptorig}[1]{...}`,
+  // que ya termina en `}`, no en `{`), así que un `doesNotMatch` de `\ptorig` a
+  // secas se dispara contra esa definición y no contra ningún uso. Lo que
+  // importa es que no se invoque: `\ptorig{` con la llave de apertura.
+  assert.doesNotMatch(source, /\\ptorig\{/);
+});
+
+test('el byline es una línea de texto, no una caja centrada', () => {
+  assert.equal(authorLine({ authors: [{ name: 'A. Perez' }, { name: 'B. Ruiz' }] }), 'A. Perez, B. Ruiz');
+  assert.doesNotMatch(authorLine({ authors: [{ name: 'A' }] }), /parbox/);
 });
