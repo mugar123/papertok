@@ -156,7 +156,11 @@ test('the ORCID experience panel mounts at full height on arrival and animates o
   assert.match(jsx, /setIsLoadingOrcid\(false\);\s*setIsExperienceOpen\(true\);\s*setExperienceToggled\(false\);/);
   // The reader's own press is what earns the entrance.
   assert.match(jsx, /onClick=\{\(\) => \{ setExperienceToggled\(true\); setIsExperienceOpen\(open => !open\); \}\}/);
-  assert.match(jsx, /initial=\{!experienceToggled \? false : prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0 \}\}/);
+  // On arrival the panel mounts at full height (the settle carries the space)
+  // and fades in (the words arrive): opacity does not touch layout, so the
+  // height keeps a single owner. `initial={false}` used to switch the fade
+  // off with the height — the bordered panel popped in at opacity 1.
+  assert.match(jsx, /initial=\{experienceToggled \? \(prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0 \}\) : \{ opacity: 0 \}\}/);
 });
 
 /**

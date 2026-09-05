@@ -1776,12 +1776,16 @@ export default function EntityExplorer({
                   // now that it can, a slide on top of the collapse is a
                   // second motion arguing with the first. Height opens the
                   // box, opacity fills it, and nothing else moves.
-                  // `initial={false}` on arrival: the panel is already open when
-                  // the record lands, so it mounts at full height and the hero
-                  // body's settle is the one animation that carries it (see
-                  // `experienceToggled`). The entrance from 0 is the reader's
-                  // toggle, where the box is at rest and there is one owner.
-                  initial={!experienceToggled ? false : prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                  // On arrival the panel is already open when the record
+                  // lands, so it mounts at full height and the hero body's
+                  // settle is the one animation that carries the SPACE (see
+                  // `experienceToggled`). Its contents still arrive: an
+                  // opacity-only entrance, which touches no layout, so the
+                  // height keeps a single owner. `initial={false}` here used
+                  // to switch the fade off with the height, and the bordered
+                  // panel popped in at opacity 1 (measured). The entrance from
+                  // 0 height is the reader's toggle, where the box is at rest.
+                  initial={experienceToggled ? (prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }) : { opacity: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   // Closing is not opening reversed, and framer would make it
                   // so: without a transition of its own the exit inherits the
