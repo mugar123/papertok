@@ -9,10 +9,19 @@ const lastSegment = (value) => String(value || '').split('/').pop();
  * picked from the palette arrived as a skeleton and collapsed 113px when the
  * record came, 156px on a phone while the page was still sliding in.
  *
- * Returns null for a row the page cannot paint. Projects are never handed
- * over: their skeleton reserves a summary box and two stat cells that a
- * search row does not carry, and a live hero born from a name alone would
- * grow by more than the skeleton does when OpenAIRE answers.
+ * Returns null for a row the page cannot paint, or for one the page would
+ * only be worse off being born with. Projects are never handed over: their
+ * skeleton reserves a summary box and two stat cells that a search row does
+ * not carry, and a live hero born from a name alone would grow by more than
+ * the skeleton does when OpenAIRE answers. A local topic row is refused too:
+ * `searchLocalTopics` (openAlexService.js) marks its rows `_localTopic: true`
+ * and they come first in the results, so the page can already resolve a
+ * richer entity for itself from CATEGORIES than the search row carries — the
+ * page can resolve the row better than the handover would. An institution
+ * row missing its counts is refused as well: `rankInstitutionsByProminence`
+ * (openAlexService.js) can leave ROR candidates unenriched, and a hero born
+ * without `works_count` or `cited_by_count` would be poorer than what the
+ * skeleton's stats grid already reserves.
  */
 export function handoverFromSearchRow(type, row) {
   if (!row || !row.display_name) return null;
@@ -28,8 +37,12 @@ export function handoverFromSearchRow(type, row) {
       institution: row.institution || null,
     };
   }
-  if (type === 'institution') return { ...row };
+  if (type === 'institution') {
+    if (row.works_count == null || row.cited_by_count == null) return null;
+    return { ...row };
+  }
   if (type === 'topic') {
+    if (row._localTopic) return null;
     return { id: row.id, display_name: row.display_name, works_count: row.works_count ?? null };
   }
   return null;

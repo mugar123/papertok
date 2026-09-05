@@ -23,9 +23,47 @@ test('an author row hands over what the hero paints', () => {
 });
 
 test('an institution row is handed over as it is; a topic row keeps its name and count', () => {
-  const institution = { id: 'https://openalex.org/I173304897', display_name: 'Harvard University', country_code: 'US', ror: 'https://ror.org/03vek6s52' };
+  const institution = { id: 'https://openalex.org/I173304897', display_name: 'Harvard University', country_code: 'US', ror: 'https://ror.org/03vek6s52', works_count: 187432, cited_by_count: 9876543, summary_stats: { h_index: 412 } };
   assert.deepEqual(handoverFromSearchRow('institution', institution), institution);
   assert.deepEqual(handoverFromSearchRow('topic', { id: 'https://openalex.org/T10001', display_name: 'Neuroscience', works_count: 12 }), { id: 'https://openalex.org/T10001', display_name: 'Neuroscience', works_count: 12 });
+});
+
+/**
+ * `searchLocalTopics` (openAlexService.js) sets `_localTopic: true` on every
+ * row it produces and returns local topics before remote ones, so this is
+ * the common case, not the edge case. Its `id` is a CATEGORIES key, so
+ * `handedEntityFor` would accept the handover — and `EntityExplorer` resolves
+ * `handedEntity || localTopic`, so a stripped handover would win over the
+ * richer entity the page already resolves for itself from CATEGORIES.
+ */
+test('a local topic row hands nothing over; the page already resolves it better from CATEGORIES', () => {
+  const localTopic = {
+    id: 'health',
+    display_name: 'Salud y Medicina',
+    labelEs: 'Salud y Medicina',
+    labelEn: 'Health & Medicine',
+    description: 'Investigación biomédica, salud pública y clínica.',
+    level: 0,
+    categoryIds: ['health.oncology', 'health.neuroscience'],
+    works_count: null,
+    _localTopic: true,
+  };
+  assert.equal(handoverFromSearchRow('topic', localTopic), null);
+});
+
+/**
+ * `rankInstitutionsByProminence` (openAlexService.js) returns ROR candidates
+ * unenriched on two expected paths — a single candidate, or the prominence
+ * fetch failing or coming back empty — so a handed institution can carry no
+ * counts at all. `explorerReservation.test.js` pins
+ * `.ehc-stats-grid:empty { display: none; }`, so a countless hero reserves a
+ * zero-height stats grid that then grows when the fetch lands.
+ */
+test('an institution row without counts hands nothing over; the page reserves what it cannot paint yet', () => {
+  const bare = { id: 'https://openalex.org/I173304897', display_name: 'Harvard University', country_code: 'US', ror: 'https://ror.org/03vek6s52', works_count: null, cited_by_count: null, summary_stats: null };
+  assert.equal(handoverFromSearchRow('institution', bare), null);
+  assert.equal(handoverFromSearchRow('institution', { ...bare, works_count: 187432 }), null, 'cited_by_count is still missing');
+  assert.equal(handoverFromSearchRow('institution', { ...bare, cited_by_count: 9876543 }), null, 'works_count is still missing');
 });
 
 test('a row without a name, or a type the page cannot paint, hands nothing over', () => {
