@@ -168,6 +168,15 @@ del toque en las pestañas del móvil — entrelazados con estos por dos sesione
 mismo árbol; el ledger de esta tarea (`.superpowers/sdd/2026-09-05-explorer-animaciones-arreglo/progress.md`)
 tiene el detalle commit a commit.
 
+Ese merge no es solo repartición de commits entre planes: reescribió los tres ficheros
+cuyo comportamiento compara esta tabla — `EntityExplorer.jsx` (337 líneas cambiadas),
+`EntityExplorer.css` (130) y `PaperCard.jsx` (303) — y cambió la convención de atributo
+que leen las mediciones de la paleta (`SearchCommand.css` pasó de `[data-state='closed']`,
+de Radix, a `[data-closed]`, de Base UI). Esta sección confirma que el estado actual del
+código mide bien; no aísla cuánto de esa mejora viene de las tareas de este plan y cuánto
+llegó con la migración de interfaz fusionada en medio. Donde el texto de abajo describe un
+mecanismo, describe lo medido hoy — no reparte esa causa entre un cambio y otro.
+
 ### La tabla
 
 Los mismos ocho caminos de la auditoría: autor, institución, proyecto y tema, desde el feed
@@ -180,12 +189,12 @@ comparable que dejó la auditoría, y donde no hay ninguna dice `n/d` en vez de 
 | Camino | Paso máx. tira: antes → después | Panel exprimido: antes → después | Fold estirado: antes → después | Esqueleto: antes → después |
 | --- | --- | --- | --- | --- |
 | Autor, ruta directa (A5068353058) | n/d → **30,2 px** (dentro de un settle de 360 ms, ver nota) | **~7 fotogramas** (0 px durante 117 ms, Tareas 3+4) → **0** (39 fotogramas reales) | no aplica (el autor no tiene fold) | n/d → 2 de 90 (arranque en frío por URL; no es un camino que la paleta entregue) |
-| Autor, paleta (q=moher → A5105180016) | **113 px** (settle 226→113, pestañas 322→209, A7) → **0,0 px** | no aplica: ni `orcidSkel` ni `orcidCard` aparecen en ningún fotograma — este autor no tiene ORCID | no aplica | n/d → 0 de 50 |
+| Autor, paleta (q=moher → A5105180016) | **113 px** (settle 226→113, pestañas 322→209, A7) → **0,0 px** | no aplica: ni `orcidSkel` ni `orcidCard` aparecen en ningún fotograma — este autor no tiene ORCID (ver nota) | no aplica | n/d → 0 de 50 |
 | Institución, ruta directa (I173304897) | n/d directo; A2 da la secuencia equivalente 333→311→320 (ver nota) → **2,3 px** | no aplica (institución no tiene panel) | **150 vs 168 de contenido, exprimido 18 px** (A1) → **0** (68 fotogramas reales, transform siempre `none`) | n/d → 2 de 72 (arranque en frío por URL) |
 | Institución, paleta (Harvard University → 03vek6s52) | n/d (A7 solo dio el número del autor) → **1,6 px** | no aplica | n/d → **0** (59 fotogramas reales) | n/d → 0 de 74 |
 | Tema, feed (`.pc-topic-link` → cs.AI, ver nota) | **+27 px en un fotograma** (A2, sobre bio.neuro) → **12,2 px**, repartidos en un settle de ~350 ms | no aplica | **aplastado 21→58 al nacer** (A5) → nace ya en 58, **0** (57 fotogramas reales) | «comiteado y sustituido en el mismo fotograma» (A5) → **0** de 72 |
 | Tema, paleta (q=neuroscience → bio.neuro) | n/d → **12,3 px**, mismo tipo de settle de contenido | no aplica | n/d → **0** (58 fotogramas reales) | n/d → 0 de 72 |
-| Proyecto, paleta (q=graphene → FW04020064) | **22,0 px en un fotograma, sin animación** (A2, mismo proyecto) → **13,4 px**, repartidos en un settle de 360 ms hacia el mismo destino (388,8) | no aplica | sin dato — esta sonda mide `.ehc-wiki-fold`, no `.project-summary-box` | n/d → **5 de 45** (ver «Qué no mejoró») |
+| Proyecto, paleta (q=graphene → FW04020064) | **22,0 px en un fotograma, sin animación** (A2, mismo proyecto) → **13,4 px**, repartidos en un settle de 360 ms hacia el mismo destino (388,8, ver nota) | no aplica | sin dato — esta sonda mide `.ehc-wiki-fold`, no `.project-summary-box` | n/d → **5 de 45** (ver «Qué no mejoró») |
 | Proyecto, feed | no medido (igual que en la auditoría: la insignia no monta en el feed de invitado en corridas de prueba) | — | — | — |
 
 ### Por qué los ceros son ceros de verdad
@@ -194,10 +203,13 @@ Los siete `.log` tienen su `[navigated]`, su `hash` final correcto y, en los cua
 paleta, su línea `target: …` con el texto de la fila que se clicó — nunca un target vacío ni
 un hash que se quedó en `#/`. Antes de confiar en el «0» de cada columna:
 
-- **Panel exprimido**: el chequeo compara `panel` contra `inner`; en el camino de autor por
-  ruta hay 39 fotogramas con ambos campos no nulos, y en los 39 el panel (152,3 px) es mayor
-  que su inner (136,3 px) todo el tiempo — nunca al revés. No es un campo ausente que colapse
-  a cero por defecto.
+- **Panel exprimido**: el chequeo compara `panel` contra `inner`; en el camino de autor
+  por ruta hay 39 fotogramas con ambos campos no nulos, y en los 39 el panel (152,3 px) es
+  mayor que su inner (136,3 px) todo el tiempo — nunca al revés. No es un campo ausente que
+  colapse a cero por defecto. En autor por paleta, el trace completo — 50 fotogramas — tiene
+  `orcidSkel` y `orcidCard` en `null` sin una sola excepción: el «no aplica» de la tabla es
+  que el bloque nunca llega a montarse para este autor, no un campo que el chequeo dejara de
+  leer.
 - **Fold estirado**: el chequeo busca `sy1.` seguido de un dígito en la transform computada.
   Institución, los dos temas y la institución-paleta tienen entre 57 y 68 fotogramas reales
   con `fold` no nulo, y en los cuatro el campo de transform es literalmente `@none` en el
@@ -222,16 +234,16 @@ un hash que se quedó en `#/`. Antes de confiar en el «0» de cada columna:
 ### Institución por ruta: el mismo caso, ahora sin depender de la suerte
 
 El hallazgo A2 describe I173304897 como «333→311→320, rescatado por casualidad porque la
-miniatura llegó antes de soltar». La corrida de hoy, sobre la misma institución, deja ver el
-mecanismo: un primer settle `315px→333.219px` termina normalmente a los 350 ms; 134 ms después
-llega una re-decisión que apunta a `293.219px`, y 15 ms después —antes de que esa primera
-re-decisión se pintara siquiera un fotograma, `ct=0` en ambas— una segunda re-decisión la
-reemplaza por `320.219px`. El settle que de verdad se pinta es un único tramo suave
-`333.219px→320.219px` a lo largo de 350 ms, sin frenazo ni doble salto: cada fotograma se
-mueve como mucho 1,6 px. Los mismos tres valores del hallazgo — un pico cerca de 333, un valle
-más abajo, un cierre cerca de 320 — siguen apareciendo, porque el contenido no cambió; lo que
-cambió es que ya no dependen de que la miniatura gane la carrera por casualidad. El re-apuntado
-los absorbe siempre.
+miniatura llegó antes de soltar». La corrida de hoy, sobre la misma institución, deja ver
+el mecanismo: un primer settle `315px→333.219px` termina normalmente a los 350 ms; 134 ms
+después llega una re-decisión que apunta a `293.219px`, y 15 ms después —antes de que esa
+primera re-decisión se pintara siquiera un fotograma, `ct=0` en ambas— una segunda
+re-decisión la reemplaza por `320.219px`. El settle que de verdad se pinta es un único
+tramo suave `333.219px→320.219px` a lo largo de 350 ms, sin frenazo ni doble salto: cada
+fotograma se mueve como mucho 1,6 px. Los mismos tres valores del hallazgo — un pico cerca
+de 333, un valle más abajo, un cierre cerca de 320 — siguen apareciendo, porque el
+contenido no cambió; lo que cambió es que en esta corrida ya no dependen de que la
+miniatura gane la carrera por casualidad, sino del re-apuntado que describe la Tarea 2.
 
 ### Tarea 13: omitida a propósito
 
@@ -252,15 +264,18 @@ como «el cambio de una constante».
 
 ### Qué no mejoró, o no se pudo medir
 
-- **Proyecto desde la paleta sigue naciendo en esqueleto.** La tarea 7 solo conectó tres tipos
-  de fila (autor, institución, tema) al mecanismo de «la página nace ya con lo que la paleta
-  tenía»; proyecto quedó fuera por decisión del propio plan (`SearchCommand.jsx` solo tiene
-  `onSelect` especial para esos tres). El resultado se ve en la tabla: 5 de 45 fotogramas con
-  esqueleto, y un settle real de 360 ms al llegar los datos. Lo que sí mejoró — y es lo que
-  medía A2 — es que ese settle ya no es un salto de un solo fotograma sin animación (22,0 px
-  «al soltar», sin curva) sino un tramo suave de la misma familia que los demás. El esqueleto en
-  sí sigue sin resolverse; no es una regresión de esta tarea, es alcance que el plan nunca
-  reclamó.
+- **Proyecto desde la paleta sigue naciendo en esqueleto.** La tarea 7 solo conectó tres
+  tipos de fila (autor, institución, tema) al mecanismo de «la página nace ya con lo que la
+  paleta tenía»; proyecto quedó fuera por decisión del propio plan (`SearchCommand.jsx` solo
+  tiene `onSelect` especial para esos tres). El resultado se ve en la tabla: 5 de 45
+  fotogramas con esqueleto, y un settle real de 360 ms al llegar los datos. Lo que sí mejoró
+  — y es lo que medía A2 — es que ese settle ya no es un salto de un solo fotograma sin
+  animación (22,0 px «al soltar», sin curva) sino un tramo suave de la misma familia que los
+  demás: el trace lo registra como una única Web Animation, `from: "282.656px", to:
+  "388.844px"`, con el último `currentTime` capturado a los 350 ms — el mismo destino de
+  388,8 px que cita la tabla y que coincide con el `body` ya asentado en la última fila. El
+  esqueleto en sí sigue sin resolverse; no es una regresión de esta tarea, es alcance que el
+  plan nunca reclamó.
 - **Proyecto desde el feed sigue sin medirse en vivo**, exactamente como en la auditoría
   original: la insignia de la tarjeta no llegó a montarse en el feed de invitado en las
   corridas de esta verificación tampoco. La tarea 12 cambió el código (900 ms → 200 ms, llega
