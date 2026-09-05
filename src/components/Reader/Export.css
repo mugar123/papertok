@@ -222,27 +222,57 @@
   overflow: hidden;
 }
 
+.rd-export-sheet-mast {
+  font: var(--mono-label);
+  font-size: 0.34rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+  margin: 0;
+}
+
+.rd-export-sheet-mastrule { display: block; height: 1px; background: var(--text-primary); margin: 2px 0 6px; }
+
+/* The cover runs flush left, not centred: a masthead reads like a page, a
+   centred title reads like a slide. */
 .rd-export-sheet-title {
   font-family: var(--font-serif);
   font-size: 8px;
   font-weight: var(--fw-semibold);
   line-height: 1.15;
-  text-align: center;
   margin-bottom: 4px;
 }
 
 .rd-export-sheet-byline {
   font: 400 4px/1.3 var(--font-mono);
-  text-align: center;
   color: var(--text-tertiary);
   margin-bottom: 9px;
 }
 
-.rd-export-sheet-abstract {
+/* Replaces the old centred abstract: a provenance notice with its own
+   margin label, the way the full page composes it. */
+.rd-export-sheet-notice { display: flex; gap: 5px; align-items: flex-start; margin: 4px 0; }
+
+.rd-export-sheet-notice b {
+  flex: 0 0 auto;
+  font: var(--mono-label);
+  font-size: 0.32rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+/* The two placeholder lines need their own column: `.rd-export-sheet-notice`
+   is a row (label beside text), so an unstyled `i` sitting directly in it
+   has no stretch to size against and renders at 0 width, invisible. Give
+   the pair their own flex column, the way the old column-direction abstract
+   did implicitly before the label moved it to a row. */
+.rd-export-sheet-notice-lines {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 0 14px 9px;
+  gap: 3.5px;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .rd-export-sheet-rule {
@@ -259,6 +289,15 @@
   margin-bottom: 5px;
 }
 
+/* The heading as printed in the source paper, under the readable section
+   title — what makes it possible to find your way back to the original. */
+.rd-export-sheet-origin {
+  font: var(--mono-label);
+  font-size: 0.32rem;
+  color: var(--text-tertiary);
+  margin: 1px 0 3px;
+}
+
 .rd-export-sheet-lines {
   display: flex;
   flex-direction: column;
@@ -272,7 +311,7 @@
   background: var(--border-default);
 }
 
-.rd-export-sheet-abstract i,
+.rd-export-sheet-notice i,
 .rd-export-sheet-notes i {
   background: var(--border-subtle);
 }
@@ -285,15 +324,26 @@
 
 .rd-export-sheet-marked i {
   flex: 1;
+  /* A transparent baseline so only the AI mark's line color animates in —
+     border-style itself cannot transition, so the dotted rule has to be
+     always there, just invisible until `data-ai` gives it a color. */
+  border-bottom: 1px dotted transparent;
   /* Animated, because these are the switches the reader is flipping and the
      preview is the only thing answering. */
-  transition: background var(--transition-base), box-shadow var(--transition-base);
+  transition: background var(--transition-base), border-color var(--transition-base);
 }
 
-.rd-export-sheet-marked i[data-on] { background: var(--brand-yellow); }
+/* The two mechanisms the separata itself uses, not the two background
+   fills the old export drew: a soft wash for the reader's own mark, a
+   dotted rule for the AI's — the same distinction `ptWash`/`\dotuline`
+   (LaTeX) and `.pdfx-mark`/`.pdfx-mark--ai` (PDF) draw on the document,
+   but through the theme's tokens here rather than their hardcoded hex:
+   this is chrome, and chrome flips with the theme, unlike the document
+   itself, which is always paper. */
+.rd-export-sheet-marked i[data-on] { background: var(--brand-yellow-soft); }
 .rd-export-sheet-marked i[data-ai] {
-  background: var(--bg-secondary);
-  box-shadow: inset 0 -1px 0 var(--accent-primary);
+  background: none;
+  border-bottom-color: var(--text-tertiary);
 }
 
 /* The footnote marker: a number is illegible at this size, an ink tick is not. */
