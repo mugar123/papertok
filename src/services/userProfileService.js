@@ -925,10 +925,13 @@ export async function readOwnUserProfile(overrides) {
  * A document that IS there is used cached or not: data in hand is data
  * (src/utils/cacheAuthority.js).
  *
- * A sibling of `readOwnUserProfile` rather than a change to it. The four other
- * callers — the profile editor, the public page in owner mode, onboarding and
- * the account warm-up — each have their own handling for a null, and
- * rewriting what they see is not this fix's business.
+ * A sibling of `readOwnUserProfile` rather than a change to it. Its callers
+ * moved over one at a time, as each one's handling of a null was understood:
+ * the comments sheet, then the account warm-up (which wrote the non-answer
+ * into both caches at sign-in) and the profile editor (which settled on
+ * "create your profile"). What still reads the plain one — the public page in
+ * owner mode, onboarding, and the editor's re-read after a failed save — has
+ * its own handling for a null and is not this fix's business.
  */
 export class UnconfirmedProfileAbsenceError extends Error {
   constructor() {

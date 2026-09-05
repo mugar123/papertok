@@ -482,7 +482,8 @@ test('the plain own-profile read is untouched: its callers still see a bare null
     getDocument: async () => ownSnapshot({ exists: false, fromCache: true }),
   }).api;
   assert.equal(await readOwnUserProfile(api), null,
-    'ProfilePage, PublicProfilePage, OnboardingFlow and accountWarmup keep their own handling');
+    'the public page in owner mode, onboarding and the editor\'s re-read after a failed save keep '
+    + 'their own handling; the editor\'s load and the account warm-up now ask for a confirmed answer');
 });
 
 test('the confirmed read still refuses demo and still needs an owner', async () => {

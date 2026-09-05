@@ -6,7 +6,9 @@ import {
   ShieldCheck,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
-import { isTransientReadError, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
+import {
+  isTransientReadError, patientRead, slowNoticeStatus, withReadTimeout,
+} from '../../utils/boundedRead.js';
 import {
   forgetOwnProfile,
   ownProfileCache,
@@ -29,6 +31,7 @@ import {
   partitionStalePins,
   profileIsPublic,
   publicAvatarFrom,
+  readConfirmedOwnUserProfile,
   readOwnUserProfile,
   readPinnableLists,
   savePinnedShareIds,
@@ -356,6 +359,7 @@ export default function ProfilePage() {
     // The retry loop outlives the promise; leaving must end it.
     const controller = new AbortController();
     const uid = user.uid;
+    const startedAt = Date.now();
 
     // Two independent reads, no longer joined by `Promise.all`: the form only
     // needs the profile, and pairing them made the whole screen wait on the
@@ -363,6 +367,16 @@ export default function ProfilePage() {
     // guillotine: a slow answer is announced as slow, retried, and accepted
     // whenever it lands — "could not be loaded" is reserved for a read that
     // actually failed.
+    //
+    // And the patience only means something because the read is the confirmed
+    // one. `readOwnUserProfile` RESOLVES a document the local cache merely
+    // failed to find — half a millisecond, no rejection — and a success is
+    // not something `patientRead` can retry, so a stalled channel settled
+    // this screen on "create your profile" for an account that has one, and
+    // wrote that same non-answer into the cache the comments sheet reads.
+    // An unconfirmed absence now rejects as `unavailable`, which is a
+    // transient error: the loop keeps asking and only a server answer
+    // settles anything.
     const applyProfile = (ownProfile) => {
       rememberOwnProfile(uid, ownProfile);
       if (!active) return;
@@ -375,12 +389,20 @@ export default function ProfilePage() {
       setHandleDraft(ownProfile?.handle || '');
       setStatus(ownProfile ? 'ready' : 'new');
     };
-    patientRead(() => readOwnUserProfile(), {
+    patientRead(() => readConfirmedOwnUserProfile(), {
       attempts: 2,
       label: 'own profile',
       signal: controller.signal,
+      // `onSlow` fires at every intermediate timeout AND at every transient
+      // rejection, and an unconfirmed absence is the instant kind: without
+      // the gate the loading line became the whole "this is taking longer
+      // than usual" panel inside the first frame, before anything had taken
+      // long. Being offline is exempt, which is why the gate decides that
+      // too instead of this line.
       onSlow: (attemptNumber, info) => {
-        if (active && !seeded) setStatus(info?.offline ? 'offline' : 'slow');
+        if (!active || seeded) return;
+        const waited = slowNoticeStatus(Date.now() - startedAt, info);
+        if (waited) setStatus(waited);
       },
       onLateResult: applyProfile,
     })
@@ -424,8 +446,14 @@ export default function ProfilePage() {
   // that move `profile` — save, rename, visibility, pinning, unpublish — and
   // chasing each one would leave the shared view stale the day a thirteenth is
   // added; watching the value covers them all.
+  //
+  // An allow-list of the two settled answers, not a list of the states to
+  // skip: 'slow' and 'offline' are waits with `profile` still null, and this
+  // effect runs on every status change, so a deny-list published exactly the
+  // unconfirmed absence the read above refuses to settle on — into the cache
+  // the comments sheet seeds its footer from.
   useEffect(() => {
-    if (!user?.uid || status === 'loading' || status === 'error') return;
+    if (!user?.uid || (status !== 'ready' && status !== 'new')) return;
     rememberOwnProfile(user.uid, profile);
   }, [profile, status, user?.uid]);
 
