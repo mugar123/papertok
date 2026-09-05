@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+  <style>
+    body { margin: 0; background: #ffffff; }
+    * { box-sizing: border-box; }
+    a { color: #111318; text-decoration: none; }
+    a:hover { color: #1a5fd0; }
+
+    /* A4 a 96 ppp. Margen 104 px = 27,5 mm: la medida cae en 586 px, unos 72
+       caracteres por línea con el cuerpo a 16 px (12 pt), que es el suelo de
+       lectura en papel. El actual compone a 15 px (11,3 pt) y a 79 caracteres. */
+    .sep { width: 794px; height: 1123px; background: #ffffff; padding: 62px 104px 46px;
+           display: flex; flex-direction: column;
+           font-family: 'Newsreader', 'Iowan Old Style', Georgia, serif; color: #111318; }
+
+    /* Cabecera de identidad: quién compuso esto y a qué nivel, antes del título.
+       Es la línea que se repite en cada página como titulillo. */
+    .mast { display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+            font: 500 9px/1 'IBM Plex Mono', monospace; letter-spacing: 0.12em;
+            text-transform: uppercase; color: #7b8290; }
+    .mast-b { color: #111318; }
+    .rule-ink { flex: 0 0 auto; height: 1.3px; background: #111318; margin-top: 8px; }
+    .rule-hair { flex: 0 0 auto; height: 0.8px; background: #dcdee4; }
+
+    .t { font-size: 30px; font-weight: 400; line-height: 1.14; letter-spacing: -0.006em;
+         margin: 23px 0 0; text-wrap: pretty; }
+    .by { font-size: 16px; line-height: 1.35; margin: 12px 0 0; }
+    .src { font: 400 10px/1.5 'IBM Plex Mono', monospace; letter-spacing: 0.035em;
+           color: #7b8290; margin: 6px 0 17px; }
+
+    /* El aviso de procedencia deja de ser un «abstract» centrado y pasa a ser lo
+       que es: una nota editorial con su etiqueta al margen. */
+    .abs { display: flex; gap: 22px; padding: 11px 0 12px; }
+    .abs-l { flex: 0 0 58px; font: 500 9px/1.85 'IBM Plex Mono', monospace;
+             letter-spacing: 0.12em; text-transform: uppercase; color: #7b8290; }
+    .abs-t { flex: 1 1 auto; font-size: 13.5px; line-height: 1.52; color: #3a3e46;
+             text-align: justify; margin: 0; }
+
+    .flow { flex: 1 1 auto; min-height: 0; overflow: hidden; padding-top: 0; }
+
+    /* Número colgado en su propia columna y, debajo del título legible, el
+       encabezado tal como está impreso en el paper: `originalHeading`, que el
+       modelo ya devuelve y hoy se tira. Es lo que permite volver al original. */
+    .sec { display: flex; gap: 13px; margin: 21px 0 9px; }
+    .sec:first-child { margin-top: 12px; }
+    .sec-no { flex: 0 0 22px; font-size: 17px; font-weight: 600; line-height: 1.3; }
+    .sec-n { font-size: 17px; font-weight: 600; line-height: 1.3; margin: 0; }
+    .sec-o { font: 400 9.5px/1.5 'IBM Plex Mono', monospace; letter-spacing: 0.03em;
+             color: #6b7280; margin: 3px 0 0; }
+
+    .p { font-size: 16px; line-height: 1.6; text-align: justify; margin: 0; }
+    .p + .p { text-indent: 1.4em; }
+
+    /* Dos mecanismos distintos, no dos colores: el amarillo se apaga a un lavado
+       y la marca de la IA pierde el fondo y se queda en punteado. Se distinguen
+       igual fotocopiado en gris, y el bloque de amarillo saturado deja de leerse
+       como una fotocopia subrayada a rotulador. */
+    .hl { background: #ffe066; color: inherit; padding: 0 1px; }
+    .ai { border-bottom: 1.4px dotted #6b7280; }
+    .ref { font: 500 9.5px/0 'IBM Plex Mono', monospace; vertical-align: super; padding-left: 1.5px; }
+    .math { font-style: italic; }
+
+    .notes { flex: 0 0 auto; padding-top: 11px; }
+    .notes-rule { width: 132px; height: 0.8px; background: #111318; margin-bottom: 9px; }
+    .n { display: flex; gap: 8px; font-size: 12.5px; line-height: 1.46; color: #3a3e46; margin: 0 0 5px; }
+    .n-no { flex: 0 0 11px; font: 500 9.5px/1.95 'IBM Plex Mono', monospace; color: #7b8290; }
+    .n-k { font-variant: small-caps; letter-spacing: 0.045em; color: #111318; }
+
+    .foot { flex: 0 0 auto; padding-top: 12px; }
+    .foot-row { display: flex; align-items: baseline; gap: 14px; padding-top: 7px; }
+    .foot-s { flex: 1 1 auto; font: 400 9px/1.5 'IBM Plex Mono', monospace;
+              letter-spacing: 0.03em; color: #868d99; margin: 0; }
+    .foot-n { font-size: 13px; }
+  </style>
+</helmet>
+
+<div class="sep">
+  <div class="mast">
+    <span><span class="mast-b">PaperTok</span> &#8194;·&#8194; Versión en lenguaje sencillo</span>
+    <span>Nivel universitario</span>
+  </div>
+  <div class="rule-ink"></div>
+
+  <h1 class="t">Worldline proper length correlators</h1>
+  <p class="by">Allic Sivaramakrishnan</p>
+  <p class="src">Artículo original: arXiv:2405.04331 &#8194;·&#8194; 4 de septiembre de 2026</p>
+
+  <div class="rule-hair"></div>
+  <div class="abs">
+    <span class="abs-l">Aviso</span>
+    <p class="abs-t">Reescritura en lenguaje sencillo del artículo original, generada automáticamente y anotada por el lector. El texto de abajo no es obra del autor del artículo: parafrasea sus resultados y no los sustituye.</p>
+  </div>
+  <div class="rule-hair"></div>
+
+  <div class="flow">
+    <div class="sec">
+      <span class="sec-no">1</span>
+      <div>
+        <h2 class="sec-n">De qué va el paper</h2>
+        <p class="sec-o">§1 Introduction</p>
+      </div>
+    </div>
+    <p class="p">Los autores calculan cuánto tiempo propio transcurre a lo largo de la línea de universo de una partícula y encuentran que <mark class="hl">esa cantidad deja de ser un número y pasa a ser una distribución</mark><sup class="ref">1</sup> en cuanto la gravedad cuántica entra en juego. Lo que era un reloj que marcaba un valor pasa a ser un reloj que marca un abanico de valores, cada uno con su probabilidad.</p>
+    <p class="p">El resultado se apoya en un cálculo de dos puntos que ya era conocido, pero al que nadie había dado esta lectura: la varianza <span class="math">⟨τ²⟩ − ⟨τ⟩²</span> deja de anularse y <span class="ai">la anchura de la distribución crece con la energía</span><sup class="ref">2</sup> del sistema estudiado.</p>
+
+    <div class="sec">
+      <span class="sec-no">2</span>
+      <div>
+        <h2 class="sec-n">Cómo lo hicieron</h2>
+        <p class="sec-o">§2 Proper length from the two-point function</p>
+      </div>
+    </div>
+    <p class="p">La parte técnica ocupa la segunda mitad del artículo. Una inducción sobre el índice <span class="math">[M : N]</span> del submódulo cierra el hueco entre los dos recuentos, y lo que queda es contabilidad alrededor de ese único paso.</p>
+
+    <div class="sec">
+      <span class="sec-no">3</span>
+      <div>
+        <h2 class="sec-n">Qué se saca de aquí</h2>
+        <p class="sec-o">§4 Discussion</p>
+      </div>
+    </div>
+    <p class="p">La consecuencia medible es que un reloj ideal colocado sobre esa línea de universo no daría siempre la misma lectura: <mark class="hl">el ruido que registraría no vendría del aparato, sino de la propia geometría</mark><sup class="ref">3</sup>. La magnitud del efecto crece con la energía, lo que en principio lo hace buscable.</p>
+  </div>
+
+  <div class="notes">
+    <div class="notes-rule"></div>
+    <p class="n"><span class="n-no">1</span><span><span class="n-k">Tuya</span> &#8194;El ruido no lo pone el aparato: sale de la propia métrica. Contárselo a Marta.</span></p>
+    <p class="n"><span class="n-no">2</span><span><span class="n-k">IA</span> &#8194;Cuanta más energía tiene la partícula, más se abre el abanico de tiempos posibles: la anchura crece como la raíz de la energía.</span></p>
+    <p class="n"><span class="n-no">3</span><span><span class="n-k">Tuya</span> &#8194;Esto es lo que habría que medir. Preguntar si alguien lo ha intentado con relojes ópticos.</span></p>
+  </div>
+
+  <div class="foot">
+    <div class="rule-hair"></div>
+    <div class="foot-row">
+      <p class="foot-s">Reescrito por PaperTok. No es obra de sus autores &#8194;·&#8194; <a href="https://arxiv.org/abs/2405.04331">arxiv.org/abs/2405.04331</a></p>
+      <span class="foot-n">1</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+
+<script data-dc-script data-props='{"$preview":{"width":794,"height":1123}}'>
+class Component extends DCLogic {}
+</script>
+</body>
+</html>

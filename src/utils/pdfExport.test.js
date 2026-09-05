@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPdfModel, plainAuthorLine } from './pdfExport.js';
+import { buildPdfModel } from './pdfExport.js';
+import { buildLatexDocument } from './latexExport.js';
 
 /**
  * Only the model is tested here: the paginator and the rasterizer need a DOM
@@ -45,47 +46,60 @@ function build(overrides = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// The byline
+// The model's shape — `meta` is `documentMeta`'s own object, mounted whole,
+// and every section carries the heading as it was printed in the source
+// paper. Both formats are the same document, so the two are cross-checked
+// against `latexExport.js` directly rather than against a restated fixture.
 // ---------------------------------------------------------------------------
 
-test('the byline is plain names, joined with commas', () => {
-  assert.equal(
-    plainAuthorLine(PAPER),
-    'Allic Sivaramakrishnan, M. Ángeles Pérez',
-  );
+test('el modelo lleva los metadatos montados, no las piezas sueltas', () => {
+  const model = build({ generatedAt: new Date(Date.UTC(2026, 8, 4)) });
+  assert.equal(model.meta.masthead, 'PaperTok · Versión en lenguaje sencillo');
+  assert.equal(model.meta.level, 'Nivel universitario');
+  assert.match(model.meta.source, /4 de septiembre de 2026/);
+  assert.equal(model.meta.colophon.rows.length > 0, true);
 });
 
-test('past twelve authors the byline says so instead of listing them', () => {
-  const many = { authors: Array.from({ length: 30 }, (_, i) => ({ name: `Autor ${i}` })) };
-  const line = plainAuthorLine(many);
-  assert.match(line, / et al\.$/);
-  assert.match(line, /Autor 11/);
-  assert.doesNotMatch(line, /Autor 12/);
+test('el encabezado original del paper llega al modelo del PDF', () => {
+  const model = build({
+    sections: [{ ...SECTIONS[0], originalHeading: '2. Methods' }],
+  });
+  assert.equal(model.sections[0].originalHeading, '2. Methods');
 });
 
-test('an empty author list is an empty byline, not "undefined"', () => {
-  assert.equal(plainAuthorLine({}), '');
-  assert.equal(plainAuthorLine({ authors: ['Nombre Solo'] }), 'Nombre Solo');
+test('una sección sin encabezado original lo deja vacío, no undefined', () => {
+  const model = build();
+  assert.equal(model.sections[1].originalHeading, '');
+});
+
+test('el modelo del PDF y el del .tex cuentan lo mismo', () => {
+  // Los dos formatos son el mismo documento: si divergen, uno miente.
+  const args = { paper: PAPER, sections: SECTIONS, annotations: [], language: 'es',
+    level: 'university', kindLabels: KIND_LABELS, originalUrl: 'https://arxiv.org/abs/2401.00001',
+    generatedAt: new Date(Date.UTC(2026, 8, 4)) };
+  const model = buildPdfModel(args);
+  const { source } = buildLatexDocument(args);
+  assert.ok(source.includes(model.meta.colophon.rows.at(-1).value));
 });
 
 // ---------------------------------------------------------------------------
 // The document
 // ---------------------------------------------------------------------------
 
-test('the model carries the frame the .tex carries: title, stamp, provenance, link', () => {
+test('the model carries the frame the .tex carries: title, level, notice, provenance, source', () => {
   const model = build();
-  assert.equal(model.title, PAPER.title);
-  assert.match(model.stamp, /nivel universitario/);
-  assert.match(model.abstract, /no es obra del autor/);
-  assert.match(model.provenance, /Reescrito por PaperTok/);
-  assert.equal(model.originalUrl, 'https://arxiv.org/abs/2401.00001');
+  assert.equal(model.meta.title, PAPER.title);
+  assert.equal(model.meta.level, 'Nivel universitario');
+  assert.match(model.meta.notice, /no es obra del autor/);
+  assert.match(model.meta.provenance, /Reescrito por PaperTok/);
+  assert.match(model.meta.source, /arxiv\.org\/abs\/2401\.00001/);
   assert.deepEqual(model.labels, { mine: 'Tuya', ai: 'IA' });
 });
 
 test('in English every string follows', () => {
   const model = build({ language: 'en' });
-  assert.match(model.stamp, /university level/);
-  assert.match(model.provenance, /Rewritten by PaperTok/);
+  assert.equal(model.meta.level, 'University level');
+  assert.match(model.meta.provenance, /Rewritten by PaperTok/);
   assert.deepEqual(model.labels, { mine: 'Yours', ai: 'AI' });
 });
 
@@ -99,6 +113,30 @@ test('a section without heading falls back to its kind label, then to "Sección"
   assert.equal(model.sections[1].label, 'Método');
   const bare = build({ sections: [{ id: 's9', paragraphs: ['Texto.'] }], kindLabels: {} });
   assert.equal(bare.sections[0].label, 'Sección');
+});
+
+// ---------------------------------------------------------------------------
+// The running head's own cap (Task 11 live verification): `buildBlocks`
+// (browser-only, verified live) writes the mast from `runningLabel`, not
+// `label` — unbounded, a routine 40-character section heading wrapped the
+// mast to two lines the moment it shared a page with a paper title already
+// at its own 45-character cap (`runningTitleText`), seen on a real
+// document, not an adversarial one. `label` — what the page's own `<h2>`
+// prints — stays whole either way; only the text repeated in the mast is
+// capped, the same split the .tex keeps between `\section{full}` and its
+// short `\sectionmark` argument (`sectionMarkText`, exportDocument.js).
+// ---------------------------------------------------------------------------
+
+test('a section heading past the cap is truncated for the running head; the page keeps it whole', () => {
+  const long = 'x'.repeat(60);
+  const model = build({ sections: [{ id: 's9', heading: long, paragraphs: ['Texto.'] }] });
+  assert.equal(model.sections[0].label, long);
+  assert.equal(model.sections[0].runningLabel, `${'x'.repeat(30)}…`);
+});
+
+test('an ordinary section heading is not cut short in either field', () => {
+  const model = build();
+  assert.equal(model.sections[0].runningLabel, model.sections[0].label);
 });
 
 // ---------------------------------------------------------------------------

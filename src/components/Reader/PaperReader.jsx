@@ -33,12 +33,12 @@ import {
 } from '../../utils/panelReveal.js';
 import { normalizeLatexText, proseSourceOffset } from '../../utils/latex.js';
 import { buildRangeAnchor, buildSelectionAnchor } from '../../utils/textHighlights.js';
+import { buildLatexDocument } from '../../utils/latexExport.js';
 import {
-  buildLatexDocument,
-  exportableAnnotations,
   exportFileName,
+  exportableAnnotations,
   summarizeExport,
-} from '../../utils/latexExport.js';
+} from '../../utils/exportDocument.js';
 import { buildPdfModel, downloadPdfDocument } from '../../utils/pdfExport.js';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -99,9 +99,15 @@ const COPY = {
       : `${count} ${count === 1 ? 'nota' : 'notas'} · numerada${count === 1 ? '' : 's'} al pie`),
     noneOfThese: 'ninguna todavía',
     alwaysIncluded: 'Siempre se incluyen el título, los autores, el enlace al original y la nota de que el texto lo escribió una IA. El fichero puede acabar lejos de aquí.',
+    previewMasthead: 'PaperTok · versión en lenguaje sencillo',
     previewTitle: 'Título del paper',
     previewByline: 'autores · reescrito por PaperTok',
+    previewNotice: 'Aviso',
     previewSection: 'De qué va el paper',
+    // Deliberately identical in the `en` block below: this is the heading as
+    // printed in the source paper, in the paper's own language, not the
+    // reader's — translating it would show a heading the paper never had.
+    previewOrigin: '§1 Introduction',
     previewNote: (format) => (format === 'pdf' ? 'Así se verá el PDF' : 'Así se verá al compilarlo'),
     format: 'Formato',
     downloadTex: 'Descargar .tex',
@@ -186,9 +192,14 @@ const COPY = {
       : `${count} ${count === 1 ? 'note' : 'notes'} · numbered at the foot`),
     noneOfThese: 'none yet',
     alwaysIncluded: 'The title, the authors, the link to the original and the note that an AI wrote the text always travel with it. The file can end up a long way from here.',
+    previewMasthead: 'PaperTok · plain-language version',
     previewTitle: 'Paper title',
     previewByline: 'authors · rewritten by PaperTok',
+    previewNotice: 'Notice',
     previewSection: 'What the paper is about',
+    // Same value as the `es` block above, on purpose: the source paper's own
+    // heading, not a translation of it.
+    previewOrigin: '§1 Introduction',
     previewNote: (format) => (format === 'pdf' ? 'How the PDF will look' : 'How it will look compiled'),
     format: 'Format',
     downloadTex: 'Download .tex',
@@ -1260,9 +1271,12 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
           optionCount: copy.optionCount,
           noneOfThese: copy.noneOfThese,
           alwaysIncluded: copy.alwaysIncluded,
+          previewMasthead: copy.previewMasthead,
           previewTitle: copy.previewTitle,
           previewByline: copy.previewByline,
+          previewNotice: copy.previewNotice,
           previewSection: copy.previewSection,
+          previewOrigin: copy.previewOrigin,
           previewNote: copy.previewNote,
           format: copy.format,
           downloadTex: copy.downloadTex,

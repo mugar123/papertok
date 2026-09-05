@@ -1,5 +1,14 @@
 import { normalizeLatexText, splitLatexText } from './latex.js';
 import { buildHighlightPlan } from './textHighlights.js';
+import {
+  documentCopy,
+  documentMeta,
+  exportFileName,
+  exportableAnnotations,
+  numberAnnotations,
+  sectionMarkText,
+  summarizeExport,
+} from './exportDocument.js';
 
 /**
  * The rewrite, as a .tex file.
@@ -57,17 +66,34 @@ const LATEX_ESCAPE = {
  * writes em dashes and curly quotes constantly and paper titles are full of
  * them, so this is not an edge case — it is most exports.
  *
- * Mapped rather than stripped: `---` is what an em dash is in LaTeX, and the
- * page should read the way the reader read it.
+ * Mapped rather than stripped: an em dash should still read as an em dash on
+ * the page. The dash and quote entries map to commands (`\textemdash{}`,
+ * `\textquoteleft{}` and so on), not to the `---`/`` ` ``/`''` ligature
+ * sequences that are the more obvious way to spell those characters in
+ * LaTeX. That distinction is not cosmetic: compiled inside `\ptmono`
+ * (`\ttfamily`, used by the running header and by `\ptorig`'s
+ * original-heading line) and looked at, Latin Modern Typewriter deliberately
+ * suppresses TeX's ligatures for `--`/`---` and `` ` ``/`''` — a typewriter
+ * face is supposed to show the input verbatim, character for character — so
+ * `Chen--` (two literal hyphens) printed instead of an em dash, and a
+ * straight `"` instead of a curly quote, with nothing in the log either
+ * time. A command has no such font dependence: it names the character
+ * instead of hoping the active font ligates its way there, so it renders
+ * correctly in both the roman and the typewriter shape, under both pdfLaTeX
+ * and XeLaTeX — all four confirmed by compiling. `\S{}`, added for the same
+ * reason, sidesteps a XeLaTeX-only defect one call site over: the raw `§`
+ * character resolved to a Turkish dotted-g (`ğ`) inside `\ptmono` under
+ * XeLaTeX specifically — again `exit=0`, nothing in the log, visible only by
+ * rasterizing the page.
  */
 const PUNCTUATION = {
   '\u00b7': '\\textperiodcentered{}',
-  '\u2014': '---',
-  '\u2013': '--',
-  '\u2018': '`',
-  '\u2019': "'",
-  '\u201c': '``',
-  '\u201d': "''",
+  '\u2014': '\\textemdash{}',
+  '\u2013': '\\textendash{}',
+  '\u2018': '\\textquoteleft{}',
+  '\u2019': '\\textquoteright{}',
+  '\u201c': '\\textquotedblleft{}',
+  '\u201d': '\\textquotedblright{}',
   '\u2026': '\\ldots{}',
   '\u2212': '-',
   '\u00d7': '\\texttimes{}',
@@ -76,8 +102,218 @@ const PUNCTUATION = {
   '\u00a0': '~',
   '\u2009': '\\,',
   '\u2192': '\\textrightarrow{}',
+  '\u00a7': '\\S{}',
 };
 const PUNCTUATION_RE = new RegExp(`[${Object.keys(PUNCTUATION).join('')}]`, 'g');
+
+/**
+ * Symbols an LLM rewrite or an indexed paper title plausibly emits, beyond
+ * the ten reserved characters above and the typographic marks in
+ * `PUNCTUATION`. The final review probed 62 such characters against this
+ * file: escapeLatexText mapped 6 of them, 25 made pdflatex refuse to produce
+ * a PDF at all, and the other 39 vanished under xelatex — exit 0, nothing in
+ * the log, the character simply missing from the page. Not hypothetical: the
+ * pipeline manufactures it. `latex.js`'s `HTML_ENTITIES` decodes `&le;` to
+ * `≤` and `&ge;` to `≥` — two of that table's four symbolic entities were
+ * already handled here, the other two are in the fatal class — and
+ * `decodeHtmlEntity`'s generic `&#NNN;` path means ANY codepoint can arrive
+ * in a title from OpenAlex.
+ *
+ * Every math-only symbol below is wrapped in `\ensuremath{}` rather than
+ * spelled as a dedicated text command, on purpose: a math command draws from
+ * the math font, which \ttfamily does not touch, so it renders identically
+ * in `\ptorig` and the running headers as it does in the body — the same
+ * fix Task 7 already applied to em dashes and curly quotes, generalized to
+ * every symbol that has no text-mode form at all. That also settles primes:
+ * there is no `\textprime` (checked `ts1enc.def` directly, no such glyph is
+ * declared in TS1), and `\ensuremath{\prime}` alone compiles but sets the
+ * mark at full baseline size — a big slash, not a tick — because \prime is
+ * meant to be attached to a superscript. `{}^\prime`, a superscript prime on
+ * an empty base, is the form that actually renders as a small raised prime;
+ * confirmed side by side, both engines, both the roman and \ttfamily shapes.
+ *
+ * The four Spanish orthography marks are the sharpest lesson of this pass:
+ * `¡ ¿ ª º` compile and print CORRECTLY as raw UTF-8 under pdfLaTeX — which
+ * is exactly what made them look safe — but under XeLaTeX, with this exact
+ * preamble (babel spanish + Latin Modern, no fontspec), they silently print
+ * the WRONG character: `¡` came out as `ą`, `¿` as `£`, `ª` as `ł`, `º` as
+ * `ž`. Worse than the missing glyph this whole map is otherwise fixing: a
+ * confident, wrong one, exit 0, nothing in the log. `ß` failed differently
+ * again — correct in roman, an empty box under \ttfamily. All five are
+ * common enough in Spanish text (PaperTok's own `es` copy) that this was
+ * reachable without any exotic input at all. Caught only by rendering both
+ * engines side by side and looking, never by reasoning about which
+ * characters "should" be safe.
+ *
+ * Look-alike Greek capitals (`Α Β Ε ...`) have no LaTeX command of their own
+ * — they are typographically identical to the Latin letter in every font
+ * this document uses — so they map straight to that letter instead of a
+ * command that does not exist. U+200B (zero-width space) maps to the empty
+ * string: it carries no visual meaning and pdfLaTeX's default UTF-8 handling
+ * has no LICR entry for it, which is a hard compile error on its own.
+ */
+const SYMBOLS = {
+  // Greek letters: lowercase, then uppercase distinct from any Latin letter
+  'α': '\\ensuremath{\\alpha}', // U+03B1
+  'β': '\\ensuremath{\\beta}', // U+03B2
+  'γ': '\\ensuremath{\\gamma}', // U+03B3
+  'δ': '\\ensuremath{\\delta}', // U+03B4
+  'ε': '\\ensuremath{\\varepsilon}', // U+03B5
+  'ζ': '\\ensuremath{\\zeta}', // U+03B6
+  'η': '\\ensuremath{\\eta}', // U+03B7
+  'θ': '\\ensuremath{\\theta}', // U+03B8
+  'ι': '\\ensuremath{\\iota}', // U+03B9
+  'κ': '\\ensuremath{\\kappa}', // U+03BA
+  'λ': '\\ensuremath{\\lambda}', // U+03BB
+  'μ': '\\ensuremath{\\mu}', // U+03BC
+  'ν': '\\ensuremath{\\nu}', // U+03BD
+  'ξ': '\\ensuremath{\\xi}', // U+03BE
+  'π': '\\ensuremath{\\pi}', // U+03C0
+  'ρ': '\\ensuremath{\\rho}', // U+03C1
+  'ς': '\\ensuremath{\\varsigma}', // U+03C2
+  'σ': '\\ensuremath{\\sigma}', // U+03C3
+  'τ': '\\ensuremath{\\tau}', // U+03C4
+  'υ': '\\ensuremath{\\upsilon}', // U+03C5
+  'φ': '\\ensuremath{\\varphi}', // U+03C6
+  'χ': '\\ensuremath{\\chi}', // U+03C7
+  'ψ': '\\ensuremath{\\psi}', // U+03C8
+  'ω': '\\ensuremath{\\omega}', // U+03C9
+  'Γ': '\\ensuremath{\\Gamma}', // U+0393
+  'Δ': '\\ensuremath{\\Delta}', // U+0394
+  'Θ': '\\ensuremath{\\Theta}', // U+0398
+  'Λ': '\\ensuremath{\\Lambda}', // U+039B
+  'Ξ': '\\ensuremath{\\Xi}', // U+039E
+  'Π': '\\ensuremath{\\Pi}', // U+03A0
+  'Σ': '\\ensuremath{\\Sigma}', // U+03A3
+  'Υ': '\\ensuremath{\\Upsilon}', // U+03A5
+  'Φ': '\\ensuremath{\\Phi}', // U+03A6
+  'Ψ': '\\ensuremath{\\Psi}', // U+03A8
+  'Ω': '\\ensuremath{\\Omega}', // U+03A9
+
+  // Greek look-alikes: no distinct glyph, so no distinct command
+  'ο': 'o', // U+03BF
+  'Α': 'A', // U+0391
+  'Β': 'B', // U+0392
+  'Ε': 'E', // U+0395
+  'Ζ': 'Z', // U+0396
+  'Η': 'H', // U+0397
+  'Ι': 'I', // U+0399
+  'Κ': 'K', // U+039A
+  'Μ': 'M', // U+039C
+  'Ν': 'N', // U+039D
+  'Ο': 'O', // U+039F
+  'Ρ': 'P', // U+03A1
+  'Τ': 'T', // U+03A4
+  'Χ': 'X', // U+03A7
+
+  // Relations and operators (core LaTeX, no amssymb needed)
+  '≤': '\\ensuremath{\\leq}', // U+2264
+  '≥': '\\ensuremath{\\geq}', // U+2265
+  '≈': '\\ensuremath{\\approx}', // U+2248
+  '≠': '\\ensuremath{\\neq}', // U+2260
+  '≡': '\\ensuremath{\\equiv}', // U+2261
+  '∼': '\\ensuremath{\\sim}', // U+223C
+  '≃': '\\ensuremath{\\simeq}', // U+2243
+  '≅': '\\ensuremath{\\cong}', // U+2245
+  '∝': '\\ensuremath{\\propto}', // U+221D
+  '≪': '\\ensuremath{\\ll}', // U+226A
+  '≫': '\\ensuremath{\\gg}', // U+226B
+  '∈': '\\ensuremath{\\in}', // U+2208
+  '∉': '\\ensuremath{\\notin}', // U+2209
+  '∀': '\\ensuremath{\\forall}', // U+2200
+  '∃': '\\ensuremath{\\exists}', // U+2203
+  '∇': '\\ensuremath{\\nabla}', // U+2207
+  '¬': '\\ensuremath{\\neg}', // U+00AC
+  '±': '\\ensuremath{\\pm}', // U+00B1
+  '÷': '\\ensuremath{\\div}', // U+00F7
+
+  // Calculus / big operators, standalone (no argument needed)
+  '∞': '\\ensuremath{\\infty}', // U+221E
+  '√': '\\ensuremath{\\surd}', // U+221A
+  '∑': '\\ensuremath{\\sum}', // U+2211
+  '∏': '\\ensuremath{\\prod}', // U+220F
+  '∫': '\\ensuremath{\\int}', // U+222B
+  '∂': '\\ensuremath{\\partial}', // U+2202
+
+  // Arrows (\textrightarrow already lived in PUNCTUATION)
+  '←': '\\ensuremath{\\leftarrow}', // U+2190
+  '↔': '\\ensuremath{\\leftrightarrow}', // U+2194
+  '⇒': '\\ensuremath{\\Rightarrow}', // U+21D2
+  '⇐': '\\ensuremath{\\Leftarrow}', // U+21D0
+  '⇔': '\\ensuremath{\\Leftrightarrow}', // U+21D4
+  '↦': '\\ensuremath{\\mapsto}', // U+21A6
+
+  // Primes: see the block comment above for why {}^\prime, not \prime
+  '′': '\\ensuremath{{}^\\prime}', // U+2032
+  '″': '\\ensuremath{{}^{\\prime\\prime}}', // U+2033
+
+  // Superscript digits and symbols
+  '⁰': '\\ensuremath{^0}', // U+2070
+  '¹': '\\ensuremath{^1}', // U+00B9
+  '²': '\\ensuremath{^2}', // U+00B2
+  '³': '\\ensuremath{^3}', // U+00B3
+  '⁴': '\\ensuremath{^4}', // U+2074
+  '⁵': '\\ensuremath{^5}', // U+2075
+  '⁶': '\\ensuremath{^6}', // U+2076
+  '⁷': '\\ensuremath{^7}', // U+2077
+  '⁸': '\\ensuremath{^8}', // U+2078
+  '⁹': '\\ensuremath{^9}', // U+2079
+  '⁺': '\\ensuremath{^+}', // U+207A
+  '⁻': '\\ensuremath{^-}', // U+207B
+  '⁼': '\\ensuremath{^=}', // U+207C
+  '⁽': '\\ensuremath{^(}', // U+207D
+  '⁾': '\\ensuremath{^)}', // U+207E
+
+  // Subscript digits and symbols
+  '₀': '\\ensuremath{_0}', // U+2080
+  '₁': '\\ensuremath{_1}', // U+2081
+  '₂': '\\ensuremath{_2}', // U+2082
+  '₃': '\\ensuremath{_3}', // U+2083
+  '₄': '\\ensuremath{_4}', // U+2084
+  '₅': '\\ensuremath{_5}', // U+2085
+  '₆': '\\ensuremath{_6}', // U+2086
+  '₇': '\\ensuremath{_7}', // U+2087
+  '₈': '\\ensuremath{_8}', // U+2088
+  '₉': '\\ensuremath{_9}', // U+2089
+  '₊': '\\ensuremath{_+}', // U+208A
+  '₋': '\\ensuremath{_-}', // U+208B
+  '₌': '\\ensuremath{_=}', // U+208C
+  '₍': '\\ensuremath{_(}', // U+208D
+  '₎': '\\ensuremath{_)}', // U+208E
+
+  // Latin-1 Supplement symbols — see the block comment above for ¡¿ªºß
+  '°': '\\ensuremath{^\\circ}', // U+00B0
+  'µ': '\\ensuremath{\\mu}', // U+00B5
+  '¶': '\\P{}', // U+00B6
+  '¢': '\\textcent{}', // U+00A2
+  '£': '\\pounds{}', // U+00A3
+  '¥': '\\textyen{}', // U+00A5
+  '€': '\\texteuro{}', // U+20AC
+  '¼': '\\textonequarter{}', // U+00BC
+  '½': '\\textonehalf{}', // U+00BD
+  '¾': '\\textthreequarters{}', // U+00BE
+  '¡': '\\textexclamdown{}', // U+00A1
+  '¿': '\\textquestiondown{}', // U+00BF
+  'ª': '\\textordfeminine{}', // U+00AA
+  'º': '\\textordmasculine{}', // U+00BA
+  'ß': '\\ss{}', // U+00DF
+  '¤': '\\textcurrency{}', // U+00A4
+  '¦': '\\textbrokenbar{}', // U+00A6
+  '¨': '\\textasciidieresis{}', // U+00A8
+  '©': '\\copyright{}', // U+00A9
+  '­': '\\-', // U+00AD (SOFT HYPHEN)
+  '®': '\\textregistered{}', // U+00AE
+  '¯': '\\textasciimacron{}', // U+00AF
+  '´': '\\textasciiacute{}', // U+00B4
+  '¸': '\\c{}', // U+00B8 — no dedicated glyph exists (checked ts1enc.def:
+  //  only \capitalcedilla, which combines onto a letter); \c{} on an empty
+  //  group is the closest a standalone spacing cedilla gets, for a
+  //  character with no real occurrence in scientific prose.
+
+  // Invisible: no visual meaning, so no replacement
+  '​': '', // U+200B (ZWSP)
+};
+const SYMBOLS_RE = new RegExp(`[${Object.keys(SYMBOLS).join('')}]`, 'g');
 
 /**
  * Control sequences that do something other than typeset.
@@ -107,7 +343,8 @@ export function escapeLatexText(value) {
   return String(value ?? '')
     .replace(/\\%/g, '%')
     .replace(LATEX_SPECIAL, character => LATEX_ESCAPE[character])
-    .replace(PUNCTUATION_RE, character => PUNCTUATION[character]);
+    .replace(PUNCTUATION_RE, character => PUNCTUATION[character])
+    .replace(SYMBOLS_RE, character => SYMBOLS[character]);
 }
 
 /** Whether a maths chunk may pass through to the file unescaped. */
@@ -118,17 +355,70 @@ export function isSafeMath(value) {
 }
 
 /**
+ * Whether a maths chunk becomes a real, numbered environment once the .tex
+ * compiles — shared with `pdfExport.js`'s `numberedEquation` gate so a
+ * numbered formula in the .tex and a numbered badge in the PDF can never
+ * point at two different formulas. Before this existed, the two files spelled
+ * the same idea differently (`item.value !== item.raw` here, absent there)
+ * and only agreed by luck; nothing stopped them from drifting apart the way
+ * F3 found they already had for `eqnarray`.
+ *
+ * An unsafe chunk is shown as escaped source, never a real environment
+ * (`emitMath`, below). A chunk a highlight or an AI mark covers whole is left
+ * unwrapped and unnumbered on the .tex side too — compiled, both
+ * `\hl{\begin{equation}...}` and `\dotuline{\begin{equation}...}` are fatal
+ * errors, so a marked formula stays raw. NOT part of this: whether `emitMath`
+ * needs to WRAP the chunk in `\begin{equation}` (`item.value !== item.raw`)
+ * versus it already being a real environment the model wrote itself — either
+ * way the compiled .tex ends up with one real numbered environment, so the
+ * PDF counts both the same; that distinction is `.tex`-only plumbing this
+ * predicate does not need.
+ */
+export function isNumberedFormula(item) {
+  return Boolean(item?.display) && !item?.kind && isSafeMath(item?.raw);
+}
+
+/**
  * A maths chunk, wrapped the way it was written. A chunk that fails the check
  * above is not dropped and not repaired — it is escaped and shown as the source
  * it is, which is both safe and honest about what the model produced.
  */
 function emitMath(item) {
-  // `raw` and never `value`: for a `\begin{...}` environment `splitLatexText`
-  // sets `value === raw`, delimiters and all, so re-wrapping it produced
-  // `$\begin{equation}...\end{equation}$` — invalid, and it took the rest of
-  // the paragraph with it. `raw` is the original slice and already carries
-  // whichever delimiter the model actually wrote.
+  // `raw` and never `value` for the safety check: for a `\begin{...}`
+  // environment `splitLatexText` sets `value === raw`, delimiters and all,
+  // so re-wrapping it produced `$\begin{equation}...\end{equation}$` —
+  // invalid, and it took the rest of the paragraph with it. `raw` is the
+  // original slice and already carries whichever delimiter the model
+  // actually wrote.
   if (!isSafeMath(item.raw)) return escapeLatexText(item.raw);
+  // Numbered — cited later as "(1)" — only when it is a display formula that
+  // still wears a delimiter of its own: confirmed against `splitLatexText`
+  // (latex.js) by calling `paragraphChunks` directly on both shapes,
+  // `value` is the bare interior with no delimiters for `$$…$$` and `\[…\]`
+  // (`value !== raw`), so re-wrapping that interior in `\begin{equation}` is
+  // safe — the delimiter being replaced is the only one there. A
+  // `\begin{equation}`/`\begin{align}`/`\begin{eqnarray}` the model wrote
+  // itself sets `value === raw` — the case just above already guards against
+  // re-wrapping THAT — and it does not need wrapping to be numbered: it is
+  // already a real `equation`-family environment, which LaTeX numbers on its
+  // own once compiled.
+  //
+  // `!item.kind`: a formula `buildHighlightPlan` covers whole with a mark
+  // (`item.kind` is 'user' or 'ai') is about to be wrapped by the CALLER in
+  // `\hl{...}` or `\dotuline{...}` (`renderParagraph`, below) — compiled,
+  // both fail on a `\begin{equation}` inside them: `\hl{\begin{equation}
+  // ...\end{equation}}` throws "Environment {equation} undefined" and
+  // `\dotuline{\begin{equation}...\end{equation}}` throws "Missing $
+  // inserted", each a fatal error that takes the rest of the document with
+  // it. Soul and ulem box their argument to draw the highlight or the
+  // underline; `equation` cannot be boxed that way. A marked formula is
+  // left exactly as `raw` — unwrapped and unnumbered, the same as every
+  // formula was before this task — which is the one shape both packages
+  // already carry correctly (verified by compiling; see the highlight
+  // tests above, "a highlight that spans a formula...").
+  if (isNumberedFormula(item) && item.value !== item.raw) {
+    return `\\begin{equation}\n${item.value}\n\\end{equation}`;
+  }
   return item.raw;
 }
 
@@ -137,30 +427,38 @@ function emitMath(item) {
  *
  * `buildHighlightPlan` splits a range at every maths boundary, because the
  * reader's HTML cannot put a `<mark>` around KaTeX's internals. LaTeX has no
- * such problem, so consecutive marked items are merged back into one `\hl`
- * before being emitted — otherwise a highlight that crossed a formula would
- * come out as two swatches with a seam down the middle.
+ * such problem, so consecutive marked items are merged back into one command
+ * — `\hl` for the reader's, `\dotuline` for the AI's — before being emitted,
+ * otherwise a highlight that crossed a formula would come out as two commands
+ * with a seam down the middle.
  */
 export function renderParagraph(text, annotations = [], labels = {}) {
   const plan = buildHighlightPlan(text, annotations);
-  const marked = annotations.filter(item => item?.note);
+  // Holds notes, not marks: a bare highlight has no entry here, only an
+  // annotation with words on it does. `isMarked`, three lines below in the
+  // main loop, is the one that means "marked".
+  const noted = annotations.filter(item => item?.note);
   const pieces = [];
   let run = null;
 
   const flush = () => {
     if (!run) return;
     const body = run.parts.join('');
+    // Dos mecanismos, no dos colores: el lavado amarillo para la del lector,
+    // el punteado para la de la IA. Fotocopiadas en gris, dos fondos claros
+    // eran el mismo gris; un fondo y un punteado no se confunden nunca.
+    const command = run.kind === 'ai' ? '\\dotuline' : '\\hl';
     // A `\footnote` inside `\hl` compiles, but the marker escapes the colour and
     // leaves a gap in it. Placed just after, it reads as one mark with a number.
     // And it is a real `\footnote`, not a marker plus a `\footnotetext` gathered
     // at the end of the document: LaTeX puts a footnote at the foot of the page
     // its marker landed on, which is the whole point. Emitting them at the end
     // put every note on the LAST page the moment there was more than one page.
-    const note = marked.find(item => item.id === run.id);
+    const note = noted.find(item => item.id === run.id);
     const kind = note && (note.kind === 'ai' ? labels.ai : labels.mine);
     pieces.push(note
-      ? `\\hl{${body}}\\footnote{\\ptkind{${escapeLatexText(kind || '')}}\\quad ${escapeLatexText(note.note)}}`
-      : `\\hl{${body}}`);
+      ? `${command}{${body}}\\footnote{\\ptkind{${escapeLatexText(kind || '')}}\\quad ${escapeLatexText(note.note)}}`
+      : `${command}{${body}}`);
     run = null;
   };
 
@@ -175,7 +473,7 @@ export function renderParagraph(text, annotations = [], labels = {}) {
     if (run && run.id === (item.id || null)) run.parts.push(body);
     else {
       flush();
-      run = { id: item.id || null, parts: [body] };
+      run = { id: item.id || null, kind: item.kind || null, parts: [body] };
     }
   }
   flush();
@@ -184,72 +482,17 @@ export function renderParagraph(text, annotations = [], labels = {}) {
 
 const SECTION_FALLBACK = { es: 'Sección', en: 'Section' };
 
-const COPY = {
-  es: {
-    babel: 'spanish,es-nodecimaldot,es-noquoting',
-    stamp: level => `Versión en lenguaje sencillo · nivel ${level}`,
-    abstract: 'Reescritura en lenguaje sencillo del artículo original, generada automáticamente y anotada por el lector. El texto de abajo no es obra del autor del artículo: parafrasea sus resultados y no los sustituye.',
-    provenance: 'Reescrito por PaperTok. No es obra de sus autores',
-    mine: 'Tuya',
-    ai: 'IA',
-    levels: { beginner: 'principiante', university: 'universitario', researcher: 'investigador' },
-    fontHint: 'Descomenta las dos líneas siguientes si tienes Newsreader instalada.',
-    kindNote: ['El marcador de una nota es el mismo venga de quien venga; lo que las', 'distingue es la etiqueta con la que empieza la nota.'],
-    footerNote: ['La procedencia no es una de las notas: va al pie de CADA página, fuera', 'de la numeración, porque el fichero puede acabar lejos de aquí.'],
-    generated: 'Generado por PaperTok. Compila con pdflatex o xelatex.',
-  },
-  en: {
-    babel: 'english',
-    stamp: level => `Plain-language version · ${level} level`,
-    abstract: 'A plain-language rewrite of the original article, generated automatically and annotated by its reader. The text below is not the work of the article’s author: it paraphrases the results and does not replace them.',
-    provenance: 'Rewritten by PaperTok. Not the work of its authors',
-    mine: 'Yours',
-    ai: 'AI',
-    levels: { beginner: 'beginner', university: 'university', researcher: 'researcher' },
-    fontHint: 'Uncomment the next two lines if you have Newsreader installed.',
-    kindNote: ['A note\'s marker is the same whoever wrote it; what tells them apart', 'is the label the note itself starts with.'],
-    footerNote: ['Provenance is not one of the notes: it sits at the foot of EVERY page,', 'outside their numbering, because this file can end up a long way from here.'],
-    generated: 'Generated by PaperTok. Compile with pdflatex or xelatex.',
-  },
-};
-
+/**
+ * El byline, escapado. Ya no es un `\parbox` centrado: la portada va en
+ * bandera y `flushleft` parte la línea sola cuando hay nueve autores.
+ */
 export function authorLine(paper, limit = 12) {
-  const authors = Array.isArray(paper?.authors) ? paper.authors : [];
-  const names = authors
+  const names = (Array.isArray(paper?.authors) ? paper.authors : [])
     .map(author => String(author?.name || author || '').trim())
     .filter(Boolean);
   if (names.length === 0) return '';
-  const shown = names.slice(0, limit).map(escapeLatexText);
-  const line = names.length > limit ? `${shown.join(', ')} et al.` : shown.join(', ');
-  // `\and` would set them in columns and `\author` alone sets them on one line
-  // that runs off the page — nine names is an ordinary paper. A centred parbox
-  // at 90% of the measure wraps them and keeps the byline a byline.
-  return `\\parbox{0.9\\textwidth}{\\centering ${line}}`;
-}
-
-/**
- * A filename the operating system will accept, derived from the title so the
- * download is recognisable in a folder six months later.
- */
-export function exportFileName(paper, language = 'es', extension = 'tex') {
-  const stem = String(paper?.title || '')
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 60)
-    .replace(/-+$/g, '');
-  const suffix = language === 'en' ? 'plain-words' : 'en-simple';
-  return `${stem || 'paper'}-${suffix}.${extension}`;
-}
-
-/**
- * The document's words, shared with the PDF export so the two formats can
- * never drift apart: one provenance line, one stamp, one pair of note labels.
- */
-export function documentCopy(language = 'es') {
-  return COPY[language === 'en' ? 'en' : 'es'];
+  const shown = names.slice(0, limit).map(escapeLatexText).join(', ');
+  return names.length > limit ? `${shown} et al.` : shown;
 }
 
 function preamble(copy, hasHighlights) {
@@ -263,96 +506,209 @@ function preamble(copy, hasHighlights) {
     '% \\usepackage{fontspec}',
     '% \\setmainfont{Newsreader}',
     `\\usepackage[${copy.babel}]{babel}`,
-    '\\usepackage[a4paper,margin=28mm,bottom=34mm]{geometry}',
-    ...(hasHighlights ? ['\\usepackage{soul}', '\\usepackage{xcolor}'] : []),
-    '\\usepackage[hidelinks]{hyperref}',
+    // Márgenes de 27,5 mm: la medida cae en unos 72 caracteres a 11 pt, que es
+    // medida de lectura. La de antes (28 mm con cuerpo menor) iba por 79.
+    '\\usepackage[a4paper,top=22mm,bottom=20mm,left=27.5mm,right=27.5mm,'
+      + 'headheight=14pt,headsep=10pt,footskip=22pt]{geometry}',
+    // The model writes `\text{}` inside `$…$` more than any other macro, and
+    // `cases`, `pmatrix`, `\mathbb`, `\boldsymbol` and its own `\begin{align}`
+    // are each one compile away too — none of the five exist without this.
+    // Compiled without it: every one of them is fatal, "Undefined control
+    // sequence" or "Environment undefined", zero PDF. Compiled with it, all
+    // five render, and the PDF (real DOM, no LaTeX underneath) already showed
+    // them fine — this line is what makes the .tex agree with it.
+    '\\usepackage{amsmath}',
+    '\\usepackage{amssymb}',
+    '\\usepackage{xcolor}',
+    ...(hasHighlights ? ['\\usepackage{soul}'] : []),
+    // `normalem` no es opcional: sin él ulem redefine \emph como subrayado y
+    // toda la cursiva del documento —incluidos los títulos originales— sale
+    // subrayada. Compilado y mirado.
+    '\\usepackage[normalem]{ulem}',
+    '\\usepackage{titlesec}',
     '\\usepackage{fancyhdr}',
+    '\\usepackage[hidelinks]{hyperref}',
     '',
-    ...(hasHighlights
-      ? [
-        '\\definecolor{ptYellow}{HTML}{FFD21E}',
-        '\\definecolor{ptGrey}{HTML}{F0F0F1}',
-        '\\sethlcolor{ptYellow}',
-        '',
-      ]
-      : []),
+    // El amarillo de pantalla (#FFD21E) a plena saturación detrás del texto lee
+    // como una fotocopia repasada a rotulador. El lavado conserva la marca y
+    // deja de gritar; la de la IA pierde el fondo y pasa a punteado, que es lo
+    // que las distingue también impresas en blanco y negro.
+    '\\definecolor{ptWash}{HTML}{FFE066}',
+    '\\definecolor{ptGrey}{HTML}{6B7280}',
+    '\\definecolor{ptRule}{HTML}{C9CCD4}',
+    ...(hasHighlights ? ['\\sethlcolor{ptWash}'] : []),
+    '',
     ...copy.kindNote.map(line => `% ${line}`),
-    '\\newcommand{\\ptkind}[1]{\\texttt{\\footnotesize #1}}',
+    '\\newcommand{\\ptmono}{\\ttfamily}',
+    '\\newcommand{\\ptkind}[1]{\\textsc{#1}}',
+    // El encabezado tal como está impreso en el paper. Termina en \noindent
+    // \ignorespaces porque abre párrafo y, con babel español, el siguiente
+    // saldría sangrado: el primer párrafo de una sección va a bandera.
+    '\\newcommand{\\ptorig}[1]{\\vspace{-5pt}\\par\\noindent'
+      + '{\\ptmono\\scriptsize\\color{ptGrey}#1}\\par\\vspace{3pt}\\noindent\\ignorespaces}',
+    // Sin encabezado original no se invoca \ptorig, y nada más apaga esa
+    // misma sangría reactivada por babel — el primer párrafo de una sección
+    // así salía sangrado mientras el de una sección con encabezado no
+    // (compilado con pdflatex y mirada la página). Este macro reproduce el
+    // tramo final de \ptorig un carácter a la vez —cancela el after-sep de
+    // \titlespacing* con el mismo -5pt, lo sustituye por el mismo 3pt— para
+    // que el hueco antes del primer párrafo no cambie entre los dos casos;
+    // solo falta el texto gris de en medio, que aquí no hay. Si se retocan
+    // los números de \ptorig hay que retocar estos a la vez: no hay forma de
+    // que compartan la constante sin tocar \ptorig, que es justo lo que este
+    // arreglo tiene prohibido.
+    '\\newcommand{\\ptnoorig}{\\vspace{-5pt}\\par\\vspace{3pt}\\noindent\\ignorespaces}',
+    '\\newcommand{\\ptrule}{\\noindent\\textcolor{ptRule}{\\rule{\\textwidth}{0.4pt}}}',
+    '',
+    // {0.62em}: con \large\bfseries, 1em deja el número descolgado del título.
+    '\\titleformat{\\section}[hang]{\\normalfont\\bfseries\\large}{\\thesection}{0.62em}{}',
+    '\\titlespacing*{\\section}{0pt}{18pt}{5pt}',
     '',
   ];
 }
 
-function footer(copy, originalUrl) {
-  const link = originalUrl
-    ? ` \\textperiodcentered{} \\url{${originalUrl.replace(/([%#&_{}$])/g, '\\$1')}}`
-    : '';
+/**
+ * Las dos páginas que tiene este documento.
+ *
+ * La primera se presenta —quién compuso esto y a qué nivel— y las demás
+ * navegan: a la izquierda el artículo, a la derecha la sección en la que vas.
+ * `\leftmark` da la ÚLTIMA sección abierta en la página, que es lo que quiere
+ * decir «dónde estoy» cuando una sección viene de la página anterior.
+ *
+ * `\fancyhead[L]`/`[R]`, en el `\pagestyle{fancy}` de abajo, son dos zonas
+ * sin ajuste de línea ni control de colisión propio: si lo que llevan no
+ * cupiera en `\textwidth`, se imprimirían una encima de la otra sin aviso de
+ * compilación. Lo que las mantiene separadas es que `meta.runningTitle` y
+ * `sectionMarkText` (las dos, exportDocument.js) llegan aquí ya acotados
+ * — compilado y medido, ver esas dos funciones.
+ *
+ * La procedencia no se mueve al colofón: sigue al pie de CADA página, fuera de
+ * la numeración de las notas, porque el fichero puede acabar lejos de aquí.
+ */
+function pageStyles(meta) {
+  const foot = escapeLatexText(meta.provenance);
   return [
-    ...copy.footerNote.map(line => `% ${line}`),
+    '\\renewcommand{\\sectionmark}[1]'
+      + '{\\markboth{\\thesection\\ \\textperiodcentered\\ #1}{}}',
+    '\\renewcommand{\\headrule}{\\color{ptRule}\\hrule height \\headrulewidth}',
+    '\\renewcommand{\\footrule}{\\color{ptRule}\\hrule height \\footrulewidth}',
+    '',
+    '\\fancypagestyle{ptfirst}{%',
+    '  \\fancyhf{}%',
+    `  \\fancyhead[L]{\\ptmono\\scriptsize ${escapeLatexText(meta.masthead)}}%`,
+    `  \\fancyhead[R]{\\ptmono\\scriptsize ${escapeLatexText(meta.level)}}%`,
+    `  \\fancyfoot[L]{\\ptmono\\scriptsize ${foot}}%`,
+    '  \\fancyfoot[R]{\\thepage}%',
+    '  \\renewcommand{\\headrulewidth}{1.3pt}%',
+    '  \\renewcommand{\\headrule}{\\hrule height \\headrulewidth}%',
+    '  \\renewcommand{\\footrulewidth}{0.4pt}%',
+    '}',
+    '',
     '\\pagestyle{fancy}',
     '\\fancyhf{}',
-    `\\fancyfoot[L]{\\footnotesize ${escapeLatexText(copy.provenance)}${link}}`,
+    `\\fancyhead[L]{\\ptmono\\scriptsize ${escapeLatexText(meta.runningTitle)}}`,
+    '\\fancyhead[R]{\\ptmono\\scriptsize\\leftmark}',
+    `\\fancyfoot[L]{\\ptmono\\scriptsize ${foot}}`,
     '\\fancyfoot[R]{\\thepage}',
-    '\\renewcommand{\\headrulewidth}{0pt}',
+    '\\renewcommand{\\headrulewidth}{0.4pt}',
+    '\\renewcommand{\\footrulewidth}{0.4pt}',
     '',
   ];
 }
 
 /**
- * Numbers every annotation that carries words, in document order, and hands
- * back a lookup by paragraph. A bare highlight has nothing to say in a footnote
- * and is not given a number — it is just colour on the page.
+ * Los siete caracteres que `\url` no deja pasar tal cual, escapados a la
+ * manera de `\url` — que no es la manera de la prosa.
+ *
+ * La premisa heredada del pie de página que la Task 3 quitó era que una
+ * contrabarra delante de los siete (`%#&_{}$`) bastaba. Compilado un
+ * documento por carácter y mirada la página, eso es cierto solo para cuatro:
+ * `%`, `#`, `&` y `_` se leen bien con `\%`, `\#`, `\&`, `\_` — es la única
+ * regla que trae `url.sty` para ellos. Los otros tres, con la misma
+ * contrabarra, salen mal de tres formas distintas, ninguna con aviso de
+ * compilación:
+ *   - `\{` imprime una contrabarra visible seguida de la llave: `\url` la
+ *     lee en modo casi verbatim, así que la contrabarra no escapa nada, es
+ *     un carácter más de la página.
+ *   - `\}` igual.
+ *   - `\$` es el peor: no imprime un signo de dólar ni una contrabarra, sino
+ *     `\protect\T1\textdollar` — el mecanismo interno de hyperref para las
+ *     cadenas del PDF, filtrado a la página como si fuera texto del lector.
+ * Los tres se codifican en porcentaje en su lugar (`%7B`, `%7D`, `%24`): es
+ * la forma canónica de escribir esos caracteres en una URL, así que el
+ * enlace sigue resolviendo exactamente igual y ahora se ve bien. El `%` que
+ * la codificación introduce —y cualquier `%` que ya trajera la URL— pasa
+ * después por la misma regla de contrabarra que ya vale para `%`, `#`, `&`
+ * y `_`.
  */
-export function numberAnnotations(sections, annotations) {
-  const order = new Map();
-  sections.forEach((section, index) => order.set(String(section?.id), index));
-  const placed = annotations
-    .filter(item => item && item.quote)
-    .map((item, arrival) => ({ item, arrival }))
-    .sort((left, right) => {
-      const ls = order.has(String(left.item.sectionId)) ? order.get(String(left.item.sectionId)) : Number.MAX_SAFE_INTEGER;
-      const rs = order.has(String(right.item.sectionId)) ? order.get(String(right.item.sectionId)) : Number.MAX_SAFE_INTEGER;
-      if (ls !== rs) return ls - rs;
-      const lp = Number(left.item.paragraphIndex) || 0;
-      const rp = Number(right.item.paragraphIndex) || 0;
-      if (lp !== rp) return lp - rp;
-      return left.arrival - right.arrival;
-    });
-
-  const byParagraph = new Map();
-  const numbered = [];
-  for (const { item } of placed) {
-    const entry = { ...item };
-    if (item.note) {
-      entry.number = numbered.length + 1;
-      numbered.push(entry);
-    }
-    const key = `${item.sectionId}:${Number(item.paragraphIndex) || 0}`;
-    byParagraph.set(key, [...(byParagraph.get(key) || []), entry]);
-  }
-  return { byParagraph, numbered };
+const URL_PERCENT_ENCODE = { '{': '%7B', '}': '%7D', $: '%24' };
+export function escapeUrlForLatex(value) {
+  return String(value ?? '')
+    .replace(/[{}$]/g, character => URL_PERCENT_ENCODE[character])
+    .replace(/([%#&_])/g, '\\$1');
 }
 
 /**
- * The annotations this rewrite can actually carry.
+ * De dónde salió esto, en una tabla que se lee de un vistazo seis meses después
+ * con el fichero suelto en una carpeta. Ningún campo es nuevo: todos salen del
+ * modelo que ya viaja al export.
  *
- * The rail holds every annotation for the paper, at any level and in any
- * language; the marks in the text are filtered to the rewrite on screen. An
- * export that used the rail's list put notes written on other words into a
- * document that no longer contains them — anchored by quote, a note only means
- * anything in the rewrite it was made on.
- *
- * An annotation with no level recorded predates the field and is kept: dropping
- * it would delete history rather than filter it.
+ * La fila de la fuente es la excepción a `escapeLatexText`: es la única fila
+ * que trae la URL cruda en vez de compuesta dentro de una frase (`meta.source`,
+ * en la portada, ya la lleva metida en una oración), y por eso es aquí donde
+ * vuelve el único enlace clicable que le queda al documento. La Task 3 se
+ * llevó el `\url{}` que antes vivía en el pie de página; desde entonces
+ * `hyperref` se cargaba sin que nada lo usara. `\url` tiene sus propias
+ * reglas de escape — no son las de la prosa — y las da `escapeUrlForLatex`
+ * arriba; una `~` de la URL, por ejemplo, se queda tal cual, mientras que
+ * `escapeLatexText` la habría convertido en `\textasciitilde{}` e impreso el
+ * comando en vez del carácter. La fila se identifica comparando su clave
+ * contra `copy.colophonKeys.source`, nunca contra "Fuente" a pelo ni contra
+ * su posición en el array: el documento existe en inglés también, y allí esa
+ * misma clave es "Source".
  */
-export function exportableAnnotations(annotations = [], { sections = [], level, language } = {}) {
-  const known = new Set(sections.map(section => String(section?.id)));
-  const wanted = language === 'en' ? 'en' : 'es';
-  return annotations.filter(item => {
-    if (!item?.quote) return false;
-    if (level && item.level && item.level !== level) return false;
-    if (item.language && item.language !== wanted) return false;
-    return known.has(String(item.sectionId));
-  });
+function colophon(meta, copy) {
+  if (meta.colophon.rows.length === 0) return [];
+  return [
+    // Todo el bloque —desde el filete hasta la última fila de la tabla— va
+    // dentro de un \minipage. Compilado un documento cuyo cuerpo termina
+    // cerca del margen inferior y mirada la página: sin esto, el filete y el
+    // título «Procedencia» se quedaban solos al pie de una página mientras la
+    // tabla entera aparecía huérfana al principio de la siguiente, sin su
+    // encabezado. Un \minipage es una caja que LaTeX nunca parte por dentro,
+    // así que si el bloque completo no cabe en lo que queda de página se
+    // empuja entero a la siguiente, en vez de partirse por cualquier punto
+    // intermedio. `\textwidth` dentro del \minipage sigue siendo el
+    // `\textwidth` de la página (un \minipage no lo redefine, solo redefine
+    // `\linewidth`), así que el filete y la tabla miden exactamente lo mismo
+    // que medían sin la caja alrededor.
+    //
+    // `\noindent` delante del `\minipage` no es cosmético: sin él, LaTeX abre
+    // un párrafo nuevo para la caja y le suma la sangría de primera línea al
+    // ancho de `\textwidth` que ya tiene la propia caja — compilado, eso
+    // salió como «Overfull \hbox (17.0pt too wide)», los 17pt exactos de esa
+    // sangría. El resto de líneas de este bloque ya llevaban su propio
+    // `\noindent`; a esta le faltaba.
+    '\\noindent\\begin{minipage}{\\textwidth}',
+    '\\vspace{24pt}',
+    '\\noindent\\rule{\\textwidth}{1.3pt}',
+    '\\vspace{6pt}',
+    '',
+    `\\noindent{\\ptmono\\scriptsize ${escapeLatexText(meta.colophon.heading)}}`,
+    '\\vspace{6pt}',
+    '',
+    '\\noindent\\begin{tabular}{@{}p{92pt}p{\\dimexpr\\textwidth-104pt\\relax}@{}}',
+    ...meta.colophon.rows.map(row => {
+      const isSource = row.key === copy.colophonKeys.source;
+      const value = isSource
+        ? `\\url{${escapeUrlForLatex(row.value)}}`
+        : escapeLatexText(row.value);
+      return `{\\ptmono\\scriptsize\\color{ptGrey}${escapeLatexText(row.key)}} & ${value} \\\\[3pt]`;
+    }),
+    '\\end{tabular}',
+    '\\end{minipage}',
+    '',
+  ];
 }
 
 /**
@@ -366,37 +722,48 @@ export function buildLatexDocument({
   level = 'university',
   kindLabels = {},
   originalUrl = '',
+  generatedAt = new Date(),
   include = {},
 } = {}) {
-  const copy = COPY[language === 'en' ? 'en' : 'es'];
-  const wantMarks = include.marks !== false;
-  const wantMine = include.mine !== false;
-  const wantAi = include.ai !== false;
-
-  const kept = exportableAnnotations(annotations, { sections, level, language })
-    .filter(item => {
-      if (item.kind === 'ai') return wantAi;
-      // A bare highlight is a mark; a highlight with words on it is a note. The
-      // two switches are separate because wanting one is not wanting the other.
-      return item.note ? wantMine : wantMarks;
-    });
+  const copy = documentCopy(language);
+  const kept = exportableAnnotations(annotations, {
+    sections, level, language, include,
+  });
 
   const { byParagraph, numbered } = numberAnnotations(sections, kept);
-  const hasHighlights = kept.length > 0;
+  // `ulem` is always loaded (Task 3); `soul` only backs `\hl`, and a document
+  // can now hold AI marks — which render as `\dotuline`, not `\hl` — with no
+  // reader marks at all. Loading `soul` for that document would be harmless,
+  // but emitting `\sethlcolor` without it is a compile error, so this is the
+  // one thing that needed to change: whether there is a reader mark to colour.
+  const hasHighlights = kept.some(item => item.kind !== 'ai');
+
+  const meta = documentMeta({
+    paper, language, level, originalUrl, generatedAt,
+    counts: summarizeExport(kept),
+  });
 
   const lines = [
     ...preamble(copy, hasHighlights),
-    ...footer(copy, originalUrl),
-    `\\title{${escapeLatexText(paper?.title || '')}}`,
-    `\\author{${authorLine(paper)}}`,
-    `\\date{${escapeLatexText(copy.stamp(copy.levels[level] || level))}}`,
-    '',
+    ...pageStyles(meta),
     '\\begin{document}',
-    '\\maketitle',
+    '\\thispagestyle{ptfirst}',
     '',
-    '\\begin{abstract}',
-    escapeLatexText(copy.abstract),
-    '\\end{abstract}',
+    '\\begin{flushleft}',
+    `{\\LARGE ${escapeLatexText(meta.title)}\\par}`,
+    ...(meta.byline ? ['\\vspace{10pt}', `{\\large ${authorLine(paper)}\\par}`] : []),
+    ...(meta.source ? ['\\vspace{5pt}', `{\\ptmono\\small ${escapeLatexText(meta.source)}\\par}`] : []),
+    '\\end{flushleft}',
+    '',
+    // El aviso no es un abstract: no resume el paper, advierte de algo. Etiqueta
+    // al margen y texto a la derecha, entre dos filetes finos.
+    '\\vspace{6pt}\\ptrule\\vspace{6pt}',
+    '',
+    `\\noindent\\begin{minipage}[t]{58pt}\\ptmono\\scriptsize ${escapeLatexText(meta.noticeLabel)}\\end{minipage}%`,
+    '\\hspace{22pt}%',
+    `\\begin{minipage}[t]{\\dimexpr\\textwidth-80pt\\relax}\\small ${escapeLatexText(meta.notice)}\\end{minipage}`,
+    '',
+    '\\vspace{6pt}\\ptrule\\vspace{4pt}',
     '',
   ];
 
@@ -404,7 +771,22 @@ export function buildLatexDocument({
     const label = section?.heading
       || kindLabels[section?.kind]
       || SECTION_FALLBACK[language === 'en' ? 'en' : 'es'];
-    lines.push(`\\section{${escapeLatexText(label)}}`);
+    // `\section[corto]{label}` solo cuando `label` pasa el tope de
+    // `sectionMarkText`: por debajo, el argumento corto sería idéntico al
+    // completo y `\section{label}` de siempre ya es exactamente ese caso.
+    const shortLabel = sectionMarkText(label);
+    lines.push(shortLabel === label
+      ? `\\section{${escapeLatexText(label)}}`
+      : `\\section[${escapeLatexText(shortLabel)}]{${escapeLatexText(label)}}`);
+    // El encabezado tal como está impreso en el paper. Lo devuelve el modelo
+    // (`originalHeading`) y hasta ahora los dos exports lo tiraban: es lo que
+    // deja volver al sitio exacto del PDF original.
+    const origin = String(section?.originalHeading || '').trim();
+    // Con o sin encabezado, algo tiene que apagar la sangría del primer
+    // párrafo — \ptorig lo hacía como efecto colateral de imprimir el
+    // encabezado; \ptnoorig hace solo eso.
+    if (origin) lines.push(`\\ptorig{${escapeLatexText(origin)}}`);
+    else lines.push('\\ptnoorig');
     const paragraphs = Array.isArray(section?.paragraphs) ? section.paragraphs : [];
     paragraphs.forEach((paragraph, index) => {
       const key = `${section?.id}:${index}`;
@@ -413,6 +795,7 @@ export function buildLatexDocument({
     });
   }
 
+  lines.push(...colophon(meta, copy));
   lines.push('\\end{document}');
   lines.push('');
 
@@ -421,20 +804,6 @@ export function buildLatexDocument({
     fileName: exportFileName(paper, language),
     noteCount: numbered.length,
   };
-}
-
-/** What the export card counts, without building the document to find out. */
-export function summarizeExport(annotations = []) {
-  let marks = 0;
-  let mine = 0;
-  let ai = 0;
-  for (const item of annotations) {
-    if (!item?.quote) continue;
-    if (item.kind === 'ai') ai += 1;
-    else if (item.note) mine += 1;
-    else marks += 1;
-  }
-  return { marks, mine, ai };
 }
 
 /** The normalized paragraph text, for callers that need to match offsets. */

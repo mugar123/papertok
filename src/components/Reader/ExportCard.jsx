@@ -152,13 +152,20 @@ export default function ExportCard({
 
         <div className="rd-export-preview">
           <div className="rd-export-sheet" aria-hidden="true">
+            <p className="rd-export-sheet-mast">{copy.previewMasthead}</p>
+            <span className="rd-export-sheet-mastrule" />
             <p className="rd-export-sheet-title">{copy.previewTitle}</p>
             <p className="rd-export-sheet-byline">{copy.previewByline}</p>
-            <div className="rd-export-sheet-abstract">
-              <i /><i style={{ width: '84%' }} />
+            <span className="rd-export-sheet-rule" />
+            <div className="rd-export-sheet-notice">
+              <b>{copy.previewNotice}</b>
+              <span className="rd-export-sheet-notice-lines">
+                <i /><i style={{ width: '76%' }} />
+              </span>
             </div>
             <span className="rd-export-sheet-rule" />
             <p className="rd-export-sheet-section">1&nbsp;&nbsp;{copy.previewSection}</p>
+            <p className="rd-export-sheet-origin">{copy.previewOrigin}</p>
             <div className="rd-export-sheet-lines">
               <i />
               <span className="rd-export-sheet-marked">
