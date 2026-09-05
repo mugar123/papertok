@@ -65,6 +65,12 @@ const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
 // it unmounts, and nothing below it moves at unmount.
 const HERO_STACK_GAP_PX = 16;
 
+// The experience panel arrives open by default (2026-09-04) — up to this many
+// rows. Measured on an author with a long history opened from the feed: 590px
+// of panel, the tab strip pushed 1108px in 710ms. Past this the panel arrives
+// folded and the chevron by the name opens it on the reader's own press.
+const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;
+
 // How the Wikipedia block's fold CLOSES (its opening stays on the arrival
 // curve, inline on the element).
 //
@@ -742,7 +748,10 @@ export default function EntityExplorer({
       const loadOrcid = async () => {
         try {
           const record = prefetchedOrcid || await getOrcidRecord(data.orcid);
-          if (!isCancelled) setOrcidInfo(record);
+          if (!isCancelled) {
+            setOrcidInfo(record);
+            setIsExperienceOpen((record?.employments?.length ?? 0) <= EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS);
+          }
         } catch (e) {
           if (!isCancelled) console.error("Error loading ORCID", e);
         } finally {

@@ -226,3 +226,15 @@ test('the Wikipedia paragraph is keyed by its source so its arrival replays', as
   const jsx = await read('./EntityExplorer.jsx');
   assert.match(jsx, /<p\s+key=\{visibleWikiInfo\?\.extract \? 'wiki' : 'fallback'\}\s+ref=\{wikiDescriptionTextRef\}/);
 });
+
+/**
+ * The panel opens by default when the record lands (2026-09-04). Measured on
+ * an author with a long history: 590px of panel, the tab strip pushed 1108px
+ * in 710ms. Past a few rows the panel arrives folded, and the chevron by the
+ * name opens it on the reader's own press.
+ */
+test('the experience panel arrives open only when it is short', async () => {
+  const jsx = await read('./EntityExplorer.jsx');
+  assert.match(jsx, /const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;/);
+  assert.match(jsx, /setOrcidInfo\(record\);\s*setIsExperienceOpen\(\(record\?\.employments\?\.length \?\? 0\) <= EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS\);/);
+});
