@@ -321,8 +321,9 @@ try {
     // `cycles` times. `follows=many` seeds fourteen follows so Following has
     // cards and a chain still landing; `at=<ms>` taps For you that soon after
     // Following; `until=<cards>` waits for that many cards first; `slow=<rate>`
-    // throttles the CPU; `mouse` is the desktop control. Exit code 1 when a
-    // tap does not change the hash, or the outgoing page has not started to
+    // throttles the CPU; `mouse` is the desktop control; `late` (past the
+    // 2.5 s chunk prefetch, so the Following chunk is warm). Exit code 1 when
+    // a tap does not change the hash, or the outgoing page has not started to
     // leave 400 ms after touchend.
     const flags = new Set((extra || '').split(',').filter(Boolean));
     const num = (name, dflt) => { const f = [...flags].find((x) => x.startsWith(name + '=')); return f ? Number(f.slice(name.length + 1)) : dflt; };

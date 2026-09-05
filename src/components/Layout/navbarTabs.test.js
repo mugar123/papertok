@@ -13,9 +13,11 @@ const stripCssComments = (source) => source.replace(/\/\*[\s\S]*?\*\//g, '');
  * while the other way took one. The only asymmetry in the bar was the
  * element: Research and Following were NavLinks — an <a href="#/…"> — and
  * For you was a <button> calling navigate('/'). When React's click does not
- * run, an anchor still navigates (the browser follows the href and the
- * HashRouter hears the hash); a button does nothing. The three tabs are the
- * same element now, so the fallback is the same for all of them.
+ * run, an anchor still navigates: the browser follows the href, which is a
+ * same-document history navigation and fires `popstate` — the one event
+ * react-router's history listens to (it has no `hashchange` listener). A
+ * button does nothing. The three tabs are the same element now, so the
+ * fallback is the same for all of them.
  */
 function linksRow(jsx) {
   const start = jsx.indexOf('className="navbar-links"');

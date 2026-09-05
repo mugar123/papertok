@@ -161,9 +161,17 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
               to here needed several tries while the other way took one, and
               the element was the only asymmetry in the bar: an anchor still
               navigates when React's click never runs — the browser follows
-              the href and the HashRouter hears the hash — a button does
-              nothing. `end`, or "/" would match every route. React Router
-              runs this onClick before its own and navigates unless it was
+              the href, which is a same-document history navigation and fires
+              `popstate`, the one event react-router's history listens to
+              (chunk-HHGH3NKS.js; it has no `hashchange` listener at all) — a
+              button does nothing. That fallback entry carries no
+              `history.state`, so `usePageTransitionCustom` reads no index and
+              leaves its memory untouched; the tab transition is unaffected
+              (it comes from TAB_ORDER, utils/tabDirection.js), but the next
+              non-tab navigation may animate as a return. It only happens on a
+              path that does nothing today, so it is strictly better than the
+              button. `end`, or "/" would match every route. React Router runs
+              this onClick before its own and navigates unless it was
               defaultPrevented, so the mode reset rides along unchanged. */}
           <NavLink
             to="/"

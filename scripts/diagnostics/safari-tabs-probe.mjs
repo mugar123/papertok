@@ -10,6 +10,10 @@ const PORT = Number(process.env.SD_PORT || 4445);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const driver = spawn('/System/Cryptexes/App/usr/bin/safaridriver', ['-p', String(PORT)], { stdio: 'ignore' });
+driver.on('error', (err) => {
+  console.log('safaridriver not available at /System/Cryptexes/App/usr/bin/safaridriver:', err.message);
+  process.exit(2);
+});
 process.on('exit', () => { try { driver.kill(); } catch {} });
 await sleep(1200);
 
@@ -36,7 +40,10 @@ const FOLLOWS = JSON.stringify([
   ['A5056895519', 'Markus Göker'], ['A5089245822', 'Joshua Adkins'], ['A5006191066', 'Scott Baker'], ['A5005196385', 'Matthew Monroe'], ['A5023982706', 'Richard Smith'],
 ].map(([id, name]) => ({ type: 'author', id, canonicalId: id, name, source: 'openalex' })));
 
-await wd('POST', S('/url'), { url: `${ORIGIN}/blank-for-seed.html` });
+// A real static same-origin page (not "blank" — nothing under this origin
+// serves one, and the SPA fallback would boot the whole app before seeding),
+// loaded only to reach this origin's localStorage.
+await wd('POST', S('/url'), { url: `${ORIGIN}/privacy.html` });
 await sleep(500);
 await exec(`try { localStorage.setItem('papertok_user', JSON.stringify({ uid: 'probe-demo', email: 'probe@example.com', displayName: 'Probe' })); localStorage.setItem('papertok_onboardingComplete', 'true'); localStorage.setItem('papertok_selectedCategories', JSON.stringify(['quant-ph', 'cond-mat.mtrl-sci', 'cs.AI'])); localStorage.setItem('papertok_following_probe-demo', ${JSON.stringify(FOLLOWS)}); } catch (e) { return String(e); } return 'seeded';`);
 await wd('POST', S('/url'), { url: `${ORIGIN}/#/` });
