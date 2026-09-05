@@ -4,9 +4,11 @@ import assert from 'node:assert/strict';
 import {
   DEFAULT_READ_TIMEOUT_MS,
   ReadTimedOutError,
+  SLOW_NOTICE_AFTER_MS,
   isReadTimeout,
   isTransientReadError,
   patientRead,
+  slowNoticeStatus,
   withReadTimeout,
 } from './boundedRead.js';
 
@@ -425,4 +427,31 @@ test('the healing loop survives a retry that also never comes back', async () =>
   await tick();
   assert.equal(late, 'the thread, eventually');
   assert.equal(timers.armed, 0);
+});
+
+// --- when a wait has waited long enough to be worth words -----------------
+
+test('a rejection that arrives in the first frame does not make the screen say "slow"', () => {
+  // The measured case: an unconfirmed absence (see cacheAuthority.js) rejects
+  // in about half a millisecond, and onSlow fires on ANY transient rejection.
+  assert.equal(slowNoticeStatus(2, { offline: false }), null);
+  assert.equal(slowNoticeStatus(0, {}), null);
+  assert.equal(slowNoticeStatus(SLOW_NOTICE_AFTER_MS - 1, undefined), null);
+});
+
+test('past the threshold the wait gets its words', () => {
+  assert.equal(slowNoticeStatus(SLOW_NOTICE_AFTER_MS, { offline: false }), 'slow');
+  assert.equal(slowNoticeStatus(30_000, {}), 'slow');
+});
+
+test('no connection needs no wait: the browser already knows', () => {
+  assert.equal(slowNoticeStatus(0, { offline: true }), 'offline');
+  assert.equal(slowNoticeStatus(30_000, { offline: true }), 'offline');
+});
+
+test('the threshold is below the read budget, so a real timeout still speaks at the first one', () => {
+  assert.ok(SLOW_NOTICE_AFTER_MS < DEFAULT_READ_TIMEOUT_MS);
+  assert.equal(slowNoticeStatus(DEFAULT_READ_TIMEOUT_MS, { offline: false }), 'slow');
+  // Injectable, so a caller with a different budget is not stuck with ours.
+  assert.equal(slowNoticeStatus(500, { offline: false }, 400), 'slow');
 });

@@ -92,6 +92,33 @@ export function isOffline() {
   return typeof navigator !== 'undefined' && navigator.onLine === false;
 }
 
+/**
+ * How long a read has to have been waiting before a screen may call it slow.
+ *
+ * `onSlow` fires at every intermediate timeout AND at every transient
+ * rejection, and the second of those can be instantaneous: a cache-served
+ * absence (src/utils/cacheAuthority.js) rejects in about half a millisecond
+ * once the client has latched itself offline. Measured on the My-comments
+ * page, `onSlow#1` landed at 2 ms — so the skeleton was replaced by "this is
+ * taking longer than usual" inside the first frame, before anything had taken
+ * long. Below the read budget on purpose, so a read that genuinely times out
+ * still gets its words at the first timeout and not one attempt later.
+ */
+export const SLOW_NOTICE_AFTER_MS = 1200;
+
+/**
+ * The status an `onSlow` notification is worth showing, or `null` for "say
+ * nothing yet, the skeleton is still the honest answer".
+ *
+ * Being offline is exempt: the browser's own verdict needs no waiting to be
+ * true, and "there seems to be no connection" is the more useful sentence the
+ * instant it is available.
+ */
+export function slowNoticeStatus(elapsedMs, info, threshold = SLOW_NOTICE_AFTER_MS) {
+  if (info?.offline) return 'offline';
+  return elapsedMs >= threshold ? 'slow' : null;
+}
+
 /** Wakes a waiting read the moment the browser regains a network. */
 function subscribeToOnline(listener) {
   if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {

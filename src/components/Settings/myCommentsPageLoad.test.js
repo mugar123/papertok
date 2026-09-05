@@ -33,3 +33,24 @@ test('load more also refuses a cached absence', async () => {
   const jsx = await read('./MyCommentsPage.jsx');
   assert.match(jsx, /fetchMyCommentsPage\(\{ cursor: state\.cursor \}\)\.then\(authoritativePage\)/);
 });
+
+test('the wait has to have waited: onSlow goes through the elapsed-time gate', async () => {
+  const jsx = await read('./MyCommentsPage.jsx');
+  assert.match(jsx, /import \{[^}]*slowNoticeStatus[^}]*\} from '\.\.\/\.\.\/utils\/boundedRead\.js';/);
+  assert.match(jsx, /const startedAt = Date\.now\(\);/, 'the effect stamps when the read began');
+  const effect = jsx.match(/patientRead\(\(\) => fetchMyCommentsPage\(\)\.then\(authoritativePage\)[\s\S]*?controller\.abort\(\);/);
+  const onSlow = effect[0].match(/onSlow: [\s\S]*?onLateResult:/);
+  assert.ok(onSlow, 'onSlow still comes before onLateResult');
+  assert.match(
+    onSlow[0],
+    /slowNoticeStatus\(Date\.now\(\) - startedAt, info\)/,
+    'an unconfirmed absence rejects in about half a millisecond, and onSlow fires on it: '
+    + 'without the gate the skeleton became "this is taking longer than usual" at 2 ms.',
+  );
+  assert.match(onSlow[0], /status: waited/, 'the gate hands back slow | offline, and both have copy');
+  assert.doesNotMatch(
+    onSlow[0],
+    /info\?\.offline \? 'offline' : 'slow'/,
+    'the offline decision belongs to the gate now, which exempts it from the wait',
+  );
+});

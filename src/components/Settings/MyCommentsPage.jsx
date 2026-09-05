@@ -4,7 +4,7 @@ import { EyeOff, ExternalLink, MessageCircle, Trash2 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { deleteComment, fetchMyCommentsPage } from '../../services/commentService.js';
 import { decodeCanonicalPaperKey } from '../../utils/paperCanonicalKey.js';
-import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
+import { isReadTimeout, patientRead, slowNoticeStatus } from '../../utils/boundedRead.js';
 import { authoritativePage } from './myCommentsLoad.js';
 import SettingsSubheader from './SettingsSubheader.jsx';
 import { SETTINGS_BREADCRUMB } from './settingsBreadcrumb.js';
@@ -99,6 +99,7 @@ export default function MyCommentsPage() {
   useEffect(() => {
     let active = true;
     const controller = new AbortController();
+    const startedAt = Date.now();
     const apply = (page) => {
       if (!active) return;
       setState({ status: 'ready', rows: page.comments, cursor: page.cursor, hasMore: page.hasMore });
@@ -107,8 +108,18 @@ export default function MyCommentsPage() {
       attempts: 3,
       label: 'my comments',
       signal: controller.signal,
+      // `onSlow` fires at every intermediate timeout AND at every transient
+      // rejection — and on the very path this page was rewritten for, the
+      // first rejection is instant: an empty cached answer becomes an
+      // `unavailable` in about half a millisecond, so the skeleton turned
+      // into "this is taking longer than usual" at 2 ms, before anything had
+      // taken long. The gate holds those words until the wait is real; being
+      // offline is exempt, because that sentence is useful immediately.
       onSlow: (attemptNumber, info) => {
-        if (active) setState(previous => ({ ...previous, status: info?.offline ? 'offline' : 'slow' }));
+        if (!active) return;
+        const waited = slowNoticeStatus(Date.now() - startedAt, info);
+        if (!waited) return;
+        setState(previous => ({ ...previous, status: waited }));
       },
       onLateResult: apply,
     })
