@@ -11,7 +11,7 @@
 
 import { collection, getDocs, limit, query } from 'firebase/firestore';
 import { IS_DEMO, db } from './firebase.js';
-import { OWN_LISTS_PAGE_SIZE, readOwnUserProfile } from './userProfileService.js';
+import { OWN_LISTS_PAGE_SIZE, readConfirmedOwnUserProfile } from './userProfileService.js';
 import { queryIsAuthoritative } from '../utils/cacheAuthority.js';
 import {
   ownListsCache,
@@ -62,7 +62,7 @@ async function defaultReadLists(uid) {
 
 export async function warmAccountCaches(uid, {
   storage,
-  readProfile = readOwnUserProfile,
+  readProfile = readConfirmedOwnUserProfile,
   readLists = defaultReadLists,
 } = {}) {
   if (!uid || IS_DEMO || warmed.has(uid)) return;
@@ -73,6 +73,19 @@ export async function warmAccountCaches(uid, {
     // second one may erase what this device remembers: an unpublished
     // profile that came back from storage on every reload was the first
     // one wearing the second one's clothes.
+    //
+    // Which is why the read is the confirmed one. `readOwnUserProfile`
+    // RESOLVES a cache-served miss as `null` — half a millisecond, no
+    // rejection, on a channel that never opened — so the first answer
+    // wore the second one's clothes again, and this time at sign-in,
+    // before any screen had asked anything. Both caches were then written
+    // with that non-answer, and the comments sheet, which seeds its
+    // footer from `ownProfileCache`, told an account with a public
+    // profile to create one. An unconfirmed absence now rejects
+    // (`unavailable`), so it arrives here as a failed read and both
+    // copies are left exactly as they were; a confirmed absence still
+    // resolves `null` and still clears them, which is the whole point of
+    // keeping the two apart.
     readProfile().then(profile => ({ profile }), () => null),
     readLists(uid).catch(() => null),
   ]);
