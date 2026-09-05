@@ -8,7 +8,7 @@ import {
   summarizeExport,
 } from './exportDocument.js';
 import { displayProse } from './latex.js';
-import { isSafeMath } from './latexExport.js';
+import { isNumberedFormula } from './latexExport.js';
 import { buildHighlightPlan } from './textHighlights.js';
 import { loadKatex } from './katexLoader.js';
 
@@ -70,15 +70,9 @@ export function buildPdfModel({
   include = {},
 } = {}) {
   const copy = documentCopy(language);
-  const wantMarks = include.marks !== false;
-  const wantMine = include.mine !== false;
-  const wantAi = include.ai !== false;
-
-  const kept = exportableAnnotations(annotations, { sections, level, language })
-    .filter(item => {
-      if (item.kind === 'ai') return wantAi;
-      return item.note ? wantMine : wantMarks;
-    });
+  const kept = exportableAnnotations(annotations, {
+    sections, level, language, include,
+  });
 
   const { byParagraph, numbered } = numberAnnotations(sections, kept);
   const fallback = SECTION_FALLBACK[language === 'en' ? 'en' : 'es'];
@@ -166,6 +160,17 @@ const MARGIN = 104;
  * appears — not worth reproducing whatever numbering KaTeX chose, when the
  * document's real numbering has to come from `emitMath`'s decisions either
  * way, to agree with the .tex.
+ *
+ * This also swallows a hand-written `\tag{5}` inside a model's own
+ * environment — KaTeX renders that as a `.katex .tag` too, and this rule
+ * hides it the same as an automatic one. Now that the preamble loads
+ * `amsmath` (`\tag` is one of its macros), that is a real asymmetry rather
+ * than a moot one: the .tex used to fail outright on `\tag` with no
+ * document to disagree with, and now compiles it, printing exactly "(5)",
+ * while the PDF still shows `emitMath`'s own document-order number instead.
+ * Left as is — reproducing an author-chosen tag here would mean threading
+ * its value out of `emitMath`'s decisions and into this renderer, which is
+ * a feature, not the numbering-agreement bug this file already fixes.
  */
 const PAGE_CSS = `
 .pdfx-page { box-sizing: border-box; width: ${PAGE_W}px; height: ${PAGE_H}px; padding: 62px ${MARGIN}px 46px; display: flex; flex-direction: column; background: #ffffff; color: #111318; font-family: 'Newsreader Variable', 'Iowan Old Style', Georgia, serif; }
@@ -244,29 +249,49 @@ function renderMath(katex, item) {
  * across paragraphs and sections instead of restarting at zero each time
  * this function runs.
  *
- * Gated on the same two conditions `emitMath` (latexExport.js) checks before
- * wrapping a formula in `\begin{equation}` for the .tex — the two exports
- * are the same document, so an unsafe or a marked formula must not claim a
- * number here either, or the PDF's "(1)" and the .tex's "(1)" could point
- * at two different formulas:
- *   - `isSafeMath(item.raw)`: an unsafe formula is escaped and shown as
- *     source in the .tex, never a real numbered environment there.
- *   - not marked (checked by the caller, via `marked`): a formula
- *     `buildHighlightPlan` covers whole with a highlight or an AI mark is
- *     never wrapped in `\begin{equation}` on the .tex side either — compiled,
- *     both `\hl{\begin{equation}...}` and `\dotuline{\begin{equation}...}`
- *     are fatal errors, so `emitMath` leaves a marked formula as raw and
- *     unnumbered. The PDF has no such constraint of its own (a `<mark>` can
- *     nest inside this flex row with no error), but numbering it anyway
- *     would only buy the two formats different counts for the same
- *     document.
+ * Gated by the caller on `isNumberedFormula` (latexExport.js) — shared with
+ * `emitMath`'s decision to wrap a formula in `\begin{equation}` for the .tex,
+ * so an unsafe or a marked formula can never claim a number here that the
+ * .tex does not also give it.
+ *
+ * `rows` answers a question `isNumberedFormula` does not: not "does this
+ * formula get a number" but "how many". A model-authored `\begin{align}`
+ * reaches the .tex as one chunk (`emitMath` does not re-wrap an environment
+ * the model already wrote) but LaTeX numbers each ROW of it — `\notag`
+ * aside — so counting chunks the way this function used to (always `+= 1`)
+ * let every formula AFTER one drift out of sync with the .tex, one number
+ * short per extra row. Reimplementing that counting means parsing `\notag`,
+ * `\nonumber` and `\\[2pt]` — but KaTeX has already made the same decision by
+ * the time this runs: rendered live and inspected, it paints one `.eqn-num`
+ * per row it numbers — none for a `\notag` row, confirmed with a three-row
+ * `align` and the middle row marked `\notag`, which produced exactly two —
+ * so counting those uses the renderer as the oracle rather than re-deriving
+ * LaTeX's own rule. `.eqn-num` is nested inside the single `.katex .tag`
+ * wrapper PAGE_CSS already hides above, whatever the row count, so hiding it
+ * still hides every row's number with no change needed there. The badge
+ * still shows one number — this row's first, matching the row the .tex
+ * numbers first — and the extra rows are folded into the running count so
+ * whatever comes next still gets the number the .tex will also give it.
+ *
+ * `\begin{eqnarray}` — base LaTeX, needs no `amsmath` — takes a different
+ * path entirely: KaTeX does not implement that environment at all ("No such
+ * environment: eqnarray", confirmed live), so `renderMath` below catches the
+ * error and falls back to the chunk's own raw source as plain text — visibly
+ * broken on the page, not merely mis-numbered, while the .tex renders it
+ * correctly. `rows` still falls back to 1 for it (no `.eqn-num` exists to
+ * count on unrendered text), which does not fix that page — a pre-existing
+ * gap this fix neither causes nor closes — but does mean this function's own
+ * behaviour for it is unchanged, not made worse.
  */
 function numberedEquation(piece, counter) {
+  const rows = piece.querySelectorAll('.katex .eqn-num').length || 1;
   counter.n += 1;
+  const label = counter.n;
+  if (rows > 1) counter.n += rows - 1;
   const body = element('div', 'pdfx-eq-b');
   body.appendChild(piece);
   const row = element('div', 'pdfx-eq');
-  row.append(body, element('span', 'pdfx-eq-n', `(${counter.n})`));
+  row.append(body, element('span', 'pdfx-eq-n', `(${label})`));
   return row;
 }
 
@@ -290,7 +315,7 @@ function renderParagraphInto(node, text, annotations, katex, eqCounter) {
       piece = element(marked ? 'mark' : 'span', marked ? markClass(item.kind) : undefined);
       if (html === null) piece.textContent = item.raw;
       else piece.innerHTML = html;
-      if (item.display && eqCounter && !marked && isSafeMath(item.raw)) piece = numberedEquation(piece, eqCounter);
+      if (eqCounter && isNumberedFormula(item)) piece = numberedEquation(piece, eqCounter);
     } else if (item.type === 'mark') {
       piece = element('mark', markClass(item.kind), displayProse(item.value));
     } else {
