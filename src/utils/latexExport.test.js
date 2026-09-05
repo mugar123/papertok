@@ -5,6 +5,7 @@ import {
   buildLatexDocument,
   escapeLatexText,
   escapeUrlForLatex,
+  isNumberedFormula,
   isSafeMath,
   paragraphChunks,
   renderParagraph,
@@ -383,6 +384,118 @@ test('a section sign becomes \\S{}, not the raw character', () => {
   assert.equal(escapeLatexText('\u00a71 Introduction'), '\\S{}1 Introduction');
 });
 
+test('greek letters and maths relations become \\ensuremath commands, one spot check per category', () => {
+  // The final review probed 62 plausible characters and found 6 in the map;
+  // 25 of the rest made pdflatex refuse a PDF outright, and the other 39
+  // vanished under xelatex with exit 0 and nothing in the log — reachable
+  // end to end, not hypothetical: latex.js's HTML_ENTITIES decodes &le; to ≤
+  // from any OpenAlex title carrying &#8804;. Each assertion below is one
+  // representative of a whole category the systematic test further down
+  // covers exhaustively; compiled and rendered under both engines, both the
+  // roman and \ptmono (\ttfamily) shapes.
+  assert.equal(escapeLatexText('α'), '\\ensuremath{\\alpha}'); // Greek lowercase
+  assert.equal(escapeLatexText('Δ'), '\\ensuremath{\\Delta}'); // Greek uppercase, distinct glyph
+  assert.equal(escapeLatexText('Α'), 'A'); // Greek uppercase, Latin look-alike
+  assert.equal(escapeLatexText('≤'), '\\ensuremath{\\leq}'); // relation (the &le; entity)
+  assert.equal(escapeLatexText('∞'), '\\ensuremath{\\infty}'); // calculus symbol
+  assert.equal(escapeLatexText('→a'), '\\textrightarrow{}a'); // arrow (already shipped, guarded here)
+  // `\ensuremath{\prime}` alone compiles but sets the mark at full baseline
+  // size, a big slash rather than a tick — `ts1enc.def` declares no
+  // `\textprime` either. `{}^\prime` (superscript prime on an empty base) is
+  // the form confirmed to render as a small raised prime.
+  assert.equal(escapeLatexText('T′'), 'T\\ensuremath{{}^\\prime}');
+  assert.equal(escapeLatexText('x⁵'), 'x\\ensuremath{^5}'); // superscript digit
+  assert.equal(escapeLatexText('€5'), '\\texteuro{}5'); // currency
+  // The sharpest catch of this pass: these four compile and print CORRECTLY
+  // as raw UTF-8 under pdfLaTeX, which is exactly what made them look safe —
+  // but under XeLaTeX, this exact preamble (babel spanish + Latin Modern, no
+  // fontspec) prints a silently WRONG character for each: confirmed
+  // rendering both engines side by side, never by reasoning about which
+  // characters "should" be fine.
+  assert.equal(escapeLatexText('¡Hola!'), '\\textexclamdown{}Hola!');
+  assert.equal(escapeLatexText('¿Qué?'), '\\textquestiondown{}Qué?');
+  assert.equal(escapeLatexText('3ª'), '3\\textordfeminine{}');
+  assert.equal(escapeLatexText('4º'), '4\\textordmasculine{}');
+  assert.equal(escapeLatexText('ß'), '\\ss{}');
+  // Invisible: a zero-width space has no LICR entry under pdfLaTeX's default
+  // UTF-8 handling, which is a hard compile error entirely on its own.
+  assert.equal(escapeLatexText('a​b'), 'ab');
+});
+
+test('escapeLatexText leaves no codepoint above U+00FF outside a known-safe set', () => {
+  // Every positive test above (and the ones before it) proves that a
+  // character ALREADY in the map survives. None of them can find the NEXT
+  // hole, because a test built from the map can only ever check the map
+  // against itself — which is exactly how 56 of 62 characters stayed
+  // unmapped for as long as they did. This test does not trust any specific
+  // character to be handled: it scans whole Unicode ranges and demands that
+  // NOTHING in them survives unescaped except a small, explicit allowlist.
+  //
+  // The ranges are the ones this fix closes completely, gaps in Unicode's
+  // own assignment excluded (verified with `\p{Assigned}`, not guessed):
+  // Latin-1 Supplement in full, the Greek alphabet's 24 letters in each
+  // case, and the digit/sign superscripts and subscripts. Three further
+  // blocks — the rest of Mathematical Operators, Arrows and General
+  // Punctuation — carry dozens of set-theory and lattice symbols, hooked and
+  // harpoon arrow variants, and spacing marks no plain-language rewrite of a
+  // paper has ever been observed to emit; only the members this fix actually
+  // added are asserted for those, listed explicitly below rather than
+  // implied by a full scan. Letter superscripts/subscripts (U+2071, U+207F,
+  // U+2090-U+209C) are the one documented, deliberate gap within an
+  // otherwise-closed block: real Unicode assignments, plausible in physics
+  // notation (a subscripted "x" for a velocity component), left unmapped
+  // because they are rarer than the digit form and each needs its own
+  // base-letter command decided empirically — a follow-up, not a hole this
+  // fix hides.
+  const SAFE_LATIN1_LETTERS = new Set([...(
+    'ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞ'
+    + 'àáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿ'
+  )]);
+  // Verified with \p{Assigned}, not guessed: every codepoint Unicode itself
+  // leaves empty inside the two ranges below, plus three more the split at
+  // 0x207E/0x2080 in an earlier draft of this test hid (0x208F between the
+  // digit and letter subscript runs, 0x209D-0x209F after the letter run
+  // ends) -- found by widening the scanned range, which is the whole point
+  // of scanning instead of asserting a hand-picked list.
+  const DOCUMENTED_GAPS = new Set([
+    0x3a2, // Greek uppercase: no capital final sigma
+    0x2071, 0x207f, // letter superscripts outside the digit/sign run
+    0x2072, 0x2073, // unassigned, inside the digit/sign superscript run
+    0x208f, // unassigned, between the subscript digit and letter runs
+    0x209d, 0x209e, 0x209f, // unassigned, after the subscript letter run
+  ]);
+  for (let cp = 0x2090; cp <= 0x209c; cp += 1) DOCUMENTED_GAPS.add(cp);
+
+  const ranges = [
+    [0x00a0, 0x00ff], // Latin-1 Supplement, in full
+    [0x0391, 0x03a9], // Greek uppercase (0x3a2 is unassigned -- no capital final sigma)
+    [0x03b1, 0x03c9], // Greek lowercase
+    [0x2070, 0x209f], // Superscripts and Subscripts (0x2072/0x2073 unassigned)
+  ];
+  const named = [ // the specific Mathematical Operators / Arrows / General
+    // Punctuation members this fix adds -- not the whole block, see above.
+    0x2264, 0x2265, 0x2248, 0x2260, 0x2261, 0x223c, 0x2243, 0x2245, 0x221d,
+    0x226a, 0x226b, 0x2208, 0x2209, 0x2200, 0x2203, 0x2207, 0x221e, 0x221a,
+    0x2211, 0x220f, 0x222b, 0x2202, 0x2190, 0x2194, 0x21d2, 0x21d0, 0x21d4,
+    0x21a6, 0x2192, 0x2032, 0x2033, 0x200b,
+  ];
+
+  const offenders = [];
+  const check = cp => {
+    if (DOCUMENTED_GAPS.has(cp)) return;
+    const char = String.fromCodePoint(cp);
+    if (SAFE_LATIN1_LETTERS.has(char)) return;
+    const escaped = escapeLatexText(char);
+    if (escaped === char) offenders.push(`U+${cp.toString(16).toUpperCase()} (${char})`);
+  };
+  for (const [start, end] of ranges) {
+    for (let cp = start; cp <= end; cp += 1) check(cp);
+  }
+  named.forEach(check);
+
+  assert.deepEqual(offenders, []);
+});
+
 // ---------------------------------------------------------------------------
 // The three the first round of tests did not catch
 // ---------------------------------------------------------------------------
@@ -726,9 +839,9 @@ test('un título corriente no lleva elipsis en ningún sitio del documento', () 
 // imprimieron uno encima del otro, ilegibles, sin un solo aviso de
 // compilación. Un caso más suave —el título envolviendo a dos líneas— sí
 // avisa, con `fancyhdr Warning: \headheight is too small`, pero tampoco es
-// el resultado que se quiere. `runningTitleText` (exportDocument.js) y
-// `sectionMarkText` (arriba) acotan cada zona por separado; ver sus propios
-// comentarios para de dónde salen 45 y 30)
+// el resultado que se quiere. `runningTitleText` y `sectionMarkText` —
+// las dos en exportDocument.js, no aquí — acotan cada zona por separado;
+// ver sus propios comentarios para de dónde salen 45 y 30)
 // ---------------------------------------------------------------------------
 
 test('un título largo llega recortado a \\fancyhead[L], no entero', () => {
@@ -872,4 +985,38 @@ test('una fórmula en bloque cubierta por una marca de IA tampoco se envuelve', 
   ], LABELS);
   assert.doesNotMatch(out, /\\begin\{equation\}/);
   assert.match(out, /\\dotuline\{\$\$a = b\$\$\}/);
+});
+
+// ---------------------------------------------------------------------------
+// El .tex y el PDF no pueden numerar distinto la misma fórmula
+// ---------------------------------------------------------------------------
+
+test('isNumberedFormula da la misma respuesta en cada forma de fórmula, tabla por tabla', () => {
+  // Antes de `isNumberedFormula` los dos formatos deletreaban esta puerta de
+  // dos formas distintas -- `.tex` con `item.value !== item.raw`, el PDF sin
+  // esa condición -- y solo coincidían por suerte; así fue como la deriva de
+  // `eqnarray` entró sin que ningún test la viera. Esta tabla recorre cada
+  // forma que `splitLatexText` (latex.js) produce para una fórmula y pasa
+  // cada una por el MISMO predicado que hoy llaman los dos emisores
+  // (`emitMath` aquí, `numberedEquation` en pdfExport.js): si algún día
+  // vuelven a deletrearlo distinto, esta prueba dejará de tener sentido
+  // antes de dejar de pasar, que es la señal de que el invariante se rompió.
+  const cases = [
+    ['$...$ en línea (no es de bloque)', 'vale $x=1$ hoy', false],
+    ['$$...$$ de bloque', 'vale $$x=1$$ hoy', true],
+    ['\\[...\\] de bloque', 'vale \\[x=1\\] hoy', true],
+    ['\\begin{equation} que ya trae el modelo', 'vale \\begin{equation}x=1\\end{equation} hoy', true],
+    ['\\begin{eqnarray} que ya trae el modelo', 'vale \\begin{eqnarray}x&=&1\\end{eqnarray} hoy', true],
+    ['fórmula insegura', 'vale $$\\input{x}$$ hoy', false],
+  ];
+  for (const [label, text, numbered] of cases) {
+    const chunk = paragraphChunks(text).find(item => item.type === 'math');
+    assert.equal(isNumberedFormula(chunk), numbered, label);
+  }
+  // La sexta fila de la tabla, marcada: ni un subrayado del lector ni una
+  // marca de la IA dejan pasar el número, en ninguno de los dos formatos.
+  const bare = paragraphChunks('vale $$x=1$$ hoy').find(item => item.type === 'math');
+  for (const kind of ['user', 'ai']) {
+    assert.equal(isNumberedFormula({ ...bare, kind }), false, `marcada (${kind})`);
+  }
 });

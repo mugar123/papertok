@@ -107,6 +107,215 @@ const PUNCTUATION = {
 const PUNCTUATION_RE = new RegExp(`[${Object.keys(PUNCTUATION).join('')}]`, 'g');
 
 /**
+ * Symbols an LLM rewrite or an indexed paper title plausibly emits, beyond
+ * the ten reserved characters above and the typographic marks in
+ * `PUNCTUATION`. The final review probed 62 such characters against this
+ * file: escapeLatexText mapped 6 of them, 25 made pdflatex refuse to produce
+ * a PDF at all, and the other 39 vanished under xelatex — exit 0, nothing in
+ * the log, the character simply missing from the page. Not hypothetical: the
+ * pipeline manufactures it. `latex.js`'s `HTML_ENTITIES` decodes `&le;` to
+ * `≤` and `&ge;` to `≥` — two of that table's four symbolic entities were
+ * already handled here, the other two are in the fatal class — and
+ * `decodeHtmlEntity`'s generic `&#NNN;` path means ANY codepoint can arrive
+ * in a title from OpenAlex.
+ *
+ * Every math-only symbol below is wrapped in `\ensuremath{}` rather than
+ * spelled as a dedicated text command, on purpose: a math command draws from
+ * the math font, which \ttfamily does not touch, so it renders identically
+ * in `\ptorig` and the running headers as it does in the body — the same
+ * fix Task 7 already applied to em dashes and curly quotes, generalized to
+ * every symbol that has no text-mode form at all. That also settles primes:
+ * there is no `\textprime` (checked `ts1enc.def` directly, no such glyph is
+ * declared in TS1), and `\ensuremath{\prime}` alone compiles but sets the
+ * mark at full baseline size — a big slash, not a tick — because \prime is
+ * meant to be attached to a superscript. `{}^\prime`, a superscript prime on
+ * an empty base, is the form that actually renders as a small raised prime;
+ * confirmed side by side, both engines, both the roman and \ttfamily shapes.
+ *
+ * The four Spanish orthography marks are the sharpest lesson of this pass:
+ * `¡ ¿ ª º` compile and print CORRECTLY as raw UTF-8 under pdfLaTeX — which
+ * is exactly what made them look safe — but under XeLaTeX, with this exact
+ * preamble (babel spanish + Latin Modern, no fontspec), they silently print
+ * the WRONG character: `¡` came out as `ą`, `¿` as `£`, `ª` as `ł`, `º` as
+ * `ž`. Worse than the missing glyph this whole map is otherwise fixing: a
+ * confident, wrong one, exit 0, nothing in the log. `ß` failed differently
+ * again — correct in roman, an empty box under \ttfamily. All five are
+ * common enough in Spanish text (PaperTok's own `es` copy) that this was
+ * reachable without any exotic input at all. Caught only by rendering both
+ * engines side by side and looking, never by reasoning about which
+ * characters "should" be safe.
+ *
+ * Look-alike Greek capitals (`Α Β Ε ...`) have no LaTeX command of their own
+ * — they are typographically identical to the Latin letter in every font
+ * this document uses — so they map straight to that letter instead of a
+ * command that does not exist. U+200B (zero-width space) maps to the empty
+ * string: it carries no visual meaning and pdfLaTeX's default UTF-8 handling
+ * has no LICR entry for it, which is a hard compile error on its own.
+ */
+const SYMBOLS = {
+  // Greek letters: lowercase, then uppercase distinct from any Latin letter
+  'α': '\\ensuremath{\\alpha}', // U+03B1
+  'β': '\\ensuremath{\\beta}', // U+03B2
+  'γ': '\\ensuremath{\\gamma}', // U+03B3
+  'δ': '\\ensuremath{\\delta}', // U+03B4
+  'ε': '\\ensuremath{\\varepsilon}', // U+03B5
+  'ζ': '\\ensuremath{\\zeta}', // U+03B6
+  'η': '\\ensuremath{\\eta}', // U+03B7
+  'θ': '\\ensuremath{\\theta}', // U+03B8
+  'ι': '\\ensuremath{\\iota}', // U+03B9
+  'κ': '\\ensuremath{\\kappa}', // U+03BA
+  'λ': '\\ensuremath{\\lambda}', // U+03BB
+  'μ': '\\ensuremath{\\mu}', // U+03BC
+  'ν': '\\ensuremath{\\nu}', // U+03BD
+  'ξ': '\\ensuremath{\\xi}', // U+03BE
+  'π': '\\ensuremath{\\pi}', // U+03C0
+  'ρ': '\\ensuremath{\\rho}', // U+03C1
+  'ς': '\\ensuremath{\\varsigma}', // U+03C2
+  'σ': '\\ensuremath{\\sigma}', // U+03C3
+  'τ': '\\ensuremath{\\tau}', // U+03C4
+  'υ': '\\ensuremath{\\upsilon}', // U+03C5
+  'φ': '\\ensuremath{\\varphi}', // U+03C6
+  'χ': '\\ensuremath{\\chi}', // U+03C7
+  'ψ': '\\ensuremath{\\psi}', // U+03C8
+  'ω': '\\ensuremath{\\omega}', // U+03C9
+  'Γ': '\\ensuremath{\\Gamma}', // U+0393
+  'Δ': '\\ensuremath{\\Delta}', // U+0394
+  'Θ': '\\ensuremath{\\Theta}', // U+0398
+  'Λ': '\\ensuremath{\\Lambda}', // U+039B
+  'Ξ': '\\ensuremath{\\Xi}', // U+039E
+  'Π': '\\ensuremath{\\Pi}', // U+03A0
+  'Σ': '\\ensuremath{\\Sigma}', // U+03A3
+  'Υ': '\\ensuremath{\\Upsilon}', // U+03A5
+  'Φ': '\\ensuremath{\\Phi}', // U+03A6
+  'Ψ': '\\ensuremath{\\Psi}', // U+03A8
+  'Ω': '\\ensuremath{\\Omega}', // U+03A9
+
+  // Greek look-alikes: no distinct glyph, so no distinct command
+  'ο': 'o', // U+03BF
+  'Α': 'A', // U+0391
+  'Β': 'B', // U+0392
+  'Ε': 'E', // U+0395
+  'Ζ': 'Z', // U+0396
+  'Η': 'H', // U+0397
+  'Ι': 'I', // U+0399
+  'Κ': 'K', // U+039A
+  'Μ': 'M', // U+039C
+  'Ν': 'N', // U+039D
+  'Ο': 'O', // U+039F
+  'Ρ': 'P', // U+03A1
+  'Τ': 'T', // U+03A4
+  'Χ': 'X', // U+03A7
+
+  // Relations and operators (core LaTeX, no amssymb needed)
+  '≤': '\\ensuremath{\\leq}', // U+2264
+  '≥': '\\ensuremath{\\geq}', // U+2265
+  '≈': '\\ensuremath{\\approx}', // U+2248
+  '≠': '\\ensuremath{\\neq}', // U+2260
+  '≡': '\\ensuremath{\\equiv}', // U+2261
+  '∼': '\\ensuremath{\\sim}', // U+223C
+  '≃': '\\ensuremath{\\simeq}', // U+2243
+  '≅': '\\ensuremath{\\cong}', // U+2245
+  '∝': '\\ensuremath{\\propto}', // U+221D
+  '≪': '\\ensuremath{\\ll}', // U+226A
+  '≫': '\\ensuremath{\\gg}', // U+226B
+  '∈': '\\ensuremath{\\in}', // U+2208
+  '∉': '\\ensuremath{\\notin}', // U+2209
+  '∀': '\\ensuremath{\\forall}', // U+2200
+  '∃': '\\ensuremath{\\exists}', // U+2203
+  '∇': '\\ensuremath{\\nabla}', // U+2207
+  '¬': '\\ensuremath{\\neg}', // U+00AC
+  '±': '\\ensuremath{\\pm}', // U+00B1
+  '÷': '\\ensuremath{\\div}', // U+00F7
+
+  // Calculus / big operators, standalone (no argument needed)
+  '∞': '\\ensuremath{\\infty}', // U+221E
+  '√': '\\ensuremath{\\surd}', // U+221A
+  '∑': '\\ensuremath{\\sum}', // U+2211
+  '∏': '\\ensuremath{\\prod}', // U+220F
+  '∫': '\\ensuremath{\\int}', // U+222B
+  '∂': '\\ensuremath{\\partial}', // U+2202
+
+  // Arrows (\textrightarrow already lived in PUNCTUATION)
+  '←': '\\ensuremath{\\leftarrow}', // U+2190
+  '↔': '\\ensuremath{\\leftrightarrow}', // U+2194
+  '⇒': '\\ensuremath{\\Rightarrow}', // U+21D2
+  '⇐': '\\ensuremath{\\Leftarrow}', // U+21D0
+  '⇔': '\\ensuremath{\\Leftrightarrow}', // U+21D4
+  '↦': '\\ensuremath{\\mapsto}', // U+21A6
+
+  // Primes: see the block comment above for why {}^\prime, not \prime
+  '′': '\\ensuremath{{}^\\prime}', // U+2032
+  '″': '\\ensuremath{{}^{\\prime\\prime}}', // U+2033
+
+  // Superscript digits and symbols
+  '⁰': '\\ensuremath{^0}', // U+2070
+  '¹': '\\ensuremath{^1}', // U+00B9
+  '²': '\\ensuremath{^2}', // U+00B2
+  '³': '\\ensuremath{^3}', // U+00B3
+  '⁴': '\\ensuremath{^4}', // U+2074
+  '⁵': '\\ensuremath{^5}', // U+2075
+  '⁶': '\\ensuremath{^6}', // U+2076
+  '⁷': '\\ensuremath{^7}', // U+2077
+  '⁸': '\\ensuremath{^8}', // U+2078
+  '⁹': '\\ensuremath{^9}', // U+2079
+  '⁺': '\\ensuremath{^+}', // U+207A
+  '⁻': '\\ensuremath{^-}', // U+207B
+  '⁼': '\\ensuremath{^=}', // U+207C
+  '⁽': '\\ensuremath{^(}', // U+207D
+  '⁾': '\\ensuremath{^)}', // U+207E
+
+  // Subscript digits and symbols
+  '₀': '\\ensuremath{_0}', // U+2080
+  '₁': '\\ensuremath{_1}', // U+2081
+  '₂': '\\ensuremath{_2}', // U+2082
+  '₃': '\\ensuremath{_3}', // U+2083
+  '₄': '\\ensuremath{_4}', // U+2084
+  '₅': '\\ensuremath{_5}', // U+2085
+  '₆': '\\ensuremath{_6}', // U+2086
+  '₇': '\\ensuremath{_7}', // U+2087
+  '₈': '\\ensuremath{_8}', // U+2088
+  '₉': '\\ensuremath{_9}', // U+2089
+  '₊': '\\ensuremath{_+}', // U+208A
+  '₋': '\\ensuremath{_-}', // U+208B
+  '₌': '\\ensuremath{_=}', // U+208C
+  '₍': '\\ensuremath{_(}', // U+208D
+  '₎': '\\ensuremath{_)}', // U+208E
+
+  // Latin-1 Supplement symbols — see the block comment above for ¡¿ªºß
+  '°': '\\ensuremath{^\\circ}', // U+00B0
+  'µ': '\\ensuremath{\\mu}', // U+00B5
+  '¶': '\\P{}', // U+00B6
+  '¢': '\\textcent{}', // U+00A2
+  '£': '\\pounds{}', // U+00A3
+  '¥': '\\textyen{}', // U+00A5
+  '€': '\\texteuro{}', // U+20AC
+  '¼': '\\textonequarter{}', // U+00BC
+  '½': '\\textonehalf{}', // U+00BD
+  '¾': '\\textthreequarters{}', // U+00BE
+  '¡': '\\textexclamdown{}', // U+00A1
+  '¿': '\\textquestiondown{}', // U+00BF
+  'ª': '\\textordfeminine{}', // U+00AA
+  'º': '\\textordmasculine{}', // U+00BA
+  'ß': '\\ss{}', // U+00DF
+  '¤': '\\textcurrency{}', // U+00A4
+  '¦': '\\textbrokenbar{}', // U+00A6
+  '¨': '\\textasciidieresis{}', // U+00A8
+  '©': '\\copyright{}', // U+00A9
+  '­': '\\-', // U+00AD (SOFT HYPHEN)
+  '®': '\\textregistered{}', // U+00AE
+  '¯': '\\textasciimacron{}', // U+00AF
+  '´': '\\textasciiacute{}', // U+00B4
+  '¸': '\\c{}', // U+00B8 — no dedicated glyph exists (checked ts1enc.def:
+  //  only \capitalcedilla, which combines onto a letter); \c{} on an empty
+  //  group is the closest a standalone spacing cedilla gets, for a
+  //  character with no real occurrence in scientific prose.
+
+  // Invisible: no visual meaning, so no replacement
+  '​': '', // U+200B (ZWSP)
+};
+const SYMBOLS_RE = new RegExp(`[${Object.keys(SYMBOLS).join('')}]`, 'g');
+
+/**
  * Control sequences that do something other than typeset.
  *
  * Only maths reaches the file unescaped — prose is escaped character by
@@ -134,7 +343,8 @@ export function escapeLatexText(value) {
   return String(value ?? '')
     .replace(/\\%/g, '%')
     .replace(LATEX_SPECIAL, character => LATEX_ESCAPE[character])
-    .replace(PUNCTUATION_RE, character => PUNCTUATION[character]);
+    .replace(PUNCTUATION_RE, character => PUNCTUATION[character])
+    .replace(SYMBOLS_RE, character => SYMBOLS[character]);
 }
 
 /** Whether a maths chunk may pass through to the file unescaped. */
@@ -142,6 +352,30 @@ export function isSafeMath(value) {
   const text = String(value ?? '');
   if (UNSAFE_MATH.test(text)) return false;
   return !/\\end\s*\{\s*document\s*\}/i.test(text);
+}
+
+/**
+ * Whether a maths chunk becomes a real, numbered environment once the .tex
+ * compiles — shared with `pdfExport.js`'s `numberedEquation` gate so a
+ * numbered formula in the .tex and a numbered badge in the PDF can never
+ * point at two different formulas. Before this existed, the two files spelled
+ * the same idea differently (`item.value !== item.raw` here, absent there)
+ * and only agreed by luck; nothing stopped them from drifting apart the way
+ * F3 found they already had for `eqnarray`.
+ *
+ * An unsafe chunk is shown as escaped source, never a real environment
+ * (`emitMath`, below). A chunk a highlight or an AI mark covers whole is left
+ * unwrapped and unnumbered on the .tex side too — compiled, both
+ * `\hl{\begin{equation}...}` and `\dotuline{\begin{equation}...}` are fatal
+ * errors, so a marked formula stays raw. NOT part of this: whether `emitMath`
+ * needs to WRAP the chunk in `\begin{equation}` (`item.value !== item.raw`)
+ * versus it already being a real environment the model wrote itself — either
+ * way the compiled .tex ends up with one real numbered environment, so the
+ * PDF counts both the same; that distinction is `.tex`-only plumbing this
+ * predicate does not need.
+ */
+export function isNumberedFormula(item) {
+  return Boolean(item?.display) && !item?.kind && isSafeMath(item?.raw);
 }
 
 /**
@@ -182,7 +416,7 @@ function emitMath(item) {
   // formula was before this task — which is the one shape both packages
   // already carry correctly (verified by compiling; see the highlight
   // tests above, "a highlight that spans a formula...").
-  if (item.display && item.value !== item.raw && !item.kind) {
+  if (isNumberedFormula(item) && item.value !== item.raw) {
     return `\\begin{equation}\n${item.value}\n\\end{equation}`;
   }
   return item.raw;
@@ -200,7 +434,10 @@ function emitMath(item) {
  */
 export function renderParagraph(text, annotations = [], labels = {}) {
   const plan = buildHighlightPlan(text, annotations);
-  const marked = annotations.filter(item => item?.note);
+  // Holds notes, not marks: a bare highlight has no entry here, only an
+  // annotation with words on it does. `isMarked`, three lines below in the
+  // main loop, is the one that means "marked".
+  const noted = annotations.filter(item => item?.note);
   const pieces = [];
   let run = null;
 
@@ -217,7 +454,7 @@ export function renderParagraph(text, annotations = [], labels = {}) {
     // at the end of the document: LaTeX puts a footnote at the foot of the page
     // its marker landed on, which is the whole point. Emitting them at the end
     // put every note on the LAST page the moment there was more than one page.
-    const note = marked.find(item => item.id === run.id);
+    const note = noted.find(item => item.id === run.id);
     const kind = note && (note.kind === 'ai' ? labels.ai : labels.mine);
     pieces.push(note
       ? `${command}{${body}}\\footnote{\\ptkind{${escapeLatexText(kind || '')}}\\quad ${escapeLatexText(note.note)}}`
@@ -273,6 +510,15 @@ function preamble(copy, hasHighlights) {
     // medida de lectura. La de antes (28 mm con cuerpo menor) iba por 79.
     '\\usepackage[a4paper,top=22mm,bottom=20mm,left=27.5mm,right=27.5mm,'
       + 'headheight=14pt,headsep=10pt,footskip=22pt]{geometry}',
+    // The model writes `\text{}` inside `$…$` more than any other macro, and
+    // `cases`, `pmatrix`, `\mathbb`, `\boldsymbol` and its own `\begin{align}`
+    // are each one compile away too — none of the five exist without this.
+    // Compiled without it: every one of them is fatal, "Undefined control
+    // sequence" or "Environment undefined", zero PDF. Compiled with it, all
+    // five render, and the PDF (real DOM, no LaTeX underneath) already showed
+    // them fine — this line is what makes the .tex agree with it.
+    '\\usepackage{amsmath}',
+    '\\usepackage{amssymb}',
     '\\usepackage{xcolor}',
     ...(hasHighlights ? ['\\usepackage{soul}'] : []),
     // `normalem` no es opcional: sin él ulem redefine \emph como subrayado y
@@ -480,17 +726,9 @@ export function buildLatexDocument({
   include = {},
 } = {}) {
   const copy = documentCopy(language);
-  const wantMarks = include.marks !== false;
-  const wantMine = include.mine !== false;
-  const wantAi = include.ai !== false;
-
-  const kept = exportableAnnotations(annotations, { sections, level, language })
-    .filter(item => {
-      if (item.kind === 'ai') return wantAi;
-      // A bare highlight is a mark; a highlight with words on it is a note. The
-      // two switches are separate because wanting one is not wanting the other.
-      return item.note ? wantMine : wantMarks;
-    });
+  const kept = exportableAnnotations(annotations, {
+    sections, level, language, include,
+  });
 
   const { byParagraph, numbered } = numberAnnotations(sections, kept);
   // `ulem` is always loaded (Task 3); `soul` only backs `\hl`, and a document
