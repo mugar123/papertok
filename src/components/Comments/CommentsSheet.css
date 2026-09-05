@@ -403,10 +403,12 @@
   margin: var(--space-4) 0;
 }
 
-/* The confirmation chip. Its wrapper (`.comments-sheet-notice`) is the
-   always-mounted live region and has no chrome of its own; the chip is the
-   child that ThreadSlot folds in and out, so its margins ride inside the
-   fold (the slot is overflow: hidden, a block formatting context). */
+/* The confirmation chip. Its wrappers (`.comments-sheet-notice`, one polite
+   and one assertive, both mounted for the life of the sheet so neither ever
+   changes role) have no chrome of their own — which is why the empty one
+   costs nothing. The chip is the child that ThreadSlot folds in and out, so
+   its margins ride inside the fold (the slot is overflow: hidden, a block
+   formatting context). */
 .comments-sheet-notice-chip {
   margin: var(--space-3) 0 var(--space-4);
   padding: var(--space-2) var(--space-3);
@@ -533,6 +535,15 @@
   font-family: var(--font-body);
 }
 
+/* The composer while the viewer's own profile is still on the wire. It is
+   `readOnly`, not `disabled` — a disabled control leaves the tab order, and
+   this box is the one carrying the explanation — so the primitive's own
+   dimming (which keys off `:disabled`) never applies and is restated here. */
+.comments-composer-input[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .comments-composer-send {
   flex: 0 0 auto;
 }
@@ -547,6 +558,20 @@
   border-radius: var(--radius-sm);
   background: var(--tint-red-bg);
   color: var(--tint-red-fg);
+  font-size: var(--fs-xs);
+  line-height: var(--lh-normal);
+}
+
+/* The wait, in the same box as the error and with the same margins so the
+   footer measures the same either way — but neutral, because nothing has gone
+   wrong: the read is still running behind it. */
+.comments-composer-wait {
+  margin: var(--space-2) 0 0;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--tint-neutral-line);
+  border-radius: var(--radius-sm);
+  background: var(--tint-neutral-bg);
+  color: var(--tint-neutral-fg);
   font-size: var(--fs-xs);
   line-height: var(--lh-normal);
 }

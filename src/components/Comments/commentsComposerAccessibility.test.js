@@ -21,10 +21,21 @@ const stripComments = source => source
 
 const read = async (path) => stripComments(await readFile(new URL(path, import.meta.url), 'utf8'));
 
+/**
+ * The LIVE composer, anchored on the ref it is the only holder of.
+ *
+ * This used to match the first `<Textarea>` in the file and trust that it was
+ * the live one — which made "keep the loading branch below the ready branch" a
+ * load-bearing rule of a source test that never said so. The ref is the honest
+ * anchor: the inert placeholder composer does not take focus programmatically
+ * and has no ref of its own.
+ */
+const liveComposer = jsx => jsx.match(/<Textarea\s+ref=\{composerInput\}[\s\S]*?\/>/);
+
 test('the composer textarea is named by more than its placeholder', async () => {
   const jsx = await read('./CommentsSheet.jsx');
 
-  const textarea = jsx.match(/<(?:textarea|Textarea)\b[\s\S]*?\/>/);
+  const textarea = liveComposer(jsx);
   assert.ok(textarea, 'the composer textarea changed shape; update this test alongside it');
   assert.match(
     textarea[0],
@@ -54,7 +65,7 @@ test('the composer textarea is named by more than its placeholder', async () => 
 test('a failed post or edit is tied to the composer field, not only announced', async () => {
   const jsx = await read('./CommentsSheet.jsx');
 
-  const textarea = jsx.match(/<(?:textarea|Textarea)\b[\s\S]*?\/>/)[0];
+  const textarea = liveComposer(jsx)[0];
   assert.match(
     textarea,
     /aria-invalid=\{composerError \? 'true' : undefined\}/,

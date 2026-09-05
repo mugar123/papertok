@@ -27,15 +27,33 @@ test('the notice is the pure lifecycle, and a success expires on a timer armed f
   assert.doesNotMatch(jsx, /setNotice\(\{/, 'every call site goes through announce()/clearNotice()');
 });
 
-test('the live region stays mounted; the chip inside it is keyed and animated by ThreadSlot', async () => {
+test('both live regions stay mounted, and neither ever changes role', async () => {
   const jsx = await read('./CommentsSheet.jsx');
-  const region = jsx.match(/<div\s+className="comments-sheet-notice"[\s\S]*?<\/div>\s*\n\s*<\/div>\s*\n\s*<footer/);
-  assert.ok(region, 'the notice region is a div right before the footer');
-  assert.match(region[0], /role=\{notice\.tone === 'error' \? 'alert' : 'status'\}/);
-  assert.match(region[0], /aria-live=\{notice\.tone === 'error' \? 'assertive' : 'polite'\}/);
-  assert.match(region[0], /<AnimatePresence mode="wait" initial=\{false\}>/);
-  assert.match(region[0], /\{notice\.text && \(\s*<ThreadSlot key=\{notice\.seq\} reduced=\{prefersReducedMotion\}>/);
-  assert.match(region[0], /className=\{`comments-sheet-notice-chip is-\$\{notice\.tone\}`\}/);
+
+  // A region whose role or politeness changes is re-registered by several
+  // screen readers, and the mutation that changed it is the one they drop —
+  // the same hazard as a node born with its message, which is why the
+  // wrapper is permanent in the first place. `clearedNotice` keeps the tone,
+  // so a success leaving and a failure arriving used to flip status → alert
+  // in the very frame the alert text landed.
+  assert.doesNotMatch(jsx, /role=\{notice\.tone/, 'the role is fixed per region, never computed');
+  assert.doesNotMatch(jsx, /aria-live=\{notice\.tone/, 'and so is the politeness');
+
+  const polite = jsx.match(/<div className="comments-sheet-notice" role="status" aria-live="polite">[\s\S]*?<\/div>/);
+  assert.ok(polite, 'the polite region is mounted permanently');
+  assert.match(polite[0], /<AnimatePresence mode="wait" initial=\{false\}>/);
+  assert.match(polite[0], /\{notice\.text && notice\.tone !== 'error' && \(\s*<ThreadSlot key=\{notice\.seq\} reduced=\{prefersReducedMotion\}>/);
+  assert.match(polite[0], /className=\{`comments-sheet-notice-chip is-\$\{notice\.tone\}`\}/);
+
+  const alert = jsx.match(/<div className="comments-sheet-notice" role="alert" aria-live="assertive">[\s\S]*?<\/div>/);
+  assert.ok(alert, 'the assertive region is mounted permanently too');
+  assert.match(alert[0], /<AnimatePresence mode="wait" initial=\{false\}>/);
+  assert.match(alert[0], /\{notice\.text && notice\.tone === 'error' && \(\s*<ThreadSlot key=\{notice\.seq\} reduced=\{prefersReducedMotion\}>/);
+  assert.match(alert[0], /className="comments-sheet-notice-chip is-error"/);
+
+  // Both sit between the body and the footer, and the wrapper has no chrome
+  // of its own, so the empty one costs nothing.
+  assert.match(jsx, /<\/div>\s*\n\s*<\/div>\s*\n\s*<footer/);
   assert.doesNotMatch(jsx, /has-text/);
 });
 

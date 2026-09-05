@@ -25,7 +25,7 @@ import {
   readModerationConfig,
   submitReport,
 } from '../../services/reportService.js';
-import { readOwnUserProfile } from '../../services/userProfileService.js';
+import { readConfirmedOwnUserProfile } from '../../services/userProfileService.js';
 import { auth } from '../../services/firebase.js';
 import { rememberOwnProfile } from '../../utils/profileSessionCaches.js';
 import { LOADING_PROFILE, composerStateFor, ownProfileFrom, seedOwnProfile } from './composerGate.js';
@@ -33,7 +33,7 @@ import { IDLE_NOTICE, clearedNotice, expireNotice, nextNotice, noticeLifetime } 
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { commentIsDissociated } from '../../utils/commentIdentity.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
-import { isReadTimeout, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
+import { isReadTimeout, patientRead, slowNoticeStatus, withReadTimeout } from '../../utils/boundedRead.js';
 import { areaAccentForPaper } from '../../utils/areaAccent.js';
 import { Button } from '../ui/button.jsx';
 import { Drawer, DrawerBody, DrawerContent } from '../ui/drawer.jsx';
@@ -84,6 +84,14 @@ const COPY = {
     en: 'This is taking unusually long. We are still trying in the background.',
   },
   retry: { es: 'Reintentar', en: 'Try again' },
+  // The inert composer's own voice. The thread above it has already painted
+  // from the Worker, so a dead box with no words reads as a broken sheet
+  // rather than as a wait — and the box cannot offer a retry, because the
+  // body above already owns that button.
+  composerWaking: {
+    es: 'La barra de escribir aún está en camino. Seguimos intentándolo.',
+    en: 'The composer is still on its way. Still trying.',
+  },
   more: { es: 'Cargar más', en: 'Load more' },
   placeholder: { es: 'Añade un comentario...', en: 'Add a comment...' },
   // The visible placeholder vanishes once the composer holds any text, so the
@@ -143,6 +151,22 @@ const WAITING_COPY = {
   // with no end and no words reads as a hung screen, so it gets both.
   stalled: COPY.stalledLoad,
   error: COPY.loadError,
+};
+
+/**
+ * The same three waits, for the OTHER read — the viewer's own profile, which
+ * decides whether there is a composer at all.
+ *
+ * That read had neither an `onSlow` nor a visible failure: a spent budget was
+ * a bare `return`, and the footer stayed a "Cargando..." box forever with
+ * nothing on screen to explain it. There is no `error` here on purpose: a
+ * non-transient failure settles the gate into one of the four doors instead,
+ * which say their own piece.
+ */
+const PROFILE_WAIT_COPY = {
+  slow: COPY.composerWaking,
+  offline: COPY.noConnection,
+  stalled: COPY.stalledLoad,
 };
 
 const RELATIVE_STEPS = [
@@ -394,6 +418,10 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   const [ownProfile, setOwnProfile] = useState(
     () => (isAuthenticated && seedOwnProfile(auth.currentUser?.uid)) || LOADING_PROFILE,
   );
+  // null | 'slow' | 'offline' | 'stalled' — what the inert composer says while
+  // the profile read is still out. See PROFILE_WAIT_COPY.
+  const [profileWait, setProfileWait] = useState(null);
+  const profileWaitId = useId();
   const [hiddenLocally, setHiddenLocally] = useState(() => locallyHiddenCommentIds());
   const [paging, setPaging] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -559,32 +587,69 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   // first), so the effect simply has nothing to fetch. Signed in, the read
   // is the one Firestore document the sheet still fetches itself — the
   // thread comes from the Worker — and on a cold channel it is the slow one,
-  // so it gets the same patience as the thread: a spent budget is still a
-  // wait (the loop keeps reading and `onLateResult` seats the answer), and
-  // only a verdict settles the gate.
+  // so it gets the same patience as the thread, three attempts included: a
+  // spent budget is still a wait (the loop keeps reading and `onLateResult`
+  // seats the answer), and only a verdict settles the gate.
+  //
+  // `readConfirmedOwnUserProfile` is what makes "a verdict" mean anything.
+  // The plain read answers `null` for a document the local cache merely
+  // failed to find — a RESOLVED promise, in about half a millisecond, which
+  // no amount of patience above it can retry — and the footer then told an
+  // account with a public profile to create one. That is the same symptom
+  // this whole read was rewritten to kill, reached by the second of the two
+  // shapes a stall has. Now an unconfirmed absence rejects as `unavailable`
+  // and is met with patience like any other.
   useEffect(() => {
     if (!isAuthenticated) return undefined;
     let active = true;
     const controller = new AbortController();
+    const startedAt = Date.now();
     const uid = auth.currentUser?.uid;
     const apply = (profile) => {
       if (!active) return;
+      // Authoritative by construction, which is what earns the write-through:
+      // `ownProfileCache` is SHARED — /settings/profile seeds its
+      // "create your profile" screen straight from this entry — so one
+      // unconfirmed `null` cached here used to flip a second screen too.
       rememberOwnProfile(uid, profile);
+      setProfileWait(null);
       setOwnProfile(ownProfileFrom(profile));
     };
-    patientRead(() => readOwnUserProfile(), {
-      attempts: 2,
+    patientRead(() => readConfirmedOwnUserProfile(), {
+      attempts: 3,
       label: 'own profile',
       signal: controller.signal,
+      // The composer has no words of its own, and the thread above it has
+      // already painted: without this the footer is a dead control nothing on
+      // screen explains. The gate is what keeps it honest — the first
+      // rejection here can arrive in under a millisecond (an unconfirmed
+      // absence), and "this is taking a while" at 2 ms is not true.
+      onSlow: (attemptNumber, info) => {
+        if (!active) return;
+        const waited = slowNoticeStatus(Date.now() - startedAt, info);
+        if (!waited) return;
+        setProfileWait(waited);
+      },
       onLateResult: apply,
     })
       .then(apply)
       .catch((error) => {
         if (!active) return;
-        if (isReadTimeout(error)) return;
+        if (isReadTimeout(error)) {
+          // The budget is spent, the loop is not: `onLateResult` stays armed
+          // and can still seat the profile. This used to be a bare `return`,
+          // which left "Cargando..." standing for the life of the sheet with
+          // nothing anywhere saying why.
+          console.warn('The viewer profile did not answer in time', error);
+          setProfileWait('stalled');
+          return;
+        }
         // Not transient (patientRead never settles on those) and not a
-        // timeout: permission, demo, a thrown TypeError. Honest answer.
+        // timeout: permission, demo, a thrown TypeError. Honest answer, and
+        // local only — a denial is news about this session, not a fact about
+        // the account worth caching for the other screens.
         console.error('The viewer profile could not be read', error);
+        setProfileWait(null);
         setOwnProfile(ownProfileFrom(null));
       });
     return () => {
@@ -963,20 +1028,37 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               {paging ? text(COPY.loading) : text(COPY.more)}
             </Button>
           )}
-          {/* The region is persistent (see the state above); the chip inside
-              it is what comes and goes, through the same slot the reply chip
-              and the composer error use, so it never shoves the thread by its
-              own height in one frame. `mode="wait"`: a confirmation that
-              replaces another lets it leave first instead of stacking. */}
-          <div
-            className="comments-sheet-notice"
-            role={notice.tone === 'error' ? 'alert' : 'status'}
-            aria-live={notice.tone === 'error' ? 'assertive' : 'polite'}
-          >
+          {/* Two regions, both permanent, and the chip goes into whichever one
+              matches its tone.
+              The regions are persistent for the same reason as ever (a live
+              region created together with its message is frequently missed),
+              but one region with a computed `role` reintroduced the hazard by
+              another door: several screen readers re-register a region whose
+              role or politeness changes, and drop the mutation that changed
+              it. `clearedNotice` keeps the tone, so after a success expires
+              the region sat at `status`, and the next failure flipped it to
+              `alert` in the exact frame the alert text arrived — the common
+              path, not an edge case. Fixed roles, one empty wrapper, and the
+              wrapper has no chrome, so the empty one costs nothing.
+              The chip inside is what comes and goes, through the same slot
+              the reply chip and the composer error use, so it never shoves the
+              thread by its own height in one frame. `mode="wait"`: a
+              confirmation that replaces another lets it leave first instead of
+              stacking. */}
+          <div className="comments-sheet-notice" role="status" aria-live="polite">
             <AnimatePresence mode="wait" initial={false}>
-              {notice.text && (
+              {notice.text && notice.tone !== 'error' && (
                 <ThreadSlot key={notice.seq} reduced={prefersReducedMotion}>
                   <p className={`comments-sheet-notice-chip is-${notice.tone}`}>{notice.text}</p>
+                </ThreadSlot>
+              )}
+            </AnimatePresence>
+          </div>
+          <div className="comments-sheet-notice" role="alert" aria-live="assertive">
+            <AnimatePresence mode="wait" initial={false}>
+              {notice.text && notice.tone === 'error' && (
+                <ThreadSlot key={notice.seq} reduced={prefersReducedMotion}>
+                  <p className="comments-sheet-notice-chip is-error">{notice.text}</p>
                 </ThreadSlot>
               )}
             </AnimatePresence>
@@ -1085,14 +1167,23 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
           {/* The profile has not answered yet. The composer is here anyway,
               inert: the footer is the bottom of a column, so a box that
               arrives late pushes everything above it up under the reader's
-              thumb. Same box, same height, before and after. */}
+              thumb. Same box, same height, before and after.
+              `readOnly` rather than `disabled`: a disabled control is out of
+              the tab order, and this is the one element with something to say
+              about why the composer is dead. Disabled, a reader tabbing the
+              sheet found the footer as empty as it was before it had a
+              loading branch at all. `aria-disabled` carries the semantics
+              `readOnly` gives up, and the send button — which has nothing to
+              explain — stays plainly disabled. */}
           {composerState === 'loading' && (
             <div className="comments-composer" aria-busy="true">
               <div className="comments-composer-row">
                 <Textarea
                   className="comments-composer-input"
                   rows={1}
-                  disabled
+                  readOnly
+                  aria-disabled="true"
+                  aria-describedby={profileWait ? profileWaitId : undefined}
                   placeholder={text(COPY.loading)}
                   aria-label={text(COPY.composerLabel)}
                 />
@@ -1100,6 +1191,18 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                   {text(COPY.send)}
                 </Button>
               </div>
+              {/* Announced when it lands, and reachable afterwards through the
+                  field's `aria-describedby`. It opens the way the reply chip
+                  and the composer error do — no new curve, no new duration. */}
+              <AnimatePresence initial={false}>
+                {profileWait && (
+                  <ThreadSlot key="composer-wait" reduced={prefersReducedMotion}>
+                    <p id={profileWaitId} className="comments-composer-wait" role="status">
+                      {text(PROFILE_WAIT_COPY[profileWait])}
+                    </p>
+                  </ThreadSlot>
+                )}
+              </AnimatePresence>
             </div>
           )}
         </footer>
