@@ -29,6 +29,7 @@ import { readOwnUserProfile } from '../../services/userProfileService.js';
 import { auth } from '../../services/firebase.js';
 import { rememberOwnProfile } from '../../utils/profileSessionCaches.js';
 import { LOADING_PROFILE, composerStateFor, ownProfileFrom, seedOwnProfile } from './composerGate.js';
+import { IDLE_NOTICE, clearedNotice, expireNotice, nextNotice, noticeLifetime } from './noticeLifecycle.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { commentIsDissociated } from '../../utils/commentIdentity.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
@@ -396,15 +397,25 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   const [hiddenLocally, setHiddenLocally] = useState(() => locallyHiddenCommentIds());
   const [paging, setPaging] = useState(false);
   const [busy, setBusy] = useState(false);
-  // { tone: 'status' | 'success' | 'error', text }. The render below only
-  // branches on `tone === 'error'` (role="alert") vs. everything else
-  // (role="status") -- 'status' and 'success' render identically, the
-  // distinction is for readability at each call site (an empty/idle clear
-  // vs. an actual confirmation). Rendered persistently below (empty by
-  // default) so the region exists before an action runs, not only once it has
-  // something to say — a live region announces changes to its content, and a
-  // node created at the same moment as its message is frequently missed.
-  const [notice, setNotice] = useState({ tone: 'status', text: '' });
+  // { tone: 'status' | 'success' | 'error', text, seq } — see noticeLifecycle.js.
+  // The region below is mounted persistently (empty by default) so it exists
+  // before an action runs: a live region announces changes to its content,
+  // and a node created at the same moment as its message is frequently
+  // missed. The chip inside it is keyed by `seq`, so two identical
+  // confirmations are two entrances, and a success clears itself.
+  const [notice, setNotice] = useState(IDLE_NOTICE);
+  const announce = useCallback((tone, message) => {
+    setNotice(previous => nextNotice(previous, { tone, text: message }));
+  }, []);
+  const clearNotice = useCallback(() => setNotice(clearedNotice), []);
+
+  useEffect(() => {
+    const lifetime = noticeLifetime(notice);
+    if (!lifetime) return undefined;
+    const { seq } = notice;
+    const timer = setTimeout(() => setNotice(previous => expireNotice(previous, seq)), lifetime);
+    return () => clearTimeout(timer);
+  }, [notice]);
   const [composerError, setComposerError] = useState(null);
   const composerErrorId = useId();
   const [draft, setDraft] = useState('');
@@ -657,20 +668,10 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     if (busy || !anchor || !draft.trim()) return;
     setBusy(true);
     setComposerError(null);
-    // Cleared here, before the network call below -- not merely "before
-    // setting the new text". Clearing and setting in the very same tick is
-    // NOT enough on its own: React batches synchronous updates from one
-    // event into a single commit, and if the batch's net result is the same
-    // string the DOM already shows, react-dom's diffing skips the write
-    // entirely (confirmed against react-dom-client and with a jsdom +
-    // MutationObserver repro elsewhere in this same delivery -- see
-    // EditInterestsModal.jsx). What actually guarantees two real commits
-    // here is the `await` a few lines down: it forces the eventual
-    // `setNotice` below onto a later commit than this one, so an identical
-    // confirmation twice in a row (post, then edit that same comment right
-    // back to wording that also says "Comment posted.") still lands as a
-    // genuine '' -> text transition each time, not a same-string no-op.
-    setNotice({ tone: 'status', text: '' });
+    // Cleared before the network call so a failure never shows last time's
+    // confirmation next to this time's error. The chip is keyed by `seq`,
+    // so the same words twice in a row are still two entrances.
+    clearNotice();
     try {
       if (editTarget) {
         const trimmed = draft.trim();
@@ -679,7 +680,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
           row.id === editTarget.id ? { ...row, text: trimmed, editedAt: new Date() } : row
         )));
         void invalidateThreadAnchor([editTarget.paperKey ?? anchor.key]);
-        setNotice({ tone: 'success', text: text(COPY.saved) });
+        announce('success', text(COPY.saved));
       } else {
         const result = await createComment({
           anchor,
@@ -694,7 +695,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         setCount(previous => (previous ? { ...previous, count: previous.count + 1 } : previous));
         if (!anchor.stubExists) setAnchor(previous => ({ ...previous, stubExists: true }));
         void invalidateThreadAnchor([anchor.key, ...localThreadKeys(paper)]);
-        setNotice({ tone: 'success', text: text(COPY.posted) });
+        announce('success', text(COPY.posted));
       }
       resetComposer();
     } catch (error) {
@@ -706,10 +707,8 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
 
   const remove = async (comment) => {
     setBusy(true);
-    // See the longer note in submit() above: this only reaches a distinct
-    // commit from the setNotice calls below because of the await a few
-    // lines down, not merely because it runs first.
-    setNotice({ tone: 'status', text: '' });
+    // Cleared before the write; see submit().
+    clearNotice();
     try {
       await deleteComment({
         paperKey: comment.paperKey ?? anchor.key,
@@ -727,10 +726,10 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
         ? { ...previous, count: Math.max(0, previous.count - droppedIds.size) }
         : previous));
       void invalidateThreadAnchor([comment.paperKey ?? anchor.key, anchor.key]);
-      setNotice({ tone: 'success', text: text(COPY.deleted) });
+      announce('success', text(COPY.deleted));
     } catch (error) {
       console.error('The comment could not be deleted', error);
-      setNotice({ tone: 'error', text: text(COPY.deleteError) });
+      announce('error', text(COPY.deleteError));
     } finally {
       setBusy(false);
     }
@@ -738,9 +737,8 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
 
   const report = async (comment, reason) => {
     setBusy(true);
-    // Same reasoning as submit() and remove(): the await below is what
-    // actually separates this clear from either setNotice outcome.
-    setNotice({ tone: 'status', text: '' });
+    // Cleared before the write; see submit().
+    clearNotice();
     try {
       await submitReport({
         targetPath: commentTargetPath(comment.paperKey ?? anchor.key, comment.id),
@@ -749,15 +747,12 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
       });
       hideCommentLocally(comment.id);
       setHiddenLocally(locallyHiddenCommentIds());
-      setNotice({ tone: 'success', text: text(COPY.reported) });
+      announce('success', text(COPY.reported));
     } catch (error) {
       // A real failure (an error thrown by the write itself) is the only
       // thing that becomes `role="alert"` below; both of these are genuine
       // refusals, never a success dressed up as one.
-      setNotice({
-        tone: 'error',
-        text: error?.code === 'permission-denied' ? text(COPY.reportThrottled) : text(COPY.writeError),
-      });
+      announce('error', error?.code === 'permission-denied' ? text(COPY.reportThrottled) : text(COPY.writeError));
     } finally {
       setBusy(false);
     }
@@ -968,19 +963,24 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               {paging ? text(COPY.loading) : text(COPY.more)}
             </Button>
           )}
-          {/* Persistent rather than mounted only when there is something to
-              say: the node has to exist before an action runs for its later
-              text to be announced at all. `has-text` (CSS) is what keeps the
-              chip's border/background from showing up empty; the role is
-              `alert` only for a genuine failure, `status` (polite) for a
-              success confirmation or the wait it is standing in for. */}
-          <p
-            className={`comments-sheet-notice ${notice.text ? 'has-text' : ''}`}
+          {/* The region is persistent (see the state above); the chip inside
+              it is what comes and goes, through the same slot the reply chip
+              and the composer error use, so it never shoves the thread by its
+              own height in one frame. `mode="wait"`: a confirmation that
+              replaces another lets it leave first instead of stacking. */}
+          <div
+            className="comments-sheet-notice"
             role={notice.tone === 'error' ? 'alert' : 'status'}
             aria-live={notice.tone === 'error' ? 'assertive' : 'polite'}
           >
-            {notice.text}
-          </p>
+            <AnimatePresence mode="wait" initial={false}>
+              {notice.text && (
+                <ThreadSlot key={notice.seq} reduced={prefersReducedMotion}>
+                  <p className={`comments-sheet-notice-chip is-${notice.tone}`}>{notice.text}</p>
+                </ThreadSlot>
+              )}
+            </AnimatePresence>
+          </div>
         </div>
 
         <footer className="comments-sheet-footer">

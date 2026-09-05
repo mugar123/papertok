@@ -403,16 +403,11 @@
   margin: var(--space-4) 0;
 }
 
-/* Rendered persistently (see CommentsSheet.jsx) so it exists before an
-   action runs, not only once it has something to announce. Empty, it must
-   take up no visible room — `line-height: 0` collapses it to nothing; the
-   chip's chrome only switches on with `.has-text`, once there is a real
-   confirmation or error to show. */
-.comments-sheet-notice {
-  line-height: 0;
-}
-
-.comments-sheet-notice.has-text {
+/* The confirmation chip. Its wrapper (`.comments-sheet-notice`) is the
+   always-mounted live region and has no chrome of its own; the chip is the
+   child that ThreadSlot folds in and out, so its margins ride inside the
+   fold (the slot is overflow: hidden, a block formatting context). */
+.comments-sheet-notice-chip {
   margin: var(--space-3) 0 var(--space-4);
   padding: var(--space-2) var(--space-3);
   border: 1px solid var(--tint-neutral-line);
@@ -421,6 +416,18 @@
   color: var(--tint-neutral-fg);
   font-size: var(--fs-xs);
   line-height: var(--lh-normal);
+}
+
+.comments-sheet-notice-chip.is-success {
+  border-color: var(--tint-green-line);
+  background: var(--tint-green-bg);
+  color: var(--tint-green-fg);
+}
+
+.comments-sheet-notice-chip.is-error {
+  border-color: var(--tint-red-line);
+  background: var(--tint-red-bg);
+  color: var(--tint-red-fg);
 }
 
 /* ── The composer, and the three doors that stand in for it ── */
