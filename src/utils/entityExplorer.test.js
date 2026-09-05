@@ -114,6 +114,35 @@ test('a project keeps the same papers key when its details land on the optimisti
   assert.equal(optimistic, detailed);
 });
 
+/**
+ * A search-palette handover hands over a ROR-shaped institution row (`id:
+ * https://ror.org/<x>`, explorerHandover.js). Once `getEntityById` answers,
+ * `mergeInstitutionWithRor` replaces it with an OpenAlex-shaped id
+ * (`services/rorService.js`). Keying on `entity.id` for that type changes
+ * the key mid-flight and starts a second, differently-filtered
+ * `getWorksByEntity` request — cancelling the first one that was already
+ * in flight, on every institution opened from the palette (the only way to
+ * reach one: the feed has no institution links).
+ */
+test('an institution keeps the same papers key when its ROR id resolves to an OpenAlex one', () => {
+  const rorHandover = {
+    ...authorRequest,
+    type: 'institution',
+    id: '03vek6s52',
+    entity: { id: 'https://ror.org/03vek6s52', display_name: 'Harvard University' },
+    entityDisplayName: 'Harvard University',
+  };
+  const beforeFetch = entityPapersRequestKey(rorHandover);
+  const afterFetch = entityPapersRequestKey({
+    ...rorHandover,
+    entity: { id: 'https://openalex.org/I136199984', display_name: 'Harvard University' },
+  });
+  assert.equal(beforeFetch, afterFetch, 'resolving to the OpenAlex id must not start a second request');
+
+  const anotherInstitution = entityPapersRequestKey({ ...rorHandover, id: '05gvnxz63' });
+  assert.notEqual(beforeFetch, anotherInstitution, 'navigating to a different institution must still change the key');
+});
+
 test('every input the papers request reads changes its key', () => {
   const base = entityPapersRequestKey(authorRequest);
   const variants = [

@@ -97,3 +97,19 @@ test('the explorer is born with the entity a link handed over, and treats its ow
   assert.match(jsx, /setEntity\(data \|\| handedEntity\);/);
   assert.match(jsx, /\}, \[type, id, searchParams, entityReloadKey, handedEntity\]\);/);
 });
+
+/**
+ * `getEntityById` can throw with no network at all (its ROR path does), well
+ * after a handed entity is already painted on screen. The success exit two
+ * lines up already guards this (`setEntity(data || handedEntity)`); the
+ * catch below used to null the entity out unconditionally, so a throw
+ * replaced a hero the reader was already looking at with the full-viewport
+ * `.explorer-error` (the `if (!entity)` gate a little further down renders
+ * it whenever `entity` is falsy). A page reached any other way — no
+ * handover — still falls back to `null` and the error screen, which is
+ * correct: there is genuinely nothing to show.
+ */
+test('a thrown fetch keeps the hero the palette already painted, instead of demolishing it', async () => {
+  const jsx = (await read('./EntityExplorer.jsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+  assert.match(jsx, /loadEntity\(\)\.catch\(error => \{\s*if \(isCancelled\) return;\s*console\.error\('Failed to load entity', error\);\s*setEntity\(handedEntity \|\| null\);\s*setEntityError\('ENTITY_LOAD_FAILED'\);\s*setIsLoadingEntity\(false\);\s*\}\);/);
+});

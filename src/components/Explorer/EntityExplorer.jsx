@@ -766,7 +766,22 @@ export default function EntityExplorer({
     loadEntity().catch(error => {
       if (isCancelled) return;
       console.error('Failed to load entity', error);
-      setEntity(null);
+      // Keep the hero the palette already painted instead of nulling it out
+      // — mirrors the success exit above (`setEntity(data || handedEntity)`).
+      // `getEntityById` can throw with no network at all (its ROR path
+      // does), well after the handed entity is already on screen; the
+      // render gate below only shows the full-viewport `.explorer-error`
+      // `if (!entity)`, so replacing a hero the reader is looking at would
+      // be a worse failure than the fetch itself. A page reached without a
+      // handover still falls back to `null` here, correctly: there is
+      // genuinely nothing to show.
+      // `entityError` is still set even when a handed entity survives it.
+      // With entity truthy the full-screen error never renders — nothing
+      // today reads this flag while a hero is on screen — but leaving it
+      // `null` would be silently pretending the upgrade succeeded. It stays
+      // the true record of the failure for `retryEntity`, and for whatever
+      // inline notice or telemetry reads it next.
+      setEntity(handedEntity || null);
       setEntityError('ENTITY_LOAD_FAILED');
       setIsLoadingEntity(false);
     });
