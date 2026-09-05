@@ -6,6 +6,7 @@ import {
   escapeLatexText,
   escapeUrlForLatex,
   isSafeMath,
+  paragraphChunks,
   renderParagraph,
 } from './latexExport.js';
 
@@ -763,4 +764,112 @@ test('un encabezado de sección corriente sigue usando \\section{...}, sin el ar
   const { source } = build();
   assert.doesNotMatch(source, /\\section\[/);
   assert.match(source, /\\section\{De qué va\}/);
+});
+
+// ---------------------------------------------------------------------------
+// Fórmulas destacadas numeradas (Task 12)
+//
+// Comprobado contra `paragraphChunks` antes de escribir `emitMath`:
+// `splitLatexText` (latex.js) deja `value` sin delimitadores para `$$…$$` y
+// `\[…\]` (`value !== raw`), y para un `\begin{...}` propio pone
+// `value === raw`, delimitadores incluidos — exactamente lo que el brief
+// pedía verificar. El `if` de la Task 12 usa esa distinción tal cual.
+// ---------------------------------------------------------------------------
+
+test('una fórmula en bloque sale numerada y una en línea no', () => {
+  const display = paragraphChunks('Queda $$a = b$$ demostrado.').find(item => item.display);
+  assert.ok(display, 'el fixture tiene que traer una fórmula en bloque');
+  const { source } = buildLatexDocument({
+    paper: PAPER, annotations: [],
+    sections: [{ id: 's1', kind: 'other', heading: 'H', paragraphs: ['Queda $$a = b$$ demostrado.'] }],
+  });
+  assert.match(source, /\\begin\{equation\}/);
+  assert.doesNotMatch(source, /\$\$/);
+  // El cuerpo es el interior desnudo (`value`), no el `raw` con delimitadores.
+  assert.match(source, /\\begin\{equation\}\na = b\n\\end\{equation\}/);
+  const inline = renderParagraph('vale $x^2$ hoy', []);
+  assert.doesNotMatch(inline, /\\begin\{equation\}/);
+  assert.match(inline, /\$x\^2\$/);
+});
+
+test('\\[…\\] se numera igual que $$…$$', () => {
+  const { source } = buildLatexDocument({
+    paper: PAPER, annotations: [],
+    sections: [{ id: 's1', kind: 'other', heading: 'H', paragraphs: ['Queda \\[a = b\\] demostrado.'] }],
+  });
+  assert.match(source, /\\begin\{equation\}\na = b\n\\end\{equation\}/);
+  // Comprobación exacta, no una regex de `\[` suelta: el colofón lleva sus
+  // propias `\\[3pt]` (el argumento de espaciado de \\, nada que ver con el
+  // delimitador de fórmula) y un `doesNotMatch` genérico las confundiría.
+  assert.ok(!source.includes('\\[a = b\\]'), 'el delimitador original no debe sobrevivir sin envolver');
+});
+
+test('una fórmula en bloque que no es segura no se envuelve en equation', () => {
+  const { source } = buildLatexDocument({
+    paper: PAPER, annotations: [],
+    sections: [{ id: 's1', kind: 'other', heading: 'H', paragraphs: ['Queda $$\\input{/etc/passwd}$$ ahi.'] }],
+  });
+  assert.doesNotMatch(source, /\\begin\{equation\}/);
+  assert.match(source, /textbackslash/);
+});
+
+test('un entorno que el modelo ya escribió no se envuelve otra vez, y sigue numerándose solo (LaTeX lo hace)', () => {
+  // Ya cubierto por el test de más arriba ("an environment keeps its own
+  // delimiters..."), repetido aquí con el vocabulario de esta tarea: el
+  // guard es `item.display && item.value !== item.raw`, así que un
+  // `\begin{equation}` propio (`value === raw`) cae al último `return
+  // item.raw` sin pasar por el wrap — y sigue siendo un entorno `equation`
+  // real, que LaTeX numera por su cuenta al compilar.
+  const { source } = buildLatexDocument({
+    paper: PAPER, annotations: [],
+    sections: [{
+      id: 's1', kind: 'other', heading: 'H',
+      paragraphs: ['La ecuacion \\begin{equation} E = mc^2 \\end{equation} lo dice.'],
+    }],
+  });
+  assert.match(source, /\\begin\{equation\} E = mc\^2 \\end\{equation\}/);
+  assert.doesNotMatch(source, /\\begin\{equation\}\n\\begin\{equation\}/);
+});
+
+test('varias fórmulas en varias secciones producen varios \\begin{equation}, uno por fórmula', () => {
+  // La numeración correlativa (1), (2), (3)… la da LaTeX al compilar el
+  // contador nativo de `equation`; lo que este test comprueba a nivel de
+  // fuente es que cada fórmula segura en bloque abre su propio entorno, en
+  // el orden del documento, sin fusionarse ni perderse ninguna.
+  const { source } = buildLatexDocument({
+    paper: PAPER, annotations: [],
+    sections: [
+      { id: 's1', kind: 'other', heading: 'Uno', paragraphs: ['Primero: $$a = 1$$ y ya.'] },
+      { id: 's2', kind: 'other', heading: 'Dos', paragraphs: ['Segundo: $$b = 2$$.', 'Tercero: \\[c = 3\\].'] },
+    ],
+  });
+  const matches = [...source.matchAll(/\\begin\{equation\}\n(.*?)\n\\end\{equation\}/g)].map(m => m[1]);
+  assert.deepEqual(matches, ['a = 1', 'b = 2', 'c = 3']);
+});
+
+test('una fórmula en bloque cubierta por un subrayado del lector no se envuelve en equation', () => {
+  // Hallazgo de compilar, no de razonar: `\hl{\begin{equation}...\end{equation}}`
+  // (soul) da "LaTeX Error: Environment {equation} undefined" — fatal, y se
+  // lleva el documento por delante — mientras que `\hl{$$a = b$$}`, lo que
+  // el código emitía antes de esta tarea, compila limpio. `soul` encaja su
+  // argumento en una caja para dibujar el resaltado detrás; `equation` no
+  // cabe en una caja así. Una fórmula marcada se queda sin número, tal cual
+  // estaba antes de esta tarea, en vez de romper el documento entero.
+  const out = renderParagraph('Antes. $$a = b$$ Despues.', [
+    { id: 'm1', kind: 'user', quote: '$$a = b$$' },
+  ], LABELS);
+  assert.doesNotMatch(out, /\\begin\{equation\}/);
+  assert.match(out, /\\hl\{\$\$a = b\$\$\}/);
+});
+
+test('una fórmula en bloque cubierta por una marca de IA tampoco se envuelve', () => {
+  // La misma comprobación con `\dotuline` (ulem, la marca de la IA):
+  // compilado, `\dotuline{\begin{equation}...\end{equation}}` da "Missing $
+  // inserted" — también fatal, con un mensaje distinto al de `\hl` pero el
+  // mismo resultado: el documento no compila.
+  const out = renderParagraph('Antes. $$a = b$$ Despues.', [
+    { id: 'm1', kind: 'ai', quote: '$$a = b$$' },
+  ], LABELS);
+  assert.doesNotMatch(out, /\\begin\{equation\}/);
+  assert.match(out, /\\dotuline\{\$\$a = b\$\$\}/);
 });

@@ -8,6 +8,7 @@ import {
   summarizeExport,
 } from './exportDocument.js';
 import { displayProse } from './latex.js';
+import { isSafeMath } from './latexExport.js';
 import { buildHighlightPlan } from './textHighlights.js';
 import { loadKatex } from './katexLoader.js';
 
@@ -148,6 +149,23 @@ const MARGIN = 104;
  * `.pdfx-mark--ai` actually use, do paint, which is why this already works
  * today. Anyone who wants the underline instead of the wash has to verify
  * it against `html2canvas-pro` first — it cannot be assumed.
+ *
+ * `.katex .tag`: KaTeX numbers a real `\begin{equation}`/`align`/`eqnarray`
+ * it is asked to render on its own, with its OWN counter — a page-wide CSS
+ * counter reset on `body` (`katexEqnNo`), painted by a `::before` on
+ * `.eqn-num` — entirely independent of `numberedEquation`'s counter below.
+ * Rendered live and looked at: a model's own `\begin{equation}` chunk
+ * (`item.value === item.raw`, the other branch of `emitMath`,
+ * latexExport.js) came out with TWO numbers side by side — KaTeX's own
+ * "(1)", restarting from its first tagged environment on the page, and this
+ * file's correct, document-order "(3)" a few pixels to its left. `$$…$$`
+ * and `\[…\]` are silent on this: their bare interior carries no
+ * environment for KaTeX to tag, only the model's own environments do.
+ * `.pdfx-eq-n` is the one count that agrees with the .tex (LaTeX's own,
+ * real numbering there), so KaTeX's own tag is hidden outright, wherever it
+ * appears — not worth reproducing whatever numbering KaTeX chose, when the
+ * document's real numbering has to come from `emitMath`'s decisions either
+ * way, to agree with the .tex.
  */
 const PAGE_CSS = `
 .pdfx-page { box-sizing: border-box; width: ${PAGE_W}px; height: ${PAGE_H}px; padding: 62px ${MARGIN}px 46px; display: flex; flex-direction: column; background: #ffffff; color: #111318; font-family: 'Newsreader Variable', 'Iowan Old Style', Georgia, serif; }
@@ -172,6 +190,10 @@ const PAGE_CSS = `
 .pdfx-sec-o { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; line-height: 1.5; letter-spacing: 0.03em; color: #6b7280; margin-top: 3px; }
 .pdfx-para { font-size: 16px; line-height: 1.6; text-align: justify; }
 .pdfx-para + .pdfx-para { text-indent: 1.4em; }
+.pdfx-eq { display: flex; align-items: baseline; gap: 16px; margin: 15px 0 16px; }
+.pdfx-eq-b { flex: 1 1 auto; text-align: center; }
+.pdfx-eq-n { flex: 0 0 auto; font-size: 15px; }
+.pdfx-page .katex .tag { display: none; }
 .pdfx-mark { background: #ffe066; color: inherit; padding: 0 1px; }
 .pdfx-mark--ai { background: none; border-bottom: 1.4px dotted #6b7280; }
 .pdfx-fnref { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; font-weight: 500; vertical-align: super; line-height: 0; padding-left: 1.5px; }
@@ -214,12 +236,47 @@ function renderMath(katex, item) {
 }
 
 /**
+ * The numbered row `Main2.dc.html` shows for a display formula — centred,
+ * its number to the right (`.pdfx-eq`/`.pdfx-eq-b`/`.pdfx-eq-n`, PAGE_CSS).
+ *
+ * `counter` is one `{ n }` object created once in `buildBlocks` and passed
+ * into every `renderParagraphInto` call from there, so numbering carries on
+ * across paragraphs and sections instead of restarting at zero each time
+ * this function runs.
+ *
+ * Gated on the same two conditions `emitMath` (latexExport.js) checks before
+ * wrapping a formula in `\begin{equation}` for the .tex — the two exports
+ * are the same document, so an unsafe or a marked formula must not claim a
+ * number here either, or the PDF's "(1)" and the .tex's "(1)" could point
+ * at two different formulas:
+ *   - `isSafeMath(item.raw)`: an unsafe formula is escaped and shown as
+ *     source in the .tex, never a real numbered environment there.
+ *   - not marked (checked by the caller, via `marked`): a formula
+ *     `buildHighlightPlan` covers whole with a highlight or an AI mark is
+ *     never wrapped in `\begin{equation}` on the .tex side either — compiled,
+ *     both `\hl{\begin{equation}...}` and `\dotuline{\begin{equation}...}`
+ *     are fatal errors, so `emitMath` leaves a marked formula as raw and
+ *     unnumbered. The PDF has no such constraint of its own (a `<mark>` can
+ *     nest inside this flex row with no error), but numbering it anyway
+ *     would only buy the two formats different counts for the same
+ *     document.
+ */
+function numberedEquation(piece, counter) {
+  counter.n += 1;
+  const body = element('div', 'pdfx-eq-b');
+  body.appendChild(piece);
+  const row = element('div', 'pdfx-eq');
+  row.append(body, element('span', 'pdfx-eq-n', `(${counter.n})`));
+  return row;
+}
+
+/**
  * One paragraph, marks and note markers in place. Runs of the same highlight
  * are kept as separate <mark>s (the seams do not show in HTML the way they do
  * in LaTeX), but the footnote marker goes after the LAST piece of its run, so
  * a highlight that crosses a formula reads as one mark with one number.
  */
-function renderParagraphInto(node, text, annotations, katex) {
+function renderParagraphInto(node, text, annotations, katex, eqCounter) {
   const plan = buildHighlightPlan(text, annotations);
   const noted = new Map(annotations
     .filter(item => item.note && item.number != null)
@@ -233,6 +290,7 @@ function renderParagraphInto(node, text, annotations, katex) {
       piece = element(marked ? 'mark' : 'span', marked ? markClass(item.kind) : undefined);
       if (html === null) piece.textContent = item.raw;
       else piece.innerHTML = html;
+      if (item.display && eqCounter && !marked && isSafeMath(item.raw)) piece = numberedEquation(piece, eqCounter);
     } else if (item.type === 'mark') {
       piece = element('mark', markClass(item.kind), displayProse(item.value));
     } else {
@@ -261,9 +319,14 @@ function buildBlocks(model, katex) {
   const push = (node, { notes = [], heading = null } = {}) => {
     blocks.push({ node, notes, heading });
   };
+  // Lives here, not inside `renderParagraphInto`: created once per document
+  // and threaded through every call below, so the count keeps climbing
+  // across paragraphs and sections instead of resetting at the top of each
+  // paragraph.
+  const eqCounter = { n: 0 };
 
   const title = element('h1', 'pdfx-title');
-  renderParagraphInto(title, model.meta.title, [], katex);
+  renderParagraphInto(title, model.meta.title, [], katex, eqCounter);
   push(title);
   if (model.meta.byline) push(element('div', 'pdfx-byline', model.meta.byline));
   if (model.meta.source) push(element('div', 'pdfx-source', model.meta.source));
@@ -304,7 +367,7 @@ function buildBlocks(model, katex) {
     for (const paragraph of section.paragraphs) {
       const node = element('p', 'pdfx-para');
       node.lang = model.language;
-      renderParagraphInto(node, paragraph.text, paragraph.annotations, katex);
+      renderParagraphInto(node, paragraph.text, paragraph.annotations, katex, eqCounter);
       const notes = paragraph.annotations
         .filter(item => item.note && item.number != null)
         .map(item => ({

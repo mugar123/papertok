@@ -150,12 +150,41 @@ export function isSafeMath(value) {
  * it is, which is both safe and honest about what the model produced.
  */
 function emitMath(item) {
-  // `raw` and never `value`: for a `\begin{...}` environment `splitLatexText`
-  // sets `value === raw`, delimiters and all, so re-wrapping it produced
-  // `$\begin{equation}...\end{equation}$` — invalid, and it took the rest of
-  // the paragraph with it. `raw` is the original slice and already carries
-  // whichever delimiter the model actually wrote.
+  // `raw` and never `value` for the safety check: for a `\begin{...}`
+  // environment `splitLatexText` sets `value === raw`, delimiters and all,
+  // so re-wrapping it produced `$\begin{equation}...\end{equation}$` —
+  // invalid, and it took the rest of the paragraph with it. `raw` is the
+  // original slice and already carries whichever delimiter the model
+  // actually wrote.
   if (!isSafeMath(item.raw)) return escapeLatexText(item.raw);
+  // Numbered — cited later as "(1)" — only when it is a display formula that
+  // still wears a delimiter of its own: confirmed against `splitLatexText`
+  // (latex.js) by calling `paragraphChunks` directly on both shapes,
+  // `value` is the bare interior with no delimiters for `$$…$$` and `\[…\]`
+  // (`value !== raw`), so re-wrapping that interior in `\begin{equation}` is
+  // safe — the delimiter being replaced is the only one there. A
+  // `\begin{equation}`/`\begin{align}`/`\begin{eqnarray}` the model wrote
+  // itself sets `value === raw` — the case just above already guards against
+  // re-wrapping THAT — and it does not need wrapping to be numbered: it is
+  // already a real `equation`-family environment, which LaTeX numbers on its
+  // own once compiled.
+  //
+  // `!item.kind`: a formula `buildHighlightPlan` covers whole with a mark
+  // (`item.kind` is 'user' or 'ai') is about to be wrapped by the CALLER in
+  // `\hl{...}` or `\dotuline{...}` (`renderParagraph`, below) — compiled,
+  // both fail on a `\begin{equation}` inside them: `\hl{\begin{equation}
+  // ...\end{equation}}` throws "Environment {equation} undefined" and
+  // `\dotuline{\begin{equation}...\end{equation}}` throws "Missing $
+  // inserted", each a fatal error that takes the rest of the document with
+  // it. Soul and ulem box their argument to draw the highlight or the
+  // underline; `equation` cannot be boxed that way. A marked formula is
+  // left exactly as `raw` — unwrapped and unnumbered, the same as every
+  // formula was before this task — which is the one shape both packages
+  // already carry correctly (verified by compiling; see the highlight
+  // tests above, "a highlight that spans a formula...").
+  if (item.display && item.value !== item.raw && !item.kind) {
+    return `\\begin{equation}\n${item.value}\n\\end{equation}`;
+  }
   return item.raw;
 }
 
