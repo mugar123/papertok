@@ -143,7 +143,7 @@
   }
 }
 
-.sr-tab.active {
+.sr-tab[data-pressed] {
   color: var(--text-primary);
   font-weight: var(--fw-semibold);
 }
@@ -758,40 +758,7 @@
   gap: var(--space-2);
 }
 
-.sr-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-.sr-btn.primary {
-  background: var(--accent-primary);
-  border-color: var(--border-ink);
-  color: var(--text-inverse);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .sr-btn:hover {
-    background: var(--bg-secondary);
-    border-color: var(--border-strong);
-  }
-
-  .sr-btn.primary:hover {
-    background: var(--accent-primary-hover);
-    border-color: var(--accent-primary-hover);
-  }
-}
+/* The hero's actions are the shared Button (design.md, rule 5). */
 
 /* ============================================
    The rest of the edition
@@ -1181,15 +1148,6 @@
 /* Quiet enough not to compete with the primary move, but still a real target. */
 .sr-turn-back {
   margin-left: auto;
-  min-height: 38px;
-  padding: 0 var(--space-2);
-  border: 0;
-  background: none;
-  color: var(--text-secondary);
-  font-family: inherit;
-  font-size: var(--fs-sm);
-  cursor: pointer;
-  transition: color var(--transition-fast);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -1252,24 +1210,6 @@
   justify-content: center;
   gap: var(--space-2);
   margin-top: var(--space-2);
-}
-
-.sr-retry {
-  min-height: 38px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-ink);
-  border-radius: var(--radius-md);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .sr-retry:hover {
-    background: var(--accent-primary-hover);
-  }
 }
 
 .sr-inline-error {
@@ -1463,7 +1403,6 @@
   .sr-real-trends,
   .sr-stat-value,
   .sr-stat-meter::after,
-  .sr-btn,
   .sr-tab,
   .sr-tab-rule {
     animation: none;

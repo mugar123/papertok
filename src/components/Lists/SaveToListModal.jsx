@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useReducedMotion } from 'framer-motion';
 import { IS_DEMO, db } from '../../services/firebase';
 import { savedPaperDocRef } from '../../services/savedPaperStore.js';
 import { collection, getDocs, doc, updateDoc, arrayUnion, arrayRemove, serverTimestamp, setDoc, limit, query } from 'firebase/firestore';
@@ -28,6 +27,11 @@ import CreateListDialog from './CreateListDialog.jsx';
 import ScientificText from '../ScientificText.js';
 import { BookOpen, Check, Download, Plus, StickyNote, Tags, X } from 'lucide-react';
 import { Button } from '../ui/button.jsx';
+import { Checkbox } from '../ui/checkbox.jsx';
+import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.jsx';
+import { Input } from '../ui/input.jsx';
+import { Label } from '../ui/label.jsx';
+import { Textarea } from '../ui/textarea.jsx';
 import { downloadCitationFile } from '../../utils/readingLibrary';
 import { buildSavedPaperPayload } from '../../utils/savedPaperPayload.js';
 import {
@@ -38,9 +42,7 @@ import {
 } from '../../utils/profileSessionCaches.js';
 import { readStoredLists, saveStoredLists } from '../../utils/userScopedStorage.js';
 import './SaveToListModal.css';
-
-/** Kept in step with the exit animation in SaveToListModal.css. */
-const DIALOG_EXIT_MS = 300;
+import { Toggle } from '../ui/toggle.jsx';
 
 /**
  * States where the lists are still on their way. 'slow' and 'offline' keep the
@@ -160,14 +162,12 @@ export default function SaveToListModal({ paper, onClose }) {
   const savingRef = useRef(false);
   const [saveError, setSaveError] = useState(false);
   const [confirmingDiscard, setConfirmingDiscard] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const prefersReducedMotion = useReducedMotion();
-  const dialogRef = useRef(null);
-  const closeTimer = useRef(null);
-  // True between a `dialog.close()` this component issued and the native
-  // `close` event it produces. `closeDialog` tells the parent itself, once;
-  // the flag is how `handleNativeClose` knows not to tell it again.
-  const closedByScript = useRef(false);
+  // App.jsx mounts this window and unmounts it on `onClose`, so the window
+  // owns its open state: it starts open, closing flips it, and the parent is
+  // only told once Base UI has finished playing the exit (see the Root's
+  // `onOpenChangeComplete` below). Telling it any earlier would unmount the
+  // window in the same frame and cut the exit short.
+  const [open, setOpen] = useState(true);
 
   // What the library says today: the dirty check and the save diff compare
   // against this, and untouched fields render it directly.
@@ -309,15 +309,6 @@ export default function SaveToListModal({ paper, onClose }) {
     };
   }, [user, paper.id, listsAttempt]);
 
-  useEffect(() => {
-    const dialog = dialogRef.current;
-    if (dialog && !dialog.open) dialog.showModal();
-  }, []);
-
-  useEffect(() => () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-  }, []);
-
   /* --- Write-free pending-state handlers --------------------------------- */
 
   // Editing anything is an implicit "keep editing": it dismisses the discard
@@ -389,59 +380,38 @@ export default function SaveToListModal({ paper, onClose }) {
 
   /**
    * Every close path lands here once the discard guard has already decided
-   * the window can go.
-   *
-   * `.close()` before the parent unmounts us, always: the platform hands focus
-   * back to the button that opened the dialog when it is closed, and not when
-   * it is merely removed from the document.
-   *
-   * The window has to survive its own exit animation, so the close is held for
-   * the length of it and the card is marked on the way out. A TIMER decides
-   * when that is over, not `animationend`: under `prefers-reduced-motion` the
-   * animation is `none`, no `animationend` ever fires, and a window waiting for
-   * one would never close at all. Reduced motion skips the wait entirely.
+   * the window can go. Flipping `open` is all it takes: Base UI marks the
+   * popup `data-closed`, waits for `saveModalOut` to finish (or for nothing,
+   * under `prefers-reduced-motion`, where the stylesheet sets the animation
+   * to `none`), hands focus back to the button that opened the window, and
+   * only then reports `onOpenChangeComplete(false)` — the one place the
+   * parent is told.
    */
-  const closeNative = () => {
-    closedByScript.current = true;
-    dialogRef.current?.close();
-  };
-
-  // A native `close` the component did not issue: Escape when `onCancel` was
-  // not fired, a `close()` from outside, a form with method="dialog". The
-  // parent has to hear about it, or `saveModalPaper` stays set on a window
-  // that is no longer there.
-  const handleNativeClose = (event) => {
-    event.stopPropagation();
-    if (closedByScript.current) {
-      closedByScript.current = false;
-      return;
-    }
-    onClose();
-  };
-
-  const closeDialog = () => {
-    if (closeTimer.current) return;
-    if (prefersReducedMotion) {
-      closeNative();
-      onClose();
-      return;
-    }
-    setClosing(true);
-    closeTimer.current = setTimeout(() => {
-      closeTimer.current = null;
-      closeNative();
-      onClose();
-      setClosing(false);
-    }, DIALOG_EXIT_MS);
-  };
+  const closeDialog = () => setOpen(false);
 
   const requestClose = () => {
-    if (saving || closing || closeTimer.current) return;
+    if (saving || !open) return;
     if (dirty) {
       setConfirmingDiscard(true);
       return;
     }
     closeDialog();
+  };
+
+  // Base UI's own dismissals — Escape, a press on the scrim, the X — arrive as
+  // a request to close, and the answer is never a direct close: the request
+  // is refused (`cancel()`) and routed through the unsaved-changes guard, the
+  // way the native dialog's `onCancel` was intercepted before.
+  const onCancel = (eventDetails) => {
+    eventDetails.cancel();
+    requestClose();
+  };
+
+  // Once the exit has played. `onClose` unmounts this component (App.jsx), so
+  // this is the single point from which the parent hears of a close, whatever
+  // path asked for it.
+  const handleOpenChangeComplete = (nextOpen) => {
+    if (!nextOpen) onClose();
   };
 
   /* --- The two write sites, last by contract ------------------------------ */
@@ -697,32 +667,29 @@ export default function SaveToListModal({ paper, onClose }) {
   };
 
   return (
-    <dialog
-      ref={dialogRef}
-      className={`save-modal-dialog${closing ? ' is-closing' : ''}`}
-      onClose={handleNativeClose}
-      onCancel={(event) => {
-        // Escape: through the same guard as every other close path.
-        event.preventDefault();
-        event.stopPropagation();
-        requestClose();
-      }}
-      onClick={(e) => { if (e.target === dialogRef.current) requestClose(); }}
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen, eventDetails) => { if (!nextOpen) onCancel(eventDetails); }}
+      onOpenChangeComplete={handleOpenChangeComplete}
     >
-      <div className={`save-modal${closing ? ' is-closing' : ''}`}>
+      {/* The X is the DialogClose below, in the header where the window has
+          always had it; the primitive's own corner button is switched off. */}
+      <DialogContent
+        className="save-modal"
+        overlayClassName="save-modal-scrim"
+        showClose={false}
+        closeLabel={copy.close}
+      >
         <header className="save-modal-header">
           <div>
             <p className="save-modal-kicker">{copy.kicker}</p>
-            <h2>{copy.title}</h2>
+            <DialogTitle>{copy.title}</DialogTitle>
           </div>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={requestClose}
-            aria-label={copy.close}
+          <DialogClose
+            render={<Button variant="ghost" size="icon-sm" aria-label={copy.close} />}
           >
             <X size={16} aria-hidden="true" />
-          </Button>
+          </DialogClose>
         </header>
 
         {/* The same KaTeX pass the feed uses: a title like "$p$-adic
@@ -739,11 +706,10 @@ export default function SaveToListModal({ paper, onClose }) {
             {/* Read later is a destination like any other, so it is the first
                 row of the same ruled list rather than a card of its own. */}
             <div className="save-modal-rows">
-              <button
-                type="button"
+              <Toggle
                 className={`save-modal-row${pendingReadLater ? ' is-selected' : ''}`}
-                onClick={toggleReadLaterSelection}
-                aria-pressed={pendingReadLater}
+                pressed={pendingReadLater}
+                onPressedChange={toggleReadLaterSelection}
               >
                 <span className="save-modal-tick" aria-hidden="true">
                   <Check size={13} strokeWidth={3} />
@@ -757,7 +723,7 @@ export default function SaveToListModal({ paper, onClose }) {
                     {pendingReadLater ? copy.readLaterOnHint : copy.readLaterOffHint}
                   </span>
                 </span>
-              </button>
+              </Toggle>
             </div>
 
             {LISTS_WAITING.includes(listsStatus) ? (
@@ -792,15 +758,14 @@ export default function SaveToListModal({ paper, onClose }) {
                   const Icon = getIcon(list.emoji);
                   return (
                     <label key={list.id} className={`save-modal-row${selected ? ' is-selected' : ''}`}>
-                      <input
-                        type="checkbox"
-                        className="save-modal-row-input"
+                      {/* The row is the label of its checkbox: the whole row
+                          toggles it, its name is the list's name, and the
+                          focus ring is drawn on the row (see the stylesheet). */}
+                      <Checkbox
+                        className="save-modal-tick"
                         checked={selected}
-                        onChange={() => toggleListSelection(list.id)}
+                        onCheckedChange={() => toggleListSelection(list.id)}
                       />
-                      <span className="save-modal-tick" aria-hidden="true">
-                        <Check size={13} strokeWidth={3} />
-                      </span>
                       <Icon className="save-modal-row-icon" size={18} strokeWidth={1.5} aria-hidden="true" />
                       <span className="save-modal-row-text">
                         <span className="save-modal-row-name">{list.name}</span>
@@ -838,17 +803,22 @@ export default function SaveToListModal({ paper, onClose }) {
               <p className="save-modal-section-title">{copy.noteAndTags}</p>
               <p className="save-modal-section-hint">{copy.noteAndTagsHint}</p>
             </div>
-            <label className="save-modal-field">
-              <span><StickyNote size={14} aria-hidden="true" /> {copy.privateNote}</span>
-              <textarea
+            <div className="save-modal-field">
+              <Label className="save-modal-field-label" htmlFor="save-modal-note">
+                <StickyNote size={14} aria-hidden="true" /> {copy.privateNote}
+              </Label>
+              <Textarea
+                id="save-modal-note"
                 value={note}
                 onChange={(event) => editNote(event.target.value)}
                 placeholder={copy.notePlaceholder}
                 maxLength={3000}
               />
-            </label>
+            </div>
             <div className="save-modal-field">
-              <span id="save-modal-tags-label"><Tags size={14} aria-hidden="true" /> {copy.tags}</span>
+              <span id="save-modal-tags-label" className="save-modal-field-label">
+                <Tags size={14} aria-hidden="true" /> {copy.tags}
+              </span>
               <div className="save-modal-tag-editor">
                 {tags.map((tag) => (
                   <span key={tag} className="save-modal-tag-chip">
@@ -863,7 +833,7 @@ export default function SaveToListModal({ paper, onClose }) {
                     </button>
                   </span>
                 ))}
-                <input
+                <Input
                   className="save-modal-tag-input"
                   aria-labelledby="save-modal-tags-label"
                   value={tagInput}
@@ -922,7 +892,7 @@ export default function SaveToListModal({ paper, onClose }) {
             </Button>
           )}
         </div>
-      </div>
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }

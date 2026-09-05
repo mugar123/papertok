@@ -991,6 +991,12 @@ a.pc-citations {
   align-items: center;
   gap: 5px;
   width: 62px;
+  /* Like, save and read are ui Toggles. The toggle's own chip look (a 2rem
+     row, nowrap, a raised shadow when pressed) is undone here: the rail
+     button is a column of icon and label, and the label wraps. */
+  height: auto;
+  white-space: normal;
+  box-shadow: none;
   background: none;
   border: none;
   cursor: pointer;
@@ -1250,64 +1256,36 @@ a.pc-citations {
   white-space: nowrap;
 }
 
-/* ── Tooltip ── */
-.pc-tooltip {
-  position: relative;
-}
-
-.pc-tooltip::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
-  background: var(--text-primary);
-  color: var(--text-inverse);
-  padding: 5px 9px;
-  border-radius: var(--radius-sm);
-  font: 500 0.6875rem/1.4 var(--font-mono);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--transition-fast);
-  z-index: 1000;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .pc-tooltip:hover::after {
-    opacity: 1;
-  }
-}
-
 /* ============================================
    Related papers sheet
    ============================================ */
 
 .related-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 12020;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  /* No `backdrop-filter` here on purpose: this overlay animates its own
-     opacity in (`relatedBackdropIn`), which would force the blur to be
-     re-resolved on every frame — the worst case for a mobile GPU. The rgba
-     scrim is what actually reads as a backdrop; the 3px blur it carried was
-     imperceptible under it. */
-  background: rgba(17, 19, 24, 0.35);
-  animation: relatedBackdropIn 0.22s ease-out both;
+  /* The drawer's own scrim (ui/drawer.css) — fixed, ink, its opacity
+     following the swipe — at the strength this sheet has always had. No
+     `backdrop-filter` here on purpose: the scrim animates its own opacity,
+     which would force a blur to be re-resolved on every frame — the worst
+     case for a mobile GPU. The rgba veil is what actually reads as a
+     backdrop; the 3px blur it once carried was imperceptible under it. */
+  --backdrop-opacity: 0.35;
 }
 
+/* The sheet is the popup of a Base UI Drawer (RelatedPapersSheet.jsx): the
+   slide in and out, the swipe and the bottom-edge anchoring are the drawer's
+   (ui/drawer.css). What is here is the sheet's own box. `--bleed` is the
+   drawer's: the sheet is pulled that far below the viewport so an overshoot
+   never shows the page behind it, so every height below carries it — a
+   height written without it would show that much less sheet. */
 .related-sheet {
   position: relative;
   /* The peek floats above the provenance row, so both read one measurement:
      a wrapped source line used to grow the row and end up underneath. */
   --graph-source-height: 30px;
   width: min(720px, 100%);
-  height: min(68vh, 610px);
-  height: min(68dvh, 610px);
-  max-height: 720px;
+  height: calc(min(68vh, 610px) + var(--bleed));
+  height: calc(min(68dvh, 610px) + var(--bleed));
+  max-height: calc(720px + var(--bleed));
+  padding-bottom: calc(var(--inset-bottom) + var(--bleed));
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -1316,8 +1294,7 @@ a.pc-citations {
   border-bottom: none;
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   box-shadow: var(--shadow-xl);
-  animation: relatedSheetIn 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
-  transition: height 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 400ms cubic-bezier(0.32, 0.72, 0, 1), height 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   will-change: transform, opacity;
 }
 
@@ -1332,10 +1309,10 @@ a.pc-citations {
   }
 }
 
-.related-sheet--loading { height: min(430px, 58vh); height: min(430px, 58dvh); }
+.related-sheet--loading { height: calc(min(430px, 58vh) + var(--bleed)); height: calc(min(430px, 58dvh) + var(--bleed)); }
 .related-sheet--empty,
 .related-sheet--error,
-.related-sheet--unavailable { height: min(350px, 52vh); height: min(350px, 52dvh); }
+.related-sheet--unavailable { height: calc(min(350px, 52vh) + var(--bleed)); height: calc(min(350px, 52dvh) + var(--bleed)); }
 
 .related-grabber {
   width: 34px;
@@ -1356,7 +1333,9 @@ a.pc-citations {
 }
 
 .related-header > div { display: flex; align-items: center; gap: 9px; }
-.related-header h3 { margin: 0; font-size: 0.9375rem; }
+/* A ui/drawer.jsx title, which arrives in the serif: a sheet heading over
+   controls keeps the UI voice, as it always has. */
+.related-header h3 { margin: 0; font: inherit; font-size: 0.9375rem; font-weight: var(--fw-semibold); letter-spacing: normal; }
 .related-header svg { color: var(--text-tertiary); }
 .related-header button {
   border: 0;
@@ -1369,6 +1348,7 @@ a.pc-citations {
 .related-mode-tabs {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: auto;
   gap: 3px;
   margin: 10px 12px 0;
   padding: 3px;
@@ -1398,11 +1378,12 @@ a.pc-citations {
   .related-mode-tabs button:hover:not(:disabled) { color: var(--text-primary); }
 }
 
-.related-mode-tabs button.is-active {
+.related-mode-tabs button[data-active] {
   background: var(--bg-card);
   border: 1px solid var(--border-default);
   color: var(--text-primary);
   font-weight: var(--fw-semibold);
+  box-shadow: none;
 }
 
 .related-mode-tabs button:disabled { cursor: default; opacity: 0.4; }
@@ -1989,6 +1970,15 @@ a.pc-citations {
   background: var(--border-subtle);
 }
 
+/* Map or list: a ui/toggle-group.jsx, drawn as the two bare icon buttons it
+   has always been — no sunken track, the pressed one gets the hairline. */
+.related-header .graph-view-toggle {
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+
 .related-header .graph-view-button {
   display: grid;
   place-items: center;
@@ -1998,6 +1988,7 @@ a.pc-citations {
   border: 1px solid transparent;
   border-radius: var(--radius-md);
   background: transparent;
+  box-shadow: none;
   color: var(--text-tertiary);
   cursor: pointer;
   transition: color var(--transition-fast), border-color var(--transition-fast), background var(--transition-fast);
@@ -2007,7 +1998,7 @@ a.pc-citations {
   .related-header .graph-view-button:hover { color: var(--text-primary); }
 }
 
-.related-header .graph-view-button.is-active {
+.related-header .graph-view-button[data-pressed] {
   border-color: var(--border-default);
   background: var(--bg-secondary);
   color: var(--text-primary);
@@ -2160,15 +2151,40 @@ a.pc-citations {
   animation-delay: calc(var(--skeleton-index, 0) * 100ms);
 }
 
-/* ── Related paper opened as a full card ── */
+/* ── Related paper opened as a full card ──
+   The popup of a full-screen Base UI Dialog (PaperCard.jsx). The primitive
+   arrives centred with a hairline and a shadow; the resets below are the
+   card claiming the whole viewport, and its arrival and leave are written on
+   the primitive's own `data-open` / `data-closed`, which is how it knows to
+   hold the node until `relatedCardOut` has played. */
 .related-card-overlay {
   position: fixed;
   inset: 0;
-  z-index: 12010;
   overflow: hidden;
+  border: 0;
+  box-shadow: none;
   background: var(--bg-secondary);
-  animation: relatedCardIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
   will-change: transform, opacity;
+}
+
+/* The card is opaque and edge to edge, so the primitive's scrim has nothing
+   to show: it sits just under the popup and draws nothing. */
+.related-card-scrim {
+  background: transparent;
+}
+
+.related-card-scrim[data-open],
+.related-card-scrim[data-closed] {
+  animation: none;
+}
+
+.related-card-overlay[data-open] {
+  animation: relatedCardIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.related-card-overlay[data-closed] {
+  animation: relatedCardOut 0.22s cubic-bezier(0.4, 0, 1, 1) both;
+  pointer-events: none;
 }
 
 .related-card-content {
@@ -2247,40 +2263,15 @@ a.pc-citations {
   }
 }
 
-.related-overlay.is-closing {
-  animation: relatedBackdropOut 0.18s ease-in both;
-}
-
-.related-overlay.is-closing .related-sheet {
-  animation: relatedSheetOut 0.18s ease-in both;
-}
-
-.related-overlay.is-selecting-paper .related-sheet {
-  animation: relatedSheetToCard 0.21s cubic-bezier(0.4, 0, 1, 1) both;
-}
-
-.related-card-overlay.is-closing {
-  animation: relatedCardOut 0.22s cubic-bezier(0.4, 0, 1, 1) both;
-}
-
-@keyframes relatedBackdropIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes relatedBackdropOut {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-@keyframes relatedSheetIn {
-  from { opacity: 0; transform: translateY(40px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes relatedSheetOut {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(24px); }
+/* A paper chosen from the sheet: the sheet does not slide back down the
+   screen the way a dismissal does, it fades and settles where it is while
+   the card takes its place. Base UI marks the popup `data-ending-style`
+   the frame `open` goes down and waits for this transition to finish
+   before the sheet hands the paper over (RelatedPapersSheet.jsx). */
+.related-sheet.is-selecting-paper[data-ending-style] {
+  opacity: 0;
+  transform: translateY(10px) scale(0.99);
+  transition: transform 0.21s cubic-bezier(0.4, 0, 1, 1), opacity 0.21s cubic-bezier(0.4, 0, 1, 1);
 }
 
 @keyframes relatedItemIn {
@@ -2353,53 +2344,56 @@ a.pc-citations {
   to { opacity: 0; transform: translateY(12px) scale(0.99); }
 }
 
-@keyframes relatedSheetToCard {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to { opacity: 0; transform: translateY(10px) scale(0.99); }
-}
-
 /* ============================================
    Authors bottom sheet (mobile)
    ============================================ */
 
+/* The sheet is a Base UI Drawer (PaperCard.jsx): the scrim, the slide, the
+   swipe and the bottom-edge anchoring are ui/drawer.css. This is the sheet's
+   own box, and the scrim at the strength it has always had — no
+   `backdrop-filter` there: the scrim animates its own opacity, and a blur
+   under it would be re-resolved on every frame of that fade. */
 .pc-authors-modal-overlay {
-  position: fixed;
-  inset: 0;
-  /* No `backdrop-filter` here: PaperCard.jsx animates this overlay's own
-     opacity in and out with framer-motion (`initial`/`animate`/`exit`), so a
-     blur underneath it would be re-resolved on every frame of that fade —
-     the pattern this pass exists to remove. The rgba scrim carries the
-     backdrop on its own; its 3px blur was not doing visible work. */
-  background: rgba(17, 19, 24, 0.35);
-  z-index: 10000;
-  display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
+  --backdrop-opacity: 0.35;
 }
 
 .pc-authors-modal-sheet {
   background: var(--bg-card);
+  border: 0;
   border-top: 1px solid var(--border-default);
   border-top-left-radius: var(--radius-2xl);
   border-top-right-radius: var(--radius-2xl);
-  padding: var(--space-5);
-  padding-bottom: calc(env(safe-area-inset-bottom, 20px) + var(--space-5));
-  max-height: 80vh;
-  max-height: 80dvh;
+  padding: 0 var(--space-5) var(--space-5);
+  /* The drawer's `--bleed`: the sheet reaches that far below the viewport
+     so an overshoot never shows the page, and the padding hides it. */
+  padding-bottom: calc(var(--inset-bottom) + var(--space-5) + var(--bleed));
+  max-height: calc(80vh + var(--bleed));
+  max-height: calc(80dvh + var(--bleed));
   display: flex;
   flex-direction: column;
   box-shadow: var(--shadow-xl);
 }
 
-/* Same trade as `.related-sheet`: this sheet enters on a spring translateY
-   (PaperCard.jsx), so `--shadow-xl`'s 48px blur is re-rasterized every frame
-   of that motion. Scoped to coarse pointers — over the scrim or the sheet's
-   own dark surface the shallower shadow reads the same, and desktop keeps
-   the deeper one since it isn't paying the per-frame cost. */
+/* Same trade as `.related-sheet`: the sheet slides in on a translateY, so
+   `--shadow-xl`'s 48px blur is re-rasterized every frame of that motion.
+   Scoped to coarse pointers — over the scrim or the sheet's own dark surface
+   the shallower shadow reads the same, and desktop keeps the deeper one
+   since it isn't paying the per-frame cost. */
 @media (pointer: coarse) {
   .pc-authors-modal-sheet {
     box-shadow: var(--shadow-lg);
   }
+}
+
+/* An author was picked: the sheet leaves with the page rather than sliding
+   back down the screen — a short drop and a fade on the page's own leaving
+   curve, 0.18 s against the page's 0.2 s, so the two go together and the
+   page's unmount, which takes the sheet with it, cuts nothing off. */
+.pc-authors-modal-sheet.is-leaving[data-ending-style] {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: transform 0.18s cubic-bezier(0.4, 0, 1, 1), opacity 0.18s cubic-bezier(0.4, 0, 1, 1);
+  pointer-events: none;
 }
 
 .pc-authors-modal-header {
@@ -2409,9 +2403,13 @@ a.pc-citations {
   margin-bottom: var(--space-4);
 }
 
+/* A ui/drawer.jsx title, which arrives in the serif: this one is a label
+   over a list of controls, not prose, so it keeps the UI voice. */
 .pc-authors-modal-header h3 {
   margin: 0;
+  font: inherit;
   font-size: 1.0625rem;
+  letter-spacing: normal;
   color: var(--text-primary);
   font-weight: var(--fw-semibold);
 }
@@ -2599,13 +2597,13 @@ a.pc-citations {
   .pc-linked-resources-list { width: 100%; }
 
   .related-sheet {
-    height: min(74dvh, 620px);
+    height: calc(min(74dvh, 620px) + var(--bleed));
   }
 
-  .related-sheet--loading { height: min(410px, 58dvh); }
+  .related-sheet--loading { height: calc(min(410px, 58dvh) + var(--bleed)); }
   .related-sheet--empty,
   .related-sheet--error,
-  .related-sheet--unavailable { height: min(330px, 48dvh); }
+  .related-sheet--unavailable { height: calc(min(330px, 48dvh) + var(--bleed)); }
 }
 
 @media (max-width: 420px) {
@@ -2633,7 +2631,7 @@ a.pc-citations {
   .related-card-loading-meta { width: 48%; }
   .related-card-loading-title { height: 28px; }
   .related-card-loading-author { width: 68%; }
-  .related-sheet--graph { max-height: min(84vh, 720px); max-height: min(84dvh, 720px); }
+  .related-sheet--graph { max-height: calc(min(84vh, 720px) + var(--bleed)); max-height: calc(min(84dvh, 720px) + var(--bleed)); }
   .graph-map { padding: 12px 14px 10px; }
   .graph-node-label { max-width: 84px; }
   .graph-trail { padding: 0 14px; }
@@ -2708,6 +2706,14 @@ a.pc-citations {
      are how the map answers a touch, and a map that cannot answer is mute. */
   .graph-node.is-entering,
   .graph-node.is-fading { opacity: 1; }
+
+  /* The drawer's own reduced-motion rule (ui/drawer.css) zeroes its
+     transitions; the two poses this file writes on top of it follow. */
+  .related-sheet.is-selecting-paper[data-ending-style],
+  .pc-authors-modal-sheet.is-leaving[data-ending-style] {
+    transition: none;
+    transform: none;
+  }
 
   .related-item {
     opacity: 1;

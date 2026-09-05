@@ -22,7 +22,8 @@
 }
 
 /* Nothing is selected until the user selects it: the resting state of both
-   options is identical, so the screen never suggests an answer. */
+   options is identical, so the screen never suggests an answer. Each card is
+   a Base UI radio rendered as a div, so its "on" state is `[data-checked]`. */
 .visibility-option {
   position: relative;
   display: flex;
@@ -45,7 +46,7 @@
   border-color: var(--border-strong);
 }
 
-.visibility-option.is-selected {
+.visibility-option[data-checked] {
   border-color: var(--accent-primary);
   background: var(--bg-elevated);
 }
@@ -62,7 +63,7 @@
   color: var(--text-secondary);
 }
 
-.visibility-option.is-selected .visibility-option-icon {
+.visibility-option[data-checked] .visibility-option-icon {
   color: var(--accent-primary);
 }
 
@@ -97,7 +98,7 @@
     box-shadow var(--transition-fast);
 }
 
-.visibility-option.is-selected .visibility-option-mark {
+.visibility-option[data-checked] .visibility-option-mark {
   border-color: var(--accent-primary);
   background: var(--accent-primary);
   box-shadow: inset 0 0 0 3px var(--bg-elevated);

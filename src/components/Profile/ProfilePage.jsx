@@ -48,6 +48,11 @@ import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { clearStoredProfile } from '../../utils/userScopedStorage.js';
 import { HANDLE_ERRORS, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
 import { loadProfileFonts } from '../../utils/loadDisplayFonts.js';
+import { Input } from '../ui/input.jsx';
+import { Label } from '../ui/label.jsx';
+import { Switch } from '../ui/switch.jsx';
+import { Textarea } from '../ui/textarea.jsx';
+import { Toggle } from '../ui/toggle.jsx';
 import './ProfilePage.css';
 
 const HANDLE_ERROR_COPY = {
@@ -941,10 +946,10 @@ export default function ProfilePage() {
 
                 <div className="profile-identity-fields">
                   <div className="profile-field">
-                    <label htmlFor="profile-handle">{copy.handle}</label>
+                    <Label htmlFor="profile-handle">{copy.handle}</Label>
                     <div className="profile-handle-input">
                       <span aria-hidden="true">@</span>
-                      <input
+                      <Input
                         id="profile-handle"
                         value={handleDraft}
                         onChange={event => setHandleDraft(event.target.value.toLowerCase())}
@@ -961,8 +966,8 @@ export default function ProfilePage() {
                   </div>
 
                   <div className="profile-field">
-                    <label htmlFor="profile-name">{copy.displayName}</label>
-                    <input
+                    <Label htmlFor="profile-name">{copy.displayName}</Label>
+                    <Input
                       id="profile-name"
                       value={displayName}
                       onChange={event => setDisplayName(event.target.value)}
@@ -974,12 +979,12 @@ export default function ProfilePage() {
 
                 <div className="profile-field">
                   <div className="profile-field-head">
-                    <label htmlFor="profile-bio">{copy.bio}</label>
+                    <Label htmlFor="profile-bio">{copy.bio}</Label>
                     <span id="profile-bio-count" className="profile-char-count">
                       {bio.length} / {USER_PROFILE_LIMITS.bio}
                     </span>
                   </div>
-                  <textarea
+                  <Textarea
                     id="profile-bio"
                     value={bio}
                     rows={4}
@@ -1018,24 +1023,19 @@ export default function ProfilePage() {
                     saved on the spot. */}
                 {status === 'ready' && (
                   <>
-                    <label className="profile-switch">
+                    <Label className="profile-switch">
                       <span className="profile-switch-copy">
                         <span className="profile-switch-label">{copy.visibilityLabel}</span>
                         <span className="profile-switch-hint">
                           {isPublicProfile ? copy.visibilityHintPublic : copy.visibilityHintPrivate}
                         </span>
                       </span>
-                      <input
-                        type="checkbox"
-                        role="switch"
+                      <Switch
                         checked={isPublicProfile}
                         disabled={visibilityBusy}
-                        onChange={event => toggleVisibility(event.target.checked)}
+                        onCheckedChange={checked => toggleVisibility(checked)}
                       />
-                      <span className="profile-switch-track" aria-hidden="true">
-                        <span className="profile-switch-thumb" />
-                      </span>
-                    </label>
+                    </Label>
 
                     {/* The limits of the promise, on the screen that makes it. */}
                     <div className="visibility-caveats">
@@ -1062,37 +1062,21 @@ export default function ProfilePage() {
                   </div>
                 </div>
 
-                <label className="profile-switch">
+                <Label className="profile-switch">
                   <span className="profile-switch-copy">
                     <span className="profile-switch-label">{copy.showPhoto}</span>
                     <span className="profile-switch-hint">{copy.showPhotoHint}</span>
                   </span>
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    checked={showPhoto}
-                    onChange={event => setShowPhoto(event.target.checked)}
-                  />
-                  <span className="profile-switch-track" aria-hidden="true">
-                    <span className="profile-switch-thumb" />
-                  </span>
-                </label>
+                  <Switch checked={showPhoto} onCheckedChange={setShowPhoto} />
+                </Label>
 
-                <label className="profile-switch">
+                <Label className="profile-switch">
                   <span className="profile-switch-copy">
                     <span className="profile-switch-label">{copy.allowContact}</span>
                     <span className="profile-switch-hint">{copy.allowContactHint}</span>
                   </span>
-                  <input
-                    type="checkbox"
-                    role="switch"
-                    checked={allowContact}
-                    onChange={event => setAllowContact(event.target.checked)}
-                  />
-                  <span className="profile-switch-track" aria-hidden="true">
-                    <span className="profile-switch-thumb" />
-                  </span>
-                </label>
+                  <Switch checked={allowContact} onCheckedChange={setAllowContact} />
+                </Label>
               </section>
 
               {/* The form ends here and says so: the two sections below save
@@ -1172,27 +1156,25 @@ export default function ProfilePage() {
                               <span className="profile-pin-count">{copy.papers(list.paperCount)}</span>
                             </span>
                             <span className="profile-pin-actions">
-                              <button
-                                type="button"
+                              <Toggle
                                 className={`profile-pin-toggle${attributed ? ' is-pinned' : ''}${settlingHere === 'attribution' ? ' is-settling' : ''}`}
-                                onClick={() => toggleAttribution(list)}
+                                pressed={attributed}
+                                onPressedChange={() => toggleAttribution(list)}
                                 disabled={pinsBusy || migration === 'running'}
-                                aria-pressed={attributed}
                               >
-                                {attributed ? <Globe2 size={16} /> : <Lock size={16} />}
+                                {attributed ? <Globe2 size={16} aria-hidden="true" /> : <Lock size={16} aria-hidden="true" />}
                                 {attributed ? copy.onProfile : copy.offProfile}
-                              </button>
+                              </Toggle>
                               {attributed && (
-                                <button
-                                  type="button"
+                                <Toggle
                                   className={`profile-pin-toggle${isPinned ? ' is-pinned' : ''}${settlingHere === 'pin' ? ' is-settling' : ''}`}
-                                  onClick={() => togglePin(list.shareId)}
+                                  pressed={isPinned}
+                                  onPressedChange={() => togglePin(list.shareId)}
                                   disabled={pinsBusy || migration === 'running' || pinsFull}
-                                  aria-pressed={isPinned}
                                 >
-                                  {isPinned ? <PinOff size={16} /> : <Pin size={16} />}
+                                  {isPinned ? <PinOff size={16} aria-hidden="true" /> : <Pin size={16} aria-hidden="true" />}
                                   {isPinned ? copy.unpin : copy.pin}
-                                </button>
+                                </Toggle>
                               )}
                             </span>
                           </li>

@@ -30,9 +30,10 @@ import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { commentIsDissociated } from '../../utils/commentIdentity.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
 import { isReadTimeout, patientRead, withReadTimeout } from '../../utils/boundedRead.js';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { areaAccentForPaper } from '../../utils/areaAccent.js';
 import { Button } from '../ui/button.jsx';
+import { Drawer, DrawerBody, DrawerContent } from '../ui/drawer.jsx';
+import { Textarea } from '../ui/textarea.jsx';
 import './CommentsSheet.css';
 
 // Opening the sheet used to start from nothing every time: anchor, pages and
@@ -408,20 +409,17 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   const [replyTarget, setReplyTarget] = useState(null);
   const [editTarget, setEditTarget] = useState(null);
 
-  // The modal keyboard contract — Escape, a focus trap, and handing focus back
-  // to whatever opened the sheet — comes from the shared hook rather than from
-  // a copy of it here. The sheet only exists while it is open, so `open` is
-  // constant.
-  const sheet = useDialogFocus(true, onClose);
+  // The sheet is a Base UI Drawer, which owns the modal contract — Escape, the
+  // focus trap, handing focus back to whatever opened it, and the swipe that
+  // dismisses it on a phone. App.jsx mounts it as `{commentsPaper && …}`, so
+  // the open state lives here: closing flips `open`, the drawer plays its
+  // leave, and only `onOpenChangeComplete(false)` tells the parent — once.
+  const [open, setOpen] = useState(true);
+  const requestClose = useCallback(() => setOpen(false), []);
   const composerInput = useRef(null);
   const dupReported = useRef(false);
   const viewerUid = ownProfile.uid || null;
   const areaAccent = useMemo(() => areaAccentForPaper(paper), [paper]);
-
-  const slidesFromBottom = useMemo(
-    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 599px)').matches,
-    [],
-  );
 
   // Everything the sheet needs, loaded once per open (and per retry). The
   // initial state is already 'loading', and the retry button re-arms it in
@@ -755,92 +753,24 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
     }
   };
 
-  // The sheet arrives on a spring — it should read as pulled into place — and
-  // leaves on a short ease-in, because a spring on the way out reads as
-  // hesitation. Entrance and exit are therefore separate transitions rather
-  // than one shared curve, and the backdrop below is timed so that neither of
-  // the two ever outlives the other on screen.
-  const sheetMotion = prefersReducedMotion ? {
-    initial: { opacity: 0 },
-    animate: { opacity: 1, transition: { duration: 0.12 } },
-    exit: { opacity: 0, transition: { duration: 0.12 } },
-  } : slidesFromBottom ? {
-    initial: { y: '100%' },
-    animate: {
-      y: 0,
-      // Near-critically damped (damping ~ 2*sqrt(stiffness*mass)): the sheet
-      // glides in and lands without a bounce. Measured, the 260/31/0.95
-      // spring was still 32px short of home 280 ms in and needed 530 ms to
-      // settle — a sheet that kept arriving after the reader had started
-      // reading it. This one covers the distance in ~220 ms and is at rest by
-      // ~330, on the same damping ratio, so it still lands rather than snaps.
-      transition: { type: 'spring', stiffness: 420, damping: 38, mass: 0.85 },
-    },
-    exit: {
-      y: '100%',
-      transition: { duration: 0.22, ease: [0.4, 0, 1, 1] },
-    },
-  } : {
-    initial: { opacity: 0, scale: 0.96, y: 14 },
-    animate: {
-      opacity: 1,
-      scale: 1,
-      y: 0,
-      transition: {
-        type: 'spring',
-        stiffness: 380,
-        damping: 34,
-        mass: 0.8,
-        // Opacity on a spring flickers at the settle; give it its own tween,
-        // long enough to keep pace with the spring.
-        opacity: { duration: 0.2, ease: [0.16, 1, 0.3, 1] },
-      },
-    },
-    // Leaving is a dismissal, not an arrival in reverse: less travel, less
-    // scale, and gone in 180 ms. Measured before: 280 ms of fade during which
-    // the window sat almost still (2px of travel at the halfway mark) — long
-    // enough to read as the app thinking about it.
-    exit: {
-      opacity: 0,
-      scale: 0.985,
-      y: 6,
-      transition: { duration: 0.18, ease: [0.4, 0, 1, 1] },
-    },
-  };
-
-  // The backdrop keeps pace with the sheet on the way in and is the last
-  // thing to go on the way out — just behind the sheet, never long after it,
-  // so the page is not dimmed for a beat with nothing on it.
-  const backdropMotion = {
-    initial: { opacity: 0 },
-    animate: {
-      opacity: 1,
-      transition: { duration: prefersReducedMotion ? 0.12 : 0.2, ease: 'easeOut' },
-    },
-    exit: {
-      opacity: 0,
-      transition: { duration: prefersReducedMotion ? 0.12 : (slidesFromBottom ? 0.26 : 0.22), ease: 'easeIn' },
-    },
-  };
-
   const hasMore = sources.some(source => source.hasMore);
 
+  // The arrival and the leave are the drawer's (ui/drawer.css): up from the
+  // bottom edge on a phone, and CommentsSheet.css turns that into a short
+  // fade-and-lift where the sheet floats centred on a wider screen. Both
+  // fold under `prefers-reduced-motion` there.
   return (
-    <motion.div
-      className="comments-sheet-backdrop"
-      {...backdropMotion}
-      onClick={onClose}
+    <Drawer
+      open={open}
+      onOpenChange={(next) => { if (!next) setOpen(false); }}
+      onOpenChangeComplete={(next) => { if (!next) onClose(); }}
+      modal
     >
-      <motion.div
-        ref={sheet}
+      <DrawerContent
         className="comments-sheet"
+        viewportClassName="comments-sheet-viewport"
         style={{ '--area-accent': areaAccent }}
-        role="dialog"
-        aria-modal="true"
         aria-label={text(COPY.title)}
-        tabIndex={-1}
-        {...sheetMotion}
-        onClick={event => event.stopPropagation()}
       >
         <header className="comments-sheet-header">
           <div className="comments-sheet-heading">
@@ -856,13 +786,17 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
             variant="ghost"
             size="icon-sm"
             className="comments-sheet-close"
-            onClick={onClose}
+            onClick={requestClose}
             aria-label={text(COPY.close)}
           >
             <X size={16} />
           </Button>
         </header>
 
+        {/* The thread and the composer are the drawer's content region: text
+            in them can be selected with a mouse without starting a swipe.
+            The header above stays a handle. */}
+        <DrawerBody className="comments-sheet-frame">
         <div className="comments-sheet-body">
           {/* The skeleton and the empty verdict cross-fade rather than swap.
               React used to replace one with the other in a single frame:
@@ -967,7 +901,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                     onReport={report}
                     isEnglish={isEnglish}
                     text={text}
-                    onNavigate={onClose}
+                    onNavigate={requestClose}
                   />
                   {entry.replies.length > 0 && (
                     <ul className="comments-replies">
@@ -1001,7 +935,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                             onReport={report}
                             isEnglish={isEnglish}
                             text={text}
-                            onNavigate={onClose}
+                            onNavigate={requestClose}
                           />
                         </motion.li>
                       ))}
@@ -1051,16 +985,16 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
           {composerState === 'no-profile' && (
             <div className="comments-gate">
               <p><strong>{text(COPY.needProfileTitle)}.</strong> {text(COPY.needProfileBody)}</p>
-              <Button asChild variant="outline">
-                <Link to="/settings/profile" onClick={onClose}>{text(COPY.needProfileCta)}</Link>
+              <Button variant="outline" render={<Link to="/settings/profile" onClick={requestClose} />}>
+                {text(COPY.needProfileCta)}
               </Button>
             </div>
           )}
           {composerState === 'private' && (
             <div className="comments-gate">
               <p><strong>{text(COPY.privateTitle)}.</strong> {text(COPY.privateBody)}</p>
-              <Button asChild variant="outline">
-                <Link to="/settings/profile" onClick={onClose}>{text(COPY.privateCta)}</Link>
+              <Button variant="outline" render={<Link to="/settings/profile" onClick={requestClose} />}>
+                {text(COPY.privateCta)}
               </Button>
             </div>
           )}
@@ -1097,12 +1031,13 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                 )}
               </AnimatePresence>
               <div className="comments-composer-row">
-                <textarea
+                <Textarea
                   ref={composerInput}
                   className="comments-composer-input"
                   value={draft}
                   maxLength={4000}
                   rows={1}
+                  aria-label={text(COPY.placeholder)}
                   placeholder={text(COPY.placeholder)}
                   aria-label={text(COPY.composerLabel)}
                   aria-invalid={composerError ? 'true' : undefined}
@@ -1139,7 +1074,8 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
             </div>
           )}
         </footer>
-      </motion.div>
-    </motion.div>
+        </DrawerBody>
+      </DrawerContent>
+    </Drawer>
   );
 }

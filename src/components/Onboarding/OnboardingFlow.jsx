@@ -15,6 +15,10 @@ import {
   readOwnUserProfile,
 } from '../../services/userProfileService.js';
 import { HANDLE_ERRORS, HANDLE_MAX_LENGTH, inspectHandle } from '../../utils/userHandle.js';
+import { guestCategoriesForAreas, readGuestInterests } from '../../utils/guestInterests.js';
+import { Input } from '../ui/input.jsx';
+import { Label } from '../ui/label.jsx';
+import { Toggle } from '../ui/toggle.jsx';
 
 const AREA_ENTRIES = Object.entries(CATEGORIES);
 
@@ -53,9 +57,23 @@ const HANDLE_ERROR_COPY = {
 };
 
 export default function OnboardingFlow() {
-  const [stepState, setStep] = useState(1);
-  const [selectedAreas, setSelectedAreas] = useState(new Set());
-  const [selectedSubcategories, setSelectedSubcategories] = useState(new Set());
+  // What this visitor said they were into before they had an account
+  // (GuestInterestsPrompt). Read once: the answer is the starting point, not
+  // a live source, and the areas step below can change everything about it.
+  // With an answer, the flow opens on the receipt already filled in — every
+  // category of every area they picked — rather than asking the same
+  // question twice. AuthContext clears the answer once completeOnboarding
+  // has written it to the profile.
+  const [guestSeed] = useState(() => {
+    const stored = readGuestInterests();
+    return stored?.areas.length ? stored.areas : null;
+  });
+  const [stepState, setStep] = useState(guestSeed ? 3 : 1);
+  const [selectedAreas, setSelectedAreas] = useState(() => new Set(guestSeed ?? []));
+  const [selectedSubcategories, setSelectedSubcategories] = useState(() => new Set(guestCategoriesForAreas(guestSeed ?? [])));
+  // Whether the receipt still shows the guest answer untouched. Once they
+  // go back and adjust, it is their selection, and the copy says so.
+  const [seedAdjusted, setSeedAdjusted] = useState(false);
   const [saving, setSaving] = useState(false);
   const [visibilityDraft, setVisibilityDraft] = useState(null);
   const [handleDraft, setHandleDraft] = useState('');
@@ -161,6 +179,7 @@ export default function OnboardingFlow() {
   };
 
   const handleBack = () => {
+    if (step === 3 && guestSeed) setSeedAdjusted(true);
     if (step > 1) setStep(step - 1);
   };
 
@@ -320,12 +339,14 @@ export default function OnboardingFlow() {
               {AREA_ENTRIES.map(([key, area]) => {
                 const isSelected = selectedAreas.has(key);
                 return (
-                  <button
+                  // The shared Toggle: a native button that writes `aria-pressed`
+                  // and `data-pressed`; the card's CSS reads the attribute.
+                  <Toggle
                     key={key}
-                    type="button"
-                    className={`area-card ${isSelected ? 'is-selected' : ''}`}
-                    onClick={() => toggleArea(key)}
-                    aria-pressed={isSelected}
+                    variant="outline"
+                    className="area-card"
+                    pressed={isSelected}
+                    onPressedChange={() => toggleArea(key)}
                     style={{ '--area-accent': area.gradient }}
                   >
                     <span className="area-card-top">
@@ -341,7 +362,7 @@ export default function OnboardingFlow() {
                     <span className="area-card-desc">
                       {isEnglish ? area.descriptionEn : area.description}
                     </span>
-                  </button>
+                  </Toggle>
                 );
               })}
             </div>
@@ -401,16 +422,16 @@ export default function OnboardingFlow() {
                       {Object.entries(area.subcategories).map(([catId, cat]) => {
                         const isSelected = selectedSubcategories.has(catId);
                         return (
-                          <button
+                          <Toggle
                             key={catId}
-                            type="button"
-                            className={`subcat-chip ${isSelected ? 'is-selected' : ''}`}
-                            onClick={() => toggleSubcategory(catId)}
-                            aria-pressed={isSelected}
+                            variant="outline"
+                            className="subcat-chip"
+                            pressed={isSelected}
+                            onPressedChange={() => toggleSubcategory(catId)}
                           >
                             <span className="subcat-chip-dot" />
                             {isEnglish ? cat.labelEn || cat.label : cat.label}
-                          </button>
+                          </Toggle>
                         );
                       })}
                     </div>
@@ -425,14 +446,22 @@ export default function OnboardingFlow() {
         {step === 3 && (
           <div className="onboarding-step onboarding-step--confirm" key="step3">
             <div className="onboarding-confirm-copy">
-              <span className="onboarding-eyebrow">{isEnglish ? 'Done' : 'Hecho'}</span>
+              <span className="onboarding-eyebrow">
+                {guestSeed && !seedAdjusted
+                  ? (isEnglish ? 'What you picked as a guest' : 'Lo que elegiste como invitado')
+                  : (isEnglish ? 'Done' : 'Hecho')}
+              </span>
               <h1 className="onboarding-title onboarding-title--big">
                 {isEnglish ? <>Your feed is <span>ready</span></> : <>Tu feed está <span>listo</span></>}
               </h1>
               <p className="onboarding-lede">
-                {isEnglish
-                  ? `You will see papers from the ${selectedSubcategories.size} categories you picked, ordered by what works for you. You can adjust the selection any time from Settings.`
-                  : `Vas a ver papers de las ${selectedSubcategories.size} categorías que marcaste, ordenados por lo que vaya funcionando contigo. Puedes ajustar la selección cuando quieras desde Ajustes.`}
+                {guestSeed && !seedAdjusted
+                  ? (isEnglish
+                    ? `We kept the ${selectedAreas.size} ${selectedAreas.size === 1 ? 'area' : 'areas'} you picked before signing in — every one of its ${selectedSubcategories.size} categories. Narrow it down now, or any time from Settings.`
+                    : `Guardamos ${selectedAreas.size === 1 ? 'el área que marcaste' : `las ${selectedAreas.size} áreas que marcaste`} antes de entrar, con sus ${selectedSubcategories.size} categorías. Afínalo ahora, o cuando quieras desde Ajustes.`)
+                  : (isEnglish
+                    ? `You will see papers from the ${selectedSubcategories.size} categories you picked, ordered by what works for you. You can adjust the selection any time from Settings.`
+                    : `Vas a ver papers de las ${selectedSubcategories.size} categorías que marcaste, ordenados por lo que vaya funcionando contigo. Puedes ajustar la selección cuando quieras desde Ajustes.`)}
               </p>
               <div className="onboarding-actions">
                 {existingProfile ? (
@@ -537,10 +566,10 @@ export default function OnboardingFlow() {
             {visibilityDraft === PROFILE_VISIBILITY.public && (
               <div className="onboarding-profile-fields">
                 <div className="onboarding-field">
-                  <label htmlFor="onboarding-handle">{isEnglish ? 'Public handle' : 'Handle público'}</label>
+                  <Label htmlFor="onboarding-handle">{isEnglish ? 'Public handle' : 'Handle público'}</Label>
                   <div className="onboarding-handle-input">
                     <span aria-hidden="true">@</span>
-                    <input
+                    <Input
                       id="onboarding-handle"
                       value={handleDraft}
                       onChange={event => {
@@ -569,8 +598,8 @@ export default function OnboardingFlow() {
                   </p>
                 </div>
                 <div className="onboarding-field">
-                  <label htmlFor="onboarding-display-name">{isEnglish ? 'Display name' : 'Nombre visible'}</label>
-                  <input
+                  <Label htmlFor="onboarding-display-name">{isEnglish ? 'Display name' : 'Nombre visible'}</Label>
+                  <Input
                     id="onboarding-display-name"
                     value={displayName || googleDisplayName}
                     onChange={event => setDisplayName(event.target.value)}

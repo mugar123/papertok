@@ -11,15 +11,15 @@ const read = (path) => readFile(new URL(path, import.meta.url), 'utf8');
  */
 test('the palette arrives in 380ms and leaves in 220ms', async () => {
   const css = await read('./SearchCommand.css');
-  assert.match(css, /\.sc-sheet\[data-state='open'\] \{\s*animation: scSheetIn 380ms cubic-bezier\(0\.16, 1, 0\.3, 1\);/);
-  assert.match(css, /\.sc-sheet\[data-state='closed'\] \{\s*animation: scSheetOut 220ms cubic-bezier\(0\.4, 0, 1, 1\) both;/);
+  assert.match(css, /\.sc-sheet\[data-open\] \{\s*animation: scSheetIn 380ms cubic-bezier\(0\.16, 1, 0\.3, 1\);/);
+  assert.match(css, /\.sc-sheet\[data-closed\] \{\s*animation: scSheetOut 220ms cubic-bezier\(0\.4, 0, 1, 1\) both;/);
 });
 
 test('the scrim is the palette\'s own, timed with the sheet', async () => {
   const css = await read('./SearchCommand.css');
-  assert.match(css, /\.sc-scrim\.sc-scrim\[data-state='open'\] \{\s*animation: fadeIn 380ms ease;/);
-  assert.match(css, /\.sc-scrim\.sc-scrim\[data-state='closed'\] \{\s*animation: fadeOut 220ms ease both;/);
-  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.sc-scrim\.sc-scrim\[data-state='closed'\][\s\S]*?animation: none;/);
+  assert.match(css, /\.sc-scrim\.sc-scrim\[data-open\] \{\s*animation: fadeIn 380ms ease;/);
+  assert.match(css, /\.sc-scrim\.sc-scrim\[data-closed\] \{\s*animation: fadeOut 220ms ease both;/);
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.sc-scrim\.sc-scrim\[data-closed\][\s\S]*?animation: none;/);
   assert.ok(reduced, 'reduced motion drops the scrim fade as it drops the sheet\'s');
   const palette = await read('./SearchCommand.jsx');
   assert.match(palette, /<CommandDialog [^>]*overlayClassName=\{`sc-scrim\$\{leavingBySelect \? ' sc-scrim--select' : ''\}`\}/);
@@ -47,9 +47,9 @@ test('a picked result closes the palette in 100ms of opacity, with no travel', a
   assert.match(palette, /className=\{`sc-sheet\$\{leavingBySelect \? ' sc-sheet--select' : ''\}`\}/);
   const css = await read('./SearchCommand.css');
   assert.match(css, /@keyframes scSheetGone \{\s*from \{\s*opacity: 1;\s*\}\s*to \{\s*opacity: 0;\s*\}\s*\}/);
-  assert.match(css, /\.sc-sheet\.sc-sheet--select\[data-state='closed'\] \{\s*animation: scSheetGone 100ms cubic-bezier\(0\.23, 1, 0\.32, 1\) both;\s*\}/);
-  assert.match(css, /\.sc-scrim\.sc-scrim\.sc-scrim--select\[data-state='closed'\] \{\s*animation: fadeOut 100ms cubic-bezier\(0\.23, 1, 0\.32, 1\) both;\s*\}/);
+  assert.match(css, /\.sc-sheet\.sc-sheet--select\[data-closed\] \{\s*animation: scSheetGone 100ms cubic-bezier\(0\.23, 1, 0\.32, 1\) both;\s*\}/);
+  assert.match(css, /\.sc-scrim\.sc-scrim\.sc-scrim--select\[data-closed\] \{\s*animation: fadeOut 100ms cubic-bezier\(0\.23, 1, 0\.32, 1\) both;\s*\}/);
   // Reduced motion switches the picked exit off with the others.
-  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.sc-sheet\.sc-sheet--select\[data-state='closed'\],[\s\S]*?animation: none;/);
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.sc-sheet\.sc-sheet--select\[data-closed\],[\s\S]*?animation: none;/);
   assert.ok(reduced, 'the picked exit is inside the reduced-motion list');
 });

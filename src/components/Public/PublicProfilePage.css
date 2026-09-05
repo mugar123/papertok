@@ -400,7 +400,17 @@ button.profile-stat:disabled {
 
 /* ─── Sections ─── */
 
+/* The root of `ui/tabs`, wrapping the row and the panel: a column, and the
+   panel's own margin is the only space between them. */
+.profile-tabs-root {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+/* The tab row is the `line` list of `ui/tabs`; its hairline is this one. */
 .profile-tabs {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-1);
@@ -431,7 +441,8 @@ button.profile-stat:disabled {
   transition: color var(--transition-fast);
 }
 
-.profile-tab.is-active {
+/* The active tab is Base UI's `data-active`. */
+.profile-tab[data-active] {
   color: var(--text-primary);
 }
 
@@ -441,19 +452,16 @@ button.profile-stat:disabled {
   color: var(--text-tertiary);
 }
 
-.profile-tab.is-active .profile-tab-count {
+.profile-tab[data-active] .profile-tab-count {
   color: var(--text-secondary);
 }
 
 /* Rule 3: the yellow marks the active tab, and nothing else on this page.
-   Rendered by framer-motion with a shared layoutId, so it slides between tabs
-   instead of blinking. */
-.profile-tab-indicator {
-  position: absolute;
-  left: var(--space-3);
-  right: var(--space-3);
-  bottom: -1px;
-  height: 3px;
+   It is the indicator of `ui/tabs`, which slides between tabs on Base UI's
+   `--active-tab-*` variables instead of blinking; here it is only trimmed
+   to the width of the label, inside the tab's own padding. */
+.profile-tabs [data-slot='tabs-indicator'] {
+  clip-path: inset(0 var(--space-3));
   background: var(--brand-yellow);
 }
 

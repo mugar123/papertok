@@ -43,13 +43,14 @@
   }
 }
 
-.wm-geo.selected {
+/* `data-pressed` is what the Base UI Toggle writes on a chosen country. */
+.wm-geo[data-pressed] {
   fill: color-mix(in srgb, var(--accent-primary) 22%, var(--bg-card));
   stroke: var(--border-ink);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .wm-geo.selected:hover {
+  .wm-geo[data-pressed]:hover {
     fill: color-mix(in srgb, var(--accent-primary) 34%, var(--bg-card));
     stroke: var(--border-ink);
   }

@@ -274,12 +274,22 @@
   gap: var(--space-3);
 }
 
+/* The card and the chip below are the shared Toggle (`ui/toggle.jsx`)
+   wearing these classes. Its utilities live in the `utilities` layer, so
+   these unlayered rules win; the few the card never set are undone here:
+   the fixed row height, the centred main axis (a column card stacks from
+   the top), the nowrap (the description clamps to two lines) and the
+   medium weight (the description reads at regular). */
 .area-card {
   position: relative;
   display: flex;
   flex-direction: column;
   align-items: stretch;
+  justify-content: flex-start;
+  height: auto;
   min-height: 140px;
+  white-space: normal;
+  font-weight: var(--fw-regular);
   padding: 13px 15px 13px 12px;
   text-align: left;
   border: 1px solid var(--border-subtle);
@@ -301,7 +311,7 @@
   }
 }
 
-.area-card.is-selected {
+.area-card[data-pressed] {
   border-color: var(--border-ink);
 }
 
@@ -326,7 +336,7 @@
   color: var(--text-secondary);
 }
 
-.area-card.is-selected .area-card-count {
+.area-card[data-pressed] .area-card-count {
   color: var(--text-primary);
 }
 
@@ -349,12 +359,12 @@
   transition: opacity var(--transition-fast);
 }
 
-.area-card.is-selected .area-card-box {
+.area-card[data-pressed] .area-card-box {
   border-color: var(--accent-primary);
   background: var(--accent-primary);
 }
 
-.area-card.is-selected .area-card-box svg {
+.area-card[data-pressed] .area-card-box svg {
   opacity: 1;
 }
 
@@ -376,7 +386,7 @@
   transition: box-shadow var(--transition-base);
 }
 
-.area-card.is-selected .area-card-name span {
+.area-card[data-pressed] .area-card-name span {
   box-shadow: inset 0 -0.32em 0 var(--brand-yellow);
 }
 
@@ -471,7 +481,9 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
+  height: auto;
   min-height: 36px;
+  white-space: normal;
   padding: 0 11px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
@@ -503,13 +515,13 @@
   transition: background var(--transition-fast), opacity var(--transition-fast);
 }
 
-.subcat-chip.is-selected {
+.subcat-chip[data-pressed] {
   border-color: var(--accent-primary);
   background: var(--accent-primary);
   color: var(--text-inverse);
 }
 
-.subcat-chip.is-selected .subcat-chip-dot {
+.subcat-chip[data-pressed] .subcat-chip-dot {
   background: var(--brand-yellow);
   opacity: 1;
 }
@@ -874,7 +886,7 @@
     border-radius: 0;
   }
 
-  .area-card.is-selected {
+  .area-card[data-pressed] {
     border-color: var(--border-subtle);
     border-left-color: var(--area-accent, var(--border-default));
     background: var(--bg-sunken);

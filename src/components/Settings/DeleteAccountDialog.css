@@ -1,16 +1,14 @@
+/* The scrim and the sheet are the AlertDialog primitive's backdrop and popup
+   (`overlayClassName` / `className`): it centres the sheet, traps focus and
+   plays its own enter/leave on `[data-open]`/`[data-closed]`. An alert
+   dialog does not dismiss on the scrim — the answer is one of its buttons. */
 .delete-account-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1800;
-  display: grid;
-  place-items: center;
-  padding: var(--space-5);
   background: rgba(17, 19, 24, 0.5);
 }
 
 .delete-account-dialog {
-  position: relative;
-  width: min(440px, 100%);
+  width: min(440px, calc(100% - 2 * var(--space-5)));
+  max-width: none;
   padding: var(--space-7) var(--space-6) var(--space-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-2xl);
@@ -19,22 +17,10 @@
   text-align: left;
 }
 
-.delete-account-dialog:focus-visible {
-  outline: 2px solid var(--focus-ring, var(--accent-primary));
-  outline-offset: 3px;
-}
-
 .delete-account-close {
   position: absolute;
   top: var(--space-3);
   right: var(--space-3);
-  display: inline-flex;
-  min-width: 32px;
-  min-height: 32px;
-  align-items: center;
-  justify-content: center;
-  border-radius: var(--radius-md);
-  color: var(--text-secondary);
 }
 
 .delete-account-dialog h2 {
@@ -51,6 +37,7 @@
   line-height: 1.5;
 }
 
+/* The field is the shared Input under its Label; only the spacing is local. */
 .delete-account-field {
   display: flex;
   flex-direction: column;
@@ -58,28 +45,8 @@
   margin: 1.1rem 0 0.4rem;
 }
 
-.delete-account-field label {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
 .delete-account-field input {
   min-height: 44px;
-  padding: 0.55rem 0.75rem;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-lg);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font: inherit;
-}
-
-.delete-account-cancel:focus-visible,
-.delete-account-confirm:focus-visible,
-.delete-account-close:focus-visible,
-.delete-account-field input:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
 }
 
 .delete-account-status {
@@ -100,43 +67,18 @@
   margin-top: 0.5rem;
 }
 
-.delete-account-cancel,
-.delete-account-confirm,
-.delete-account-close {
-  display: inline-flex;
-  min-height: 44px;
-  min-width: 44px;
-  align-items: center;
-  justify-content: center;
-  gap: 0.4rem;
-  padding: 0.55rem 0.9rem;
-  border-radius: var(--radius-lg);
-  font-size: 0.875rem;
-  font-weight: 700;
-}
-
-.delete-account-close {
-  min-width: 44px;
-  padding: 0;
-}
-
-.delete-account-cancel {
-  border: 1px solid var(--border-default);
-  color: var(--text-primary);
-}
-
+/* The confirm is the outline Button in the red tint: a danger that still
+   reads as a control, not a solid block of red. */
 .delete-account-confirm {
-  border: 1px solid rgba(239, 68, 68, 0.42);
+  border-color: rgba(239, 68, 68, 0.42);
   color: var(--tint-red-fg);
   background: rgba(239, 68, 68, 0.08);
 }
 
-.delete-account-confirm:disabled {
-  opacity: 0.45;
-}
-
 @media (hover: hover) and (pointer: fine) {
   .delete-account-confirm:hover:not(:disabled) {
+    border-color: rgba(239, 68, 68, 0.42);
+    color: var(--tint-red-fg);
     background: rgba(239, 68, 68, 0.14);
   }
 }

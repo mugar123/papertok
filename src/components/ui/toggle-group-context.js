@@ -6,4 +6,4 @@ import { createContext } from 'react';
  * re-evaluating it would mint a new context that already-mounted consumers
  * would not be holding.
  */
-export const ToggleGroupContext = createContext({ size: 'default' });
+export const ToggleGroupContext = createContext({ size: 'default', variant: 'default' });

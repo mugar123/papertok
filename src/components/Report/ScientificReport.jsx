@@ -10,6 +10,8 @@ import { accessTagForPaper, reviewTagForPaper } from '../../utils/paperStatus.js
 import CustomDateSelector from './CustomDateSelector';
 import ReportFilters from './ReportFilters';
 import PaperCard from '../Feed/PaperCard';
+import { Button } from '../ui/button.jsx';
+import { Toggle } from '../ui/toggle.jsx';
 import ResearchForme from './ResearchForme';
 import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import PaperOverlay from '../Feed/PaperOverlay';
@@ -458,17 +460,18 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
           {timeOptions.map((o) => {
             const isActive = Boolean(timeframe === o.id || (o.id === 'custom' && customRange));
             return (
-              <button
+              <Toggle
                 key={o.id}
-                className={`sr-tab ${isActive ? 'active' : ''}`}
-                onClick={() => {
+                className="sr-tab"
+                pressed={isActive}
+                onPressedChange={() => {
                   if (o.id === 'custom') setShowCustomPicker(p => !p);
                   else { setTimeframe(o.id); setCustomRange(null); setShowCustomPicker(false); }
                 }}
               >
                 {o.label}
                 {isActive && <ActivePeriodRule reduced={prefersReducedMotion} />}
-              </button>
+              </Toggle>
             );
           })}
         </nav>
@@ -503,12 +506,13 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
               ? 'The filters could not be updated. The previous edition is still shown.'
               : 'No se pudieron actualizar los filtros. Se mantiene visible la edición anterior.'}
           </span>
-          <button
-            type="button"
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => fetchReport(timeframe, filters, 1, { forceRefresh: true, refreshTrends: true })}
           >
             {isEnglish ? 'Retry' : 'Reintentar'}
-          </button>
+          </Button>
         </div>
       )}
 
@@ -517,9 +521,9 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
       ) : error && totalPapers === 0 ? (
         <div className="sr-state">
           <p>{getUiErrorMessage(error, language, 'REPORT_LOAD_FAILED')}</p>
-          <button className="sr-retry" onClick={() => fetchReport(timeframe, filters, 1, { refreshTrends: true })}>
+          <Button onClick={() => fetchReport(timeframe, filters, 1, { refreshTrends: true })}>
             {isEnglish ? 'Try again' : 'Reintentar'}
-          </button>
+          </Button>
         </div>
       ) : totalPapers === 0 ? (
         <div className="sr-empty-wrap">
@@ -538,13 +542,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
             </p>
             <div className="sr-empty-actions">
               {hasActiveFilters && (
-                <button className="sr-retry" onClick={() => setFilters({ categories: [], countries: [] })}>
+                <Button onClick={() => setFilters({ categories: [], countries: [] })}>
                   {isEnglish ? 'Clear filters' : 'Limpiar filtros'}
-                </button>
+                </Button>
               )}
               {broaderTimeframe && (
-                <button
-                  className="sr-retry"
+                <Button
                   onClick={() => {
                     setTimeframe(broaderTimeframe);
                     setCustomRange(null);
@@ -552,12 +555,12 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   }}
                 >
                   {isEnglish ? 'Broaden period' : 'Ampliar periodo'}
-                </button>
+                </Button>
               )}
               {(hasUnavailableSource || !broaderTimeframe) && (
-                <button className="sr-retry" onClick={() => fetchReport(timeframe, filters, 1, { forceRefresh: true, refreshTrends: true })}>
+                <Button onClick={() => fetchReport(timeframe, filters, 1, { forceRefresh: true, refreshTrends: true })}>
                   {isEnglish ? 'Try again' : 'Reintentar'}
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -745,14 +748,14 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   {safeDoiUrl(hero.doi) && <a href={safeDoiUrl(hero.doi)} target="_blank" rel="noopener noreferrer" className="sr-tag sr-tag--link" onClick={e => e.stopPropagation()} title={isEnglish ? 'Open the DOI record' : 'Abrir el registro DOI'}><ExternalLink size={12} /> DOI</a>}
                 </div>
                 <div className="sr-hero-actions">
-                  <button className="sr-btn primary" onClick={() => setSelectedPaper(accessibleHero)}>
+                  <Button onClick={() => setSelectedPaper(accessibleHero)}>
                     {isEnglish ? 'View details' : 'Ver detalle'}
-                  </button>
-                  <button className="sr-btn ghost" onClick={() => handleShare(accessibleHero)}>
+                  </Button>
+                  <Button variant="ghost" onClick={() => handleShare(accessibleHero)}>
                     {copied
                       ? <><Check size={15} /> {isEnglish ? 'Copied' : 'Copiado'}</>
                       : <><Share2 size={15} /> {isEnglish ? 'Share' : 'Compartir'}</>}
-                  </button>
+                  </Button>
                 </div>
                 </div>
                 <blockquote className="sr-hero-abstract">
@@ -802,18 +805,18 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                   </p>
                   <div className="sr-turn-row">
                     {currentSelection > 1 && (
-                      <button className="sr-btn" onClick={() => goToSelection(currentSelection - 1)}>
+                      <Button variant="outline" onClick={() => goToSelection(currentSelection - 1)}>
                         <ArrowLeft size={15} />
                         {isEnglish ? `Selection ${currentSelection - 1}` : `Tanda ${currentSelection - 1}`}
-                      </button>
+                      </Button>
                     )}
                     {broaderTimeframe && (
-                      <button
-                        className="sr-btn"
+                      <Button
+                        variant="outline"
                         onClick={() => { setTimeframe(broaderTimeframe); setCustomRange(null); setShowCustomPicker(false); }}
                       >
                         {isEnglish ? 'Widen the period' : 'Ampliar el periodo'}
-                      </button>
+                      </Button>
                     )}
                     <span className="sr-turn-note">
                       {isEnglish
@@ -821,9 +824,9 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                         : `${totalSelections} tandas · ${report.corpusSize || 0} candidatos ordenados`}
                     </span>
                     {currentSelection > 2 && (
-                      <button className="sr-turn-back" onClick={() => goToSelection(1)}>
+                      <Button variant="ghost" className="sr-turn-back" onClick={() => goToSelection(1)}>
                         {isEnglish ? 'Back to selection 1' : 'Volver a la tanda 1'}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </>
@@ -839,24 +842,24 @@ export default function ScientificReport({ onOpenPdf, onSaveToList }) {
                         turned the page by mistake should not have to go all the
                         way to the start to undo it. */}
                     {currentSelection > 1 && (
-                      <button className="sr-btn" onClick={() => goToSelection(currentSelection - 1)}>
+                      <Button variant="outline" onClick={() => goToSelection(currentSelection - 1)}>
                         <ArrowLeft size={15} />
                         {isEnglish ? `Selection ${currentSelection - 1}` : `Tanda ${currentSelection - 1}`}
-                      </button>
+                      </Button>
                     )}
-                    <button className="sr-btn primary" onClick={() => goToSelection(currentSelection + 1)}>
+                    <Button onClick={() => goToSelection(currentSelection + 1)}>
                       {isEnglish ? `Read selection ${currentSelection + 1}` : `Leer la tanda ${currentSelection + 1}`}
                       <ArrowRight size={15} />
-                    </button>
+                    </Button>
                     <span className="sr-turn-note">
                       {isEnglish
                         ? `${totalSelections} selections in this period · ${report.corpusSize || 0} candidates ranked`
                         : `${totalSelections} tandas en este periodo · ${report.corpusSize || 0} candidatos ordenados`}
                     </span>
                     {currentSelection > 2 && (
-                      <button className="sr-turn-back" onClick={() => goToSelection(1)}>
+                      <Button variant="ghost" className="sr-turn-back" onClick={() => goToSelection(1)}>
                         {isEnglish ? 'Back to selection 1' : 'Volver a la tanda 1'}
-                      </button>
+                      </Button>
                     )}
                   </div>
                 </>

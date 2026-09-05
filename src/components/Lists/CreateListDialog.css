@@ -2,46 +2,44 @@
    modal. Lifted from the dialog that used to live inside SaveToListModal.css,
    which is why the shapes are already familiar. */
 
-.create-list-dialog {
-  border: none;
-  background: transparent;
-  padding: 0;
-  max-width: 100vw;
-  max-height: 100vh;
-  max-height: 100dvh;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* A Base UI Dialog (ui/dialog.jsx): the primitive centres and portals the
+   popup and marks it `data-open` on the way in, `data-closed` on the way out,
+   holding it in the document until the exit has played. Opened from the save
+   modal it is a nested dialog and draws no scrim of its own — the modal dims
+   itself instead (SaveToListModal.css); from the lists page the scrim below
+   is the one that shows. */
+
+.create-list-scrim {
+  /* No `backdrop-filter`: this scrim fades in with `fadeIn`, and animating
+     opacity over a blurred layer forces the blur to be re-resolved every
+     frame — the worst case for a mobile GPU. The rgba scrim alone reads as
+     the backdrop; its 3px blur was invisible under it. */
+  background: rgba(17, 19, 24, 0.4);
 }
 
-.create-list-dialog::backdrop {
-  /* No `backdrop-filter`: this backdrop fades in with `fadeIn`, and
-     animating opacity over a blurred layer forces the blur to be
-     re-resolved every frame — the worst case for a mobile GPU. The rgba
-     scrim alone reads as the backdrop; its 3px blur was invisible under it.
-     This rule fully owns its `::backdrop` (background, animation, and now
-     the absence of a filter) rather than falling through to `dialog::backdrop`
-     in global.css — that base rule carries no `backdrop-filter` of its own
-     either, so nothing reintroduces one here unopposed. */
-  background: rgba(17, 19, 24, 0.4);
+.create-list-scrim[data-open] {
   animation: fadeIn 0.15s ease;
+}
+
+.create-list-scrim[data-closed] {
+  animation: fadeOut 0.16s ease forwards;
 }
 
 .create-list-card {
   width: min(calc(100vw - var(--space-8)), 380px);
+  max-width: none;
   padding: var(--space-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-card);
   box-shadow: var(--shadow-xl);
-  animation: createListIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* A matched pair, and the exit is the shorter of the two: an entrance is worth
    watching because the window is arriving, while a dismissal that lingers is
-   just the interface holding on after the decision was made. */
+   just the interface holding on after the decision was made. `transform`,
+   never `translate`: the primitive centres the popup with the `translate`
+   property and a keyframe touching it would drag the window to the corner. */
 @keyframes createListIn {
   from { opacity: 0; transform: translateY(6px) scale(0.98); }
   to { opacity: 1; transform: none; }
@@ -52,14 +50,15 @@
   to { opacity: 0; transform: translateY(4px) scale(0.985); }
 }
 
-/* `forwards` matters: the window stays mounted for the length of this, and
-   without it the card would snap back to full opacity for the last frame. */
-.create-list-card.is-closing {
-  animation: createListOut 0.16s ease forwards;
+.create-list-card[data-open] {
+  animation: createListIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.create-list-dialog.is-closing::backdrop {
-  animation: fadeOut 0.16s ease forwards;
+/* `forwards` matters: the window stays mounted for the length of this, and
+   without it the card would snap back to full opacity for the last frame. */
+.create-list-card[data-closed] {
+  animation: createListOut 0.16s ease forwards;
+  pointer-events: none;
 }
 
 .create-list-header {
@@ -84,28 +83,23 @@
   margin-bottom: var(--space-4);
 }
 
-.create-list-field > span {
+/* A field's caption is machine data here (mono, uppercase) — on the name
+   field it is a real <label>, on the pickers the span the radio group is
+   named after. The name field itself is ui/input.jsx as it comes. */
+.create-list-field-label {
   font: var(--mono-label);
   letter-spacing: var(--mono-track);
   text-transform: uppercase;
   color: var(--text-secondary);
 }
 
+/* The two radio groups. ui/radio-group.jsx lays a group out as a grid; the
+   icons flow instead, and the palette is its own grid further down. */
+/* The name field is the ui Input (hairline box, ink on focus from
+   global.css); this only keeps it at the dialog's own type size. */
 .create-list-input {
   width: 100%;
-  padding: var(--space-2) var(--space-3);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-default);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-family: var(--font-body);
   font-size: var(--fs-sm);
-}
-
-.create-list-input:focus {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -1px;
-  border-color: var(--border-strong);
 }
 
 .create-list-icon-picker {
@@ -132,7 +126,7 @@
   }
 }
 
-.create-list-icon-btn.is-active {
+.create-list-icon-btn[data-checked] {
   border-color: var(--border-ink);
   background: var(--bg-sunken);
   color: var(--text-primary);
@@ -180,7 +174,7 @@
 
 /* The tick carries the choice; the ink ring is what survives a screenshot in
    grayscale, where eight swatches are eight greys. */
-.create-list-color-btn.is-active {
+.create-list-color-btn[data-checked] {
   outline: 2px solid var(--border-ink);
   outline-offset: 2px;
 }
@@ -237,11 +231,12 @@
   transform: scale(0.94);
 }
 
+/* With no animation to wait for, the primitive unmounts the window at once. */
 @media (prefers-reduced-motion: reduce) {
-  .create-list-card,
-  .create-list-card.is-closing,
-  .create-list-dialog::backdrop,
-  .create-list-dialog.is-closing::backdrop,
+  .create-list-card[data-open],
+  .create-list-card[data-closed],
+  .create-list-scrim[data-open],
+  .create-list-scrim[data-closed],
   .create-list-color-btn > svg {
     animation: none;
   }

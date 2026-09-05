@@ -90,15 +90,18 @@ function AppContent() {
   // and a feed load keeps costing one read.
   const [commentsPaper, setCommentsPaper] = useState(null)
   const [guestFeedReady, setGuestFeedReady] = useState(false)
+  // While the guest is being asked what they are into, the consent banner
+  // waits: two panels arriving on the same first paint would be a wall.
+  const [guestInterestsOpen, setGuestInterestsOpen] = useState(false)
   const [authPromptOpen, setAuthPromptOpen] = useState(false)
   const [searchOpen, setSearchOpen] = useState(false)
   // The palette mounts on its first open and then stays mounted, closed or
-  // not. Its exit is `@radix-ui/react-presence` keeping the sheet on screen
-  // while `scSheetOut` runs (SearchCommand.css), and Presence can only do that
-  // inside a component that still exists: mounted behind `searchOpen &&`, a
-  // close removed the whole tree in the same commit — gone from the DOM 2 ms
-  // after the click, `data-state="closed"` never observed — and the exit had
-  // never played once. The lazy chunk still waits for the first open, which is
+  // not. Its exit is Base UI's dialog keeping the sheet on screen while
+  // `scSheetOut` runs (SearchCommand.css), and it can only do that inside a
+  // component that still exists: mounted behind `searchOpen &&`, a close
+  // removed the whole tree in the same commit — gone from the DOM 2 ms after
+  // the click, the closed state never observed — and the exit had never
+  // played once. The lazy chunk still waits for the first open, which is
   // what the conditional mount was for; a closed palette costs one idle hook.
   const [searchMounted, setSearchMounted] = useState(false)
   const openSearch = useCallback(() => {
@@ -238,6 +241,8 @@ function AppContent() {
                 <PageTransition>
                   <GuestFeedPage
                     onReady={setGuestFeedReady}
+                    onInterestsPromptChange={setGuestInterestsOpen}
+                    interestsPromptSuspended={authPromptOpen}
                     onAuthRequired={requestAuthentication}
                     onOpenPdf={openPdf}
                     onOpenComments={setCommentsPaper}
@@ -439,7 +444,7 @@ function AppContent() {
         </Suspense>
       )}
 
-      <AnalyticsConsentBanner guestFeedReady={guestFeedReady} />
+      <AnalyticsConsentBanner guestFeedReady={guestFeedReady && !guestInterestsOpen} />
 
       <AnimatePresence>
         {authPromptOpen && (

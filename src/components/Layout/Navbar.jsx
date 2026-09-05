@@ -74,7 +74,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     navbarHasArrived = true;
     setArriving(false);
   };
-  const { feedMode, setFeedMode } = useFeed();
+  const { setFeedMode } = useFeed();
   const { isEnglish } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -98,7 +98,20 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   const isFollowingActive = pathname === '/following';
   const isResearchActive = pathname === '/research' || pathname === '/report';
   const isHomeActive = pathname === '/';
-  const activeTab = isHomeActive && feedMode === 'top' ? 'home' : isResearchActive ? 'research' : isFollowingActive ? 'following' : '';
+  // Which tab is current is the pathname, and nothing else. This used to also
+  // require `feedMode === 'top'`, from a time when this feed had more than one
+  // mode; `feedMode` has had exactly one reachable value since — FeedContext
+  // initialises it to 'top', and `handleSetFeedMode`, whose only caller in the
+  // app is the For you tab below (always with 'top'), returns early when the
+  // mode is unchanged. The gate started to matter the moment that tab became a
+  // NavLink (2026-09-05): React Router appends its own `active` class and sets
+  // `aria-current="page"` from `isActive`, which is the pathname alone, so a
+  // narrower hand-written condition could not have won — the tab would have
+  // been marked current while this file claimed it was not. If a second feed
+  // mode is ever added, this line and that `aria-current` have to be revisited
+  // together: a `className` callback suppresses the appended class, but nothing
+  // in NavLink's plain API gates `aria-current`.
+  const activeTab = isHomeActive ? 'home' : isResearchActive ? 'research' : isFollowingActive ? 'following' : '';
   const linksRef = useRef(null);
   const rule = useActiveTabRule(linksRef, `${activeTab}:${isEnglish}`);
 
@@ -143,18 +156,32 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             aria-hidden="true"
             style={{ transform: rule.transform || undefined, opacity: rule.transform ? 1 : 0 }}
           />
-          <button
-            type="button"
-            className={`navbar-link ${isHomeActive && feedMode === 'top' ? 'active' : ''}`}
-            aria-current={isHomeActive && feedMode === 'top' ? 'page' : undefined}
-            onClick={() => {
-              if (location.pathname !== '/') navigate('/');
-              setFeedMode('top');
-            }}
+          {/* A NavLink like its two siblings, not a <button> that calls
+              navigate('/'). On the phone (2026-09-05) the tap from Following
+              to here needed several tries while the other way took one, and
+              the element was the only asymmetry in the bar: an anchor still
+              navigates when React's click never runs — the browser follows
+              the href, which is a same-document history navigation and fires
+              `popstate`, the one event react-router's history listens to
+              (chunk-HHGH3NKS.js; it has no `hashchange` listener at all) — a
+              button does nothing. That fallback entry carries no
+              `history.state`, so `usePageTransitionCustom` reads no index and
+              leaves its memory untouched; the tab transition is unaffected
+              (it comes from TAB_ORDER, utils/tabDirection.js), but the next
+              non-tab navigation may animate as a return. It only happens on a
+              path that does nothing today, so it is strictly better than the
+              button. `end`, or "/" would match every route. React Router runs
+              this onClick before its own and navigates unless it was
+              defaultPrevented, so the mode reset rides along unchanged. */}
+          <NavLink
+            to="/"
+            end
+            className={`navbar-link ${isHomeActive ? 'active' : ''}`}
+            onClick={() => setFeedMode('top')}
           >
             <Layers size={15} aria-hidden="true" />
             {isEnglish ? 'For you' : 'Para ti'}
-          </button>
+          </NavLink>
 
           <NavLink
             to="/research"

@@ -57,6 +57,8 @@ import { cleanPaperText, displayAuthorName } from '../../utils/paperText.js';
 import { getIcon } from '../../utils/icons.js';
 import { normalizeHandle } from '../../utils/userHandle.js';
 import ScientificText from '../ScientificText.js';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.jsx';
+import { Toggle } from '../ui/toggle.jsx';
 import FollowSheet from './FollowSheet.jsx';
 import { loadProfileFonts } from '../../utils/loadDisplayFonts.js';
 import './PublicProfilePage.css';
@@ -1192,20 +1194,22 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                   </button>
                 </>
               ) : profile && (
-                <button
-                  type="button"
+                /* An on/off state, so a `ui/toggle` (`aria-pressed`): pressed
+                   is "following". The label and the colour still cycle with
+                   the hover-to-unfollow intent above. */
+                <Toggle
                   className={`profile-follow-button${following ? ' profile-follow-button--following' : ''}${following && followHover && !followBusy ? ' is-unfollow-intent' : ''}`}
-                  onClick={toggleFollow}
+                  pressed={following}
+                  onPressedChange={() => { toggleFollow(); }}
                   onMouseEnter={() => setFollowHover(true)}
                   onMouseLeave={() => setFollowHover(false)}
                   onFocus={() => setFollowHover(true)}
                   onBlur={() => setFollowHover(false)}
                   disabled={followBusy}
-                  aria-pressed={following}
                 >
                   <FollowButtonIcon size={16} />
                   {followButtonLabel}
-                </button>
+                </Toggle>
               )}
             </div>
             {followError && <p className="profile-follow-error">{copy.followFailed}</p>}
@@ -1262,45 +1266,45 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
         </header>
 
         {view.isOwner ? (
-          <>
-            <div className="profile-tabs" role="tablist" aria-label={copy.tabsLabel}>
+          /* The owner's sections are `ui/tabs`: Base UI wires each tab to the
+             panel by value (`aria-controls` / `aria-labelledby`, arrow keys
+             along the row) and its indicator slides the yellow rule from tab
+             to tab, which the framer `layoutId` used to do. The ids are kept
+             so the wiring reads the same as before. */
+          <Tabs
+            value={activeTab}
+            onValueChange={(next) => setRequestedTab(next)}
+            className="profile-tabs-root"
+          >
+            <TabsList variant="line" className="profile-tabs" aria-label={copy.tabsLabel}>
               {view.tabs.map(tab => {
                 const count = tabCount(tab);
                 return (
-                <button
-                  key={tab}
-                  type="button"
-                  role="tab"
-                  id={`profile-tab-${tab}`}
-                  aria-selected={activeTab === tab}
-                  aria-controls={`profile-panel-${tab}`}
-                  className={`profile-tab${activeTab === tab ? ' is-active' : ''}`}
-                  onClick={() => setRequestedTab(tab)}
-                >
-                  {copy.tabs[tab]}
-                  {count && <span className="profile-tab-count">{count}</span>}
-                  {activeTab === tab && (
-                    <motion.span
-                      className="profile-tab-indicator"
-                      layoutId="profile-tab-indicator"
-                      aria-hidden="true"
-                      transition={prefersReducedMotion
-                        ? { duration: 0 }
-                        : { type: 'spring', stiffness: 500, damping: 40 }}
-                    />
-                  )}
-                </button>
+                  <TabsTrigger
+                    key={tab}
+                    value={tab}
+                    id={`profile-tab-${tab}`}
+                    className="profile-tab"
+                  >
+                    {copy.tabs[tab]}
+                    {count && <span className="profile-tab-count">{count}</span>}
+                  </TabsTrigger>
                 );
               })}
-            </div>
+            </TabsList>
 
+            {/* One panel, for whichever tab is active, so the crossfade
+                between two tabs' rows can still play inside it: a panel per
+                tab would be unmounted by the primitive the moment it stopped
+                being the active one, before its leave had a chance. */}
+            <TabsContent
+              value={activeTab}
+              id={`profile-panel-${activeTab}`}
+              className="profile-panel"
+            >
             <AnimatePresence mode="wait" initial={false}>
-              <motion.section
+              <motion.div
                 key={activeTab}
-                id={`profile-panel-${activeTab}`}
-                role="tabpanel"
-                aria-labelledby={`profile-tab-${activeTab}`}
-                className="profile-panel"
                 initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6 }}
@@ -1365,9 +1369,10 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                     )}
                   </>
                 ))}
-              </motion.section>
+              </motion.div>
             </AnimatePresence>
-          </>
+            </TabsContent>
+          </Tabs>
         ) : (
           <section aria-label={copy.pinnedHeading}>
             <div className="profile-visitor-lists">

@@ -19,17 +19,21 @@
  * ticks the new list for the pending save. Keeping persistence out is what stops
  * the two from diverging again.
  *
- * A native <dialog>, and nested inside the save modal's own dialog when it is
- * opened from there. Escape lands on the topmost dialog only, so it folds this
- * window without touching the modal underneath or its unsaved-changes guard —
- * as long as the cancel and close events stop propagating, which React would
- * otherwise carry up the component tree to the parent dialog's handlers.
+ * A Base UI Dialog (ui/dialog.jsx), and a nested one when it is opened from
+ * inside the save modal: the primitive keeps the stack, so Escape and a press
+ * outside reach only the topmost window and fold this one without touching
+ * the modal underneath or its unsaved-changes guard. The Root stays mounted
+ * while `open` is false — that is how the exit gets to play before the popup
+ * leaves the document.
  */
-import { useEffect, useId, useReducer, useRef, useState } from 'react';
-import { useReducedMotion } from 'framer-motion';
+import { useEffect, useId, useReducer, useRef } from 'react';
 import { Check, X } from 'lucide-react';
 import { AVAILABLE_ICONS, getIcon } from '../../utils/icons.js';
 import { Button } from '../ui/button.jsx';
+import { Dialog, DialogClose, DialogContent, DialogTitle } from '../ui/dialog.jsx';
+import { Input } from '../ui/input.jsx';
+import { Label } from '../ui/label.jsx';
+import { RadioGroup, RadioGroupItem } from '../ui/radio-group.jsx';
 import {
   canSubmitCreateList,
   createListFormReducer,
@@ -37,9 +41,6 @@ import {
 } from '../../utils/createListFormModel.js';
 import { LIST_COLORS, randomListColorId, resolveListColorId } from '../../utils/listColors.js';
 import './CreateListDialog.css';
-
-/** Kept in step with the exit animation in CreateListDialog.css. */
-const DIALOG_EXIT_MS = 160;
 
 const COPY = {
   en: {
@@ -119,12 +120,9 @@ export default function CreateListDialog({
   onSave,
 }) {
   const [state, dispatch] = useReducer(createListFormReducer, CREATE_LIST_FORM_INITIAL);
-  const [closing, setClosing] = useState(false);
-  const prefersReducedMotion = useReducedMotion();
+  // Ties the name field to its error message (aria-describedby).
   const nameErrorId = useId();
-  const dialogRef = useRef(null);
   const inputRef = useRef(null);
-  const closeTimer = useRef(null);
   // A ref rather than `state.busy`: two Enters can land before React re-renders,
   // and both would read a stale `busy: false` and write two lists.
   const inFlight = useRef(false);
@@ -137,12 +135,6 @@ export default function CreateListDialog({
   // colour the owner never sees as current.
   const listColor = editing ? resolveListColorId(list) : null;
 
-  // Leaving the screen mid-exit must not leave a timer holding a `.close()` and
-  // an `onClose` for a window that no longer exists.
-  useEffect(() => () => {
-    if (closeTimer.current) clearTimeout(closeTimer.current);
-  }, []);
-
   useEffect(() => {
     if (!open) return;
     inFlight.current = false;
@@ -152,53 +144,19 @@ export default function CreateListDialog({
         ? { name: listName, icon: listIcon, color: listColor }
         : { color: randomListColorId() },
     });
-    // Explicitly, and not with `autoFocus`: showModal() runs from the ref
-    // callback, which is early enough to leave the caret on <body> — a keyboard
-    // user would open this window with nothing focused inside it and Tab from
-    // the top of the document. An effect runs after the commit, so by here the
-    // field exists and the dialog is already modal.
-    inputRef.current?.focus();
   }, [open, editing, listName, listIcon, listColor]);
-
-  if (!open) return null;
 
   const copy = isEnglish ? COPY.en : COPY.es;
 
   /**
    * Every close path lands here, so none of them can abandon a write midway.
-   *
-   * `.close()` before the parent unmounts us, always: the platform hands focus
-   * back to the button that opened the dialog when it is closed, and not when
-   * it is merely removed from the document. Dropping it would leave the caret
-   * nowhere after every cancel.
-   *
-   * The window has to survive its own exit animation, so the close is held for
-   * the length of it and the card is marked on the way out. A TIMER decides
-   * when that is over, not `animationend`: under `prefers-reduced-motion` the
-   * animation is `none`, no `animationend` ever fires, and a window waiting for
-   * one would never close at all. Reduced motion skips the wait entirely.
+   * The caller owns `open`; clearing it starts the exit, and Base UI keeps the
+   * popup in the document until `createListOut` has played (or, under
+   * `prefers-reduced-motion`, not at all) and then hands focus back to the
+   * button that opened the window.
    */
-  const close = () => {
-    if (closeTimer.current) return;
-    if (prefersReducedMotion) {
-      dialogRef.current?.close();
-      onClose();
-      return;
-    }
-    setClosing(true);
-    closeTimer.current = setTimeout(() => {
-      closeTimer.current = null;
-      dialogRef.current?.close();
-      onClose();
-      // Cleared here rather than on the next open: setting it from the reopen
-      // effect would be a synchronous setState in an effect body, which
-      // cascades a render on every single open.
-      setClosing(false);
-    }, DIALOG_EXIT_MS);
-  };
-
   const requestClose = () => {
-    if (!inFlight.current) close();
+    if (!inFlight.current) onClose();
   };
 
   const submit = async () => {
@@ -210,7 +168,7 @@ export default function CreateListDialog({
       if (editing) await onSave(listId, fields);
       else await onCreate(fields.name, fields.icon, fields.color);
       inFlight.current = false;
-      close();
+      onClose();
     } catch {
       inFlight.current = false;
       dispatch({ type: 'failed' });
@@ -218,42 +176,32 @@ export default function CreateListDialog({
   };
 
   return (
-    <dialog
-      ref={(node) => {
-        dialogRef.current = node;
-        if (node && !node.open) node.showModal();
-      }}
-      className={`create-list-dialog${closing ? ' is-closing' : ''}`}
-      aria-label={editing ? copy.editTitle : copy.title}
-      onCancel={(event) => {
-        // stopPropagation matters: React carries the synthetic cancel up the
-        // component tree, and a parent dialog's onCancel would close that too.
-        event.preventDefault();
-        event.stopPropagation();
-        requestClose();
-      }}
-      onClose={(event) => event.stopPropagation()}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) requestClose();
-      }}
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => { if (!nextOpen) requestClose(); }}
     >
-      <div className={`create-list-card${closing ? ' is-closing' : ''}`}>
+      <DialogContent
+        className="create-list-card"
+        overlayClassName="create-list-scrim"
+        showClose={false}
+        closeLabel={copy.close}
+        // The name field, and not the first tabbable thing (the X): a keyboard
+        // user opens this window to type a name.
+        initialFocus={inputRef}
+      >
         <div className="create-list-header">
-          <h3>{editing ? copy.editTitle : copy.title}</h3>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={requestClose}
-            aria-label={copy.close}
+          <DialogTitle render={<h3 />}>{editing ? copy.editTitle : copy.title}</DialogTitle>
+          <DialogClose
+            render={<Button variant="ghost" size="icon-sm" aria-label={copy.close} />}
           >
             <X size={16} aria-hidden="true" />
-          </Button>
+          </DialogClose>
         </div>
 
-        <label className="create-list-field">
-          <span>{copy.nameLabel}</span>
-          <input
-            type="text"
+        <div className="create-list-field">
+          <Label className="create-list-field-label" htmlFor="create-list-name">{copy.nameLabel}</Label>
+          <Input
+            id="create-list-name"
             className="create-list-input"
             placeholder={copy.namePlaceholder}
             ref={inputRef}
@@ -264,57 +212,63 @@ export default function CreateListDialog({
             onChange={(event) => dispatch({ type: 'name', value: event.target.value })}
             onKeyDown={(event) => { if (event.key === 'Enter') submit(); }}
           />
-        </label>
+        </div>
 
+        {/* Two pickers, two radio groups: one choice among a few, arrow keys
+            between them, and a real button behind each swatch. The item
+            styles itself from `data-checked`. */}
         <div className="create-list-field">
-          <span id="create-list-icon-label">{copy.iconLabel}</span>
-          <div
+          <span id="create-list-icon-label" className="create-list-field-label">{copy.iconLabel}</span>
+          <RadioGroup
             className="create-list-icon-picker"
-            role="radiogroup"
             aria-labelledby="create-list-icon-label"
+            value={state.icon}
+            onValueChange={(value) => dispatch({ type: 'icon', value })}
           >
             {AVAILABLE_ICONS.map((iconName) => {
               const Icon = getIcon(iconName);
               return (
-                <button
+                <RadioGroupItem
                   key={iconName}
-                  type="button"
-                  role="radio"
-                  aria-checked={state.icon === iconName}
+                  value={iconName}
                   aria-label={iconName}
-                  className={`create-list-icon-btn${state.icon === iconName ? ' is-active' : ''}`}
-                  onClick={() => dispatch({ type: 'icon', value: iconName })}
+                  nativeButton
+                  render={<button type="button" className="create-list-icon-btn" />}
                 >
-                  <Icon size={22} strokeWidth={1.5} />
-                </button>
+                  <Icon size={22} strokeWidth={1.5} aria-hidden="true" />
+                </RadioGroupItem>
               );
             })}
-          </div>
+          </RadioGroup>
         </div>
 
         <div className="create-list-field">
-          <span id="create-list-color-label">{copy.colorLabel}</span>
-          <div
+          <span id="create-list-color-label" className="create-list-field-label">{copy.colorLabel}</span>
+          <RadioGroup
             className="create-list-color-picker"
-            role="radiogroup"
             aria-labelledby="create-list-color-label"
+            value={state.color}
+            onValueChange={(value) => dispatch({ type: 'color', value })}
           >
             {LIST_COLORS.map((colorId) => (
-              <button
+              <RadioGroupItem
                 key={colorId}
-                type="button"
-                role="radio"
-                aria-checked={state.color === colorId}
+                value={colorId}
                 aria-label={copy.colors[colorId]}
                 title={copy.colors[colorId]}
-                className={`create-list-color-btn${state.color === colorId ? ' is-active' : ''}`}
-                style={{ '--swatch': `var(--list-${colorId})` }}
-                onClick={() => dispatch({ type: 'color', value: colorId })}
+                nativeButton
+                render={(
+                  <button
+                    type="button"
+                    className="create-list-color-btn"
+                    style={{ '--swatch': `var(--list-${colorId})` }}
+                  />
+                )}
               >
                 {state.color === colorId && <Check size={15} strokeWidth={3} aria-hidden="true" />}
-              </button>
+              </RadioGroupItem>
             ))}
-          </div>
+          </RadioGroup>
           <p className="create-list-color-hint">{editing ? copy.colorHintEdit : copy.colorHint}</p>
         </div>
 
@@ -336,7 +290,7 @@ export default function CreateListDialog({
               : (state.busy ? copy.creating : copy.create)}
           </Button>
         </div>
-      </div>
-    </dialog>
+      </DialogContent>
+    </Dialog>
   );
 }

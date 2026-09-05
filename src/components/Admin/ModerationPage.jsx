@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useId, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, ExternalLink, RotateCw, ShieldAlert } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
@@ -11,6 +11,8 @@ import {
   setCommentsFrozen,
   setReportStatus,
 } from '../../services/reportService.js';
+import { Checkbox } from '../ui/checkbox.jsx';
+import { Label } from '../ui/label.jsx';
 import './ModerationPage.css';
 
 /**
@@ -63,6 +65,7 @@ export default function ModerationPage() {
   const navigate = useNavigate();
   const { isEnglish, locale } = useLanguage();
   const text = useCallback(entry => entry[isEnglish ? 'en' : 'es'], [isEnglish]);
+  const killswitchId = useId();
 
   const [state, setState] = useState({ status: 'loading', reports: [] });
   const [targets, setTargets] = useState({});
@@ -174,13 +177,13 @@ export default function ModerationPage() {
         </header>
 
         {state.status === 'ready' && frozen !== null && (
-          <label className="moderation-killswitch">
-            <input type="checkbox" checked={frozen} onChange={toggleFreeze} />
-            <span>
+          <div className="moderation-killswitch">
+            <Checkbox id={killswitchId} checked={frozen} onCheckedChange={toggleFreeze} />
+            <Label htmlFor={killswitchId}>
               <strong>{text(COPY.killswitch)}</strong>
               <small>{text(COPY.killswitchHint)}</small>
-            </span>
-          </label>
+            </Label>
+          </div>
         )}
 
         {feedback && <p className="moderation-feedback" role="alert">{feedback}</p>}

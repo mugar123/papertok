@@ -44,6 +44,9 @@ import { getUiErrorMessage } from '../../utils/errorMessages';
 import EditInterestsModal from './EditInterestsModal';
 import DeleteAccountDialog from './DeleteAccountDialog';
 import EmailNotificationModal from '../Following/EmailNotificationModal';
+import { Button } from '../ui/button.jsx';
+import { RadioGroup, RadioGroupItem } from '../ui/radio-group.jsx';
+import { Switch } from '../ui/switch.jsx';
 import './SettingsPage.css';
 
 /* The GitHub mark (the same path the login page uses): the sign-in row is
@@ -702,26 +705,27 @@ export default function SettingsPage() {
                     tabIndex={-1}
                     aria-hidden="true"
                   />
-                  <button
-                    type="button"
+                  <Button
+                    variant="outline"
                     className="settings-photo-button"
                     disabled={savingPhoto}
                     onClick={() => profileInputRef.current?.click()}
                   >
-                    <Camera size={17} />
+                    <Camera size={17} aria-hidden="true" />
                     {copy.changePhoto}
-                  </button>
+                  </Button>
                   {profilePhoto && (
-                    <button
-                      type="button"
+                    <Button
+                      variant="outline"
+                      size="icon"
                       className="settings-photo-restore"
                       disabled={savingPhoto}
                       onClick={handleRestorePhoto}
                       aria-label={user?.photoURL ? copy.restoreGooglePhoto : copy.removePhoto}
                       title={user?.photoURL ? copy.restoreGooglePhoto : copy.removePhoto}
                     >
-                      <RotateCcw size={17} />
-                    </button>
+                      <RotateCcw size={17} aria-hidden="true" />
+                    </Button>
                   )}
                 </div>
 
@@ -761,9 +765,9 @@ export default function SettingsPage() {
                       </div>
                       <p>{copy.publicProfileDescription}</p>
                     </div>
-                    <button className="settings-row-action" onClick={() => navigate('/settings/profile')}>
-                      {copy.edit} <ChevronRight size={17} />
-                    </button>
+                    <Button variant="outline" className="settings-row-action" onClick={() => navigate('/settings/profile')}>
+                      {copy.edit} <ChevronRight size={17} aria-hidden="true" />
+                    </Button>
                   </div>
 
                   <div className="settings-row" style={{ '--settings-index': 1 }}>
@@ -772,9 +776,9 @@ export default function SettingsPage() {
                       <h3>{copy.myComments}</h3>
                       <p>{copy.myCommentsDescription}</p>
                     </div>
-                    <button className="settings-row-action" onClick={() => navigate('/settings/comments')}>
-                      {copy.viewAll} <ChevronRight size={17} />
-                    </button>
+                    <Button variant="outline" className="settings-row-action" onClick={() => navigate('/settings/comments')}>
+                      {copy.viewAll} <ChevronRight size={17} aria-hidden="true" />
+                    </Button>
                   </div>
 
                   <div className="settings-row" style={{ '--settings-index': 1 }}>
@@ -802,9 +806,9 @@ export default function SettingsPage() {
                         </div>
                       )}
                     </div>
-                    <button className="settings-row-action" onClick={() => navigate('/settings/following')}>
-                      {copy.viewAll} <ChevronRight size={17} />
-                    </button>
+                    <Button variant="outline" className="settings-row-action" onClick={() => navigate('/settings/following')}>
+                      {copy.viewAll} <ChevronRight size={17} aria-hidden="true" />
+                    </Button>
                   </div>
 
                   <div className="settings-row" style={{ '--settings-index': 2 }}>
@@ -823,9 +827,9 @@ export default function SettingsPage() {
                         </div>
                       )}
                     </div>
-                    <button className="settings-row-action" onClick={() => setIsInterestsOpen(true)}>
-                      {copy.edit} <ChevronRight size={17} />
-                    </button>
+                    <Button variant="outline" className="settings-row-action" onClick={() => setIsInterestsOpen(true)}>
+                      {copy.edit} <ChevronRight size={17} aria-hidden="true" />
+                    </Button>
                   </div>
                 </div>
               </section>
@@ -851,26 +855,29 @@ export default function SettingsPage() {
                         {!savingLevel && levelFeedback === 'error' && copy.saveError}
                       </span>
                     </div>
-                    <div className="settings-levels" role="radiogroup" aria-label={copy.aiLevelLabel}>
+                    <RadioGroup
+                      className="settings-levels"
+                      aria-label={copy.aiLevelLabel}
+                      value={readingPreferences.aiExplanationLevel}
+                      onValueChange={handleLevelChange}
+                      disabled={Boolean(savingLevel)}
+                    >
                       {AI_EXPLANATION_LEVELS.map(({ id }) => {
                         const { label, description, Icon } = LEVEL_DETAILS[id];
-                        const active = readingPreferences.aiExplanationLevel === id;
                         return (
-                          <button
+                          <RadioGroupItem
                             key={id}
-                            type="button"
-                            role="radio"
-                            aria-checked={active}
-                            className={active ? 'is-active' : ''}
+                            value={id}
+                            render={<button type="button" />}
+                            nativeButton
                             disabled={Boolean(savingLevel)}
-                            onClick={() => handleLevelChange(id)}
                           >
-                            <Icon size={18} />
+                            <Icon size={18} aria-hidden="true" />
                             <span><strong>{label[language]}</strong><small>{description[language]}</small></span>
-                          </button>
+                          </RadioGroupItem>
                         );
                       })}
-                    </div>
+                    </RadioGroup>
                   </div>
                 </div>
               </section>
@@ -896,28 +903,20 @@ export default function SettingsPage() {
                         {!savingLanguage && languageFeedback === 'error' && copy.saveError}
                       </span>
                     </div>
-                    <div className="settings-language" role="radiogroup" aria-label={copy.languageLabel}>
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={language === 'es'}
-                        className={language === 'es' ? 'is-active' : ''}
-                        disabled={savingLanguage}
-                        onClick={() => handleLanguageChange('es')}
-                      >
+                    <RadioGroup
+                      className="settings-language"
+                      aria-label={copy.languageLabel}
+                      value={language}
+                      onValueChange={handleLanguageChange}
+                      disabled={savingLanguage}
+                    >
+                      <RadioGroupItem value="es" render={<button type="button" />} nativeButton disabled={savingLanguage}>
                         {copy.spanish}
-                      </button>
-                      <button
-                        type="button"
-                        role="radio"
-                        aria-checked={language === 'en'}
-                        className={language === 'en' ? 'is-active' : ''}
-                        disabled={savingLanguage}
-                        onClick={() => handleLanguageChange('en')}
-                      >
+                      </RadioGroupItem>
+                      <RadioGroupItem value="en" render={<button type="button" />} nativeButton disabled={savingLanguage}>
                         {copy.english}
-                      </button>
-                    </div>
+                      </RadioGroupItem>
+                    </RadioGroup>
                   </div>
                 </div>
               </section>
@@ -943,9 +942,9 @@ export default function SettingsPage() {
                       </div>
                       <p>{notificationStatus.description}</p>
                     </div>
-                    <button className="settings-row-action" onClick={() => setIsNotificationsOpen(true)}>
-                      {copy.configure} <ChevronRight size={17} />
-                    </button>
+                    <Button variant="outline" className="settings-row-action" onClick={() => setIsNotificationsOpen(true)}>
+                      {copy.configure} <ChevronRight size={17} aria-hidden="true" />
+                    </Button>
                   </div>
                 </div>
               </section>
@@ -967,21 +966,15 @@ export default function SettingsPage() {
                       <p>{copy.usageAnalyticsDescription}</p>
                     </div>
                     <div className="settings-toggle-control">
-                      <span>{analyticsConsent === ANALYTICS_CONSENT.GRANTED ? copy.analyticsEnabled : copy.analyticsDisabled}</span>
-                      <button
-                        type="button"
-                        className={`settings-toggle ${analyticsConsent === ANALYTICS_CONSENT.GRANTED ? 'is-active' : ''}`}
-                        role="switch"
-                        aria-checked={analyticsConsent === ANALYTICS_CONSENT.GRANTED}
+                      <span aria-live="polite">{analyticsConsent === ANALYTICS_CONSENT.GRANTED ? copy.analyticsEnabled : copy.analyticsDisabled}</span>
+                      <Switch
+                        className="settings-toggle"
+                        checked={analyticsConsent === ANALYTICS_CONSENT.GRANTED}
                         aria-label={copy.analyticsToggleLabel}
-                        onClick={() => updateAnalyticsConsent(
-                          analyticsConsent === ANALYTICS_CONSENT.GRANTED
-                            ? ANALYTICS_CONSENT.DENIED
-                            : ANALYTICS_CONSENT.GRANTED,
+                        onCheckedChange={checked => updateAnalyticsConsent(
+                          checked ? ANALYTICS_CONSENT.GRANTED : ANALYTICS_CONSENT.DENIED,
                         )}
-                      >
-                        <span aria-hidden="true" />
-                      </button>
+                      />
                     </div>
                   </div>
 
@@ -991,13 +984,13 @@ export default function SettingsPage() {
                       <h3>{copy.deleteAccount}</h3>
                       <p>{copy.deleteAccountDescription}</p>
                     </div>
-                    <button
-                      type="button"
+                    <Button
+                      variant="outline"
                       className="settings-signout"
                       onClick={() => setDeleteAccountOpen(true)}
                     >
                       {copy.deleteAccountAction}
-                    </button>
+                    </Button>
                   </div>
                 </div>
               </section>
@@ -1053,15 +1046,15 @@ export default function SettingsPage() {
                     {gitHubLinked ? (
                       <span className="settings-row-status"><Check size={16} /> {copy.connected}</span>
                     ) : (
-                      <button
-                        type="button"
+                      <Button
+                        variant="outline"
                         className="settings-row-action"
                         onClick={handleLinkGitHub}
                         disabled={linkingGitHub}
                       >
                         {linkingGitHub ? copy.connecting : copy.connect}
-                        {!linkingGitHub && <ChevronRight size={17} />}
-                      </button>
+                        {!linkingGitHub && <ChevronRight size={17} aria-hidden="true" />}
+                      </Button>
                     )}
                   </div>
 
@@ -1071,9 +1064,9 @@ export default function SettingsPage() {
                       <h3>{copy.session}</h3>
                       <p>{copy.sessionDescription}</p>
                     </div>
-                    <button className="settings-signout" onClick={handleSignOut}>
-                      <LogOut size={18} /> {copy.signOut}
-                    </button>
+                    <Button variant="outline" className="settings-signout" onClick={handleSignOut}>
+                      <LogOut size={18} aria-hidden="true" /> {copy.signOut}
+                    </Button>
                   </div>
                 </div>
 

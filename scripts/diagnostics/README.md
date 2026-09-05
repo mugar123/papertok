@@ -144,3 +144,27 @@ node scripts/diagnostics/explorer-hero-frames.mjs shotwhen '#/explorer/author/A5
 types with `Input.insertText` (cmdk ignores the native value setter). Build with
 `IS_DEMO = true` in `src/services/firebase.js` for it, and put it back to `false`
 before committing anything.
+
+```bash
+node scripts/diagnostics/explorer-loading-probe.mjs tap '#/' demo,mobile,slow=4,follows=many,at=2500,cycles=2
+node scripts/diagnostics/explorer-loading-probe.mjs tap '#/' demo,mobile,mouse
+```
+
+`tap` (2026-09-05) presses the tab bar with `Input.dispatchTouchEvent` — the
+gesture recogniser, hit-testing and click synthesis run as on a phone, which
+`tabswitch`'s `element.click()` skips — For you → Following → For you,
+`cycles` times, and logs every touch/pointer/mouse/click event that reaches the
+document, `pushState`, and the pages per frame. `follows=many` seeds fourteen
+follows so Following has cards and a chain still landing; `at=<ms>` taps For
+you that soon after entering Following; `until=<cards>` waits for that many
+cards first; `slow=<rate>` throttles the CPU; `mouse` is the desktop control;
+`late` waits out the 2.5 s chunk prefetch so the Following chunk is warm.
+Exit code 1 when a tap leaves the hash unchanged or the outgoing page has not
+started to leave 400 ms after touchend. Needs `IS_DEMO = true` flipped locally
+(never committed) and a server on a Worker-allowed origin (5173/5174/5175).
+
+`safari-tabs-probe.mjs` runs the same sequence in desktop Safari through
+`safaridriver` (WebKit, mouse clicks): enable Safari → Settings → Advanced →
+"Allow remote automation" once, then `ORIGIN=http://localhost:5174 node
+scripts/diagnostics/safari-tabs-probe.mjs`. It seeds the demo session through
+`localStorage` on a first load and reads the same event log.

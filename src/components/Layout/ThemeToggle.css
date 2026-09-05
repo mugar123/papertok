@@ -19,6 +19,12 @@
   position: relative;
 }
 
+/* The ui Toggle raises its pressed state as a white chip; here the host's
+   chrome is the whole look, and "pressed" is drawn by the icon alone. */
+.theme-toggle[data-pressed] {
+  box-shadow: none;
+}
+
 /* 32 px is the drawing; 44 is what a thumb has to hit. The pseudo-element is
    out of flow, so the button keeps its size and its grid centring, and the
    bar's spacing does not move. */

@@ -120,46 +120,21 @@ test('SelectionMenu moves focus into itself as soon as it opens, not only once c
   // `if (composing) textareaRef.current?.focus()`, so the menu's first,
   // non-composing state (the one every open starts in) never received focus
   // at all -- a keyboard user who somehow triggered `pending` had a menu on
-  // screen and no way to reach it with Tab.
+  // screen and no way to reach it with Tab. The menu is a Base UI Popover
+  // now: the primitive moves focus into the popup on open, and `initialFocus`
+  // names the first action as where it lands.
+  const popup = jsx.match(/<PopoverPrimitive\.Popup\b[\s\S]*?>/);
+  assert.ok(popup, 'SelectionMenu no longer renders a Base UI Popover popup; update this test alongside it');
+  const initial = popup[0].match(/initialFocus=\{(\w+)\}/);
+  assert.ok(
+    initial,
+    'the popup lost its initialFocus -- without it (or an equivalent), the menu never receives '
+    + 'focus in its first, non-composing state.',
+  );
   assert.match(
     jsx,
-    /import \{ useDialogFocus \} from '\.\.\/\.\.\/hooks\/useDialogFocus\.js';/,
-    'SelectionMenu no longer imports useDialogFocus -- without it (or an equivalent), the menu '
-    + 'never receives focus in its first, non-composing state.',
-  );
-
-  assert.match(
-    jsx,
-    /useDialogFocus\(true, onClose\)/,
-    'the call to useDialogFocus changed shape; update this test alongside it',
-  );
-
-  assert.match(
-    jsx,
-    /data-dialog-initial-focus/,
-    'no element in the menu is marked data-dialog-initial-focus; useDialogFocus falls back to the '
-    + 'first focusable element when nothing is marked, but the explicit marker is what survives a '
-    + 'reordering of the buttons -- update this test alongside it if that trade was deliberately dropped',
-  );
-
-  // Escape-to-close must survive the move from the old bespoke listener to
-  // useDialogFocus, which is the one thing in this file guaranteed to still
-  // provide it.
-  assert.doesNotMatch(
-    jsx,
-    /document\.addEventListener\('keydown', handleKey, true\)/,
-    'the old bespoke Escape-key listener is still here alongside useDialogFocus -- Escape would '
-    + 'fire onClose() twice (harmless) but the dead code should go; update this test if it was '
-    + 'kept on purpose',
-  );
-
-  // The list -> compose refocus is a different transition than the initial
-  // open (useDialogFocus's own initial-focus effect runs once, on mount,
-  // while `composing` starts false and only flips after) and must survive.
-  assert.match(
-    jsx,
-    /if \(composing\) textareaRef\.current\?\.focus\(\);/,
-    'the composing-mode textarea autofocus is gone -- clicking "Write a note" would open the '
-    + 'composer without moving focus into it.',
+    new RegExp(`className="rd-menu-item" ref=\\{${initial[1]}\\}`),
+    `no menu item carries ref={${initial[1]}}; initialFocus then points at nothing and Base UI falls `
+    + 'back to the popup itself, which is reachable but announces no action.',
   );
 });

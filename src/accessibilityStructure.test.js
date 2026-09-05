@@ -177,14 +177,17 @@ test('the navbar exposes a name and marks the active route', async () => {
 
   const forYouAt = navbar.search(/'For you'\s*:\s*'Para ti'/);
   assert.notEqual(forYouAt, -1, 'the "For you" / "Para ti" control is gone from Navbar.jsx.');
-  const openingTagAt = navbar.lastIndexOf('<button', forYouAt);
-  assert.notEqual(openingTagAt, -1, 'the "For you" label is no longer inside a <button>.');
-  assert.match(
-    navbar.slice(openingTagAt, forYouAt),
-    /aria-current=/,
-    'the "For you" control no longer carries aria-current. The active tab is styled '
-    + 'with a class, so without aria-current the current page is communicated by '
-    + 'appearance alone and nothing announces which feed you are on (WCAG 1.3.1).',
+  const openingTagAt = navbar.lastIndexOf('<NavLink', forYouAt);
+  assert.notEqual(
+    openingTagAt,
+    -1,
+    'the "For you" label is no longer inside a <NavLink>. It was a <button> that called '
+    + 'navigate("/") and wrote its own aria-current until 2026-09-05; as a NavLink — like '
+    + 'the other two tabs — React Router sets aria-current="page" on the active one '
+    + 'itself (verified in react-router 7.18: NavLink defaults `"aria-current": '
+    + 'ariaCurrentProp = "page"`). Turned back into a <button> or a plain <a>, nothing '
+    + 'announces which feed you are on and the current tab is communicated by appearance '
+    + 'alone (WCAG 1.3.1).',
   );
 });
 

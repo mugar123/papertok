@@ -8,9 +8,13 @@
  * the flat chrome and the yellow active tab.
  */
 
+/* The container is the Tabs root (the filter bar is its list, the results
+   its panel); the primitive's own gap is undone so the header keeps its rule
+   flush against the results. */
 .search-page-container {
   display: flex;
   flex-direction: column;
+  gap: 0;
   height: 100vh;
   height: 100dvh;
   width: 100vw;
@@ -110,8 +114,13 @@
   flex-shrink: 0;
 }
 
+/* The ui Input, flat inside the wrapper that draws its box. */
 .search-input {
   flex: 1;
+  min-width: 0;
+  height: auto;
+  padding: 0;
+  border-radius: 0;
   background: none;
   border: none !important;
   color: var(--text-primary);
@@ -150,21 +159,32 @@
   }
 }
 
-/* ─── Filter pills ─── */
+/* ─── Filter pills ───
+   A ui TabsList (`line`): a scrolling row of pills over a hairline, and the
+   active one underlined in the brand yellow by the primitive's indicator,
+   which slides between tabs on a transition. */
 .search-filter-bar {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--space-2);
   width: 100%;
   min-width: 0;
   overflow-x: auto;
-  padding: 1px 2px 2px;
+  padding: 1px 2px 5px;
+  border-bottom: 1px solid var(--border-default);
   overscroll-behavior-inline: contain;
   scrollbar-width: none;
 }
 
 .search-filter-bar::-webkit-scrollbar {
   display: none;
+}
+
+/* The rule under the active pill has to sit inside the scroll box, or the
+   overflow clips it: on the padding edge, just above the hairline. */
+.search-filter-bar [data-slot='tabs-indicator'] {
+  bottom: 0;
 }
 
 .search-filter-pill {
@@ -193,17 +213,18 @@
   transition: color var(--transition-fast);
 }
 
-/* The bar is a `role="tablist"`, and rule 3 of `design.md` reserves the yellow
-   for exactly this: the active nav or tab item. It was a violet wash before,
-   which is an action accent and said nothing about which tab you were on. */
-.search-filter-pill.active {
-  border-color: var(--brand-yellow);
-  background: var(--brand-yellow-soft);
+/* The bar is a tablist, and rule 3 of `design.md` reserves the yellow for
+   exactly this: the active nav or tab item. The yellow is the underline the
+   Tabs indicator draws; the pill itself firms up to ink so the tab is not
+   marked twice. `data-active` is what Base UI writes on the active tab. */
+.search-filter-pill[data-active] {
+  border-color: var(--border-ink);
+  background: var(--bg-secondary);
   color: var(--text-primary);
   font-weight: var(--fw-semibold);
 }
 
-.search-filter-pill.active svg {
+.search-filter-pill[data-active] svg {
   color: var(--text-primary);
 }
 

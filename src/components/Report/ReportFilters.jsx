@@ -1,26 +1,23 @@
 import { useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { Collapsible } from '@base-ui/react/collapsible';
 import { CATEGORIES } from '../../data/categories';
 import { getCountryName, searchCountries } from '../../data/countries';
 import { Check, ChevronDown, LoaderCircle, MapPin, Search, X } from 'lucide-react';
 import WorldMap from './WorldMap';
 import { Button } from '../ui/button.jsx';
+import { Input } from '../ui/input.jsx';
+import { Toggle } from '../ui/toggle.jsx';
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
 import { useLanguage } from '../../context/LanguageContext';
 import './ReportFilters.css';
 
 const EASE = [0.16, 1, 0.3, 1];
-/**
- * Opening and closing are not the same movement played backwards.
- *
- * `EASE` is an expo-out: nearly all of its speed is spent in the first frames.
- * Coming in that is what a panel should do — arrive fast, settle gently. Going
- * out it means the block falls off a cliff and then crawls: measured on the
- * affiliation-country section, 155 of its 579 pixels went in a single 17ms
- * frame and the last 8 took 133ms. It read as a cut, not as a fold. Closing
- * gets a curve that eases at both ends instead.
- */
-const EASE_CLOSE = [0.4, 0, 0.2, 1];
 const QUICK_COUNTRIES = ['US', 'GB', 'DE', 'FR', 'CN', 'JP', 'ES', 'CA'];
+
+/* A discipline pill that framer can stagger in and press: the ui toggle-group
+   item forwards its ref, which is all `motion.create` needs. */
+const MotionToggleGroupItem = motion.create(ToggleGroupItem);
 
 function normalizeFilters(filters = {}) {
   return {
@@ -37,36 +34,19 @@ function filterKey(filters = {}) {
   });
 }
 
-/** Smooth expand/collapse for a block of content. */
-function Collapse({ isOpen, children, reduced, id }) {
+/**
+ * Smooth expand/collapse for a block of content: a Base UI Collapsible panel.
+ * The primitive measures the content into `--collapsible-panel-height` and
+ * marks the first and last frames with `data-starting-style` /
+ * `data-ending-style`; the fold itself — the two different curves of opening
+ * and closing — is written on `.rf-collapse` in the stylesheet, and the panel
+ * stays mounted until the exit transition ends.
+ */
+function Collapse({ children, id }) {
   return (
-    <AnimatePresence initial={false}>
-      {isOpen && (
-        <motion.div
-          id={id}
-          initial={{ height: 0, opacity: 0 }}
-          animate={{
-            height: 'auto',
-            opacity: 1,
-            transition: reduced
-              ? { duration: 0 }
-              : { height: { duration: 0.32, ease: EASE }, opacity: { duration: 0.22 } },
-          }}
-          exit={{
-            height: 0,
-            opacity: 0,
-            transition: reduced
-              ? { duration: 0 }
-              // The content goes before the box does, so the last frames of the
-              // fold are empty rather than a strip of clipped text.
-              : { height: { duration: 0.28, ease: EASE_CLOSE }, opacity: { duration: 0.16, ease: 'easeIn' } },
-          }}
-          style={{ overflow: 'hidden' }}
-        >
-          {children}
-        </motion.div>
-      )}
-    </AnimatePresence>
+    <Collapsible.Panel id={id} className="rf-collapse">
+      {children}
+    </Collapsible.Panel>
   );
 }
 
@@ -114,7 +94,10 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
     });
   };
 
-  const toggleCategory = (key) => toggleDraftValue('categories', key);
+  /* The discipline group hands back the whole pressed set. */
+  const setCategories = (categories) => {
+    setDraftFilters(current => ({ ...current, categories: [...categories] }));
+  };
 
   const toggleCountry = (code) => {
     toggleDraftValue('countries', code);
@@ -136,12 +119,16 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
     setIsOpen(false);
   };
 
-  const togglePanel = () => {
-    if (isOpen) closePanel();
-    else {
-      setDraftFilters(appliedFilters);
-      setIsOpen(true);
-    }
+  const openPanel = () => {
+    setDraftFilters(appliedFilters);
+    setIsOpen(true);
+  };
+
+  /* The Collapsible reports the next state (trigger, keyboard); opening seeds
+     the draft from what is applied, closing throws the draft away. */
+  const handlePanelOpenChange = (open) => {
+    if (open) openPanel();
+    else closePanel();
   };
 
   const applyFilters = () => {
@@ -157,15 +144,14 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
   const draftCount = activeCategories.length + activeCountries.length;
 
   return (
-    <div className="rf">
+    // The block is a Base UI Collapsible: the row is its trigger (Base UI
+    // writes `aria-expanded`, `aria-controls` and `data-panel-open` on it) and
+    // the panel below folds on a CSS transition.
+    <Collapsible.Root className="rf" open={isOpen} onOpenChange={handlePanelOpenChange}>
       {/* The row reads as the twin of the EDITION row above it: a mono label,
           the state set in running text, and one hairline rule underneath. */}
-      <button
-        type="button"
-        className={`rf-toggle ${isOpen ? 'is-open' : ''}`}
-        onClick={togglePanel}
-        aria-expanded={isOpen}
-        aria-controls="rf-panel"
+      <Collapsible.Trigger
+        render={<button type="button" className="rf-toggle" />}
       >
         <span className="rf-toggle-label">{isEnglish ? 'Filters' : 'Filtros'}</span>
         <span className={`rf-toggle-summary ${appliedCount > 0 ? '' : 'is-empty'}`}>
@@ -192,7 +178,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
             body, which spanned both columns and landed on the sidebar's
             numbers — a line that only existed while loading. */}
         {loading && <span className="rf-sweep" aria-hidden="true" />}
-      </button>
+      </Collapsible.Trigger>
 
       <AnimatePresence initial={false}>
         {!isOpen && appliedCount > 0 && (
@@ -232,15 +218,27 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
         )}
       </AnimatePresence>
 
-      <Collapse isOpen={isOpen} reduced={reduced} id="rf-panel">
+      <Collapse id="rf-panel">
         <div className="rf-panel">
           <div className="rf-section">
             <span className="rf-section-label">{isEnglish ? 'Discipline' : 'Disciplina'}</span>
-            <motion.div
+            {/* A multi-select ToggleGroup (`aria-pressed` on every pill, arrow
+                keys between them); the stagger and the press stay framer's,
+                on the items. `outline` so the group draws no track of its own. */}
+            <ToggleGroup
+              multiple
+              variant="outline"
               className="rf-pills"
-              initial={reduced ? false : 'hidden'}
-              animate="visible"
-              variants={{ visible: { transition: { staggerChildren: 0.012 } } }}
+              value={activeCategories}
+              onValueChange={setCategories}
+              aria-label={isEnglish ? 'Discipline' : 'Disciplina'}
+              render={(
+                <motion.div
+                  initial={reduced ? false : 'hidden'}
+                  animate="visible"
+                  variants={{ visible: { transition: { staggerChildren: 0.012 } } }}
+                />
+              )}
             >
               {areaKeys.map(key => {
                 const area = CATEGORIES[key];
@@ -248,12 +246,10 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                 const isActive = activeCategories.includes(key);
                 const label = isEnglish ? area.labelEn : area.label;
                 return (
-                  <motion.button
-                    type="button"
+                  <MotionToggleGroupItem
                     key={key}
-                    className={`rf-pill ${isActive ? 'active' : ''}`}
-                    onClick={() => toggleCategory(key)}
-                    aria-pressed={isActive}
+                    value={key}
+                    className="rf-pill"
                     aria-label={`${isActive ? (isEnglish ? 'Remove' : 'Quitar') : (isEnglish ? 'Add' : 'Añadir')} ${label}`}
                     style={isActive ? { '--rf-pill-accent': area.gradient } : undefined}
                     variants={{
@@ -265,28 +261,27 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                     {isActive && <Check size={12} aria-hidden="true" />}
                     {!isActive && <Icon size={13} aria-hidden="true" />}
                     {label}
-                  </motion.button>
+                  </MotionToggleGroupItem>
                 );
               })}
-            </motion.div>
+            </ToggleGroup>
           </div>
 
           {/* `--country` carries no gap: see the note on the rule. The space
               between the toggle and the block below it has to live *inside*
               the block, or it vanishes in one frame when the block unmounts. */}
-          <div className="rf-section rf-section--country">
-            <button
-              className="rf-country-toggle"
-              type="button"
-              aria-expanded={isCountryOpen}
-              aria-controls="rf-country-controls"
-              onClick={() => setIsCountryOpen(open => !open)}
-            >
+          {/* A Collapsible of its own, nested in the panel's. */}
+          <Collapsible.Root
+            className="rf-section rf-section--country"
+            open={isCountryOpen}
+            onOpenChange={setIsCountryOpen}
+          >
+            <Collapsible.Trigger render={<button type="button" className="rf-country-toggle" />}>
               <span><MapPin size={13} /> {isEnglish ? 'Affiliation country' : 'País de afiliación'}{activeCountries.length ? ` (${activeCountries.length})` : ''}</span>
               <Chevron isOpen={isCountryOpen} size={15} reduced={reduced} />
-            </button>
+            </Collapsible.Trigger>
 
-            <Collapse isOpen={isCountryOpen} reduced={reduced} id="rf-country-controls">
+            <Collapse id="rf-country-controls">
               <div className="rf-country-controls">
                 <p className="rf-country-note">
                   {isEnglish
@@ -296,7 +291,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
 
                 <div className="rf-search-wrap">
                   <Search size={15} className="rf-search-icon" aria-hidden="true" />
-                  <input
+                  <Input
                     ref={countryInputRef}
                     className="rf-search"
                     type="search"
@@ -367,21 +362,21 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                 {!countrySearch && (
                   <div className="rf-quick-countries">
                     <span className="rf-quick-label">{isEnglish ? 'Quick selection' : 'Selección rápida'}</span>
+                    {/* Independent chips, not a group: each is its own ui Toggle
+                        (`aria-pressed` from Base UI), and the stylesheet keys
+                        the pressed look off `data-pressed`. */}
                     <div className="rf-quick-list">
-                      {QUICK_COUNTRIES.map(code => {
-                        const selected = activeCountries.includes(code);
-                        return (
-                          <button
-                            type="button"
-                            key={code}
-                            className={`rf-quick-country ${selected ? 'selected' : ''}`}
-                            aria-pressed={selected}
-                            onClick={() => toggleCountry(code)}
-                          >
-                            {getCountryName(code, language)}
-                          </button>
-                        );
-                      })}
+                      {QUICK_COUNTRIES.map(code => (
+                        <Toggle
+                          key={code}
+                          variant="outline"
+                          className="rf-quick-country"
+                          pressed={activeCountries.includes(code)}
+                          onPressedChange={() => toggleCountry(code)}
+                        >
+                          {getCountryName(code, language)}
+                        </Toggle>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -423,7 +418,7 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
                 </div>
               </div>
             </Collapse>
-          </div>
+          </Collapsible.Root>
 
           <div className="rf-actions">
             <Button
@@ -451,6 +446,6 @@ export default function ReportFilters({ filters, onChange, loading = false }) {
           </div>
         </div>
       </Collapse>
-    </div>
+    </Collapsible.Root>
   );
 }

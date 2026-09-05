@@ -352,33 +352,29 @@ for (const stylesheet of ['./SearchPage.css', './SearchCommand.css']) {
   });
 }
 
-test('an exit is animated, because a transitioned one never finishes', async () => {
-  // `@radix-ui/react-presence` keeps a closing node mounted only while
-  // `getComputedStyle(node).animationName` is not `none`. A `transition` sets no
-  // animation name, so Presence unmounts on the spot and the exit is cut off at
-  // its first frame — which reads as "the animation is too fast" rather than as
-  // a bug, and is why `design.md` has a paragraph about it.
-  //
-  // So: anything this stylesheet styles for the closed state owes that state an
-  // `animation`. `both` comes with it, to hold the last frame instead of
+test('an exit is animated, and an animated exit holds its last frame', async () => {
+  // Base UI keeps a closing popup mounted for as long as
+  // `element.getAnimations()` reports something running on it, then unmounts.
+  // A CSS `animation` on `[data-closed]` is that something; without one the
+  // node is gone on the spot and the exit is cut off at its first frame —
+  // which reads as "the animation is too fast" rather than as a bug, and is
+  // why `design.md` has a paragraph about it. (A `transition` on
+  // `[data-ending-style]` would also be seen, but this stylesheet drives the
+  // sheet and the scrim with keyframes, so the closed state owes an
+  // `animation`.) `both` comes with it, to hold the last frame instead of
   // snapping back to full opacity on the way out.
   const css = withoutComments(
     await readFile(new URL('./SearchCommand.css', import.meta.url), 'utf8'),
   );
   const closing = innermostRules(css)
-    .filter(rule => rule.selectors.some(one => one.includes("[data-state='closed']")));
+    .filter(rule => rule.selectors.some(one => one.includes('[data-closed]')));
 
   assert.ok(closing.length > 0, 'expected to have found the exit at all');
   for (const rule of closing) {
     // The reduced-motion block turns the animation off on purpose; that one is
-    // allowed to say `none`, and Presence unmounting at once is then correct.
+    // allowed to say `none`, and an immediate unmount is then correct.
     if (/animation:\s*none/.test(rule.body)) continue;
     assert.match(rule.body, /animation:/, `${rule.selectors.join(', ')} must animate its exit`);
-    assert.doesNotMatch(
-      rule.body,
-      /transition:/,
-      `${rule.selectors.join(', ')} must not lean on a transition to leave`,
-    );
     assert.match(rule.body, /\bboth\b/, `${rule.selectors.join(', ')} should hold its last frame`);
   }
 });
@@ -565,7 +561,7 @@ test('the explorer is only ever asked for a type it can resolve', () => {
  * while `scSheetOut` runs — which it can only do while the component is still
  * mounted. `App.jsx` used to mount `SearchCommand` behind `searchOpen &&`, so
  * closing removed the whole tree in the same commit (measured in the browser:
- * gone from the DOM 2 ms after close, `data-state="closed"` never observed),
+ * gone from the DOM 2 ms after close, the closed state never observed),
  * and the exit `SearchCommand.css` describes had never played once. The lazy
  * chunk still waits for the first open; what must not happen is a second
  * unmount on every close.
@@ -598,7 +594,7 @@ test('the palette clears its state on the way in, never on the way out', () => {
  * `<label>`, `aria-label` or `aria-labelledby` anywhere near it.
  */
 test('the search page input is named by more than its placeholder', () => {
-  const input = page.match(/<input\s+type="search"[\s\S]*?\/>/);
+  const input = page.match(/<(?:input|Input)\s+type="search"[\s\S]*?\/>/);
   assert.ok(input, 'the search page input changed shape; update this test alongside it');
   assert.match(
     input[0],

@@ -1,40 +1,16 @@
+/* The scrim and the sheet are the Dialog primitive's backdrop and popup
+   (`overlayClassName` / `className`): it centres the sheet, traps focus,
+   closes on Escape and the scrim, and plays its own enter/leave on
+   `[data-open]`/`[data-closed]`, so no motion is spelled here. No
+   `backdrop-filter`: the primitive animates this element's own opacity,
+   which would force the blur to be re-resolved on every frame — the worst
+   case for a mobile GPU. The rgba veil alone is what reads as the backdrop. */
 .eim-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  height: 100dvh;
-  /* No `backdrop-filter`: this overlay animates its own opacity in and out
-     (`eim-fade-in`/`eim-fade-out` below), which would force the blur to be
-     re-resolved on every frame — the worst case for a mobile GPU. The rgba
-     veil alone is what reads as the backdrop; its 8px blur was invisible
-     under it. */
   background: rgba(17, 19, 24, 0.60);
-  z-index: 9999;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: var(--space-4);
-  opacity: 0;
-  pointer-events: none;
-  animation: eim-fade-in 0.3s forwards ease-out;
-}
-
-.eim-overlay--closing {
-  animation: eim-fade-out 0.3s forwards ease-in;
-}
-
-@keyframes eim-fade-in {
-  to { opacity: 1; pointer-events: auto; }
-}
-
-@keyframes eim-fade-out {
-  to { opacity: 0; pointer-events: none; }
 }
 
 .eim-modal {
-  width: 100%;
+  width: calc(100% - 2 * var(--space-4));
   max-width: 800px;
   max-height: 90vh;
   max-height: 90dvh;
@@ -45,24 +21,13 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transform: translateY(20px) scale(0.98);
-  animation: eim-slide-up 0.4s forwards cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.eim-overlay--closing .eim-modal {
-  animation: eim-slide-down 0.3s forwards ease-in;
-}
-
-@keyframes eim-slide-up {
-  to { transform: translateY(0) scale(1); }
-}
-
-@keyframes eim-slide-down {
-  to { transform: translateY(20px) scale(0.95); opacity: 0; }
-}
-
+/* The X is the primitive's own, in the sheet's corner; the header keeps
+   clear of it. */
 .eim-header {
   padding: var(--space-6);
+  padding-right: calc(var(--space-6) + 40px);
   border-bottom: 1px solid var(--border-subtle);
   display: flex;
   justify-content: space-between;
@@ -71,10 +36,6 @@
 }
 
 .eim-header-text h2 {
-  font-family: var(--font-heading);
-  font-size: var(--fs-xl);
-  font-weight: var(--fw-bold);
-  color: var(--text-primary);
   margin: 0 0 var(--space-2) 0;
 }
 
@@ -83,27 +44,6 @@
   font-size: var(--fs-md);
   color: var(--text-secondary);
   margin: 0;
-}
-
-.eim-close-btn {
-  background: var(--bg-secondary);
-  border: none;
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .eim-close-btn:hover {
-    background: var(--bg-glass-hover);
-    color: var(--text-primary);
-  }
 }
 
 .eim-body {
@@ -193,8 +133,14 @@
 
 /* ── INTERACTION: Push-up / Glow / Push-down Pill ── */
 
+/* The pill is the shared Toggle (`ui/toggle.jsx`) wearing this class: its
+   utilities live in the `utilities` layer, so these unlayered rules win.
+   `height: auto` and `white-space: normal` undo the toggle's fixed row
+   height and nowrap, which the pill never had. */
 .eim-pill {
   position: relative;
+  height: auto;
+  white-space: normal;
   background: var(--bg-sunken);
   border: 1px solid var(--border-default);
   padding: 10px 18px;
@@ -230,7 +176,7 @@
   transition: transform 0.1s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.eim-pill--selected {
+.eim-pill[data-pressed] {
   /* Glow */
   background: var(--bg-glass-hover);
   border-color: var(--border-strong);
@@ -240,7 +186,7 @@
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .eim-pill--selected:hover {
+  .eim-pill[data-pressed]:hover {
     background: var(--bg-glass-hover);
     box-shadow: 0 0 20px rgba(17, 19, 24, 0.09), inset 0 0 15px rgba(17, 19, 24, 0.06);
   }
@@ -328,13 +274,11 @@
 }
 
 @media (max-width: 768px) {
-  .eim-overlay {
-    padding: var(--space-2);
-  }
   .eim-modal {
-    height: 100%;
-    max-height: 100vh;
-    max-height: 100dvh;
+    width: calc(100% - 2 * var(--space-2));
+    height: calc(100vh - 2 * var(--space-2));
+    height: calc(100dvh - 2 * var(--space-2));
+    max-height: none;
     border-radius: var(--radius-lg);
   }
   .eim-body {

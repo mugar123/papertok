@@ -12,40 +12,37 @@
    mono for machine data, serif for the paper's own words, and every control
    from `src/components/ui/button.jsx`. */
 
-.save-modal-dialog {
-  border: none;
-  background: transparent;
-  padding: 0;
-  max-width: 100vw;
-  max-height: 100vh;
-  max-height: 100dvh;
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* The window is a Base UI Dialog (ui/dialog.jsx): the primitive centres the
+   popup and portals it to <body>, and marks it `data-open` on the way in and
+   `data-closed` on the way out — it holds the node in the document until the
+   closing animation has finished, which is what `DIALOG_EXIT_MS` and the
+   `is-closing` class used to do by hand. The two rules below are the scrim;
+   `.save-modal` is the popup. */
+
+.save-modal-scrim {
+  /* No `backdrop-filter`: this scrim fades in with `fadeIn`, and animating
+     opacity over a blurred layer forces the blur to be re-resolved every
+     frame — the worst case for a mobile GPU. The rgba scrim alone reads as
+     the backdrop; its 3px blur was invisible under it. */
+  background: rgba(17, 19, 24, 0.4);
 }
 
-.save-modal-dialog::backdrop {
-  /* No `backdrop-filter`: this backdrop fades in with `fadeIn`, and
-     animating opacity over a blurred layer forces the blur to be
-     re-resolved every frame — the worst case for a mobile GPU. The rgba
-     scrim alone reads as the backdrop; its 3px blur was invisible under it.
-     This rule fully owns its `::backdrop` (background, animation, and now
-     the absence of a filter) rather than falling through to `dialog::backdrop`
-     in global.css — that base rule carries no `backdrop-filter` of its own
-     either, so nothing reintroduces one here unopposed. */
-  background: rgba(17, 19, 24, 0.4);
-  /* The scrim used to finish 60ms before the window it is behind, so the
-     backdrop settled while the card was still arriving. Same length, same
-     curve, one movement. */
+/* The scrim used to finish 60ms before the window it is behind, so the
+   backdrop settled while the card was still arriving. Same length, same
+   curve, one movement. */
+.save-modal-scrim[data-open] {
   animation: fadeIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.save-modal-scrim[data-closed] {
+  animation: fadeOut 0.32s cubic-bezier(0.4, 0, 1, 1) forwards;
 }
 
 .save-modal {
   display: flex;
   flex-direction: column;
   width: min(calc(100vw - var(--space-6)), 440px);
+  max-width: none;
   /* Rule 7: the clamp is in viewport units, so the sheet keeps growing with
      the screen instead of cutting the list while the page sits empty. */
   max-height: min(90vh, 720px);
@@ -54,12 +51,29 @@
   border: 1px solid var(--border-default);
   border-radius: var(--radius-2xl);
   box-shadow: var(--shadow-xl);
-  /* The previous `scaleIn` was a 2% scale over 200ms — below the threshold
-     at which a 440px sheet reads as arriving, so opening looked like a
-     hard cut. 16px of travel and 4% of scale, on the same spring the
-     comments sheet uses on desktop, is what makes the window drop into
-     place. */
+}
+
+/* The previous `scaleIn` was a 2% scale over 200ms — below the threshold at
+   which a 440px sheet reads as arriving, so opening looked like a hard cut.
+   16px of travel and 4% of scale, on the same spring the comments sheet uses
+   on desktop, is what makes the window drop into place. `transform`, never
+   `translate`: the primitive centres the popup with the `translate` property
+   and a keyframe touching it would drag the window to the corner. */
+.save-modal[data-open] {
   animation: saveModalIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* The new-list window opens nested inside this one, and a nested Base UI
+   dialog draws no scrim of its own (dialog.md, "Nested dialogs"): the parent
+   is asked to dim itself instead, which is what this veil is. */
+.save-modal[data-nested-dialog-open]::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: rgba(17, 19, 24, 0.4);
+  pointer-events: none;
+  animation: fadeIn 0.15s ease;
 }
 
 @keyframes saveModalIn {
@@ -76,8 +90,8 @@
    filter panel already leave by: it holds while it goes, and goes at the end.
    240ms was then trimmed to 200: a dismissal is read in its first frames, and
    the last 40ms were the reader waiting on a window already gone in their
-   head. `DIALOG_EXIT_MS` in the component matches this to the millisecond,
-   and `saveModalMotion.test.js` fails if they ever drift.
+   head. The primitive reads the length from the animation itself, so there
+   is no timer left to keep in step; `saveModalMotion.test.js` pins the pair.
 
    Then up again, to 300 (and the entrance to 360, the scrim on both clocks):
    asked for on 2026-09-03 — both read as too quick in use, the window there
@@ -89,16 +103,10 @@
 }
 
 /* `forwards` matters: the window stays mounted for the length of this, and
-   without it the card would snap back to full opacity for the last frame. */
-.save-modal.is-closing {
+   without it the card would snap back to full opacity for the last frame.
+   No taps land on a window that is leaving. */
+.save-modal[data-closed] {
   animation: saveModalOut 0.3s cubic-bezier(0.4, 0, 1, 1) forwards;
-}
-
-.save-modal-dialog.is-closing::backdrop {
-  animation: fadeOut 0.32s cubic-bezier(0.4, 0, 1, 1) forwards;
-}
-
-.save-modal-dialog.is-closing {
   pointer-events: none;
 }
 
@@ -221,19 +229,17 @@
 
 .save-modal-row.is-selected { background: var(--bg-sunken); }
 
-/* The input used to be `display: none`, which took the checkbox out of the tab
-   order: the whole destinations list was unreachable by keyboard. It is now
-   merely invisible, still focusable, and the focus ring is drawn on the row. */
-.save-modal-row-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  margin: 0;
-  pointer-events: none;
+/* The list rows' checkbox is the Base UI Checkbox (ui/checkbox.jsx): a
+   focusable `role="checkbox"` box the row labels, in the tab order — the old
+   hidden input once was `display: none`, which took the whole destinations
+   list out of keyboard reach. The box keeps the global focus ring (it is the
+   control), and the row it sits in lifts like a hovered row at the same
+   time, so the eye finds the row and the ring says which box. The Read
+   later row is itself a toggle button, so there the ring goes round the row. */
+.save-modal-row:has(.save-modal-tick:focus-visible) {
+  background: var(--bg-secondary);
 }
 
-.save-modal-row:has(.save-modal-row-input:focus-visible),
 .save-modal-row:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: -2px;
@@ -249,22 +255,23 @@
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--bg-card);
-  /* The tick is always in the DOM and merely invisible while unselected: an
-     icon that appears from nothing shifts nothing, and there is no second
-     checkmark drawn in CSS to disagree with it — the old rule painted a
-     `::after` glyph in `--text-primary` on an `--accent-primary` background,
-     which is the same ink twice, so the box read as a solid black square. */
+  /* One glyph, drawn by the component: the old rule painted a `::after`
+     checkmark in `--text-primary` on an `--accent-primary` background, which
+     is the same ink twice, so the box read as a solid black square. */
   color: var(--text-inverse);
   transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
+/* The Read later tick is always in the DOM and merely invisible while
+   unselected: an icon that appears from nothing shifts nothing. */
 .save-modal-tick > svg {
   opacity: 0;
   transform: scale(0.55);
   transition: opacity var(--transition-fast), transform var(--transition-fast);
 }
 
-.save-modal-row.is-selected .save-modal-tick {
+.save-modal-row.is-selected .save-modal-tick,
+.save-modal-tick[data-checked] {
   background: var(--accent-primary);
   border-color: var(--accent-primary);
 }
@@ -272,6 +279,17 @@
 .save-modal-row.is-selected .save-modal-tick > svg {
   opacity: 1;
   transform: scale(1);
+}
+
+/* The checkbox's own indicator lands the same way: Base UI marks it
+   `data-starting-style` for the first frame it exists. */
+.save-modal-tick [data-slot='checkbox-indicator'] {
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+}
+
+.save-modal-tick [data-slot='checkbox-indicator'][data-starting-style] {
+  opacity: 0;
+  transform: scale(0.55);
 }
 
 .save-modal-row-icon {
@@ -375,15 +393,19 @@
   gap: var(--space-2);
 }
 
-.save-modal-field > span {
+.save-modal-field-label {
   display: flex;
   align-items: center;
   gap: var(--space-2);
   font-size: var(--fs-xs);
   font-weight: var(--fw-medium);
+  line-height: var(--lh-normal);
   color: var(--text-secondary);
 }
 
+/* The note is ui/textarea.jsx and the tag editor is drawn like it. Neither
+   sets a font size: the field keeps the primitive's 16px, below which iOS
+   zooms into whatever is tapped. */
 .save-modal-field textarea,
 .save-modal-tag-editor {
   width: 100%;
@@ -393,20 +415,15 @@
   color: var(--text-primary);
   padding: var(--space-3);
   font-family: var(--font-body);
-  font-size: var(--fs-sm);
   transition: border-color var(--transition-fast);
 }
 
 .save-modal-field textarea {
   min-height: 84px;
+  max-height: 40vh;
+  max-height: 40dvh;
   resize: vertical;
   line-height: var(--lh-normal);
-}
-
-.save-modal-field textarea:focus {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: -1px;
-  border-color: var(--border-strong);
 }
 
 .save-modal-tag-editor {
@@ -455,21 +472,31 @@
   .save-modal-tag-remove:hover { color: var(--accent-danger); }
 }
 
+/* ui/input.jsx, undressed: the editor around it is the field, so the input
+   gives up its own box, height and padding and shares the line with the
+   chips. */
 .save-modal-tag-input {
   flex: 1;
+  width: auto;
   min-width: 8ch;
+  height: auto;
+  padding: 0;
   border: none;
+  border-radius: 0;
   background: transparent;
   color: var(--text-primary);
   font-family: var(--font-body);
-  font-size: var(--fs-sm);
 }
 
-/* Deliberate: `.save-modal-tag-editor:focus-within` already draws the ring
-   for the whole control, so the inner input must not add its own second,
-   outset one on top. */
-.save-modal-tag-input:focus {
-  outline: none;
+/* `.save-modal-tag-editor:focus-within` draws the ring for the whole
+   control, so the input inside gives up the inset ink hairline global.css
+   hands every text field on `:focus-visible` (that same global rule is what
+   drops the input's own outline; nothing is switched off here). The
+   selector is this long on purpose: the global rule carries three `:not()`s
+   and a plain class pair loses to it. */
+.save-modal-tag-editor:focus-within input.save-modal-tag-input[data-slot='input']:focus-visible {
+  box-shadow: none;
+  border: none;
 }
 
 /* ── Utility group: rule 6, primary left, utilities right behind a rule ── */
@@ -547,18 +574,23 @@
   gap: var(--space-2);
 }
 
+/* With no animation to wait for, the primitive unmounts the window at once
+   and the parent hears of the close in the same tick. */
 @media (prefers-reduced-motion: reduce) {
-  .save-modal,
-  .save-modal.is-closing,
-  .save-modal-dialog::backdrop,
-  .save-modal-dialog.is-closing::backdrop,
+  .save-modal[data-open],
+  .save-modal[data-closed],
+  .save-modal-scrim[data-open],
+  .save-modal-scrim[data-closed],
+  .save-modal[data-nested-dialog-open]::after,
   .save-modal-tag-chip,
   .save-modal-discard {
     animation: none;
   }
 
   .save-modal-tick > svg,
-  .save-modal-row.is-selected .save-modal-tick > svg {
+  .save-modal-row.is-selected .save-modal-tick > svg,
+  .save-modal-tick [data-slot='checkbox-indicator'],
+  .save-modal-tick [data-slot='checkbox-indicator'][data-starting-style] {
     transition: none;
     transform: none;
   }

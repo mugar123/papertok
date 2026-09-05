@@ -1,4 +1,5 @@
 import { CATEGORIES } from '../data/categories.js';
+import { guestCategoriesForAreas, normalizeGuestAreas } from './guestInterests.js';
 
 const isDev = import.meta.env?.DEV === true;
 
@@ -46,4 +47,77 @@ export function guestCategoryLabel(categoryId, onMissing = warnMissingCategory) 
 
 export function buildGuestDiscoveryQuery(categories = GUEST_CATEGORIES) {
   return categories.map(category => `"${guestCategoryLabel(category)}"`).join(' OR ');
+}
+
+/**
+ * The areas arXiv can be asked by category. Elsewhere (medicine, biology) an
+ * id becomes a phrase search in `fetchPapers`, which is what the signed-in
+ * feed avoids with the same list (FeedContext's `arxivAllowedAreas`).
+ */
+const ARXIV_AREAS = new Set(['physics', 'math', 'cs', 'eess', 'stat', 'econ', 'mech', 'civil', 'chemeng']);
+const PUBMED_AREAS = new Set(['bio', 'med']);
+
+// One query each. The signed-in feed sends five categories to arXiv, five to
+// OpenAlex and three to PubMed per page; a guest who picked four areas should
+// not cost more than a member who picked forty categories.
+const GUEST_ARXIV_CAP = 6;
+const GUEST_DISCOVERY_CAP = 5;
+const GUEST_PUBMED_CAP = 3;
+
+/**
+ * Round-robin across areas: the first subcategory of each, then the second,
+ * … until `cap`. Every chosen area is represented before any area gets a
+ * second seat, so a guest who picked physics and economics does not get six
+ * physics categories and no economics.
+ */
+function interleaveAreaCategories(areas, cap) {
+  const lists = areas.map(key => Object.keys(CATEGORIES[key].subcategories));
+  const picked = [];
+  for (let index = 0; picked.length < cap; index += 1) {
+    let added = false;
+    for (const list of lists) {
+      if (index < list.length && picked.length < cap) {
+        picked.push(list[index]);
+        added = true;
+      }
+    }
+    if (!added) break;
+  }
+  return picked;
+}
+
+/**
+ * What the four guest sources are asked, for a guest who picked these areas
+ * — or, with none, the fixed sample above.
+ *
+ * `key` is what the feed hook watches: a plan with the same key is the same
+ * plan, and a re-render must not re-fetch.
+ */
+export function buildGuestFeedPlan(areas = []) {
+  const chosen = normalizeGuestAreas(areas);
+  if (chosen.length === 0) {
+    return Object.freeze({
+      key: 'default',
+      areas: [],
+      categories: [...GUEST_CATEGORIES],
+      arxivCategories: [...GUEST_CATEGORIES],
+      discoveryQuery: buildGuestDiscoveryQuery(),
+      pubmedQuery: 'neuroscience OR bioinformatics',
+      pubmedCategories: ['bio.neuro', 'bio.comp'],
+    });
+  }
+
+  const arxivAreas = chosen.filter(key => ARXIV_AREAS.has(key));
+  const pubmedAreas = chosen.filter(key => PUBMED_AREAS.has(key));
+  const pubmedCategories = interleaveAreaCategories(pubmedAreas, GUEST_PUBMED_CAP);
+
+  return Object.freeze({
+    key: chosen.join('+'),
+    areas: chosen,
+    categories: guestCategoriesForAreas(chosen),
+    arxivCategories: interleaveAreaCategories(arxivAreas, GUEST_ARXIV_CAP),
+    discoveryQuery: buildGuestDiscoveryQuery(interleaveAreaCategories(chosen, GUEST_DISCOVERY_CAP)),
+    pubmedQuery: pubmedCategories.map(id => `"${guestCategoryLabel(id)}"`).join(' OR '),
+    pubmedCategories,
+  });
 }

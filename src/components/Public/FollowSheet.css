@@ -13,42 +13,35 @@
    subrayado amarillo de 3px que `.profile-tab` ya usa dos dedos más arriba.
    ============================================ */
 
-.follow-sheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 0;
-  /* No `backdrop-filter`: FollowSheet.jsx fades this element's own opacity
-     in and out with framer-motion, and a blur under an animated opacity is
-     re-resolved every frame — the worst case for a mobile GPU. The dark
-     veil alone reads as the backdrop; its 6px blur was invisible under it. */
-  background: rgba(0, 0, 0, 0.55);
-}
-
-/* Anclada al borde inferior en el móvil (de ahí entra), y anclada ARRIBA
-   cuando flota en pantallas anchas. Lo segundo es deliberado: el cuerpo ya no
-   tiene altura fija, así que cambiar de pestaña cambia la altura — y una caja
-   centrada que cambia de altura se recentra, que es justo el salto que la
-   altura fija existía para evitar. Anclada arriba crece sólo hacia abajo. */
+/* El velo, el viewport que ancla la hoja al borde inferior, el gesto de
+   arrastre y el deslizamiento son de `ui/drawer` (drawer.css): la hoja es un
+   Drawer de Base UI. Aquí queda sólo su caja — y, más abajo, la forma en que
+   flota anclada ARRIBA en pantallas anchas. Lo segundo es deliberado: el
+   cuerpo no tiene altura fija, así que cambiar de pestaña cambia la altura —
+   y una caja centrada que cambia de altura se recentra, que es justo el
+   salto que la altura fija existía para evitar. Anclada arriba crece sólo
+   hacia abajo. El home indicator lo despeja el propio drawer (su
+   `padding-bottom` ya suma `--inset-bottom`). */
 .follow-sheet {
   display: flex;
   flex-direction: column;
   width: 100%;
   max-width: 460px;
-  /* Despeja el home indicator: la hoja va a ras del borde inferior del
-     viewport en el móvil, así que sin esto la última fila (`.follow-sheet-more`,
-     o el último seguidor visible) queda debajo de él. Cero en un dispositivo
-     sin home indicator, así que el borde de la hoja no se mueve ahí. */
-  padding-bottom: var(--inset-bottom);
   border: 1px solid var(--border-default);
   border-bottom: none;
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   background: var(--bg-elevated);
   box-shadow: var(--shadow-xl);
   overflow: hidden;
+}
+
+/* La raíz de `ui/tabs` envuelve cabecera, cuerpo y pie para que cada pestaña
+   quede cableada a su panel: es la columna de la hoja. */
+.follow-sheet-frame {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 0;
 }
 
 /* ─── Cabecera ─── */
@@ -61,10 +54,13 @@
   border-bottom: 1px solid var(--border-subtle);
 }
 
+/* La lista de `ui/tabs` (variante `line`). El filete inferior ya lo pone la
+   cabecera; el de la lista sobraría. */
 .follow-sheet-tabs {
   display: flex;
   gap: var(--space-1);
   min-width: 0;
+  border-bottom: 0;
 }
 
 /* Copia exacta de `.profile-tab`: mismo font, mismo tracking, mismo padding.
@@ -96,12 +92,13 @@
   color: var(--text-secondary);
 }
 
-.follow-sheet-tab--active {
+/* La activa la marca Base UI con `data-active`. */
+.follow-sheet-tab[data-active] {
   color: var(--text-primary);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .follow-sheet-tab--active:hover {
+  .follow-sheet-tab[data-active]:hover {
     color: var(--text-primary);
   }
 }
@@ -114,19 +111,17 @@
   color: var(--text-tertiary);
 }
 
-.follow-sheet-tab--active .follow-sheet-tab-count {
+.follow-sheet-tab[data-active] .follow-sheet-tab-count {
   color: var(--text-secondary);
 }
 
-/* El amarillo marca la pestaña activa, y nada más en esta hoja. Lo pinta
-   framer-motion con un layoutId compartido, así que se DESLIZA de una pestaña
-   a otra en vez de parpadear — el mismo gesto que `.profile-tab-indicator`. */
-.follow-sheet-tab-indicator {
-  position: absolute;
-  left: var(--space-3);
-  right: var(--space-3);
-  bottom: -1px;
-  height: 3px;
+/* El amarillo marca la pestaña activa, y nada más en esta hoja. Lo pinta el
+   indicador de `ui/tabs`, que se DESLIZA de una pestaña a otra con las
+   variables `--active-tab-*` de Base UI — el mismo gesto que las pestañas del
+   perfil. Aquí sólo se recorta al ancho del rótulo, sin el padding lateral,
+   como siempre estuvo. */
+.follow-sheet-tabs [data-slot='tabs-indicator'] {
+  clip-path: inset(0 var(--space-3));
   background: var(--brand-yellow);
 }
 
@@ -463,14 +458,34 @@
 /* ─── Escritorio ─── */
 
 @media (min-width: 600px) {
-  .follow-sheet-backdrop {
+  .follow-sheet-viewport {
     align-items: flex-start;
     padding: 10vh var(--space-4) var(--space-4);
   }
 
+  /* Flotando, no anclada: sin sangrado bajo el borde, y la llegada es un
+     asentarse-y-fundirse corto en el sitio en vez del deslizamiento del
+     drawer — salir es un cierre, no una llegada al revés, así que recorre
+     menos. El transform de reposo sigue siendo el del drawer (lleva el
+     gesto de arrastre). */
   .follow-sheet {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    max-height: calc(90dvh - var(--space-4));
     border-bottom: 1px solid var(--border-default);
     border-radius: var(--radius-2xl);
+    transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .follow-sheet[data-starting-style] {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+  }
+
+  .follow-sheet[data-ending-style] {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+    transition-duration: 180ms;
   }
 
   .follow-sheet-body {
@@ -483,5 +498,17 @@
   .follow-row-pending-block,
   .follow-row-pending-line {
     animation: none;
+  }
+
+  /* Sigue llegando y yéndose — una hoja que aparece de golpe se lee como
+     un fallo — pero sólo por opacidad. */
+  .follow-sheet {
+    transition: opacity 120ms linear;
+  }
+
+  .follow-sheet[data-starting-style],
+  .follow-sheet[data-ending-style] {
+    opacity: 0;
+    transform: none;
   }
 }

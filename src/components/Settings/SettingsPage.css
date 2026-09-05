@@ -244,9 +244,12 @@
   display: none;
 }
 
+/* The shared Button carries these classes for layout and the row's own
+   tint; its fixed height yields to the min-height here. */
 .settings-photo-button,
 .settings-photo-restore {
   display: inline-flex;
+  height: auto;
   min-height: 40px;
   align-items: center;
   justify-content: center;
@@ -435,6 +438,7 @@
 .settings-row-action {
   display: inline-flex;
   min-width: 88px;
+  height: auto;
   min-height: 38px;
   align-items: center;
   justify-content: center;
@@ -562,7 +566,8 @@
   }
 }
 
-.settings-levels button.is-active {
+/* Each card is a Base UI radio rendered as a button: "on" is `data-checked`. */
+.settings-levels button[data-checked] {
   border-color: var(--border-ink);
   color: var(--gradient-physics);
   background: var(--bg-secondary);
@@ -616,7 +621,7 @@
   }
 }
 
-.settings-language button.is-active {
+.settings-language button[data-checked] {
   color: var(--text-inverse);
   background: var(--accent-primary);
   box-shadow: 0 4px 14px rgba(17, 19, 24, 0.08);
@@ -678,36 +683,10 @@
   text-transform: uppercase;
 }
 
+/* The switch itself is the shared Switch primitive; only its place in the
+   row is set here. */
 .settings-toggle {
-  position: relative;
-  width: 44px;
-  height: 26px;
   flex: 0 0 auto;
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-2xl);
-  background: var(--bg-secondary);
-  transition: border-color var(--transition-fast), background var(--transition-fast);
-}
-
-.settings-toggle > span {
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--text-secondary);
-  transition: transform var(--transition-fast), background var(--transition-fast);
-}
-
-.settings-toggle.is-active {
-  border-color: rgba(129, 92, 246, 0.65);
-  background: var(--accent-primary);
-}
-
-.settings-toggle.is-active > span {
-  transform: translateX(18px);
-  background: var(--bg-card);
 }
 
 .settings-section--community {
@@ -716,6 +695,7 @@
 
 .settings-signout {
   display: inline-flex;
+  height: auto;
   min-height: 40px;
   align-items: center;
   gap: 8px;
@@ -924,8 +904,6 @@
   .settings-language button,
   .settings-index-list button,
   .settings-index-marker,
-  .settings-toggle,
-  .settings-toggle > span,
   .settings-signout {
     transition: none;
   }

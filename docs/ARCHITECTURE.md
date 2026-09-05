@@ -57,12 +57,33 @@ The recommendation engine combines bounded signals for explicit preferences, lea
 affinity, followed entities, recency, citations, semantic relevance, exploration, and
 diversity.
 
+## UI foundation
+
+- The interface is React with per-component stylesheets over the tokens in
+  `src/styles/variables.css` (see `design.md`). Interactive primitives — dialogs, sheets,
+  drawers, popovers, menus, tabs, toggles, tooltips and form controls — are shadcn/ui
+  components generated for **Base UI** (`@base-ui/react`, `components.json` style
+  `base-nova`) and live in `src/components/ui/`, re-drawn in the project's vocabulary.
+  Base UI owns focus management, dismissal, positioning and the wait for exit animations;
+  components style its state attributes (`data-open`, `data-closed`, `data-starting-style`,
+  `data-ending-style`, `data-pressed`, `data-checked`, `data-active`, `data-highlighted`).
+- Tailwind v4 (`@tailwindcss/vite`) supplies utilities for `ui/` only; `global.css` maps
+  shadcn's semantic colours onto the tokens in `@theme inline`, and `dark:` follows the
+  app's `data-theme` switch through `@custom-variant dark`, not the OS media query.
+- cmdk remains the engine of the search palette (`ui/command.jsx`), hosted on the Base UI
+  dialog.
+
 ## Persistence
 
 - Firebase Authentication owns user identity.
 - Firestore stores profiles, follows, interactions, preferences, and reading data.
 - Browser storage is used only for bounded caches and must be namespaced by user when it
-  contains personalized state.
+  contains personalized state. The one deliberate exception is `papertok_guestInterests`
+  (`src/utils/guestInterests.js`): the areas a signed-out visitor picked in the guest feed's
+  interests prompt, which has no user id to be scoped to. It is a bridge, not a store — the
+  onboarding pre-selects from it and `completeOnboarding` clears it once the preferences are
+  in `users/{uid}`, and a session that loads an already-onboarded profile clears it too, so a
+  stray answer never seeds the next account on a shared device.
 - Cloudflare KV stores notification state and edge-cached comment-thread anchors. Atomic AI and protected-provider request quotas use
   a Durable Object ledger keyed by bounded UTC periods and hashed user identifiers.
 - Scheduled digests query native arXiv categories directly before falling back to OpenAlex,

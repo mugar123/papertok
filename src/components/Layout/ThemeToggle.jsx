@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { Toggle } from '../ui/toggle.jsx';
 import { useLanguage } from '../../context/LanguageContext';
 import { useTheme } from '../../context/ThemeContext';
 import './ThemeToggle.css';
@@ -15,8 +16,9 @@ import './ThemeToggle.css';
  * The name stays put while the state moves, which is the whole reason to use a
  * pressed button: a name that flips to "switch to light mode" *and* a pressed
  * state announces as "switch to light mode, button, pressed", and the listener
- * has to guess which half is the state. The stylesheet keys the morph off that
- * same attribute, so the drawing and the announcement cannot drift apart.
+ * has to guess which half is the state. It is the ui `Toggle` (Base UI), which
+ * owns `aria-pressed`; the stylesheet keys the morph off that same attribute,
+ * so the drawing and the announcement cannot drift apart.
  *
  * The disc is one circle: `r 8` scaled to half for the sun, full and inked for
  * the moon, with a masked bite that slides in last. `vector-effect` keeps the
@@ -31,14 +33,14 @@ export default function ThemeToggle({ className = 'navbar-icon-btn' }) {
   const label = isEnglish ? 'Dark mode' : 'Modo oscuro';
 
   return (
-    <button
+    <Toggle
       ref={buttonRef}
-      type="button"
+      size="icon"
       className={`${className} theme-toggle`}
-      aria-pressed={isDark}
+      pressed={isDark}
       title={label}
       aria-label={label}
-      onClick={() => toggleTheme(buttonRef.current)}
+      onPressedChange={() => toggleTheme(buttonRef.current)}
     >
       <svg
         className="theme-toggle-disc"
@@ -78,6 +80,6 @@ export default function ThemeToggle({ className = 'navbar-icon-btn' }) {
           mask="url(#theme-toggle-mask)"
         />
       </svg>
-    </button>
+    </Toggle>
   );
 }

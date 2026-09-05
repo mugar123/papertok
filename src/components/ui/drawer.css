@@ -1,0 +1,165 @@
+/* ============================================
+   ui/drawer — the bottom sheet a thumb dismisses (Base UI Drawer)
+
+   The only stylesheet in ui/. The swipe is a calc() over Base UI's
+   --drawer-swipe-* variables and belongs in CSS, not in a class name; every
+   colour, rule and radius here is still a token. `--bleed` is the extra
+   sheet pulled below the viewport edge so an overshoot never shows the page
+   behind it.
+   ============================================ */
+
+.ui-drawer-backdrop {
+  --backdrop-opacity: 0.4;
+  --drawer-swipe-progress: 0;
+  position: fixed;
+  inset: 0;
+  z-index: 12050;
+  min-height: 100dvh;
+  background: rgb(17, 19, 24);
+  opacity: calc(var(--backdrop-opacity) * (1 - var(--drawer-swipe-progress)));
+  transition: opacity 400ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.ui-drawer-backdrop[data-starting-style],
+.ui-drawer-backdrop[data-ending-style] {
+  opacity: 0;
+}
+
+.ui-drawer-backdrop[data-swiping] {
+  transition-duration: 0ms;
+}
+
+.ui-drawer-backdrop[data-ending-style] {
+  transition-duration: calc(var(--drawer-swipe-strength, 1) * 360ms);
+}
+
+.ui-drawer-viewport {
+  position: fixed;
+  inset: 0;
+  z-index: 12051;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.ui-drawer-viewport[data-side='top'] {
+  align-items: flex-start;
+}
+
+.ui-drawer-viewport[data-side='left'] {
+  align-items: stretch;
+  justify-content: flex-start;
+}
+
+.ui-drawer-viewport[data-side='right'] {
+  align-items: stretch;
+  justify-content: flex-end;
+}
+
+.ui-drawer-popup {
+  --bleed: 3rem;
+  --drawer-swipe-movement-x: 0px;
+  --drawer-swipe-movement-y: 0px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: calc(85dvh + var(--bleed));
+  margin-bottom: calc(-1 * var(--bleed));
+  padding-bottom: calc(var(--inset-bottom) + var(--bleed));
+  border: 1px solid var(--border-default);
+  border-bottom: 0;
+  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+  background: var(--bg-card);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-xl);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  will-change: transform;
+  transform: translateY(var(--drawer-swipe-movement-y));
+  transition: transform 400ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.ui-drawer-popup[data-starting-style],
+.ui-drawer-popup[data-ending-style] {
+  transform: translateY(calc(100% - var(--bleed) + 2px));
+}
+
+.ui-drawer-popup[data-swiping] {
+  transition-duration: 0ms;
+  user-select: none;
+}
+
+.ui-drawer-popup[data-ending-style] {
+  transition-duration: calc(var(--drawer-swipe-strength, 1) * 360ms);
+}
+
+/* Side drawers: the bleed moves to the outer edge and the swipe to the x axis. */
+.ui-drawer-popup[data-side='right'],
+.ui-drawer-popup[data-side='left'] {
+  width: min(420px, calc(100vw - 40px + var(--bleed)));
+  height: 100%;
+  max-height: none;
+  margin-bottom: 0;
+  padding-bottom: var(--inset-bottom);
+  border-bottom: 1px solid var(--border-default);
+  border-radius: 0;
+  transform: translateX(var(--drawer-swipe-movement-x));
+}
+
+.ui-drawer-popup[data-side='right'] {
+  margin-right: calc(-1 * var(--bleed));
+  padding-right: var(--bleed);
+  border-right: 0;
+}
+
+.ui-drawer-popup[data-side='left'] {
+  margin-left: calc(-1 * var(--bleed));
+  padding-left: var(--bleed);
+  border-left: 0;
+}
+
+.ui-drawer-popup[data-side='right'][data-starting-style],
+.ui-drawer-popup[data-side='right'][data-ending-style] {
+  transform: translateX(calc(100% - var(--bleed) + 2px));
+}
+
+.ui-drawer-popup[data-side='left'][data-starting-style],
+.ui-drawer-popup[data-side='left'][data-ending-style] {
+  transform: translateX(calc(-100% + var(--bleed) - 2px));
+}
+
+.ui-drawer-popup[data-side='top'] {
+  margin-top: calc(-1 * var(--bleed));
+  margin-bottom: 0;
+  padding-top: calc(var(--inset-top) + var(--bleed));
+  padding-bottom: 0;
+  border-top: 0;
+  border-bottom: 1px solid var(--border-default);
+  border-radius: 0 0 var(--radius-2xl) var(--radius-2xl);
+}
+
+.ui-drawer-popup[data-side='top'][data-starting-style],
+.ui-drawer-popup[data-side='top'][data-ending-style] {
+  transform: translateY(calc(-100% + var(--bleed) - 2px));
+}
+
+.ui-drawer-handle {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 4px;
+  margin: 10px auto 6px;
+  border-radius: var(--radius-full);
+  background: var(--border-strong);
+}
+
+.ui-drawer-body {
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-drawer-backdrop,
+  .ui-drawer-popup {
+    transition-duration: 0ms;
+  }
+}

@@ -9,10 +9,27 @@
 .rd {
   position: fixed;
   inset: 0;
-  z-index: 12040;
+  /* One above the Base UI scrim (12050): the shell is the popup of a modal
+     Dialog now, and its own scrim sits behind it, hidden below. The export
+     card and the selection menu are portaled popovers at 12055, above. */
+  z-index: 12051;
   display: flex;
   flex-direction: column;
+  /* The popup of `ui/dialog` arrives as a centred sheet — translated to the
+     middle, capped in width, with a hairline, a radius and the large shadow.
+     The reader is the viewport; those are undone here, in this unlayered
+     rule, rather than with opposing utilities whose order in the built
+     stylesheet is Tailwind's to decide. */
+  max-width: none;
+  translate: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   background: var(--bg-primary);
+  /* Where the reader grows from: the card's button, handed over by
+     PaperReader.jsx as `--rd-origin` (viewport coordinates — `.rd` is
+     `inset: 0`, so its box is the viewport). */
+  transform-origin: var(--rd-origin, 50% 62%);
   /* How much of the annotation sheet stays on screen once it is put away.
      Declared here rather than on the sheet because three things have to agree
      on it — the sheet's own resting transform, the control panel parked above
@@ -235,7 +252,7 @@
   background: var(--border-default);
 }
 
-.rd-panel [data-state='on'] {
+.rd-panel [data-pressed] {
   background: var(--brand-yellow);
   color: var(--text-on-brand);
 }
@@ -521,6 +538,95 @@
    thing to look at. The wipe stays; the pen is gone. */
 .rd {
   --rd-write-mask: linear-gradient(90deg, #000 0 40%, rgba(0, 0, 0, 0.5) 50%, transparent 64%);
+}
+
+/* ── The reader's arrival and leave ──
+   Base UI marks the popup `data-open` while it is up and `data-closed` for
+   the length of the leave, and holds the node until the animation on it has
+   played — so these are animations, not transitions. The shell grows out of
+   the card's button (`--rd-origin`, above) on the native `scale`, never
+   `transform`: the dialog's centring utilities own `translate`, and a
+   keyframe touching them would drag the sheet to a corner mid-animation.
+
+   The floating chrome arrives a beat behind the sheet, top to bottom, and is
+   the first thing gone on the way out: chrome that outlives the page it
+   floats over reads as the page falling over. Its keyframes sit on the
+   wrappers; `[data-receded]` (below) still moves only their children, so
+   the two never write the same property. */
+.rd-scrim {
+  /* The sheet is opaque and covers the viewport: there is nothing for a
+     scrim to dim, and dimming the card behind it for a beat before the
+     zoom would show. */
+  display: none;
+}
+
+.rd[data-open] {
+  animation: rdShellIn 320ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.rd[data-closed] {
+  animation: rdShellOut 220ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+.rd[data-open] .rd-float-close,
+.rd[data-open] .rd-status,
+.rd[data-open] .rd-panel-dock {
+  animation: rdChromeIn 280ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.rd[data-open] .rd-status { animation-delay: 30ms; }
+.rd[data-open] .rd-panel-dock { animation-delay: 60ms; }
+
+.rd[data-closed] .rd-float-close,
+.rd[data-closed] .rd-status,
+.rd[data-closed] .rd-panel-dock {
+  animation: rdChromeOut 120ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes rdShellIn {
+  from { opacity: 0; scale: 0.94; }
+  to { opacity: 1; scale: 1; }
+}
+
+@keyframes rdShellOut {
+  from { opacity: 1; scale: 1; }
+  to { opacity: 0; scale: 0.96; }
+}
+
+@keyframes rdChromeIn {
+  from { opacity: 0; translate: 0 8px; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+@keyframes rdChromeOut {
+  from { opacity: 1; translate: 0 0; }
+  to { opacity: 0; translate: 0 6px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Still arrives and leaves — a surface that snaps in and out reads as a
+     glitch — but by opacity alone, and shorter. */
+  .rd[data-open] {
+    animation: rdRevealStill 120ms linear both;
+  }
+
+  .rd[data-closed] {
+    animation: rdShellStillOut 120ms linear both;
+  }
+
+  .rd[data-open] .rd-float-close,
+  .rd[data-open] .rd-status,
+  .rd[data-open] .rd-panel-dock,
+  .rd[data-closed] .rd-float-close,
+  .rd[data-closed] .rd-status,
+  .rd[data-closed] .rd-panel-dock {
+    animation: none;
+  }
+}
+
+@keyframes rdShellStillOut {
+  from { opacity: 1; }
+  to { opacity: 0; }
 }
 
 .rd-section[data-reveal] .rd-section-head,

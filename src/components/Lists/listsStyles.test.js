@@ -35,6 +35,11 @@ const NOT_CLASS_NAMES = new Set([
   // visible label with `aria-labelledby`.
   'create-list-icon-label',
   'create-list-color-label',
+  // `id`s again: the note textarea and the name input, each wired to its
+  // <label> with `htmlFor`. The fields themselves are ui/textarea.jsx and
+  // ui/input.jsx and carry no class of their own.
+  'save-modal-note',
+  'create-list-name',
 ]);
 
 const PAIRS = [
