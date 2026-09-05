@@ -1251,9 +1251,7 @@
   overflow: hidden;
 }
 
-.explorer-feed-loading,
-.explorer-empty,
-.explorer-grid-loading {
+.explorer-empty {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2378,6 +2376,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .explorer-hero-content,
+  /* Forward guard: `.explorer-error` declares no animation or transition of
+     its own today, so this line switches nothing off yet. It stays so that an
+     entrance added to the error screen later arrives already guarded, instead
+     of shipping motion that reduced-motion does not catch. */
   .explorer-error,
   .ehc-wiki p,
   .ehc-wiki-skeleton span::after,
@@ -2385,11 +2387,9 @@
   .project-summary-box p,
   .project-summary-toggle svg,
   .ee-author-card.staggerFadeUp,
-  .skeleton-item,
   .ex-skel,
   .ex-skel::after,
   .ehc-stat-value.is-settled,
-  .skel,
   .orcid-career-section--animate > *,
   .ehc-spinner,
   .ehc-bg-blur {
