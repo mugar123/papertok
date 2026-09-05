@@ -143,18 +143,24 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
             aria-hidden="true"
             style={{ transform: rule.transform || undefined, opacity: rule.transform ? 1 : 0 }}
           />
-          <button
-            type="button"
+          {/* A NavLink like its two siblings, not a <button> that calls
+              navigate('/'). On the phone (2026-09-05) the tap from Following
+              to here needed several tries while the other way took one, and
+              the element was the only asymmetry in the bar: an anchor still
+              navigates when React's click never runs — the browser follows
+              the href and the HashRouter hears the hash — a button does
+              nothing. `end`, or "/" would match every route. React Router
+              runs this onClick before its own and navigates unless it was
+              defaultPrevented, so the mode reset rides along unchanged. */}
+          <NavLink
+            to="/"
+            end
             className={`navbar-link ${isHomeActive && feedMode === 'top' ? 'active' : ''}`}
-            aria-current={isHomeActive && feedMode === 'top' ? 'page' : undefined}
-            onClick={() => {
-              if (location.pathname !== '/') navigate('/');
-              setFeedMode('top');
-            }}
+            onClick={() => setFeedMode('top')}
           >
             <Layers size={15} aria-hidden="true" />
             {isEnglish ? 'For you' : 'Para ti'}
-          </button>
+          </NavLink>
 
           <NavLink
             to="/research"

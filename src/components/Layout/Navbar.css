@@ -188,7 +188,7 @@
   font-weight: var(--fw-medium);
   text-decoration: none;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast), opacity 0.12s ease-out;
 }
 
 .navbar-link svg {
@@ -212,6 +212,17 @@
   background: transparent;
   color: var(--text-primary);
   font-weight: var(--fw-semibold);
+}
+
+/* The press, answered by the element before React runs. On a phone the hover
+   above never fires — it sits behind (hover: hover) — and the underline only
+   moves once the router has committed, which on the Following → For you tap
+   was 93–220 ms after touchend even in Chromium (2026-09-05, mobile
+   emulation, CPU ×4 on the slow end). The dip is the card's own recipe
+   (.pc-author-link:active); `opacity` in the transition list above is what
+   keeps it from snapping. */
+.navbar-link:active {
+  opacity: 0.55;
 }
 
 /* The travelling rule: one element at the left of the links row, carried to
