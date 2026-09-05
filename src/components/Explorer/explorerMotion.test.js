@@ -190,3 +190,18 @@ test('nothing in the hero body gives way to the settle', async () => {
   const css = stripComments(await read('./EntityExplorer.css'));
   assert.match(css, /\.explorer-hero-content > \* \{\s*flex-shrink: 0;\s*\}/);
 });
+
+/**
+ * The project summary box carried `layout` too. The hero body's settle
+ * already animates the space; the projection was a second owner of the same
+ * height, and it scaled three lines of serif when the "Read more" toggle
+ * mounted a frame after the text.
+ */
+test('the project summary box is a plain block; the settle owns its height', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  assert.match(jsx, /\{type === 'project' && entity\?\.summary && \(\s*<div\s+className=\{`project-summary-box/);
+  const box = jsx.match(/<div\s+className=\{`project-summary-box[\s\S]*?<\/div>\s*\)\}/);
+  assert.ok(box, 'the summary box is still rendered');
+  assert.doesNotMatch(box[0], /\blayout\b/);
+  assert.doesNotMatch(box[0], /transition=/);
+});

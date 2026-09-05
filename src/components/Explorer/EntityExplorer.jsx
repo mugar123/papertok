@@ -1872,8 +1872,7 @@ export default function EntityExplorer({
 
           {/* Project Summary - expandable */}
           {type === 'project' && entity?.summary && (
-            <motion.div
-              layout={!prefersReducedMotion}
+            <div
               className={`project-summary-box ${expandedSummary ? 'is-expanded' : ''} ${isProjectSummaryExpandable ? 'is-expandable' : ''}`}
               onClick={isProjectSummaryExpandable ? () => setExpandedSummary(!expandedSummary) : undefined}
               onKeyDown={isProjectSummaryExpandable ? (event) => handleActivationKey(event, () => setExpandedSummary(!expandedSummary)) : undefined}
@@ -1885,9 +1884,6 @@ export default function EntityExplorer({
                   ? (isEnglish ? 'Collapse project summary' : 'Contraer resumen del proyecto')
                   : (isEnglish ? 'Expand project summary' : 'Ampliar resumen del proyecto')
                 : undefined}
-              transition={prefersReducedMotion
-                ? { duration: 0 }
-                : { layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] } }}
             >
               <p
                 ref={projectSummaryTextRef}
@@ -1903,7 +1899,7 @@ export default function EntityExplorer({
                     : (isEnglish ? 'Read more' : 'Leer más')}
                 </span>
               )}
-            </motion.div>
+            </div>
           )}
 
           {/* Project subjects */}
@@ -1983,8 +1979,14 @@ export default function EntityExplorer({
               folds the block away instead of cutting it. */}
           <AnimatePresence initial={false}>
             {(wikiDescription || entity?.homepage_url || (isWikiRequestPending && ['concept', 'topic', 'institution'].includes(type))) && (
+              // No `layout`. The hero body's settle already carries this
+              // height; a projection on top of it was a second owner of
+              // the same number, and it scaled the paragraph while the
+              // body was still settling (measured: scaleY 1.21 with 13.5px
+              // of drift for 380ms on a topic, 1.3 for a frame on an
+              // institution). The fold animates its own height only when
+              // it arrives or leaves; in between, the settle moves it.
               <motion.div
-                layout
                 className="ehc-wiki-fold"
                 // The fold is a box of its own around the padded block, so
                 // that `height: 0` means nothing rather than the 26px of
@@ -2021,7 +2023,6 @@ export default function EntityExplorer({
                     height: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
                     marginTop: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
                     y: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
-                    layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
                   }}
               >
                 <div
