@@ -152,6 +152,7 @@ const PAGE_CSS = `
 .pdfx-notice-l { flex: 0 0 58px; font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9px; font-weight: 500; line-height: 1.85; letter-spacing: 0.12em; text-transform: uppercase; color: #7b8290; }
 .pdfx-notice-t { flex: 1 1 auto; font-size: 13.5px; line-height: 1.52; color: #3a3e46; text-align: justify; }
 .pdfx-flow { flex: 1 1 auto; min-height: 0; overflow: hidden; }
+.pdfx-flow--cont { padding-top: 24px; }
 .pdfx-sec { display: flex; gap: 13px; margin: 21px 0 9px; }
 .pdfx-sec--first { margin-top: 12px; }
 .pdfx-sec-no { flex: 0 0 22px; font-size: 17px; font-weight: 600; line-height: 1.3; }
@@ -374,7 +375,7 @@ export async function renderPdfPages(model, host) {
     }
     heads.push(mastR);
 
-    flow = element('div', 'pdfx-flow');
+    flow = element('div', pages.length === 0 ? 'pdfx-flow' : 'pdfx-flow pdfx-flow--cont');
     notes = element('div', 'pdfx-notes');
     notes.style.display = 'none';
 
