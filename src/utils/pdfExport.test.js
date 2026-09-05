@@ -116,6 +116,30 @@ test('a section without heading falls back to its kind label, then to "Sección"
 });
 
 // ---------------------------------------------------------------------------
+// The running head's own cap (Task 11 live verification): `buildBlocks`
+// (browser-only, verified live) writes the mast from `runningLabel`, not
+// `label` — unbounded, a routine 40-character section heading wrapped the
+// mast to two lines the moment it shared a page with a paper title already
+// at its own 45-character cap (`runningTitleText`), seen on a real
+// document, not an adversarial one. `label` — what the page's own `<h2>`
+// prints — stays whole either way; only the text repeated in the mast is
+// capped, the same split the .tex keeps between `\section{full}` and its
+// short `\sectionmark` argument (`sectionMarkText`, exportDocument.js).
+// ---------------------------------------------------------------------------
+
+test('a section heading past the cap is truncated for the running head; the page keeps it whole', () => {
+  const long = 'x'.repeat(60);
+  const model = build({ sections: [{ id: 's9', heading: long, paragraphs: ['Texto.'] }] });
+  assert.equal(model.sections[0].label, long);
+  assert.equal(model.sections[0].runningLabel, `${'x'.repeat(30)}…`);
+});
+
+test('an ordinary section heading is not cut short in either field', () => {
+  const model = build();
+  assert.equal(model.sections[0].runningLabel, model.sections[0].label);
+});
+
+// ---------------------------------------------------------------------------
 // Filtering and numbering — the .tex rules, verbatim
 // ---------------------------------------------------------------------------
 

@@ -6,6 +6,7 @@ import {
   exportFileName,
   exportableAnnotations,
   numberAnnotations,
+  sectionMarkText,
   summarizeExport,
 } from './exportDocument.js';
 
@@ -228,25 +229,6 @@ export function authorLine(paper, limit = 12) {
   return names.length > limit ? `${shown} et al.` : shown;
 }
 
-/**
- * El rótulo de una sección, hasta `limit` caracteres, luego honestidad — el
- * mismo mecanismo que `runningTitleText` (exportDocument.js), un límite
- * distinto para la otra mitad de la misma colisión. Ver el comentario de
- * `runningTitleText` para de dónde sale el número: entre las dos, dejan hueco
- * de sobra en `\textwidth` aun en el peor caso.
- *
- * Solo alimenta el argumento CORTO de `\section[corto]{completo}` — el
- * mecanismo nativo de LaTeX para separar "lo que se ve en el texto" de "lo
- * que llega a `\sectionmark`" (y de ahí a `\leftmark`, la cabecera). El
- * título de la sección tal cual lo escribió el modelo se queda intacto en el
- * cuerpo del documento: nada en el hallazgo señala el título en pantalla,
- * solo la cabecera que arma `\leftmark` con él.
- */
-export function sectionMarkText(label, limit = 30) {
-  const text = String(label || '');
-  return text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text;
-}
-
 function preamble(copy, hasHighlights) {
   return [
     `% ${copy.generated}`,
@@ -321,9 +303,8 @@ function preamble(copy, hasHighlights) {
  * `\fancyhead[L]`/`[R]`, en el `\pagestyle{fancy}` de abajo, son dos zonas
  * sin ajuste de línea ni control de colisión propio: si lo que llevan no
  * cupiera en `\textwidth`, se imprimirían una encima de la otra sin aviso de
- * compilación. Lo que las mantiene separadas es que `meta.runningTitle`
- * (`runningTitleText`, exportDocument.js) y el argumento corto de
- * `\section[corto]{...}` (`sectionMarkText`, arriba) llegan aquí ya acotados
+ * compilación. Lo que las mantiene separadas es que `meta.runningTitle` y
+ * `sectionMarkText` (las dos, exportDocument.js) llegan aquí ya acotados
  * — compilado y medido, ver esas dos funciones.
  *
  * La procedencia no se mueve al colofón: sigue al pie de CADA página, fuera de

@@ -4,6 +4,7 @@ import {
   exportFileName,
   exportableAnnotations,
   numberAnnotations,
+  sectionMarkText,
   summarizeExport,
 } from './exportDocument.js';
 import { displayProse } from './latex.js';
@@ -52,7 +53,7 @@ const SECTION_FALLBACK = { es: 'Sección', en: 'Section' };
  *     colophon: { heading: string, rows: Array<{ key: string, value: string }> } },
  *   language: string,
  *   labels: { mine: string, ai: string },
- *   sections: Array<{ label: string, originalHeading: string, paragraphs: Array<{ text: string, annotations: Array<object> }> }>,
+ *   sections: Array<{ label: string, runningLabel: string, originalHeading: string, paragraphs: Array<{ text: string, annotations: Array<object> }> }>,
  *   noteCount: number, fileName: string,
  * }}
  */
@@ -87,15 +88,26 @@ export function buildPdfModel({
     }),
     language: language === 'en' ? 'en' : 'es',
     labels: { mine: copy.mine, ai: copy.ai },
-    sections: sections.map(section => ({
-      label: section?.heading || kindLabels[section?.kind] || fallback,
-      originalHeading: String(section?.originalHeading || '').trim(),
-      paragraphs: (Array.isArray(section?.paragraphs) ? section.paragraphs : [])
-        .map((text, index) => ({
-          text,
-          annotations: byParagraph.get(`${section?.id}:${index}`) || [],
-        })),
-    })),
+    sections: sections.map(section => {
+      const label = section?.heading || kindLabels[section?.kind] || fallback;
+      return {
+        label,
+        // Solo para el titulillo (`buildBlocks`, abajo): el mismo tope que
+        // el `.tex` aplica al argumento corto de `\section[corto]{...}` —
+        // `sectionMarkText`, exportDocument.js — para la misma colisión,
+        // esta vez contra `meta.runningTitle` en la cabecera del PDF. El
+        // rótulo de arriba, el que de verdad se lee en la página, se queda
+        // intacto: el hallazgo fue un titulillo envuelto a dos líneas, no
+        // un encabezado ilegible en el cuerpo.
+        runningLabel: sectionMarkText(label),
+        originalHeading: String(section?.originalHeading || '').trim(),
+        paragraphs: (Array.isArray(section?.paragraphs) ? section.paragraphs : [])
+          .map((text, index) => ({
+            text,
+            annotations: byParagraph.get(`${section?.id}:${index}`) || [],
+          })),
+      };
+    }),
     noteCount: numbered.length,
     fileName: exportFileName(paper, language, 'pdf'),
   };
@@ -282,7 +294,12 @@ function buildBlocks(model, katex) {
     head.append(element('span', 'pdfx-sec-no', String(index + 1)), stack);
     // `heading` deja de ser un booleano: lleva el texto del titulillo, que el
     // paginador necesita para saber en qué sección acaba cada página.
-    push(head, { heading: `${index + 1}\u2002\u00b7\u2002${section.label}` });
+    // `runningLabel` (buildPdfModel, arriba) ya llega acotado a 30
+    // caracteres por `sectionMarkText` — el mismo tope que el `.tex` aplica
+    // al argumento corto de `\section`, para la misma colisión con
+    // `meta.runningTitle` a su izquierda en esta cabecera. `section.label`,
+    // sin acotar, es el que va al `<h2>` de la página: ese no cambia.
+    push(head, { heading: `${index + 1}\u2002\u00b7\u2002${section.runningLabel}` });
 
     for (const paragraph of section.paragraphs) {
       const node = element('p', 'pdfx-para');

@@ -7,7 +7,6 @@ import {
   escapeUrlForLatex,
   isSafeMath,
   renderParagraph,
-  sectionMarkText,
 } from './latexExport.js';
 
 /**
@@ -516,29 +515,6 @@ test('una sección sin encabezado original no deja un ptorig vacío', () => {
 test('el byline es una línea de texto, no una caja centrada', () => {
   assert.equal(authorLine({ authors: [{ name: 'A. Perez' }, { name: 'B. Ruiz' }] }), 'A. Perez, B. Ruiz');
   assert.doesNotMatch(authorLine({ authors: [{ name: 'A' }] }), /parbox/);
-});
-
-test('sectionMarkText: un rótulo corriente no se toca', () => {
-  assert.equal(sectionMarkText('Qué significa'), 'Qué significa');
-  assert.equal(sectionMarkText(''), '');
-  assert.equal(sectionMarkText(undefined), '');
-});
-
-test('sectionMarkText: pasado el tope, se recorta con honestidad — el mismo mecanismo que runningTitleText', () => {
-  const long = 'x'.repeat(60);
-  const capped = sectionMarkText(long);
-  assert.equal(capped, `${'x'.repeat(30)}…`);
-  assert.equal(capped.length, 31);
-});
-
-test('sectionMarkText: el límite es exacto — justo en 30 no hay elipsis, en 31 sí', () => {
-  assert.equal(sectionMarkText('x'.repeat(30)), 'x'.repeat(30));
-  assert.doesNotMatch(sectionMarkText('x'.repeat(30)), /…/);
-  assert.match(sectionMarkText('x'.repeat(31)), /…$/);
-});
-
-test('sectionMarkText: el límite se puede ajustar, como el de runningTitleText', () => {
-  assert.equal(sectionMarkText('abcdef', 5), 'abcde…');
 });
 
 // ---------------------------------------------------------------------------

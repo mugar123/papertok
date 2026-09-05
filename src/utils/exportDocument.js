@@ -167,7 +167,7 @@ export function colophonTitleText(paper, limit = 500) {
  * distinto porque el motivo es distinto.
  *
  * `\fancyhead[L]` (este título) y `\fancyhead[R]` (`\leftmark`, que lleva el
- * número de sección y su encabezado — ver `sectionMarkText`, latexExport.js)
+ * número de sección y su encabezado — ver `sectionMarkText`, abajo)
  * son dos zonas sin ajuste de línea ni control de colisión: cuando sus
  * anchuras naturales suman más que el hueco entre ellas, se IMPRIMEN UNA
  * ENCIMA DE LA OTRA en vez de truncarse — compilado con un título de 102
@@ -195,6 +195,37 @@ export function colophonTitleText(paper, limit = 500) {
 export function runningTitleText(paper, limit = 45) {
   const title = String(paper?.title || '');
   return title.length > limit ? `${title.slice(0, limit).trimEnd()}…` : title;
+}
+
+/**
+ * El rótulo de una sección tal y como va al titulillo de cada página de
+ * continuación: hasta `limit` caracteres, luego honestidad — el mismo
+ * mecanismo que `runningTitleText`, arriba, la otra mitad de la misma
+ * colisión. Ver su comentario para de dónde salen 45 y 30.
+ *
+ * Vivía en `latexExport.js`: el número se midió allí, contra
+ * `\ptmono\scriptsize` y el `\textwidth` de la separata en LaTeX. Pero lo
+ * que acota no es una particularidad de ese formato — es qué le está
+ * permitido decir al titulillo — y el PDF tiene el suyo propio con la misma
+ * forma: número de sección más rótulo, a la derecha de la cabecera, sin
+ * ajuste de línea. Sin este tope, un rótulo de sección corriente (40
+ * caracteres, nada adversarial) envolvía a dos líneas el titulillo del PDF
+ * en cuanto compartía página con un título de portada ya en su propio
+ * límite de 45 — visto en un documento real, no en una prueba. El `.tex`
+ * sigue usando esta misma función, solo que importada de aquí en vez de
+ * definida en su propio fichero.
+ *
+ * Como `runningTitleText`, esto SOLO alimenta el titulillo: el argumento
+ * corto de `\section[corto]{completo}` en el `.tex` (que llega a
+ * `\sectionmark` y de ahí a `\leftmark`), el campo `runningLabel` del
+ * modelo del PDF (`buildPdfModel`, pdfExport.js). El rótulo tal cual lo
+ * escribió el modelo se queda intacto en el cuerpo de los dos formatos —
+ * ninguno de los dos recorta lo que se lee en la página, solo lo que se
+ * repite arriba para orientar.
+ */
+export function sectionMarkText(label, limit = 30) {
+  const text = String(label || '');
+  return text.length > limit ? `${text.slice(0, limit).trimEnd()}…` : text;
 }
 
 /**

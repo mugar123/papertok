@@ -9,6 +9,7 @@ import {
   formatExportDate,
   numberAnnotations,
   runningTitleText,
+  sectionMarkText,
   summarizeExport,
 } from './exportDocument.js';
 
@@ -208,7 +209,7 @@ test('el título del colofón y el de la cabecera se recortan cada uno a su prop
 // ---------------------------------------------------------------------------
 // El título de la cabecera de página (hallazgo de compilar, no de los tests:
 // `\fancyhead[L]` (este título) y `\fancyhead[R]` (`\leftmark`, el número de
-// sección — ver `sectionMarkText`, latexExport.js) son dos zonas sin ajuste
+// sección — ver `sectionMarkText`, más abajo) son dos zonas sin ajuste
 // de línea ni control de colisión — latexExport.js — que compiladas con un
 // título de 102 caracteres, ni siquiera especialmente largo, se imprimieron
 // una encima de la otra, ilegibles, sin un solo aviso de compilación)
@@ -238,4 +239,40 @@ test('runningTitleText: el límite es exacto — justo en 45 no hay elipsis, en 
 
 test('runningTitleText: el límite se puede ajustar, como el de colophonTitleText', () => {
   assert.equal(runningTitleText({ title: 'abcdef' }, 5), 'abcde…');
+});
+
+// ---------------------------------------------------------------------------
+// El rótulo de sección en el titulillo — la otra mitad de la misma colisión
+// que el bloque de arriba. Vivía en `latexExport.js` (el 30 se midió allí,
+// contra la tipografía del `.tex`) pero lo que acota no es una
+// particularidad de ese formato: es qué le está permitido decir al
+// titulillo, y el PDF tiene el suyo propio con la misma forma. Sin este
+// tope, un rótulo de sección de 40 caracteres — nada adversarial — bastaba
+// para envolver a dos líneas el titulillo del PDF en cuanto compartía
+// página con un título de portada ya en su límite de 45 (docD, verificación
+// en vivo de Task 11) — el mismo fallo de colisión que el bloque de arriba
+// documenta para el `.tex`, sin haber tenido nunca su propio tope.
+// ---------------------------------------------------------------------------
+
+test('sectionMarkText: un rótulo corriente no se toca', () => {
+  assert.equal(sectionMarkText('Qué significa'), 'Qué significa');
+  assert.equal(sectionMarkText(''), '');
+  assert.equal(sectionMarkText(undefined), '');
+});
+
+test('sectionMarkText: pasado el tope, se recorta con honestidad — el mismo mecanismo que runningTitleText', () => {
+  const long = 'x'.repeat(60);
+  const capped = sectionMarkText(long);
+  assert.equal(capped, `${'x'.repeat(30)}…`);
+  assert.equal(capped.length, 31);
+});
+
+test('sectionMarkText: el límite es exacto — justo en 30 no hay elipsis, en 31 sí', () => {
+  assert.equal(sectionMarkText('x'.repeat(30)), 'x'.repeat(30));
+  assert.doesNotMatch(sectionMarkText('x'.repeat(30)), /…/);
+  assert.match(sectionMarkText('x'.repeat(31)), /…$/);
+});
+
+test('sectionMarkText: el límite se puede ajustar, como el de runningTitleText', () => {
+  assert.equal(sectionMarkText('abcdef', 5), 'abcde…');
 });
