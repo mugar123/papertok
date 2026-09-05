@@ -25,7 +25,10 @@ import {
   readModerationConfig,
   submitReport,
 } from '../../services/reportService.js';
-import { profileIsPublic, readOwnUserProfile } from '../../services/userProfileService.js';
+import { readOwnUserProfile } from '../../services/userProfileService.js';
+import { auth } from '../../services/firebase.js';
+import { rememberOwnProfile } from '../../utils/profileSessionCaches.js';
+import { LOADING_PROFILE, composerStateFor, ownProfileFrom, seedOwnProfile } from './composerGate.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { commentIsDissociated } from '../../utils/commentIdentity.js';
 import { createSessionCache } from '../../utils/sessionCache.js';
@@ -41,9 +44,6 @@ import './CommentsSheet.css';
 // that was on screen two seconds earlier. Reopening now paints the cached
 // thread instantly and lets the same load effect revalidate behind it.
 const threadCache = createSessionCache({ maxEntries: 12 });
-// One slot: the signed-in viewer of this tab. Cleared on sign-out so a
-// following session can never inherit the previous account's composer gate.
-let viewerProfileCache = null;
 
 /**
  * The comment thread of one paper, as a sheet over the paper page.
@@ -388,8 +388,10 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   // plus any alternate that already holds comments (split-brain read).
   const [sources, setSources] = useState(seededThread ? seededThread.sources : []);
   const [count, setCount] = useState(seededThread ? seededThread.count : null);
+  // Painted from what this device already knows (Task 1's seed) so the
+  // footer exists on open; the effect below revalidates behind it.
   const [ownProfile, setOwnProfile] = useState(
-    () => (isAuthenticated && viewerProfileCache) || { status: 'loading', profile: null },
+    () => (isAuthenticated && seedOwnProfile(auth.currentUser?.uid)) || LOADING_PROFILE,
   );
   const [hiddenLocally, setHiddenLocally] = useState(() => locallyHiddenCommentIds());
   const [paging, setPaging] = useState(false);
@@ -543,25 +545,41 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
 
   // The viewer's own profile decides what the composer is allowed to say.
   // Signed out, the composer never consults it (the signed-out gate comes
-  // first), so the effect simply has nothing to fetch.
+  // first), so the effect simply has nothing to fetch. Signed in, the read
+  // is the one Firestore document the sheet still fetches itself — the
+  // thread comes from the Worker — and on a cold channel it is the slow one,
+  // so it gets the same patience as the thread: a spent budget is still a
+  // wait (the loop keeps reading and `onLateResult` seats the answer), and
+  // only a verdict settles the gate.
   useEffect(() => {
+    if (!isAuthenticated) return undefined;
     let active = true;
-    if (!isAuthenticated) {
-      viewerProfileCache = null;
-      return undefined;
-    }
-    readOwnUserProfile()
-      .then((profile) => {
-        const resolved = { status: 'ready', profile, uid: profile?.uid ?? undefined };
-        // Only a real answer is worth keeping across opens; a transient
-        // failure must not gate the composer for the rest of the session.
-        viewerProfileCache = resolved;
-        if (active) setOwnProfile(resolved);
-      })
-      .catch(() => {
-        if (active) setOwnProfile({ status: 'ready', profile: null });
+    const controller = new AbortController();
+    const uid = auth.currentUser?.uid;
+    const apply = (profile) => {
+      if (!active) return;
+      rememberOwnProfile(uid, profile);
+      setOwnProfile(ownProfileFrom(profile));
+    };
+    patientRead(() => readOwnUserProfile(), {
+      attempts: 2,
+      label: 'own profile',
+      signal: controller.signal,
+      onLateResult: apply,
+    })
+      .then(apply)
+      .catch((error) => {
+        if (!active) return;
+        if (isReadTimeout(error)) return;
+        // Not transient (patientRead never settles on those) and not a
+        // timeout: permission, demo, a thrown TypeError. Honest answer.
+        console.error('The viewer profile could not be read', error);
+        setOwnProfile(ownProfileFrom(null));
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [isAuthenticated]);
 
   // Two stubs for one paper is a data condition the admin fixes by merging;
@@ -584,15 +602,7 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   )), [rows, viewerUid, hiddenLocally]);
   const thread = useMemo(() => groupThread(visibleRows), [visibleRows]);
 
-  const composerState = !isAuthenticated
-    ? 'signed-out'
-    : ownProfile.status !== 'ready'
-      ? 'loading'
-      : !ownProfile.profile
-        ? 'no-profile'
-        : !profileIsPublic(ownProfile.profile)
-          ? 'private'
-          : 'ready';
+  const composerState = composerStateFor({ isAuthenticated, ownProfile });
   const canInteract = composerState === 'ready';
 
   const loadMore = async () => {
@@ -1037,7 +1047,6 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                   value={draft}
                   maxLength={4000}
                   rows={1}
-                  aria-label={text(COPY.placeholder)}
                   placeholder={text(COPY.placeholder)}
                   aria-label={text(COPY.composerLabel)}
                   aria-invalid={composerError ? 'true' : undefined}
@@ -1071,6 +1080,26 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                   </ThreadSlot>
                 )}
               </AnimatePresence>
+            </div>
+          )}
+          {/* The profile has not answered yet. The composer is here anyway,
+              inert: the footer is the bottom of a column, so a box that
+              arrives late pushes everything above it up under the reader's
+              thumb. Same box, same height, before and after. */}
+          {composerState === 'loading' && (
+            <div className="comments-composer" aria-busy="true">
+              <div className="comments-composer-row">
+                <Textarea
+                  className="comments-composer-input"
+                  rows={1}
+                  disabled
+                  placeholder={text(COPY.loading)}
+                  aria-label={text(COPY.composerLabel)}
+                />
+                <Button type="button" className="comments-composer-send" disabled>
+                  {text(COPY.send)}
+                </Button>
+              </div>
             </div>
           )}
         </footer>
