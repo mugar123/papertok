@@ -44,9 +44,16 @@ test('the skeleton paper row reserves the live row\'s line boxes, summary includ
  */
 test('a query topic is born resolved rather than loading', async () => {
   const jsx = await read('./EntityExplorer.jsx');
-  assert.match(jsx, /const bornResolved = type === 'topic' && isOpaqueQueryTopicText\(id\);/);
-  assert.match(jsx, /useState\(\(\) => \(bornResolved \? resolveQueryTopicRoute\(id, searchParams\) : null\)\)/);
+  // A local topic — the id a category pill on a card navigates to — resolves
+  // from CATEGORIES with no fetch either. Born loading, it painted the skeleton
+  // for one commit and settled 109→146 DURING the page's own entrance.
+  assert.match(jsx, /const localTopic = useMemo\(\s*\(\) => \(type === 'topic' \|\| type === 'concept' \? getLocalTopicEntity\(id\) : null\),\s*\[id, type\],\s*\);/);
+  assert.match(jsx, /const bornResolved = Boolean\(localTopic\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
+  assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(localTopic \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);
   assert.match(jsx, /const \[isLoadingEntity, setIsLoadingEntity\] = useState\(\(\) => !bornResolved\);/);
+  // And a navigation between entities takes the same shortcut, in the same
+  // batch as the reset, so no skeleton commit ever paints.
+  assert.match(jsx, /const local = type === 'topic' \|\| type === 'concept' \? getLocalTopicEntity\(id\) : null;\s*if \(local\) \{\s*setEntity\(local\);\s*setIsLoadingEntity\(false\);\s*return;\s*\}/);
   // And with none of the counts, the ruled grid does not paint as a 1px line.
   const css = stripComments(await read('./EntityExplorer.css'));
   assert.match(css, /\.ehc-stats-grid:empty \{\s*display: none;\s*\}/);

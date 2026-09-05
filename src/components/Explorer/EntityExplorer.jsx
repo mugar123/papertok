@@ -215,15 +215,21 @@ export default function EntityExplorer({
     interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
 
-  // A free-text topic is resolved from the route alone, with no fetch behind
-  // it — so it is born live. Born loading instead, the page painted the full
-  // skeleton for exactly one frame (the effect below resolves it synchronously
-  // after that paint) and `useHeightSettle` then spent 360ms animating the hero
-  // body from the skeleton's ~434px down to the 130px the topic actually has:
-  // a settle explaining a wait that never happened, on the very path a topic
-  // tag on a card takes. The effect still re-resolves it; that is idempotent.
-  const bornResolved = type === 'topic' && isOpaqueQueryTopicText(id);
-  const [entity, setEntity] = useState(() => (bornResolved ? resolveQueryTopicRoute(id, searchParams) : null));
+  // A free-text topic is resolved from the route alone, and a local one — the
+  // id a category pill on a card navigates to — from CATEGORIES; neither has a
+  // fetch behind it, so both are born live. Born loading instead, the page
+  // painted the full skeleton for exactly one frame (the effect below resolves
+  // it right after that paint) and `useHeightSettle` then spent 360ms
+  // animating the hero body from the skeleton's height to the topic's — a
+  // settle explaining a wait that never happened, on the very path a topic
+  // tag on a card takes (measured: 109→146 during the page's own entrance).
+  // The effect still re-resolves it; that is idempotent.
+  const localTopic = useMemo(
+    () => (type === 'topic' || type === 'concept' ? getLocalTopicEntity(id) : null),
+    [id, type],
+  );
+  const bornResolved = Boolean(localTopic) || (type === 'topic' && isOpaqueQueryTopicText(id));
+  const [entity, setEntity] = useState(() => (bornResolved ? (localTopic || resolveQueryTopicRoute(id, searchParams)) : null));
   const [entityError, setEntityError] = useState(null);
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState([]);
@@ -614,6 +620,16 @@ export default function EntityExplorer({
 
       if (type === 'topic' && isOpaqueQueryTopicText(id)) {
         setEntity(resolveQueryTopicRoute(id, searchParams));
+        setIsLoadingEntity(false);
+        return;
+      }
+
+      // Same shortcut for a local topic on a navigation between entities: the
+      // resets above and these two land in one batch, so no skeleton commit
+      // paints in between.
+      const local = type === 'topic' || type === 'concept' ? getLocalTopicEntity(id) : null;
+      if (local) {
+        setEntity(local);
         setIsLoadingEntity(false);
         return;
       }
