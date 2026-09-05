@@ -5,6 +5,7 @@
 //        node probe.mjs bootload '#/' [demo,mobile,hold]   (PROFILE_DIR=<profile> to reuse one)
 //        node probe.mjs open '#/' [mobile,slow,hold,late,viamodal,profile,sel=<css>,wait=<ms>]
 //        node probe.mjs swipe '#/' [mobile,slow,n=<swipes>]
+//        node probe.mjs tap '#/' demo,mobile[,slow=<rate>,follows=many,at=<ms>,until=<cards>,cycles=<n>,mouse,late]
 import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -307,6 +308,127 @@ try {
     await run('For you -> Following', "document.querySelector('.navbar-link[href=\"#/following\"]').click(); true");
     await run('Following -> For you', "[...document.querySelectorAll('.navbar-link')].find((l) => /For you|Para ti/.test(l.textContent)).click(); true");
     await run('back (history.back)', 'history.back(); true');
+  }
+
+  if (mode === 'tap') {
+    // The tab bar under a REAL tap: `Input.dispatchTouchEvent`, so the gesture
+    // recogniser, hit-testing and click synthesis all run as on a phone —
+    // `element.click()` (the `tabswitch` mode) skips all three and can never
+    // see a tap that another layer eats or a click React never receives.
+    // Every touch/pointer/mouse/click event that reaches the document is
+    // logged in the capture phase, with pushState and hashchange, and the
+    // pages are sampled per frame through the handover. Both directions,
+    // `cycles` times. `follows=many` seeds fourteen follows so Following has
+    // cards and a chain still landing; `at=<ms>` taps For you that soon after
+    // Following; `until=<cards>` waits for that many cards first; `slow=<rate>`
+    // throttles the CPU; `mouse` is the desktop control. Exit code 1 when a
+    // tap does not change the hash, or the outgoing page has not started to
+    // leave 400 ms after touchend.
+    const flags = new Set((extra || '').split(',').filter(Boolean));
+    const num = (name, dflt) => { const f = [...flags].find((x) => x.startsWith(name + '=')); return f ? Number(f.slice(name.length + 1)) : dflt; };
+    const cycles = num('cycles', 2);
+    const atMs = num('at', 0);
+    const untilCards = num('until', 0);
+    const slowRate = num('slow', flags.has('slow') ? 4 : 0);
+    const useMouse = flags.has('mouse');
+    const manyFollows = [
+      ['A5056895519', 'Markus Göker'], ['A5089245822', 'Joshua Adkins'], ['A5006191066', 'Scott Baker'], ['A5005196385', 'Matthew Monroe'], ['A5023982706', 'Richard Smith'],
+      ['A5085384361', 'Mary Lipton'], ['A5075235007', 'Weijun Qian'], ['A5022928420', 'Samuel Purvine'], ['A5050316172', 'William R Schafer'], ['A5058699536', 'Sebastian Funk'],
+    ].map(([id, name]) => ({ type: 'author', id, canonicalId: id, name, source: 'openalex' })).concat([
+      { type: 'institution', id: 'I4210108322', canonicalId: 'I4210108322', name: 'National Institute for Fusion Science', source: 'openalex' },
+      { type: 'institution', id: 'I1294671590', canonicalId: 'I1294671590', name: 'CNRS', source: 'openalex' },
+      { type: 'institution', id: 'I142606810', canonicalId: 'I142606810', name: 'Pacific Northwest National Laboratory', source: 'openalex' },
+      { type: 'topic', id: 'cs.AI', canonicalId: 'cs.AI', name: 'Artificial Intelligence', source: 'arxiv' },
+    ]);
+    const follows = JSON.stringify(flags.has('follows=many') ? manyFollows : [{ type: 'author', id: 'A5006398227', name: 'Probe author', source: 'openalex' }]);
+    if (flags.has('demo')) {
+      await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => { try { localStorage.setItem('papertok_user', JSON.stringify({ uid: 'probe-demo', email: 'probe@example.com', displayName: 'Probe' })); localStorage.setItem('papertok_onboardingComplete', 'true'); localStorage.setItem('papertok_selectedCategories', JSON.stringify(['quant-ph', 'cond-mat.mtrl-sci', 'cs.AI'])); localStorage.setItem('papertok_following_probe-demo', ${JSON.stringify(follows)}); } catch {} })();` });
+    }
+    if (flags.has('mobile')) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true });
+      await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+    }
+    if (slowRate > 0) await cdp.send('Emulation.setCPUThrottlingRate', { rate: slowRate });
+    await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
+      window.__ev = [];
+      const desc = (el) => { if (!el || !el.tagName) return String(el && el.nodeName); const cls = typeof el.className === 'string' ? el.className.split(' ').filter(Boolean).slice(0, 2).join('.') : ''; const txt = (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 16); return el.tagName.toLowerCase() + (cls ? '.' + cls : '') + (txt ? '[' + txt + ']' : ''); };
+      const push = (o) => window.__ev.push({ t: Math.round(performance.now()), ...o });
+      for (const type of ['touchstart', 'touchend', 'touchcancel', 'pointerdown', 'pointerup', 'pointercancel', 'mousedown', 'mouseup', 'click']) {
+        document.addEventListener(type, (e) => { const p = e.changedTouches ? e.changedTouches[0] : e; push({ type, target: desc(e.target), x: Math.round(p?.clientX ?? -1), y: Math.round(p?.clientY ?? -1), dp: e.defaultPrevented }); }, true);
+      }
+      window.addEventListener('hashchange', () => push({ type: 'hashchange', hash: location.hash }));
+      const ps = history.pushState.bind(history); history.pushState = (s, t, u) => { push({ type: 'pushState', url: String(u) }); return ps(s, t, u); };
+      window.__lt = []; try { new PerformanceObserver((l) => { for (const e of l.getEntries()) window.__lt.push({ t: Math.round(e.startTime), d: Math.round(e.duration) }); }).observe({ type: 'longtask', buffered: true }); } catch {}
+      window.__fr = []; window.__frOn = false;
+      const op = (el) => el ? Number(getComputedStyle(el).opacity).toFixed(2) : null;
+      const tf = (el) => el ? getComputedStyle(el).transform.replace('matrix(1, 0, 0, 1, ', 't(') : null;
+      const tick = () => {
+        if (window.__frOn) {
+          const pages = [...document.querySelectorAll('#main-content > div')];
+          const rule = document.querySelector('.navbar-link-rule');
+          window.__fr.push({ t: Math.round(performance.now()), hash: location.hash, pages: pages.map((p) => op(p) + '@' + tf(p) + ' d=' + p.getAttribute('data-nav-direction')).join(' | '), active: (document.querySelector('.navbar-link.active')?.textContent || '').trim(), rule: rule ? tf(rule) : null, cards: document.querySelectorAll('.feed-snap-item').length, title: (document.querySelector('.pc-title')?.textContent || '').trim().slice(0, 28), veil: !!document.querySelector('.feed-empty--veil'), empty: !!document.querySelector('.ff-empty'), sk: document.querySelectorAll('.sk').length });
+        }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    })();` });
+    await cdp.send('Page.navigate', { url });
+    console.log('feed ready:', await pollUntil(cdp, "document.querySelectorAll('.pc-sheet').length > 0", 40000, 100));
+    await sleep(flags.has('late') ? 6000 : 1500);
+    const FOR_YOU = "[...document.querySelectorAll('.navbar-link')].find((l) => /For you|Para ti/.test(l.textContent))";
+    const FOLLOWING = "document.querySelector('.navbar-link[href=\"#/following\"]')";
+    let failures = 0;
+    const tap = async (label, expr) => {
+      const box = await cdp.eval(`(() => { const el = ${expr}; if (!el) return null; const r = el.getBoundingClientRect(); const x = r.left + r.width / 2, y = r.top + r.height / 2; const h = document.elementFromPoint(x, y); return { x, y, w: Math.round(r.width), h: Math.round(r.height), hit: h ? h.tagName.toLowerCase() + '.' + String(h.className).split(' ').slice(0, 2).join('.') : null, hitIsTarget: h === el || (h && el.contains(h)) }; })()`);
+      if (!box) { console.log(`\n## ${label}: TARGET NOT FOUND`); failures += 1; return null; }
+      const evStart = await cdp.eval('window.__ev.length');
+      await cdp.eval('window.__fr = []; window.__frOn = true; true');
+      const t0 = await cdp.eval('Math.round(performance.now())');
+      if (useMouse) {
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: box.x, y: box.y });
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: box.x, y: box.y, button: 'left', clickCount: 1 });
+        await sleep(40);
+        await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: box.x, y: box.y, button: 'left', clickCount: 1 });
+      } else {
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x, y: box.y, radiusX: 4, radiusY: 4, force: 1 }] });
+        await sleep(60);
+        await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      }
+      return { label, box, evStart, t0 };
+    };
+    const report = async (info, waitMs, expectHash) => {
+      if (!info) return;
+      await sleep(waitMs);
+      const r = await cdp.eval(`(() => { window.__frOn = false; const t0 = ${info.t0}; const ev = window.__ev.slice(${info.evStart}).map((e) => ({ ...e, t: e.t - t0 })); const fr = window.__fr; const changes = []; let last = ''; for (const x of fr) { const k = JSON.stringify([x.hash, x.pages, x.active, x.rule, x.cards > 0, x.title, x.veil, x.empty, x.sk]); if (k !== last) { last = k; changes.push({ ...x, t: x.t - t0 }); } } const longTasks = window.__lt.filter((e) => e.t >= t0 - 50 && e.t <= t0 + ${waitMs}).map((e) => ({ at: e.t - t0, d: e.d })); return { hash: location.hash, events: ev, longTasks, changes: changes.slice(0, 30) }; })()`);
+      const touchEnd = r.events.find((e) => e.type === (useMouse ? 'mouseup' : 'touchend'));
+      const click = r.events.find((e) => e.type === 'click');
+      const push = r.events.find((e) => e.type === 'pushState' || e.type === 'hashchange');
+      const first = r.changes.find((c) => c.hash === expectHash);
+      const exit = r.changes.find((c) => c.hash === expectHash && /^0\.9[0-8]|^0\.[0-8]/.test(c.pages));
+      const verdict = { hash: r.hash, clickOn: click?.target ?? null, clickAt: click?.t ?? null, pushAt: push?.t ?? null, firstNewFrameAt: first?.t ?? null, exitStartAt: exit?.t ?? null, longTasks: r.longTasks };
+      const ok = r.hash === expectHash && exit && touchEnd && exit.t - touchEnd.t <= 400;
+      if (!ok) failures += 1;
+      console.log(`\n## ${info.label}  tap@(${Math.round(info.box.x)},${Math.round(info.box.y)}) target ${info.box.w}x${info.box.h} elementFromPoint=${info.box.hit} hitIsTarget=${info.box.hitIsTarget}  ${ok ? 'OK' : 'FAIL'}`);
+      console.log('verdict:', JSON.stringify(verdict));
+      console.log('events:', JSON.stringify(r.events));
+      console.log('frames:', JSON.stringify(r.changes, null, 0).replace(/\},\{/g, '},\n{'));
+    };
+    for (let cycle = 1; cycle <= cycles; cycle++) {
+      const a = await tap(`cycle ${cycle}: For you -> Following`, FOLLOWING);
+      if (untilCards > 0) {
+        await pollUntil(cdp, `document.querySelectorAll('.feed-snap-item').length >= ${untilCards}`, 25000, 50);
+        await report(a, 0, '#/following');
+      } else if (atMs > 0) {
+        await sleep(atMs);
+        await report(a, 0, '#/following');
+      } else {
+        await report(a, 2500, '#/following');
+      }
+      const b = await tap(`cycle ${cycle}: Following -> For you`, FOR_YOU);
+      await report(b, 3500, '#/');
+    }
+    console.log(`\n${failures === 0 ? 'ALL TAPS OK' : failures + ' TAP(S) FAILED'}`);
+    process.exitCode = failures === 0 ? 0 : 1;
   }
 
   if (mode === 'open') {
