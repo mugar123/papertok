@@ -70,15 +70,24 @@ test('el popover anima la salida, no solo la entrada', async () => {
 
 /**
  * El filete viajaba en diagonal de «Para ti» a las otras dos pestañas: el
- * primero es un <button> (line-height `normal` del navegador, 28 px de alto)
+ * primero ERA un <button> (line-height `normal` del navegador, 28 px de alto)
  * y las otras son <a> (el 1.5 del body, 33 px), y el filete cuelga del borde
  * inferior de cada enlace. Medido: 2,5 px más alto bajo «Para ti». Una sola
  * line-height para los tres, fijada en la regla, y el filete corre a nivel.
+ *
+ * Desde el 05-09-2026 las tres son <a> (Navbar.jsx), así que la declaración ya
+ * no reconcilia nada: --lh-normal es 1.5 y el body ya lo aplica, de modo que
+ * fija justo lo que las anclas heredarían. Se queda como pin defensivo —
+ * vuelve a hacer trabajo el día que una pestaña deje de ser un <a> o un padre
+ * cambie su line-height, que es la deriva de la que nació— y este test la
+ * sostiene para que no se borre por parecer redundante.
  */
 test('los tres enlaces de la navbar comparten line-height, o el filete viaja en diagonal', async () => {
   const css = await readFile(new URL('./Navbar.css', import.meta.url), 'utf8');
   const rule = css.match(/\.navbar-link \{([\s\S]*?)\n\}/);
   assert.ok(rule, 'expected the .navbar-link rule');
   assert.match(rule[1], /line-height: var\(--lh-normal\);/,
-    'el <button> de «Para ti» no hereda la line-height del body y queda 5 px más bajo que los <a>');
+    'el pin defensivo de line-height se ha borrado: hoy no cambia nada porque las tres '
+    + 'pestañas son <a> y heredan el mismo 1.5, pero es lo que sujeta el filete si una '
+    + 'deja de serlo o un padre cambia la suya');
 });

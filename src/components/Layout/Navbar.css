@@ -170,14 +170,19 @@
   align-items: center;
   gap: 6px;
   padding: 6px var(--nav-rule-inset);
-  /* Set here, not inherited: "For you" is a <button> and the other two are
+  /* Set here, not inherited: "For you" WAS a <button> and the other two are
      <a>. A button's line-height is the UA's `normal`, an anchor's is the
      body's 1.5, so at 14px the button stood 28px tall against the anchors'
      33 — and the rule, anchored to each link's bottom edge, sat 2.5px higher
      under "For you" than under Research or Following. Every trip from the
      first tab to either of the others travelled that 2.5px diagonally, which
      is the small glitch the reader saw in the slide. One line-height for the
-     three, and the rule runs level. */
+     three, and the rule runs level.
+
+     Since 2026-09-05 all three are anchors (Navbar.jsx), so this reconciles
+     nothing today: --lh-normal is 1.5 and the body already applies it, which
+     is exactly what an anchor inherits. It stays as a defensive pin against
+     that drift returning, and navbarChrome.test.js holds it there. */
   line-height: var(--lh-normal);
   border: none;
   border-radius: var(--radius-md);
@@ -188,7 +193,7 @@
   font-weight: var(--fw-medium);
   text-decoration: none;
   cursor: pointer;
-  transition: background var(--transition-fast), color var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast), opacity 0.12s ease-out;
 }
 
 .navbar-link svg {
@@ -212,6 +217,17 @@
   background: transparent;
   color: var(--text-primary);
   font-weight: var(--fw-semibold);
+}
+
+/* The press, answered by the element before React runs. On a phone the hover
+   above never fires — it sits behind (hover: hover) — and the underline only
+   moves once the router has committed, which on the Following → For you tap
+   was 93–220 ms after touchend even in Chromium (2026-09-05, mobile
+   emulation, CPU ×4 on the slow end). The dip is the card's own recipe
+   (.pc-author-link:active); `opacity` in the transition list above is what
+   keeps it from snapping. */
+.navbar-link:active {
+  opacity: 0.55;
 }
 
 /* The travelling rule: one element at the left of the links row, carried to
