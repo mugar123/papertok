@@ -4,6 +4,8 @@ import { EyeOff, ExternalLink, MessageCircle, Trash2 } from 'lucide-react';
 import { useLanguage } from '../../context/LanguageContext';
 import { deleteComment, fetchMyCommentsPage } from '../../services/commentService.js';
 import { decodeCanonicalPaperKey } from '../../utils/paperCanonicalKey.js';
+import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
+import { authoritativePage } from './myCommentsLoad.js';
 import SettingsSubheader from './SettingsSubheader.jsx';
 import { SETTINGS_BREADCRUMB } from './settingsBreadcrumb.js';
 import './MyCommentsPage.css';
@@ -28,6 +30,18 @@ const COPY = {
   empty: { es: 'Todavía no has comentado ningún paper.', en: 'You have not commented on any paper yet.' },
   emptyCta: { es: 'Explorar papers', en: 'Explore papers' },
   error: { es: 'No se pudieron cargar tus comentarios.', en: 'Your comments could not be loaded.' },
+  slowLoad: {
+    es: 'Está tardando más de lo normal. Seguimos intentándolo.',
+    en: 'This is taking longer than usual. Still trying.',
+  },
+  noConnection: {
+    es: 'Parece que no hay conexión. Seguimos intentándolo.',
+    en: 'There seems to be no connection. Still trying.',
+  },
+  stalledLoad: {
+    es: 'Está tardando muchísimo. Seguimos intentándolo por detrás.',
+    en: 'This is taking unusually long. We are still trying in the background.',
+  },
   retry: { es: 'Reintentar', en: 'Try again' },
   more: { es: 'Cargar más', en: 'Load more' },
   openPaper: { es: 'Ver el paper', en: 'View paper' },
@@ -39,6 +53,17 @@ const COPY = {
   confirm: { es: 'Sí, borrar', en: 'Yes, delete' },
   cancel: { es: 'Cancelar', en: 'Cancel' },
   deleteError: { es: 'No se pudo borrar. Vuelve a intentarlo.', en: 'It could not be deleted. Try again.' },
+};
+
+/**
+ * What the page says while it is not showing the list. Three are waits (the
+ * retry loop is still running behind them); only `error` is a verdict.
+ */
+const WAITING_COPY = {
+  slow: COPY.slowLoad,
+  offline: COPY.noConnection,
+  stalled: COPY.stalledLoad,
+  error: COPY.error,
 };
 
 function formatDate(value, locale) {
@@ -65,27 +90,50 @@ export default function MyCommentsPage() {
   };
 
   // The initial state is already 'loading'; the retry button re-arms it in
-  // its own handler, so the effect never needs a synchronous setState.
+  // its own handler, so the effect never needs a synchronous setState. The
+  // read is the only comments query with no edge path — it is the one that
+  // meets a cold WebChannel — so it waits like the sheet does: intermediate
+  // timeouts become words, a transient rejection (including an empty cached
+  // answer, see myCommentsLoad.js) is retried, and the loop outlives the
+  // promise so a late answer still heals the screen.
   useEffect(() => {
     let active = true;
-    fetchMyCommentsPage()
-      .then((page) => {
-        if (active) {
-          setState({ status: 'ready', rows: page.comments, cursor: page.cursor, hasMore: page.hasMore });
-        }
-      })
+    const controller = new AbortController();
+    const apply = (page) => {
+      if (!active) return;
+      setState({ status: 'ready', rows: page.comments, cursor: page.cursor, hasMore: page.hasMore });
+    };
+    patientRead(() => fetchMyCommentsPage().then(authoritativePage), {
+      attempts: 3,
+      label: 'my comments',
+      signal: controller.signal,
+      onSlow: (attemptNumber, info) => {
+        if (active) setState(previous => ({ ...previous, status: info?.offline ? 'offline' : 'slow' }));
+      },
+      onLateResult: apply,
+    })
+      .then(apply)
       .catch((error) => {
+        if (!active) return;
+        if (isReadTimeout(error)) {
+          console.warn('My comments did not answer in time', error);
+          setState(previous => ({ ...previous, status: 'stalled' }));
+          return;
+        }
         console.error('My comments could not be loaded', error);
-        if (active) setState({ status: 'error', rows: [], cursor: null, hasMore: false });
+        setState({ status: 'error', rows: [], cursor: null, hasMore: false });
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [attempt]);
 
   const loadMore = async () => {
     if (paging || !state.cursor) return;
     setPaging(true);
     try {
-      const page = await fetchMyCommentsPage({ cursor: state.cursor });
+      const page = await fetchMyCommentsPage({ cursor: state.cursor }).then(authoritativePage);
       setState(previous => ({
         ...previous,
         rows: [...previous.rows, ...page.comments],
@@ -135,9 +183,11 @@ export default function MyCommentsPage() {
           </div>
         )}
 
-        {state.status === 'error' && (
-          <div className="my-comments-state">
-            <p>{text(COPY.error)}</p>
+        {WAITING_COPY[state.status] && (
+          // 'slow', 'offline' and 'stalled' keep aria-busy and the retry loop
+          // behind them; only 'error' is a verdict.
+          <div className="my-comments-state" role="status" aria-busy={state.status !== 'error'}>
+            <p>{text(WAITING_COPY[state.status])}</p>
             <button
               type="button"
               className="my-comments-more"
