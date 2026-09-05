@@ -19,13 +19,37 @@ test('the scrim is the palette\'s own, timed with the sheet', async () => {
   const css = await read('./SearchCommand.css');
   assert.match(css, /\.sc-scrim\.sc-scrim\[data-state='open'\] \{\s*animation: fadeIn 380ms ease;/);
   assert.match(css, /\.sc-scrim\.sc-scrim\[data-state='closed'\] \{\s*animation: fadeOut 220ms ease both;/);
-  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.sc-scrim\.sc-scrim\[data-state='closed'\] \{\s*animation: none;/);
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.sc-scrim\.sc-scrim\[data-state='closed'\][\s\S]*?animation: none;/);
   assert.ok(reduced, 'reduced motion drops the scrim fade as it drops the sheet\'s');
   const palette = await read('./SearchCommand.jsx');
-  assert.match(palette, /<CommandDialog [^>]*overlayClassName="sc-scrim"/);
+  assert.match(palette, /<CommandDialog [^>]*overlayClassName=\{`sc-scrim\$\{leavingBySelect \? ' sc-scrim--select' : ''\}`\}/);
   const command = await read('../ui/command.jsx');
   assert.match(command, /function CommandDialog\(\{ children, className, overlayClassName, title = 'Search', \.\.\.props \}\)/);
   assert.match(command, /overlayClassName=\{overlayClassName\}/);
   const dialog = await read('../ui/dialog.jsx');
   assert.match(dialog, /<DialogOverlay className=\{overlayClassName\} \/>/);
+});
+
+/**
+ * Picking a result is not dismissing the palette. Measured before this: the
+ * sheet left on its 220ms ease-in with 14px of travel, the scrim on its own
+ * 220ms `ease`, and the feed beneath on the page's 200ms exit — three
+ * dissolves on three clocks, two empty frames at ~205ms, and the new page
+ * arriving from the right under a 2% ghost of the sheet. When a row is
+ * picked, sheet and scrim go in 100ms of opacity and the page transition is
+ * the only movement left.
+ */
+test('a picked result closes the palette in 100ms of opacity, with no travel', async () => {
+  const palette = await read('./SearchCommand.jsx');
+  assert.match(palette, /const \[leavingBySelect, setLeavingBySelect\] = useState\(false\);/);
+  assert.match(palette, /setLeavingBySelect\(true\);\s*onOpenChange\(false\);/);
+  assert.match(palette, /if \(open\) \{\s*reset\(\);\s*setLeavingBySelect\(false\);\s*\}/);
+  assert.match(palette, /className=\{`sc-sheet\$\{leavingBySelect \? ' sc-sheet--select' : ''\}`\}/);
+  const css = await read('./SearchCommand.css');
+  assert.match(css, /@keyframes scSheetGone \{\s*from \{\s*opacity: 1;\s*\}\s*to \{\s*opacity: 0;\s*\}\s*\}/);
+  assert.match(css, /\.sc-sheet\.sc-sheet--select\[data-state='closed'\] \{\s*animation: scSheetGone 100ms cubic-bezier\(0\.23, 1, 0\.32, 1\) both;\s*\}/);
+  assert.match(css, /\.sc-scrim\.sc-scrim\.sc-scrim--select\[data-state='closed'\] \{\s*animation: fadeOut 100ms cubic-bezier\(0\.23, 1, 0\.32, 1\) both;\s*\}/);
+  // Reduced motion switches the picked exit off with the others.
+  const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\.sc-sheet\.sc-sheet--select\[data-state='closed'\],[\s\S]*?animation: none;/);
+  assert.ok(reduced, 'the picked exit is inside the reduced-motion list');
 });

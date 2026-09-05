@@ -587,7 +587,7 @@ test('the palette clears its state on the way in, never on the way out', () => {
   // the suggestions cascade in, inside the 220 ms exit. Clearing on open, in a
   // layout effect, happens before the first paint of the next opening instead.
   assert.doesNotMatch(palette, /if \(!open\) reset\(\)/, 'the palette resets while its exit is still playing');
-  assert.match(palette, /useLayoutEffect\(\(\) => \{\s*if \(open\) reset\(\);/, 'the palette clears on open, before paint');
+  assert.match(palette, /useLayoutEffect\(\(\) => \{\s*if \(open\) \{\s*reset\(\);/, 'the palette clears on open, before paint');
 });
 
 /**
