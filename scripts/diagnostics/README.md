@@ -123,3 +123,24 @@ includes `http://localhost:5173`) and serve it on that port with
 Chrome is not installed; whole-document navigations are logged, and a
 `[vite:preloadError]` line means the page reloaded itself mid-run — check
 `node_modules` was installed with `npm ci`.
+
+## `explorer-hero-frames.mjs` — the hero's arrivals, frame by frame (2026-09-05)
+
+The `open` probe above samples the hero's box. This one samples what is INSIDE
+it as well — the experience panel and its inner, the Wikipedia fold with its
+computed transform, the settle's own `from`/`to`/`currentTime` — because the
+two mechanisms of the 2026-09-05 audit (`docs/AUDITORIA-ANIMACIONES-EXPLORER-2026-09-05.md`)
+were invisible from the box: a panel squeezed to 0px by flex under a settle,
+and a settle re-animating from a height the box had already left.
+
+```bash
+node scripts/diagnostics/explorer-hero-frames.mjs route '#/explorer/author/A5068353058' 7000
+node scripts/diagnostics/explorer-hero-frames.mjs fromfeed '.pc-topic-link' late 7000
+node scripts/diagnostics/explorer-hero-frames.mjs fromsearch author q=moher late 6000   # needs an IS_DEMO build
+node scripts/diagnostics/explorer-hero-frames.mjs shotwhen '#/explorer/author/A5068353058' "(()=>{const p=document.querySelector('#ehc-experience-panel');return !!p&&p.getBoundingClientRect().height<110;})()" squeeze.png
+```
+
+`fromsearch` seeds a demo session in `localStorage` before the first script and
+types with `Input.insertText` (cmdk ignores the native value setter). Build with
+`IS_DEMO = true` in `src/services/firebase.js` for it, and put it back to `false`
+before committing anything.
