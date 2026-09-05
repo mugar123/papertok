@@ -32,6 +32,7 @@ import {
 import { auth, db, IS_DEMO } from './firebase.js';
 import { PUBLIC_LIST_LIMITS } from './publicListPayload.js';
 import { userSearchEntry, userSearchReference } from './userSearchService.js';
+import { documentIsAuthoritative } from '../utils/cacheAuthority.js';
 import { normalizeHandle, requireHandle } from '../utils/userHandle.js';
 
 export const USER_PROFILE_LIMITS = Object.freeze({
@@ -904,6 +905,46 @@ export async function readOwnUserProfile(overrides) {
   const api = operations(overrides);
   requireSupported(api);
   return readUserProfile(requireOwner(api), overrides);
+}
+
+/**
+ * The absence this account's own profile has to prove before anyone acts on
+ * it (docs/AUDITORIA-COMENTARIOS-2026-09-05.md, C3).
+ *
+ * `readOwnUserProfile` above answers `null` for any document that is not
+ * there, and a `getDoc` against a stalled channel says "not there" from the
+ * in-memory cache in half a millisecond — a *resolved* promise, so no amount
+ * of patience above it ever sees a failure to retry. That is how the comments
+ * sheet came to tell an account WITH a public profile to create one: the
+ * branch that fixed the ten-second `unavailable` rejection left the cache's
+ * own version of the same stall wide open.
+ *
+ * Here an unconfirmed absence becomes the most retryable error Firestore has
+ * (`unavailable`, exactly the shape `isTransientReadError` looks for), so
+ * `patientRead` keeps asking and the eventual server answer settles the gate.
+ * A document that IS there is used cached or not: data in hand is data
+ * (src/utils/cacheAuthority.js).
+ *
+ * A sibling of `readOwnUserProfile` rather than a change to it. The four other
+ * callers — the profile editor, the public page in owner mode, onboarding and
+ * the account warm-up — each have their own handling for a null, and
+ * rewriting what they see is not this fix's business.
+ */
+export class UnconfirmedProfileAbsenceError extends Error {
+  constructor() {
+    super('The missing profile came from the cache, not the server.');
+    this.name = 'UnconfirmedProfileAbsenceError';
+    this.code = 'unavailable';
+  }
+}
+
+export async function readConfirmedOwnUserProfile(overrides) {
+  const api = operations(overrides);
+  requireSupported(api);
+  const uid = requireOwner(api);
+  const snapshot = await api.getDocument(profileReference(api, uid));
+  if (!documentIsAuthoritative(snapshot)) throw new UnconfirmedProfileAbsenceError();
+  return readProfileSnapshot(snapshot);
 }
 
 /**

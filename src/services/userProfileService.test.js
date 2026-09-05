@@ -2,11 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { InvalidHandleError } from '../utils/userHandle.js';
+import { isTransientReadError } from '../utils/boundedRead.js';
 import { PUBLIC_LIST_LIMITS } from './publicListPayload.js';
 import {
   HandleUnavailableError,
   PINNABLE_LISTS_PAGE_SIZE,
   USER_PROFILE_LIMITS,
+  UnconfirmedProfileAbsenceError,
   UserProfileUnsupportedError,
   changeUserHandle,
   createUserProfile,
@@ -14,7 +16,9 @@ import {
   partitionStalePins,
   pinListEntry,
   publicAvatarFrom,
+  readConfirmedOwnUserProfile,
   readOwnLists,
+  readOwnUserProfile,
   readPinnableLists,
   readUserProfile,
   readUserProfileByHandle,
@@ -417,6 +421,75 @@ test('reading a profile never requires a signed-in user', async () => {
   }).api;
   const profile = await readUserProfile('user-1', api);
   assert.equal(profile.handle, 'ada');
+});
+
+// --- the owner's own profile, with authority (C3) -------------------------
+
+/** A snapshot the way `getDoc` hands one back, metadata included. */
+function ownSnapshot({ exists, fromCache, data = { handle: 'ada', displayName: 'Ada' } }) {
+  return {
+    exists: () => exists,
+    id: 'user-1',
+    data: () => data,
+    metadata: { fromCache },
+  };
+}
+
+test('an own profile that is there is used, cached or not', async () => {
+  const reads = [];
+  const api = fakeApi({
+    getDocument: async (path) => {
+      reads.push(path);
+      return ownSnapshot({ exists: true, fromCache: true });
+    },
+  }).api;
+  const profile = await readConfirmedOwnUserProfile(api);
+  assert.deepEqual(reads, ['db/userProfiles/user-1'], 'one read, at the owner document');
+  assert.equal(profile.handle, 'ada');
+  assert.equal(profile.uid, 'user-1');
+});
+
+test('an own profile the server says is not there is an answer', async () => {
+  const api = fakeApi({
+    getDocument: async () => ownSnapshot({ exists: false, fromCache: false }),
+  }).api;
+  assert.equal(await readConfirmedOwnUserProfile(api), null);
+});
+
+test('an absence served by the cache is not an answer, and patientRead will retry it', async () => {
+  const api = fakeApi({
+    getDocument: async () => ownSnapshot({ exists: false, fromCache: true }),
+  }).api;
+  await assert.rejects(
+    () => readConfirmedOwnUserProfile(api),
+    (error) => {
+      assert.ok(error instanceof UnconfirmedProfileAbsenceError);
+      assert.equal(error.code, 'unavailable');
+      assert.equal(isTransientReadError(error), true,
+        'the composer gate only reopens if patience keeps asking');
+      return true;
+    },
+  );
+});
+
+test('a snapshot with no metadata at all is trusted, so a stubbed read is still an answer', async () => {
+  const api = fakeApi({ getDocument: async () => ({ exists: () => false }) }).api;
+  assert.equal(await readConfirmedOwnUserProfile(api), null);
+});
+
+test('the plain own-profile read is untouched: its callers still see a bare null', async () => {
+  const api = fakeApi({
+    getDocument: async () => ownSnapshot({ exists: false, fromCache: true }),
+  }).api;
+  assert.equal(await readOwnUserProfile(api), null,
+    'ProfilePage, PublicProfilePage, OnboardingFlow and accountWarmup keep their own handling');
+});
+
+test('the confirmed read still refuses demo and still needs an owner', async () => {
+  const demo = fakeApi({ isDemo: true }).api;
+  await assert.rejects(() => readConfirmedOwnUserProfile(demo), UserProfileUnsupportedError);
+  const guest = fakeApi({ currentUser: null }).api;
+  await assert.rejects(() => readConfirmedOwnUserProfile(guest), /Authentication is required/);
 });
 
 // --- the rules that back all of the above ---------------------------------
