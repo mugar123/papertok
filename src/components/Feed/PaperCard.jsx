@@ -1254,15 +1254,15 @@ const PaperCard = memo(function PaperCard({
               // title jolt down a full row in a single frame -- that snap,
               // not the easing, read as abrupt. This is the middle ground: a
               // short measured `height: 0 -> auto` tween eases the space
-              // open. It is a layout property again, knowingly -- 0.45s once
-              // per card, on this slot's subtree. The pill itself stays
-              // invisible until the space has mostly opened, then fades in
-              // via the inner `.pc-project-badge-motion` (which owns all the
-              // opacity/y/scale so the two layers never stack curves). No
-              // overflow clip on this slot on purpose: the global
-              // `:focus-visible` ring overhangs the pill by 4px and a hard
-              // clip would cut it -- the fade delay below is what keeps the
-              // pill from ghosting over the title while the space opens.
+              // open. It is a layout property again, knowingly -- 0.2s once
+              // per card, the catalog's own entrance curve, on this slot's
+              // subtree. The pill itself fades in over the same 0.2s via the
+              // inner `.pc-project-badge-motion`, which now animates only
+              // opacity and a full `transform` string -- no `y`/`scale`
+              // shorthands and no delay, so it composites off the main
+              // thread while the feed paints. No overflow clip on this slot
+              // on purpose: the global `:focus-visible` ring overhangs the
+              // pill by 4px and a hard clip would cut it.
               initial={prefersReducedMotion
                 ? { opacity: 0 }
                 : { height: 0 }}
@@ -1274,22 +1274,19 @@ const PaperCard = memo(function PaperCard({
                 : { height: 0, opacity: 0 }}
               transition={prefersReducedMotion
                 ? { duration: 0.12 }
-                : { duration: 0.45, ease: [0.25, 0.1, 0.25, 1] }}
+                : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             >
               <div className="pc-project-badge-slot-inner">
                 <motion.div
                   className="pc-project-badge-motion"
                   initial={prefersReducedMotion
                     ? false
-                    : { opacity: 0, y: 10, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                    : { opacity: 0, transform: 'translateY(6px)' }}
+                  animate={{ opacity: 1, transform: 'translateY(0px)' }}
                   exit={{ opacity: 0, transition: { duration: 0.15 } }}
                   transition={prefersReducedMotion
                     ? { duration: 0.12 }
-                    : {
-                      opacity: { delay: 0.3, duration: 0.5, ease: 'easeOut' },
-                      default: { delay: 0.3, duration: 0.6, ease: [0.22, 1, 0.36, 1] },
-                    }}
+                    : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
                 >
                   <button
                     type="button"
@@ -1475,17 +1472,23 @@ const PaperCard = memo(function PaperCard({
             <motion.div
               key={`linked-resources-${paperViewKey}`}
               className="pc-linked-resources-slot"
-              // Same choreography as `.pc-project-badge-slot` above, for the
-              // same reason: reserving the height in one layout pass made
-              // everything below jolt down in a single frame, and that snap
-              // -- not the easing -- read as abrupt. A short measured
-              // `height: 0 -> auto` tween eases the space open (a layout
-              // property again, knowingly: 0.45s once per card), and the
-              // block only fades in once the space has mostly opened. No
-              // overflow clip here either -- the resource chips are links
-              // whose `:focus-visible` ring overhangs by 4px -- so it is the
-              // fade delay that keeps content from ghosting over what sits
-              // below while the space opens.
+              // This used to be the same choreography as
+              // `.pc-project-badge-slot` above; it no longer is. That badge
+              // moved to 200ms on the compositor (task 12) and this block
+              // still runs the older shape they once shared: a measured
+              // `height: 0 -> auto` tween at 0.45s, and inside it the whole
+              // label-and-chips block on `y`/`scale` after a 300ms delay --
+              // main-thread motion inside the feed, knowingly left as-is
+              // here (a follow-up task, not this one, owns bringing it to
+              // the badge's 200ms shape). Reserving the height in one layout
+              // pass made everything below jolt down in a single frame, and
+              // that snap -- not the easing -- read as abrupt; the measured
+              // tween eases the space open instead, and the block only fades
+              // in once the space has mostly opened. No overflow clip here
+              // either -- the resource chips are links whose
+              // `:focus-visible` ring overhangs by 4px -- so it is the fade
+              // delay that keeps content from ghosting over what sits below
+              // while the space opens.
               initial={prefersReducedMotion
                 ? { opacity: 0 }
                 : { height: 0 }}

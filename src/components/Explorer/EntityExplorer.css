@@ -27,6 +27,13 @@
   gap: var(--space-4);
   color: var(--text-secondary);
   background: var(--bg-primary);
+  /* Resolves from 0.35 like every other arrival in the hero: it replaces a
+     skeleton that stood for 700ms, and it used to replace it in one frame.
+     This runs longer than the plan's 100–250ms entrance band, on a
+     different curve, on purpose: it is `.explorer-hero-content`'s own
+     animation copied byte for byte, so the error resolves exactly like
+     every other arrival in the hero instead of being its own special case. */
+  animation: slideUpFade 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .explorer-error h2 {
@@ -103,6 +110,19 @@
   flex-direction: column;
   gap: var(--space-4);
   animation: slideUpFade 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* The settle (`useHeightSettle`) pins this box's height with a Web Animation.
+   A flex column with a definite height smaller than its content shrinks the
+   items whose automatic minimum size is 0 — exactly the ones with `overflow:
+   hidden`: the experience panel, the Wikipedia fold, the wiki block. Measured
+   on ORCID's arrival: the panel laid out at 0px for the first 117ms of a
+   360ms settle, its inner 136px the whole time, then grew 0→152 in the tail
+   and shoved the ORCID card that had already landed. Nothing in this column
+   may give way: the box clips at the bottom while it grows, which is the
+   reveal the settle exists for. */
+.explorer-hero-content > * {
+  flex-shrink: 0;
 }
 
 /* The skeleton is the page's first paint, and the page transition already
@@ -2400,10 +2420,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .explorer-hero-content,
-  /* Forward guard: `.explorer-error` declares no animation or transition of
-     its own today, so this line switches nothing off yet. It stays so that an
-     entrance added to the error screen later arrives already guarded, instead
-     of shipping motion that reduced-motion does not catch. */
+  /* The error screen's entrance (`slideUpFade`) goes with the rest. */
   .explorer-error,
   .ehc-wiki p,
   .ehc-wiki-skeleton span::after,

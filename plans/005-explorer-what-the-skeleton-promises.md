@@ -111,6 +111,10 @@ one commit while only the parent's height settle blurs the loss.
 exactly this: "one that never comes folds the block away instead of cutting it".
 Wrap the ORCID slot the same way.
 
+**Done 2026-09-05**: the slot is reserved only when the route carries an ORCID
+id (`explorerSkeletonShape(type, { hasOrcid })`); otherwise the card grows the
+hero under the settle's clip when it comes.
+
 ### 5. Typing in the search box tears the list down to five shapes
 
 `EntityExplorer.jsx:779-782` sets `isLoadingPapers` on every page-1 query, and

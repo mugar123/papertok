@@ -156,7 +156,11 @@ test('the ORCID experience panel mounts at full height on arrival and animates o
   assert.match(jsx, /setIsLoadingOrcid\(false\);\s*setIsExperienceOpen\(true\);\s*setExperienceToggled\(false\);/);
   // The reader's own press is what earns the entrance.
   assert.match(jsx, /onClick=\{\(\) => \{ setExperienceToggled\(true\); setIsExperienceOpen\(open => !open\); \}\}/);
-  assert.match(jsx, /initial=\{!experienceToggled \? false : prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0 \}\}/);
+  // On arrival the panel mounts at full height (the settle carries the space)
+  // and fades in (the words arrive): opacity does not touch layout, so the
+  // height keeps a single owner. `initial={false}` used to switch the fade
+  // off with the height — the bordered panel popped in at opacity 1.
+  assert.match(jsx, /initial=\{experienceToggled \? \(prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0 \}\) : \{ opacity: 0 \}\}/);
 });
 
 /**
@@ -171,4 +175,66 @@ test('the hero body settles on a curve that lands, not the arrival curve', async
   assert.ok(call, 'the hero body is settled');
   assert.match(call[0], /easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)'/);
   assert.doesNotMatch(call[0], /0\.16, 1, 0\.3, 1/, 'the settle must not ride the expo-out');
+});
+
+/**
+ * `useHeightSettle` pins the hero body's height with a Web Animation. A flex
+ * column with a definite height smaller than its content shrinks the items
+ * whose automatic minimum size is 0 — exactly the ones with `overflow:
+ * hidden`: the experience panel, the Wikipedia fold, the wiki block. Measured
+ * on ORCID's arrival: the panel laid out at 0px for the first 117ms of a
+ * 360ms settle, its inner 136px the whole time, then grew 0→152 in the tail
+ * and shoved the card that had already landed.
+ */
+test('nothing in the hero body gives way to the settle', async () => {
+  const css = stripComments(await read('./EntityExplorer.css'));
+  assert.match(css, /\.explorer-hero-content > \* \{\s*flex-shrink: 0;\s*\}/);
+});
+
+/**
+ * The project summary box carried `layout` too. The hero body's settle
+ * already animates the space; the projection was a second owner of the same
+ * height, and it scaled three lines of serif when the "Read more" toggle
+ * mounted a frame after the text.
+ */
+test('the project summary box is a plain block; the settle owns its height', async () => {
+  const jsx = stripComments(await read('./EntityExplorer.jsx'));
+  assert.match(jsx, /\{type === 'project' && entity\?\.summary && \(\s*<div\s+className=\{`project-summary-box/);
+  const box = jsx.match(/<div\s+className=\{`project-summary-box[\s\S]*?<\/div>\s*\)\}/);
+  assert.ok(box, 'the summary box is still rendered');
+  assert.doesNotMatch(box[0], /\blayout\b/);
+  assert.doesNotMatch(box[0], /transition=/);
+});
+
+/**
+ * Measured opening an arXiv author with no OpenAlex profile from the feed:
+ * 700ms of a 1300px skeleton, then a centred line in one frame. The error
+ * resolves from the same 0.35 as every other arrival in the hero; the
+ * reduced-motion block already names `.explorer-error`.
+ */
+test('the error screen resolves in place instead of cutting', async () => {
+  const css = stripComments(await read('./EntityExplorer.css'));
+  assert.match(css, /\.explorer-error \{[^}]*animation: slideUpFade 0\.42s cubic-bezier\(0\.16, 1, 0\.3, 1\) both;[^}]*\}/);
+});
+
+/**
+ * The paragraph used to change text without remounting — from one line of
+ * local description to three of Wikipedia at opacity 1, with none of the
+ * arrival `wikiProseIn` promises. Keyed by source, the words arrive again.
+ */
+test('the Wikipedia paragraph is keyed by its source so its arrival replays', async () => {
+  const jsx = await read('./EntityExplorer.jsx');
+  assert.match(jsx, /<p\s+key=\{visibleWikiInfo\?\.extract \? 'wiki' : 'fallback'\}\s+ref=\{wikiDescriptionTextRef\}/);
+});
+
+/**
+ * The panel opens by default when the record lands (2026-09-04). Measured on
+ * an author with a long history: 590px of panel, the tab strip pushed 1108px
+ * in 710ms. Past a few rows the panel arrives folded, and the chevron by the
+ * name opens it on the reader's own press.
+ */
+test('the experience panel arrives open only when it is short', async () => {
+  const jsx = await read('./EntityExplorer.jsx');
+  assert.match(jsx, /const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;/);
+  assert.match(jsx, /setOrcidInfo\(record\);\s*setIsExperienceOpen\(\(record\?\.employments\?\.length \?\? 0\) <= EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS\);/);
 });

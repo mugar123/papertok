@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, BadgeCheck, Check, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
@@ -22,6 +22,7 @@ import { useHeightSettle } from '../../hooks/useHeightSettle';
 import { CATEGORIES } from '../../data/categories';
 import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.js';
+import { handedEntityFor } from '../../utils/explorerHandover.js';
 import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { Button } from '../ui/button.jsx';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../ui/dropdown-menu.jsx';
@@ -63,6 +64,12 @@ const ENTITY_SUPPLEMENT_RENDER_BUDGET_MS = 3500;
 // much negative margin alongside its height: the box reaches nothing before
 // it unmounts, and nothing below it moves at unmount.
 const HERO_STACK_GAP_PX = 16;
+
+// The experience panel arrives open by default (2026-09-04) — up to this many
+// rows. Measured on an author with a long history opened from the feed: 590px
+// of panel, the tab strip pushed 1108px in 710ms. Past this the panel arrives
+// folded and the chevron by the name opens it on the reader's own press.
+const EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS = 4;
 
 // How the Wikipedia block's fold CLOSES (its opening stays on the arrival
 // curve, inline on the element).
@@ -223,15 +230,23 @@ export default function EntityExplorer({
     interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
 
-  // A free-text topic is resolved from the route alone, with no fetch behind
-  // it — so it is born live. Born loading instead, the page painted the full
-  // skeleton for exactly one frame (the effect below resolves it synchronously
-  // after that paint) and `useHeightSettle` then spent 360ms animating the hero
-  // body from the skeleton's ~434px down to the 130px the topic actually has:
-  // a settle explaining a wait that never happened, on the very path a topic
-  // tag on a card takes. The effect still re-resolves it; that is idempotent.
-  const bornResolved = type === 'topic' && isOpaqueQueryTopicText(id);
-  const [entity, setEntity] = useState(() => (bornResolved ? resolveQueryTopicRoute(id, searchParams) : null));
+  // A page can be born live three ways: with the entity a search row handed
+  // over in router state (`explorerHandover.js` — measured before this, an
+  // author picked from the palette arrived as a skeleton and collapsed 113px,
+  // 156px on a phone while the page was still sliding in); as a local topic,
+  // resolved from CATEGORIES; or as a free-text topic, resolved from the
+  // route. None has a fetch behind it. Born loading instead, the page painted
+  // the skeleton for a frame and settled from its height to the real one — a
+  // wait that never happened, animated. The effect below still fetches the
+  // full record; for a handed entity that is an upgrade, never a wait.
+  const location = useLocation();
+  const handedEntity = useMemo(() => handedEntityFor(type, id, location.state), [id, location.state, type]);
+  const localTopic = useMemo(
+    () => (type === 'topic' || type === 'concept' ? getLocalTopicEntity(id) : null),
+    [id, type],
+  );
+  const bornResolved = Boolean(handedEntity) || Boolean(localTopic) || (type === 'topic' && isOpaqueQueryTopicText(id));
+  const [entity, setEntity] = useState(() => (bornResolved ? (handedEntity || localTopic || resolveQueryTopicRoute(id, searchParams)) : null));
   const [entityError, setEntityError] = useState(null);
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState([]);
@@ -570,9 +585,14 @@ export default function EntityExplorer({
     let isCancelled = false;
 
     async function loadEntity() {
-      setIsLoadingEntity(true);
       setEntityError(null);
-      setEntity(null);
+      if (handedEntity) {
+        setEntity(handedEntity);
+        setIsLoadingEntity(false);
+      } else {
+        setIsLoadingEntity(true);
+        setEntity(null);
+      }
       setPapers([]);
       setIsLoadingPapers(true);
       setEntityAuthors([]);
@@ -597,6 +617,16 @@ export default function EntityExplorer({
 
       if (type === 'topic' && isOpaqueQueryTopicText(id)) {
         setEntity(resolveQueryTopicRoute(id, searchParams));
+        setIsLoadingEntity(false);
+        return;
+      }
+
+      // Same shortcut for a local topic on a navigation between entities: the
+      // resets above and these two land in one batch, so no skeleton commit
+      // paints in between.
+      const local = type === 'topic' || type === 'concept' ? getLocalTopicEntity(id) : null;
+      if (local) {
+        setEntity(local);
         setIsLoadingEntity(false);
         return;
       }
@@ -676,7 +706,7 @@ export default function EntityExplorer({
         if (isCancelled) return;
       }
       
-      setEntity(data);
+      setEntity(data || handedEntity);
       setIsLoadingEntity(false);
 
       // Both follow-up requests declare themselves before either starts, in
@@ -718,7 +748,10 @@ export default function EntityExplorer({
       const loadOrcid = async () => {
         try {
           const record = prefetchedOrcid || await getOrcidRecord(data.orcid);
-          if (!isCancelled) setOrcidInfo(record);
+          if (!isCancelled) {
+            setOrcidInfo(record);
+            setIsExperienceOpen((record?.employments?.length ?? 0) <= EXPERIENCE_OPEN_BY_DEFAULT_MAX_ROWS);
+          }
         } catch (e) {
           if (!isCancelled) console.error("Error loading ORCID", e);
         } finally {
@@ -733,14 +766,29 @@ export default function EntityExplorer({
     loadEntity().catch(error => {
       if (isCancelled) return;
       console.error('Failed to load entity', error);
-      setEntity(null);
+      // Keep the hero the palette already painted instead of nulling it out
+      // — mirrors the success exit above (`setEntity(data || handedEntity)`).
+      // `getEntityById` can throw with no network at all (its ROR path
+      // does), well after the handed entity is already on screen; the
+      // render gate below only shows the full-viewport `.explorer-error`
+      // `if (!entity)`, so replacing a hero the reader is looking at would
+      // be a worse failure than the fetch itself. A page reached without a
+      // handover still falls back to `null` here, correctly: there is
+      // genuinely nothing to show.
+      // `entityError` is still set even when a handed entity survives it.
+      // With entity truthy the full-screen error never renders — nothing
+      // today reads this flag while a hero is on screen — but leaving it
+      // `null` would be silently pretending the upgrade succeeded. It stays
+      // the true record of the failure for `retryEntity`, and for whatever
+      // inline notice or telemetry reads it next.
+      setEntity(handedEntity || null);
       setEntityError('ENTITY_LOAD_FAILED');
       setIsLoadingEntity(false);
     });
     return () => {
       isCancelled = true;
     };
-  }, [type, id, searchParams, entityReloadKey]);
+  }, [type, id, searchParams, entityReloadKey, handedEntity]);
 
   useEffect(() => {
     if (!canLoadWikiInfo) {
@@ -1236,7 +1284,7 @@ export default function EntityExplorer({
        all reserved between the stats and the tab strip. On an author that was
        a second tab the page would never render and a 177px drop when the real
        header arrived; on an institution, 242px. */
-    const shape = explorerSkeletonShape(type);
+    const shape = explorerSkeletonShape(type, { hasOrcid: Boolean(extractOrcid(id)) });
     return (
       <div
         className={`explorer-container explorer-skeleton explorer-skeleton--${type || 'entity'}`}
@@ -1754,12 +1802,16 @@ export default function EntityExplorer({
                   // now that it can, a slide on top of the collapse is a
                   // second motion arguing with the first. Height opens the
                   // box, opacity fills it, and nothing else moves.
-                  // `initial={false}` on arrival: the panel is already open when
-                  // the record lands, so it mounts at full height and the hero
-                  // body's settle is the one animation that carries it (see
-                  // `experienceToggled`). The entrance from 0 is the reader's
-                  // toggle, where the box is at rest and there is one owner.
-                  initial={!experienceToggled ? false : prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }}
+                  // On arrival the panel is already open when the record
+                  // lands, so it mounts at full height and the hero body's
+                  // settle is the one animation that carries the SPACE (see
+                  // `experienceToggled`). Its contents still arrive: an
+                  // opacity-only entrance, which touches no layout, so the
+                  // height keeps a single owner. `initial={false}` here used
+                  // to switch the fade off with the height, and the bordered
+                  // panel popped in at opacity 1 (measured). The entrance from
+                  // 0 height is the reader's toggle, where the box is at rest.
+                  initial={experienceToggled ? (prefersReducedMotion ? { opacity: 0 } : { opacity: 0, height: 0 }) : { opacity: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   // Closing is not opening reversed, and framer would make it
                   // so: without a transition of its own the exit inherits the
@@ -1846,8 +1898,7 @@ export default function EntityExplorer({
 
           {/* Project Summary - expandable */}
           {type === 'project' && entity?.summary && (
-            <motion.div
-              layout={!prefersReducedMotion}
+            <div
               className={`project-summary-box ${expandedSummary ? 'is-expanded' : ''} ${isProjectSummaryExpandable ? 'is-expandable' : ''}`}
               onClick={isProjectSummaryExpandable ? () => setExpandedSummary(!expandedSummary) : undefined}
               onKeyDown={isProjectSummaryExpandable ? (event) => handleActivationKey(event, () => setExpandedSummary(!expandedSummary)) : undefined}
@@ -1859,9 +1910,6 @@ export default function EntityExplorer({
                   ? (isEnglish ? 'Collapse project summary' : 'Contraer resumen del proyecto')
                   : (isEnglish ? 'Expand project summary' : 'Ampliar resumen del proyecto')
                 : undefined}
-              transition={prefersReducedMotion
-                ? { duration: 0 }
-                : { layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] } }}
             >
               <p
                 ref={projectSummaryTextRef}
@@ -1877,7 +1925,7 @@ export default function EntityExplorer({
                     : (isEnglish ? 'Read more' : 'Leer más')}
                 </span>
               )}
-            </motion.div>
+            </div>
           )}
 
           {/* Project subjects */}
@@ -1957,8 +2005,14 @@ export default function EntityExplorer({
               folds the block away instead of cutting it. */}
           <AnimatePresence initial={false}>
             {(wikiDescription || entity?.homepage_url || (isWikiRequestPending && ['concept', 'topic', 'institution'].includes(type))) && (
+              // No `layout`. The hero body's settle already carries this
+              // height; a projection on top of it was a second owner of
+              // the same number, and it scaled the paragraph while the
+              // body was still settling (measured: scaleY 1.21 with 13.5px
+              // of drift for 380ms on a topic, 1.3 for a frame on an
+              // institution). The fold animates its own height only when
+              // it arrives or leaves; in between, the settle moves it.
               <motion.div
-                layout
                 className="ehc-wiki-fold"
                 // The fold is a box of its own around the padded block, so
                 // that `height: 0` means nothing rather than the 26px of
@@ -1995,7 +2049,6 @@ export default function EntityExplorer({
                     height: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
                     marginTop: { duration: 0.42, ease: [0.16, 1, 0.3, 1] },
                     y: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
-                    layout: { duration: 0.38, ease: [0.16, 1, 0.3, 1] },
                   }}
               >
                 <div
@@ -2037,6 +2090,7 @@ export default function EntityExplorer({
                   </div>
                 ) : wikiDescription ? (
                   <p
+                    key={visibleWikiInfo?.extract ? 'wiki' : 'fallback'}
                     ref={wikiDescriptionTextRef}
                     className={isWikiDescriptionExpanded ? 'expanded' : 'collapsed'}
                     style={wikiDescriptionExpandedHeight ? { '--wiki-description-expanded-height': `${wikiDescriptionExpandedHeight}px` } : undefined}

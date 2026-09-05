@@ -71,7 +71,7 @@ test('the list is loading from the first live frame, so the empty-state copy nev
 
 test('the ORCID record and the impact score are requested together, declared before either starts', async () => {
   const jsx = await read('./EntityExplorer.jsx');
-  assert.match(jsx, /setEntity\(data\);\s*setIsLoadingEntity\(false\);[\s\S]*?if \(wantsOrcid\) setIsLoadingOrcid\(true\);[\s\S]*?await Promise\.all\(\[\s*wantsRecentImpact \? loadRecentImpact\(\) : null,\s*wantsOrcid \? loadOrcid\(\) : null,\s*\]\);/);
+  assert.match(jsx, /setEntity\(data \|\| handedEntity\);\s*setIsLoadingEntity\(false\);[\s\S]*?if \(wantsOrcid\) setIsLoadingOrcid\(true\);[\s\S]*?await Promise\.all\(\[\s*wantsRecentImpact \? loadRecentImpact\(\) : null,\s*wantsOrcid \? loadOrcid\(\) : null,\s*\]\);/);
 });
 
 test('an institution keeps its Wikipedia block open while the paragraph is on its way', async () => {
@@ -118,7 +118,12 @@ test('the page skeleton reserves as many rows as the list skeleton paints', asyn
 test('the Wikipedia block folds inside a wrapper that also absorbs the stack gap', async () => {
   const jsx = await read('./EntityExplorer.jsx');
   assert.match(jsx, /const HERO_STACK_GAP_PX = 16;/);
-  const fold = jsx.match(/<motion\.div\s+layout\s+className="ehc-wiki-fold"[\s\S]*?>\s*<div\s+className=\{`ehc-wiki /);
+  // No `layout` on the fold: the hero body's settle already carries this
+  // height, and a projection on top of it scaled the paragraph (measured:
+  // scaleY 1.21 for 380ms on a topic, 1.3 for a frame on an institution).
+  const fold = jsx.match(/<motion\.div\s+className="ehc-wiki-fold"[\s\S]*?>\s*<div\s+className=\{`ehc-wiki /);
+  assert.ok(fold, 'the fold declares no layout projection');
+  assert.doesNotMatch(fold[0], /\blayout\b/);
   assert.ok(fold, 'the motion wrapper is a box of its own around the padded `.ehc-wiki`');
   assert.match(fold[0], /initial=\{prefersReducedMotion \? \{ opacity: 0 \} : \{ opacity: 0, height: 0, marginTop: -HERO_STACK_GAP_PX, y: -8 \}\}/);
   assert.match(fold[0], /animate=\{\{ opacity: 1, height: 'auto', marginTop: 0, y: 0 \}\}/);

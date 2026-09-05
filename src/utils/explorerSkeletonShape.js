@@ -53,15 +53,22 @@ export function hasAuthorsTab(type, entity = null) {
  *   types, whose counts always come. A project's cells are each conditional
  *   (budget, funding, dates, participants) and two is what usually lands;
  *   four reserved where two arrive shrank the grid by a row at the handover.
+ *
+ * `hasOrcid`: whether the route already knows the author has an ORCID record
+ * (an ORCID id in the URL). The card was reserved for every author; three of
+ * four authors opened in the 2026-09-05 audit had no record, and a reserved
+ * block that never comes is the list rising 113px 400ms after the page has
+ * landed. Unreserved, a card that does come grows the hero from the bottom
+ * under the settle's clip, which reads as an arrival.
  */
-export function explorerSkeletonShape(type) {
+export function explorerSkeletonShape(type, { hasOrcid = false } = {}) {
   const authorish = type === 'author';
   const institutionish = type === 'institution';
   const projectish = type === 'project';
   return {
     tabs: hasAuthorsTab(type) ? 2 : 1,
     identity: authorish ? 'topics' : institutionish ? 'credentials' : 'none',
-    aside: authorish ? 'orcid' : institutionish ? 'wiki' : projectish ? 'summary' : 'none',
+    aside: authorish ? (hasOrcid ? 'orcid' : 'none') : institutionish ? 'wiki' : projectish ? 'summary' : 'none',
     stats: projectish ? 2 : 4,
     // Every type the Explorer serves can be followed — `followEntity` covers
     // author, institution, project, concept and topic — so the button is part

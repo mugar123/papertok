@@ -24,6 +24,7 @@ import { useEntitySearch } from '../../hooks/useEntitySearch.js';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { searchPaperDestination } from '../../utils/searchDestinations.js';
+import { handoverFromSearchRow } from '../../utils/explorerHandover.js';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import {
   buildSearchSectionValues,
@@ -129,6 +130,13 @@ function initialOf(name, handle) {
  */
 export default function SearchCommand({ open, onOpenChange }) {
   const navigate = useNavigate();
+  // Whether the palette is closing because a row was picked. Picking is not
+  // dismissing: the reader is being answered, not getting out of the way, so
+  // the sheet and its scrim go in 100ms of opacity (`.sc-sheet--select`) and
+  // the page transition is the only movement left. Measured before this:
+  // sheet, scrim and feed dissolved on three clocks with two empty frames in
+  // the middle. Cleared on the way in, like `reset`.
+  const [leavingBySelect, setLeavingBySelect] = useState(false);
   const { isEnglish, language } = useLanguage();
   const copy = COPY[isEnglish ? 'en' : 'es'];
   const { isFollowing, isFollowPending, toggleFollow } = useFollowing();
@@ -158,11 +166,22 @@ export default function SearchCommand({ open, onOpenChange }) {
   // empty-query view — results gone, suggestions cascading in — inside the
   // 220 ms it was fading out. A layout effect on open runs before that opening
   // is painted, so the previous answer is never on screen either way.
+  // `leavingBySelect` clears here for the same reason: it must be false
+  // before the next close that isn't a pick, or a stale `true` left over from
+  // the last pick would give a plain Escape the picked exit instead of the
+  // dismiss. Calling the setter synchronously is exactly the point — before
+  // paint, same as `reset()` beside it — so the rule is off for this effect.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useLayoutEffect(() => {
-    if (open) reset();
+    if (open) {
+      reset();
+      setLeavingBySelect(false);
+    }
   }, [open, reset]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const go = useCallback((path, state = null) => {
+    setLeavingBySelect(true);
     onOpenChange(false);
     // Router state, when there is any: the public paper page paints a paper
     // handed to it and treats its own fetch as an upgrade, so a row the palette
@@ -270,7 +289,7 @@ export default function SearchCommand({ open, onOpenChange }) {
         ? `/explorer/author/https%3A%2F%2Forcid.org%2F${orcid}`
         : `/explorer/author/${lastPathSegment(author.id)}`;
       return (
-        <CommandItem key={author.id} value={`author-${author.id}`} onSelect={() => go(path)}>
+        <CommandItem key={author.id} value={`author-${author.id}`} onSelect={() => go(path, { entity: handoverFromSearchRow('author', author), entityType: 'author' })}>
           <Users size={14} className="sc-icon" />
           <span className="sc-label">{author.display_name}</span>
           <span className="sc-meta">
@@ -286,7 +305,7 @@ export default function SearchCommand({ open, onOpenChange }) {
       <CommandItem
         key={institution.id}
         value={`institution-${institution.id}`}
-        onSelect={() => go(`/explorer/institution/${lastPathSegment(institution.id)}`)}
+        onSelect={() => go(`/explorer/institution/${lastPathSegment(institution.id)}`, { entity: handoverFromSearchRow('institution', institution), entityType: 'institution' })}
       >
         <Building2 size={14} className="sc-icon" />
         <span className="sc-label">
@@ -304,7 +323,7 @@ export default function SearchCommand({ open, onOpenChange }) {
       <CommandItem
         key={concept.id}
         value={`topic-${concept.id}`}
-        onSelect={() => go(`/explorer/topic/${encodeURIComponent(lastPathSegment(concept.id))}`)}
+        onSelect={() => go(`/explorer/topic/${encodeURIComponent(lastPathSegment(concept.id))}`, { entity: handoverFromSearchRow('topic', concept), entityType: 'topic' })}
       >
         <Lightbulb size={14} className="sc-icon" />
         <span className="sc-label">{concept.display_name || concept.label}</span>
@@ -395,7 +414,7 @@ export default function SearchCommand({ open, onOpenChange }) {
   });
 
   return (
-    <CommandDialog open={open} onOpenChange={onOpenChange} title={copy.placeholder} className="sc-sheet" overlayClassName="sc-scrim">
+    <CommandDialog open={open} onOpenChange={onOpenChange} title={copy.placeholder} className={`sc-sheet${leavingBySelect ? ' sc-sheet--select' : ''}`} overlayClassName={`sc-scrim${leavingBySelect ? ' sc-scrim--select' : ''}`}>
       {/* The field leads the entrance rather than sitting it out.
           Everything in the list below already rose into place while the one
           element the palette exists for — the field you are about to type in —

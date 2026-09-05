@@ -101,6 +101,19 @@ export function pinSourcePaper(papers, sourcePaperId) {
  * that changes between the optimistic entity and the detailed one. A topic's
  * providers are asked with the localized name; every other type passes the
  * entity's own, as the author search phrase or `getWorksByEntity`'s fallback.
+ *
+ * An institution keys on the route id instead, for the same reason a project
+ * skips the name: `entity.id` is the field that changes mid-flight. A
+ * search-palette handover hands over a ROR-shaped id (`https://ror.org/<x>`,
+ * see explorerHandover.js); `getEntityById` answers with an OpenAlex-shaped
+ * one (`mergeInstitutionWithRor` sets `id: openAlexInstitution.id`, in
+ * services/rorService.js). Keying on `entity.id` would start a second,
+ * differently-filtered request the moment that answer lands —
+ * `getWorksByEntity` branches on ROR versus OpenAlex ids, so the two are not
+ * the same query — cancelling the one already in flight. The route id never
+ * changes mid-flight, and both `getEntityById` and `getWorksByEntity` already
+ * accept a ROR id in either shape (a full URL or the bare code), so the one
+ * request that starts from it is still the right one.
  */
 export function entityPapersRequestKey({
   type,
@@ -118,7 +131,7 @@ export function entityPapersRequestKey({
   return JSON.stringify([
     type,
     id,
-    entity?.id || id,
+    type === 'institution' ? id : (entity?.id || id),
     type === 'project'
       ? ''
       : ['concept', 'topic'].includes(type)
