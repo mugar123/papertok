@@ -1,5 +1,17 @@
 const lastSegment = (value) => String(value || '').split('/').pop();
 
+// `decodeURIComponent` throws `URIError` on a lone `%` (not a valid escape).
+// None of the three wired rows (author, institution, topic) can produce one
+// in a route id, but this runs inside a render-phase memo, where a throw is
+// a worse failure than a route that simply fails to match.
+const safeDecodeURIComponent = (value) => {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+};
+
 /**
  * What a search-palette row hands the Explorer through router state.
  *
@@ -58,7 +70,7 @@ export function handedEntityFor(type, id, state) {
   const handed = state?.entity;
   if (!handed || !handed.display_name || typeof id !== 'string') return null;
   if (state.entityType !== type) return null;
-  const routeId = decodeURIComponent(id);
+  const routeId = safeDecodeURIComponent(id);
   if (type === 'author') {
     const orcidInRoute = routeId.match(/orcid\.org\/([0-9X-]+)/i)?.[1];
     if (orcidInRoute) {

@@ -72,7 +72,13 @@ test('the project badge opens its space in 200ms and arrives on the compositor',
   const jsx = await read('./PaperCard.jsx');
   const slot = jsx.match(/className="pc-project-badge-slot"[\s\S]*?className="pc-project-badge-motion"[\s\S]*?>\s*<button/);
   assert.ok(slot, 'the badge slot and its motion wrapper are still there');
-  assert.match(slot[0], /: \{ duration: 0\.2, ease: \[0\.23, 1, 0\.32, 1\] \}\}/, 'the slot opens in 200ms');
+  // Anchored to the outer slot alone: the inner motion below carries the
+  // identical `duration: 0.2, ease: [0.23, 1, 0.32, 1]` literal, so matching
+  // against the whole `slot[0]` capture would still pass if the slot itself
+  // regressed to the old 0.45s height while only the inner motion stayed at
+  // 200ms.
+  const outerSlot = jsx.match(/className="pc-project-badge-slot"[\s\S]*?<div className="pc-project-badge-slot-inner">/)?.[0] || '';
+  assert.match(outerSlot, /: \{ duration: 0\.2, ease: \[0\.23, 1, 0\.32, 1\] \}\}/, 'the slot opens in 200ms');
   assert.match(slot[0], /initial=\{prefersReducedMotion\s*\?\s*false\s*:\s*\{ opacity: 0, transform: 'translateY\(6px\)' \}\}/);
   assert.match(slot[0], /animate=\{\{ opacity: 1, transform: 'translateY\(0px\)' \}\}/);
   assert.doesNotMatch(slot[0], /delay:/);

@@ -28,7 +28,11 @@
   color: var(--text-secondary);
   background: var(--bg-primary);
   /* Resolves from 0.35 like every other arrival in the hero: it replaces a
-     skeleton that stood for 700ms, and it used to replace it in one frame. */
+     skeleton that stood for 700ms, and it used to replace it in one frame.
+     This runs longer than the plan's 100–250ms entrance band, on a
+     different curve, on purpose: it is `.explorer-hero-content`'s own
+     animation copied byte for byte, so the error resolves exactly like
+     every other arrival in the hero instead of being its own special case. */
   animation: slideUpFade 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 

@@ -24,11 +24,20 @@ const restingOverflow = new WeakMap();
  * frame after the paragraph it belongs to, the reader folding a panel) used
  * to leave the memory behind, and the next dep animated the box from a
  * height it had already left — measured on a topic page as the list jumping
- * 27px up and sliding back down when the thumbnail loaded. A settle in
- * flight is read every commit as well: if its target still stands it resumes
- * on the same keyframes and clock; if the target moved under it, it is
- * re-aimed from where the box is. The cost is one layout read per commit on
- * a small subtree, which the browser was about to do before paint anyway.
+ * 27px up and sliding back down when the thumbnail loaded. `deps` is
+ * load-bearing now, not optional: called without it, `depsAreSame(undefined,
+ * undefined)` reads as false on every commit, so `depsChanged` is always
+ * true and the hook silently becomes "animate on any change of 1px or more"
+ * instead of only the ones `deps` says are worth it. A settle in flight is
+ * read every commit as well: if its target still stands it resumes on the
+ * same keyframes and clock; if the target moved under it, it is re-aimed
+ * from where the box is. Calling this "one layout read per commit on a small
+ * subtree" would undersell it: `getBoundingClientRect()` flushes layout for
+ * the whole document, not just this element, and the caller here
+ * (`EntityExplorer`) re-renders on every keystroke of its own in-page search
+ * box — so this runs, synchronously, on every one of those keystrokes too.
+ * Still the right trade: the alternative is the box snapping instead of
+ * settling.
  *
  * The ref may point at a different element from one commit to the next (a
  * skeleton and the live block it hands over to): the remembered height

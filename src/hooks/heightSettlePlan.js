@@ -1,4 +1,3 @@
-
 /** Under this many pixels a change is not worth a movement. */
 const SAME_HEIGHT_PX = 1;
 

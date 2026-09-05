@@ -1472,17 +1472,23 @@ const PaperCard = memo(function PaperCard({
             <motion.div
               key={`linked-resources-${paperViewKey}`}
               className="pc-linked-resources-slot"
-              // Same choreography as `.pc-project-badge-slot` above, for the
-              // same reason: reserving the height in one layout pass made
-              // everything below jolt down in a single frame, and that snap
-              // -- not the easing -- read as abrupt. A short measured
-              // `height: 0 -> auto` tween eases the space open (a layout
-              // property again, knowingly: 0.45s once per card), and the
-              // block only fades in once the space has mostly opened. No
-              // overflow clip here either -- the resource chips are links
-              // whose `:focus-visible` ring overhangs by 4px -- so it is the
-              // fade delay that keeps content from ghosting over what sits
-              // below while the space opens.
+              // This used to be the same choreography as
+              // `.pc-project-badge-slot` above; it no longer is. That badge
+              // moved to 200ms on the compositor (task 12) and this block
+              // still runs the older shape they once shared: a measured
+              // `height: 0 -> auto` tween at 0.45s, and inside it the whole
+              // label-and-chips block on `y`/`scale` after a 300ms delay --
+              // main-thread motion inside the feed, knowingly left as-is
+              // here (a follow-up task, not this one, owns bringing it to
+              // the badge's 200ms shape). Reserving the height in one layout
+              // pass made everything below jolt down in a single frame, and
+              // that snap -- not the easing -- read as abrupt; the measured
+              // tween eases the space open instead, and the block only fades
+              // in once the space has mostly opened. No overflow clip here
+              // either -- the resource chips are links whose
+              // `:focus-visible` ring overhangs by 4px -- so it is the fade
+              // delay that keeps content from ghosting over what sits below
+              // while the space opens.
               initial={prefersReducedMotion
                 ? { opacity: 0 }
                 : { height: 0 }}

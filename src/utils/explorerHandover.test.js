@@ -90,3 +90,10 @@ test('institutions and topics match on the last path segment', () => {
   assert.equal(handedEntityFor('topic', 'T10001', { entity: topic, entityType: 'topic' }), topic);
   assert.equal(handedEntityFor('topic', 'T10002', { entity: topic, entityType: 'topic' }), null);
 });
+
+test('a route id that is not a valid URI escape fails to match instead of throwing', () => {
+  const entity = { id: 'https://openalex.org/A5068353058', display_name: 'David Moher' };
+  const state = { entity, entityType: 'author' };
+  assert.doesNotThrow(() => handedEntityFor('author', 'A%', state));
+  assert.equal(handedEntityFor('author', 'A%', state), null);
+});

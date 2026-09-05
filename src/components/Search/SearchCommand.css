@@ -367,9 +367,10 @@
    the page they asked for is already on its way in from the right, and a
    sheet still drifting up at 14% opacity beside it (measured at 200ms) is a
    second movement arguing with the first. So the picked exit is opacity only,
-   100ms, on the entrance curve, for the sheet and the scrim alike; the page
-   transition is the only movement left. The class is doubled on the scrim
-   for the reason the rule above gives. */
+   100ms, on `cubic-bezier(0.23, 1, 0.32, 1)` — not this file's own entrance
+   curve, `scSheetIn`'s `cubic-bezier(0.16, 1, 0.3, 1)` — for the sheet and
+   the scrim alike; the page transition is the only movement left. The class
+   is doubled on the scrim for the reason the rule above gives. */
 @keyframes scSheetGone {
   from {
     opacity: 1;
