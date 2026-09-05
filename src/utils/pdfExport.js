@@ -153,7 +153,7 @@ const PAGE_CSS = `
 .pdfx-notice-t { flex: 1 1 auto; font-size: 13.5px; line-height: 1.52; color: #3a3e46; text-align: justify; }
 .pdfx-flow { flex: 1 1 auto; min-height: 0; overflow: hidden; }
 .pdfx-sec { display: flex; gap: 13px; margin: 21px 0 9px; }
-.pdfx-sec:first-child { margin-top: 12px; }
+.pdfx-sec--first { margin-top: 12px; }
 .pdfx-sec-no { flex: 0 0 22px; font-size: 17px; font-weight: 600; line-height: 1.3; }
 .pdfx-sec-n { font-size: 17px; font-weight: 600; line-height: 1.3; }
 .pdfx-sec-o { font-family: 'IBM Plex Mono', ui-monospace, Menlo, monospace; font-size: 9.5px; line-height: 1.5; letter-spacing: 0.03em; color: #6b7280; margin-top: 3px; }
@@ -265,7 +265,13 @@ function buildBlocks(model, katex) {
   push(element('div', 'pdfx-hair'));
 
   model.sections.forEach((section, index) => {
-    const head = element('div', 'pdfx-sec');
+    // The reduced top margin belongs to the first section OF THE DOCUMENT,
+    // not to whichever block a page break happens to open with — `:first-child`
+    // would fire on any continuation page whose overflowed block happened to
+    // be a heading, which is not what this spacing means. `pdfx-sec--first`
+    // is set once, here, by document position, and PAGE_CSS keys off it
+    // instead of the page-relative selector.
+    const head = element('div', index === 0 ? 'pdfx-sec pdfx-sec--first' : 'pdfx-sec');
     const stack = element('div');
     stack.appendChild(element('h2', 'pdfx-sec-n', section.label));
     // El encabezado tal como está impreso en el paper, igual que en el lector.
@@ -327,6 +333,12 @@ function noteEntry(note) {
  * empty page stays and is clipped: a single paragraph taller than A4 is not a
  * case worth a column model. A heading is never left as the last thing on a
  * page — if its first paragraph moves on, it moves with it.
+ *
+ * Each page also gets its furniture: an identity masthead on page 1, a
+ * running head naming the current section on every page after it, and a
+ * footer with the provenance line and the page number. The running head
+ * cannot be written when the page is made — see the comment further down,
+ * where it is actually filled in, for why that has to wait.
  */
 export async function renderPdfPages(model, host) {
   const katex = await loadKatex();
@@ -338,23 +350,44 @@ export async function renderPdfPages(model, host) {
   }
 
   const pages = [];
+  const heads = [];
+  const marks = [];
   let page = null;
   let flow = null;
   let notes = null;
 
   const newPage = () => {
     page = element('div', 'pdfx-page');
+    const mast = element('div', 'pdfx-mast');
+    const mastL = element('span');
+    const mastR = element('span');
+    mast.append(mastL, mastR);
+    const mastRule = element('div');
+    // La primera página se presenta; las demás navegan.
+    if (pages.length === 0) {
+      mastL.appendChild(element('span', 'pdfx-mast-b', model.meta.masthead));
+      mastR.textContent = model.meta.level;
+      mastRule.className = 'pdfx-mast-rule';
+    } else {
+      mastL.appendChild(element('span', 'pdfx-mast-b', model.meta.runningTitle));
+      mastRule.className = 'pdfx-mast-rule--cont';
+    }
+    heads.push(mastR);
+
     flow = element('div', 'pdfx-flow');
     notes = element('div', 'pdfx-notes');
     notes.style.display = 'none';
+
     const foot = element('div', 'pdfx-foot');
-    foot.appendChild(element('span', undefined, model.provenance));
-    if (model.originalUrl) {
-      foot.appendChild(element('span', undefined, '·'));
-      foot.appendChild(element('span', 'pdfx-foot-link', model.originalUrl));
-    }
-    foot.appendChild(element('span', 'pdfx-foot-page', String(pages.length + 1)));
-    page.append(flow, notes, foot);
+    foot.appendChild(element('div', 'pdfx-hair'));
+    const row = element('div', 'pdfx-foot-row');
+    row.append(
+      element('span', 'pdfx-foot-s', model.meta.provenance),
+      element('span', 'pdfx-foot-n', String(pages.length + 1)),
+    );
+    foot.appendChild(row);
+
+    page.append(mast, mastRule, flow, notes, foot);
     host.appendChild(page);
     pages.push(page);
   };
@@ -375,17 +408,41 @@ export async function renderPdfPages(model, host) {
       if (!notes.children.length) notes.style.display = 'none';
       // An orphaned heading follows its paragraph to the next page.
       const last = flow.lastElementChild;
-      const carried = last?.classList.contains('pdfx-heading') && flow.children.length > 1
+      const carried = last?.classList.contains('pdfx-sec') && flow.children.length > 1
         ? last
         : null;
       newPage();
-      if (carried) flow.appendChild(carried);
+      if (carried) {
+        flow.appendChild(carried);
+        // A carried heading already has a mark, recorded below when IT was
+        // seated — for the page it is now leaving. Moving the node without
+        // moving its mark would leave that abandoned page's running head
+        // claiming a section it no longer shows a word of, so the mark
+        // follows the node to the page it actually ends up on.
+        const movedMark = marks.find(mark => mark.node === carried);
+        if (movedMark) movedMark.page = pages.length - 1;
+      }
       flow.appendChild(block.node);
       if (seated.length > 0) {
         notes.style.display = '';
         for (const entry of seated) notes.appendChild(entry);
       }
     }
+    // The block may have just moved to a new page above, so which page it
+    // ends up on is only known now, at the end of the loop body — reading
+    // `pages.length - 1` any earlier would attribute it to the page it left.
+    if (block.heading) marks.push({ page: pages.length - 1, text: block.heading, node: block.node });
+  }
+
+  // El titulillo dice en qué sección vas. Se escribe ahora y no al crear la
+  // página porque una página se crea vacía: hasta que no se ha sentado todo no
+  // se sabe qué secciones cayeron en ella. Una página sin título propio hereda
+  // el de la anterior, que es justo el caso de una sección que continúa.
+  let running = '';
+  for (let index = 0; index < pages.length; index += 1) {
+    const own = marks.filter(mark => mark.page === index).at(-1);
+    if (own) running = own.text;
+    if (index > 0) heads[index].textContent = running;
   }
 
   // Fonts settle after the text is in the DOM; the capture must not race them.
