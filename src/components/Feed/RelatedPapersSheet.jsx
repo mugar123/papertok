@@ -19,15 +19,13 @@ import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js
 import {
   buildRelatedPaperEntries,
   getRelatedPaperIdentity,
-  getRelatedTransitionAction,
-  getRelatedTransitionDuration,
-  getRelatedTransitionFallbackDelay,
-  RELATED_PAPER_HANDOFF_MS,
-  RELATED_SHEET_CLOSE_MS,
 } from '../../utils/relatedPaperTransition.js';
 import ScientificText from '../ScientificText';
+import { Toggle } from '../ui/toggle.jsx';
 import { useLanguage } from '../../context/LanguageContext';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
+import { Drawer, DrawerClose, DrawerContent, DrawerTitle } from '../ui/drawer.jsx';
+import { Tabs, TabsList, TabsTrigger } from '../ui/tabs.jsx';
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
 
 const INITIAL_GRAPH = {
   references: [],
@@ -85,8 +83,19 @@ function LoadingState({ label }) {
   );
 }
 
+/**
+ * A Base UI Drawer (ui/drawer.jsx): a bottom sheet a thumb can swipe away.
+ * PaperCard mounts the sheet and unmounts it on `onClose`, so the sheet owns
+ * its open state: every way out — the X, Escape, the scrim, a swipe, a paper
+ * chosen from the list — takes `open` down, the primitive plays the exit
+ * (the drawer's slide, or the settle-and-fade of `is-selecting-paper` in
+ * PaperCard.css) and only then, from `onOpenChangeComplete(false)`, is the
+ * parent told: `onSelectPaper` when a paper is waiting, `onClose` otherwise.
+ * The primitive also owns the focus trap, Escape and the restore.
+ */
 export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onSelectPaper }) {
   const { isEnglish, locale } = useLanguage();
+  const [open, setOpen] = useState(true);
   const hasGraphIdentifier = Boolean(getCitationGraphDoi(paper));
   const [mode, setMode] = useState(hasGraphIdentifier ? 'graph' : 'similar');
   const [view, setView] = useState('map');
@@ -94,7 +103,6 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
   const [graphs, setGraphs] = useState({});
   const [papers, setPapers] = useState([]);
   const [relatedStatus, setRelatedStatus] = useState(hasGraphIdentifier ? 'idle' : 'loading');
-  const [isClosing, setIsClosing] = useState(false);
   const [isSelectionReady, setIsSelectionReady] = useState(false);
   const [selectedPaperKey, setSelectedPaperKey] = useState(null);
   const [focusedKey, setFocusedKey] = useState(null);
@@ -109,7 +117,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
   const closingRef = useRef(false);
   const mountedRef = useRef(false);
   const pendingSelectionRef = useRef(null);
-  const transitionTimerRef = useRef(null);
+  const closeButtonRef = useRef(null);
   const walkTimersRef = useRef([]);
   const walkingRef = useRef(false);
   const resizeRef = useRef(null);
@@ -128,7 +136,6 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     return () => {
       mountedRef.current = false;
       pendingSelectionRef.current = null;
-      if (transitionTimerRef.current !== null) clearTimeout(transitionTimerRef.current);
       walkTimersRef.current.forEach(clearTimeout);
       resizeRef.current?.disconnect();
     };
@@ -142,8 +149,6 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
 
   const finishClose = useCallback(() => {
     if (!mountedRef.current || !closingRef.current) return;
-    if (transitionTimerRef.current !== null) clearTimeout(transitionTimerRef.current);
-    transitionTimerRef.current = null;
     closingRef.current = false;
     onCloseRef.current();
   }, []);
@@ -152,8 +157,6 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     if (!mountedRef.current) return;
     const pendingSelection = pendingSelectionRef.current;
     if (!pendingSelection) return;
-    if (transitionTimerRef.current !== null) clearTimeout(transitionTimerRef.current);
-    transitionTimerRef.current = null;
     pendingSelectionRef.current = null;
     closingRef.current = false;
     onSelectPaperRef.current(pendingSelection.paper);
@@ -164,18 +167,8 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     closingRef.current = true;
     pendingSelectionRef.current = null;
     setIsSelectionReady(false);
-    setIsClosing(true);
-    const duration = getRelatedTransitionDuration(RELATED_SHEET_CLOSE_MS, prefersReducedMotion);
-    if (duration === 0) {
-      finishClose();
-      return;
-    }
-    transitionTimerRef.current = setTimeout(
-      finishClose,
-      getRelatedTransitionFallbackDelay(RELATED_SHEET_CLOSE_MS, prefersReducedMotion),
-    );
-  }, [finishClose, prefersReducedMotion]);
-  const dialogRef = useDialogFocus(true, requestClose);
+    setOpen(false);
+  }, []);
 
   const requestPaper = useCallback((relatedPaper, paperKey) => {
     if (closingRef.current) return;
@@ -184,23 +177,16 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
     closingRef.current = true;
     setSelectedPaperKey(paperKey);
     setIsSelectionReady(true);
-    setIsClosing(true);
-    const duration = getRelatedTransitionDuration(RELATED_PAPER_HANDOFF_MS, prefersReducedMotion);
-    if (duration === 0) {
-      finishSelection();
-      return;
-    }
-    transitionTimerRef.current = setTimeout(
-      finishSelection,
-      getRelatedTransitionFallbackDelay(RELATED_PAPER_HANDOFF_MS, prefersReducedMotion),
-    );
-  }, [finishSelection, prefersReducedMotion]);
+    setOpen(false);
+  }, []);
 
-  const handleSheetAnimationEnd = useCallback((event) => {
-    if (event.target !== event.currentTarget) return;
-    const action = getRelatedTransitionAction(event.animationName);
-    if (action === 'close') finishClose();
-    if (action === 'select') finishSelection();
+  // The primitive has finished the exit — the parent hears of it here and
+  // nowhere else. A paper chosen from the sheet is handed over; anything
+  // else was a dismissal.
+  const handleOpenChangeComplete = useCallback((nextOpen) => {
+    if (nextOpen) return;
+    if (pendingSelectionRef.current) finishSelection();
+    else finishClose();
   }, [finishClose, finishSelection]);
 
   const center = trail[trail.length - 1];
@@ -441,23 +427,22 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
       : (isEnglish ? 'citations unknown' : 'citas desconocidas');
 
     return (
-      <button
+      <Toggle
         key={node.key}
-        type="button"
         className={classes.join(' ')}
         data-side={node.side}
         data-relation={node.relation}
         style={style}
         onClick={() => setFocusedKey(isFocused ? null : node.key)}
         disabled={Boolean(selectedPaperKey) || isLeaving}
-        aria-pressed={isFocused}
+        pressed={isFocused}
         aria-label={`${node.paper.title} · ${node.paper.year} · ${citations}`}
       >
         <span className="graph-node-dot" aria-hidden="true"><i /></span>
         <span className="graph-node-label" aria-hidden="true">
           <b>{nodeAuthorLabel(node.paper)}</b> {`’${String(node.paper.year).slice(2)}`}
         </span>
-      </button>
+      </Toggle>
     );
   };
 
@@ -664,14 +649,13 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
           {entries.map(({ paper: related, key }, index) => {
             const listKey = `list:${key}`;
             return (
-              <button
+              <Toggle
                 key={key}
-                type="button"
                 className={`related-item ${focusedKey === listKey ? 'is-selected' : ''}`}
                 style={{ '--related-index': index }}
                 onClick={() => setFocusedKey(focusedKey === listKey ? null : listKey)}
                 disabled={Boolean(selectedPaperKey)}
-                aria-pressed={focusedKey === listKey}
+                pressed={focusedKey === listKey}
               >
                 <span
                   className={`graph-list-dot ${relation === 'reference' ? 'is-hollow' : 'is-filled'}`}
@@ -687,7 +671,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
                   </small>
                 </span>
                 <ChevronRight size={18} />
-              </button>
+              </Toggle>
             );
           })}
         </div>
@@ -696,80 +680,83 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
   );
 
   return (
-    <div
-      className={`related-overlay ${isClosing ? 'is-closing' : ''} ${isSelectingPaper ? 'is-selecting-paper' : ''}`}
-      onClick={requestClose}
-      role="presentation"
+    <Drawer
+      open={open}
+      onOpenChange={(nextOpen) => { if (!nextOpen) requestClose(); }}
+      onOpenChangeComplete={handleOpenChangeComplete}
     >
-      <section
-        ref={dialogRef}
+      <DrawerContent
+        render={<section />}
         className={`related-sheet related-sheet--graph related-sheet--${sheetStatus} ${isSelectingPaper ? 'is-selecting-paper' : ''}`}
-        onClick={event => event.stopPropagation()}
-        onAnimationEnd={handleSheetAnimationEnd}
-        aria-label={isEnglish ? 'Paper connections' : 'Conexiones del paper'}
+        overlayClassName="related-overlay"
         aria-modal="true"
         aria-busy={visibleStatus === 'loading'}
-        role="dialog"
-        tabIndex={-1}
+        // The X, not the first tabbable thing (the map/list switch): a
+        // keyboard user who opened the sheet by mistake leaves it at once.
+        initialFocus={closeButtonRef}
       >
         <div className="related-grabber" aria-hidden="true" />
         <header className="related-header">
-          <div><Network size={18} /><h3>{isEnglish ? 'Paper connections' : 'Conexiones del paper'}</h3></div>
+          <div>
+            <Network size={18} />
+            <DrawerTitle render={<h3 />}>{isEnglish ? 'Paper connections' : 'Conexiones del paper'}</DrawerTitle>
+          </div>
           <div className="related-header-actions">
             {mode === 'graph' && (
               <>
-                <button
-                  className={`graph-view-button ${view === 'map' ? 'is-active' : ''}`}
-                  onClick={() => setView('map')}
-                  aria-label={isEnglish ? 'Map view' : 'Ver como mapa'}
-                  title={isEnglish ? 'Map' : 'Mapa'}
-                  aria-pressed={view === 'map'}
+                {/* Single-select, and a press on the pressed one reports []:
+                    the view never goes to "neither". */}
+                <ToggleGroup
+                  className="graph-view-toggle"
+                  value={[view]}
+                  onValueChange={([next]) => { if (next) setView(next); }}
+                  aria-label={isEnglish ? 'Graph view' : 'Vista del grafo'}
                 >
-                  <Network size={17} />
-                </button>
-                <button
-                  className={`graph-view-button ${view === 'list' ? 'is-active' : ''}`}
-                  onClick={() => setView('list')}
-                  aria-label={isEnglish ? 'List view' : 'Ver como lista'}
-                  title={isEnglish ? 'List' : 'Lista'}
-                  aria-pressed={view === 'list'}
-                >
-                  <List size={17} />
-                </button>
+                  <ToggleGroupItem
+                    value="map"
+                    size="icon"
+                    className="graph-view-button"
+                    aria-label={isEnglish ? 'Map view' : 'Ver como mapa'}
+                    title={isEnglish ? 'Map' : 'Mapa'}
+                  >
+                    <Network size={17} />
+                  </ToggleGroupItem>
+                  <ToggleGroupItem
+                    value="list"
+                    size="icon"
+                    className="graph-view-button"
+                    aria-label={isEnglish ? 'List view' : 'Ver como lista'}
+                    title={isEnglish ? 'List' : 'Lista'}
+                  >
+                    <List size={17} />
+                  </ToggleGroupItem>
+                </ToggleGroup>
                 <span className="related-header-divider" aria-hidden="true" />
               </>
             )}
-            <button
-              onClick={requestClose}
+            <DrawerClose
+              ref={closeButtonRef}
               aria-label={isEnglish ? 'Close' : 'Cerrar'}
               title={isEnglish ? 'Close' : 'Cerrar'}
-              data-dialog-initial-focus
             >
               <X size={20} />
-            </button>
+            </DrawerClose>
           </div>
         </header>
 
-        <div className="related-mode-tabs" role="tablist" aria-label={isEnglish ? 'Connection type' : 'Tipo de conexión'}>
-          <button
-            className={mode === 'graph' ? 'is-active' : ''}
-            onClick={() => setMode('graph')}
-            disabled={!hasGraphIdentifier || Boolean(selectedPaperKey)}
-            role="tab"
-            aria-selected={mode === 'graph'}
-          >
-            <GitBranch size={16} />{isEnglish ? 'Graph' : 'Grafo'}
-          </button>
-          <button
-            className={mode === 'similar' ? 'is-active' : ''}
-            onClick={() => setMode('similar')}
-            disabled={Boolean(selectedPaperKey)}
-            role="tab"
-            aria-selected={mode === 'similar'}
-          >
-            <Sparkles size={16} />{isEnglish ? 'Similar' : 'Similares'}
-          </button>
-        </div>
+        {/* ui/tabs.jsx, in the pill shape the sheet has always drawn: the
+            content below is switched by `mode` rather than held in panels,
+            because most of it is shared between the two. */}
+        <Tabs value={mode} onValueChange={(next) => setMode(next)}>
+          <TabsList variant="pill" className="related-mode-tabs" aria-label={isEnglish ? 'Connection type' : 'Tipo de conexión'}>
+            <TabsTrigger value="graph" disabled={!hasGraphIdentifier || Boolean(selectedPaperKey)}>
+              <GitBranch size={16} />{isEnglish ? 'Graph' : 'Grafo'}
+            </TabsTrigger>
+            <TabsTrigger value="similar" disabled={Boolean(selectedPaperKey)}>
+              <Sparkles size={16} />{isEnglish ? 'Similar' : 'Similares'}
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
 
         {mode === 'graph' && (
           <div className="graph-trail" aria-label={isEnglish ? 'Path through the graph' : 'Recorrido por el grafo'}>
@@ -884,7 +871,7 @@ export default function RelatedPapersSheet({ paper, onClose, onPreparePaper, onS
             <span>{isEnglish ? 'One hop · cached 24 h' : 'Un salto · en caché 24 h'}</span>
           </div>
         )}
-      </section>
-    </div>
+      </DrawerContent>
+    </Drawer>
   );
 }

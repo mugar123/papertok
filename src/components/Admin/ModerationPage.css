@@ -60,15 +60,19 @@
   cursor: pointer;
 }
 
-.moderation-killswitch input {
+/* The box is the shared Checkbox; the copy is its Label, stacked. */
+.moderation-killswitch > [data-slot='checkbox'] {
   margin-top: 3px;
-  accent-color: var(--accent-danger);
 }
 
-.moderation-killswitch span {
+.moderation-killswitch label {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: var(--space-1);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
+  cursor: pointer;
 }
 
 .moderation-killswitch strong {

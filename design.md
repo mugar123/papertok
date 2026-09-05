@@ -81,7 +81,9 @@ Variants: `default` (ink), `outline`, `ghost`, `brand` (yellow), `violet`,
 `teal`, `rose`, `sky`, `success`, `field` (adopts `--accent` of its element),
 `destructive`. Sizes: `default`, `sm`, `lg`, `icon`, `icon-sm`. Full width with
 the `w-full` utility. Delete any bespoke `.foo-btn` rules you replace.
-Dialogs, palettes, toggles and tooltips already exist in `src/components/ui/`.
+Dialogs, sheets, drawers, popovers, menus, tabs, toggles, tooltips and the form
+controls already exist in `src/components/ui/` — reach for them before a `div`
+with a click handler or a hand-rolled overlay.
 
 ### 6. Group actions by intent
 Primary actions cluster left. Utility icons cluster right behind a `1px` rule.
@@ -136,15 +138,43 @@ Transitions `--transition-fast/base/slow/spring`.
 
 ## Shared components (`src/components/ui/`)
 
+shadcn/ui on **Base UI** (`@base-ui/react`, `components.json` style `base-nova`),
+every part styled with this file's tokens rather than shadcn's defaults. Add a
+new one with `npx shadcn add <name>` and then re-draw it in the vocabulary
+above before it ships (near-square radii, hairlines, mono labels, serif prose,
+no `dark:` — the theme is the token re-binding on `data-theme`).
+
 - **`button.jsx`** (+ `button-variants.js`) — the only button. See rule 5.
-- **`dialog.jsx`** — Radix dialog (overlay + content + close). Use for modals
-  instead of hand-rolling a backdrop.
-- **`command.jsx`** — cmdk command palette (see `SearchCommand`).
-- **`toggle-group.jsx`** (+ `toggle-group-context.js`) — segmented choices; the
-  selected item is a raised white chip on a sunken track.
-- **`tooltip.jsx`** — Radix tooltip.
+  Compose with a non-button through `render={<a href … />}` (Base UI's render
+  prop; there is no `asChild`).
+- **`dialog.jsx`** — the centred modal (ink scrim, white sheet). Base UI owns
+  the focus trap, Escape, outside-press, focus restore and nesting; there is
+  no hand-rolled focus hook any more. `alert-dialog.jsx` for confirmations
+  that must be answered.
+- **`sheet.jsx`** — a positioned Dialog from an edge, no gesture (filters,
+  side rails). **`drawer.jsx`** — the bottom sheet a thumb dismisses
+  (swipe, snap points): comments, follow sheet, related papers, authors.
+- **`popover.jsx`** — a non-modal anchored panel (preferences tray, date
+  picker, export card). **`dropdown-menu.jsx`** — a `role="menu"` of commands.
+  **`tooltip.jsx`** — a mono label on hover/focus.
+- **`tabs.jsx`** — `line` (yellow underline, the one place the yellow marks a
+  tab) and `pill` (raised chip on a sunken track).
+- **`toggle.jsx` / `toggle-group.jsx`** — `aria-pressed` chips and segmented
+  choices; a group's `value` is always an array.
+- **`switch.jsx`, `checkbox.jsx`, `radio-group.jsx`, `select.jsx`,
+  `input.jsx`, `textarea.jsx`, `label.jsx`, `slider.jsx`, `separator.jsx`** —
+  the form controls. A card-shaped radio is `RadioGroupItem render={…}`.
+- **`command.jsx`** — cmdk command palette on the Dialog (see `SearchCommand`).
 - **`../../lib/utils.js`** — `cn()` merges class names (clsx + tailwind-merge),
   letting a caller's utility win over a component default.
+
+Base UI's docs travel with the package:
+`node_modules/@base-ui/react/docs/react/components/<name>.md`. Its state
+attributes are what component CSS styles: `[data-open]` / `[data-closed]` for
+an animation, `[data-starting-style]` / `[data-ending-style]` for a
+transition, `[data-pressed]`, `[data-checked]`, `[data-active]`,
+`[data-highlighted]`, `[data-popup-open]`. A popup is portaled to `<body>`, so
+a selector rooted in a page container does not reach it.
 
 Tailwind v4 is wired via `@tailwindcss/vite`; utility classes (`w-full`,
 `flex`, …) work in JSX. Element resets live in `@layer base` in
@@ -236,11 +266,16 @@ bug this pattern exists to prevent.
   the classes produce no rule at all — no warning, no missing-class error, just an
   overlay that appears and vanishes in one frame and reads as "the animation is
   too fast". When you paste a component from upstream, check every utility it uses
-  actually exists here. The overlay now fades with the `fadeIn` / `fadeOut`
-  keyframes `variables.css` already defines. It must be an `animation`, not a
-  `transition`: `@radix-ui/react-presence` only defers unmount while
-  `getComputedStyle(node).animationName` is not `none`, so a transitioned exit is
-  cut off by the unmount.
+  actually exists here. The overlay fades with the `fadeIn` / `fadeOut`
+  keyframes `variables.css` already defines.
+- **An exit that nothing is running is no exit.** Base UI keeps a closing popup
+  mounted only while `element.getAnimations()` reports something on it — a CSS
+  `animation` on `[data-closed]` or a `transition` on `[data-ending-style]`.
+  A closed state styled with neither is unmounted on the spot, and the leave is
+  cut off at its first frame, which reads as "too fast" rather than as a bug.
+  Animations take `both` so the last frame holds. And a component whose parent
+  unmounts it on close (`{open && <X/>}`) must flip its own `open` first and
+  call the parent from `onOpenChangeComplete(false)`, or the parent wins.
 - **Don't cache a failure.** Cache successes long, unknowns briefly, failures
   never — and share in-flight promises so a double mount cannot race itself.
 - **`createContext` must not share a module with a component.** A module that

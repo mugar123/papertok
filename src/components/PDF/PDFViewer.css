@@ -1,19 +1,46 @@
-/* PDF Viewer Overlay */
+/* PDF Viewer Overlay — the popup of a full-screen Base UI Dialog
+   (ui/dialog.jsx). The primitive arrives centred with a hairline and a
+   shadow; the overrides below are the viewer claiming the whole viewport at
+   the z-index it has always had, above every other surface. */
 .pdf-overlay {
   position: fixed;
   inset: 0;
   z-index: 12100;
+  width: auto;
+  max-width: none;
+  translate: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   /* No `backdrop-filter`: this overlay fades its own opacity in/out
      (`pdfOverlayIn`/`pdfOverlayOut`), and animating opacity over a blurred
      layer forces the blur to be re-resolved every frame — the worst case
      for a mobile GPU. The dark rgba veil is what actually reads as the
      backdrop; its 8px blur added nothing visible under it. */
   background: rgba(17, 19, 24, 0.85);
+}
+
+/* The veil is the popup itself, so the primitive's scrim draws nothing. */
+.pdf-scrim {
+  z-index: 12099;
+  background: transparent;
+}
+
+.pdf-scrim[data-open],
+.pdf-scrim[data-closed] {
+  animation: none;
+}
+
+/* `data-open` / `data-closed` are the primitive's: it holds the popup in the
+   document until the closing animation has finished, and only then tells
+   App.jsx to unmount the viewer. */
+.pdf-overlay[data-open] {
   animation: pdfOverlayIn 0.3s ease-out;
 }
 
-.pdf-overlay.is-closing {
+.pdf-overlay[data-closed] {
   animation: pdfOverlayOut 0.3s forwards;
+  pointer-events: none;
 }
 
 .pdf-viewer {
@@ -21,10 +48,13 @@
   inset: 0;
   display: flex;
   flex-direction: column;
+}
+
+.pdf-overlay[data-open] .pdf-viewer {
   animation: pdfViewerIn 0.3s ease-out;
 }
 
-.pdf-viewer.is-closing {
+.pdf-overlay[data-closed] .pdf-viewer {
   animation: pdfViewerOut 0.2s forwards;
 }
 
@@ -236,11 +266,12 @@
   to { opacity: 0; }
 }
 
+/* With no animation to wait for, the primitive unmounts the viewer at once. */
 @media (prefers-reduced-motion: reduce) {
-  .pdf-overlay,
-  .pdf-overlay.is-closing,
-  .pdf-viewer,
-  .pdf-viewer.is-closing,
+  .pdf-overlay[data-open],
+  .pdf-overlay[data-closed],
+  .pdf-overlay[data-open] .pdf-viewer,
+  .pdf-overlay[data-closed] .pdf-viewer,
   .pdf-loading-spinner {
     animation: none;
   }

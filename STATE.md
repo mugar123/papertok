@@ -1,5 +1,93 @@
 # Estado / pendientes
 
+## La interfaz pasa a shadcn/ui sobre Base UI, con el mismo estilo (2026-09-05)
+
+**Había cinco componentes copiados de shadcn sobre Radix en `src/components/ui/`
+y, fuera de ellos, catorce overlays hechos a mano (diálogos, hojas, menús,
+popovers) con un hook de foco propio (`useDialogFocus`, diez usos), dos
+`<dialog>` nativos, controles de formulario a mano (switches con `role`,
+radiogroups, tablists, `rc-slider`) y una docena de tests que fijaban el
+contrato de `@radix-ui/react-presence` (`data-state`, salida por `animation`).**
+Ahora `ui/` es shadcn generado para Base UI (`@base-ui/react` 1.8.0,
+`components.json` estilo `base-nova`) y redibujado con los tokens del
+proyecto: button (con `render` en vez de `asChild`), dialog, alert-dialog,
+sheet, drawer (hoja inferior con gesto, la única con CSS propio en `ui/`),
+popover, dropdown-menu, tooltip, toggle, toggle-group, tabs (`line` con el
+subrayado amarillo y `pill`), switch, checkbox, radio-group, select, input,
+textarea, label, slider, separator, y command (cmdk sigue, sobre el Dialog
+nuevo). Radix y `rc-slider` salen de `package.json`; el hook de foco se borra:
+la primitiva trae trampa, Escape, restauración y anidamiento. Base UI no
+escribe `aria-modal`, así que lo escriben las cuatro primitivas modales, que
+es lo que lee la guardia de gestos de `FeedContainer`. Cada pantalla conserva
+su hoja de estilos: los componentes montan las primitivas con sus clases de
+siempre y los selectores pasan de `.active`/`.is-closing`/`data-state` a los
+atributos de Base UI (`data-open`, `data-closed`, `data-starting-style`,
+`data-ending-style`, `data-pressed`, `data-checked`, `data-active`). Un
+overlay que su padre desmonta al cerrar (`{x && <X/>}`) baja primero su
+`open` y avisa al padre desde `onOpenChangeComplete(false)`, para que la
+salida se vea. Qué es cada cosa ahora: AuthPrompt, GuestInterestsPrompt,
+VisibilityPrompt, EmailNotificationModal, EditInterestsModal, PaperOverlay,
+PDFViewer, la tarjeta relacionada y el lector → `Dialog`; DeleteAccountDialog →
+`AlertDialog`; comentarios, hoja de seguidos, papers relacionados y autores →
+`Drawer`; el cajón de filtros del Explorer → `Sheet`; el menú de preferencias
+de la barra, la selección del lector y la tarjeta de exportación → `Popover`;
+los enlaces de proyecto del Explorer → `DropdownMenu`; pestañas de búsqueda,
+perfil público, seguidos y relacionados → `Tabs`; switches, radios, selects,
+campos, el slider de fechas y las píldoras → sus primitivas. Dos excepciones
+razonadas: el calendario del informe es un `Collapsible` (se despliega en
+sitio y no debe cerrarse al pulsar fuera) y el tooltip del mapa sigue al
+puntero sobre 170 trazos y se queda como estaba (decorativo, cada país lleva
+`aria-label`). Los tests que fijaban el contrato de Radix se reescribieron
+contra el de Base UI protegiendo el mismo invariante (una salida que nada
+ejecuta no es salida: `getAnimations()` es lo que retiene el nodo). Suite:
+2053 tests en verde, lint limpio, build de producción correcto. Verificado
+en el navegador como invitado: la pregunta de intereses y el acceso abren
+como diálogos modales en portal, el foco entra, Escape cierra y devuelve el
+foco, la respuesta rearma el feed. Pendiente un recorrido manual con sesión
+(lector, comentarios, listas, ajustes) y con teclado en Safari iOS: el gesto
+de deslizar para cerrar los `Drawer` es de Base UI y no se ha probado en un
+teléfono. `docs/ARCHITECTURE.md` y `design.md` describen la base nueva.
+
+Cierre del mismo día: la rama se puso al día con `origin/main` (20 commits:
+accesibilidad del lector y del menú de selección, campos con etiqueta,
+errores de formulario) y lo que el remoto había hecho sobre el hook de foco
+antiguo se portó a las primitivas (el menú de selección toma `initialFocus`
+en su primera acción; editar intereses conserva su error de formulario; los
+seis tests nuevos del remoto aceptan `Input`/`Textarea`). Repaso de restos:
+ya no queda ningún `<button aria-pressed>` a mano (me gusta / guardar /
+leído de la tarjeta, chips de intereses y del onboarding, fila «leer más
+tarde», seguir desde la paleta, nodos y filas del grafo, días del
+calendario: todos `Toggle`); fuera los keyframes muertos `heartBeat` y
+`slideDown`, el CSS del tooltip antiguo de la tarjeta, el selector
+`[data-state='on']` de Radix en el lector y los tres helpers de transición
+que ningún componente importaba. Quedan nativos, a propósito: el `<input
+type="file">` del avatar en Ajustes y las píldoras del periodo del informe
+que no son on/off.
+
+## El invitado elige sus intereses, y si se registra, van a su perfil (2026-09-04)
+
+**Un invitado veía siempre la misma muestra fija (seis categorías, las mismas
+para todo el mundo), y si se registraba el onboarding le preguntaba desde
+cero.** Ahora, cuando la primera tarjeta está en pantalla (y 900 ms después,
+para no pisar la llegada del feed), aparece una vez la pregunta «¿Qué te
+interesa?» (`GuestInterestsPrompt`): las once áreas como chips, «Ahora no» a
+un toque, y la respuesta rearma el feed de invitado en el acto
+(`buildGuestFeedPlan`: arXiv, OpenAlex, PubMed y las fuentes de dominio
+preguntan por esas áreas, con los mismos topes por fuente que el feed
+logueado y reparto round-robin entre áreas). El feed se vacía y vuelve con el
+velo del átomo («reuniendo»), no se intercambia bajo el pulgar. «Ahora no»
+se recuerda y la pregunta no vuelve sola; el chip de la cabecera («3 áreas»)
+la reabre. Con el banner de analítica se turnan: espera a que esta cierre. La
+respuesta vive en `papertok_guestInterests`, la única clave sin uid a
+propósito (no hay uid), y es un puente: al registrarse, el onboarding abre en
+el recibo con esas áreas y todas sus categorías preseleccionadas,
+`completeOnboarding` las escribe en `users/{uid}.preferences` y borra la
+copia local; una cuenta que ya tenía intereses la descarta al cargar, para
+que nunca siembre la siguiente cuenta nueva del mismo dispositivo. Evento
+`guest_interests` (set / skip / clear, nº de áreas). Tests: `guestInterests`,
+`guestFeedPlan`, y dos SOURCE en `OnboardingFlow.test.js` que atan las tres
+piezas.
+
 ## Abrir un autor (o un tema, un proyecto, una institución) sin glitch, y el feed más fluido en móvil (2026-09-04)
 
 **Cuatro cosas hacían glitch al tocar un autor desde una tarjeta, medidas en

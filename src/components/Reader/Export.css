@@ -7,22 +7,20 @@
    and real marks at 3px.
    ============================================ */
 
+/* The popup of a Base UI Popover whose trigger is the download button
+   (PaperReader.jsx): the positioner puts it above the button and keeps it on
+   the page, `ui/popover` fades and scales it in from the edge it rises out
+   of — so this rule is the card's box and nothing about where it goes. */
 .rd-export {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 108px;
-  margin-inline: auto;
   width: 720px;
   max-width: calc(100vw - var(--space-6));
-  z-index: 12055;
+  padding: 0;
+  font-size: inherit;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-xl);
   background: var(--bg-card);
   box-shadow: var(--shadow-lg);
   overflow: hidden;
-  /* It rises out of the panel, not out of the middle of the screen. */
-  transform-origin: bottom center;
 }
 
 .rd-export-head {
@@ -84,6 +82,9 @@
   padding: 0 var(--space-2) 4px;
 }
 
+/* Each option is a `ui/label` wrapping a `ui/checkbox`: the whole row is the
+   target, the box is the control. `data-disabled` is set on the row by the
+   component when there is nothing of that kind to include. */
 .rd-export-option {
   display: flex;
   align-items: flex-start;
@@ -93,33 +94,32 @@
   border: none;
   border-radius: var(--radius-md);
   background: transparent;
+  font-weight: var(--fw-regular);
+  line-height: normal;
   text-align: left;
   cursor: pointer;
   transition: background var(--transition-fast);
 }
 
-.rd-export-option:disabled { cursor: not-allowed; }
-.rd-export-option:disabled .rd-export-option-label { color: var(--text-tertiary); }
+.rd-export-option[data-disabled] { cursor: not-allowed; }
+.rd-export-option[data-disabled] .rd-export-option-label { color: var(--text-tertiary); }
 
 @media (hover: hover) and (pointer: fine) {
-  .rd-export-option:not(:disabled):hover { background: var(--bg-secondary); }
+  .rd-export-option:not([data-disabled]):hover { background: var(--bg-secondary); }
 }
 
 .rd-export-box {
   flex: 0 0 auto;
-  display: grid;
-  place-items: center;
   width: 15px;
   height: 15px;
   margin-top: 1px;
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-sm);
   background: var(--bg-card);
-  color: transparent;
   transition: background var(--transition-fast), border-color var(--transition-fast);
 }
 
-.rd-export-box[data-on] {
+.rd-export-box[data-checked] {
   border-color: var(--border-ink);
   background: var(--accent-primary);
   color: var(--text-inverse);
@@ -174,13 +174,15 @@
   border-left: 1px solid var(--border-default);
 }
 
-.rd-export-format-chip[data-on] {
+/* The chips are the items of a `ui/radio-group`, rendered as buttons; the
+   chosen one is Base UI's `data-checked`. */
+.rd-export-format-chip[data-checked] {
   background: var(--accent-primary);
   color: var(--text-inverse);
 }
 
 @media (hover: hover) and (pointer: fine) {
-  .rd-export-format-chip:not([data-on]):hover {
+  .rd-export-format-chip:not([data-checked]):hover {
     background: var(--bg-secondary);
     color: var(--text-primary);
   }
@@ -389,18 +391,10 @@
   .rd-export-go:not(:disabled):hover { background: var(--accent-primary-hover); }
 }
 
-/* ── Narrow: the card becomes the sheet the annotations already use ── */
+/* ── Narrow: the card takes the width of the page, still above its button ── */
 @media (max-width: 780px) {
   .rd-export {
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: auto;
-    max-width: none;
-    border: none;
-    border-top: 1px solid var(--border-default);
-    border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
-    box-shadow: 0 -8px 24px rgba(17, 19, 24, 0.08);
+    width: calc(100vw - var(--space-6));
   }
 
   /* No room for a page beside the choices, and the choices are the decision. */

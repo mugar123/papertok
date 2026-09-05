@@ -5,14 +5,50 @@
    other two were measured against. Edge to edge and opaque: no dimmed backdrop,
    no radius, no shadow — the reader has gone somewhere, rather than had a
    window opened over where they were.
+
+   The popup is a Base UI Dialog (ui/dialog.jsx), which arrives centred with
+   a hairline and a shadow: everything below that undoes that is the takeover
+   claiming the whole viewport. The z-index stays the one the takeover has
+   always had, so everything that opens over it (the reader, the sheets, the
+   PDF) keeps its place above.
    ============================================ */
 
 .paper-overlay {
   position: fixed;
   inset: 0;
   z-index: var(--z-overlay);
+  width: auto;
+  max-width: none;
+  translate: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
   overflow: hidden;
   background: var(--bg-primary);
+}
+
+/* The takeover is opaque, so the primitive's scrim has nothing to show; it
+   sits just under the popup and draws nothing. */
+.paper-overlay-scrim {
+  z-index: calc(var(--z-overlay) - 1);
+  background: transparent;
+}
+
+.paper-overlay-scrim[data-open],
+.paper-overlay-scrim[data-closed] {
+  animation: none;
+}
+
+/* The frame fades and the surface drops into place under it; leaving is the
+   same trip back, shorter. The primitive waits for the popup's own animation
+   (the fade) before unmounting, so the surface's leave is timed inside it. */
+.paper-overlay[data-open] {
+  animation: fadeIn 0.2s ease-out;
+}
+
+.paper-overlay[data-closed] {
+  animation: fadeOut 0.2s ease-out forwards;
+  pointer-events: none;
 }
 
 .paper-overlay-surface {
@@ -21,6 +57,24 @@
   overflow: hidden;
   background: var(--bg-secondary);
   transform-origin: 50% 55%;
+}
+
+.paper-overlay[data-open] .paper-overlay-surface {
+  animation: paperOverlaySurfaceIn 0.36s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.paper-overlay[data-closed] .paper-overlay-surface {
+  animation: paperOverlaySurfaceOut 0.18s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+
+@keyframes paperOverlaySurfaceIn {
+  from { opacity: 0; transform: translateY(26px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes paperOverlaySurfaceOut {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(18px) scale(0.99); }
 }
 
 /* Above the card, and clear of the notch. */
@@ -41,4 +95,13 @@
    the next paper. In here there is no next paper. */
 .paper-overlay-content.hide-scroll-hint .pc-scroll-hint {
   display: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .paper-overlay[data-open],
+  .paper-overlay[data-closed],
+  .paper-overlay[data-open] .paper-overlay-surface,
+  .paper-overlay[data-closed] .paper-overlay-surface {
+    animation: none;
+  }
 }

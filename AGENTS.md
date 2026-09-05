@@ -63,7 +63,9 @@ reviewing, or modifying UI. Non-negotiable core, summarized:
    semantics cannot express the truth.
 3. Every function must work with keyboard alone: no mouse-only, drag-only, or
    gesture-only paths. Dialogs manage focus (trap, Escape, restore) — reuse
-   `useDialogFocus` or native `<dialog>`; do not hand-roll focus traps.
+   `Dialog` / `AlertDialog` / `Sheet` / `Drawer` from `src/components/ui/` (shadcn on
+   Base UI — the primitive owns the trap, Escape, restore and nesting); do not
+   hand-roll focus traps or overlays.
 4. Visible focus always; never `outline: none` without an equivalent visible indicator.
 5. Contrast: 4.5:1 normal text, 3:1 large text and UI components. Never color as the
    only signal. Respect `prefers-reduced-motion`. Pointer targets ≥ 24×24 CSS px.

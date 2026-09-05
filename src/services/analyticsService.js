@@ -48,6 +48,10 @@ export const PRODUCT_ANALYTICS_EVENTS = Object.freeze([
   // `select_content`, which is GA4's name for a *click*, so an impression
   // arrived counted as one and the card looked like it converted every viewer.
   'guest_demo_end',
+  // The interests prompt a guest meets once the sample feed is on screen.
+  // `set` is an answer, `skip` a "not now", `clear` a pick emptied out from
+  // the header chip; `areas` is how many areas the answer holds.
+  'guest_interests',
 ]);
 
 const ANALYTICS_CONSENT_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
@@ -111,6 +115,7 @@ const CATEGORIES = Object.freeze({
   destination: new Set(['publisher', 'pdf', 'doi', 'arxiv', 'other']),
   entity_type: new Set(['author', 'institution', 'project', 'topic']),
   entry_point: new Set(['home', 'login', 'onboarding', 'shared_link', 'other']),
+  guest_interests_action: new Set(['set', 'skip', 'clear']),
   language: new Set(['en', 'es']),
   method: new Set(['google', 'email', 'link', 'native', 'clipboard', 'other']),
   newsletter_action: new Set(['subscribe', 'unsubscribe']),
@@ -154,6 +159,7 @@ const EVENT_PARAMETER_SCHEMAS = Object.freeze({
   // Mirrors `guest_demo_start`'s shape so the two ends of the run can be read
   // as one funnel; `position` is how many papers were behind the reader.
   guest_demo_end: { position: 'boundedNumber', language: 'language' },
+  guest_interests: { action: 'guest_interests_action', areas: 'boundedNumber', language: 'language' },
 });
 
 let acquisitionTrackedInMemory = false;

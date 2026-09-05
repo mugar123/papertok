@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchPapers } from '../services/arxivService.js';
 import { OpenAlexAdapter } from '../services/adapters/OpenAlexAdapter.js';
 import { PubmedAdapter } from '../services/adapters/PubmedAdapter.js';
 import { PaperBuilder } from '../services/PaperBuilder.js';
 import { fetchDomainPapers } from '../services/domainSourceService.js';
 import { settleSourcesForFirstPaint, fulfilledPaperLists } from '../utils/asyncTiming.js';
-import { GUEST_CATEGORIES, buildGuestDiscoveryQuery } from '../utils/guestFeedPlan.js';
+import { buildGuestFeedPlan } from '../utils/guestFeedPlan.js';
 import { enrichPapersBatch } from '../services/openAlexService.js';
 import { enrichPubmedIds, mergeEuropePmcEnrichment } from '../services/europePmcService.js';
 import {
@@ -20,26 +20,33 @@ const GUEST_EARLY_PAINT_COUNT = 4;
 // 5.2 s, which no realistic budget saves. Waiting 5 s for it bought nothing.
 const GUEST_SOURCE_BUDGET_MS = 4_000;
 
-function startGuestCandidateRequests({ refresh = false } = {}) {
-  const query = buildGuestDiscoveryQuery();
+// A source the plan has nothing for is not asked at all, rather than asked for
+// nothing: an empty arXiv list returns [] on its own, but a PubMed search for
+// '' would be a real request for whatever PubMed makes of an empty string.
+function startGuestCandidateRequests(plan, { refresh = false } = {}) {
   const openAlex = new OpenAlexAdapter();
-  const pubmed = new PubmedAdapter();
-  return [
-    fetchPapers(
-      GUEST_CATEGORIES,
-      0,
-      GUEST_PAGE_SIZE,
-      'recent',
-      'submittedDate',
-      { forceRefresh: refresh },
-    ),
-    openAlex.search(query, 1, { internalCategories: GUEST_CATEGORIES })
+  const requests = [
+    plan.arxivCategories.length > 0
+      ? fetchPapers(
+        plan.arxivCategories,
+        0,
+        GUEST_PAGE_SIZE,
+        'recent',
+        'submittedDate',
+        { forceRefresh: refresh },
+      )
+      : Promise.resolve([]),
+    openAlex.search(plan.discoveryQuery, 1, { internalCategories: plan.categories })
       .then(result => result.papers),
-    pubmed.search('neuroscience OR bioinformatics', 1, {
-      internalCategories: ['bio.neuro', 'bio.comp'],
-    }).then(result => result.papers),
-    fetchDomainPapers(GUEST_CATEGORIES, 1, GUEST_PAGE_SIZE, 'recent'),
+    fetchDomainPapers(plan.categories, 1, GUEST_PAGE_SIZE, 'recent'),
   ];
+  if (plan.pubmedQuery) {
+    const pubmed = new PubmedAdapter();
+    requests.push(pubmed.search(plan.pubmedQuery, 1, {
+      internalCategories: plan.pubmedCategories,
+    }).then(result => result.papers));
+  }
+  return requests;
 }
 
 function dedupePapers(papers) {
@@ -63,14 +70,25 @@ function mergeKeepingShownOrder(shown, incoming, pageSize) {
   return [...shown, ...extra].slice(0, pageSize);
 }
 
-export function useGuestFeed() {
+/**
+ * The guest feed, built for `areas` — the interests a visitor picked, or the
+ * fixed sample when they picked none. The plan is derived here so the caller
+ * only holds the answer; a re-render with the same areas is the same plan and
+ * loads nothing (`plan.key`).
+ */
+export function useGuestFeed({ areas = [] } = {}) {
   const [papers, setPapers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const requestIdRef = useRef(0);
+  const plan = useMemo(() => buildGuestFeedPlan(areas), [areas]);
+  const planKey = plan.key;
 
-  const load = useCallback(async ({ refresh = false } = {}) => {
+  // `refresh` is the reader's pull-to-refresh: the shown papers stay until
+  // the new ones land, and arXiv is asked past its cache. `forceRefresh` is
+  // what that second part is called at the source.
+  const load = useCallback(async (requestedPlan, { refresh = false, forceRefresh = refresh } = {}) => {
     const requestId = ++requestIdRef.current;
     if (refresh) setIsRefreshing(true);
     else setLoading(true);
@@ -78,7 +96,7 @@ export function useGuestFeed() {
 
     try {
       const { first, all } = settleSourcesForFirstPaint(
-        startGuestCandidateRequests({ refresh }),
+        startGuestCandidateRequests(requestedPlan, { refresh: forceRefresh }),
         GUEST_SOURCE_BUDGET_MS,
         (papers) => PaperBuilder.deduplicate(papers).length >= GUEST_EARLY_PAINT_COUNT,
       );
@@ -146,16 +164,54 @@ export function useGuestFeed() {
     }
   }, []);
 
+  // The first load, and one more each time the plan changes. A changed plan
+  // is a rebuilt feed, not a refresh: the papers on screen were chosen for
+  // interests the guest just replaced, so they go, and the atom veil covers
+  // the wait ("gathering" — FeedContainer reads an emptied feed that is
+  // refreshing as exactly that). Left in place, the old cards would have sat
+  // there for the two seconds the sources take and then swapped under the
+  // reader's thumb.
+  // The reset happens in render, not in the effect: between the plan
+  // changing and an effect emptying the state there is one committed frame,
+  // and in that frame the page would report "ready" with the old cards and
+  // the consent banner would mount for it, only to leave again. Storing the
+  // key the papers belong to and comparing it here is React's own pattern
+  // for state that depends on the previous render.
+  const [shownKey, setShownKey] = useState(planKey);
+  if (shownKey !== planKey) {
+    setShownKey(planKey);
+    setPapers([]);
+    setIsRefreshing(true);
+  }
+  // Keyed by the plan, not by the array it came from: a caller re-rendering
+  // with an equal list is the same plan, and must not start a load that
+  // would show up as a skeleton under the cards already on screen.
+  const loadedKeyRef = useRef(null);
   useEffect(() => {
+    const previousKey = loadedKeyRef.current;
+    if (previousKey === plan.key) return undefined;
     let active = true;
+    let started = false;
+    loadedKeyRef.current = plan.key;
     queueMicrotask(() => {
-      if (active) load();
+      if (!active) return;
+      started = true;
+      load(plan, previousKey !== null ? { refresh: true, forceRefresh: false } : {});
     });
     return () => {
       active = false;
-      requestIdRef.current += 1;
+      // A load cancelled before it began (StrictMode's mount, unmount, mount)
+      // has not loaded anything: the key goes back, so the effect's second
+      // run is not turned away as "already loaded" and the feed then never
+      // asks a single source.
+      if (!started) loadedKeyRef.current = previousKey;
     };
-  }, [load]);
+  }, [load, plan]);
+
+  // Anything still in flight when the page unmounts is dropped, not applied.
+  useEffect(() => () => {
+    requestIdRef.current += 1;
+  }, []);
 
   return {
     papers,
@@ -163,6 +219,7 @@ export function useGuestFeed() {
     error,
     hasMore: false,
     isRefreshing,
-    refresh: () => load({ refresh: true }),
+    areas: plan.areas,
+    refresh: () => load(plan, { refresh: true }),
   };
 }

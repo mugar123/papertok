@@ -1,0 +1,215 @@
+/* ============================================
+   GuestInterestsPrompt — one question, after the first card
+
+   Drawn from the same parts as AuthPrompt (the ink scrim, the white sheet,
+   the serif headline) and the onboarding's category chips, so a guest who
+   later signs up meets the same vocabulary on the areas step. On a phone the
+   sheet docks to the bottom edge and takes the safe-area inset; from 640px
+   up it floats centred like the sign-in modal.
+   ============================================ */
+
+/* The scrim and the sheet are the Dialog primitive's backdrop and popup
+   (`overlayClassName` / `className`); the primitive centres the sheet and
+   plays its own enter/leave on `[data-open]`/`[data-closed]`, so no motion
+   is spelled here. Stacking is DOM order under <body>: a guest who taps
+   "Sign in" while this is open gets the sign-in dialog on top because it
+   is portaled later. No backdrop-filter, for the same reason AuthPrompt
+   gives: the opacity of this element is animated, and a blur under an
+   animated opacity is re-resolved every frame. */
+.gip-backdrop {
+  background: rgba(17, 19, 24, 0.5);
+}
+
+/* On a phone the sheet docks to the bottom edge: the primitive's centring
+   (`top: 50%` and a `translate` of -50% on both axes) is overridden here and
+   restored from 640px up. */
+.gip {
+  top: auto;
+  bottom: 0;
+  translate: -50% 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: none;
+  max-height: calc(100dvh - 24px);
+  padding: var(--space-6) var(--space-5) calc(var(--space-4) + var(--inset-bottom));
+  border: 1px solid var(--border-default);
+  border-bottom: 0;
+  border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-xl);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* ── Copy ── */
+.gip-kicker {
+  margin: 0 0 var(--space-2);
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.gip-title {
+  margin: 0 0 var(--space-2);
+  padding-right: var(--space-8);
+  font-family: var(--font-serif);
+  font-size: 1.6rem;
+  font-weight: 600;
+  line-height: 1.14;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.gip-lede {
+  margin: 0 0 var(--space-5);
+  max-width: 48ch;
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+}
+
+/* ── The areas ── */
+.gip-areas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px;
+  margin-bottom: var(--space-5);
+}
+
+/* The area is the shared Toggle (`ui/toggle.jsx`) wearing this class; its
+   utilities sit in the `utilities` layer, so these unlayered rules win.
+   `height: auto` and `white-space: normal` undo the toggle's fixed row
+   height and nowrap: a long area name wraps inside its 150px column. */
+.gip-area {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: auto;
+  min-height: 44px;
+  white-space: normal;
+  padding: 0 10px 0 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: var(--fw-medium);
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.gip-area-icon {
+  display: grid;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--area-accent, var(--text-secondary));
+  background: color-mix(in srgb, var(--area-accent, var(--text-secondary)) 10%, transparent);
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.gip-area-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* The tick is a box that fills, like the onboarding's area cards. */
+.gip-area-check {
+  display: grid;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: transparent;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.gip-area[data-pressed] {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+}
+
+.gip-area[data-pressed] .gip-area-icon {
+  color: var(--text-inverse);
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.gip-area[data-pressed] .gip-area-check {
+  border-color: var(--brand-yellow);
+  background: var(--brand-yellow);
+  color: var(--text-on-brand);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .gip-area:not([data-pressed]):hover {
+    border-color: var(--border-default);
+    background: var(--bg-sunken);
+    color: var(--text-primary);
+  }
+}
+
+/* ── Foot ── */
+.gip-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--border-subtle);
+}
+
+.gip-tally {
+  margin: 0;
+  font: var(--mono-label);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+
+.gip-tally.is-on {
+  color: var(--text-primary);
+}
+
+.gip-actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.gip-submit {
+  gap: 6px;
+}
+
+@media (min-width: 640px) {
+  .gip {
+    top: 50%;
+    bottom: auto;
+    translate: -50% -50%;
+    width: min(600px, calc(100% - 2 * var(--space-5)));
+    padding: var(--space-8) var(--space-7) var(--space-5);
+    border-bottom: 1px solid var(--border-default);
+    border-radius: var(--radius-2xl);
+  }
+
+  .gip-title {
+    font-size: 1.85rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .gip-area,
+  .gip-area-icon,
+  .gip-area-check {
+    transition: none;
+  }
+}

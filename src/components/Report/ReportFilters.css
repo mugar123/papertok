@@ -52,7 +52,8 @@
   transition: color var(--transition-fast), border-color var(--transition-fast);
 }
 
-.rf-toggle.is-open {
+/* `data-panel-open` is what Base UI writes on the Collapsible's trigger. */
+.rf-toggle[data-panel-open] {
   color: var(--text-primary);
   border-bottom-color: var(--border-default);
 }
@@ -142,6 +143,49 @@
   font-weight: var(--fw-medium);
 }
 
+/* ── The fold ──
+   A Base UI Collapsible panel. The primitive measures its content into
+   `--collapsible-panel-height` and marks the first frame of the entrance with
+   `data-starting-style` and the whole exit with `data-ending-style`; it keeps
+   the panel mounted until the exit transition ends. The two curves are not
+   the same movement played backwards: the entrance is an expo-out, nearly all
+   of its speed spent in the first frames, which is what a panel should do —
+   arrive fast, settle gently. Going out that reads as a cliff and then a
+   crawl (measured on the country section: 155 of its 579 pixels went in one
+   17ms frame and the last 8 took 133ms), so closing gets a curve eased at
+   both ends, and the content fades before the box does so the last frames of
+   the fold are empty rather than a strip of clipped text. */
+.rf-collapse {
+  height: var(--collapsible-panel-height);
+  overflow: hidden;
+  transition:
+    height 0.32s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.22s ease;
+}
+
+.rf-collapse[hidden]:not([hidden='until-found']) {
+  display: none;
+}
+
+.rf-collapse[data-starting-style],
+.rf-collapse[data-ending-style] {
+  height: 0;
+  opacity: 0;
+}
+
+.rf-collapse[data-ending-style] {
+  transition:
+    height 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.16s ease-in;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rf-collapse,
+  .rf-collapse[data-ending-style] {
+    transition: none;
+  }
+}
+
 /* ── The panel ── */
 .rf-panel {
   display: flex;
@@ -222,17 +266,27 @@
   line-height: var(--lh-normal);
 }
 
-/* ── Discipline chips ── */
+/* ── Discipline chips ──
+   A ui ToggleGroup (`multiple`, outline) whose items are the chips. These
+   rules are unlayered, so they win over the primitive's utilities: the group
+   draws no track, and the chip keeps its own measure and its field colour. */
 .rf-pills {
   display: flex;
   flex-wrap: wrap;
+  align-items: stretch;
   gap: var(--space-2);
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: none;
 }
 
 .rf-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  height: auto;
   min-height: 34px;
   padding: 6px 12px;
   border: 1px solid var(--border-default);
@@ -256,14 +310,14 @@
 /* Selection is marked with the discipline's own field colour, derived from it
    rather than hardcoded — the chip is the only place on this row where colour
    carries data. */
-.rf-pill.active {
+.rf-pill[data-pressed] {
   border-color: color-mix(in srgb, var(--rf-pill-accent, var(--gradient-brand)) 40%, var(--border-default));
   background: color-mix(in srgb, var(--rf-pill-accent, var(--gradient-brand)) 8%, var(--bg-card));
   color: var(--text-primary);
   font-weight: var(--fw-semibold);
 }
 
-.rf-pill.active svg {
+.rf-pill[data-pressed] svg {
   color: var(--rf-pill-accent, var(--gradient-brand));
 }
 
@@ -404,12 +458,14 @@
   gap: 6px;
 }
 
+/* The quick picks are ui Toggles; the other two are plain chips. */
 .rf-quick-country,
 .rf-country-pill,
 .rf-active-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  height: auto;
   min-height: 32px;
   padding: 5px 10px;
   border: 1px solid var(--border-default);
@@ -434,7 +490,7 @@
   }
 }
 
-.rf-quick-country.selected,
+.rf-quick-country[data-pressed],
 .rf-country-pill,
 .rf-active-chip {
   border-color: var(--border-ink);

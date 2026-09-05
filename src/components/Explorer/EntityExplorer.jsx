@@ -22,8 +22,16 @@ import { useHeightSettle } from '../../hooks/useHeightSettle';
 import { CATEGORIES } from '../../data/categories';
 import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.js';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
+import { Menu as MenuPrimitive } from '@base-ui/react/menu';
 import { Button } from '../ui/button.jsx';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from '../ui/dropdown-menu.jsx';
+import { Input } from '../ui/input.jsx';
+import { Label } from '../ui/label.jsx';
+import { Sheet, SheetClose, SheetContent, SheetTitle } from '../ui/sheet.jsx';
+import { Switch } from '../ui/switch.jsx';
+import { Toggle } from '../ui/toggle.jsx';
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useFeed } from '../../context/FeedContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -282,7 +290,6 @@ export default function EntityExplorer({
   const [expandedSummary, setExpandedSummary] = useState(false);
   const [participantsExpanded, setParticipantsExpanded] = useState(false);
   const [isWikiDescriptionExpanded, setIsWikiDescriptionExpanded] = useState(false);
-  const [isProjectLinksMenuOpen, setIsProjectLinksMenuOpen] = useState(false);
   const [projectSummaryExpandedHeight, setProjectSummaryExpandedHeight] = useState(0);
   const [wikiDescriptionExpandedHeight, setWikiDescriptionExpandedHeight] = useState(0);
   const [isProjectSummaryExpandable, setIsProjectSummaryExpandable] = useState(false);
@@ -301,10 +308,6 @@ export default function EntityExplorer({
     peerReviewed: false,
     dateRange: ''
   });
-  // Same shared dialog contract as the app's other overlays: initial focus,
-  // a contained Tab cycle, Escape, and returning focus to the filter button
-  // that opened the drawer.
-  const filterDrawerRef = useDialogFocus(showFilters, () => setShowFilters(false));
 
   const [entityAuthors, setEntityAuthors] = useState([]);
   const [isLoadingAuthors, setIsLoadingAuthors] = useState(false);
@@ -315,7 +318,6 @@ export default function EntityExplorer({
   const [hasMoreAuthors, setHasMoreAuthors] = useState(false);
   const observerAuthorsRef = useRef(null);
   const viewedEntityRef = useRef('');
-  const projectLinksMenuRef = useRef(null);
   const projectSummaryTextRef = useRef(null);
   const wikiDescriptionTextRef = useRef(null);
   const localizedTopicEntity = useMemo(
@@ -504,24 +506,6 @@ export default function EntityExplorer({
     };
   }, [measureExpandableDescriptions]);
 
-  useEffect(() => {
-    if (!isProjectLinksMenuOpen) return undefined;
-
-    const closeMenu = (event) => {
-      if (!projectLinksMenuRef.current?.contains(event.target)) setIsProjectLinksMenuOpen(false);
-    };
-    const closeOnEscape = (event) => {
-      if (event.key === 'Escape') setIsProjectLinksMenuOpen(false);
-    };
-
-    document.addEventListener('pointerdown', closeMenu);
-    document.addEventListener('keydown', closeOnEscape);
-    return () => {
-      document.removeEventListener('pointerdown', closeMenu);
-      document.removeEventListener('keydown', closeOnEscape);
-    };
-  }, [isProjectLinksMenuOpen]);
-
   const followEntity = useMemo(() => {
     if (!entity || !['author', 'institution', 'project', 'concept', 'topic'].includes(type)) return null;
     const followType = type === 'concept' ? 'topic' : type;
@@ -600,7 +584,6 @@ export default function EntityExplorer({
       setExperienceToggled(false);
       setExpandedSummary(false);
       setIsWikiDescriptionExpanded(false);
-      setIsProjectLinksMenuOpen(false);
       setIsProjectSummaryExpandable(false);
       setIsWikiDescriptionExpandable(false);
       setResolvingParticipant(null);
@@ -1604,67 +1587,60 @@ export default function EntityExplorer({
                 </p>
               )}
               {type === 'project' && (entity.openaireId || safeProjectWebsiteUrl) && (
-                <div className="project-links-menu" ref={projectLinksMenuRef}>
-                  <button
-                    type="button"
-                    className={`project-links-trigger ${isProjectLinksMenuOpen ? 'is-open' : ''}`}
-                    onClick={() => setIsProjectLinksMenuOpen(!isProjectLinksMenuOpen)}
-                    aria-expanded={isProjectLinksMenuOpen}
-                    aria-haspopup="menu"
-                  >
-                    <Globe size={15} />
-                    <span>{isEnglish ? 'View project' : 'Ver proyecto'}</span>
-                    <ChevronDown size={15} aria-hidden="true" />
-                  </button>
-                  <AnimatePresence>
-                    {isProjectLinksMenuOpen && (
-                      <motion.div
-                        className="project-links-dropdown"
-                        initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.98 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.98 }}
-                        transition={prefersReducedMotion
-                          ? { duration: 0 }
-                          : { duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
-                        role="menu"
-                      >
-                        {entity.openaireId && (
-                          <a
-                            className="project-links-option"
-                            href={`https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            onClick={() => setIsProjectLinksMenuOpen(false)}
-                            role="menuitem"
-                          >
-                            <span className="project-links-option-icon"><Building2 size={16} /></span>
-                            <span>
-                              <strong>{isEnglish ? 'OpenAIRE record' : 'Ficha en OpenAIRE'}</strong>
-                              <small>{isEnglish ? 'Data, publications, and participants' : 'Datos, publicaciones y participantes'}</small>
-                            </span>
-                            <ExternalLink size={14} />
-                          </a>
-                        )}
-                        {safeProjectWebsiteUrl && (
-                          <a
-                            className="project-links-option"
-                            href={safeProjectWebsiteUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            onClick={() => setIsProjectLinksMenuOpen(false)}
-                            role="menuitem"
-                          >
-                            <span className="project-links-option-icon"><Globe size={16} /></span>
-                            <span>
-                              <strong>{isEnglish ? 'Official website' : 'Sitio oficial'}</strong>
-                              <small>{isEnglish ? 'The project’s own website' : 'Web del propio proyecto'}</small>
-                            </span>
-                            <ExternalLink size={14} />
-                          </a>
-                        )}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                <div className="project-links-menu">
+                  {/* A menu of links: Base UI's Menu gives it `role="menu"`, arrow
+                      keys, Escape and outside-press; the items are `LinkItem`s
+                      (`<a role="menuitem">`), which the ui dropdown does not wrap
+                      yet, so the part is taken from the primitive. `closeOnClick`
+                      because the links open a new tab and the menu has no reason
+                      to stay behind. */}
+                  <DropdownMenu>
+                    <DropdownMenuTrigger render={<button type="button" className="project-links-trigger" />}>
+                      <Globe size={15} />
+                      <span>{isEnglish ? 'View project' : 'Ver proyecto'}</span>
+                      <ChevronDown size={15} aria-hidden="true" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent
+                      className="project-links-dropdown"
+                      align="start"
+                      side="bottom"
+                      sideOffset={8}
+                      aria-label={isEnglish ? 'Project links' : 'Enlaces del proyecto'}
+                    >
+                      {entity.openaireId && (
+                        <MenuPrimitive.LinkItem
+                          className="project-links-option"
+                          href={`https://explore.openaire.eu/search/project?projectId=${encodeURIComponent(entity.openaireId)}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          closeOnClick
+                        >
+                          <span className="project-links-option-icon"><Building2 size={16} /></span>
+                          <span>
+                            <strong>{isEnglish ? 'OpenAIRE record' : 'Ficha en OpenAIRE'}</strong>
+                            <small>{isEnglish ? 'Data, publications, and participants' : 'Datos, publicaciones y participantes'}</small>
+                          </span>
+                          <ExternalLink size={14} />
+                        </MenuPrimitive.LinkItem>
+                      )}
+                      {safeProjectWebsiteUrl && (
+                        <MenuPrimitive.LinkItem
+                          className="project-links-option"
+                          href={safeProjectWebsiteUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          closeOnClick
+                        >
+                          <span className="project-links-option-icon"><Globe size={16} /></span>
+                          <span>
+                            <strong>{isEnglish ? 'Official website' : 'Sitio oficial'}</strong>
+                            <small>{isEnglish ? 'The project’s own website' : 'Web del propio proyecto'}</small>
+                          </span>
+                          <ExternalLink size={14} />
+                        </MenuPrimitive.LinkItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
               )}
               {topConcepts.length > 0 && (
@@ -1744,18 +1720,20 @@ export default function EntityExplorer({
             )}
           </div>
           {followEntity && (
-            <Button
-              variant={entityIsFollowing ? 'outline' : 'default'}
-              size="sm"
+            // A pressed button, not a command: ink while it invites, a bordered
+            // chip once the relationship exists (`.entity-follow-btn` in the
+            // stylesheet keys the two looks off the `data-pressed` Base UI sets).
+            <Toggle
+              variant="outline"
               className="entity-follow-btn"
+              pressed={entityIsFollowing}
               onClick={handleFollow}
               disabled={entityFollowPending}
-              aria-pressed={entityIsFollowing}
             >
               {entityIsFollowing
                   ? <><Check size={14} /> <span>{isEnglish ? 'Following' : 'Siguiendo'}</span></>
                   : <span>{isEnglish ? 'Follow' : 'Seguir'}</span>}
-            </Button>
+            </Toggle>
           )}
           </div>
           </div>
@@ -2199,8 +2177,9 @@ export default function EntityExplorer({
         <div className="explorer-toolbar">
           <div className="explorer-search-box">
             <Search size={16} className="es-icon" />
-            <input 
-              type="text" 
+            <Input
+              type="text"
+              className="explorer-search-input"
               placeholder={isEnglish
                 ? `Search ${activeTab === 'papers' ? 'papers' : 'authors'} from ${type === 'institution' ? 'this institution' : type === 'concept' || type === 'topic' ? 'this topic' : type === 'project' ? 'this project' : 'this person'}...`
                 : `Buscar ${activeTab === 'papers' ? 'publicaciones' : 'autores'} de ${type === 'institution' ? 'esta universidad' : type === 'concept' || type === 'topic' ? 'este tema' : type === 'project' ? 'este proyecto' : 'esta persona'}...`}
@@ -2235,6 +2214,9 @@ export default function EntityExplorer({
           <>
 
             
+            {/* One tooltip provider over the list, so moving between verified
+                badges does not re-wait the delay on each. */}
+            <TooltipProvider>
             <div className="explorer-grid">
               {(!isLoadingPapers || isFetchingMore) && mountedPapers.map((paper, idx) => (
                 <div 
@@ -2276,9 +2258,20 @@ export default function EntityExplorer({
                   <h3 className="eli-title">
                     <ScientificText>{paper.title}</ScientificText>
                     {paper.isPeerReviewed && (
-                      <span className="pc-tooltip eli-verified" data-tooltip={isEnglish ? 'Published in a peer-reviewed journal' : 'Publicado en revista (revisado por pares)'}>
-                        <BadgeCheck size={16} />
-                      </span>
+                      // The name is on the badge itself (the row is the focus
+                      // stop, so the badge is not made focusable); the tooltip
+                      // spells it out for a pointer.
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={<span className="eli-verified" role="img" />}
+                          aria-label={isEnglish ? 'Published in a peer-reviewed journal' : 'Publicado en revista (revisado por pares)'}
+                        >
+                          <BadgeCheck size={16} aria-hidden="true" />
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {isEnglish ? 'Published in a peer-reviewed journal' : 'Publicado en revista (revisado por pares)'}
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </h3>
                   <p className="eli-authors">{(paper.authors || []).map(a => a.name || a).join(', ')}</p>
@@ -2325,7 +2318,8 @@ export default function EntityExplorer({
                 </div>
               )}
             </div>
-            
+            </TooltipProvider>
+
             {!isLoadingPapers && filteredPapers.length === 0 && (
               <div className="explorer-empty">
                 {papersError ? (
@@ -2417,99 +2411,106 @@ export default function EntityExplorer({
         )}
       </div>
 
-      {/* Filter Drawer */}
-      <AnimatePresence>
-        {showFilters && (
-          <>
-            <motion.div 
-              className="ee-filter-backdrop" 
-              onClick={() => setShowFilters(false)} 
-              initial={{opacity:0}} 
-              animate={{opacity:1}} 
-              exit={{opacity:0}} 
-            />
-            <motion.div
-              ref={filterDrawerRef}
-              className="ee-filter-drawer"
-              initial={prefersReducedMotion ? { opacity: 0 } : { x: '100%' }}
-              animate={prefersReducedMotion ? { opacity: 1 } : { x: 0 }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { x: '100%' }}
-              transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', damping: 25, stiffness: 200 }}
-              role="dialog"
-              aria-modal="true"
-              aria-labelledby="entity-filter-title"
-              tabIndex={-1}
-            >
+      {/* Filter drawer — a Sheet: a positioned modal Dialog (focus trap,
+          Escape, restore, `aria-modal`) that slides in from the right and
+          waits for its own exit before unmounting. The title names it. */}
+      <Sheet open={showFilters} onOpenChange={setShowFilters}>
+        <SheetContent
+          side="right"
+          className="ee-filter-drawer"
+          overlayClassName="ee-filter-backdrop"
+          showClose={false}
+        >
               <div className="ee-filter-header">
-                <h3 id="entity-filter-title"><SlidersHorizontal size={18}/> {isEnglish ? 'Advanced filters' : 'Filtros avanzados'}</h3>
-                <Button variant="ghost" size="icon" data-dialog-initial-focus onClick={() => setShowFilters(false)} aria-label={isEnglish ? 'Close filters' : 'Cerrar filtros'} title={isEnglish ? 'Close' : 'Cerrar'}><X size={20}/></Button>
+                <SheetTitle render={<h3 />}><SlidersHorizontal size={18}/> {isEnglish ? 'Advanced filters' : 'Filtros avanzados'}</SheetTitle>
+                <SheetClose
+                  render={<Button variant="ghost" size="icon" />}
+                  aria-label={isEnglish ? 'Close filters' : 'Cerrar filtros'}
+                  title={isEnglish ? 'Close' : 'Cerrar'}
+                >
+                  <X size={20}/>
+                </SheetClose>
               </div>
               <div className="ee-filter-body">
+                {/* Each row of chips is one choice, so each is a single-select
+                    ui ToggleGroup: Base UI writes `aria-pressed` on the chip
+                    that is on (the old `active` class said nothing to a screen
+                    reader) and moves between chips on the arrow keys. The
+                    group reports `[]` when the pressed chip is pressed again;
+                    "no choice" is not a state these have, so that is ignored.
+                    The open choices ("All", "Any date") are stored as '' and
+                    carried under a sentinel value here. */}
                 <div className="ee-filter-section">
                   <h4>{isEnglish ? 'Sort by' : 'Ordenar por'}</h4>
-                  <div className="ee-filter-chips">
-                    <button 
-                      className={`ee-filter-chip ${sortBy === 'cited_by_count:desc' ? 'active' : ''}`}
-                      onClick={() => setSortBy('cited_by_count:desc')}
-                    >
+                  <ToggleGroup
+                    variant="outline"
+                    className="ee-filter-chips"
+                    aria-label={isEnglish ? 'Sort by' : 'Ordenar por'}
+                    value={[sortBy]}
+                    onValueChange={([next]) => { if (next !== undefined) setSortBy(next); }}
+                  >
+                    <ToggleGroupItem value="cited_by_count:desc" className="ee-filter-chip">
                       {isEnglish ? 'Most cited' : 'Más citados'}
-                    </button>
-                    <button 
-                      className={`ee-filter-chip ${sortBy === 'publication_date:desc' ? 'active' : ''}`}
-                      onClick={() => setSortBy('publication_date:desc')}
-                    >
+                    </ToggleGroupItem>
+                    <ToggleGroupItem value="publication_date:desc" className="ee-filter-chip">
                       {isEnglish ? 'Most recent' : 'Más recientes'}
-                    </button>
-                  </div>
+                    </ToggleGroupItem>
+                  </ToggleGroup>
                 </div>
                 <div className="ee-filter-section">
                   <h4>{isEnglish ? 'Category (Area)' : 'Categoría (Área)'}</h4>
-                  <div className="ee-filter-chips">
-                    <button 
-                      className={`ee-filter-chip ${filters.category === '' ? 'active' : ''}`}
-                      onClick={() => setFilters({...filters, category: ''})}
-                    >
+                  <ToggleGroup
+                    variant="outline"
+                    className="ee-filter-chips"
+                    aria-label={isEnglish ? 'Category (Area)' : 'Categoría (Área)'}
+                    value={[filters.category || 'all']}
+                    onValueChange={([next]) => {
+                      if (next !== undefined) setFilters({ ...filters, category: next === 'all' ? '' : next });
+                    }}
+                  >
+                    <ToggleGroupItem value="all" className="ee-filter-chip">
                       {isEnglish ? 'All' : 'Todas'}
-                    </button>
+                    </ToggleGroupItem>
                     {Object.entries(CATEGORIES).map(([key, cat]) => (
-                      <button 
-                        key={key} 
-                        className={`ee-filter-chip ${filters.category === key ? 'active' : ''}`}
-                        onClick={() => setFilters({...filters, category: key})}
-                      >
+                      <ToggleGroupItem key={key} value={key} className="ee-filter-chip">
                         {isEnglish ? cat.labelEn : cat.label}
-                      </button>
+                      </ToggleGroupItem>
                     ))}
-                  </div>
+                  </ToggleGroup>
                 </div>
                 <div className="ee-filter-section">
                   <h4>{isEnglish ? 'Publication date' : 'Fecha de publicación'}</h4>
-                  <div className="ee-filter-chips">
-                    {['', 'last_year', 'last_5_years'].map(val => (
-                      <button 
-                        key={val}
-                        className={`ee-filter-chip ${filters.dateRange === val ? 'active' : ''}`}
-                        onClick={() => setFilters({...filters, dateRange: val})}
-                      >
-                        {val === ''
+                  <ToggleGroup
+                    variant="outline"
+                    className="ee-filter-chips"
+                    aria-label={isEnglish ? 'Publication date' : 'Fecha de publicación'}
+                    value={[filters.dateRange || 'any']}
+                    onValueChange={([next]) => {
+                      if (next !== undefined) setFilters({ ...filters, dateRange: next === 'any' ? '' : next });
+                    }}
+                  >
+                    {['any', 'last_year', 'last_5_years'].map(val => (
+                      <ToggleGroupItem key={val} value={val} className="ee-filter-chip">
+                        {val === 'any'
                           ? (isEnglish ? 'Any date' : 'Cualquier fecha')
                           : val === 'last_year'
                             ? (isEnglish ? 'Last year' : 'Último año')
                             : (isEnglish ? 'Last 5 years' : 'Últimos 5 años')}
-                      </button>
+                      </ToggleGroupItem>
                     ))}
-                  </div>
+                  </ToggleGroup>
                 </div>
                 <div className="ee-filter-section">
-                  <label className="ee-toggle-label">
-                    <input 
-                      type="checkbox" 
-                      checked={filters.peerReviewed} 
-                      onChange={e => setFilters({...filters, peerReviewed: e.target.checked})} 
+                  {/* An enclosing label: the Switch renders a span (`role="switch"`)
+                      with a hidden input, which is the pattern Base UI names for
+                      a wrapping label. */}
+                  <Label className="ee-toggle-label">
+                    <Switch
+                      checked={filters.peerReviewed}
+                      onCheckedChange={(checked) => setFilters({ ...filters, peerReviewed: checked })}
                     />
-                    <div className="ee-toggle-switch"></div>
                     {isEnglish ? 'Peer-reviewed only' : 'Solo revisados por pares'}
-                  </label>
+                  </Label>
                 </div>
               </div>
               <div className="ee-filter-footer">
@@ -2520,10 +2521,8 @@ export default function EntityExplorer({
                   {isEnglish ? 'Apply filters' : 'Aplicar filtros'}
                 </Button>
               </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+        </SheetContent>
+      </Sheet>
 
       {/* Paper Card Overlay — the shared takeover, so the explorer, search and
           Research all open a paper the same way. */}

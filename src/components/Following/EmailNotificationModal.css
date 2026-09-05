@@ -1,20 +1,18 @@
+/* The scrim and the sheet are the Dialog primitive's backdrop and popup
+   (`overlayClassName` / `className`): it centres the sheet, traps focus,
+   closes on Escape and the scrim, and plays its own enter/leave on
+   `[data-open]`/`[data-closed]`, so no motion is spelled here. No
+   `backdrop-filter`: the primitive fades this element's own opacity in and
+   out, and a blur under an animated opacity is re-resolved every frame —
+   the worst case for a mobile GPU. The dark veil alone reads as the
+   backdrop. */
 .email-notification-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  display: grid;
-  place-items: center;
-  padding: 20px;
-  /* No `backdrop-filter`: EmailNotificationModal.jsx fades this element's
-     own opacity in and out with framer-motion, and a blur under an
-     animated opacity is re-resolved every frame — the worst case for a
-     mobile GPU. The dark veil alone reads as the backdrop; its 10px blur
-     was invisible under it. */
   background: rgba(5, 5, 8, 0.72);
 }
 
 .email-notification-modal {
-  width: min(520px, 100%);
+  width: min(520px, calc(100% - 40px));
+  max-width: none;
   max-height: calc(100vh - 32px);
   max-height: calc(100dvh - 32px);
   overflow-y: auto;
@@ -24,12 +22,13 @@
   box-shadow: 0 24px 80px rgba(17, 19, 24, 0.12);
 }
 
+/* Two columns now: the X is the primitive's own, in the sheet's corner. */
 .email-notification-modal > header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: auto minmax(0, 1fr);
   gap: 13px;
   align-items: center;
-  padding: 22px;
+  padding: 22px 56px 22px 22px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -54,22 +53,6 @@
   margin: 0;
   color: var(--text-secondary);
   font-size: 13px;
-}
-
-.email-notification-close {
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 50%;
-  color: var(--text-secondary);
-  background: transparent;
-  cursor: pointer;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .email-notification-close:hover { color: var(--text-primary); background: var(--bg-secondary); }
 }
 
 .email-notification-body { padding: 20px 22px; }
@@ -100,49 +83,30 @@
   gap: 20px;
 }
 
-.email-notification-toggle-row { position: relative; cursor: pointer; }
+/* The name of each control is its <Label>, stacked title over hint; the
+   control itself is the shared Switch / Select, drawn by the primitive. */
+.email-notification-toggle-row > label,
+.email-notification-count > label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  min-width: 0;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  cursor: pointer;
+}
 .email-notification-toggle-row strong,
 .email-notification-toggle-row small,
 .email-notification-count strong,
 .email-notification-count small { display: block; }
 .email-notification-toggle-row strong,
-.email-notification-count strong { font-size: 14px; }
+.email-notification-count strong { font-size: 14px; font-weight: 700; }
 .email-notification-toggle-row small,
-.email-notification-count small { margin-top: 3px; color: var(--text-tertiary); font-size: 12px; }
-.email-notification-toggle-row input { position: absolute; opacity: 0; pointer-events: none; }
+.email-notification-count small { margin-top: 3px; color: var(--text-tertiary); font-size: 12px; font-weight: 400; }
 
-.email-notification-switch {
-  position: relative;
-  flex: 0 0 auto;
-  width: 42px;
-  height: 24px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-2xl);
-  background: var(--bg-secondary);
-  transition: background 180ms ease, border-color 180ms ease;
-}
-
-.email-notification-switch::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--text-secondary);
-  transition: transform 180ms ease, background 180ms ease;
-}
-
-.email-notification-toggle-row input:checked + .email-notification-switch {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary);
-}
-
-.email-notification-toggle-row input:checked + .email-notification-switch::after {
-  transform: translateX(18px);
-  background: var(--bg-card);
-}
+.email-notification-switch { flex: 0 0 auto; }
 
 .email-notification-options {
   margin-top: 22px;
@@ -173,21 +137,17 @@
   cursor: pointer;
 }
 
-.email-notification-segments button.is-active {
+.email-notification-segments button[data-checked] {
   border-color: var(--border-default);
   color: var(--text-primary);
   background: var(--bg-secondary);
 }
 
 .email-notification-count { margin-top: 18px; }
-.email-notification-count select {
+.email-notification-count-trigger {
   min-width: 72px;
   height: 38px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  padding: 0 10px;
-  color: var(--text-primary);
-  background: var(--bg-elevated);
+  flex: 0 0 auto;
 }
 
 .email-notification-schedule {
@@ -270,9 +230,18 @@
   .email-notification-test-spinner { animation: none; transition: none; }
 }
 
+/* On a phone the sheet docks to the bottom edge: the primitive's centring
+   (`top: 50%`, a two-axis `translate` of -50%) is overridden here. */
 @media (max-width: 520px) {
-  .email-notification-backdrop { align-items: end; padding: 0; }
-  .email-notification-modal { width: 100%; max-height: 92vh; max-height: 92dvh; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
+  .email-notification-modal {
+    top: auto;
+    bottom: 0;
+    translate: -50% 0;
+    width: 100%;
+    max-height: 92vh;
+    max-height: 92dvh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
   .email-notification-modal > header,
   .email-notification-body { padding-left: 18px; padding-right: 18px; }
   .email-notification-modal > footer { padding-left: 18px; padding-right: 18px; }

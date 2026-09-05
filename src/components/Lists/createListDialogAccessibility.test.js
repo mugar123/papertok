@@ -23,7 +23,7 @@ const read = async (path) => stripComments(await readFile(new URL(path, import.m
 test('a failed create/save is tied to the name field, not only announced', async () => {
   const jsx = await read('./CreateListDialog.jsx');
 
-  const input = jsx.match(/<input\b[\s\S]*?\/>/);
+  const input = jsx.match(/<(?:input|Input)\b[\s\S]*?\/>/);
   assert.ok(input, 'the list-name input changed shape; update this test alongside it');
   assert.match(
     input[0],

@@ -223,6 +223,14 @@
   color: var(--text-primary);
 }
 
+/* The pin toggles are the shared Toggle (`aria-pressed`); the marks below
+   are this page's own, so the primitive's raised-chip look yields to them. */
+.profile-pin-toggle {
+  height: auto;
+  font-weight: var(--fw-medium);
+  box-shadow: none;
+}
+
 /* The soft yellow flips with the theme (#fff4c9 -> #35290b), so what sits
    on it takes `--text-on-brand-soft`, which flips with it: ink on paper,
    the brand yellow on the dark wash. `--text-on-brand` is for the FULL
@@ -377,14 +385,9 @@
   border: 1px solid var(--profile-card-line);
   border-radius: var(--radius-md);
   background: var(--bg-card);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
   cursor: pointer;
-}
-
-.profile-switch input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
 }
 
 .profile-switch-copy {
@@ -403,43 +406,6 @@
 .profile-switch-hint {
   color: var(--text-tertiary);
   font-size: var(--fs-xs);
-}
-
-.profile-switch-track {
-  position: relative;
-  flex: 0 0 auto;
-  width: 42px;
-  height: 24px;
-  border: 1px solid var(--profile-line-field);
-  border-radius: var(--radius-full);
-  background: var(--bg-elevated);
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-.profile-switch-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  border-radius: 50%;
-  background: var(--text-tertiary);
-  transition: transform var(--transition-fast), background var(--transition-fast);
-}
-
-.profile-switch input:checked + .profile-switch-track {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary);
-}
-
-.profile-switch input:checked + .profile-switch-track .profile-switch-thumb {
-  transform: translateX(18px);
-  background: var(--text-inverse);
-}
-
-.profile-switch input:focus-visible + .profile-switch-track {
-  outline: 2px solid var(--accent-primary);
-  outline-offset: 2px;
 }
 
 /* The form ends here, and says so: the two sections under it save on their

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { Toggle } from '@base-ui/react/toggle';
 import { ComposableMap, Geographies, Geography, ZoomableGroup } from '@vnedyalk0v/react19-simple-maps';
 import { getCountryName, SUPPORTED_COUNTRY_CODES } from '../../data/countries';
 import isoMapping from '../../data/isoMapping.json';
@@ -18,7 +19,7 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
     const alpha2 = isoMapping.numericToAlpha2[geo.id];
     if (!SUPPORTED_COUNTRIES.has(alpha2)) return;
     const name = alpha2 ? getCountryName(alpha2, language) : geo.properties.name;
-    
+
     setTooltipContent(name);
     setTooltipPos({ x: e.clientX, y: e.clientY });
   };
@@ -31,19 +32,6 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
     if (tooltipContent) {
       setTooltipPos({ x: e.clientX, y: e.clientY });
     }
-  };
-
-  const handleClick = (geo) => {
-    const alpha2 = isoMapping.numericToAlpha2[geo.id];
-    if (SUPPORTED_COUNTRIES.has(alpha2)) {
-      onToggleCountry(alpha2);
-    }
-  };
-
-  const handleKeyDown = (event, geo) => {
-    if (event.key !== 'Enter' && event.key !== ' ') return;
-    event.preventDefault();
-    handleClick(geo);
   };
 
   return (
@@ -69,22 +57,46 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
               geographies.map((geo) => {
                 const alpha2 = isoMapping.numericToAlpha2[geo.id];
                 const isSupported = SUPPORTED_COUNTRIES.has(alpha2);
-                const isSelected = isSupported && selectedCountries.includes(alpha2);
-                const countryName = alpha2 ? getCountryName(alpha2, language) : geo.properties.name;
-                
+
+                /* A country we cannot filter by is drawn but is not a control:
+                   no role, no name, out of the tab order. */
+                if (!isSupported) {
+                  return (
+                    <Geography
+                      key={geo.rsmKey}
+                      geography={geo}
+                      className="wm-geo unsupported"
+                      tabIndex={-1}
+                      aria-hidden="true"
+                    />
+                  );
+                }
+
+                const isSelected = selectedCountries.includes(alpha2);
+                const countryName = getCountryName(alpha2, language);
+
+                /* A supported country is a Base UI Toggle drawn as its own
+                   <path>: with `nativeButton={false}` the primitive gives the
+                   path `role="button"`, the tab stop, Enter and Space, and
+                   writes `aria-pressed` / `data-pressed` from `pressed` — the
+                   stylesheet keys the selected fill off the latter. The ui
+                   chip Toggle is not used here because its chip classes have
+                   no meaning on an SVG path. */
                 return (
-                  <Geography
+                  <Toggle
                     key={geo.rsmKey}
-                    geography={geo}
-                    onClick={() => handleClick(geo)}
-                    onKeyDown={(event) => handleKeyDown(event, geo)}
-                    onMouseEnter={(e) => handleMouseEnter(geo, e)}
-                    onMouseLeave={handleMouseLeave}
-                    className={`wm-geo ${isSelected ? 'selected' : ''} ${isSupported ? '' : 'unsupported'}`}
-                    role={isSupported ? 'button' : undefined}
-                    tabIndex={isSupported ? 0 : -1}
-                    aria-label={isSupported ? `${isEnglish ? 'Filter by' : 'Filtrar por'} ${countryName}` : undefined}
-                    aria-pressed={isSupported ? isSelected : undefined}
+                    nativeButton={false}
+                    pressed={isSelected}
+                    onPressedChange={() => onToggleCountry(alpha2)}
+                    aria-label={`${isEnglish ? 'Filter by' : 'Filtrar por'} ${countryName}`}
+                    render={(
+                      <Geography
+                        geography={geo}
+                        className="wm-geo"
+                        onMouseEnter={(e) => handleMouseEnter(geo, e)}
+                        onMouseLeave={handleMouseLeave}
+                      />
+                    )}
                   />
                 );
               })
@@ -93,10 +105,17 @@ export default function WorldMap({ selectedCountries = [], onToggleCountry }) {
         </ZoomableGroup>
       </ComposableMap>
 
-      {/* Floating HTML Tooltip via Portal to avoid clipping/transform issues */}
+      {/* The name follows the pointer across the map. It stays a portaled
+          element rather than a ui Tooltip: the tooltip primitive anchors to a
+          trigger element, and here there are ~170 paths under one pointer
+          whose label is re-positioned on every move — the ui TooltipContent
+          exposes no `anchor` for a virtual pointer element. The label is
+          decorative for assistive technology: each country already carries
+          its name on `aria-label`. */}
       {tooltipContent && typeof document !== 'undefined' && createPortal(
         <div 
           className="wm-tooltip"
+          aria-hidden="true"
           style={{
             left: tooltipPos.x,
             top: tooltipPos.y - 20

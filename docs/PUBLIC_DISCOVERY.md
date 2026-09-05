@@ -20,6 +20,17 @@ entity pages. Actions that create personal state (likes, follows, saved papers, 
 preferences) keep their visible controls but open the sign-in prompt instead of writing shared
 guest data.
 
+Once the first card of the sample feed is on screen, a guest is asked once which areas they are
+into (`GuestInterestsPrompt`). The answer — area keys, kept on the device in
+`papertok_guestInterests` — rebuilds the guest feed through `buildGuestFeedPlan`
+(`src/utils/guestFeedPlan.js`): every source is asked for those areas instead of the fixed
+sample, with the same per-source caps the signed-in feed keeps (six arXiv categories, five
+OpenAlex labels, three PubMed labels, spread round-robin across the chosen areas so each one
+is represented). "Not now" is remembered and the prompt does not return on its own; the header
+chip reopens it, and names the answer once there is one. If the guest signs up, the onboarding
+opens on its receipt with those areas and all their categories pre-selected, and
+`completeOnboarding` writes them to the profile and clears the device copy.
+
 Custom lists can be published as deliberately reduced Firestore documents. They contain at
 most 50 sanitized papers and never include private notes, tags, preferences, or interaction
 state. The public document carries no owner field; attribution is a separate, per-list and

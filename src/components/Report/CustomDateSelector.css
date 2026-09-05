@@ -118,47 +118,47 @@
   white-space: nowrap;
 }
 
-/* rc-slider ships its own look; these override it in place of the inline
-   gradient objects the component used to pass as props. */
-.cds-rail .rc-slider {
-  height: 18px;
-  padding: 7px 0;
-}
-
-.cds-rail .rc-slider-rail {
+/* The rail is the ui Slider (Base UI), which owns the keyboard, the touch and
+   the hidden range inputs. These rules are unlayered, so they win over the
+   primitive's utilities and keep the rail in this page's voice: a 3px square
+   rule like every other rule on the page, ink for the chosen span, and a
+   thumb that fills with ink while it is held. */
+.cds-rail [data-slot='slider-track'] {
   height: 3px;
   border-radius: 0;
   background: var(--border-subtle);
 }
 
-.cds-rail .rc-slider-track {
-  height: 3px;
-  border-radius: 0;
+.cds-rail [data-slot='slider-range'] {
   background: var(--text-primary);
 }
 
-.cds-rail .rc-slider-handle {
+.cds-rail [data-slot='slider-thumb'] {
   width: 15px;
   height: 15px;
-  margin-top: -6px;
   border: 1px solid var(--text-primary);
   background: var(--bg-card);
-  opacity: 1;
   box-shadow: none;
-  /* Nothing eased here on purpose: a transition on a dragged handle reads as
-     lag, however small. */
+  /* Nothing eased or scaled here on purpose: a transition on a dragged handle
+     reads as lag, however small. */
+  scale: none;
   transition: none;
 }
 
-.cds-rail .rc-slider-handle:hover,
-.cds-rail .rc-slider-handle-dragging,
-.cds-rail .rc-slider-handle:focus-visible {
-  border-color: var(--text-primary);
+/* Focus lands on the hidden input inside the thumb, so the ring is drawn on
+   the thumb from `:focus-within`, where it can be seen. */
+.cds-rail [data-slot='slider-thumb'][data-dragging],
+.cds-rail [data-slot='slider-thumb']:focus-within {
   background: var(--text-primary);
-  box-shadow: none;
 }
 
-.cds-rail .rc-slider-handle:focus-visible {
+@media (hover: hover) and (pointer: fine) {
+  .cds-rail [data-slot='slider-thumb']:hover {
+    background: var(--text-primary);
+  }
+}
+
+.cds-rail [data-slot='slider-thumb']:focus-within {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -238,13 +238,32 @@
   transition: transform var(--transition-base);
 }
 
-.cds-step--action.is-open .cds-step-chevron {
+/* `data-panel-open` is what Base UI writes on the Collapsible's trigger. */
+.cds-step--action[data-panel-open] .cds-step-chevron {
   transform: rotate(90deg);
 }
 
-/* ── The day step, expanded in place ── */
+/* ── The day step, expanded in place ──
+   A Base UI Collapsible panel: the primitive measures the content into
+   `--collapsible-panel-height`, marks the first frame in with
+   `data-starting-style` and the way out with `data-ending-style`, and keeps
+   the panel mounted until the exit transition ends. */
 .cds-cal-slot {
+  height: var(--collapsible-panel-height);
   overflow: hidden;
+  transition:
+    height 0.28s cubic-bezier(0.16, 1, 0.3, 1),
+    opacity 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.cds-cal-slot[hidden]:not([hidden='until-found']) {
+  display: none;
+}
+
+.cds-cal-slot[data-starting-style],
+.cds-cal-slot[data-ending-style] {
+  height: 0;
+  opacity: 0;
 }
 
 .cds-cal {
@@ -413,6 +432,7 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The two actions are ui Buttons (outline to cancel, ink to apply). */
 .cds-reading-actions {
   display: flex;
   align-items: center;
@@ -420,41 +440,11 @@
   margin-left: auto;
 }
 
-.cds-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  min-height: 38px;
-  padding: 0 var(--space-4);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-md);
-  background: var(--bg-card);
-  color: var(--text-primary);
-  font-family: inherit;
-  font-size: var(--fs-sm);
-  font-weight: var(--fw-semibold);
-  cursor: pointer;
-  transition: background var(--transition-fast), border-color var(--transition-fast);
-}
-
-@media (hover: hover) and (pointer: fine) {
-  .cds-btn:hover { background: var(--bg-secondary); }
-  .cds-btn--primary:hover { background: var(--accent-primary-hover); }
-}
-
-.cds-btn--primary {
-  border-color: var(--accent-primary);
-  background: var(--accent-primary);
-  color: var(--text-inverse);
-}
-
 .cds-close:focus-visible,
 .cds-step--action:focus-visible,
 .cds-cal-nav:focus-visible,
 .cds-cal-day:focus-visible,
-.cds-cal-clear:focus-visible,
-.cds-btn:focus-visible {
+.cds-cal-clear:focus-visible {
   outline: 2px solid var(--focus-ring);
   outline-offset: 2px;
 }
@@ -475,7 +465,7 @@
   }
 
   .cds-reading-actions { margin-left: 0; width: 100%; }
-  .cds-btn { flex: 1 1 auto; }
+  .cds-reading-actions > button { flex: 1 1 auto; }
 }
 
 /* Two months, then one, as the measure narrows. */
@@ -490,8 +480,8 @@
 @media (prefers-reduced-motion: reduce) {
   .cds-enter,
   .cds-step-chevron,
-  .cds-cal-day,
-  .cds-btn {
+  .cds-cal-slot,
+  .cds-cal-day {
     animation: none;
     transition: none;
   }

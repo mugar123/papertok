@@ -31,6 +31,7 @@ import {
   resolvePreferredSearchSection,
 } from '../../utils/searchRelevance';
 import './SearchCommand.css';
+import { Toggle } from '../ui/toggle.jsx';
 
 const COPY = {
   es: {
@@ -208,19 +209,18 @@ export default function SearchCommand({ open, onOpenChange }) {
     const following = isFollowing(entity);
     const pending = isFollowPending(entity) || pendingEntity === entity.id;
     return (
-      <button
-        type="button"
+      <Toggle
         className={`sc-follow ${following ? 'is-following' : ''}`}
         onClick={(event) => follow(event, entity)}
         disabled={pending}
-        aria-pressed={following}
+        pressed={following}
         aria-label={following ? copy.following : copy.follow}
       >
         {pending
           ? <LoaderCircle size={12} className="spinning" />
           : following ? <Check size={12} /> : <Plus size={12} />}
         <span>{following ? copy.following : copy.follow}</span>
-      </button>
+      </Toggle>
     );
   };
 

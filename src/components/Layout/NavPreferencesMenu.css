@@ -1,6 +1,8 @@
-/* El popover de preferencias: un desplegable anclado al grupo de utilidades.
-   Anima con una transición CSS de entrada (opacity/translate) — nada de
-   framer en el cromo — y a la derecha se pega al borde del propio botón. */
+/* El popover de preferencias: un desplegable anclado al botón de utilidades.
+   Base UI lo posiciona (portal bajo <body>, así que estas reglas no dependen
+   de ningún contenedor) y marca la entrada y la salida con
+   `data-starting-style` / `data-ending-style`; la animación es una transición
+   CSS de opacity/translate — nada de framer en el cromo. */
 
 .nav-prefs {
   position: relative;
@@ -8,63 +10,73 @@
   align-items: center;
 }
 
-.nav-prefs-trigger.is-open {
+.nav-prefs-trigger[data-popup-open] {
   background: var(--bg-secondary);
   color: var(--text-primary);
 }
 
 .nav-prefs-menu {
-  position: absolute;
-  top: calc(100% + 10px);
-  right: 0;
-  z-index: var(--z-nav);
+  width: max-content;
   min-width: 216px;
   padding: 6px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   background: var(--bg-elevated);
   box-shadow: 0 16px 40px rgba(17, 19, 24, 0.14);
-  animation: navPrefsIn 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  transform-origin: top right;
+  transition:
+    opacity 0.18s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes navPrefsIn {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
+/* The primitive scales its popup a hair; this one only drops in, as before. */
+.nav-prefs-menu[data-starting-style],
+.nav-prefs-menu[data-ending-style] {
+  scale: none;
 }
 
-@keyframes navPrefsOut {
-  from {
-    opacity: 1;
-    transform: translateY(0);
-  }
-  to {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
+.nav-prefs-menu[data-starting-style] {
+  opacity: 0;
+  transform: translateY(-8px);
 }
 
-.nav-prefs-menu.is-closing {
-  animation: navPrefsOut 0.14s ease forwards;
+/* The exit is shorter and eased at both ends, so the tray folds rather than
+   falls; Base UI waits for it before unmounting. */
+.nav-prefs-menu[data-ending-style] {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition:
+    opacity 0.14s ease,
+    transform 0.14s ease;
   pointer-events: none;
 }
 
 .nav-prefs-row {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   width: 100%;
+  height: auto;
   padding: 8px 10px;
   border: none;
   border-radius: var(--radius-md);
   background: none;
+  box-shadow: none;
   color: var(--text-secondary);
   font-family: var(--font-body);
   font-size: var(--fs-sm);
+  font-weight: var(--fw-regular);
   text-align: left;
   cursor: pointer;
   transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+/* The theme row is a Toggle; on, it reads as the row it is, not as a chip. */
+.nav-prefs-row[data-pressed] {
+  background: none;
+  box-shadow: none;
+  color: var(--text-primary);
 }
 
 .nav-prefs-row span {
@@ -89,13 +101,16 @@
   padding: 2px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
+  background: none;
 }
 
 .nav-prefs-lang button {
+  height: auto;
   padding: 3px 8px;
   border: none;
   border-radius: var(--radius-sm);
   background: none;
+  box-shadow: none;
   color: var(--text-tertiary);
   font: 600 0.6875rem/1.4 var(--font-mono);
   cursor: pointer;
@@ -122,7 +137,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .nav-prefs-menu,
-  .nav-prefs-menu.is-closing,
+  .nav-prefs-menu[data-ending-style],
   .nav-prefs-row,
   .nav-prefs-lang button {
     animation: none;

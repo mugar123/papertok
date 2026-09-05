@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { UsersRound, X } from 'lucide-react';
@@ -15,7 +15,8 @@ import {
   readFollowList,
   rememberFollowList,
 } from '../../utils/profileSessionCaches.js';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
+import { Drawer, DrawerContent } from '../ui/drawer.jsx';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.jsx';
 import './FollowSheet.css';
 
 /**
@@ -191,17 +192,18 @@ export default function FollowSheet({
   const [pages, setPages] = useState(() => seedPages(uid));
   const [attempt, setAttempt] = useState(0);
   const [paging, setPaging] = useState(false);
-  // The sheet only exists in the tree while it is shown, so `open` is always
-  // true here — the same contract AuthPrompt uses.
-  const dialogRef = useDialogFocus(true, onClose);
+  // The sheet is a Base UI Drawer, which owns the modal contract — Escape, the
+  // focus trap, focus back to the counter that opened it, the swipe that
+  // dismisses it on a phone. The profile mounts it as `{followSheet && …}`,
+  // so the open state lives here: closing flips `open`, the drawer plays its
+  // leave, and only `onOpenChangeComplete(false)` tells the parent — once.
+  const [open, setOpen] = useState(true);
+  const requestClose = useCallback(() => setOpen(false), []);
+  // Where focus lands on open. The tabs come first in the DOM, but a sheet
+  // that opens on its own close button is the one the reader can leave the
+  // way they came.
+  const closeButton = useRef(null);
   const current = pages[mode] || EMPTY_PAGE;
-  // Decided once per open: this drives which entrance the sheet plays (slide
-  // from the bottom edge it is anchored to on phones, a scale-fade when it
-  // floats centered on desktop), not the layout, which is pure CSS.
-  const slidesFromBottom = useMemo(
-    () => typeof window !== 'undefined' && window.matchMedia('(max-width: 599px)').matches,
-    [],
-  );
 
   // The body height tracks THIS tab's count, not the larger of the two — the
   // old rule is what left 440px of void under a single follower. Switching
@@ -378,80 +380,49 @@ export default function FollowSheet({
     }
   };
 
-  const sheetMotion = prefersReducedMotion ? {
-    initial: { opacity: 0 },
-    animate: { opacity: 1 },
-    exit: { opacity: 0 },
-    transition: { duration: 0.1 },
-  } : slidesFromBottom ? {
-    initial: { y: '100%' },
-    animate: { y: 0 },
-    exit: { y: '100%' },
-    transition: { type: 'spring', damping: 32, stiffness: 340 },
-  } : {
-    initial: { opacity: 0, scale: 0.96, y: 12 },
-    animate: { opacity: 1, scale: 1, y: 0 },
-    exit: { opacity: 0, scale: 0.97, y: 8 },
-    transition: { duration: 0.24, ease: [0.16, 1, 0.3, 1] },
-  };
-
+  // The arrival and the leave are the drawer's (ui/drawer.css): up from the
+  // bottom edge on a phone, and FollowSheet.css turns that into a short
+  // fade-and-settle where the sheet hangs from the top on a wider screen.
   return (
-    <motion.div
-      className="follow-sheet-backdrop"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: prefersReducedMotion ? 0.1 : 0.18 }}
-      onClick={onClose}
+    <Drawer
+      open={open}
+      onOpenChange={(next) => { if (!next) setOpen(false); }}
+      onOpenChangeComplete={(next) => { if (!next) onClose(); }}
+      modal
     >
-      <motion.div
-        ref={dialogRef}
+      <DrawerContent
         className="follow-sheet"
-        role="dialog"
-        aria-modal="true"
+        viewportClassName="follow-sheet-viewport"
         aria-label={mode === 'followers' ? copy.followers : copy.following}
-        tabIndex={-1}
-        {...sheetMotion}
+        initialFocus={closeButton}
         style={expectedRows != null ? { '--follow-rows': expectedRows } : undefined}
-        onClick={event => event.stopPropagation()}
       >
+        {/* The two tabs are `ui/tabs`: the yellow rule under the active one
+            is the list's own indicator and slides from one tab to the other
+            — the same gesture the profile's own tabs make, so the two rows
+            of tabs move alike. The root wraps the header and the body so the
+            tab and its panel are wired together; it renders the frame. */}
+        <Tabs
+          value={mode}
+          onValueChange={(next) => onModeChange(next)}
+          className="follow-sheet-frame"
+        >
         <header className="follow-sheet-header">
-          <div className="follow-sheet-tabs" role="tablist">
+          <TabsList variant="line" className="follow-sheet-tabs">
             {MODE_NAMES.map(name => (
-              <button
-                key={name}
-                type="button"
-                role="tab"
-                aria-selected={mode === name}
-                className={`follow-sheet-tab${mode === name ? ' follow-sheet-tab--active' : ''}`}
-                onClick={() => onModeChange(name)}
-              >
+              <TabsTrigger key={name} value={name} className="follow-sheet-tab">
                 {copy[name]}
                 {counts?.[name] != null && (
                   <span className="follow-sheet-tab-count">{counts[name]}</span>
                 )}
-                {/* The shared layoutId is the whole point: the yellow rule
-                    slides from one tab to the other instead of blinking off
-                    here and on over there — the same gesture the profile's own
-                    tabs make, so the two rows of tabs move alike. */}
-                {mode === name && (
-                  <motion.span
-                    className="follow-sheet-tab-indicator"
-                    layoutId="follow-sheet-tab-indicator"
-                    transition={prefersReducedMotion
-                      ? { duration: 0 }
-                      : { type: 'spring', stiffness: 520, damping: 42 }}
-                  />
-                )}
-              </button>
+              </TabsTrigger>
             ))}
-          </div>
+          </TabsList>
           <div className="follow-sheet-close-wrap">
             <button
               type="button"
               className="follow-sheet-close"
-              data-dialog-initial-focus
-              onClick={onClose}
+              onClick={requestClose}
               aria-label={copy.close}
             >
               <X size={16} />
@@ -468,12 +439,12 @@ export default function FollowSheet({
         )}
 
         <div className="follow-sheet-body">
-          {/* One panel per tab. Deliberately NOT an AnimatePresence crossfade:
-              a `mode="wait"` swap makes every tab change wait on an exit
-              animation before the next tab exists, and the motion it would buy
-              is already there — the rows stagger in on their own, under a box
-              whose height is easing at the same time. */}
-          <div className="follow-sheet-panel">
+          {/* One panel, for whichever tab is active. Deliberately NOT a
+              crossfade: a swap that waits on an exit animation before the
+              next tab exists buys motion that is already there — the rows
+              stagger in on their own, under a box whose height is easing at
+              the same time. */}
+          <TabsContent value={mode} className="follow-sheet-panel">
               {FOLLOW_WAITING.includes(current.status) && (
                 <div className="follow-sheet-loading" aria-label={copy.loading} aria-busy="true">
                   {Array.from({ length: skeletonRows }, (unused, index) => (
@@ -535,13 +506,13 @@ export default function FollowSheet({
                         uid={row.uid}
                         profile={row.profile}
                         unavailableLabel={copy.unavailable}
-                        onNavigate={onClose}
+                        onNavigate={requestClose}
                       />
                     </motion.li>
                   ))}
                 </ul>
               )}
-          </div>
+          </TabsContent>
         </div>
 
         {/* Outside the body on purpose: inside it, the button scrolled away
@@ -556,7 +527,8 @@ export default function FollowSheet({
             {paging ? copy.loading : copy.more}
           </button>
         )}
-      </motion.div>
-    </motion.div>
+        </Tabs>
+      </DrawerContent>
+    </Drawer>
   );
 }

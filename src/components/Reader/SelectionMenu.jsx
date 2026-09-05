@@ -1,9 +1,9 @@
-import { useEffect, useId, useRef, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import { Highlighter, Loader2, PenLine, Sparkles } from 'lucide-react';
 import { MAX_NOTE_LENGTH } from '../../services/userHighlightService.js';
-import { placeSelectionMenu } from '../../utils/selectionMenuPlacement.js';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
+import { Popover } from '../ui/popover.jsx';
+import { Textarea } from '../ui/textarea.jsx';
 
 /**
  * What to do with the passage you just selected.
@@ -14,12 +14,42 @@ import { useDialogFocus } from '../../hooks/useDialogFocus.js';
  * to the sentence that started it, and that thread is the whole point of
  * putting this over the selection instead of in a sidebar.
  *
- * Placement is by the selection's own rectangle. It prefers to sit under the
- * passage and flips above when there is no room, clamped to the viewport on
- * both axes so a selection at the edge of the page still gets a usable menu.
+ * A Base UI Popover anchored to the selection's own rectangle, handed over as
+ * a virtual element: it sits under the passage, flips above when there is no
+ * room, and is shifted back inside the viewport at the edges — what
+ * `placeSelectionMenu` used to compute by hand. Outside press and Escape are
+ * the primitive's; both arrive here as `onClose`. The Positioner is composed
+ * from the primitive rather than through `PopoverContent` because only the
+ * Positioner takes an `anchor`, and the ui wrapper does not forward one.
+ *
+ * Kept mounted while the reader is on the fine-pointer route, with `open`
+ * following whether there is a pending selection: the popup has to keep
+ * pointing at the last rectangle for the length of its leave, after the
+ * selection that produced it has already been dismissed.
  */
 
+/** A floating-ui virtual element over a viewport rectangle captured at selection time. */
+function virtualAnchor(rect) {
+  if (!rect) return null;
+  const width = rect.right - rect.left;
+  const height = rect.bottom - rect.top;
+  return {
+    getBoundingClientRect: () => ({
+      x: rect.left,
+      y: rect.top,
+      top: rect.top,
+      left: rect.left,
+      right: rect.right,
+      bottom: rect.bottom,
+      width,
+      height,
+      toJSON() { return this; },
+    }),
+  };
+}
+
 export default function SelectionMenu({
+  open = false,
   anchor,
   copy,
   usesLeft,
@@ -31,39 +61,26 @@ export default function SelectionMenu({
   onAsk,
   onClose,
 }) {
-  const prefersReducedMotion = useReducedMotion();
   const noteFieldId = useId();
   const [composing, setComposing] = useState(false);
   const [draft, setDraft] = useState('');
-  // The shared hook owns focus and Escape, the same way every other dialog in
-  // the app does. It matters more here than it looks: the keyboard route into
-  // this menu (Enter on a focused paragraph) leaves focus on the paragraph,
-  // so without this the menu opened and the reader could not reach it. The
-  // hook also keeps a stack, so Escape closes this menu and not the reader
-  // behind it — which is what the hand-rolled `stopPropagation` used to buy.
-  const dialogRef = useDialogFocus(true, onClose);
   const textareaRef = useRef(null);
-
+  // Where focus lands on open: the first action. The keyboard route into this
+  // menu (Enter on a focused paragraph) leaves focus on the paragraph, so
+  // without this the menu opened and the reader could not reach it.
+  const firstActionRef = useRef(null);
+  // The last rectangle the menu opened on. Written from an effect, not during
+  // render (`react-hooks/refs`), and read only when Base UI asks where to put
+  // the popup — which it does on open and on every layout shift after.
+  const anchorRef = useRef(null);
   useEffect(() => {
-    const handlePointer = (event) => {
-      if (!dialogRef.current?.contains(event.target)) onClose();
-    };
-    // Capture, so a click on the document behind closes the menu before that
-    // click can start a new selection underneath it.
-    document.addEventListener('mousedown', handlePointer, true);
-    return () => {
-      document.removeEventListener('mousedown', handlePointer, true);
-    };
-  }, [onClose, dialogRef]);
+    if (anchor) anchorRef.current = anchor;
+  }, [anchor]);
+  const resolveAnchor = useCallback(() => virtualAnchor(anchorRef.current), []);
 
   useEffect(() => {
     if (composing) textareaRef.current?.focus();
   }, [composing]);
-
-  const position = placeSelectionMenu(anchor, {
-    width: window.innerWidth,
-    height: window.innerHeight,
-  }, composing);
 
   const submit = (event) => {
     event.preventDefault();
@@ -72,81 +89,94 @@ export default function SelectionMenu({
   };
 
   return (
-    <motion.div
-      ref={dialogRef}
-      className="rd-menu"
-      role="dialog"
-      aria-label={copy.selectionTitle}
-      data-composing={composing ? '' : undefined}
-      style={{ left: position.left, top: position.top, width: position.width }}
-      layout={prefersReducedMotion ? false : 'size'}
-      initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -6, scale: 0.96 }}
-      animate={{ opacity: 1, y: 0, scale: 1 }}
-      exit={prefersReducedMotion
-        ? { opacity: 0, transition: { duration: 0.08 } }
-        : { opacity: 0, y: -4, scale: 0.98, transition: { duration: 0.11, ease: 'easeIn' } }}
-      transition={{ duration: prefersReducedMotion ? 0.1 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+    <Popover
+      open={open}
+      onOpenChange={(next) => { if (!next) onClose(); }}
+      // The composer is the menu's own state: a menu that reopens on the next
+      // selection already in "write a note" mode is answering a question the
+      // reader has not asked yet. Reset once the leave has played.
+      onOpenChangeComplete={(next) => {
+        if (next) return;
+        setComposing(false);
+        setDraft('');
+      }}
     >
-      {/* The inner blocks carry `layout` of their own so the parent's size
-          animation does not scale their type: framer counter-scales a laid-out
-          child, and without it the words stretch for the length of the morph. */}
-      {composing ? (
-        <motion.form layout={prefersReducedMotion ? false : 'position'} className="rd-menu-compose" onSubmit={submit}>
-          <label className="rd-menu-label" htmlFor={noteFieldId}>
-            <i className="rd-menu-pen" aria-hidden="true" />
-            {copy.yourNote}
-          </label>
-          <textarea
-            id={noteFieldId}
-            ref={textareaRef}
-            className="rd-menu-input"
-            value={draft}
-            maxLength={MAX_NOTE_LENGTH}
-            placeholder={copy.notePlaceholder}
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              // Enter writes a newline; the shortcut is the one every comment
-              // box in this app already uses.
-              if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit(event);
-            }}
-          />
-          <div className="rd-menu-actions">
-            <button type="submit" className="rd-menu-save" disabled={!draft.trim() || busy}>
-              {busy ? <Loader2 size={14} className="spinning" /> : null}
-              {copy.save}
-            </button>
-            <button type="button" className="rd-menu-cancel" onClick={onClose}>{copy.cancel}</button>
-          </div>
-        </motion.form>
-      ) : (
-        <motion.div layout={prefersReducedMotion ? false : 'position'} className="rd-menu-list">
-          <button type="button" className="rd-menu-item" data-dialog-initial-focus onClick={onHighlight}>
-            <Highlighter size={15} />
-            {copy.justHighlight}
-          </button>
-          <button type="button" className="rd-menu-item" onClick={() => setComposing(true)}>
-            <PenLine size={15} />
-            {copy.writeNote}
-          </button>
-          <button
-            type="button"
-            className="rd-menu-item"
-            onClick={onAsk}
-            disabled={!canAsk}
-            title={canAsk ? undefined : copy.noUsesLeft}
+      <PopoverPrimitive.Portal>
+        <PopoverPrimitive.Positioner
+          anchor={resolveAnchor}
+          side="bottom"
+          align="start"
+          sideOffset={8}
+          collisionPadding={10}
+          className="isolate z-[12055]"
+        >
+          <PopoverPrimitive.Popup
+            initialFocus={firstActionRef}
+            className="rd-menu"
+            aria-label={copy.selectionTitle}
+            data-composing={composing ? '' : undefined}
           >
-            <Sparkles size={15} />
-            {copy.explainThis}
-            {/* The price, stated before it is spent. A daily allowance that only
-                announces itself once it is gone is a trap — and where there is
-                no allowance there is no price to state. */}
-            {!unlimited && <small>{canAsk ? copy.oneUse : copy.noUsesLeftShort}</small>}
-          </button>
-          {typeof usesLeft === 'number' && (
-            <p className="rd-menu-foot">{copy.usesLeftLine(usesLeft)}</p>
-          )}
-        </motion.div>
-      )}
-    </motion.div>
+            {composing ? (
+              <form className="rd-menu-compose" onSubmit={submit}>
+                <label className="rd-menu-label" htmlFor={noteFieldId}>
+                  <i className="rd-menu-pen" aria-hidden="true" />
+                  {copy.yourNote}
+                </label>
+                <Textarea
+                  id={noteFieldId}
+                  ref={textareaRef}
+                  className="rd-menu-input"
+                  value={draft}
+                  maxLength={MAX_NOTE_LENGTH}
+                  placeholder={copy.notePlaceholder}
+                  aria-label={copy.yourNote}
+                  onChange={(event) => setDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    // Enter writes a newline; the shortcut is the one every comment
+                    // box in this app already uses.
+                    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit(event);
+                  }}
+                />
+                <div className="rd-menu-actions">
+                  <button type="submit" className="rd-menu-save" disabled={!draft.trim() || busy}>
+                    {busy ? <Loader2 size={14} className="spinning" /> : null}
+                    {copy.save}
+                  </button>
+                  <button type="button" className="rd-menu-cancel" onClick={onClose}>{copy.cancel}</button>
+                </div>
+              </form>
+            ) : (
+              <div className="rd-menu-list">
+                <button type="button" className="rd-menu-item" ref={firstActionRef} onClick={onHighlight}>
+                  <Highlighter size={15} />
+                  {copy.justHighlight}
+                </button>
+                <button type="button" className="rd-menu-item" onClick={() => setComposing(true)}>
+                  <PenLine size={15} />
+                  {copy.writeNote}
+                </button>
+                <button
+                  type="button"
+                  className="rd-menu-item"
+                  onClick={onAsk}
+                  disabled={!canAsk}
+                  title={canAsk ? undefined : copy.noUsesLeft}
+                >
+                  <Sparkles size={15} />
+                  {copy.explainThis}
+                  {/* The price, stated before it is spent. A daily allowance that only
+                      announces itself once it is gone is a trap — and where there is
+                      no allowance there is no price to state. */}
+                  {!unlimited && <small>{canAsk ? copy.oneUse : copy.noUsesLeftShort}</small>}
+                </button>
+                {typeof usesLeft === 'number' && (
+                  <p className="rd-menu-foot">{copy.usesLeftLine(usesLeft)}</p>
+                )}
+              </div>
+            )}
+          </PopoverPrimitive.Popup>
+        </PopoverPrimitive.Positioner>
+      </PopoverPrimitive.Portal>
+    </Popover>
   );
 }

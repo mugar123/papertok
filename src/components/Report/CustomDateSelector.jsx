@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
-import Slider from 'rc-slider';
-import 'rc-slider/assets/index.css';
-import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+import { Collapsible } from '@base-ui/react/collapsible';
 import { ChevronRight, ChevronLeft, X } from 'lucide-react';
+import { Button } from '../ui/button.jsx';
+import { Slider } from '../ui/slider.jsx';
 import { useLanguage } from '../../context/LanguageContext';
 import {
   formatYMD,
@@ -13,6 +13,7 @@ import {
   resolveCustomPeriod,
 } from '../../utils/customPeriod.js';
 import './CustomDateSelector.css';
+import { Toggle } from '../ui/toggle.jsx';
 
 const MONTHS = {
   es: ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'],
@@ -24,7 +25,6 @@ const WEEKDAYS = {
 };
 
 const MIN_YEAR = 1950;
-const EASE = [0.16, 1, 0.3, 1];
 
 function getInitialSelection(value, currentYear) {
   const valid = value?.type === 'custom'
@@ -56,7 +56,6 @@ function railPosition(year, currentYear) {
 
 export default function CustomDateSelector({ value, onApply, onCancel }) {
   const { language, isEnglish } = useLanguage();
-  const prefersReducedMotion = useReducedMotion();
   const currentYear = new Date().getFullYear();
   const initial = getInitialSelection(value, currentYear);
   const today = new Date();
@@ -72,8 +71,9 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
 
   /* Escape closes the day step rather than the whole panel: the panel has its
      own close, and losing a range because the calendar was open is a bad trade.
-     There is no click-outside handler any more — step two expands in place, so
-     clicking elsewhere on the page has no business collapsing it. */
+     There is no click-outside handler — step two is a Collapsible that expands
+     in place, not a popover, so clicking elsewhere on the page has no business
+     collapsing it. */
   useEffect(() => {
     if (!showCalendar) return undefined;
     const handleKeyDown = (event) => {
@@ -85,6 +85,9 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [showCalendar]);
 
+  /* The ui Slider reports the pair as an array; Base UI keeps the two thumbs
+     from crossing, and they may meet (one year), which is what unlocks step
+     two. */
   const handleYearRangeChange = (nextRange) => {
     setYearRange(nextRange);
     setShowCalendar(false);
@@ -182,13 +185,11 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
         </div>
         <div className="cds-rail">
           <Slider
-            range
             min={MIN_YEAR}
             max={currentYear}
             value={yearRange}
-            onChange={handleYearRangeChange}
-            allowCross={false}
-            ariaLabelForHandle={isEnglish ? ['Start year', 'End year'] : ['Año inicial', 'Año final']}
+            onValueChange={handleYearRangeChange}
+            getAriaLabel={(index) => (isEnglish ? ['Start year', 'End year'] : ['Año inicial', 'Año final'])[index]}
           />
         </div>
         <div className="cds-rail-ticks" aria-hidden="true">
@@ -218,46 +219,30 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
         {/* Step two is always here, greyed with its reason rather than absent.
             A control that vanishes teaches nothing about why it vanished. */}
         {stepTwoReady ? (
-          <button
-            type="button"
-            className={`cds-step cds-step--action ${showCalendar ? 'is-open' : ''}`}
-            onClick={() => setShowCalendar(open => !open)}
-            aria-expanded={showCalendar}
+          // Step two is a Base UI Collapsible, not a popover: the calendar is
+          // three months wide and belongs in the flow of the panel, under the
+          // row that opens it. Base UI writes `aria-expanded`, `aria-controls`
+          // and `data-panel-open` on the trigger and folds the panel on a CSS
+          // transition, waiting for the exit before unmounting.
+          <Collapsible.Root
+            className="cds-step-two"
+            open={showCalendar}
+            onOpenChange={(open) => setShowCalendar(open)}
           >
-            <span className="cds-step-n">2</span>
-            <span className="cds-step-body">
-              {isEnglish ? 'Narrow to exact days.' : 'Afina a días exactos.'}
-            </span>
-            <span className="cds-step-why">
-              {startDateStr
-                ? (isEnglish ? 'Days chosen' : 'Días elegidos')
-                : (isEnglish ? 'Optional' : 'Opcional')}
-              <ChevronRight size={14} className="cds-step-chevron" aria-hidden="true" />
-            </span>
-          </button>
-        ) : (
-          <div className="cds-step cds-step--off">
-            <span className="cds-step-n">2</span>
-            <span className="cds-step-body">
-              {isEnglish ? 'Narrow to exact days.' : 'Afina a días exactos.'}
-            </span>
-            <span className="cds-step-why">
-              {isEnglish
-                ? 'Available once both ends sit on the same year'
-                : 'Disponible cuando los dos extremos caen en el mismo año'}
-            </span>
-          </div>
-        )}
+            <Collapsible.Trigger render={<button type="button" className="cds-step cds-step--action" />}>
+              <span className="cds-step-n">2</span>
+              <span className="cds-step-body">
+                {isEnglish ? 'Narrow to exact days.' : 'Afina a días exactos.'}
+              </span>
+              <span className="cds-step-why">
+                {startDateStr
+                  ? (isEnglish ? 'Days chosen' : 'Días elegidos')
+                  : (isEnglish ? 'Optional' : 'Opcional')}
+                <ChevronRight size={14} className="cds-step-chevron" aria-hidden="true" />
+              </span>
+            </Collapsible.Trigger>
 
-        <AnimatePresence initial={false}>
-          {stepTwoReady && showCalendar && (
-            <motion.div
-              className="cds-cal-slot"
-              initial={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
-              animate={prefersReducedMotion ? { opacity: 1 } : { height: 'auto', opacity: 1 }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { height: 0, opacity: 0 }}
-              transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.28, ease: EASE }}
-            >
+            <Collapsible.Panel className="cds-cal-slot">
               <div className="cds-cal">
                 <div className="cds-cal-head">
                   <button
@@ -299,17 +284,16 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
                           const dateValue = formatYMD(yearRange[0], month, day);
                           const isFuture = dateValue > todayStr;
                           return (
-                            <button
-                              type="button"
+                            <Toggle
                               key={dateValue}
                               className={`cds-cal-day ${isDaySelected(month, day) ? 'is-in-range' : ''} ${isDayEndpoint(month, day) ? 'is-end' : ''}`}
                               onClick={() => handleDayClick(month, day)}
                               disabled={isFuture}
                               aria-label={prettyDate(dateValue)}
-                              aria-pressed={isDaySelected(month, day)}
+                              pressed={isDaySelected(month, day)}
                             >
                               {day}
-                            </button>
+                            </Toggle>
                           );
                         })}
                       </div>
@@ -327,9 +311,21 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
                   </button>
                 )}
               </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            </Collapsible.Panel>
+          </Collapsible.Root>
+        ) : (
+          <div className="cds-step cds-step--off">
+            <span className="cds-step-n">2</span>
+            <span className="cds-step-body">
+              {isEnglish ? 'Narrow to exact days.' : 'Afina a días exactos.'}
+            </span>
+            <span className="cds-step-why">
+              {isEnglish
+                ? 'Available once both ends sit on the same year'
+                : 'Disponible cuando los dos extremos caen en el mismo año'}
+            </span>
+          </div>
+        )}
       </div>
 
       {/* The sentence is the readout and the validation at once: it says what
@@ -345,12 +341,12 @@ export default function CustomDateSelector({ value, onApply, onCancel }) {
           {period.cappedAtToday && ` · ${isEnglish ? 'closed at today' : 'cerrado en hoy'}`}
         </span>
         <div className="cds-reading-actions">
-          <button type="button" className="cds-btn" onClick={onCancel}>
+          <Button type="button" variant="outline" onClick={onCancel}>
             {isEnglish ? 'Cancel' : 'Cancelar'}
-          </button>
-          <button type="button" className="cds-btn cds-btn--primary" onClick={handleApply}>
+          </Button>
+          <Button type="button" onClick={handleApply}>
             {isEnglish ? 'Apply period' : 'Aplicar periodo'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>

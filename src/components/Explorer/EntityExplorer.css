@@ -228,9 +228,35 @@
 .ehc-title-row .ehc-name { flex: 1 1 auto; }
 .ehc-title-row .entity-follow-btn { flex: 0 0 auto; }
 
-/* Keeps the follow control from jumping width between its two labels. */
+/* The follow control is a ui Toggle. Off, it invites in ink; on
+   (`data-pressed`, written by Base UI with `aria-pressed`), it is the
+   bordered chip that says the relationship exists. The fixed min-width keeps
+   it from jumping between its two labels. */
 .entity-follow-btn {
   min-width: 96px;
+  gap: 8px;
+  border: 1px solid var(--text-primary);
+  background: var(--accent-primary);
+  color: var(--text-inverse);
+  font-weight: var(--fw-semibold);
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.entity-follow-btn[data-pressed] {
+  border-color: var(--border-default);
+  background: var(--bg-card);
+  color: var(--text-primary);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .entity-follow-btn:hover {
+    background: var(--accent-primary-hover);
+  }
+
+  .entity-follow-btn[data-pressed]:hover {
+    border-color: var(--border-strong);
+    background: var(--bg-secondary);
+  }
 }
 
 /* Chevron by the name that discloses the professional-experience panel. */
@@ -804,12 +830,17 @@
   flex-shrink: 0;
 }
 
+/* The ui Input inside the box: the box draws the border and the focus state,
+   so the field itself goes flat and takes no height or padding of its own. */
 .explorer-search-box input {
   flex: 1;
   min-width: 0;
   width: 100%;
+  height: auto;
+  padding: 0;
   background: transparent;
   border: none;
+  border-radius: 0;
   color: var(--text-primary);
   font-family: var(--font-body);
   font-size: var(--fs-sm);
@@ -1368,17 +1399,19 @@
   outline-offset: 2px;
 }
 
-/* ─── Filter drawer ─── */
+/* ─── Filter drawer ───
+   A ui Sheet (Base UI Dialog pinned to the right edge). The primitive brings
+   the slide and the fade, the stacking order and the focus trap; these rules
+   only keep the drawer's own measure and chrome. Both are portaled under
+   <body>, which is why nothing here is rooted in `.entity-explorer`. */
 .ee-filter-backdrop {
   position: fixed;
   inset: 0;
-  /* No `backdrop-filter`: EntityExplorer.jsx fades this element's own
-     opacity in and out with framer-motion, and a blur under an animated
-     opacity is re-resolved every frame — the worst case for a mobile GPU.
-     The rgba veil alone reads as the backdrop; its 3px blur was invisible
-     under it. */
+  /* No `backdrop-filter`: the veil's opacity is what fades in and out, and a
+     blur under an animated opacity is re-resolved every frame — the worst
+     case for a mobile GPU. The rgba veil alone reads as the backdrop; its
+     3px blur was invisible under it. */
   background: rgba(17, 19, 24, 0.4);
-  z-index: 2000;
 }
 
 .ee-filter-drawer {
@@ -1391,9 +1424,9 @@
   width: min(320px, 85vw);
   background: var(--bg-card);
   border-left: 1px solid var(--border-default);
-  z-index: 2001;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
   box-shadow: var(--shadow-xl);
 }
 
@@ -1405,13 +1438,18 @@
   border-bottom: 1px solid var(--border-default);
 }
 
+/* The title is the dialog's name (SheetTitle), set in the UI voice: it is a
+   control's caption, not prose, so the primitive's serif is undone here. */
 .ee-filter-header h3 {
   margin: 0;
   display: flex;
   align-items: center;
   gap: var(--space-2);
+  font-family: var(--font-body);
   font-size: var(--fs-base);
   font-weight: var(--fw-semibold);
+  letter-spacing: normal;
+  line-height: var(--lh-normal);
   color: var(--text-primary);
 }
 
@@ -1442,13 +1480,23 @@
 .ee-filter-reset { flex: 1; }
 .ee-filter-apply { flex: 2; }
 
+/* Each row is a single-select ui ToggleGroup (outline) whose items are the
+   chips. Unlayered, so these win over the primitive's utilities: the group
+   draws no track and takes the row's width, and the chip keeps its own
+   measure. */
 .ee-filter-chips {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  background: none;
 }
 
 .ee-filter-chip {
+  height: auto;
   padding: 6px 12px;
   background: var(--bg-card);
   border: 1px solid var(--border-default);
@@ -1467,7 +1515,8 @@
   }
 }
 
-.ee-filter-chip.active {
+/* `data-pressed` is what Base UI writes on the chip that is on. */
+.ee-filter-chip[data-pressed] {
   background: var(--bg-secondary);
   border-color: var(--border-ink);
   color: var(--text-primary);
@@ -1479,49 +1528,18 @@
   outline-offset: 2px;
 }
 
-/* Peer-review toggle */
+/* Peer-review toggle — the ui Switch inside an enclosing ui Label; the
+   switch draws itself, this is only the row it sits in. */
 .ee-toggle-label {
   display: flex;
   align-items: center;
   gap: 10px;
   font-size: var(--fs-sm);
+  font-weight: var(--fw-regular);
+  line-height: var(--lh-normal);
   color: var(--text-primary);
   cursor: pointer;
   user-select: none;
-}
-
-.ee-toggle-label input {
-  display: none;
-}
-
-.ee-toggle-switch {
-  position: relative;
-  width: 40px;
-  height: 22px;
-  flex-shrink: 0;
-  background: var(--border-default);
-  border-radius: var(--radius-full);
-  transition: background var(--transition-base);
-}
-
-.ee-toggle-label input:checked + .ee-toggle-switch {
-  background: var(--accent-primary);
-}
-
-.ee-toggle-switch::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  background: var(--bg-card);
-  border-radius: var(--radius-full);
-  transition: transform var(--transition-base) cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.ee-toggle-label input:checked + .ee-toggle-switch::after {
-  transform: translateX(18px);
 }
 
 /* ─── Authors grid ─── */
@@ -1666,7 +1684,8 @@
   transition: border-color var(--transition-fast), background var(--transition-fast), transform 0.16s ease-out;
 }
 
-.project-links-trigger.is-open,
+/* `data-popup-open` is what Base UI writes on the menu's trigger. */
+.project-links-trigger[data-popup-open],
 .project-links-trigger:focus-visible {
   border-color: var(--border-ink);
   background: var(--bg-secondary);
@@ -1690,22 +1709,20 @@
   transition: transform var(--transition-fast);
 }
 
-.project-links-trigger.is-open > svg:last-child {
+.project-links-trigger[data-popup-open] > svg:last-child {
   transform: rotate(180deg);
 }
 
+/* The menu popup. Base UI portals it under <body> and positions it from the
+   trigger, so it carries no position of its own; the primitive's fade-and-
+   scale entrance grows from `--transform-origin`. */
 .project-links-dropdown {
-  position: absolute;
-  z-index: 30;
-  top: calc(100% + 8px);
-  left: 0;
   width: min(280px, calc(100vw - 48px));
   padding: 6px;
   border: 1px solid var(--border-default);
   border-radius: var(--radius-lg);
   background: var(--bg-card);
   box-shadow: var(--shadow-lg);
-  transform-origin: top left;
 }
 
 .project-links-option {
@@ -1719,6 +1736,12 @@
   color: var(--text-primary);
   text-decoration: none;
   transition: background var(--transition-fast);
+}
+
+/* `data-highlighted` is the menu's roving highlight (arrow keys as well as
+   the pointer), so hover and keyboard land on the same look. */
+.project-links-option[data-highlighted] {
+  background: var(--bg-secondary);
 }
 
 @media (hover: hover) and (pointer: fine) {
@@ -2302,8 +2325,9 @@
     justify-content: space-between;
   }
 
+  /* As wide as the trigger it hangs from; the positioner publishes that. */
   .project-links-dropdown {
-    width: 100%;
+    width: var(--anchor-width);
   }
 
   .project-participants-grid {

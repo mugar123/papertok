@@ -1,12 +1,11 @@
-import { useEffect, useState } from 'react';
-import { motion, useReducedMotion } from 'framer-motion';
+import { useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useLanguage } from '../../context/LanguageContext.jsx';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { getUiErrorMessage } from '../../utils/errorMessages';
 import { Button } from '../ui/button.jsx';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
 import './AuthPrompt.css';
 
 // The in-context door. It signs the guest in on the spot, which is the whole
@@ -14,20 +13,25 @@ import './AuthPrompt.css';
 // paper afterwards — so it deliberately offers no way out to /login: that page
 // exists for the trips that already took the user somewhere else (a direct
 // link, a protected route), and those are the only ones that need a `returnTo`.
+//
+// App.jsx mounts this only while it is wanted (`{authPromptOpen && <AuthPrompt/>}`),
+// so the dialog opens on mount and owns its own `open` flag: closing — the X,
+// Escape, the scrim, or a session appearing — flips it, Base UI plays the
+// leave, and only then `onOpenChangeComplete(false)` tells the parent to
+// unmount. That is the one place `onClose` is called, so it reaches App once.
 export default function AuthPrompt({ onClose }) {
   const { signInWithGoogle, signInWithGitHub, error, user } = useAuth();
   const { language, isEnglish } = useLanguage();
   const { trackEvent } = useAnalyticsConsent();
-  const prefersReducedMotion = useReducedMotion();
-  const dialogRef = useDialogFocus(true, onClose);
+  const [open, setOpen] = useState(true);
   const [pendingProvider, setPendingProvider] = useState(null);
   const [collision, setCollision] = useState(null);
+  const closeButtonRef = useRef(null);
 
   // Once a session exists the prompt has done its job: routing takes the user on
-  // to onboarding or the feed, so the modal steps out of the way.
-  useEffect(() => {
-    if (user) onClose();
-  }, [user, onClose]);
+  // to onboarding or the feed, so the modal steps out of the way. Derived, not
+  // an effect: the session appearing is itself the close.
+  const isOpen = open && !user;
 
   const SIGN_IN_METHODS = {
     google: signInWithGoogle,
@@ -56,52 +60,41 @@ export default function AuthPrompt({ onClose }) {
   const busy = Boolean(pendingProvider);
 
   return (
-    <motion.div
-      className="auth-modal-backdrop"
-      role="presentation"
-      initial={prefersReducedMotion ? false : { opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: prefersReducedMotion ? 0.1 : 0.2, ease: 'easeOut' }}
-      onClick={onClose}
+    <Dialog
+      open={isOpen}
+      onOpenChange={setOpen}
+      onOpenChangeComplete={(isOpen) => { if (!isOpen) onClose(); }}
+      modal
     >
-      <motion.section
-        ref={dialogRef}
+      <DialogContent
         className="auth-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="auth-modal-title"
-        tabIndex={-1}
-        initial={prefersReducedMotion ? false : { opacity: 0, y: 16, scale: 0.96 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8, scale: 0.98 }}
-        transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.26, ease: [0.16, 1, 0.3, 1] }}
-        onClick={(event) => event.stopPropagation()}
+        overlayClassName="auth-modal-backdrop"
+        showClose={false}
+        // Focus lands on the close control, as it always has here: the
+        // reader hears the title and the lede, and no provider is preselected.
+        initialFocus={closeButtonRef}
       >
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="auth-modal-close"
-          data-dialog-initial-focus
-          onClick={onClose}
+        <DialogClose
+          ref={closeButtonRef}
+          render={<Button variant="ghost" size="icon-sm" className="auth-modal-close" />}
           aria-label={isEnglish ? 'Close' : 'Cerrar'}
         >
           <X size={16} />
-        </Button>
+        </DialogClose>
 
         <div className="auth-modal-brand">
           <span className="auth-modal-mark" aria-hidden="true">P</span>
           <span className="auth-modal-wordmark">Paper<span>Tok</span></span>
         </div>
 
-        <h2 id="auth-modal-title" className="auth-modal-title">
+        <DialogTitle className="auth-modal-title">
           {isEnglish ? 'Make PaperTok yours' : 'Haz que PaperTok sea tuyo'}
-        </h2>
-        <p className="auth-modal-lede">
+        </DialogTitle>
+        <DialogDescription className="auth-modal-lede">
           {isEnglish
             ? 'Like, save and follow research, and train a feed that learns what you read.'
             : 'Da me gusta, guarda y sigue investigación, y entrena un feed que aprende lo que lees.'}
-        </p>
+        </DialogDescription>
 
         <div className="auth-modal-methods">
           <Button
@@ -162,8 +155,7 @@ export default function AuthPrompt({ onClose }) {
             {getUiErrorMessage(error, language, 'AUTH_FAILED')}
           </p>
         ) : null}
-
-      </motion.section>
-    </motion.div>
+      </DialogContent>
+    </Dialog>
   );
 }

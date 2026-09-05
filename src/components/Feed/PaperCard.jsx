@@ -11,12 +11,18 @@ import {
 import { canonicalPaperIdentity } from '../../utils/paperCanonicalKey.js';
 import ScientificText from '../ScientificText';
 import { Button } from '../ui/button.jsx';
+import { Toggle } from '../ui/toggle.jsx';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { getProjectForPaper } from '../../services/openAireService';
 import { authorExplorerPath } from '../../utils/explorerPaths.js';
 import { useNavigate, Link } from 'react-router-dom';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
+// Before the card's own stylesheet on purpose: PaperCard.css restates a few
+// of the drawer's box declarations for the two sheets and has to come later
+// in the cascade to win them.
+import { Drawer, DrawerClose, DrawerContent, DrawerHandle, DrawerTitle } from '../ui/drawer.jsx';
+import { Dialog, DialogClose, DialogContent } from '../ui/dialog.jsx';
 import './PaperCard.css';
 const RelatedPapersSheet = lazy(() => import('./RelatedPapersSheet'));
 import { findOpenAccessCopy } from '../../services/unpaywallService';
@@ -53,13 +59,7 @@ const STATUS_CHIP_ICONS = {
 };
 import { buildFollowReasonLabel } from '../../utils/followingFeed.js';
 import { isTechnicalClassification } from '../../utils/scientificClassification.js';
-import {
-  getRelatedPaperIdentity,
-  getRelatedTransitionAction,
-  getRelatedTransitionDuration,
-  getRelatedTransitionFallbackDelay,
-  RELATED_CARD_CLOSE_MS,
-} from '../../utils/relatedPaperTransition.js';
+import { getRelatedPaperIdentity } from '../../utils/relatedPaperTransition.js';
 import { hydrateCitationGraphPaper } from '../../services/citationGraphService.js';
 import { resolveWithin } from '../../utils/asyncTiming.js';
 import {
@@ -69,7 +69,6 @@ import {
   safeExternalUrl,
 } from '../../utils/externalUrl.js';
 import { openFirstTarget, openTargetsForPaper } from '../../utils/paperOpenTargets.js';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext.jsx';
 import { getPublicEntityPath, getPublicPaperUrl } from '../../utils/publicNavigation.js';
 
@@ -235,6 +234,13 @@ function RelatedPaperCardSkeleton({ label }) {
 // the eye's delayed spring (0.06 s + 0.36 s) plus a frame of slack.
 const READ_RELEASE_MS = 450;
 
+/**
+ * The rail toggles sit on the card, which has its own pointer handlers; a
+ * press on like, save or read is theirs alone. Base UI runs this before its
+ * own click handler, so the state still flips through `onPressedChange`.
+ */
+const swallowClick = (event) => event.stopPropagation();
+
 const PaperCard = memo(function PaperCard({ 
   paper, 
   isLiked = false, 
@@ -296,12 +302,10 @@ const PaperCard = memo(function PaperCard({
   );
   const [showAuthorsModal, setShowAuthorsModal] = useState(false);
   // The sheet is leaving with the page: an author was picked from it. It
-  // stays mounted and moves to its leaving pose — a short drop and a fade on
-  // the page's own leaving curve, 0.18 s against the page's 0.2 s — and the
-  // page's unmount takes it away. Not an AnimatePresence exit: a spring back
-  // down the screen (~0.6 s) was cut off part-way when the card went, and
-  // the reason for a close does not reach an exit reliably enough to pick a
-  // shorter one.
+  // closes in its leaving pose (`is-leaving`, PaperCard.css) — a short drop
+  // and a fade on the page's own leaving curve, 0.18 s against the page's
+  // 0.2 s — instead of the drawer's slide back down the screen (~0.4 s),
+  // which the page's unmount cut off part-way when the card went.
   const [authorsSheetLeaving, setAuthorsSheetLeaving] = useState(false);
   const [showRelated, setShowRelated] = useState(false);
   const [showReader, setShowReader] = useState(false);
@@ -345,11 +349,9 @@ const PaperCard = memo(function PaperCard({
   const viewStartTime = useRef(null);
   const totalViewTime = useRef(0);
   const relatedCardClosingRef = useRef(false);
-  const relatedCardTransitionTimerRef = useRef(null);
   const relatedPreparationRef = useRef(null);
   const relatedHydrationRequestRef = useRef(0);
   const analyticsViewedPaperRef = useRef(null);
-  const authorsDialogRef = useDialogFocus(showAuthorsModal, () => setShowAuthorsModal(false));
   const paperViewKey = paper?.id || paper?.doi || paper?.arxivId || 'paper';
 
   useEffect(() => {
@@ -703,36 +705,24 @@ const PaperCard = memo(function PaperCard({
     [paper.categories, paper.primaryCategory]
   );
 
+  /**
+   * The related card is a Base UI Dialog (ui/dialog.jsx). Closing — the back
+   * button, Escape, all of them arrive as `onOpenChange(false)` — flips
+   * `isClosingRelatedCard`, which takes `open` down and lets the primitive
+   * play `relatedCardOut` (PaperCard.css); the paper is only let go of in
+   * `finishRelatedCardClose`, from `onOpenChangeComplete(false)`, once that
+   * has finished. No timer stands in for the animation any more, and with
+   * reduced motion (no animation) the primitive reports the close at once.
+   */
   const closeRelatedCard = useCallback(() => {
     if (relatedCardClosingRef.current) return;
     relatedCardClosingRef.current = true;
     relatedHydrationRequestRef.current += 1;
     setIsClosingRelatedCard(true);
-    const duration = getRelatedTransitionDuration(RELATED_CARD_CLOSE_MS, prefersReducedMotion);
-    const finishRelatedCardClose = () => {
-      relatedCardClosingRef.current = false;
-      relatedPreparationRef.current = null;
-      relatedCardTransitionTimerRef.current = null;
-      setPendingRelatedPaper(null);
-      setSelectedRelatedPaper(null);
-      setIsClosingRelatedCard(false);
-    };
-    if (duration === 0) {
-      finishRelatedCardClose();
-      return;
-    }
-    relatedCardTransitionTimerRef.current = setTimeout(
-      finishRelatedCardClose,
-      getRelatedTransitionFallbackDelay(RELATED_CARD_CLOSE_MS, prefersReducedMotion),
-    );
-  }, [prefersReducedMotion]);
-  const relatedCardDialogRef = useDialogFocus(Boolean(activeRelatedPaper), closeRelatedCard);
+  }, []);
 
-  const handleRelatedCardAnimationEnd = useCallback((event) => {
-    if (event.target !== event.currentTarget || getRelatedTransitionAction(event.animationName) !== 'close') return;
+  const finishRelatedCardClose = useCallback(() => {
     if (!relatedCardClosingRef.current) return;
-    if (relatedCardTransitionTimerRef.current !== null) clearTimeout(relatedCardTransitionTimerRef.current);
-    relatedCardTransitionTimerRef.current = null;
     relatedCardClosingRef.current = false;
     relatedPreparationRef.current = null;
     setPendingRelatedPaper(null);
@@ -741,7 +731,6 @@ const PaperCard = memo(function PaperCard({
   }, []);
 
   useEffect(() => () => {
-    if (relatedCardTransitionTimerRef.current !== null) clearTimeout(relatedCardTransitionTimerRef.current);
     relatedHydrationRequestRef.current += 1;
   }, []);
 
@@ -795,8 +784,7 @@ const PaperCard = memo(function PaperCard({
   // the label says so, and the feed drops it on the next load, not this one.
   // The button is a toggle: a second press takes the mark back, the tick
   // folds away and the eye springs back in.
-  const handleMarkAsRead = (e) => {
-    e.stopPropagation();
+  const handleMarkAsRead = () => {
     if (publicMode) {
       requireAuthentication('mark_read');
       return;
@@ -876,7 +864,12 @@ const PaperCard = memo(function PaperCard({
     [paper],
   );
 
-  const handleDoubleTap = useCallback(() => {
+  // Only a tap on the card itself. The sheets, the related card and the
+  // reader are portaled to the body, and React still bubbles their clicks
+  // up this tree — the old overlays stopped propagation by hand; the DOM
+  // check covers every surface at once.
+  const handleDoubleTap = useCallback((event) => {
+    if (event?.target instanceof Node && !cardRef.current?.contains(event.target)) return;
     const now = Date.now();
     if (now - lastTap.current < 300) {
       if (!isLiked) {
@@ -893,8 +886,7 @@ const PaperCard = memo(function PaperCard({
     lastTap.current = now;
   }, [isLiked, onLike, paper, publicMode, requireAuthentication]);
 
-  const handleLike = (e) => {
-    e.stopPropagation();
+  const handleLike = () => {
     if (publicMode) {
       requireAuthentication('like');
       return;
@@ -915,8 +907,7 @@ const PaperCard = memo(function PaperCard({
     onNotInterested(paper);
   };
 
-  const handleSave = (event) => {
-    event.stopPropagation();
+  const handleSave = () => {
     if (publicMode) {
       requireAuthentication('save');
       return;
@@ -1630,12 +1621,19 @@ const PaperCard = memo(function PaperCard({
         </div>
       </article>
 
-      {/* Side actions (TikTok style) */}
+      {/* Side actions (TikTok style). Like, save and read are on/off states,
+          so they are ui Toggles: Base UI writes `aria-pressed` / `data-pressed`
+          from `pressed` and reports the flip through `onPressedChange`. The
+          click is swallowed on the way (`swallowClick`) so it never reaches
+          the card underneath, as it never did. The `--liked` / `--saved` /
+          `--read` classes stay: each names its own colour, and the stylesheet
+          and its tests key the pop and the eye-to-tick morph on them. */}
       <div className="pc-side-actions">
-        <button
+        <Toggle
           className={`pc-side-btn pc-side-btn--like ${isLiked ? 'pc-side-btn--liked' : ''}`}
-          onClick={handleLike}
-          aria-pressed={isLiked}
+          pressed={isLiked}
+          onPressedChange={handleLike}
+          onClick={swallowClick}
         >
           <span className="pc-side-icon">
             <svg viewBox="0 0 24 24" fill={isLiked ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.75">
@@ -1643,7 +1641,7 @@ const PaperCard = memo(function PaperCard({
             </svg>
           </span>
           <span className="pc-side-label">{isEnglish ? 'Like' : 'Me gusta'}</span>
-        </button>
+        </Toggle>
 
         {canOpenComments && (
           <button
@@ -1658,10 +1656,11 @@ const PaperCard = memo(function PaperCard({
           </button>
         )}
 
-        <button
+        <Toggle
           className={`pc-side-btn pc-side-btn--bookmark ${isSaved ? 'pc-side-btn--saved' : ''}`}
-          onClick={handleSave}
-          aria-pressed={isSaved}
+          pressed={isSaved}
+          onPressedChange={handleSave}
+          onClick={swallowClick}
         >
           <span className="pc-side-icon">
             <svg viewBox="0 0 24 24" fill={isSaved ? 'currentColor' : 'none'} stroke="currentColor" strokeWidth="1.75">
@@ -1670,12 +1669,13 @@ const PaperCard = memo(function PaperCard({
             </svg>
           </span>
           <span className="pc-side-label">{isEnglish ? 'Save' : 'Guardar'}</span>
-        </button>
+        </Toggle>
 
-        <button
+        <Toggle
           className={`pc-side-btn pc-side-btn--seen ${isReadActive ? 'pc-side-btn--read' : ''} ${releasingRead && !isReadActive ? 'pc-side-btn--unreading' : ''}`}
-          onClick={handleMarkAsRead}
-          aria-pressed={isReadActive}
+          pressed={isReadActive}
+          onPressedChange={handleMarkAsRead}
+          onClick={swallowClick}
           title={isReadActive
             ? (isEnglish ? 'Mark as unread' : 'Marcar como no leído')
             : (isEnglish ? 'Mark as read' : 'Marcar como leído')}
@@ -1698,7 +1698,7 @@ const PaperCard = memo(function PaperCard({
                     ? (isEnglish ? 'Open source' : 'Abrir fuente')
                     : (isEnglish ? 'Read' : 'Leer'))}
           </span>
-        </button>
+        </Toggle>
 
         <button className="pc-side-btn pc-side-btn--skip" onClick={handleNotInterested}>
           <span className="pc-side-icon">
@@ -1733,96 +1733,75 @@ const PaperCard = memo(function PaperCard({
         </div>
       )}
 
-      {/* On `document.body`, not in the card. The overlay is `position:
-          fixed`, and a fixed box inside an ancestor with a transform is fixed
-          to that ancestor: the page wrapper takes one the frame a navigation
-          starts (PageTransition slides and fades it), so a sheet still on
-          screen while an author opened from it — the phone's path to every
-          author — snapped to the page's box and slid off with it. Outside
-          the routed tree it stays where the viewport is; the related sheet
-          and the reader already live here for the same reason. */}
-      {createPortal(
-      <AnimatePresence>
-        {showAuthorsModal && (
-          <motion.div 
-            ref={authorsDialogRef}
-            className="pc-authors-modal-overlay"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="pc-authors-dialog-title"
-            tabIndex={-1}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: authorsSheetLeaving ? 0 : 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: prefersReducedMotion ? 0.1 : (authorsSheetLeaving ? 0.18 : 0.2), ease: authorsSheetLeaving ? [0.4, 0, 1, 1] : 'easeOut' }}
-            style={authorsSheetLeaving ? { pointerEvents: 'none' } : undefined}
-            onClick={(e) => { e.stopPropagation(); setShowAuthorsModal(false); }}
-          >
-            <motion.div 
-              className="pc-authors-modal-sheet"
-              initial={prefersReducedMotion ? false : { y: '100%' }}
-              animate={authorsSheetLeaving
-                ? (prefersReducedMotion ? { opacity: 0 } : { y: 24, opacity: 0 })
-                : { y: 0, opacity: 1 }}
-              exit={prefersReducedMotion ? { opacity: 0 } : { y: '100%' }}
-              transition={prefersReducedMotion
-                ? { duration: 0 }
-                : authorsSheetLeaving
-                  ? { duration: 0.18, ease: [0.4, 0, 1, 1] }
-                  : { type: 'spring', damping: 25, stiffness: 200 }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="pc-authors-modal-header">
-                <h3 id="pc-authors-dialog-title">{isEnglish ? 'Authors' : 'Autores'}</h3>
-                <button data-dialog-initial-focus onClick={() => setShowAuthorsModal(false)} aria-label={isEnglish ? 'Close authors' : 'Cerrar autores'}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
-              </div>
-              <div className="pc-authors-modal-list">
-                {(paper.authors || []).map((author, idx) => (
-                  <button
-                    key={idx}
-                    type="button"
-                    className="pc-authors-modal-item"
-                    onClick={() => {
-                      const path = authorExplorerPath(author, paper.arxivId || paper.id, { publicMode });
-                      // With somewhere to go the sheet leaves with the page;
-                      // without, it is dismissed as if by the scrim.
-                      if (path) setAuthorsSheetLeaving(true);
-                      else setShowAuthorsModal(false);
-                      trackEvent('select_content', {
-                        content_type: 'author',
-                        surface: analyticsSurface,
-                        position,
-                      });
-                      if (path) navigate(path);
-                    }}
-                  >
-                    <div className="pc-author-avatar-large" style={{ '--i': idx }} aria-hidden="true">
-                      {(author.name || author).charAt(0).toUpperCase()}
-                    </div>
-                    <span>{author.name || author}</span>
-                  </button>
-                ))}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>,
-      document.body,
-      'papertok-authors-sheet',
-      )}
-      {showRelated && createPortal(
+      {/* The authors sheet is a Base UI Drawer (ui/drawer.jsx): a bottom
+          sheet a thumb can also swipe away, portaled to `document.body` by
+          the primitive. Not in the card on purpose: a fixed box inside an
+          ancestor with a transform is fixed to that ancestor, and the page
+          wrapper takes one the frame a navigation starts (PageTransition
+          slides and fades it), so a sheet still on screen while an author
+          opened from it — the phone's path to every author — snapped to the
+          page's box and slid off with it. The related sheet and the reader
+          live outside the routed tree for the same reason. */}
+      <Drawer
+        open={showAuthorsModal}
+        onOpenChange={(nextOpen) => { if (!nextOpen) setShowAuthorsModal(false); }}
+        onOpenChangeComplete={(nextOpen) => { if (!nextOpen) setAuthorsSheetLeaving(false); }}
+      >
+        <DrawerContent
+          className={`pc-authors-modal-sheet ${authorsSheetLeaving ? 'is-leaving' : ''}`}
+          overlayClassName="pc-authors-modal-overlay"
+          aria-modal="true"
+        >
+          <DrawerHandle />
+          <div className="pc-authors-modal-header">
+            <DrawerTitle render={<h3 id="pc-authors-dialog-title" />}>{isEnglish ? 'Authors' : 'Autores'}</DrawerTitle>
+            <DrawerClose aria-label={isEnglish ? 'Close authors' : 'Cerrar autores'}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </DrawerClose>
+          </div>
+          <div className="pc-authors-modal-list">
+            {(paper.authors || []).map((author, idx) => (
+              <button
+                key={idx}
+                type="button"
+                className="pc-authors-modal-item"
+                onClick={() => {
+                  const path = authorExplorerPath(author, paper.arxivId || paper.id, { publicMode });
+                  // With somewhere to go the sheet leaves with the page, in
+                  // its leaving pose; without, it is dismissed as if by the
+                  // scrim.
+                  if (path) setAuthorsSheetLeaving(true);
+                  setShowAuthorsModal(false);
+                  trackEvent('select_content', {
+                    content_type: 'author',
+                    surface: analyticsSurface,
+                    position,
+                  });
+                  if (path) navigate(path);
+                }}
+              >
+                <div className="pc-author-avatar-large" style={{ '--i': idx }} aria-hidden="true">
+                  {(author.name || author).charAt(0).toUpperCase()}
+                </div>
+                <span>{author.name || author}</span>
+              </button>
+            ))}
+          </div>
+        </DrawerContent>
+      </Drawer>
+      {/* A Base UI Drawer too, and it portals itself to the body; it is
+          mounted here for as long as it is open and unmounted on `onClose`,
+          which the sheet only calls once its exit has played. */}
+      {showRelated && (
         <Suspense fallback={null}>
           <RelatedPapersSheet
+            key={`papertok-related-sheet:${getRelatedPaperIdentity(paper) || 'current'}`}
             paper={paper}
             onClose={closeRelatedSheet}
             onPreparePaper={prepareRelatedPaper}
             onSelectPaper={selectRelatedPaper}
           />
-        </Suspense>,
-        document.body,
-        `papertok-related-sheet:${getRelatedPaperIdentity(paper) || 'current'}`,
+        </Suspense>
       )}
       {showReader && createPortal(
         // The reader opens over a card that already painted, so there is no
@@ -1838,25 +1817,29 @@ const PaperCard = memo(function PaperCard({
         document.body,
         'papertok-paper-reader',
       )}
-      {activeRelatedPaper && createPortal(
-        <div
-          ref={relatedCardDialogRef}
-          className={`related-card-overlay ${isClosingRelatedCard ? 'is-closing' : ''}`}
-          role="dialog"
-          aria-modal="true"
+      {/* A related paper opens as a full-screen Base UI Dialog over this
+          card. The primitive owns the focus trap, Escape and the restore to
+          the row that opened it; `open` goes down before the paper is let go
+          of, so `relatedCardOut` gets to play (see closeRelatedCard). */}
+      <Dialog
+        open={Boolean(activeRelatedPaper) && !isClosingRelatedCard}
+        onOpenChange={(nextOpen) => { if (!nextOpen) closeRelatedCard(); }}
+        onOpenChangeComplete={(nextOpen) => { if (!nextOpen) finishRelatedCardClose(); }}
+      >
+        <DialogContent
+          className="related-card-overlay inset-0 max-w-none translate-x-0 translate-y-0 rounded-none"
+          overlayClassName="related-card-scrim"
+          showClose={false}
+          closeLabel={isEnglish ? 'Back to previous paper' : 'Volver al paper anterior'}
           aria-label={isEnglish ? 'Related paper' : 'Paper relacionado'}
-          tabIndex={-1}
-          onAnimationEnd={handleRelatedCardAnimationEnd}
         >
-          <button
+          <DialogClose
             className="related-card-back"
-            data-dialog-initial-focus
-            onClick={closeRelatedCard}
             aria-label={isEnglish ? 'Back to previous paper' : 'Volver al paper anterior'}
             title={isEnglish ? 'Back' : 'Volver'}
           >
             <ArrowLeft size={22} />
-          </button>
+          </DialogClose>
           {selectedRelatedPaper ? (
             <div className="related-card-content is-ready">
               <PaperCard
@@ -1881,13 +1864,11 @@ const PaperCard = memo(function PaperCard({
                 position={position}
               />
             </div>
-          ) : (
+          ) : activeRelatedPaper ? (
             <RelatedPaperCardSkeleton label={isEnglish ? 'Loading paper details' : 'Cargando detalles del paper'} />
-          )}
-        </div>,
-        document.body,
-        `papertok-related-card:${getRelatedPaperIdentity(activeRelatedPaper) || 'selected'}`,
-      )}
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 });

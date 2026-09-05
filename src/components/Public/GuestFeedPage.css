@@ -74,7 +74,38 @@
   font-weight: var(--fw-semibold);
 }
 
+/* The way back into the interests question. A chip rather than an icon:
+   once answered it names the answer ("3 áreas"), which is what tells a guest
+   the feed they are looking at was built for them. */
+.guest-interests-button {
+  display: inline-flex;
+  height: 32px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 var(--space-3) 0 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  background: transparent;
+  font: 600 0.6875rem/1 var(--font-mono);
+  letter-spacing: var(--mono-track);
+  text-transform: uppercase;
+  white-space: nowrap;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+
+.guest-interests-button.is-set {
+  border-color: var(--tint-amber-line);
+  color: var(--text-on-brand-soft);
+  background: var(--brand-yellow-soft);
+}
+
 @media (hover: hover) and (pointer: fine) {
+  .guest-interests-button:hover {
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+  }
+
   .guest-header-button:hover,
   .guest-language-button:hover {
     color: var(--text-primary);
@@ -96,6 +127,24 @@
 }
 
 @media (max-width: 560px) {
+  /* Icon only, like the sign-in button beside it: the label is the
+     accessible name either way, and the sparkle carries the yellow of an
+     answered pick. */
+  .guest-interests-button {
+    width: 32px;
+    padding: 0;
+    justify-content: center;
+  }
+
+  .guest-interests-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
   .guest-sign-in-button:not(:focus-visible) {
     gap: 0;
     font-size: 0;
@@ -107,7 +156,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .guest-header-button,
-  .guest-language-button {
+  .guest-language-button,
+  .guest-interests-button {
     transition: none;
   }
 }

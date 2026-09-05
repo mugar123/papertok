@@ -9,16 +9,44 @@
    (your pen) and ink (the model's).
    ============================================ */
 
-/* ── The selection menu ── */
+/* ── The selection menu ──
+   The popup of a Base UI Popover anchored to the selection's rectangle
+   (SelectionMenu.jsx): the positioner owns where it is and how far it may
+   stray from the passage; this owns only its box. Width is the menu's, and
+   grows with the composer — the positioner re-measures and keeps it on the
+   page. A transition rather than an animation: a menu the reader dismisses
+   mid-arrival should turn back, not finish arriving first. */
 .rd-menu {
-  position: fixed;
-  z-index: 12060;
+  width: 244px;
+  max-width: calc(100vw - var(--space-8));
   border: 1px solid var(--border-ink);
   border-radius: var(--radius-xl);
   background: var(--bg-card);
   box-shadow: var(--shadow-lg);
-  /* Scaled by framer on entry; without this the corners crawl. */
-  transform-origin: top left;
+  /* No `outline: 0` here: when a keyboard opens it the popup takes focus,
+     and the global `:focus-visible` ring is the indicator that it did. */
+  /* The corner it grows from is the one nearest the passage, and Base UI
+     says which. */
+  transform-origin: var(--transform-origin, top left);
+  transition: opacity 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    scale 150ms cubic-bezier(0.16, 1, 0.3, 1),
+    translate 150ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.rd-menu[data-composing] {
+  width: 348px;
+}
+
+.rd-menu[data-starting-style] {
+  opacity: 0;
+  scale: 0.96;
+  translate: 0 -6px;
+}
+
+.rd-menu[data-ending-style] {
+  opacity: 0;
+  scale: 0.98;
+  translate: 0 -4px;
 }
 
 .rd-menu-list {
@@ -96,7 +124,10 @@
 
 .rd-menu-input {
   width: 100%;
-  height: 78px;
+  /* Three lines to start; `ui/textarea` sizes it to what is typed from
+     there, up to a share of the viewport, never a fixed em (design.md, 7). */
+  min-height: 78px;
+  max-height: min(12rem, 30vh);
   padding: var(--space-2);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-md);
@@ -227,8 +258,13 @@
   margin: var(--space-3) 0;
 }
 
+/* The items of a single-select `ui/toggle-group` (outline variant, which
+   fills with ink when pressed — the chip's own idea). What is set here is
+   the chip's size and voice; the pressed state is Base UI's `data-pressed`. */
 .rd-rail-filter {
   position: relative;
+  height: auto;
+  min-height: 24px;
   padding: 4px 8px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-sm);
@@ -260,7 +296,7 @@
   transform: translateY(-50%);
 }
 
-.rd-rail-filter[data-on] {
+.rd-rail-filter[data-pressed] {
   border-color: var(--border-ink);
   background: var(--accent-primary);
   color: var(--text-inverse);
@@ -593,15 +629,9 @@
    the phone rule next to it. */
 
 @media (max-width: 640px) {
-  .rd-menu {
-    /* A phone has no room for a floating menu beside a passage: it spans the
-       page and stays put, with rows a thumb can hit. */
-    left: var(--space-4) !important;
-    right: var(--space-4);
-    width: auto !important;
-    max-width: calc(100vw - var(--space-8));
-  }
-
+  /* A narrow window has no room for a floating menu beside a passage: the
+     popup's `max-width` above spans the page, and the positioner keeps it
+     inside; the rows grow to what a thumb can hit. */
   .rd-menu-item { min-height: 46px; }
 }
 
@@ -609,6 +639,18 @@
   .rd-rail[data-surface='sheet'],
   .rd-rail-chevron {
     transition: none;
+  }
+
+  /* The menu still fades — a popup that pops reads as a glitch — but it
+     neither scales nor travels. */
+  .rd-menu {
+    transition: opacity 100ms linear;
+  }
+
+  .rd-menu[data-starting-style],
+  .rd-menu[data-ending-style] {
+    scale: 1;
+    translate: none;
   }
 
   /* Still hidden, just not travelled to. */

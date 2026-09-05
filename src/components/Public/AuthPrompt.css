@@ -9,24 +9,22 @@
    provider buttons from the shared Button component.
    ============================================ */
 
+/* The scrim is the Dialog primitive's own backdrop (`overlayClassName`); it
+   only takes the ink veil this modal has always had. No `backdrop-filter`:
+   the primitive fades the element's own opacity in and out, and a blur
+   under an animated opacity is re-resolved every frame — the worst case
+   for a mobile GPU. The veil alone reads as the backdrop. */
 .auth-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1800;
-  display: grid;
-  place-items: center;
-  padding: var(--space-5);
-  /* No `backdrop-filter`: AuthPrompt.jsx fades this element's own opacity
-     in and out with framer-motion (`initial`/`animate`/`exit`), and a blur
-     under an animated opacity is re-resolved every frame — the worst case
-     for a mobile GPU. The ink veil alone reads as the backdrop; its 4px
-     blur was invisible under it. */
   background: rgba(17, 19, 24, 0.5);
 }
 
+/* The sheet is the Dialog primitive's popup, centred by it; the primitive's
+   enter/leave (dialogIn/dialogOut) plays on `[data-open]`/`[data-closed]`,
+   so no motion is spelled here. The width keeps the page margin the old
+   grid padding gave the sheet on a narrow screen. */
 .auth-modal {
-  position: relative;
-  width: min(400px, 100%);
+  width: min(400px, calc(100% - 2 * var(--space-5)));
+  max-width: none;
   padding: var(--space-8) var(--space-6) var(--space-5);
   border: 1px solid var(--border-default);
   border-radius: var(--radius-2xl);

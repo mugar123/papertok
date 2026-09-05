@@ -4,6 +4,7 @@ import { AlertCircle, ChevronUp, PenLine, Sparkles, Trash2 } from 'lucide-react'
 import { ANNOTATION_FILTERS } from '../../utils/annotationOrder.js';
 import { displayProse } from '../../utils/latex.js';
 import { SHEET_DRAG_SLOP, sheetDragOffset, shouldSettleOpen } from '../../utils/sheetDrag.js';
+import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
 import ThinkingDots from './ThinkingDots.jsx';
 
 /**
@@ -211,117 +212,120 @@ export default function AnnotationRail({
         <div className="rd-rail-head">{head}</div>
       )}
 
-          <div className="rd-rail-filters" role="group" aria-label={copy.annotations}>
-            {ANNOTATION_FILTERS.map(value => (
-              <button
-                key={value}
-                type="button"
-                className="rd-rail-filter"
-                data-on={filter === value ? '' : undefined}
-                aria-pressed={filter === value}
-                onClick={() => onFilter(value)}
-              >
-                {copy.filters[value]}
-              </button>
-            ))}
-          </div>
+      {/* One filter at a time, and always one: a single-select group
+          reports `[]` when the pressed chip is pressed again, and that
+          is the one answer the margin refuses — "all" is the resting
+          state, not "none". */}
+      <ToggleGroup
+        className="rd-rail-filters"
+        variant="outline"
+        size="sm"
+        value={[filter]}
+        onValueChange={([next]) => { if (next) onFilter(next); }}
+        aria-label={copy.annotations}
+      >
+        {ANNOTATION_FILTERS.map(value => (
+          <ToggleGroupItem key={value} value={value} className="rd-rail-filter">
+            {copy.filters[value]}
+          </ToggleGroupItem>
+        ))}
+      </ToggleGroup>
 
-          <div className="rd-rail-list">
-            <AnimatePresence initial={false}>
-              {thinking && (
-                <motion.div
-                  key="thinking"
-                  className="rd-note rd-note--ai rd-note--thinking"
-                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={prefersReducedMotion
-                    ? { opacity: 0, transition: { duration: 0.12 } }
-                    : { opacity: 0, y: -4, transition: { duration: 0.18, ease: 'easeIn' } }}
-                  transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+      <div className="rd-rail-list">
+        <AnimatePresence initial={false}>
+          {thinking && (
+            <motion.div
+              key="thinking"
+              className="rd-note rd-note--ai rd-note--thinking"
+              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={prefersReducedMotion
+                ? { opacity: 0, transition: { duration: 0.12 } }
+                : { opacity: 0, y: -4, transition: { duration: 0.18, ease: 'easeIn' } }}
+              transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <span className="rd-note-origin">
+                <ThinkingDots />
+                {copy.reading}
+              </span>
+              <span className="rd-note-bar" />
+              <span className="rd-note-bar rd-note-bar--short" />
+            </motion.div>
+          )}
+
+          {error && (
+            <motion.p
+              key="error"
+              className="rd-note rd-note--failed"
+              role="alert"
+              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, transition: { duration: 0.12 } }}
+              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+            >
+              <AlertCircle size={13} />
+              {errorText}
+            </motion.p>
+          )}
+
+          {annotations.map(annotation => (
+            <motion.div
+              key={annotation.id}
+              /* No `layout` here on purpose. It reads every card's box on every
+                 render of the reader, and a forced layout on this page costs
+                 milliseconds — while buying nothing the exit does not already
+                 give: a removed card animates its own height to zero, so the
+                 cards below slide up on that same curve. */
+              className="rd-note"
+              data-kind={annotation.kind === 'ai' ? 'ai' : 'user'}
+              initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={prefersReducedMotion
+                ? { opacity: 0, transition: { duration: 0.12 } }
+                : { opacity: 0, x: -8, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: 'easeIn' } }}
+              transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.16, 1, 0.3, 1] }}
+              onAnimationComplete={() => { if (annotation.fresh) onSettle(annotation.id); }}
+            >
+              <div className="rd-note-head">
+                <span className="rd-note-origin">
+                  {annotation.kind === 'ai' && <Sparkles size={10} />}
+                  {annotation.kind === 'ai' ? copy.originAi : copy.originMine}
+                </span>
+                {/* The anchor doubles as the way back to the passage. */}
+                <button
+                  type="button"
+                  className="rd-note-where"
+                  onClick={() => onFocus(annotation)}
+                  title={copy.goToPassage}
                 >
-                  <span className="rd-note-origin">
-                    <ThinkingDots />
-                    {copy.reading}
-                  </span>
-                  <span className="rd-note-bar" />
-                  <span className="rd-note-bar rd-note-bar--short" />
-                </motion.div>
+                  {labelFor(annotation)}
+                </button>
+                <button
+                  type="button"
+                  className="rd-note-remove"
+                  onClick={() => onRemove(annotation.id)}
+                  aria-label={copy.removeAnnotation}
+                  title={copy.removeAnnotation}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </div>
+              <p className="rd-note-quote">{displayProse(annotation.quote)}</p>
+              {annotation.note && (
+                <p className="rd-note-body" data-fresh={annotation.fresh && annotation.kind === 'ai' ? '' : undefined}>
+                  {annotation.note}
+                </p>
               )}
+            </motion.div>
+          ))}
+        </AnimatePresence>
 
-              {error && (
-                <motion.p
-                  key="error"
-                  className="rd-note rd-note--failed"
-                  role="alert"
-                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, transition: { duration: 0.12 } }}
-                  transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-                >
-                  <AlertCircle size={13} />
-                  {errorText}
-                </motion.p>
-              )}
-
-              {annotations.map(annotation => (
-                <motion.div
-                  key={annotation.id}
-                  /* No `layout` here on purpose. It reads every card's box on every
-                     render of the reader, and a forced layout on this page costs
-                     milliseconds — while buying nothing the exit does not already
-                     give: a removed card animates its own height to zero, so the
-                     cards below slide up on that same curve. */
-                  className="rd-note"
-                  data-kind={annotation.kind === 'ai' ? 'ai' : 'user'}
-                  initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={prefersReducedMotion
-                    ? { opacity: 0, transition: { duration: 0.12 } }
-                    : { opacity: 0, x: -8, height: 0, marginBottom: 0, paddingTop: 0, paddingBottom: 0, transition: { duration: 0.18, ease: 'easeIn' } }}
-                  transition={{ duration: prefersReducedMotion ? 0.12 : 0.22, ease: [0.16, 1, 0.3, 1] }}
-                  onAnimationComplete={() => { if (annotation.fresh) onSettle(annotation.id); }}
-                >
-                  <div className="rd-note-head">
-                    <span className="rd-note-origin">
-                      {annotation.kind === 'ai' && <Sparkles size={10} />}
-                      {annotation.kind === 'ai' ? copy.originAi : copy.originMine}
-                    </span>
-                    {/* The anchor doubles as the way back to the passage. */}
-                    <button
-                      type="button"
-                      className="rd-note-where"
-                      onClick={() => onFocus(annotation)}
-                      title={copy.goToPassage}
-                    >
-                      {labelFor(annotation)}
-                    </button>
-                    <button
-                      type="button"
-                      className="rd-note-remove"
-                      onClick={() => onRemove(annotation.id)}
-                      aria-label={copy.removeAnnotation}
-                      title={copy.removeAnnotation}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  </div>
-                  <p className="rd-note-quote">{displayProse(annotation.quote)}</p>
-                  {annotation.note && (
-                    <p className="rd-note-body" data-fresh={annotation.fresh && annotation.kind === 'ai' ? '' : undefined}>
-                      {annotation.note}
-                    </p>
-                  )}
-                </motion.div>
-              ))}
-            </AnimatePresence>
-
-            {annotations.length === 0 && !thinking && !error && (
-              <p className="rd-rail-empty">
-                {filter === 'all' ? copy.emptyAll : copy.emptyFiltered}
-              </p>
-            )}
-          </div>
-
+        {annotations.length === 0 && !thinking && !error && (
+          <p className="rd-rail-empty">
+            {filter === 'all' ? copy.emptyAll : copy.emptyFiltered}
+          </p>
+        )}
+      </div>
     </aside>
   );
 }

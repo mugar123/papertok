@@ -43,11 +43,13 @@ import { buildPdfModel, downloadPdfDocument } from '../../utils/pdfExport.js';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useAnalyticsConsent } from '../../context/AnalyticsContext';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { pickSelectionRoute } from '../../utils/readerSelection.js';
 import { nextBarVisibility } from '../../utils/scrollDirection.js';
 import { safeDoiUrl, safeExternalUrl } from '../../utils/externalUrl.js';
 import { Button } from '../ui/button.jsx';
+import { Dialog, DialogContent } from '../ui/dialog.jsx';
+import { Popover, PopoverTrigger } from '../ui/popover.jsx';
+import { Toggle } from '../ui/toggle.jsx';
 import { ToggleGroup, ToggleGroupItem } from '../ui/toggle-group.jsx';
 import AnnotationRail from './AnnotationRail.jsx';
 import ExportCard from './ExportCard.jsx';
@@ -418,38 +420,13 @@ const GHOST_LINES = Object.freeze([
 
 const EASE_OUT = [0.16, 1, 0.3, 1];
 
-/**
- * The reader grows out of the button that opened it and collapses back into it.
- *
- * `when: 'afterChildren'` on the way out is the whole choreography: the floating
- * chrome leaves first and fast, and only once it is gone does the sheet fold
- * back towards the card. Reversing that order looks like the page fell over.
+/*
+ * The reader's own entrance and exit — growing out of the button that opened
+ * it, collapsing back into it, the floating chrome a beat behind — are CSS
+ * now, on the `[data-open]` / `[data-closed]` attributes the Base UI Dialog
+ * sets (see `.rd[data-open]` in PaperReader.css). The origin still comes from
+ * the card: it travels as the `--rd-origin` variable set on the shell below.
  */
-const SHELL_VARIANTS = {
-  hidden: { opacity: 0, scale: 0.94 },
-  visible: {
-    opacity: 1,
-    scale: 1,
-    transition: { duration: 0.32, ease: EASE_OUT, when: 'beforeChildren', staggerChildren: 0.03 },
-  },
-  exit: {
-    opacity: 0,
-    scale: 0.96,
-    transition: { duration: 0.22, ease: 'easeIn', when: 'afterChildren' },
-  },
-};
-
-const CHROME_VARIANTS = {
-  hidden: { opacity: 0, y: 8 },
-  visible: { opacity: 1, y: 0, transition: { duration: 0.28, ease: EASE_OUT } },
-  exit: { opacity: 0, y: 6, transition: { duration: 0.12, ease: 'easeIn' } },
-};
-
-const STILL_SHELL_VARIANTS = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { duration: 0.12 } },
-  exit: { opacity: 0, transition: { duration: 0.12 } },
-};
 
 /**
  * The panel's own coming and going, independent of the reader's.
@@ -459,12 +436,8 @@ const STILL_SHELL_VARIANTS = {
  * inside each target rather than on the element, which is what lets the two
  * directions differ at all.
  *
- * Passed to `animate` as objects, never as variant labels. The dock above the
- * panel is a variant node — it carries the reader's own entrance — and a label
- * on a child inside a variant tree is resolved by that tree, so the panel sat
- * at whatever the dock last said and never moved when its own state changed. An
- * object is not a variant and is not propagated: it animates when it changes,
- * which is all this needs.
+ * Passed to `animate` as objects, never as variant labels, so the panel animates
+ * whenever its own state changes and nothing above it can override that.
  */
 const PANEL_STATES = {
   shown: {
@@ -486,12 +459,6 @@ const PANEL_STATES = {
 const STILL_PANEL_STATES = {
   shown: { opacity: 1, y: 0, scale: 1, pointerEvents: 'auto', transition: { duration: 0.12 } },
   hidden: { opacity: 0, y: 0, scale: 1, pointerEvents: 'none', transition: { duration: 0.12 } },
-};
-
-const STILL_CHROME_VARIANTS = {
-  hidden: { opacity: 0 },
-  visible: { opacity: 1, transition: { duration: 0.12 } },
-  exit: { opacity: 0, transition: { duration: 0.08 } },
 };
 
 /**
@@ -735,15 +702,17 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
   /**
    * The reader closes itself and only then tells the card.
    *
-   * It has always declared an `exit`, and that exit has never run: the card
-   * mounted it as `{showReader && createPortal(…)}`, so calling `onClose`
-   * deleted the node in the same commit and framer-motion never got a chance to
-   * hold it back. Owning the presence here means the leaving animation happens
-   * where the leaving is decided, and the card keeps its one-line mount.
+   * The card mounts it as `{showReader && createPortal(…)}`, so calling
+   * `onClose` deletes the node in the same commit. Owning `open` here means
+   * the Base UI Dialog gets to play its leave first — it holds the node until
+   * the `[data-closed]` animation ends — and `onOpenChangeComplete(false)` is
+   * the one moment the card is told. The card keeps its one-line mount.
    */
   const [open, setOpen] = useState(true);
   const requestClose = useCallback(() => setOpen(false), []);
-  const dialogRef = useDialogFocus(open, requestClose);
+  // Where focus lands on open: the way back, as it always was
+  // (`data-dialog-initial-focus`, now the popup's `initialFocus`).
+  const closeButtonRef = useRef(null);
   const panel = usePanelReveal();
 
   const supportsRewrite = canRewritePaper(paper);
@@ -1184,13 +1153,13 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
    */
   const goToPassage = useCallback((annotation) => {
     const selector = `[data-section="${CSS.escape(String(annotation.sectionId))}"][data-paragraph="${Number(annotation.paragraphIndex)}"]`;
-    const paragraph = dialogRef.current?.querySelector(selector);
+    const paragraph = scrollRef.current?.querySelector(selector);
     if (!paragraph) return;
     paragraph.scrollIntoView({
       behavior: prefersReducedMotion ? 'auto' : 'smooth',
       block: 'center',
     });
-  }, [dialogRef, prefersReducedMotion]);
+  }, [prefersReducedMotion]);
 
 
   const gateError = supportsRewrite ? null : 'AI_REWRITE_NEEDS_FULL_TEXT';
@@ -1222,7 +1191,9 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
 
   /* The reader grows from wherever it was opened. `.rd` is `inset: 0`, so its
      own box is the viewport and the button's viewport coordinates are already
-     the right origin — no measuring, no offset parent to correct for. */
+     the right origin — no measuring, no offset parent to correct for. Handed
+     to the stylesheet as `--rd-origin`, which the arrival and the leave
+     keyframes read as their `transform-origin`. */
   const transformOrigin = originRect
     ? `${originRect.left + originRect.width / 2}px ${originRect.top + originRect.height / 2}px`
     : '50% 62%';
@@ -1237,9 +1208,11 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     <div className="rd-panel-group">
       <span className="rd-panel-label">{copy.level}</span>
       <ToggleGroup
-        type="single"
-        value={level}
-        onValueChange={(next) => { if (next) setLevel(next); }}
+        value={[level]}
+        // Single-select: the array carries at most one id, and it is empty
+        // when the pressed level is pressed again — which is not a request
+        // for no level at all, so it is ignored.
+        onValueChange={([next]) => { if (next) setLevel(next); }}
         aria-label={copy.level}
       >
         {PAPER_REWRITE_LEVELS.map(option => (
@@ -1258,22 +1231,58 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
 
   /* Shared between the dock (fine pointer) and `ReaderBar` (touch): the
      touch route has no dock, and the export must stay reachable there —
-     hiding it once already shipped a phone with no way to download. */
+     hiding it once already shipped a phone with no way to download.
+
+     The download button is the trigger of the export card's Popover, and
+     the card itself travels inside the same root so the two are one tree
+     wherever this slot is rendered: Base UI anchors the card above the
+     button, closes it on an outside press or Escape (and not on a press of
+     the button, which toggles), and returns focus to it afterwards. The
+     root renders no element of its own, so the group's markup is unchanged. */
   const exportControl = (
-    <div className="rd-panel-group">
-      <span className="rd-panel-label">{copy.download}</span>
-      <Button
-        variant={exportOpen ? 'brand' : 'outline'}
-        size="icon-sm"
-        onClick={() => setExportOpen(value => !value)}
-        aria-pressed={exportOpen}
-        disabled={sections.length === 0}
-        title={copy.download}
-        aria-label={copy.download}
-      >
-        <Download size={15} />
-      </Button>
-    </div>
+    <Popover open={exportOpen} onOpenChange={(next) => setExportOpen(next)}>
+      <div className="rd-panel-group">
+        <span className="rd-panel-label">{copy.download}</span>
+        <PopoverTrigger
+          render={<Toggle variant="brand" size="icon" pressed={exportOpen} />}
+          disabled={sections.length === 0}
+          title={copy.download}
+          aria-label={copy.download}
+        >
+          <Download size={15} />
+        </PopoverTrigger>
+      </div>
+      <ExportCard
+        copy={{
+          download: copy.download,
+          whatGoes: copy.whatGoes,
+          options: copy.exportOptions,
+          optionCount: copy.optionCount,
+          noneOfThese: copy.noneOfThese,
+          alwaysIncluded: copy.alwaysIncluded,
+          previewTitle: copy.previewTitle,
+          previewByline: copy.previewByline,
+          previewSection: copy.previewSection,
+          previewNote: copy.previewNote,
+          format: copy.format,
+          downloadTex: copy.downloadTex,
+          downloadPdf: copy.downloadPdf,
+          generating: copy.generating,
+          downloaded: copy.downloaded,
+          cancel: copy.cancel,
+        }}
+        counts={exportCounts}
+        include={include}
+        onToggle={(id) => setInclude(current => ({ ...current, [id]: !current[id] }))}
+        onDownload={handleDownload}
+        busy={exporting}
+        fileNames={{
+          pdf: exportFileName(paper, isEnglish ? 'en' : 'es', 'pdf'),
+          tex: exportFileName(paper, isEnglish ? 'en' : 'es'),
+        }}
+        stamp={`${isEnglish ? levelLabel.labelEn : levelLabel.label} · ${isEnglish ? 'English' : 'Español'}`}
+      />
+    </Popover>
   );
 
   // Shared with `ReaderBar` below: on the touch route the sheet holding
@@ -1289,40 +1298,46 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
     : null;
 
   return (
-    <AnimatePresence onExitComplete={onClose}>
-      {open && (
-      <motion.div
-        ref={dialogRef}
-        className="rd"
-        role="dialog"
-        aria-modal="true"
+    /* A full-screen Base UI Dialog: modal (FeedContainer's scroll guard reads
+       the `aria-modal` it sets), with pointer dismissal off because a surface
+       that covers the viewport has no outside to press — and the export card
+       and the selection menu are portaled popovers that must not read as one.
+       The centred-sheet look of DialogContent is undone in `.rd` itself
+       (PaperReader.css), which is also everything else the shell looks like. */
+    <Dialog
+      open={open}
+      onOpenChange={(next) => { if (!next) requestClose(); }}
+      onOpenChangeComplete={(next) => { if (!next) onClose(); }}
+      modal
+      disablePointerDismissal
+    >
+      <DialogContent
+        className="rd inset-0 max-w-none translate-x-0 translate-y-0 rounded-none border-0 shadow-none"
+        overlayClassName="rd-scrim"
+        showClose={false}
+        initialFocus={closeButtonRef}
         aria-label={copy.title}
-        tabIndex={-1}
-        style={prefersReducedMotion ? undefined : { transformOrigin }}
-        variants={prefersReducedMotion ? STILL_SHELL_VARIANTS : SHELL_VARIANTS}
-        initial="hidden"
-        animate="visible"
-        exit="exit"
+        style={{ '--rd-origin': transformOrigin }}
         onMouseMove={panel.onPointerMove}
         onMouseLeave={panel.onPointerGone}
       >
         {/* Chrome floats over the document instead of sitting in bars above it:
             the page is the interface, the controls are an overlay on top. */}
-        <motion.div className="rd-float-close" data-receded={chromeReceded ? '' : undefined} variants={prefersReducedMotion ? STILL_CHROME_VARIANTS : CHROME_VARIANTS}>
+        <div className="rd-float-close" data-receded={chromeReceded ? '' : undefined}>
           <Button
+            ref={closeButtonRef}
             variant="outline"
             size="icon"
             className="shadow-[var(--shadow-md)]"
             onClick={requestClose}
-            data-dialog-initial-focus
             aria-label={copy.close}
             title={copy.back}
           >
             <ArrowLeft size={18} />
           </Button>
-        </motion.div>
+        </div>
 
-        <motion.div className="rd-status" data-receded={chromeReceded ? '' : undefined} variants={prefersReducedMotion ? STILL_CHROME_VARIANTS : CHROME_VARIANTS}>
+        <div className="rd-status" data-receded={chromeReceded ? '' : undefined}>
           {/* Identity to the document, state to the chrome. The kicker names
               *what this is* ("Leer en simple"), which is the same kind of fact
               as the paper's own title next to it in `rd-doc-title` — so on a
@@ -1364,15 +1379,15 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
               </span>
             </span>
           )}
-        </motion.div>
+        </div>
 
         {/* Two elements, two jobs. The dock is what the reader's own entrance
-            and exit move; the panel inside it is what comes and goes with the
-            pointer. One element holding both animations fights itself — the
-            second to write a transform wins, and neither looks deliberate. */}
-        <motion.div
+            and exit move (in CSS, with the rest of the chrome); the panel
+            inside it is what comes and goes with the pointer. One element
+            holding both animations fights itself — the second to write a
+            transform wins, and neither looks deliberate. */}
+        <div
           className="rd-panel-dock"
-          variants={prefersReducedMotion ? STILL_CHROME_VARIANTS : CHROME_VARIANTS}
           onFocusCapture={panel.onFocusIn}
           onBlurCapture={panel.onFocusOut}
         >
@@ -1393,23 +1408,23 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
                 shared with the sheet's settings tab. */}
             <div className="rd-panel-group">
               <span className="rd-panel-label">{copy.annotations}</span>
-              <Button
-                variant={(isNarrow ? sheetOpen : railOpen) ? 'brand' : 'outline'}
-                size="icon-sm"
-                onClick={() => (isNarrow ? setSheetOpen(v => !v) : setRailOpen(v => !v))}
-                aria-pressed={isNarrow ? sheetOpen : railOpen}
+              <Toggle
+                variant="brand"
+                size="icon"
+                pressed={isNarrow ? sheetOpen : railOpen}
+                onPressedChange={() => (isNarrow ? setSheetOpen(v => !v) : setRailOpen(v => !v))}
                 title={copy.toggleAnnotations}
                 aria-label={copy.toggleAnnotations}
               >
                 <PenLine size={15} />
-              </Button>
+              </Toggle>
             </div>
             <div className="rd-panel-divider" />
 
             {exportControl}
 
           </motion.div>
-        </motion.div>
+        </div>
 
         <div
           ref={scrollRef}
@@ -1623,59 +1638,25 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
 
         {/* Over the selection, not in a corner: what it acts on is the passage
             under it, and a menu that drifts away from its subject stops being
-            about it. */}
-        <AnimatePresence>
-          {exportOpen && (
-            <ExportCard
-              copy={{
-                download: copy.download,
-                whatGoes: copy.whatGoes,
-                options: copy.exportOptions,
-                optionCount: copy.optionCount,
-                noneOfThese: copy.noneOfThese,
-                alwaysIncluded: copy.alwaysIncluded,
-                previewTitle: copy.previewTitle,
-                previewByline: copy.previewByline,
-                previewSection: copy.previewSection,
-                previewNote: copy.previewNote,
-                format: copy.format,
-                downloadTex: copy.downloadTex,
-                downloadPdf: copy.downloadPdf,
-                generating: copy.generating,
-                downloaded: copy.downloaded,
-                cancel: copy.cancel,
-              }}
-              counts={exportCounts}
-              include={include}
-              onToggle={(id) => setInclude(current => ({ ...current, [id]: !current[id] }))}
-              onDownload={handleDownload}
-              busy={exporting}
-              onClose={() => setExportOpen(false)}
-              fileNames={{
-                pdf: exportFileName(paper, isEnglish ? 'en' : 'es', 'pdf'),
-                tex: exportFileName(paper, isEnglish ? 'en' : 'es'),
-              }}
-              stamp={`${isEnglish ? levelLabel.labelEn : levelLabel.label} · ${isEnglish ? 'English' : 'Español'}`}
-            />
-          )}
-        </AnimatePresence>
-
-        <AnimatePresence>
-          {selectionRoute === 'menu' && annotations.pending && (
-            <SelectionMenu
-              anchor={annotations.pending.anchor}
-              copy={copy}
-              usesLeft={quota?.unlimited ? null : quota?.remainingUses ?? null}
-              unlimited={Boolean(quota?.unlimited)}
-              canAsk={quota ? quota.unlimited || quota.remainingUses > 0 : true}
-              busy={annotations.busy === 'saving'}
-              onHighlight={annotations.highlight}
-              onSaveNote={annotations.saveNote}
-              onAsk={annotations.ask}
-              onClose={annotations.dismiss}
-            />
-          )}
-        </AnimatePresence>
+            about it. A popover anchored to the selection's rectangle; it stays
+            mounted and follows `pending` with `open`, so its leave can play
+            over the passage it was about. (The export card lives with its
+            trigger, in `exportControl` above.) */}
+        {selectionRoute === 'menu' && (
+          <SelectionMenu
+            open={Boolean(annotations.pending)}
+            anchor={annotations.pending?.anchor}
+            copy={copy}
+            usesLeft={quota?.unlimited ? null : quota?.remainingUses ?? null}
+            unlimited={Boolean(quota?.unlimited)}
+            canAsk={quota ? quota.unlimited || quota.remainingUses > 0 : true}
+            busy={annotations.busy === 'saving'}
+            onHighlight={annotations.highlight}
+            onSaveNote={annotations.saveNote}
+            onAsk={annotations.ask}
+            onClose={annotations.dismiss}
+          />
+        )}
 
         {/* One island rather than a popover: always mounted on the touch
             route, morphing in place and hiding with the scroll. The mobile
@@ -1696,8 +1677,7 @@ export default function PaperReader({ paper, onClose, originRect = null }) {
             visible={barVisible}
           />
         )}
-      </motion.div>
-      )}
-    </AnimatePresence>
+      </DialogContent>
+    </Dialog>
   );
 }

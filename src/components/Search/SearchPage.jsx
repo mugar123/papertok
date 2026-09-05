@@ -55,6 +55,9 @@ import PaperCard from '../Feed/PaperCard';
 import PaperOverlay from '../Feed/PaperOverlay';
 import PDFViewer from '../PDF/PDFViewer';
 import ScientificText from '../ScientificText';
+import { Input } from '../ui/input.jsx';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.jsx';
+import { Toggle } from '../ui/toggle.jsx';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import {
   authorProminenceWeight,
@@ -160,12 +163,16 @@ function FollowButton({ entity, isFollowing, isPending, onToggle }) {
     ? (isEnglish ? 'Following' : 'Siguiendo')
     : (isEnglish ? 'Follow' : 'Seguir');
 
+  // A ui Toggle: Base UI writes `aria-pressed` (and `data-pressed`) from
+  // `pressed`. The click still goes through `onToggle`, which stops it from
+  // reaching the row link underneath and asks the following context.
   return (
-    <button
+    <Toggle
+      variant="outline"
       className={`search-follow-btn ${following ? 'following' : ''} ${pending ? 'is-pending' : ''}`}
+      pressed={following}
       onClick={(event) => onToggle(event, entity)}
       disabled={pending}
-      aria-pressed={following}
       aria-label={label}
       title={label}
     >
@@ -173,7 +180,7 @@ function FollowButton({ entity, isFollowing, isPending, onToggle }) {
         ? <Check size={14} aria-hidden="true" />
         : <Plus size={14} aria-hidden="true" />}
       <span>{label}</span>
-    </button>
+    </Toggle>
   );
 }
 
@@ -809,7 +816,14 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
   };
 
   return (
-    <div className="search-page-container">
+    // The page is the Tabs root: the filter bar is its list and the results
+    // its one panel, so Base UI can wire `aria-controls` / `aria-labelledby`
+    // between them and give the pills arrow-key navigation.
+    <Tabs
+      className="search-page-container"
+      value={activeSearchFilter}
+      onValueChange={handleSearchFilterChange}
+    >
       <div className="search-header">
         <div className="search-header-main">
           <button
@@ -822,7 +836,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
           </button>
           <div className={`search-input-wrapper ${searchPending ? 'is-searching' : ''}`}>
             <Search className="search-icon" size={18} />
-            <input
+            <Input
               type="search"
               className="search-input"
               placeholder={isEnglish ? 'Search PaperTok...' : 'Buscar en PaperTok...'}
@@ -843,37 +857,41 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
             )}
           </div>
         </div>
-        <div
+        {/* `line`: the active pill is underlined in the brand yellow, the one
+            mark the yellow is for (design.md, rule 3). */}
+        <TabsList
+          variant="line"
           className="search-filter-bar"
-          role="tablist"
           aria-label={isEnglish ? 'Filter search results' : 'Filtrar resultados de búsqueda'}
         >
           {SEARCH_FILTER_OPTIONS.map(({ id, labelEs, labelEn, Icon }) => {
-            const isActive = activeSearchFilter === id;
             const label = isEnglish ? labelEn : labelEs;
             return (
-              <button
+              <TabsTrigger
                 key={id}
                 id={`search-filter-${id}`}
-                type="button"
-                className={`search-filter-pill ${isActive ? 'active' : ''}`}
-                role="tab"
-                aria-selected={isActive}
-                aria-controls="search-results-panel"
-                onClick={() => handleSearchFilterChange(id)}
+                value={id}
+                className="search-filter-pill"
                 title={label}
               >
                 <Icon size={15} aria-hidden="true" />
                 <span>{label}</span>
-              </button>
+              </TabsTrigger>
             );
           })}
-        </div>
+        </TabsList>
 
       </div>
 
       <div className="search-results custom-scrollbar">
-        <div id="search-results-panel" className="search-results-list" aria-busy={searchPending}>
+        {/* One panel for every pill: it takes the active value, so it is
+            always the panel of the tab that is on. */}
+        <TabsContent
+          value={activeSearchFilter}
+          id="search-results-panel"
+          className="search-results-list"
+          aria-busy={searchPending}
+        >
             {/* Persistent: mounted before any search ever runs, so only its
                 text changes and a screen reader actually hears the outcome. */}
             <p className="visually-hidden" role="status" aria-live="polite">{resultAnnouncement}</p>
@@ -1365,7 +1383,7 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
                 </OrderedSearchSections>
               </div>
             )}
-          </div>
+        </TabsContent>
       </div>
 
       {/* Paper Card Overlay */}
@@ -1398,6 +1416,6 @@ export default function SearchPage({ onSaveToList = () => {}, onAuthRequired = (
       {pdfPaper && (
         <PDFViewer paper={pdfPaper} onClose={() => setPdfPaper(null)} />
       )}
-    </div>
+    </Tabs>
   );
 }

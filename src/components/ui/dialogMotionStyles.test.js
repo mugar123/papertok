@@ -24,10 +24,11 @@ test('el contenido del diálogo anima entrada y salida, no solo el velo', async 
   const dialog = await readFile(DIALOG_JSX, 'utf8');
   const content = dialog.match(/function DialogContent[\s\S]*?\n\}/);
   assert.ok(content, 'dialog.jsx ya no define DialogContent');
-  assert.match(content[0], /data-\[state=open\]:\[animation:dialogIn/);
-  // `both` es el contrato con radix-Presence: sin él, el unmount corta la
-  // salida y volvemos a la desaparición en un frame.
-  assert.match(content[0], /data-\[state=closed\]:\[animation:dialogOut[^\]]*_both\]/);
+  assert.match(content[0], /data-open:\[animation:dialogIn/);
+  // `both` es el contrato con Base UI: mantiene el nodo mientras
+  // `getAnimations()` devuelva algo, y sin `both` el último frame vuelve a
+  // opacidad plena antes del unmount.
+  assert.match(content[0], /data-closed:\[animation:dialogOut[^\]]*_both\]/);
 
   const variables = await readFile(VARIABLES_CSS, 'utf8');
   for (const name of ['dialogIn', 'dialogOut']) {

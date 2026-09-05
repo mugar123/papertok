@@ -24,7 +24,7 @@ const read = async (path) => stripComments(await readFile(new URL(path, import.m
 test('the composer textarea is named by more than its placeholder', async () => {
   const jsx = await read('./CommentsSheet.jsx');
 
-  const textarea = jsx.match(/<textarea\b[\s\S]*?\/>/);
+  const textarea = jsx.match(/<(?:textarea|Textarea)\b[\s\S]*?\/>/);
   assert.ok(textarea, 'the composer textarea changed shape; update this test alongside it');
   assert.match(
     textarea[0],
@@ -54,7 +54,7 @@ test('the composer textarea is named by more than its placeholder', async () => 
 test('a failed post or edit is tied to the composer field, not only announced', async () => {
   const jsx = await read('./CommentsSheet.jsx');
 
-  const textarea = jsx.match(/<textarea\b[\s\S]*?\/>/)[0];
+  const textarea = jsx.match(/<(?:textarea|Textarea)\b[\s\S]*?\/>/)[0];
   assert.match(
     textarea,
     /aria-invalid=\{composerError \? 'true' : undefined\}/,

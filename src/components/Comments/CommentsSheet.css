@@ -14,41 +14,36 @@
    `Feed/PaperCard.css` (the field rule and the area-tinted monogram).
    ============================================ */
 
-.comments-sheet-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: var(--z-modal);
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-  padding: 0;
-  /* The system scrim: ink, not black. There is no token for it — AuthPrompt
-     writes the same value, and design.md names it. No `backdrop-filter`:
-     CommentsSheet.jsx fades this element's own opacity in and out with
-     framer-motion, and a blur under an animated opacity is re-resolved every
-     frame — the worst case for a mobile GPU. The scrim alone reads as the
-     backdrop; its 4px blur was not adding visible depth. */
-  background: rgba(17, 19, 24, 0.4);
-}
-
-/* Bottom-anchored on phones, floating centered on anything wider — the same
-   surface contract as FollowSheet, so the two sheets feel like one family. */
+/* The scrim, the viewport that anchors the sheet to the bottom edge, the
+   swipe and the slide are `ui/drawer` (drawer.css): the sheet is a Base UI
+   Drawer now. What is here is the sheet's own box, and the wider-screen
+   shape where it floats centred instead — the same surface contract as
+   FollowSheet, so the two sheets feel like one family. */
 .comments-sheet {
   display: flex;
   flex-direction: column;
   width: 100%;
   max-width: 520px;
+  /* The drawer pads the safe-area inset itself; the footer below already
+     does, so only the bleed (the sheet pulled below the edge for an
+     overshoot) stays. `--bleed` is the drawer's own variable, restated
+     here with the same value so this file reads on its own. */
+  --bleed: 3rem;
+  padding-bottom: var(--bleed);
   border: 1px solid var(--border-default);
   border-bottom: none;
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   background: var(--bg-card);
   box-shadow: var(--shadow-xl);
-  overflow: hidden;
-  /* The sheet grows out of the edge it is anchored to, and it is promoted to
-     its own layer for the length of the transition so the spring stays on the
-     compositor instead of repainting the thread underneath. */
-  transform-origin: 50% 100%;
-  will-change: transform, opacity;
+}
+
+/* The drawer's content region — the thread and the composer, selectable
+   with a mouse without starting a swipe. It carries the column's flex so
+   the body's fixed height and the footer lay out as they did. */
+.comments-sheet-frame {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* ── Masthead ──
@@ -550,19 +545,49 @@
 }
 
 @media (min-width: 600px) {
-  .comments-sheet-backdrop {
+  .comments-sheet-viewport {
     align-items: center;
     padding: var(--space-4);
   }
 
+  /* Floating, not anchored: no bleed below the edge, and the arrival is a
+     short lift-and-fade in place rather than the drawer's slide — leaving is
+     a dismissal, not an arrival in reverse, so it travels less. The rest
+     transform stays the drawer's own (it carries the swipe). */
   .comments-sheet {
+    margin-bottom: 0;
+    padding-bottom: 0;
+    max-height: calc(100dvh - 2 * var(--space-4));
     border-bottom: 1px solid var(--border-default);
     border-radius: var(--radius-2xl);
-    transform-origin: 50% 50%;
+    transition: transform 320ms cubic-bezier(0.16, 1, 0.3, 1), opacity 200ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .comments-sheet[data-starting-style] {
+    opacity: 0;
+    transform: translateY(14px) scale(0.96);
+  }
+
+  .comments-sheet[data-ending-style] {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+    transition-duration: 180ms;
   }
 
   .comments-sheet-body {
     height: min(48dvh, 460px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .comments-sheet {
+    transition: opacity 120ms linear;
+  }
+
+  .comments-sheet[data-starting-style],
+  .comments-sheet[data-ending-style] {
+    opacity: 0;
+    transform: none;
   }
 }
 

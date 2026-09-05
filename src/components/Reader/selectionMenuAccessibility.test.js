@@ -37,12 +37,12 @@ test('the note textarea is named by a real <label>, not a floating span', async 
     + 'screen reader can use, wrapping the field or not.',
   );
 
-  const textarea = jsx.match(/<textarea\b[\s\S]*?\/>/);
+  const textarea = jsx.match(/<(?:textarea|Textarea)\b[\s\S]*?\/>/);
   assert.ok(textarea, 'the note textarea changed shape; update this test alongside it');
   assert.match(
     textarea[0],
     /className="rd-menu-input"/,
-    'the matched <textarea> is no longer the note field (className="rd-menu-input"); '
+    'the matched textarea is no longer the note field (className="rd-menu-input"); '
     + 'update this test alongside it',
   );
   assert.match(

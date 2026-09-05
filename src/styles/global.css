@@ -20,6 +20,11 @@
    @source line below the whole contract rather than an addition to it, so the
    built CSS can only ever contain what the app actually renders. */
 @import 'tailwindcss/utilities.css' layer(utilities) source(none);
+/* `dark:` follows the app's own theme switch (`data-theme` on <html>, set
+   before first paint by index.html), not the OS media query: this is what
+   makes a shadcn component's `dark:` utilities mean the same thing as the
+   token re-binding in variables.css. */
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
 @source '../**/*.{js,jsx}';
 
 /* shadcn expects semantic token names. Rather than a parallel palette, they are

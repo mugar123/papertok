@@ -1,43 +1,37 @@
 import { useState, useEffect } from 'react';
-import { X, Check } from 'lucide-react';
+import { Check } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
-import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { CATEGORIES } from '../../data/categories';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog.jsx';
+import { Toggle } from '../ui/toggle.jsx';
 import './EditInterestsModal.css';
 
+/**
+ * SettingsPage keeps this mounted and drives it through `isOpen`, so the
+ * Dialog is controlled from outside: the X, Escape and the scrim report
+ * `onOpenChange(false)`, which is the parent's `onClose`, and Base UI plays
+ * the leave before the popup goes. The primitive also owns what this
+ * overlay never had — a dialog role, `aria-modal`, the focus trap.
+ */
 export default function EditInterestsModal({ isOpen, onClose }) {
   const { userPreferences, updatePreferences } = useAuth();
   const { isEnglish } = useLanguage();
   const [selected, setSelected] = useState(new Set());
-  const [isClosing, setIsClosing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formError, setFormError] = useState('');
 
   // Initialize selection when modal opens
   useEffect(() => {
     if (isOpen && userPreferences) {
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         setSelected(new Set(userPreferences));
-        setIsClosing(false);
         setFormError('');
       }, 0);
+      return () => clearTimeout(timeoutId);
     }
+    return undefined;
   }, [isOpen, userPreferences]);
-
-  const handleClose = () => {
-    setIsClosing(true);
-    setTimeout(() => {
-      onClose();
-      setIsClosing(false);
-    }, 300); // match animation duration
-  };
-
-  // The overlay stays mounted through the 300ms close animation above, so the
-  // trap must too — it releases (and returns focus) only once the component
-  // is about to render null. Escape now closes through the same handleClose
-  // as the button, instead of skipping the animation.
-  const dialogRef = useDialogFocus(isOpen || isClosing, handleClose);
 
   const toggleSubcategory = (subKey) => {
     setSelected((prev) => {
@@ -81,7 +75,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
       // the element actually unmounts (formError is '', falsy) and remounts
       // fresh, which is a real, always-observable mutation. `setTimeout(0)`
       // recreates that same separation here, on the same tick-deferral this
-      // file already uses elsewhere (see the init effect and handleClose).
+      // file already uses elsewhere (see the init effect).
       setFormError('');
       setTimeout(() => {
         setFormError(isEnglish
@@ -94,7 +88,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
     setIsSaving(true);
     try {
       await updatePreferences(Array.from(selected));
-      handleClose();
+      onClose();
     } catch (error) {
       console.error('Error saving preferences:', error);
       setFormError(isEnglish
@@ -105,34 +99,20 @@ export default function EditInterestsModal({ isOpen, onClose }) {
     }
   };
 
-  if (!isOpen && !isClosing) return null;
-
   return (
-    <div className={`eim-overlay ${isClosing ? 'eim-overlay--closing' : ''}`}>
-      <div
-        ref={dialogRef}
+    <Dialog open={isOpen} onOpenChange={nextOpen => { if (!nextOpen) onClose(); }} modal>
+      <DialogContent
         className="eim-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="eim-title"
-        tabIndex={-1}
-        onClick={(e) => e.stopPropagation()}
+        overlayClassName="eim-overlay"
+        closeLabel={isEnglish ? 'Close' : 'Cerrar'}
       >
         <div className="eim-header">
           <div className="eim-header-text">
-            <h2 id="eim-title">{isEnglish ? 'Configure your algorithm' : 'Configura tu algoritmo'}</h2>
-            <p>{isEnglish
+            <DialogTitle>{isEnglish ? 'Configure your algorithm' : 'Configura tu algoritmo'}</DialogTitle>
+            <DialogDescription>{isEnglish
               ? 'Select the research areas you want to see in your feed'
-              : 'Selecciona las áreas de investigación que quieres ver en tu feed'}</p>
+              : 'Selecciona las áreas de investigación que quieres ver en tu feed'}</DialogDescription>
           </div>
-          <button
-            className="eim-close-btn"
-            onClick={handleClose}
-            data-dialog-initial-focus
-            aria-label={isEnglish ? 'Close' : 'Cerrar'}
-          >
-            <X size={20} />
-          </button>
         </div>
 
         <div className="eim-body">
@@ -144,13 +124,14 @@ export default function EditInterestsModal({ isOpen, onClose }) {
               <div key={areaKey} className="eim-area">
                 <div className="eim-area-header">
                   <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)' }}>
-                    <div className="eim-area-icon">
+                    <div className="eim-area-icon" aria-hidden="true">
                       <area.icon size={24} />
                     </div>
                     <h3 className="eim-area-title">{isEnglish ? area.labelEn : area.label}</h3>
                   </div>
-                  <button 
-                    className="eim-area-toggle-btn" 
+                  <button
+                    type="button"
+                    className="eim-area-toggle-btn"
                     onClick={() => toggleArea(areaKey)}
                   >
                     {allSelected
@@ -162,16 +143,21 @@ export default function EditInterestsModal({ isOpen, onClose }) {
                   {Object.entries(area.subcategories).map(([subKey, sub]) => {
                     const isSelected = selected.has(subKey);
                     return (
-                      <button
+                      // The shared Toggle is a native button that writes
+                      // `aria-pressed` and `data-pressed`; the pill's own CSS
+                      // styles the pressed state off that attribute.
+                      <Toggle
                         key={subKey}
-                        className={`eim-pill ${isSelected ? 'eim-pill--selected' : ''}`}
-                        onClick={() => toggleSubcategory(subKey)}
+                        variant="outline"
+                        className="eim-pill"
+                        pressed={isSelected}
+                        onPressedChange={() => toggleSubcategory(subKey)}
                       >
                         <div className="eim-pill-content">
-                          {isSelected && <Check size={14} strokeWidth={3} className="eim-pill-check" />}
+                          {isSelected && <Check size={14} strokeWidth={3} className="eim-pill-check" aria-hidden="true" />}
                           <span>{isEnglish ? sub.labelEn || sub.label : sub.label}</span>
                         </div>
-                      </button>
+                      </Toggle>
                     );
                   })}
                 </div>
@@ -191,9 +177,11 @@ export default function EditInterestsModal({ isOpen, onClose }) {
               : `${selected.size} interese${selected.size !== 1 ? 's' : ''} seleccionado${selected.size !== 1 ? 's' : ''}`}
           </span>
           <button
+            type="button"
             className="eim-save-btn"
             onClick={handleSave}
             disabled={isSaving}
+            aria-busy={isSaving ? 'true' : undefined}
           >
             {/* The spinner is decorative; the label stays put beside it so the
                 button keeps an accessible name — "Saving..." rather than
@@ -202,7 +190,7 @@ export default function EditInterestsModal({ isOpen, onClose }) {
             {isSaving ? (isEnglish ? 'Saving...' : 'Guardando...') : (isEnglish ? 'Save changes' : 'Guardar cambios')}
           </button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -20,6 +20,7 @@ import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } fr
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.js';
 import { forgetOwnProfile } from '../utils/profileSessionCaches.js';
 import { accountLooksOnboarded } from '../utils/accountOnboarding.js';
+import { clearGuestInterests } from '../utils/guestInterests.js';
 import { toggleFollowedAuthor } from '../utils/followedAuthors.js';
 
 const PROFILE_CACHE_TIMEOUT_MS = 800;
@@ -114,6 +115,10 @@ export function AuthProvider({ children }) {
               complete: true,
               preferences: Array.isArray(preferences) ? preferences : [],
             });
+            // An account that already chose its interests is the authority
+            // on them. A guest pick left waiting on this device would only
+            // ever seed the NEXT new account here with someone else's areas.
+            clearGuestInterests();
           }
           return true;
         };
@@ -248,6 +253,7 @@ export function AuthProvider({ children }) {
     if (IS_DEMO) {
       demoSet('selectedCategories', preferences);
       demoSet('onboardingComplete', true);
+      clearGuestInterests();
       return;
     }
 
@@ -258,6 +264,9 @@ export function AuthProvider({ children }) {
         preferences
       }, { merge: true });
       saveStoredOnboarding(userId, { complete: true, preferences });
+      // The interests a guest picked before signing up have now reached the
+      // profile (the onboarding pre-selects from them); the bridge is done.
+      clearGuestInterests();
     }
   }, [user?.uid]);
 
