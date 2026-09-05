@@ -55,15 +55,25 @@ test('the hero settles between its heights instead of snapping at the handover',
   assert.doesNotMatch(jsx, /className="explorer-hero" ref=/, 'the outer hero is not the animated box');
 });
 
-test('the height settle is a FLIP on one property, chaining through a settle already running', async () => {
-  const hook = await read('../../hooks/useHeightSettle.js');
-  assert.match(hook, /useLayoutEffect\(/, 'measured before paint, so the first frame is already the old height');
-  assert.match(hook, /el\.animate\(\s*\[\{ height: `\$\{from\}px` \}, \{ height: `\$\{to\}px` \}\],/);
+test('the height settle is a FLIP on one property, decided every commit and re-aimed in flight', async () => {
+  const hookRaw = await read('../../hooks/useHeightSettle.js');
+  const hook = hookRaw.replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+  assert.match(hook, /import \{ depsAreSame, planHeightSettle \} from '\.\/heightSettlePlan\.js';/);
+  // Measured before paint, so the first frame is already the old height —
+  // and with NO dependency list: the memory is kept on every commit.
+  assert.match(hook, /useLayoutEffect\(\(\) => \{/);
+  assert.match(hook, /\n {2}\}\);\n\}\n$/, 'the effect closes without a dependency array');
+  assert.doesNotMatch(hookRaw, /eslint-disable-next-line react-hooks\/exhaustive-deps/);
+  // A settle in flight is read (keyframes and clock) before it is cancelled.
   assert.match(hook, /el\.getAnimations\(\)\.find\(\(animation\) => animation\.id === SETTLE_ID\)/);
-  assert.match(hook, /from = el\.getBoundingClientRect\(\)\.height;\s*running\.cancel\(\);/);
-  assert.match(hook, /if \(!enabled \|\| from == null \|\| Math\.abs\(to - from\) < 1/, 'no animation on the first measurement or on a change too small to see');
-  // Clipped only while moving: the box is smaller than its content on the way
-  // down and on the way up, and a project's links menu hangs outside it at rest.
+  assert.match(hook, /const \[start, end\] = inFlight\.effect\.getKeyframes\(\);/);
+  assert.match(hook, /current = el\.getBoundingClientRect\(\)\.height;\s*inFlight\.cancel\(\);/);
+  // The decision is the pure module's; the hook only measures and drives.
+  assert.match(hook, /const plan = planHeightSettle\(\{ remembered: lastHeightRef\.current, depsChanged, running, current, natural \}\);/);
+  assert.match(hook, /lastHeightRef\.current = plan\.remember;/);
+  assert.match(hook, /el\.animate\(\s*\[\{ height: `\$\{plan\.from\}px` \}, \{ height: `\$\{plan\.to\}px` \}\],/);
+  assert.match(hook, /if \(plan\.action === 'resume'\) animation\.currentTime = plan\.currentTime;/);
+  // Clipped only while moving; a newer settle keeps the clip.
   assert.match(hook, /el\.style\.overflow = 'hidden';/);
   assert.match(hook, /animation\.finished\.then\(release, release\);/);
   assert.match(hook, /if \(el\.getAnimations\(\)\.some\(\(other\) => other\.id === SETTLE_ID\)\) return;/, 'a newer settle keeps the clip');
