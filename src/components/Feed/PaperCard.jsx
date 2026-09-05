@@ -1254,15 +1254,15 @@ const PaperCard = memo(function PaperCard({
               // title jolt down a full row in a single frame -- that snap,
               // not the easing, read as abrupt. This is the middle ground: a
               // short measured `height: 0 -> auto` tween eases the space
-              // open. It is a layout property again, knowingly -- 0.45s once
-              // per card, on this slot's subtree. The pill itself stays
-              // invisible until the space has mostly opened, then fades in
-              // via the inner `.pc-project-badge-motion` (which owns all the
-              // opacity/y/scale so the two layers never stack curves). No
-              // overflow clip on this slot on purpose: the global
-              // `:focus-visible` ring overhangs the pill by 4px and a hard
-              // clip would cut it -- the fade delay below is what keeps the
-              // pill from ghosting over the title while the space opens.
+              // open. It is a layout property again, knowingly -- 0.2s once
+              // per card, the catalog's own entrance curve, on this slot's
+              // subtree. The pill itself fades in over the same 0.2s via the
+              // inner `.pc-project-badge-motion`, which now animates only
+              // opacity and a full `transform` string -- no `y`/`scale`
+              // shorthands and no delay, so it composites off the main
+              // thread while the feed paints. No overflow clip on this slot
+              // on purpose: the global `:focus-visible` ring overhangs the
+              // pill by 4px and a hard clip would cut it.
               initial={prefersReducedMotion
                 ? { opacity: 0 }
                 : { height: 0 }}
@@ -1274,22 +1274,19 @@ const PaperCard = memo(function PaperCard({
                 : { height: 0, opacity: 0 }}
               transition={prefersReducedMotion
                 ? { duration: 0.12 }
-                : { duration: 0.45, ease: [0.25, 0.1, 0.25, 1] }}
+                : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             >
               <div className="pc-project-badge-slot-inner">
                 <motion.div
                   className="pc-project-badge-motion"
                   initial={prefersReducedMotion
                     ? false
-                    : { opacity: 0, y: 10, scale: 0.98 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                    : { opacity: 0, transform: 'translateY(6px)' }}
+                  animate={{ opacity: 1, transform: 'translateY(0px)' }}
                   exit={{ opacity: 0, transition: { duration: 0.15 } }}
                   transition={prefersReducedMotion
                     ? { duration: 0.12 }
-                    : {
-                      opacity: { delay: 0.3, duration: 0.5, ease: 'easeOut' },
-                      default: { delay: 0.3, duration: 0.6, ease: [0.22, 1, 0.36, 1] },
-                    }}
+                    : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
                 >
                   <button
                     type="button"

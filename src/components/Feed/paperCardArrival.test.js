@@ -59,3 +59,22 @@ test('the abstract toggle keeps its place from the first frame, so the arrival p
   const reduced = css.match(/@media \(prefers-reduced-motion: reduce\) \{[\s\S]*?\n\}/g) || [];
   assert.ok(reduced.some((block) => /\.pc-abstract-toggle[\s\S]*?transition: none;/.test(block)), 'reduced motion drops the fade');
 });
+
+/**
+ * The project badge arrives async and opens its own space. It used to take
+ * 900ms: a 450ms height on a built-in-like curve, then the badge on `y`/
+ * `scale` shorthands after a 300ms delay — main-thread motion inside the
+ * feed, on a card being read, tens of times a day. The space still opens
+ * (nothing else can move what is below), on the catalog's clock; the badge
+ * itself arrives on opacity and a full transform string, with no delay.
+ */
+test('the project badge opens its space in 200ms and arrives on the compositor', async () => {
+  const jsx = await read('./PaperCard.jsx');
+  const slot = jsx.match(/className="pc-project-badge-slot"[\s\S]*?className="pc-project-badge-motion"[\s\S]*?>\s*<button/);
+  assert.ok(slot, 'the badge slot and its motion wrapper are still there');
+  assert.match(slot[0], /: \{ duration: 0\.2, ease: \[0\.23, 1, 0\.32, 1\] \}\}/, 'the slot opens in 200ms');
+  assert.match(slot[0], /initial=\{prefersReducedMotion\s*\?\s*false\s*:\s*\{ opacity: 0, transform: 'translateY\(6px\)' \}\}/);
+  assert.match(slot[0], /animate=\{\{ opacity: 1, transform: 'translateY\(0px\)' \}\}/);
+  assert.doesNotMatch(slot[0], /delay:/);
+  assert.doesNotMatch(slot[0], /\by: \d|scale:/);
+});
