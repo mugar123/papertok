@@ -249,13 +249,19 @@ async function defaultReadAuthorPage(database, uid, pageSize, cursor) {
     ...(cursor ? [startAfter(cursor)] : []),
     limit(pageSize),
   ));
-  return snapshot.docs.map(document => ({
-    id: document.id,
-    data: document.data(),
-    // papers/{paperKey}/comments/{id} — the grandparent names the thread.
-    paperKey: document.ref.parent.parent?.id ?? null,
-    cursor: document,
-  }));
+  return {
+    // A query never rejects for lack of a backend: against a stalled channel
+    // it resolves empty from the in-memory cache at the SDK's ten-second
+    // mark. The caller must know, or it will paint that as "no comments".
+    fromCache: snapshot.metadata?.fromCache === true,
+    rows: snapshot.docs.map(document => ({
+      id: document.id,
+      data: document.data(),
+      // papers/{paperKey}/comments/{id} — the grandparent names the thread.
+      paperKey: document.ref.parent.parent?.id ?? null,
+      cursor: document,
+    })),
+  };
 }
 
 /**
@@ -307,13 +313,14 @@ export async function fetchMyCommentsPage({ cursor = null, pageSize } = {}, over
   const size = Number.isInteger(pageSize) && pageSize > 0
     ? Math.min(pageSize, MY_COMMENTS_PAGE_SIZE)
     : MY_COMMENTS_PAGE_SIZE;
-  const rows = await api.readAuthorPage(api.database, uid, size, cursor);
+  const { rows, fromCache = false } = await api.readAuthorPage(api.database, uid, size, cursor);
   const comments = rows.map(row => ({ id: row.id, paperKey: row.paperKey, ...row.data }));
   const last = rows.length ? rows[rows.length - 1] : null;
   return {
     comments,
     cursor: rows.length >= size ? (last?.cursor ?? null) : null,
     hasMore: rows.length >= size,
+    fromCache: fromCache === true,
   };
 }
 

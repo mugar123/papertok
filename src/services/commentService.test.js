@@ -243,13 +243,32 @@ test('the comment count is capped and says so', async () => {
 
 test('my comments come back with the thread key their path names', async () => {
   const page = await fetchMyCommentsPage({}, api({
-    readAuthorPage: async () => [
-      { id: 'c1', paperKey: 'K1', data: { text: 'a', status: 'hidden' }, cursor: 'x' },
-    ],
+    readAuthorPage: async () => ({
+      fromCache: false,
+      rows: [{ id: 'c1', paperKey: 'K1', data: { text: 'a', status: 'hidden' }, cursor: 'x' }],
+    }),
   }));
   assert.equal(page.comments[0].paperKey, 'K1');
   assert.equal(page.comments[0].status, 'hidden',
     'hidden comments surface here — it is where the author learns of moderation');
+  assert.equal(page.fromCache, false);
+});
+
+test('an empty answer carries where it came from', async () => {
+  const cached = await fetchMyCommentsPage({}, api({
+    readAuthorPage: async () => ({ fromCache: true, rows: [] }),
+  }));
+  assert.deepEqual(cached, { comments: [], cursor: null, hasMore: false, fromCache: true });
+
+  const server = await fetchMyCommentsPage({}, api({
+    readAuthorPage: async () => ({ fromCache: false, rows: [] }),
+  }));
+  assert.equal(server.fromCache, false);
+});
+
+test('a missing fromCache flag counts as a server answer', async () => {
+  const page = await fetchMyCommentsPage({}, api({ readAuthorPage: async () => ({ rows: [] }) }));
+  assert.equal(page.fromCache, false);
 });
 
 // --- groupThread -----------------------------------------------------------
