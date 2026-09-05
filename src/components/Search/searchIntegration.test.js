@@ -616,3 +616,11 @@ test('the search page input is named by more than its placeholder', () => {
     'the search input lost its aria-label and is named only by a placeholder again.',
   );
 });
+
+test('author, institution and topic rows hand their entity over in router state', async () => {
+  const palette = await readFile(new URL('./SearchCommand.jsx', import.meta.url), 'utf8');
+  assert.match(palette, /import \{ handoverFromSearchRow \} from '\.\.\/\.\.\/utils\/explorerHandover\.js';/);
+  assert.match(palette, /onSelect=\{\(\) => go\(path, \{ entity: handoverFromSearchRow\('author', author\), entityType: 'author' \}\)\}/);
+  assert.match(palette, /onSelect=\{\(\) => go\(`\/explorer\/institution\/\$\{lastPathSegment\(institution\.id\)\}`, \{ entity: handoverFromSearchRow\('institution', institution\), entityType: 'institution' \}\)\}/);
+  assert.match(palette, /onSelect=\{\(\) => go\(`\/explorer\/topic\/\$\{encodeURIComponent\(lastPathSegment\(concept\.id\)\)\}`, \{ entity: handoverFromSearchRow\('topic', concept\), entityType: 'topic' \}\)\}/);
+});

@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
-import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Building2, Lightbulb, Users, Loader2, Search, X, Share2, ExternalLink, Filter, SlidersHorizontal, ChevronRight, ChevronDown, BadgeCheck, Check, FileText, Briefcase, Globe, MapPin, BookOpen, Download, Eye, Award, Tag } from 'lucide-react';
 import { getEntityById, getWorksByEntity, getAuthorsByEntity, enrichPapersBatch, fetchPapersByDois, getAuthorProfileExact, getAuthorProfileByOrcid, findInstitution, getEntityRecentImpact, getLocalTopicEntity, enrichAuthorInstitutionLocalization } from '../../services/openAlexService';
 import { isOpenAlexRateLimitError } from '../../services/openAlexClient';
@@ -22,6 +22,7 @@ import { useHeightSettle } from '../../hooks/useHeightSettle';
 import { CATEGORIES } from '../../data/categories';
 import { areaAccentForCategory as getAreaGradient, areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { explorerSkeletonShape, hasAuthorsTab } from '../../utils/explorerSkeletonShape.js';
+import { handedEntityFor } from '../../utils/explorerHandover.js';
 import { useDialogFocus } from '../../hooks/useDialogFocus.js';
 import { Button } from '../ui/button.jsx';
 import { useFollowing } from '../../context/FollowingContext';
@@ -215,21 +216,23 @@ export default function EntityExplorer({
     interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
 
-  // A free-text topic is resolved from the route alone, and a local one — the
-  // id a category pill on a card navigates to — from CATEGORIES; neither has a
-  // fetch behind it, so both are born live. Born loading instead, the page
-  // painted the full skeleton for exactly one frame (the effect below resolves
-  // it right after that paint) and `useHeightSettle` then spent 360ms
-  // animating the hero body from the skeleton's height to the topic's — a
-  // settle explaining a wait that never happened, on the very path a topic
-  // tag on a card takes (measured: 109→146 during the page's own entrance).
-  // The effect still re-resolves it; that is idempotent.
+  // A page can be born live three ways: with the entity a search row handed
+  // over in router state (`explorerHandover.js` — measured before this, an
+  // author picked from the palette arrived as a skeleton and collapsed 113px,
+  // 156px on a phone while the page was still sliding in); as a local topic,
+  // resolved from CATEGORIES; or as a free-text topic, resolved from the
+  // route. None has a fetch behind it. Born loading instead, the page painted
+  // the skeleton for a frame and settled from its height to the real one — a
+  // wait that never happened, animated. The effect below still fetches the
+  // full record; for a handed entity that is an upgrade, never a wait.
+  const location = useLocation();
+  const handedEntity = useMemo(() => handedEntityFor(type, id, location.state), [id, location.state, type]);
   const localTopic = useMemo(
     () => (type === 'topic' || type === 'concept' ? getLocalTopicEntity(id) : null),
     [id, type],
   );
-  const bornResolved = Boolean(localTopic) || (type === 'topic' && isOpaqueQueryTopicText(id));
-  const [entity, setEntity] = useState(() => (bornResolved ? (localTopic || resolveQueryTopicRoute(id, searchParams)) : null));
+  const bornResolved = Boolean(handedEntity) || Boolean(localTopic) || (type === 'topic' && isOpaqueQueryTopicText(id));
+  const [entity, setEntity] = useState(() => (bornResolved ? (handedEntity || localTopic || resolveQueryTopicRoute(id, searchParams)) : null));
   const [entityError, setEntityError] = useState(null);
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState([]);
@@ -592,9 +595,14 @@ export default function EntityExplorer({
     let isCancelled = false;
 
     async function loadEntity() {
-      setIsLoadingEntity(true);
       setEntityError(null);
-      setEntity(null);
+      if (handedEntity) {
+        setEntity(handedEntity);
+        setIsLoadingEntity(false);
+      } else {
+        setIsLoadingEntity(true);
+        setEntity(null);
+      }
       setPapers([]);
       setIsLoadingPapers(true);
       setEntityAuthors([]);
@@ -709,7 +717,7 @@ export default function EntityExplorer({
         if (isCancelled) return;
       }
       
-      setEntity(data);
+      setEntity(data || handedEntity);
       setIsLoadingEntity(false);
 
       // Both follow-up requests declare themselves before either starts, in
@@ -773,7 +781,7 @@ export default function EntityExplorer({
     return () => {
       isCancelled = true;
     };
-  }, [type, id, searchParams, entityReloadKey]);
+  }, [type, id, searchParams, entityReloadKey, handedEntity]);
 
   useEffect(() => {
     if (!canLoadWikiInfo) {

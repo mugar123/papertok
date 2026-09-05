@@ -84,3 +84,16 @@ test('the skeleton tab strip stands as tall as the live one', async () => {
   assert.match(css, /\.explorer-skeleton \.ee-tabs \{\s*min-height: 40px;\s*align-items: center;\s*\}/);
   assert.match(css, /\.ee-tab \{[^}]*padding: 10px 2px;[^}]*\}/, 'the 40px is the live tab: 10px either side of the label and the 3px rule');
 });
+
+test('the explorer is born with the entity a link handed over, and treats its own fetch as an upgrade', async () => {
+  const jsx = (await read('./EntityExplorer.jsx')).replace(/\/\*[\s\S]*?\*\/|^\s*\/\/.*$/gm, '');
+  assert.match(jsx, /import \{ useParams, useNavigate, useSearchParams, useLocation \} from 'react-router-dom';/);
+  assert.match(jsx, /import \{ handedEntityFor \} from '\.\.\/\.\.\/utils\/explorerHandover\.js';/);
+  assert.match(jsx, /const handedEntity = useMemo\(\(\) => handedEntityFor\(type, id, location\.state\), \[id, location\.state, type\]\);/);
+  assert.match(jsx, /const bornResolved = Boolean\(handedEntity\) \|\| Boolean\(localTopic\) \|\| \(type === 'topic' && isOpaqueQueryTopicText\(id\)\);/);
+  assert.match(jsx, /useState\(\(\) => \(bornResolved \? \(handedEntity \|\| localTopic \|\| resolveQueryTopicRoute\(id, searchParams\)\) : null\)\)/);
+  // The load never puts a handed page back into the skeleton.
+  assert.match(jsx, /if \(handedEntity\) \{\s*setEntity\(handedEntity\);\s*setIsLoadingEntity\(false\);\s*\} else \{\s*setIsLoadingEntity\(true\);\s*setEntity\(null\);\s*\}/);
+  assert.match(jsx, /setEntity\(data \|\| handedEntity\);/);
+  assert.match(jsx, /\}, \[type, id, searchParams, entityReloadKey, handedEntity\]\);/);
+});

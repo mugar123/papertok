@@ -24,6 +24,7 @@ import { useEntitySearch } from '../../hooks/useEntitySearch.js';
 import { useFollowing } from '../../context/FollowingContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { searchPaperDestination } from '../../utils/searchDestinations.js';
+import { handoverFromSearchRow } from '../../utils/explorerHandover.js';
 import { getLocalizedInstitutionName } from '../../utils/institutionLocalization';
 import {
   buildSearchSectionValues,
@@ -270,7 +271,7 @@ export default function SearchCommand({ open, onOpenChange }) {
         ? `/explorer/author/https%3A%2F%2Forcid.org%2F${orcid}`
         : `/explorer/author/${lastPathSegment(author.id)}`;
       return (
-        <CommandItem key={author.id} value={`author-${author.id}`} onSelect={() => go(path)}>
+        <CommandItem key={author.id} value={`author-${author.id}`} onSelect={() => go(path, { entity: handoverFromSearchRow('author', author), entityType: 'author' })}>
           <Users size={14} className="sc-icon" />
           <span className="sc-label">{author.display_name}</span>
           <span className="sc-meta">
@@ -286,7 +287,7 @@ export default function SearchCommand({ open, onOpenChange }) {
       <CommandItem
         key={institution.id}
         value={`institution-${institution.id}`}
-        onSelect={() => go(`/explorer/institution/${lastPathSegment(institution.id)}`)}
+        onSelect={() => go(`/explorer/institution/${lastPathSegment(institution.id)}`, { entity: handoverFromSearchRow('institution', institution), entityType: 'institution' })}
       >
         <Building2 size={14} className="sc-icon" />
         <span className="sc-label">
@@ -304,7 +305,7 @@ export default function SearchCommand({ open, onOpenChange }) {
       <CommandItem
         key={concept.id}
         value={`topic-${concept.id}`}
-        onSelect={() => go(`/explorer/topic/${encodeURIComponent(lastPathSegment(concept.id))}`)}
+        onSelect={() => go(`/explorer/topic/${encodeURIComponent(lastPathSegment(concept.id))}`, { entity: handoverFromSearchRow('topic', concept), entityType: 'topic' })}
       >
         <Lightbulb size={14} className="sc-icon" />
         <span className="sc-label">{concept.display_name || concept.label}</span>
