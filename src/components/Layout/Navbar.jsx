@@ -74,7 +74,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
     navbarHasArrived = true;
     setArriving(false);
   };
-  const { feedMode, setFeedMode } = useFeed();
+  const { setFeedMode } = useFeed();
   const { isEnglish } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -98,7 +98,20 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
   const isFollowingActive = pathname === '/following';
   const isResearchActive = pathname === '/research' || pathname === '/report';
   const isHomeActive = pathname === '/';
-  const activeTab = isHomeActive && feedMode === 'top' ? 'home' : isResearchActive ? 'research' : isFollowingActive ? 'following' : '';
+  // Which tab is current is the pathname, and nothing else. This used to also
+  // require `feedMode === 'top'`, from a time when this feed had more than one
+  // mode; `feedMode` has had exactly one reachable value since — FeedContext
+  // initialises it to 'top', and `handleSetFeedMode`, whose only caller in the
+  // app is the For you tab below (always with 'top'), returns early when the
+  // mode is unchanged. The gate started to matter the moment that tab became a
+  // NavLink (2026-09-05): React Router appends its own `active` class and sets
+  // `aria-current="page"` from `isActive`, which is the pathname alone, so a
+  // narrower hand-written condition could not have won — the tab would have
+  // been marked current while this file claimed it was not. If a second feed
+  // mode is ever added, this line and that `aria-current` have to be revisited
+  // together: a `className` callback suppresses the appended class, but nothing
+  // in NavLink's plain API gates `aria-current`.
+  const activeTab = isHomeActive ? 'home' : isResearchActive ? 'research' : isFollowingActive ? 'following' : '';
   const linksRef = useRef(null);
   const rule = useActiveTabRule(linksRef, `${activeTab}:${isEnglish}`);
 
@@ -155,7 +168,7 @@ export default function Navbar({ onOpenSearch = () => {}, searchOpen = false }) 
           <NavLink
             to="/"
             end
-            className={`navbar-link ${isHomeActive && feedMode === 'top' ? 'active' : ''}`}
+            className={`navbar-link ${isHomeActive ? 'active' : ''}`}
             onClick={() => setFeedMode('top')}
           >
             <Layers size={15} aria-hidden="true" />
