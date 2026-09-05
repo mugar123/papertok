@@ -2066,6 +2066,7 @@ export default function EntityExplorer({
                   </div>
                 ) : wikiDescription ? (
                   <p
+                    key={visibleWikiInfo?.extract ? 'wiki' : 'fallback'}
                     ref={wikiDescriptionTextRef}
                     className={isWikiDescriptionExpanded ? 'expanded' : 'collapsed'}
                     style={wikiDescriptionExpandedHeight ? { '--wiki-description-expanded-height': `${wikiDescriptionExpandedHeight}px` } : undefined}

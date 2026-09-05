@@ -205,3 +205,24 @@ test('the project summary box is a plain block; the settle owns its height', asy
   assert.doesNotMatch(box[0], /\blayout\b/);
   assert.doesNotMatch(box[0], /transition=/);
 });
+
+/**
+ * Measured opening an arXiv author with no OpenAlex profile from the feed:
+ * 700ms of a 1300px skeleton, then a centred line in one frame. The error
+ * resolves from the same 0.35 as every other arrival in the hero; the
+ * reduced-motion block already names `.explorer-error`.
+ */
+test('the error screen resolves in place instead of cutting', async () => {
+  const css = stripComments(await read('./EntityExplorer.css'));
+  assert.match(css, /\.explorer-error \{[^}]*animation: slideUpFade 0\.42s cubic-bezier\(0\.16, 1, 0\.3, 1\) both;[^}]*\}/);
+});
+
+/**
+ * The paragraph used to change text without remounting — from one line of
+ * local description to three of Wikipedia at opacity 1, with none of the
+ * arrival `wikiProseIn` promises. Keyed by source, the words arrive again.
+ */
+test('the Wikipedia paragraph is keyed by its source so its arrival replays', async () => {
+  const jsx = await read('./EntityExplorer.jsx');
+  assert.match(jsx, /<p\s+key=\{visibleWikiInfo\?\.extract \? 'wiki' : 'fallback'\}\s+ref=\{wikiDescriptionTextRef\}/);
+});

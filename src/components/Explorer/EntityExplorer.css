@@ -27,6 +27,9 @@
   gap: var(--space-4);
   color: var(--text-secondary);
   background: var(--bg-primary);
+  /* Resolves from 0.35 like every other arrival in the hero: it replaces a
+     skeleton that stood for 700ms, and it used to replace it in one frame. */
+  animation: slideUpFade 0.42s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
 .explorer-error h2 {
@@ -2413,10 +2416,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .explorer-hero-content,
-  /* Forward guard: `.explorer-error` declares no animation or transition of
-     its own today, so this line switches nothing off yet. It stays so that an
-     entrance added to the error screen later arrives already guarded, instead
-     of shipping motion that reduced-motion does not catch. */
+  /* The error screen's entrance (`slideUpFade`) goes with the rest. */
   .explorer-error,
   .ehc-wiki p,
   .ehc-wiki-skeleton span::after,
