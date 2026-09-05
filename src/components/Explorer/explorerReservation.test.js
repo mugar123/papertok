@@ -73,3 +73,8 @@ test('the project skeleton reserves its summary box and the stat cells that land
   const css = stripComments(await read('./EntityExplorer.css'));
   assert.match(css, /\.project-summary-box--reserved \{\s*font-size: 0\.9375rem;\s*line-height: 1\.6;/);
 });
+
+test('the page skeleton asks the route whether an ORCID card is coming', async () => {
+  const jsx = await read('./EntityExplorer.jsx');
+  assert.match(jsx, /const shape = explorerSkeletonShape\(type, \{ hasOrcid: Boolean\(extractOrcid\(id\)\) \}\);/);
+});

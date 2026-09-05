@@ -1277,7 +1277,7 @@ export default function EntityExplorer({
        all reserved between the stats and the tab strip. On an author that was
        a second tab the page would never render and a 177px drop when the real
        header arrived; on an institution, 242px. */
-    const shape = explorerSkeletonShape(type);
+    const shape = explorerSkeletonShape(type, { hasOrcid: Boolean(extractOrcid(id)) });
     return (
       <div
         className={`explorer-container explorer-skeleton explorer-skeleton--${type || 'entity'}`}

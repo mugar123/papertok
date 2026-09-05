@@ -37,7 +37,13 @@ test('the entity can only ever remove the tab, never add one', () => {
 });
 
 test('each type reserves the block it actually carries', () => {
-  assert.equal(explorerSkeletonShape('author').aside, 'orcid');
+  // An author's ORCID card is reserved only when the route knows there is one
+  // (an ORCID id in the route). Three of four authors opened in the 2026-09-05
+  // audit had no record: a reserved block that never comes is the list rising
+  // 113px 400ms after the page has already landed, while an unreserved one that
+  // does come grows the hero from the bottom under the settle's clip.
+  assert.equal(explorerSkeletonShape('author').aside, 'none');
+  assert.equal(explorerSkeletonShape('author', { hasOrcid: true }).aside, 'orcid');
   assert.equal(explorerSkeletonShape('institution').aside, 'wiki');
   // Measured at 390px: a project hero landed 276px taller than its skeleton,
   // 122 of it the summary box OpenAIRE returns for nearly every grant.
