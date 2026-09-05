@@ -172,3 +172,17 @@ test('the hero body settles on a curve that lands, not the arrival curve', async
   assert.match(call[0], /easing: 'cubic-bezier\(0\.4, 0, 0\.2, 1\)'/);
   assert.doesNotMatch(call[0], /0\.16, 1, 0\.3, 1/, 'the settle must not ride the expo-out');
 });
+
+/**
+ * `useHeightSettle` pins the hero body's height with a Web Animation. A flex
+ * column with a definite height smaller than its content shrinks the items
+ * whose automatic minimum size is 0 — exactly the ones with `overflow:
+ * hidden`: the experience panel, the Wikipedia fold, the wiki block. Measured
+ * on ORCID's arrival: the panel laid out at 0px for the first 117ms of a
+ * 360ms settle, its inner 136px the whole time, then grew 0→152 in the tail
+ * and shoved the card that had already landed.
+ */
+test('nothing in the hero body gives way to the settle', async () => {
+  const css = stripComments(await read('./EntityExplorer.css'));
+  assert.match(css, /\.explorer-hero-content > \* \{\s*flex-shrink: 0;\s*\}/);
+});

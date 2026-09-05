@@ -105,6 +105,19 @@
   animation: slideUpFade 0.42s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* The settle (`useHeightSettle`) pins this box's height with a Web Animation.
+   A flex column with a definite height smaller than its content shrinks the
+   items whose automatic minimum size is 0 — exactly the ones with `overflow:
+   hidden`: the experience panel, the Wikipedia fold, the wiki block. Measured
+   on ORCID's arrival: the panel laid out at 0px for the first 117ms of a
+   360ms settle, its inner 136px the whole time, then grew 0→152 in the tail
+   and shoved the ORCID card that had already landed. Nothing in this column
+   may give way: the box clips at the bottom while it grows, which is the
+   reveal the settle exists for. */
+.explorer-hero-content > * {
+  flex-shrink: 0;
+}
+
 /* The skeleton is the page's first paint, and the page transition already
    brings it in; a second fade on top of that (0.35 → 1 over 420 ms while the
    page itself went 0 → 1 over 300 ms) was content arriving after its frame.
