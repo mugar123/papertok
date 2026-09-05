@@ -155,6 +155,26 @@ const WikiBlockSkeleton = () => (
   </div>
 );
 
+/**
+ * The project's summary box before the grant has answered. The live box is
+ * three clamped lines of serif at 0.9375rem/1.6 and a show-more toggle, in a
+ * box padded 16/16/10 — the same line box `.ehc-wiki-skeleton` already
+ * reserves for the Wikipedia paragraph, so it borrows those rows: three of
+ * prose and one for the toggle, 16 + 96 + 10 = 122px, which is what landed
+ * (measured at 390px). Unreserved, the summary was 122 of the 276px a project
+ * hero grew by at the handover.
+ */
+const ProjectSummarySkeleton = () => (
+  <div className="project-summary-box project-summary-box--reserved" aria-hidden="true">
+    <div className="ehc-wiki-skeleton">
+      <span />
+      <span />
+      <span />
+      <span className="ehc-wiki-skeleton-toggle" />
+    </div>
+  </div>
+);
+
 const handleActivationKey = (event, action) => {
   if (event.key !== 'Enter' && event.key !== ' ') return;
   event.preventDefault();
@@ -195,11 +215,19 @@ export default function EntityExplorer({
     interactionIdFor, toggleLike, markNotInterested, markAsRead, unmarkAsRead, trackViewTime, trackSkip,
   } = useFeed();
 
-  const [entity, setEntity] = useState(null);
+  // A free-text topic is resolved from the route alone, with no fetch behind
+  // it — so it is born live. Born loading instead, the page painted the full
+  // skeleton for exactly one frame (the effect below resolves it synchronously
+  // after that paint) and `useHeightSettle` then spent 360ms animating the hero
+  // body from the skeleton's ~434px down to the 130px the topic actually has:
+  // a settle explaining a wait that never happened, on the very path a topic
+  // tag on a card takes. The effect still re-resolves it; that is idempotent.
+  const bornResolved = type === 'topic' && isOpaqueQueryTopicText(id);
+  const [entity, setEntity] = useState(() => (bornResolved ? resolveQueryTopicRoute(id, searchParams) : null));
   const [entityError, setEntityError] = useState(null);
   const [entityReloadKey, setEntityReloadKey] = useState(0);
   const [papers, setPapers] = useState([]);
-  const [isLoadingEntity, setIsLoadingEntity] = useState(true);
+  const [isLoadingEntity, setIsLoadingEntity] = useState(() => !bornResolved);
   // True from the start, and re-armed by every entity load: the live page's
   // first frame comes before the effect that requests the papers, and with
   // this false that frame showed the empty-state copy — "no results matched"
@@ -1308,7 +1336,7 @@ export default function EntityExplorer({
 
               <div className="ehc-hero-aside">
                 <div className="ehc-stats-grid">
-                  {[1, 2, 3, 4].map(i => (
+                  {Array.from({ length: shape.stats }, (_, i) => (
                     <div key={i} className="ehc-stat-box">
                       <span className="ex-skel ex-skel-stat-value"></span>
                       <span className="ex-skel ex-skel-stat-label"></span>
@@ -1332,6 +1360,7 @@ export default function EntityExplorer({
                 16px gap and measured against the wrong parent. */}
             {shape.aside === 'orcid' && <OrcidCardSkeleton />}
             {shape.aside === 'wiki' && <WikiBlockSkeleton />}
+            {shape.aside === 'summary' && <ProjectSummarySkeleton />}
           </div>
 
           {/* One tab or two, from the same helper the live strip answers with.
@@ -1365,6 +1394,8 @@ export default function EntityExplorer({
                 <div className="ex-skel ex-skel-title"></div>
                 <div className="ex-skel ex-skel-title"></div>
                 <div className="ex-skel ex-skel-authors"></div>
+                <div className="ex-skel ex-skel-summary"></div>
+                <div className="ex-skel ex-skel-summary ex-skel-summary--short"></div>
               </div>
             ))}
           </div>
@@ -2272,6 +2303,8 @@ export default function EntityExplorer({
                     <div className="ex-skel ex-skel-title"></div>
                     <div className="ex-skel ex-skel-title"></div>
                     <div className="ex-skel ex-skel-authors"></div>
+                    <div className="ex-skel ex-skel-summary"></div>
+                    <div className="ex-skel ex-skel-summary ex-skel-summary--short"></div>
                   </div>
                 ))}
 

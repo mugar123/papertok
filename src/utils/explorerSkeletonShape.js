@@ -42,16 +42,27 @@ export function hasAuthorsTab(type, entity = null) {
  *   institution's ROR credentials and its related-organisation chips.
  * - `aside` — the block between the stats and the tabs, which is where the two
  *   page shapes differ most: an author's ORCID card, an institution's
- *   Wikipedia paragraph. A project has no block it always carries, so it
- *   reserves none rather than inventing one.
+ *   Wikipedia paragraph, a project's summary box. The summary used to be
+ *   left unreserved on the grounds that a project "has no block it always
+ *   carries" — measured on a phone (390px), the live project hero landed
+ *   276px taller than its skeleton, and 122 of that was the summary box
+ *   OpenAIRE returns for nearly every grant, plus 33 for the links menu.
+ *   The participants grid and a long title still grow the page; those are
+ *   data. The summary is the shape.
+ * - `stats` — how many cells the stats grid reserves. Four for the OpenAlex
+ *   types, whose counts always come. A project's cells are each conditional
+ *   (budget, funding, dates, participants) and two is what usually lands;
+ *   four reserved where two arrive shrank the grid by a row at the handover.
  */
 export function explorerSkeletonShape(type) {
   const authorish = type === 'author';
   const institutionish = type === 'institution';
+  const projectish = type === 'project';
   return {
     tabs: hasAuthorsTab(type) ? 2 : 1,
     identity: authorish ? 'topics' : institutionish ? 'credentials' : 'none',
-    aside: authorish ? 'orcid' : institutionish ? 'wiki' : 'none',
+    aside: authorish ? 'orcid' : institutionish ? 'wiki' : projectish ? 'summary' : 'none',
+    stats: projectish ? 2 : 4,
     // Every type the Explorer serves can be followed — `followEntity` covers
     // author, institution, project, concept and topic — so the button is part
     // of the spine, not of a variant.

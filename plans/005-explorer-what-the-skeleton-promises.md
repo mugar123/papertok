@@ -1,6 +1,6 @@
 # 005 — The Explorer's skeleton promises things that never arrive
 
-- **Status**: TODO
+- **Status**: PARTLY DONE (2026-09-05) — items 1, 2 and the query-topic flash shipped; see below
 - **Commit**: e2da8a6
 - **Severity**: HIGH (the largest remaining cause of "the page shoves me around")
 - **Category**: 8 (missed opportunities) + 1 (purpose)
@@ -32,6 +32,20 @@ Verified per type. `✓` = reserved and delivered.
 | **topic / concept** | **2 → 1** | none ✓ | **none, but a wiki block lands** | **3, or 0** for a query topic | icon → photo |
 | **project** | 1 ✓ | none — live hero adds chips, summary, subjects, participants | none ✓ | **0–5** | icon, never a photo ✓ |
 | **source** | 2 ✓ | none ✓ | **none, and not even held open** | **3** | icon → photo |
+
+## What shipped on 2026-09-05, measured at 390px
+
+| Item | Before | After |
+| --- | --- | --- |
+| 1. Paper row reservation | skeleton 138px, live 199px (+61 per row, ~305 over five) | **198px vs 199** — the row's own line boxes, summary included; a grid so the bars' margins do not collapse |
+| 2. Project skeleton | hero 275px vs 551 live (+276) | **365 vs 551** — the summary box reserved at 124 (live 122), two stat cells (51 vs 48); the 186 left is a four-line title (81) and the participants (99), which are data |
+| Query topic (arrival auditor's F3) | skeleton for one frame, then a 360ms settle from ~434px to 130 | **0 skeleton frames** — born resolved from the route; and the empty stats grid no longer paints as a 1px rule (117 vs 130) |
+
+Not shipped, and why: the author header without a topics strip (−56) and the
+ORCID slot for an author without a record (−112) are data the route cannot
+know; both are now one smooth settle (measured: −114px in 20 frames, worst step
+14px, 0 dropped) on the gentle curve, so what remains is that the shapes cut
+rather than fade — item 4 below, cosmetic now. Items 3, 5, 6, 7 untouched.
 
 ## The items, in the order they are worth doing
 

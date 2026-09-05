@@ -502,6 +502,13 @@
 /* ─── Stats ─── */
 /* Compact by design: a 2×2 block that sits beside the follow action rather
    than a full-width band under the name. */
+/* A query topic carries none of the counts; with nothing inside, the grid was
+   a 1px ruled line where the stats should be. React emits no text nodes for
+   the conditions that fail, so the box is genuinely empty. */
+.ehc-stats-grid:empty {
+  display: none;
+}
+
 .ehc-stats-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(94px, 1fr));
@@ -976,7 +983,8 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--space-4);
-  margin-bottom: var(--space-3);
+  min-height: 15px;
+  margin-bottom: 10px;
 }
 
 /* Mono-cased field label on the left, citations and year on the right — the
@@ -984,11 +992,40 @@
 .ex-skel-kicker { width: 108px; height: 10px; }
 .ex-skel-metrics { width: 96px; height: 10px; }
 
-/* Two lines of serif title, the second one short, the way a title wraps. */
-.ex-skel-title { height: 19px; margin-bottom: 9px; max-width: var(--explorer-measure); }
-.ex-skel-title:last-of-type { width: 58%; }
+/* The rows are the live row's own line boxes, not a spacing guess — the same
+   method `.ehc-wiki-skeleton` uses for the paragraph. Measured on a phone
+   (390px), the shortest row that ever lands: `.eli-header` 15 + 10 below,
+   `.eli-title` two lines of 24.6 + 8, `.eli-authors` 21 + 8, `.eli-summary`
+   two lines of 23.25 — 158px of content, 199 with the row's padding. The
+   shape this replaces reserved 138: two 19px title bars 9px apart, a 12px
+   authors bar, and nothing at all for the summary, which the live row always
+   carries (there is a fallback string). So every row grew ~61px the frame the
+   words landed, ~305px over the five, and rows two to five each resolved that
+   far below the shape they replaced. Longer titles still grow a row; the
+   common one no longer does.
 
-.ex-skel-authors { height: 12px; width: 42%; margin-top: var(--space-4); }
+   Two lines of serif title, the second one short, the way a title wraps: a
+   19px bar sits in each 24.6px line, and the title's own 8px follows. */
+.ex-skel-title { height: 19px; margin-bottom: 11px; max-width: var(--explorer-measure); }
+/* Adjacent-sibling, not `:last-of-type`: the last div in the row was never a
+   title (the authors bar was, and now the summary's), so that selector never
+   matched and the short second line never drew. */
+.ex-skel-title + .ex-skel-title { width: 58%; margin-bottom: 8px; }
+
+/* A grid, so the bars' margins do not collapse into each other. As blocks,
+   the authors bar's 13px below and the summary's 5px above became 13, and the
+   two summary bars' 6 + 5 became 6 — ten pixels short of the row measured
+   above (187 where 197 was reserved). Grid items keep every margin. The
+   accent stripe is `position: absolute`, so it is not a grid item. */
+.explorer-list-item.ex-skel-row { display: grid; }
+
+/* One line of authors at `--fs-sm`: 21px of line, then the 8px the live one
+   keeps below it. */
+.ex-skel-authors { height: 12px; width: 42%; margin: 4px 0 13px; }
+
+/* Two lines of summary, 23.25px each; the second one short. */
+.ex-skel-summary { height: 12px; margin: 5px 0 6px; max-width: var(--explorer-measure); }
+.ex-skel-summary--short { width: 70%; }
 
 /* The stat cells keep their own box and rules — flattening each one into a
    single shimmer block merged the four into one grey slab, which is not what
@@ -2274,6 +2311,18 @@
   .project-participants-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* The project summary's reservation borrows `.ehc-wiki-skeleton`'s rows, and
+   those are sized in `em` against the paragraph they stand in for: the wiki
+   block sets 0.9375rem on `.ehc-wiki`, but the summary box sets its size on
+   the `p` inside it, not on the box. Set here, so 1.6em is the same 24px line
+   the live summary wraps at — three of them and the toggle, 96px in a box
+   padded 16/16/10, 122 to the pixel. */
+.project-summary-box--reserved {
+  font-size: 0.9375rem;
+  line-height: 1.6;
+  cursor: default;
 }
 
 /* ── The press ──

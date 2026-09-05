@@ -39,7 +39,18 @@ test('the entity can only ever remove the tab, never add one', () => {
 test('each type reserves the block it actually carries', () => {
   assert.equal(explorerSkeletonShape('author').aside, 'orcid');
   assert.equal(explorerSkeletonShape('institution').aside, 'wiki');
-  assert.equal(explorerSkeletonShape('project').aside, 'none');
+  // Measured at 390px: a project hero landed 276px taller than its skeleton,
+  // 122 of it the summary box OpenAIRE returns for nearly every grant.
+  assert.equal(explorerSkeletonShape('project').aside, 'summary');
+});
+
+test('the stats grid reserves the cells that usually land', () => {
+  // The OpenAlex counts always come; a project's cells are each conditional
+  // and two is the usual number — four reserved shrank the grid by a row.
+  for (const type of ['author', 'institution', 'concept', 'topic']) {
+    assert.equal(explorerSkeletonShape(type).stats, 4);
+  }
+  assert.equal(explorerSkeletonShape('project').stats, 2);
 });
 
 test('the strip under the name differs by what the page puts there', () => {
