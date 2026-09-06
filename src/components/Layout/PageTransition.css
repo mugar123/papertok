@@ -22,14 +22,18 @@
    ============================================ */
 
 .page-transition {
-  /* The only place a duration is written. `hold` lasts the longest
-     entrance: the held page does not know which one runs on top of it,
-     and 120ms under an already opaque page is invisible. */
+  /* The only place a duration is written. A held page has no clock of its
+     own: it rides the one of the entrance above it (`hold` the enter clock,
+     `hold-lateral` the lateral one), because it has to end in the very
+     frame that page settles — earlier, and the arriving page is translucent
+     over nothing; later, and it paints OVER a page that has already dropped
+     its stacking (below). One hold timed for the longest entrance was
+     measured doing that under every tab switch: eight frames of the For you
+     card at 60% over a Research page already at rest. */
   --page-enter-ms: 300ms;
   --page-leave-ms: 260ms;
   --page-lateral-ms: 180ms;
   --page-fade-ms: 150ms;
-  --page-hold-ms: 300ms;
   --page-reveal-ms: 260ms;
   --page-reduced-ms: 120ms;
   /* The box the motion.div used to set inline: without an explicit width a
@@ -49,6 +53,7 @@
    column that tall would try to squeeze a long page into it. Taps go
    through to the page underneath or the one on top. */
 .page-transition[data-page-motion="hold"],
+.page-transition[data-page-motion="hold-lateral"],
 .page-transition[data-page-motion="leave"],
 .page-transition[data-page-motion="fade"] {
   position: fixed;
@@ -86,10 +91,17 @@
 }
 
 /* Giving way: the page underneath shrinks by 2% and dims to 60% while the
-   deeper page settles over it. It is removed when this ends, under a page
-   that is opaque by then. */
+   page on top settles over it, and is removed in the same frame that page
+   comes to rest — the same clock, so the two `animationend`s land in one
+   React commit. A held page still here after the page on top has dropped
+   its `z-index: 2` is a fixed, positioned sibling of a static one: it
+   paints over it. */
 .page-transition[data-page-motion="hold"] {
-  animation: pageHold var(--page-hold-ms) var(--ease-out-quad) both;
+  animation: pageHold var(--page-enter-ms) var(--ease-out-quad) both;
+}
+
+.page-transition[data-page-motion="hold-lateral"] {
+  animation: pageHold var(--page-lateral-ms) var(--ease-out-quad) both;
 }
 
 /* Coming back: the page that gave way returns to size and brightness
@@ -175,7 +187,8 @@
     animation: pageFadeOut var(--page-reduced-ms) var(--ease-out-quad) both;
   }
 
-  .page-transition[data-page-motion="hold"] {
+  .page-transition[data-page-motion="hold"],
+  .page-transition[data-page-motion="hold-lateral"] {
     animation: pageDim var(--page-reduced-ms) var(--ease-out-quad) both;
   }
 

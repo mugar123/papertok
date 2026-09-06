@@ -39,18 +39,26 @@ function animationsBySelector(css) {
  * still — measured clean and felt like a cut. A page has to be seen
  * travelling: 24px over 300ms on a quad-out, the page underneath giving way.
  */
-test('seven durations, every one inside the 300ms UI band, and the hold outlasts both entrances', async () => {
+test('six durations, every one inside the 300ms UI band, and a held page rides the clock of the page on top of it', async () => {
   const css = await read('./PageTransition.css');
   const ms = durations(css);
-  assert.deepEqual(Object.keys(ms).sort(), ['enter', 'fade', 'hold', 'lateral', 'leave', 'reduced', 'reveal']);
-  assert.deepEqual(ms, { enter: 300, leave: 260, lateral: 180, fade: 150, hold: 300, reveal: 260, reduced: 120 }, 'the durations, exactly');
+  assert.deepEqual(Object.keys(ms).sort(), ['enter', 'fade', 'lateral', 'leave', 'reduced', 'reveal']);
+  assert.deepEqual(ms, { enter: 300, leave: 260, lateral: 180, fade: 150, reveal: 260, reduced: 120 }, 'the durations, exactly');
   for (const [name, value] of Object.entries(ms)) assert.ok(value > 0 && value <= 300, `${name}: ${value}ms`);
-  assert.ok(ms.hold >= ms.enter && ms.hold >= ms.lateral, 'the held page is not removed under a page still arriving');
   assert.ok(ms.reduced < ms.enter, 'reduced motion is shorter, not just flatter');
+  // A held page has no clock of its own. It must end in the very frame the
+  // page on top settles: earlier, and the arriving page is translucent over
+  // nothing; later, and it paints OVER a page that has already dropped its
+  // stacking. Measured 2026-09-06, from a 300ms hold under a 180ms lateral
+  // entrance: eight frames of the For you card at 60% over a Research page
+  // already at rest, on every tab switch.
+  assert.doesNotMatch(css, /--page-hold/, 'the held page is timed by the entrance above it, never by itself');
+  assert.match(css, /\[data-page-motion="hold"\] \{\s*animation: pageHold var\(--page-enter-ms\)/, 'under a deeper page, the enter clock');
+  assert.match(css, /\[data-page-motion="hold-lateral"\] \{\s*animation: pageHold var\(--page-lateral-ms\)/, 'under a tab, the lateral clock');
   // Declared once, on the root, and nowhere else as a literal.
   const root = css.match(/\.page-transition \{([\s\S]*?)\n\}/);
   assert.ok(root, 'the root rule');
-  assert.equal(root[1].match(/--page-[a-z-]+-ms:/g).length, 7);
+  assert.equal(root[1].match(/--page-[a-z-]+-ms:/g).length, 6);
   assert.equal(css.replace(root[1], '').match(/\b\d+ms\b/g), null, 'durations are named, never repeated as literals');
 });
 
@@ -72,7 +80,7 @@ test('every motion has a rule, and everything rides a curve that can be seen tra
   assert.doesNotMatch(css, /cubic-bezier\(/, 'the curve is the token, not a literal');
   assert.doesNotMatch(css, /--ease-out-expo/, 'the expo-out did 80% of its change in the first 60ms: a cut, not a movement');
   const animations = [...css.matchAll(/animation: (\S+) var\(--page-[a-z-]+-ms\) (\S+) both;/g)];
-  assert.equal(animations.length, 11, 'seven motions and four reduced-motion rewrites, each named, timed and filled both ways');
+  assert.equal(animations.length, 12, 'eight motions and four reduced-motion rewrites, each named, timed and filled both ways');
   for (const [, name, easing] of animations) {
     assert.equal(easing, 'var(--ease-out-quad)', `${name} runs on ${easing}`);
   }
@@ -88,6 +96,7 @@ test('each motion runs the keyframes named for it, and reduced motion swaps only
     '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"]': 'pageEnterFromRight',
     '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"]': 'pageEnterFromLeft',
     '.page-transition[data-page-motion="hold"]': 'pageHold',
+    '.page-transition[data-page-motion="hold-lateral"]': 'pageHold',
     '.page-transition[data-page-motion="reveal"]': 'pageReveal',
     '.page-transition[data-page-motion="leave"]': 'pageLeave',
     '.page-transition[data-page-motion="fade"]': 'pageFadeOut',
@@ -97,6 +106,7 @@ test('each motion runs the keyframes named for it, and reduced motion swaps only
     '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="1"]': 'pageFadeIn',
     '.page-transition[data-page-motion="enter-lateral"][data-nav-direction="-1"]': 'pageFadeIn',
     '.page-transition[data-page-motion="hold"]': 'pageDim',
+    '.page-transition[data-page-motion="hold-lateral"]': 'pageDim',
     '.page-transition[data-page-motion="reveal"]': 'pageBrighten',
     '.page-transition[data-page-motion="leave"]': 'pageFadeOut',
     '.page-transition[data-page-motion="fade"]': 'pageFadeOut',
@@ -132,8 +142,8 @@ test('pages move on opacity and transform only, travel far enough to be seen, an
 
 test('the leaving page is out of flow and under the bar; an arriving page covers it only while animating', async () => {
   const css = await read('./PageTransition.css');
-  const leaving = css.match(/\.page-transition\[data-page-motion="hold"\],\s*\.page-transition\[data-page-motion="leave"\],\s*\.page-transition\[data-page-motion="fade"\] \{([\s\S]*?)\n\}/);
-  assert.ok(leaving, 'the three leaving motions share one geometry rule');
+  const leaving = css.match(/\.page-transition\[data-page-motion="hold"\],\s*\.page-transition\[data-page-motion="hold-lateral"\],\s*\.page-transition\[data-page-motion="leave"\],\s*\.page-transition\[data-page-motion="fade"\] \{([\s\S]*?)\n\}/);
+  assert.ok(leaving, 'the four leaving motions share one geometry rule');
   assert.match(leaving[1], /position: fixed;/);
   assert.match(leaving[1], /left: 0;\s*right: 0;/);
   assert.match(leaving[1], /height: auto;/, 'a fixed flex column must not squeeze a 1300px page into the viewport');
@@ -150,12 +160,12 @@ test('the leaving page is out of flow and under the bar; an arriving page covers
   assert.match(root, /width: 100%;\s*height: 100%;\s*display: flex;\s*flex-direction: column;/, 'the route root keeps the box the motion.div had');
 });
 
-test('reduced motion keeps the fades and drops the movement, for all six animated motions', async () => {
+test('reduced motion keeps the fades and drops the movement, for all seven animated motions', async () => {
   const css = await read('./PageTransition.css');
   const block = css.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*)\n\}\s*$/);
   assert.ok(block, 'one reduced-motion block closes the file');
   const reduced = block[1];
-  for (const motion of ['enter', 'enter-lateral', 'hold', 'reveal', 'leave', 'fade']) {
+  for (const motion of ['enter', 'enter-lateral', 'hold', 'hold-lateral', 'reveal', 'leave', 'fade']) {
     assert.match(reduced, new RegExp(`\\[data-page-motion="${motion}"\\]`), `${motion} is redefined`);
   }
   const names = [...reduced.matchAll(/animation: (\S+) var\(--page-reduced-ms\)/g)].map((m) => m[1]);

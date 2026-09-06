@@ -59,15 +59,15 @@ Una regla: **la página más profunda va encima; la otra se queda debajo, quieta
 
 | Navegación (`direction`, `lateral`) | Página que llega | Página que se va |
 | --- | --- | --- |
-| Push a más profundidad (`1`, `false`): tarjeta → entidad, buscador → entidad, entidad → entidad | **`enter`**, encima. Opacidad 0→1 y `translateY(24px)`→0, **300 ms**, `--ease-out-quad` | **`hold`**, debajo. Cede: opacidad 1→0,6 y `scale(0.98)`, 300 ms |
+| Push a más profundidad (`1`, `false`): tarjeta → entidad, buscador → entidad, entidad → entidad | **`enter`**, encima. Opacidad 0→1 y `translateY(24px)`→0, **300 ms**, `--ease-out-quad` | **`hold`**, debajo. Cede: opacidad 1→0,6 y `scale(0.98)`, con el reloj de `enter` (300 ms) |
 | Vuelta (`-1`), incluida la flecha del héroe | **`reveal`**, debajo. Recupera tamaño y brillo: opacidad 0,6→1 y `scale(0.98)`→1, **260 ms**; las tarjetas del feed en reposo (`[data-nav-direction="-1"]` en `PaperCard.css`, sin cambios) | **`leave`**, encima. Opacidad 1→0 y 0→`translateY(24px)`, **260 ms**, `--ease-out-quad`. Sale por donde entró |
-| Pestaña a pestaña (`±1`, `true`) | **`enter-lateral`**, encima. Opacidad 0→1 y `translateX(direction × 10px)`→0, **180 ms** | **`hold`**, debajo, cede igual, 300 ms |
+| Pestaña a pestaña (`±1`, `true`) | **`enter-lateral`**, encima. Opacidad 0→1 y `translateX(direction × 10px)`→0, **180 ms** | **`hold-lateral`**, debajo, cede igual, con el reloj de `enter-lateral` (180 ms) |
 | Replace o primera entrada (`0`) | **`rest`** | **`fade`**, encima. Solo opacidad, **150 ms** |
-| `prefers-reduced-motion: reduce` | `enter` y `enter-lateral`: solo opacidad, **120 ms**; `reveal`: 0,6→1 | `leave` y `fade`: solo opacidad, 120 ms; `hold`: 1→0,6 |
+| `prefers-reduced-motion: reduce` | `enter` y `enter-lateral`: solo opacidad, **120 ms**; `reveal`: 0,6→1 | `leave` y `fade`: solo opacidad, 120 ms; `hold` y `hold-lateral`: 1→0,6 |
 
 Una regla: **la página más profunda va encima y viaja; la de debajo cede un poco en vez de quedarse clavada**, como una hoja que se posa sobre la página de la que viene, y al volver como esa hoja levantándose. Nunca se disuelven las dos a la vez.
 
-Las duraciones viven como propiedades personalizadas en la raíz de la transición (`--page-enter-ms: 300ms`, `--page-leave-ms: 260ms`, `--page-lateral-ms: 180ms`, `--page-fade-ms: 150ms`, `--page-hold-ms: 300ms`, `--page-reveal-ms: 260ms`, `--page-reduced-ms: 120ms`) y solo ahí. `hold` dura lo que la entrada más larga: la página retenida no sabe cuál corre encima, y un desmontaje 40 ms tarde bajo una página ya opaca es invisible.
+Las duraciones viven como propiedades personalizadas en la raíz de la transición (`--page-enter-ms: 300ms`, `--page-leave-ms: 260ms`, `--page-lateral-ms: 180ms`, `--page-fade-ms: 150ms`, `--page-reveal-ms: 260ms`, `--page-reduced-ms: 120ms`) y solo ahí. La retenida no tiene reloj propio: `hold` corre con `--page-enter-ms` y `hold-lateral` con `--page-lateral-ms`, porque tiene que terminar en el mismo fotograma en que se asienta la página de encima. Si termina antes, la de encima queda translúcida sobre nada; si termina después, pinta ENCIMA de una página que ya ha soltado su apilamiento (§6: la que llega pierde su `z-index: 2` al asentarse, y la retenida sigue en `position: fixed`). Un solo `hold` de 300 ms «para la entrada más larga» hizo exactamente eso bajo cada cambio de pestaña (§13).
 
 Lo que desaparece: `TRAVEL_PX`, `ENTER_MS`, `EXIT_MS`, `LATERAL_*`, `EASE`, `EASE_LEAVING`, `routeVariants`, `reducedMotionVariants`, el `motion.div`, el atajo `x`, `useReducedMotion` en este componente.
 
@@ -78,7 +78,7 @@ Lo que desaparece: `TRAVEL_PX`, `ENTER_MS`, `EXIT_MS`, `LATERAL_*`, `EASE`, `EAS
 **`src/components/Layout/PageTransition.jsx`** deja de ser un `motion.div` y pasa a ser un `div` con atributos:
 
 - `data-nav-direction={direction}` — se mantiene tal cual; `PaperCard.css` y `explorerEntrance.test.js` lo leen.
-- `data-page-motion` — una de `enter`, `enter-lateral`, `rest`, `hold`, `leave`, `fade`, calculada por un módulo puro (§7) a partir de `direction`, `lateral` y `present`.
+- `data-page-motion` — una de `enter`, `enter-lateral`, `reveal`, `rest`, `hold`, `hold-lateral`, `leave`, `fade`, calculada por un módulo puro (§7) a partir de `direction`, `lateral` y `present`.
 - La dirección se lee de `usePresenceData()` (lo que `AnimatePresence` entrega al hijo que sale) y, si no hay contexto de presencia, del proveedor `usePageTransitionCustomValue()` que ya existe. El componente sigue sin calcular nada por sí mismo.
 - `present` viene de `usePresence()`; `safeToRemove` se llama cuando termina la animación de salida.
 
@@ -97,7 +97,7 @@ Lo que desaparece: `TRAVEL_PX`, `ENTER_MS`, `EXIT_MS`, `LATERAL_*`, `EASE`, `EAS
 `src/components/Layout/pageMotion.js`:
 
 ```js
-/** 'enter' | 'enter-lateral' | 'rest' | 'hold' | 'leave' | 'fade' */
+/** 'enter' | 'enter-lateral' | 'reveal' | 'rest' | 'hold' | 'hold-lateral' | 'leave' | 'fade' */
 export function pageMotionFor({ direction, lateral, present }) { … }
 export const EXIT_SAFETY_MS = 700;
 ```
@@ -110,7 +110,7 @@ Tabla de verdad, que es también su test de comportamiento (`pageMotion.test.js`
 | true | true | 1 o -1 | `enter-lateral` |
 | true | false | -1 | `rest` |
 | true | cualquiera | 0 | `rest` |
-| false | true | 1 o -1 | `hold` |
+| false | true | 1 o -1 | `hold-lateral` |
 | false | false | 1 | `hold` |
 | false | false | -1 | `leave` |
 | false | cualquiera | 0 | `fade` |
@@ -186,4 +186,21 @@ Medido igual que §11, build de demo, chunk caliente. El «vacío» del muestreo
 | Autor a 600 px → volver, escritorio | 84/84 | 0 | 17 | 305 ms |
 
 En las hojas: a 99 ms la página de autor ya se lee sobre la tarjeta, que se atenúa y encoge; a 237 ms la tarjeta es un rastro; a 300 ms la página está quieta. En la vuelta, a 106 ms la página de autor baja y se desvanece mostrando la zona a la que estaba desplazada, nunca su cabecera, y el feed recupera el brillo a 173 ms. El primer título de tarjeta del feed retenido se mantiene en opacidad 1 en todos los fotogramas.
+
+## 13. Corrección (2026-09-06, tarde): la retenida pintaba encima de la pestaña nueva
+
+Síntoma, reportado tras desplegar §12: al cambiar de For you a Research —y de Research a For you, y de For you a Following— con la animación ya terminada, una tarjeta del feed de For you aparecía un instante sobre la página nueva y desaparecía.
+
+Causa, medida con el guion de §11 (build de demo, chunk caliente): `hold` duraba 300 ms —«la entrada más larga»— bajo un `enter-lateral` de 180 ms. Cuando `enter-lateral` termina, `PageTransition` pasa la página nueva a `rest` y esta pierde su `position: relative; z-index: 2` (§6, a propósito: un elemento fijo dentro de la página, como el lector, no puede quedar atrapado bajo la barra). La retenida sigue 120 ms más en `position: fixed; z-index: 1`, y un hermano posicionado pinta encima de uno estático: la tarjeta al 60 % y `scale(0.98)` sobre Research hasta que su `animationend` la entrega. Ocho fotogramas por cambio de pestaña (241–358 ms en For you → Research, 221–337 ms en For you → Following, 228–345 ms en la vuelta). Tarjeta → entidad no lo sufría porque `enter` y `hold` duraban lo mismo y los dos `animationend` caen en el mismo commit de React. La v1 (§11) tenía la misma ventana, de 40 ms y con la retenida opaca; el muestreador no la veía porque no miraba el orden de pintado.
+
+Arreglo: la retenida no tiene reloj propio. `hold` corre con `--page-enter-ms` y el movimiento nuevo `hold-lateral` con `--page-lateral-ms` (`pageMotion.js`: `false, true, ±1 → hold-lateral`); `--page-hold-ms` desaparece. El test de la hoja de estilos fija la invariante al revés de como estaba —la retenida no sobrevive a la entrada que la cubre, en vez de aguantarla— y el muestreador imprime `exposed`: fotogramas con una página en `rest` junto a otra en `hold` o `hold-lateral`.
+
+| Escenario | Expuestos antes → después | Con dos páginas antes → después | Quieta antes → después |
+| --- | --- | --- | --- |
+| For you → Research | 8 → 0 | 21 → 13 | 374 → 227 ms |
+| For you → Following | 8 → 0 | 21 → 13 | 354 → 226 ms |
+| Research → For you (volver) | 8 → 0 | 21 → 13 | 361 → 241 ms |
+| Tarjeta → autor (control, sin cambios) | no medido antes; los relojes ya eran iguales → 0 | 20 (§12) → 21 | 363 (§12) → 365 ms |
+
+Barra en todos los fotogramas y cero vacíos en los cuatro. La pestaña se asienta ~130 ms antes porque ya no espera a que la retenida termine un `hold` más largo que la entrada.
 

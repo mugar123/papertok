@@ -18,15 +18,24 @@
  *   true     true     ±1         → enter-lateral  slides 10px along the bar
  *   true     false    -1         → reveal         back to size and brightness under the page leaving
  *   true     any      0          → rest
- *   false    true     ±1         → hold           recedes under the new tab
- *   false    false    1          → hold           recedes under the deeper page
+ *   false    true     ±1         → hold-lateral   recedes under the new tab, for as long as the tab takes
+ *   false    false    1          → hold           recedes under the deeper page, for as long as it takes
  *   false    false    -1         → leave          drops 24px and fades, on top
  *   false    any      0          → fade           opacity only, on top
  *
  * Precedence: `present`, then `direction === 0`, then `lateral`, then the
  * sign. Out-of-range input reads as 0 / false / present.
+ *
+ * Two holds, not one, because a held page has to end in the very frame the
+ * page on top settles: the arriving page drops its stacking when its own
+ * animation ends, and a held page still there after that — fixed, z-index
+ * 1 — paints OVER it. One `hold` timed for the longest entrance did exactly
+ * that under every tab switch (measured 2026-09-06: eight frames of the For
+ * you card at 60% over a Research page already at rest). The held page is
+ * named for the entrance above it, and PageTransition.css times it by that
+ * entrance's clock.
  */
-export const PAGE_MOTIONS = Object.freeze(['enter', 'enter-lateral', 'reveal', 'rest', 'hold', 'leave', 'fade']);
+export const PAGE_MOTIONS = Object.freeze(['enter', 'enter-lateral', 'reveal', 'rest', 'hold', 'hold-lateral', 'leave', 'fade']);
 
 /**
  * How long a leaving page may wait for its `animationend` before handing
@@ -47,6 +56,6 @@ export function pageMotionFor({ direction, lateral, present } = {}) {
     return sign === 1 ? 'enter' : 'reveal';
   }
   if (sign === 0) return 'fade';
-  if (isLateral) return 'hold';
+  if (isLateral) return 'hold-lateral';
   return sign === 1 ? 'hold' : 'leave';
 }
