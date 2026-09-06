@@ -222,6 +222,26 @@ const RESIZE = [0.4, 0, 0.2, 1];
 const ROW_DELAYS = [0, 0.03, 0.055, 0.075, 0.09];
 const rowDelay = index => ROW_DELAYS[index] ?? 0.1;
 
+/* The head start the reveal gives the skeleton it replaces. `popLayout` takes
+   the leaving skeleton out of flow, so the thread has the body in the same
+   frame — and the grey bars sit exactly where the first lines of type land.
+   Without this the comments were drawn ACROSS them: for most of the 180 ms
+   the skeleton's exit lasts the reader got serif text crossed by grey
+   rectangles — not a handover, two states in one place.
+
+   120 ms is where that exit stops being visible rather than where it ends:
+   `--bg-secondary` over the card is so light that below about 0.4 opacity
+   there is nothing left to see. Starting the first row there costs no blank
+   frame and leaves no overlap — measured both ways. */
+const REVEAL_LEAD = 0.12;
+
+/* How long the skeleton holds itself invisible before it fades in, in step
+   with `.comments-sheet-loading .comment-skeleton` (CommentsSheet.css). A
+   healthy thread read finishes inside it, which is the whole point of the
+   hold — and it is also why the lead above is owed only sometimes: a handover
+   from a body that was blank all along has no grey to wait for. */
+const SKELETON_HOLD = 320;
+
 /**
  * A block that opens and closes in place instead of appearing and vanishing.
  *
@@ -678,6 +698,57 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
   )), [rows, viewerUid, hiddenLocally]);
   const thread = useMemo(() => groupThread(visibleRows), [visibleRows]);
 
+  /* What the body painted in the last frame it committed — or `null`, which
+     is the sheet's own first frame. The reveal below is a handover, so it has
+     to know what it is handing over from.
+
+     `null` is the case that was wrong. A thread served from the cache is on
+     screen from the drawer's own first frame, and the drawer's slide is
+     400 ms (`.ui-drawer-popup`, ui/drawer.css) — while the reveal is over
+     inside 300 (the last row waits 0.1 and runs 0.2). So on that open every
+     row finished arriving while the sheet was still travelling, and what the
+     reader actually saw was a slab of settled text rising into place. The
+     sheet's own arrival is the entrance there, which is the same verdict
+     `initial={false}` already reaches for the skeleton and the empty state
+     above. */
+  const bodyKind = status === 'loading' ? 'skeleton'
+    : status !== 'ready' ? 'waiting'
+      : (thread.length ? 'thread' : 'empty');
+  // State and not a ref, because it is read while rendering — and set from the
+  // frame callback rather than from the effect body, because "painted" means
+  // exactly that: what the reader's screen actually showed, not what React
+  // committed. A body that changes twice inside one frame was never seen, and
+  // the cancelled frame is the honest answer for it.
+  const [paintedBody, setPaintedBody] = useState(null);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setPaintedBody(bodyKind));
+    return () => cancelAnimationFrame(frame);
+  }, [bodyKind]);
+
+  /* Whether the skeleton has been up long enough to be grey at all. It holds
+     itself invisible for its first 320 ms (`.comments-sheet-loading
+     .comment-skeleton`, CommentsSheet.css) — longer than a healthy thread read
+     — so the common open hands over from a body that was blank the whole time
+     and is owed no head start whatsoever. */
+  const [skeletonShowing, setSkeletonShowing] = useState(false);
+  useEffect(() => {
+    if (bodyKind !== 'skeleton') {
+      const frame = requestAnimationFrame(() => setSkeletonShowing(false));
+      return () => cancelAnimationFrame(frame);
+    }
+    const timer = setTimeout(() => setSkeletonShowing(true), SKELETON_HOLD);
+    return () => clearTimeout(timer);
+  }, [bodyKind]);
+  // A row on the first frame has nothing to arrive from. Every other row does:
+  // the whole thread replacing the skeleton, or one comment just posted.
+  const rowArrives = !prefersReducedMotion && paintedBody !== null;
+  // Only the thread's own arrival queues. A single new row lands now — it is
+  // the answer to something the reader just did, and it waits for nothing.
+  const threadArrives = rowArrives && paintedBody !== 'thread';
+  // ...and only grey the reader can actually see is worth waiting for.
+  const clearingSkeleton = paintedBody === 'skeleton' && skeletonShowing;
+  const revealDelay = index => (clearingSkeleton ? REVEAL_LEAD : 0) + rowDelay(index);
+
   const composerState = composerStateFor({ isAuthenticated, ownProfile });
   const canInteract = composerState === 'ready';
 
@@ -902,6 +973,14 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
               role="status"
               initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
+              /* It had no exit: the first comment of a paper replaced "nobody
+                 has commented yet" in a single frame, which is the one moment
+                 in the sheet where a reader is watching for their own words to
+                 land. It leaves quicker than it arrived — a verdict that has
+                 just been disproved should get out of the way. */
+              exit={prefersReducedMotion
+                ? { opacity: 0, transition: { duration: 0 } }
+                : { opacity: 0, y: -4, transition: { duration: 0.14, ease: LEAVE } }}
               transition={prefersReducedMotion ? { duration: 0.12 } : { duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
             >
               <span className="comments-sheet-state-icon" aria-hidden="true">
@@ -936,20 +1015,30 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                   under it can start closing the gap in the same frame instead
                   of waiting for it to finish; `layout` is what makes them
                   travel rather than jump. Deleting a comment used to teleport
-                  the rest of the thread upward by the height of the row. */}
+                  the rest of the thread upward by the height of the row.
+
+                  Arriving is the other half, and it is two different events:
+                  the thread arriving (every row is new, so they queue behind
+                  the skeleton they are replacing) and one row arriving into a
+                  thread already on screen (nothing to queue behind). A row on
+                  the sheet's first frame is neither — see `paintedBody`. */}
               <AnimatePresence mode="popLayout">
               {thread.map((entry, index) => (
                 <motion.li
                   key={entry.id}
                   className="comments-list-item"
                   layout={prefersReducedMotion ? false : 'position'}
-                  initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
+                  initial={rowArrives ? { opacity: 0, y: 6 } : false}
                   animate={{
                     opacity: 1,
                     y: 0,
-                    transition: prefersReducedMotion
-                      ? { duration: 0 }
-                      : { duration: 0.2, ease: [0.23, 1, 0.32, 1], delay: rowDelay(index) },
+                    transition: rowArrives
+                      ? {
+                        duration: 0.2,
+                        ease: [0.23, 1, 0.32, 1],
+                        delay: threadArrives ? revealDelay(index) : 0,
+                      }
+                      : { duration: 0 },
                   }}
                   /* Out to the side, not down: a row that leaves along the
                      axis the list scrolls on is indistinguishable from the
@@ -980,13 +1069,21 @@ export default function CommentsSheet({ paper, isAuthenticated, isEnglish, onClo
                         <motion.li
                           key={reply.id}
                           layout={prefersReducedMotion ? false : 'position'}
-                          initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
+                          initial={rowArrives ? { opacity: 0, y: 4 } : false}
                           animate={{
                             opacity: 1,
                             y: 0,
-                            transition: prefersReducedMotion
-                              ? { duration: 0 }
-                              : { duration: 0.18, ease: [0.23, 1, 0.32, 1] },
+                            /* A reply comes in with its parent, so it takes
+                               its parent's delay exactly — head start and
+                               stagger slot both. The pair is one entry of the
+                               index, not two. */
+                            transition: rowArrives
+                              ? {
+                                duration: 0.18,
+                                ease: [0.23, 1, 0.32, 1],
+                                delay: threadArrives ? revealDelay(index) : 0,
+                              }
+                              : { duration: 0 },
                           }}
                           exit={prefersReducedMotion
                             ? { opacity: 0, transition: { duration: 0.1 } }
