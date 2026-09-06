@@ -14,13 +14,16 @@
 //     <label>-sheet.png, rendered by the same headless Chrome;
 //   * a requestAnimationFrame sampler installed in the page, which notes per
 //     frame whether `.navbar` exists and, for each `#main-content > *` (the
-//     route pages), its data-page-motion, computed opacity, transform and
-//     position — written to <label>-samples.json. From it the script prints:
-//     frames with the bar, frames with no page at ≥ 0.98 opacity ("void"),
-//     frames with two pages (overlap), and the first frame after which one
-//     page stands alone at rest ("settled"). A main thread busy mounting a
-//     page skips rAF ticks, so the sampler counts frames the page produced,
-//     not wall-clock milliseconds.
+//     route pages), its data-page-motion, computed opacity, transform,
+//     position and — when the page holds cards under it — the first
+//     `.pc-title`'s computed opacity, the held feed must keep it at 1 —
+//     written to <label>-samples.json. From it the script prints: frames
+//     with the bar, frames with no page at ≥ 0.98 opacity ("void"), frames
+//     with two pages (overlap), the first frame after which one page stands
+//     alone at rest ("settled"), and the lowest held-card opacity seen
+//     ("held cards ≥ …"). A main thread busy mounting a page skips rAF
+//     ticks, so the sampler counts frames the page produced, not wall-clock
+//     milliseconds.
 //
 // `demo` seeds a signed-in demo session in localStorage before the first
 // script: build with IS_DEMO = true in src/services/firebase.js for it, and
@@ -34,6 +37,7 @@ import { spawn } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 
 const CHROME = process.env.CHROME || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const PORT = Number(process.env.PORT || 9231);
@@ -68,7 +72,14 @@ const SAMPLER = `(() => {
   const tick = () => {
     const pages = [...document.querySelectorAll('#main-content > *')].map((el) => {
       const cs = getComputedStyle(el);
-      return { motion: el.dataset.pageMotion || null, opacity: Number(cs.opacity), transform: cs.transform, position: cs.position, top: el.style.top || null };
+      return {
+        motion: el.dataset.pageMotion || null,
+        opacity: Number(cs.opacity),
+        transform: cs.transform,
+        position: cs.position,
+        top: el.style.top || null,
+        card: (() => { const t = el.querySelector('.pc-title'); return t ? Number(getComputedStyle(t).opacity) : null; })(),
+      };
     });
     samples.push({ t: Math.round(performance.now() - start), navbar: Boolean(document.querySelector('.navbar')), pages });
     if (performance.now() - start < 1400) requestAnimationFrame(tick);
@@ -132,7 +143,9 @@ function summarise(samples) {
   // Three answers, not two: a page that never moved is not a page that
   // never stopped moving.
   const settledText = !moved ? 'no movement observed' : settled === null ? 'never within the window' : `${settled} ms`;
-  return `sampler: ${total} frames; bar in ${withBar}/${total}; void ${voidFrames.length} (${voidFrames.map((s) => `${s.t}ms`).join(' ') || '-'}); overlap ${overlap}; settled at ${settledText}`;
+  const heldCards = samples.flatMap((s) => s.pages.filter((p) => p.motion === 'hold' && p.card !== null).map((p) => p.card));
+  const heldText = heldCards.length ? `held cards ≥ ${Math.min(...heldCards).toFixed(2)}` : 'held cards n/a';
+  return `sampler: ${total} frames; bar in ${withBar}/${total}; void ${voidFrames.length} (${voidFrames.map((s) => `${s.t}ms`).join(' ') || '-'}); overlap ${overlap}; settled at ${settledText}; ${heldText}`;
 }
 
 try {
@@ -207,7 +220,7 @@ try {
   const capH = mobile ? 844 : 562;
   const rowH = Math.round(capH * w / capW) + 22;
   await cdp.send('Emulation.setDeviceMetricsOverride', { width: 6 * (w + 6) + 16, height: rows * rowH + 16, deviceScaleFactor: 1, mobile: false });
-  await cdp.send('Page.navigate', { url: `file://${sheetPath}` });
+  await cdp.send('Page.navigate', { url: pathToFileURL(sheetPath).href });
   await sleep(1200);
   const shot = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
   writeFileSync(join(OUT, `${label}-sheet.png`), Buffer.from(shot.data, 'base64'));

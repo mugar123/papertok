@@ -184,17 +184,22 @@ node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' author-mob
 node scripts/diagnostics/page-transition-frames.mjs '.pc-topic-link' topic-desktop demo
 node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' back-desktop demo back
 node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' back-scrolled-desktop demo back scroll=600
+node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' back-mobile demo mobile back
 node scripts/diagnostics/page-transition-frames.mjs 'a[href="#/research"]' tab-desktop demo
 ```
 
 The summary line reads `sampler: 71 frames; bar in 71/71; void 0 (-); overlap 14;
-settled at 236 ms`: frames the page produced with the bar mounted, frames with
-no page at ≥ 0.98 opacity (the old `mode="wait"` handover had two), frames with
-two route pages on screen, and the first frame after which one page stands
-alone at rest. `back` clicks the selector first, waits 1.8 s, and records
-`history.back()`; `scroll=<px>` with it scrolls the page it opened first, so the
-leaving page's lift by its own scroll (`top` in the samples) is on record. `demo`
-needs `IS_DEMO = true` flipped locally (never
-committed) and a server on a Worker-allowed origin (5173/5174/5175;
-`ORIGIN=http://localhost:5175` to pick another). `OUT=<dir>` keeps the frames,
-samples and sheets out of the tree.
+settled at 236 ms; held cards ≥ 1.00`: frames the page produced with the bar
+mounted, frames with no page at ≥ 0.98 opacity (the old `mode="wait"` handover
+had two), frames with two route pages on screen, the first frame after which
+one page stands alone at rest, and the lowest opacity seen on a held page's
+first card title (`held cards ≥ 1.00` means the held feed never dipped —
+anything lower means a card replayed its arrival under the entity page).
+`back` clicks the selector first, waits 1.8 s, and records `history.back()`;
+`scroll=<px>` with it scrolls the page it opened first, so the leaving page's
+lift by its own scroll (`top` in the samples) is on record. `demo` needs
+`IS_DEMO = true` flipped locally (never committed) and a server on a
+Worker-allowed origin (5173/5174/5175; `ORIGIN=http://localhost:5175` to pick
+another). `OUT=<dir>` keeps the frames, samples and sheets out of the tree;
+`PORT=<n>` picks another CDP debugging port (default 9231, for parallel runs);
+`CHROME=<path>` names another Chromium binary (default Google Chrome).
