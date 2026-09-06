@@ -203,3 +203,23 @@ Worker-allowed origin (5173/5174/5175; `ORIGIN=http://localhost:5175` to pick
 another). `OUT=<dir>` keeps the frames, samples and sheets out of the tree;
 `PORT=<n>` picks another CDP debugging port (default 9231, for parallel runs);
 `CHROME=<path>` names another Chromium binary (default Google Chrome).
+
+## `project-badge-frames.mjs` — the funding badge opening its space (2026-09-06)
+
+```bash
+node scripts/diagnostics/project-badge-frames.mjs after
+node scripts/diagnostics/project-badge-frames.mjs mobile-run mobile
+node scripts/diagnostics/project-badge-frames.mjs late delay=2000
+```
+
+Loads the guest feed on `localhost:5173` in a headless Chrome and answers the
+first card's OpenAIRE lookup itself (`Fetch.fulfillRequest`) with a fake funded
+project, so the badge always arrives and the run is deterministic. A
+`requestAnimationFrame` sampler installed before the app's first script notes,
+per frame, the slot's height, the badge's opacity and transform, and the
+title's top — and prints the biggest single-frame move of the title, which is
+what "the title drops" looks like in numbers. On 2026-09-06 the 200 ms expo-out
+opening measured 10, 9.6 and 7.9 px in its first three frames; the 320 ms
+`--ease-out-quad` opening that replaced it stays under 3.5 px per frame in
+steady state. `delay=MS` holds the OpenAIRE answer so the badge can be made to
+land while the title is still arriving or long after it.

@@ -1248,21 +1248,27 @@ const PaperCard = memo(function PaperCard({
               key="project-badge"
               className="pc-project-badge-slot"
               // The badge arrives async, so at mount time the space it needs
-              // does not exist yet and something below has to move. Reserving
-              // it in one layout pass (the previous iteration, after a
-              // 620ms `gridTemplateRows` tween proved too heavy) made the
-              // title jolt down a full row in a single frame -- that snap,
-              // not the easing, read as abrupt. This is the middle ground: a
-              // short measured `height: 0 -> auto` tween eases the space
-              // open. It is a layout property again, knowingly -- 0.2s once
-              // per card, the catalog's own entrance curve, on this slot's
-              // subtree. The pill itself fades in over the same 0.2s via the
-              // inner `.pc-project-badge-motion`, which now animates only
-              // opacity and a full `transform` string -- no `y`/`scale`
-              // shorthands and no delay, so it composites off the main
-              // thread while the feed paints. No overflow clip on this slot
-              // on purpose: the global `:focus-visible` ring overhangs the
-              // pill by 4px and a hard clip would cut it.
+              // does not exist yet and something below has to move: the
+              // title, on a card that is being read. Reserving the space in
+              // one layout pass made the title jolt down a full row in a
+              // single frame. So did, very nearly, the 200ms expo-out that
+              // replaced it: measured on the guest feed, that curve put
+              // 10, 9.6 and 7.9px of the 37px opening into its first three
+              // frames -- three quarters of the travel in 50ms -- with the
+              // badge already at half opacity on the first frame, over a
+              // title that had not yet moved. Nobody asked for this space,
+              // so it does not open on a click's curve: the measured
+              // `height: 0 -> auto` tween runs on `--ease-out-quad`, the
+              // curve the app moves pages with, over the arrival's own
+              // 320ms -- 3.6px per frame at most, 60% open at 120ms. It is
+              // a layout property, knowingly, once per card, on this slot's
+              // subtree. The pill itself waits those 120ms and then fades
+              // in over 200ms via the inner `.pc-project-badge-motion`,
+              // which animates only opacity and a full `transform` string
+              // -- no `y`/`scale` shorthands -- so it composites off the
+              // main thread and lands together with the space. No overflow
+              // clip on this slot on purpose: the global `:focus-visible`
+              // ring overhangs the pill by 4px and a hard clip would cut it.
               initial={prefersReducedMotion
                 ? { opacity: 0 }
                 : { height: 0 }}
@@ -1274,7 +1280,7 @@ const PaperCard = memo(function PaperCard({
                 : { height: 0, opacity: 0 }}
               transition={prefersReducedMotion
                 ? { duration: 0.12 }
-                : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                : { duration: 0.32, ease: [0.25, 0.46, 0.45, 0.94] }}
             >
               <div className="pc-project-badge-slot-inner">
                 <motion.div
@@ -1286,7 +1292,7 @@ const PaperCard = memo(function PaperCard({
                   exit={{ opacity: 0, transition: { duration: 0.15 } }}
                   transition={prefersReducedMotion
                     ? { duration: 0.12 }
-                    : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                    : { delay: 0.12, duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
                 >
                   <button
                     type="button"
