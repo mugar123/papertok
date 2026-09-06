@@ -210,15 +210,26 @@ limpio. Lo que sigue abierto está dicho como tal.
   escribía esa ausencia sin confirmar en la cache compartida además de borrar
   la copia guardada en el dispositivo. `21eec45` cerró la del editor de perfil.
 
-### Lo que queda abierto
+  La tercera, `PublicProfilePage.jsx` en modo propio (la ruta `/profile`),
+  la cerró `8c7bb61` el 06-09: sembraba la misma cache compartida con un
+  `null` que podía venir de la cache de Firestore, y de ahí la hoja repetía
+  el mensaje. No era un cambio de una línea porque ese efecto no tenía
+  `patientRead`, y la lectura confirmada a secas habría convertido un
+  arranque lento en pantalla de error. Ahora la rama propia del efecto va
+  por `patientRead` (dos intentos, aborto al desmontar, `onLateResult`), la
+  cache solo se escribe desde la función que aplica una respuesta del
+  servidor, y la espera reutiliza lo que la página ya tenía: el esqueleto
+  hasta el umbral de `slowNoticeStatus`, y después la página de estado con
+  dos títulos nuevos («está tardando», «no hay conexión»), el mismo cuerpo y
+  el mismo Reintentar, que ahora devuelve el esqueleto antes de leer de
+  nuevo. Una página ya sembrada (cache de sesión o copia del dispositivo)
+  nunca vuelve a una espera. La rama de visitante no cambia. Test de regex
+  sobre el fuente en `ownProfileConfirmedRead.test.js`, con una trampa
+  anotada: el comentario que cita el glob `/public/user/*` abre un bloque
+  para un despojador de comentarios ingenuo, así que las líneas `//` se
+  quitan antes que los bloques.
 
-`PublicProfilePage.jsx:381` en modo propio (la ruta `/profile`) siembra la
-misma cache compartida con un `null` que puede venir de la cache de Firestore,
-y de ahí la hoja puede repetir el mensaje. No se ha tocado: ese efecto no usa
-`patientRead`, así que cambiar solo la lectura convertiría un arranque lento
-en pantalla de error, y añadirle la espera paciente es una tarea aparte. La
-ventana es mucho más estrecha que las dos cerradas: hace falta visitar
-`/profile` con el canal estancado, mientras que el calentamiento corría solo.
+### Lo que queda abierto
 
 Tres cosas menores quedan anotadas y no bloquean: el umbral de 1 200 ms es un
 juicio y no una medida (es inyectable), las dos regiones del aviso pueden
