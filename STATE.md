@@ -43,7 +43,10 @@ feed aplica un perfil que llega después de su presupuesto en vez de tirarlo.
 visita un perfil público, retiene en la red todo lo que lleve el SID de ese
 stream y navega a un segundo perfil): en producción el segundo perfil **no
 pinta en 30 s**; con el arreglo pinta a los **4,1 s** y en el registro de red
-aparece el handshake nuevo. **No medido con sesión:** el arranque autenticado
+aparece el handshake nuevo. **Fusionado a main y desplegado el mismo día**
+(`e951c69`, avance rápido sobre `b1c7cdc`): Vercel sirvió el bundle en ~40 s
+y la misma sonda contra producción, ya con el arreglo, pinta el segundo
+perfil a los **4,2 s** con su handshake nuevo. **No medido con sesión:** el arranque autenticado
 real (feed + listas) va por el mismo helper y está fijado por tests de
 fuente, pero la medida en vivo exige iniciar sesión en el Chrome dedicado.
 
