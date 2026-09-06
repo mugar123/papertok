@@ -227,3 +227,33 @@ opening measured 10, 9.6 and 7.9 px in its first three frames; the 320 ms
 `--ease-out-quad` opening that replaced it stays under 3.5 px per frame in
 steady state. `delay=MS` holds the OpenAIRE answer so the badge can be made to
 land while the title is still arriving or long after it.
+
+## `firestore-stall-probe.mjs` — a listen stream that died under a live client (2026-09-06)
+
+Behind "the feed / the lists / followers sometimes take forever and I have to
+reload". The SDK routes every `getDoc`/`getDocs` over one WebChannel stream and
+keeps it open for as long as anything listens (always, here: `following`). A
+stream that dies silently — sleep, a network change, a proxy dropping the
+connection — is not an error the SDK sees: reads issued against it had not
+settled after 96 s, network back or not. `disableNetwork` + `enableNetwork`
+rebuilds it in 6 ms, and `patientRead` now asks for that at `DEFAULT_STALL_MS`
+(see `src/utils/streamRecovery.js`).
+
+The probe reproduces the dead stream faithfully: it visits a public profile
+(two SDK reads, no session needed), notes the stream's `SID`, then holds at the
+network — never answers — every request carrying that `SID`, and navigates
+in-app to a second profile. The network is fine; only that stream is dead. It
+samples what the page shows, when it paints, and lists the Firestore requests,
+so a rebuilt stream shows up as a new handshake with a new `SID`.
+
+```bash
+ORIGIN=https://papertok.app PORT=9225 node scripts/diagnostics/firestore-stall-probe.mjs hold=30   # the deployed build
+ORIGIN=http://localhost:5173 PORT=9224 node scripts/diagnostics/firestore-stall-probe.mjs hold=30  # a dev server
+```
+
+Measured 2026-09-06: production, second profile **not painted after 30 s**, no
+new stream. With the fix, painted at **4.1 s**: the held request at 3 s, the new
+handshake at 3.8 s, the profile from the server right after. `HANDLE` and
+`HANDLE2` pick the two profiles (default `mugar`, `nick_mugar`). The comments
+sheet is not a usable surface for this as a guest: the thread anchor is
+resolved at the Worker and a paper without comments never touches Firestore.

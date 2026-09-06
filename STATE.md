@@ -1,5 +1,52 @@
 # Estado / pendientes
 
+## El feed y las listas ya no quedan rehenes de un stream de Firestore muerto (2026-09-06)
+
+**«Parece que el feed principal y los papers de las listas tardan mucho en
+cargar.»** Medido antes de tocar nada: el servidor de Firestore contesta por
+REST en 100–340 ms, el Worker está sano (siete fuentes en 200, el feed de
+invitado pinta a los ~3,9 s) y una sonda del SDK desde esta máquina lee en
+290–450 ms en frío, ~150 ms en caliente y 231 ms tras 104 s de inactividad,
+así que ni el backend ni la red eran lentos. Lo que sí se reprodujo, contra
+producción y con las peticiones del SDK retenidas en la red: **un stream de
+escucha que muere en silencio bajo un cliente vivo** (portátil que vuelve de
+dormir, red que cambia bajo la pestaña, proxy que corta sin cerrar; la app lo
+mantiene abierto siempre por el listener de `following`). Un `getDoc` y un
+`getDocs` lanzados contra ese stream **no se asentaron en 96 s**, ni cuando
+volvió la red, y las lecturas nuevas se encolaban detrás. En la app eso es:
+el agregado del feed agota sus 5 s (feed sin personalizar, sin likes ni
+guardados), el perfil de cuenta agota sus 7 s («No se pudo cargar tu perfil»
+y Reintentar pregunta al mismo stream muerto), las listas 6–18 s
+(«stalled»), los papers de una lista 4/20 s, y sólo una recarga lo curaba —
+la misma familia que la hoja de seguidores del día anterior. Lo que sí lo
+cura sin recargar: `disableNetwork()` + `enableNetwork()` (6 ms): los rehenes
+se asientan al instante (un documento cacheado con sus datos, uno no cacheado
+como `unavailable`, una consulta vacía `fromCache`) y la lectura siguiente
+contesta del servidor en 130 ms. Ahora `patientRead` (`utils/boundedRead.js`)
+lleva un vigilante: un intento sin respuesta a los `DEFAULT_STALL_MS` (3 s,
+un orden de magnitud sobre una lectura sana y dentro de todos los
+presupuestos) pide la recuperación registrada en `services/firebase.js`
+(`utils/streamRecovery.js`, una patada por cada 8 s como mucho, nunca sin
+red), trata el vaciado como «ahora no» — `isAnswer` rechaza lo que la cache
+contesta — y el reintento es la primera lectura del stream nuevo. Se han
+puesto en `patientRead` las lecturas que todavía eran un `getDoc`/`getDocs`
+desnudo bajo guillotina: el agregado de interacciones (`readAggregate`, que
+además ya no reconstruye sobre una ausencia sin confirmar, y las páginas de
+una reconstrucción rechazan lo que no venga del servidor), el perfil de
+cuenta (`AuthContext`, que además aplica una respuesta tardía y limpia su
+propio error), los metadatos de una lista (un `patientRead` por lote con su
+`AbortController`) y el perfil público de un visitante
+(`readUserProfileByHandle` rechaza una ausencia servida desde cache). Y el
+feed aplica un perfil que llega después de su presupuesto en vez de tirarlo.
+**Verificado de extremo a extremo** con
+`scripts/diagnostics/firestore-stall-probe.mjs` (Chrome headless por CDP:
+visita un perfil público, retiene en la red todo lo que lleve el SID de ese
+stream y navega a un segundo perfil): en producción el segundo perfil **no
+pinta en 30 s**; con el arreglo pinta a los **4,1 s** y en el registro de red
+aparece el handshake nuevo. **No medido con sesión:** el arranque autenticado
+real (feed + listas) va por el mismo helper y está fijado por tests de
+fuente, pero la medida en vivo exige iniciar sesión en el Chrome dedicado.
+
 ## La hoja de seguidores lee por REST, llega de verdad y no miente (2026-09-06)
 
 **«A veces followers tarda muchísimo y hay que recargar la página.»** Medido

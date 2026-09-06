@@ -36,7 +36,7 @@ import { resolveProfileView } from '../../utils/profileAccess.js';
 import { resolveListColor } from '../../utils/listColors.js';
 import { areaAccentForPaper, areaLabelForPaper } from '../../utils/areaAccent.js';
 import { resolvedPaperTitle } from '../../utils/paperDisplayTitle.js';
-import { isTransientReadError, patientRead, slowNoticeStatus } from '../../utils/boundedRead.js';
+import { isReadTimeout, isTransientReadError, patientRead, slowNoticeStatus } from '../../utils/boundedRead.js';
 import {
   createPendingIdRequests,
   requestMissingRecords,
@@ -386,6 +386,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
 
   useEffect(() => {
     let active = true;
+    // The visitor read's retry loop outlives its promise; leaving ends it.
+    const visitorRead = new AbortController();
     // A read that fails for good — permission, demo mode, a thrown TypeError —
     // is reported only when there is nothing to show: a failed revalidation
     // must not replace a perfectly good cached view with an error page; the
@@ -397,7 +399,17 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
     };
 
     if (!selfMode) {
-      readUserProfileByHandle(handle)
+      // A visitor's read used to be bare: against a listen stream that had
+      // died under the client it never answered, and the page sat on its
+      // skeleton for good. `patientRead` kicks the stream at DEFAULT_STALL_MS
+      // and asks again on the rebuilt one (utils/streamRecovery.js).
+      // `readUserProfileByHandle` already turns a cache-served miss into a
+      // retryable rejection, so a `null` here is the server's own not-found.
+      patientRead(() => readUserProfileByHandle(handle), {
+        attempts: 3,
+        label: 'public profile',
+        signal: visitorRead.signal,
+      })
         .then(result => {
           // A visitor's not-found is not cached: the profile could be created
           // a moment later, and 'not-found' must stay a fresh answer.
@@ -410,10 +422,16 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
           setStatus(result ? 'ready' : 'not-found');
         })
         .catch(error => {
-          console.error('Error loading public profile:', error);
+          if (isReadTimeout(error)) {
+            // Budget spent, nothing to show: the loop behind the read is over
+            // (no late listener), so this is the honest verdict for the page.
+            console.warn('The public profile did not answer in time', error);
+          } else {
+            console.error('Error loading public profile:', error);
+          }
           reportFailure(error);
         });
-      return () => { active = false; };
+      return () => { active = false; visitorRead.abort(); };
     }
 
     // The owner's read gets patience rather than a guillotine: a slow answer

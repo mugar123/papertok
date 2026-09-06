@@ -87,6 +87,20 @@ export class UserProfileUnsupportedError extends Error {
   }
 }
 
+/**
+ * The read came back from the local cache, not from the server, so whatever
+ * it says about a document's absence is not known yet. `code: 'unavailable'`
+ * is deliberate: it is what `isTransientReadError` treats as "ask again".
+ */
+export class ProfileReadUnconfirmedError extends Error {
+  constructor() {
+    super('The profile read was answered by the cache, not the server.');
+    this.name = 'ProfileReadUnconfirmedError';
+    this.code = 'unavailable';
+    this.retryable = true;
+  }
+}
+
 export class HandleUnavailableError extends Error {
   constructor(handle) {
     super(`The handle "${handle}" is already taken.`);
@@ -872,6 +886,11 @@ export async function readUserProfileByHandle(handle, overrides) {
   if (!normalized) return null;
 
   const reservation = await api.getDocument(handleReference(api, normalized));
+  // A miss the local cache answered is not a free handle: with the stream
+  // rebuilt under a stalled read (utils/streamRecovery.js) the SDK flushes
+  // the read from the cache, and "nobody has this handle" must come from the
+  // server. Thrown as the "not now" `patientRead` retries.
+  if (!documentIsAuthoritative(reservation)) throw new ProfileReadUnconfirmedError();
   if (!reservation?.exists()) return null;
   const uid = cleanString(reservation.data()?.uid, 128);
   if (!uid) return null;
@@ -889,6 +908,7 @@ export async function readUserProfileByHandle(handle, overrides) {
     if (error?.code === 'permission-denied') return null;
     throw error;
   }
+  if (!documentIsAuthoritative(snapshot)) throw new ProfileReadUnconfirmedError();
   const profile = readProfileSnapshot(snapshot);
   // A reservation whose profile moved on is stale, not a redirect.
   return profile && normalizeHandle(profile.handle) === normalized ? profile : null;

@@ -395,6 +395,22 @@ test('a profile visit is one read, and a handle visit is two', async () => {
   assert.equal(profile.uid, 'user-1');
 });
 
+test('a handle the cache merely failed to find is not a free handle: the read asks again', async () => {
+  // The flush behind a stream kick (utils/streamRecovery.js) answers a
+  // pending read from the local cache. For a document the session never
+  // fetched that answer is "does not exist, fromCache" — and painting
+  // "this profile is not available" on it would be the lie the follow sheet
+  // told before it moved to REST.
+  const fromCache = { exists: () => false, id: 'ada', data: () => undefined, metadata: { fromCache: true } };
+  const api = fakeApi({ currentUser: null, getDocument: async () => fromCache }).api;
+  await assert.rejects(readUserProfileByHandle('ada', api), (error) => error.code === 'unavailable' && error.retryable === true);
+
+  // The server's own miss is still a miss.
+  const fromServer = { exists: () => false, id: 'ada', data: () => undefined, metadata: { fromCache: false } };
+  const confirmed = fakeApi({ currentUser: null, getDocument: async () => fromServer }).api;
+  assert.equal(await readUserProfileByHandle('ada', confirmed), null);
+});
+
 test('a reservation pointing at a profile that moved on resolves to nothing', async () => {
   const documents = {
     'db/handles/ada': { uid: 'user-1' },

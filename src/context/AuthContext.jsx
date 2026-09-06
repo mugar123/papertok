@@ -15,6 +15,8 @@ import {
   normalizeReadingPreferences,
 } from '../utils/userSettings';
 import { settleWithin } from '../utils/asyncTiming';
+import { isReadTimeout, patientRead } from '../utils/boundedRead.js';
+import { documentIsAuthoritative } from '../utils/cacheAuthority.js';
 import { normalizeProfilePhoto } from '../utils/profileImage';
 import { clearUserScopedStorage, readStoredOnboarding, saveStoredOnboarding } from '../utils/userScopedStorage';
 import { hydrateAccountCaches, resetAccountWarmup, warmAccountCaches } from '../services/accountWarmup.js';
@@ -132,20 +134,46 @@ export function AuthProvider({ children }) {
         const hydratedFromCache = cached.status === 'fulfilled' && applyProfile(cached.value);
         if (hydratedFromCache) setLoading(false);
 
-        const remote = await settleWithin(getDoc(userRef), PROFILE_NETWORK_TIMEOUT_MS);
-        if (!isCurrent()) return;
-
-        if (remote.status === 'fulfilled') {
-          // The server is the authority on whether the document exists. A
-          // remembered onboarding only decided the paint while this read was
-          // in flight; it does not get to overrule a missing document.
-          if (!applyProfile(remote.value)) {
+        // The server is the authority on whether the document exists. A
+        // remembered onboarding only decided the paint while this read was
+        // in flight; it does not get to overrule a missing document.
+        const applyRemote = (snapshot) => {
+          if (!applyProfile(snapshot)) {
             setOnboardingComplete(false);
             saveStoredOnboarding(currentUser.uid, { complete: false, preferences: [] });
           }
+        };
+        // This used to be one `getDoc` under a seven-second guillotine. Against
+        // a listen stream that had died under the client — a laptop back from
+        // sleep, a network changed under the tab — the read never answered,
+        // the seven seconds ended in "your profile could not be loaded", and
+        // Retry asked the same dead stream again. `patientRead` kicks the
+        // stream at DEFAULT_STALL_MS and re-asks on the rebuilt one; `isAnswer`
+        // refuses the cache-served absence the kick flushes, which is not the
+        // server's word on whether the document exists; and an answer that
+        // lands after the verdict still applies, clearing the error itself.
+        const remote = await settleWithin(
+          patientRead(() => getDoc(userRef), {
+            attempts: 1,
+            ms: PROFILE_NETWORK_TIMEOUT_MS,
+            label: 'account profile',
+            isAnswer: documentIsAuthoritative,
+            onLateResult: (snapshot) => {
+              if (!isCurrent()) return;
+              setProfileLoadError(null);
+              applyRemote(snapshot);
+              setLoading(false);
+            },
+          }),
+          PROFILE_NETWORK_TIMEOUT_MS,
+        );
+        if (!isCurrent()) return;
+
+        if (remote.status === 'fulfilled') {
+          applyRemote(remote.value);
         } else if (!hydratedFromCache) {
           setProfileLoadError('PROFILE_LOAD_FAILED');
-          if (remote.status === 'rejected') {
+          if (remote.status === 'rejected' && !isReadTimeout(remote.reason)) {
             console.error('Error fetching user data', remote.reason);
           } else {
             console.warn('Profile loading exceeded the timeout');

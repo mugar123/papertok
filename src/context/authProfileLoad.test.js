@@ -19,10 +19,13 @@ test('SOURCE: a remembered onboarding never stands in for a profile that failed 
   // the app on an empty followedAuthors is what turned the next follow into an
   // overwrite of the whole list.
   assert.doesNotMatch(code, /!storedOnboarding\?\.complete/);
+  // The server's answer — in time or late — goes through one applier, and a
+  // document that is not there is an account without onboarding.
   assert.match(
     code,
-    /if \(!applyProfile\(remote\.value\)\) \{\s*setOnboardingComplete\(false\);\s*saveStoredOnboarding\(currentUser\.uid, \{ complete: false, preferences: \[\] \}\);/,
+    /const applyRemote = \(snapshot\) => \{\s*if \(!applyProfile\(snapshot\)\) \{\s*setOnboardingComplete\(false\);\s*saveStoredOnboarding\(currentUser\.uid, \{ complete: false, preferences: \[\] \}\);/,
   );
+  assert.match(code, /if \(remote\.status === 'fulfilled'\) \{\s*applyRemote\(remote\.value\);/);
   assert.match(code, /\} else if \(!hydratedFromCache\) \{\s*setProfileLoadError\('PROFILE_LOAD_FAILED'\);/);
 });
 

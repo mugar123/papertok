@@ -29,6 +29,34 @@ export const DEFAULT_READ_TIMEOUT_MS = 6000;
 /** First pause after a transient rejection; doubles up to the cap below. */
 export const DEFAULT_RETRY_DELAY_MS = 800;
 export const MAX_RETRY_DELAY_MS = 8000;
+/**
+ * How long an attempt may go unanswered before the stream it rides is
+ * presumed dead and rebuilt (see utils/streamRecovery.js).
+ *
+ * Measured: a healthy cold read answers in 290–450 ms and a warm one in
+ * 130–230 ms, and a read against a silent stream answers never — there is
+ * no in-between worth waiting for. Three seconds is an order of magnitude
+ * above healthy and still inside every budget on the reads that gate a
+ * screen (5 s for the feed's profile, 7 s for the account, 6 s here), so the
+ * retry that follows the kick lands before any of them says "stalled".
+ */
+export const DEFAULT_STALL_MS = 3000;
+
+let defaultStallRecovery = null;
+
+/**
+ * Registers what a stalled read should do to the transport — in the app, the
+ * Firestore stream kick wired up in services/firebase.js. One registration
+ * for every `patientRead`, so a screen never has to know which stream it is
+ * on; a read that passes `onStall` of its own overrides it. Returns the
+ * unregister function, which tests use.
+ */
+export function registerStallRecovery(recover) {
+  defaultStallRecovery = typeof recover === 'function' ? recover : null;
+  return () => {
+    if (defaultStallRecovery === recover) defaultStallRecovery = null;
+  };
+}
 
 export class ReadTimedOutError extends Error {
   constructor(label = 'read', cause) {
@@ -80,6 +108,10 @@ const TRANSIENT_READ_CODES = Object.freeze([
 export function isTransientReadError(error) {
   if (!error) return false;
   if (error.timedOut === true) return true;
+  // A service that knows its own error is a "not now" says so on the error
+  // itself (PublicListUnavailableError): the cache answered instead of the
+  // server, and asking again is the right response, not a verdict.
+  if (error.retryable === true) return true;
   return TRANSIENT_READ_CODES.includes(error.code);
 }
 
@@ -213,6 +245,16 @@ export function patientRead(makeAttempt, options = {}) {
     onSlow,
     onLateResult,
     signal,
+    /**
+     * "Is this value an answer?" A cache-served emptiness is not one (see
+     * utils/cacheAuthority.js), and the stream kick below produces exactly
+     * that for every read it flushes. A value the caller cannot act on is
+     * treated like a transient rejection: the screen may say slow, and a
+     * fresh read is queued — never resolved, never handed to `onLateResult`.
+     */
+    isAnswer = () => true,
+    stallMs = DEFAULT_STALL_MS,
+    onStall = defaultStallRecovery,
     checkOffline = isOffline,
     subscribeOnline = subscribeToOnline,
     setTimer = setTimeout,
@@ -226,6 +268,7 @@ export function patientRead(makeAttempt, options = {}) {
     let stopped = false;
     let timer = null;
     let retryTimer = null;
+    let stallTimer = null;
     let releaseOnline = null;
     let retries = 0;
     let lastTransient = null;
@@ -236,8 +279,10 @@ export function patientRead(makeAttempt, options = {}) {
       stopped = true;
       clearTimer(timer);
       clearTimer(retryTimer);
+      clearTimer(stallTimer);
       timer = null;
       retryTimer = null;
+      stallTimer = null;
       if (releaseOnline) {
         releaseOnline();
         releaseOnline = null;
@@ -319,18 +364,52 @@ export function patientRead(makeAttempt, options = {}) {
       } catch (error) {
         attemptPromise = Promise.reject(error);
       }
-      attemptPromise.then(succeed, (error) => {
-        if (isReadTimeout(error)) return;
-        if (!isTransientReadError(error)) {
-          failForReal(error);
-          return;
-        }
+      const notNow = (error) => {
         // "Not now", not "not ever". This attempt is gone, so nothing is left
         // racing for it — ask again, after a pause.
         lastTransient = error;
         notifySlow(attemptNumber);
         scheduleRetry(attemptNumber);
+      };
+      attemptPromise.then((value) => {
+        clearTimer(stallTimer);
+        stallTimer = null;
+        if (settled && !timedOut) return;
+        if (!isAnswer(value)) {
+          notNow(null);
+          return;
+        }
+        succeed(value);
+      }, (error) => {
+        clearTimer(stallTimer);
+        stallTimer = null;
+        if (isReadTimeout(error)) return;
+        if (!isTransientReadError(error)) {
+          failForReal(error);
+          return;
+        }
+        notNow(error);
       });
+      // The stream watch. An attempt still unanswered at `stallMs` while the
+      // browser says it has a network is, by measurement, riding a dead
+      // stream (utils/streamRecovery.js), and no amount of waiting or
+      // re-asking on that same stream changes it. The recovery flushes the
+      // attempt — as a transient, or as a value `isAnswer` refuses — and the
+      // retry that follows is the first read on the rebuilt stream.
+      if (onStall && stallMs > 0 && stallMs < ms) {
+        clearTimer(stallTimer);
+        stallTimer = setTimer(() => {
+          stallTimer = null;
+          if (stopped || checkOffline()) return;
+          try {
+            const outcome = onStall(attemptNumber);
+            if (outcome && typeof outcome.catch === 'function') outcome.catch(() => {});
+          } catch {
+            // A recovery that throws has nothing to add to a read that is
+            // already being waited out.
+          }
+        }, stallMs);
+      }
       clearTimer(timer);
       timer = setTimer(() => {
         timer = null;

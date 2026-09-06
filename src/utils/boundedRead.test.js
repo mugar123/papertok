@@ -3,11 +3,13 @@ import assert from 'node:assert/strict';
 
 import {
   DEFAULT_READ_TIMEOUT_MS,
+  DEFAULT_STALL_MS,
   ReadTimedOutError,
   SLOW_NOTICE_AFTER_MS,
   isReadTimeout,
   isTransientReadError,
   patientRead,
+  registerStallRecovery,
   slowNoticeStatus,
   withReadTimeout,
 } from './boundedRead.js';
@@ -454,4 +456,134 @@ test('the threshold is below the read budget, so a real timeout still speaks at 
   assert.equal(slowNoticeStatus(DEFAULT_READ_TIMEOUT_MS, { offline: false }), 'slow');
   // Injectable, so a caller with a different budget is not stuck with ours.
   assert.equal(slowNoticeStatus(500, { offline: false }, 400), 'slow');
+});
+
+// --- a stream that has died under a live client ---------------------------
+//
+// Measured 2026-09-06 against production with the SDK's requests held at the
+// network: a getDoc and a getDocs issued against a silent listen stream had
+// not settled after 96 s, and did not settle when the network came back
+// either — the SDK never re-opens a stream it believes is healthy. A
+// disableNetwork/enableNetwork pair rebuilt it in 6 ms: the hostages settled
+// at once (a cached document with its data, an uncached one as `unavailable`,
+// a query as an empty cache answer) and the next read answered from the
+// server in 130 ms. `patientRead` is where every screen already waits, so it
+// is where the stream gets its kick.
+
+test('an attempt that has not answered by stallMs asks for the stream to be recovered, once', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  const stalls = [];
+  const read = patientRead(makeAttempt, {
+    ...timers, ...noAmbient, attempts: 2, stallMs: 3000,
+    onStall: (attempt) => stalls.push(attempt),
+  });
+
+  assert.ok(timers.delays.includes(3000), 'the stall watch is armed with the attempt');
+  timers.fire(3000);
+  assert.deepEqual(stalls, [1], 'still no answer at the threshold: the stream is kicked');
+
+  // The kick flushes the hostage as the SDK's own "client is offline" — a
+  // transient — and the retry that follows meets the rebuilt stream.
+  launched[0].reject(unavailable());
+  await tick();
+  timers.fire(800);
+  assert.equal(launched.length, 2);
+  launched[1].resolve('the lists, from the server');
+  assert.equal(await read, 'the lists, from the server');
+  assert.deepEqual(stalls, [1], 'the retry answered before its own stall watch fired');
+});
+
+test('a read that answers before stallMs never touches the stream', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  const stalls = [];
+  const read = patientRead(makeAttempt, {
+    ...timers, ...noAmbient, stallMs: 3000, onStall: (attempt) => stalls.push(attempt),
+  });
+  launched[0].resolve('fast');
+  assert.equal(await read, 'fast');
+  timers.fire(3000);
+  assert.deepEqual(stalls, [], 'a settled read has nothing to recover');
+  assert.equal(timers.armed, 0);
+});
+
+test('with no network there is no stream to recover, so the stall watch stays quiet', () => {
+  const timers = fakeTimers();
+  const { makeAttempt } = scriptedAttempts();
+  const stalls = [];
+  patientRead(makeAttempt, {
+    ...timers, checkOffline: () => true, subscribeOnline: () => () => {},
+    stallMs: 3000, onStall: (attempt) => stalls.push(attempt),
+  }).catch(() => {});
+  timers.fire(3000);
+  assert.deepEqual(stalls, [], 'the browser already said offline; a kick would only churn');
+});
+
+test('the stall threshold sits below the read budget, so the kick lands before the verdict', () => {
+  assert.ok(DEFAULT_STALL_MS < DEFAULT_READ_TIMEOUT_MS);
+  assert.ok(DEFAULT_STALL_MS >= 2000, 'well above a healthy cold read (450 ms measured)');
+});
+
+test('with no onStall of its own, a read uses the recovery registered for the app', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt } = scriptedAttempts();
+  const calls = [];
+  const restore = registerStallRecovery(() => calls.push('kick'));
+  try {
+    patientRead(makeAttempt, { ...timers, ...noAmbient, stallMs: 3000 }).catch(() => {});
+    timers.fire(3000);
+    assert.deepEqual(calls, ['kick']);
+  } finally {
+    restore();
+  }
+  const { makeAttempt: again } = scriptedAttempts();
+  patientRead(again, { ...timers, ...noAmbient, stallMs: 3000 }).catch(() => {});
+  timers.fire(3000);
+  assert.deepEqual(calls, ['kick'], 'once unregistered, a stall is only waited out');
+});
+
+test('an answer the caller cannot act on is a "not now", not a result', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  const notices = [];
+  const read = patientRead(makeAttempt, {
+    ...timers, ...noAmbient, attempts: 2,
+    // A query flushed from the cache by the kick: empty, and not the server's word.
+    isAnswer: (snapshot) => snapshot.authoritative,
+    onSlow: (attempt, info) => notices.push({ attempt, ...info }),
+  });
+
+  launched[0].resolve({ authoritative: false, docs: [] });
+  await tick();
+  assert.equal(launched.length, 1, 'not replaced on the spot');
+  assert.deepEqual(notices, [{ attempt: 1, offline: false }], 'the screen may say slow, never empty');
+  assert.ok(timers.delays.includes(800), 'a fresh read is queued behind the backoff');
+
+  timers.fire(800);
+  launched[1].resolve({ authoritative: true, docs: ['a list'] });
+  assert.deepEqual(await read, { authoritative: true, docs: ['a list'] });
+});
+
+test('a late answer the caller cannot act on is not delivered as the healing result either', async () => {
+  const timers = fakeTimers();
+  const { makeAttempt, launched } = scriptedAttempts();
+  let late = null;
+  const read = patientRead(makeAttempt, {
+    ...timers, ...noAmbient, attempts: 1,
+    isAnswer: (snapshot) => snapshot.authoritative,
+    onLateResult: (value) => { late = value; },
+  });
+  read.catch(() => {});
+
+  timers.fire(6000);                       // the verdict
+  launched[0].resolve({ authoritative: false });
+  await tick();
+  assert.equal(late, null, 'an empty cache answer must not heal the screen with nothing');
+  assert.ok(timers.armed > 0, 'the loop keeps asking');
+  timers.fire();                           // the backoff
+  assert.equal(launched.length, 2);
+  launched[1].resolve({ authoritative: true });
+  await tick();
+  assert.deepEqual(late, { authoritative: true });
 });

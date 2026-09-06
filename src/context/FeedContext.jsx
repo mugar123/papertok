@@ -785,44 +785,12 @@ export function FeedProvider({ children, feedRouteActive = true }) {
     // a cold load, and it only ever paid off on a remount inside one session.
     // A single document read is a single round trip, so the timeout guard below
     // is all the protection the feed still needs against a slow Firestore.
-    const loadInteractions = async () => {
-      interactionProfileHydrated.current = false;
+    /**
+     * Everything a profile changes once it is in hand, in one place, so the
+     * answer that arrives late does exactly what the answer in time does.
+     */
+    const applyInteractionProfile = (result) => {
       try {
-        const client = createInteractionProfileClient(userId);
-        const checkedAt = readProfileDriftCheckedAt(userId);
-        const checkDrift = Date.now() - checkedAt > PROFILE_DRIFT_CHECK_INTERVAL_MS;
-        // Recorded whatever the outcome: a check that fails must not retry on
-        // every single load.
-        if (checkDrift) saveProfileDriftCheckedAt(userId, Date.now());
-
-        const settled = await settleWithin(
-          loadInteractionProfile({
-            readAggregate: client.readAggregate,
-            listInteractionPage: client.listInteractionPage,
-            writeAggregate: client.writeAggregate,
-            countInteractions: client.countInteractions,
-            checkDrift,
-            userId,
-          }),
-          INTERACTIONS_NETWORK_TIMEOUT_MS,
-        );
-        if (cancelled) return;
-
-        const result = settled.status === 'fulfilled'
-          ? settled.value
-          : unavailableInteractionProfile({ reason: 'timeout' });
-
-        // UNAVAILABLE means the profile could not be determined, not that it is
-        // empty. Overwriting the sets here is what made a user with 39 likes see
-        // none, so this path touches nothing: whatever is already on screen for
-        // this account stays, and the aggregate stays unwritten.
-        if (!hasInteractionProfile(result)) {
-          console.warn(
-            `[Recomendador] Perfil no disponible (${result.reason}); se mantiene el estado actual.`,
-          );
-          return;
-        }
-
         const { profile } = result;
         if (result.repairedDrift) {
           console.info(
@@ -916,11 +884,67 @@ export function FeedProvider({ children, feedRouteActive = true }) {
         });
         semanticIdleHandle = semanticIdleHandleId;
       } catch (err) {
+        if (!cancelled) console.error('Error applying the interaction profile:', err);
+      }
+    };
+    const loadInteractions = async () => {
+      interactionProfileHydrated.current = false;
+      try {
+        const client = createInteractionProfileClient(userId);
+        const checkedAt = readProfileDriftCheckedAt(userId);
+        const checkDrift = Date.now() - checkedAt > PROFILE_DRIFT_CHECK_INTERVAL_MS;
+        // Recorded whatever the outcome: a check that fails must not retry on
+        // every single load.
+        if (checkDrift) saveProfileDriftCheckedAt(userId, Date.now());
+
+        const profileLoad = loadInteractionProfile({
+          readAggregate: client.readAggregate,
+          listInteractionPage: client.listInteractionPage,
+          writeAggregate: client.writeAggregate,
+          countInteractions: client.countInteractions,
+          checkDrift,
+          userId,
+        });
+        const settled = await settleWithin(profileLoad, INTERACTIONS_NETWORK_TIMEOUT_MS);
+        if (cancelled) return;
+
+        const result = settled.status === 'fulfilled'
+          ? settled.value
+          : unavailableInteractionProfile({ reason: 'timeout' });
+
+        // UNAVAILABLE means the profile could not be determined, not that it is
+        // empty. Overwriting the sets here is what made a user with 39 likes see
+        // none, so this path touches nothing: whatever is already on screen for
+        // this account stays, and the aggregate stays unwritten.
+        if (!hasInteractionProfile(result)) {
+          console.warn(
+            `[Recomendador] Perfil no disponible (${result.reason}); se mantiene el estado actual.`,
+          );
+          // The budget decides when the feed may start, not whether the
+          // profile counts. The read behind it keeps going (patientRead in
+          // interactionProfileStore.js: it kicks a dead stream and re-asks),
+          // and an answer that lands after the budget used to be dropped on
+          // the floor — the account then scrolled without its likes, its
+          // saved papers or its affinities until a reload. Now it applies the
+          // moment it arrives, exactly as an answer in time would have.
+          if (settled.status === 'timed_out') {
+            profileLoad.then((lateResult) => {
+              if (cancelled || !hasInteractionProfile(lateResult)) return;
+              console.info('[Recomendador] Perfil recibido tras el presupuesto; se aplica ahora.');
+              applyInteractionProfile(lateResult);
+            }).catch(() => {});
+          }
+          return;
+        }
+
+        applyInteractionProfile(result);
+      } catch (err) {
         if (!cancelled) console.error('Error loading interactions:', err);
       } finally {
         if (!cancelled) setRecommendationProfileUserId(userId);
       }
     };
+
     loadInteractions();
 
     return () => {

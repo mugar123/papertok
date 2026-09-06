@@ -31,7 +31,6 @@ import { paperLegacyAdapter } from '../../models/Paper';
 import { AlertTriangle, Check, Download, Globe2, Library, Lock, Pencil, Plus, Share2, Unlink, X } from 'lucide-react';
 import { shareOrCopyLink } from '../../utils/shareLink.js';
 import { downloadCitationFile } from '../../utils/readingLibrary';
-import { settleWithin } from '../../utils/asyncTiming';
 import { decodeFirestoreDocId, encodeFirestoreDocId } from '../../utils/firestoreDocId.js';
 import { hydrateLegacyArxivPapers } from '../../services/likedPaperRecords.js';
 import { getUiErrorMessage } from '../../utils/errorMessages';
@@ -274,6 +273,8 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
   // overwrite what this device knew with an emptiness nobody confirmed.
   const listsHeardFromServer = useRef(false);
   const metadataRequestId = useRef(0);
+  const metadataAbortRef = useRef(null);
+  useEffect(() => () => metadataAbortRef.current?.abort(), []);
   // The ceiling on the whole metadata fan-out; a new open cancels the last one's.
   const metadataBudgetTimer = useRef(null);
   const failedMetadataRequests = useRef(new Map());
@@ -440,6 +441,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
         const answered = await patientRead(() => getDocs(listsRef), {
           attempts: 3,
           label: 'custom lists',
+          // A cache-served emptiness is not an answer, and the stream kick
+          // behind `patientRead` produces exactly one for the read it
+          // flushes. Refused here, it becomes a retry on the rebuilt stream
+          // instead of the "could not be loaded" the `throw` below would say.
+          isAnswer: snapshotIsAuthoritative,
           signal: controller.signal,
           onLateResult: (lateSnapshot) => {
             if (!active) return;
@@ -516,6 +522,11 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
 
     if (!user) return;
     setPendingPaperIds(new Set(missingIds));
+    // The retry loops behind the reads below outlive their promises; a newer
+    // open, or leaving the screen, must end the previous one's.
+    metadataAbortRef.current?.abort();
+    const metadataAbort = new AbortController();
+    metadataAbortRef.current = metadataAbort;
 
     /**
      * The same set, in the closure.
@@ -670,63 +681,51 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
          * fetched — which is exactly what a cache cannot have. It would only
          * buy a second `mergeSnapshot` racing the first.
          */
-        const networkRequest = getDocs(metadataQuery);
-        const networkResultRequest = settleWithin(
-          networkRequest,
-          PAPER_METADATA_LOAD_DEADLINE_MS,
-        ).then((networkResult) => {
-          if (networkResult.status === 'fulfilled') {
-            // Documents in hand are documents whatever their provenance; it is
-            // an ABSENCE that needs the server to have said so. Offline, this
-            // read fulfils empty off the in-memory cache in a fraction of a
-            // millisecond, and counting that as "these papers have no metadata"
-            // is the lie the lists read one screen up already refuses to tell.
-            mergeSnapshot(requestDefinition.source, networkResult.value);
-
-            // Settling means "nothing more is coming for these rows", so it may
-            // only happen on an answer worth believing. An EMPTY snapshot off
-            // the local cache is not one: offline, `getDocs` fulfils in a
-            // fraction of a millisecond with nothing in it, and settling on that
-            // would put the raw arXiv id under every row — "this paper has no
-            // metadata" — for a question that was never actually asked. The rows
-            // keep waiting, the banner below says so, and the total budget is
-            // what stops the wait being unbounded.
-            if (!queryIsAuthoritative(networkResult.value)) {
-              return { status: 'unauthoritative' };
-            }
-            // The early return here used to skip the `else` below, so a request
-            // that came back WITHOUT a document for some id never decremented
-            // that id's outstanding count and the row waited under a skeleton
-            // for an answer already given. A server saying "no such document"
-            // is an answer.
-            settleRequest(requestDefinition);
-            return networkResult;
+        /**
+         * One `patientRead` per batch. It used to be a bare `getDocs` under a
+         * four-second deadline, and against a listen stream that had died
+         * under the client the read never answered: every row sat under its
+         * skeleton until the total budget said "some metadata could not be
+         * loaded", for papers the server would have returned in 130 ms on a
+         * fresh stream. `patientRead` kicks the stream at DEFAULT_STALL_MS
+         * and asks again; `isAnswer` refuses the empty cache answer the kick
+         * flushes — an ABSENCE only counts when the server reports it, and
+         * settling on a local one would put the raw arXiv id under every row.
+         * A batch past its deadline is still running: `onLateResult` merges
+         * and settles it when it lands, exactly as before.
+         */
+        const settleLate = (lateSnapshot) => {
+          mergeSnapshot(requestDefinition.source, lateSnapshot);
+          settleRequest(requestDefinition);
+          if (
+            metadataRequestId.current === requestId
+            && missingIds.every((paperId) => resolvedIds.has(paperId))
+          ) {
+            failedMetadataRequests.current.delete(list.id);
+            setMetadataError(null);
           }
-
-          if (networkResult.status === 'timed_out') {
-            // Still running. The rows it covers keep waiting until it lands or
-            // gives up — the deadline above bounds the caller, not the read.
-            networkRequest.then((lateSnapshot) => {
-              mergeSnapshot(requestDefinition.source, lateSnapshot);
-              settleRequest(requestDefinition);
-              if (
-                metadataRequestId.current === requestId
-                && missingIds.every((paperId) => resolvedIds.has(paperId))
-              ) {
-                failedMetadataRequests.current.delete(list.id);
-                setMetadataError(null);
-              }
-            }).catch(() => settleRequest(requestDefinition));
-          } else {
-            settleRequest(requestDefinition);
-          }
-          return networkResult;
+        };
+        return patientRead(() => getDocs(metadataQuery), {
+          attempts: 1,
+          ms: PAPER_METADATA_LOAD_DEADLINE_MS,
+          label: `list metadata (${requestDefinition.source})`,
+          isAnswer: queryIsAuthoritative,
+          signal: metadataAbort.signal,
+          onLateResult: settleLate,
+        }).then((snapshot) => {
+          // Documents in hand are documents whatever their provenance; a
+          // server saying "no such document" is an answer too, and the row
+          // it covers stops waiting.
+          mergeSnapshot(requestDefinition.source, snapshot);
+          settleRequest(requestDefinition);
+          return { status: 'fulfilled', value: snapshot };
+        }, (reason) => {
+          // Still running past its deadline: the rows it covers keep waiting
+          // until it lands or the total budget gives up on them.
+          if (isReadTimeout(reason)) return { status: 'timed_out' };
+          settleRequest(requestDefinition);
+          return { status: 'rejected', reason };
         });
-
-        // `settleWithin` resolves rather than rejects, so this only throws if
-        // the handler above did — the caller classifies everything else from
-        // the value it returns.
-        return networkResultRequest;
       };
 
       // Every source/batch has its own deadline and paints as soon as it
@@ -769,19 +768,17 @@ export default function ListsPage({ onOpenPdf, onEditPaper }) {
        *
        *   timed out      — the read is genuinely still running, and its late
        *                    handler will merge and settle when it lands.
-       *   unauthoritative — an empty answer off the local cache. We did not
-       *                    find out, so the row keeps waiting under the banner.
        *
-       * Anything else has had its answer, whatever the answer was. If the
+       * An empty answer off the local cache never reaches here any more:
+       * `patientRead` refuses it (`isAnswer`) and asks again. Anything else
+       * has had its answer, whatever the answer was. If the
        * counter says otherwise, the counter is wrong and this frees the row.
        * The total budget is what bounds the two cases above.
        */
       const stillAnswerable = new Set(
         requestResults.flatMap((result, index) => {
           const status = result.status === 'fulfilled' ? result.value?.status : 'rejected';
-          return status === 'timed_out' || status === 'unauthoritative'
-            ? requestDefinitions[index].paperIds
-            : [];
+          return status === 'timed_out' ? requestDefinitions[index].paperIds : [];
         }),
       );
       dropPending(missingIds.filter((paperId) => !stillAnswerable.has(paperId)));

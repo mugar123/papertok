@@ -27,6 +27,8 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from './firebase';
+import { patientRead } from '../utils/boundedRead.js';
+import { documentIsAuthoritative, queryIsAuthoritative } from '../utils/cacheAuthority.js';
 import { serializeInteractionProfile } from '../utils/interactionProfile.js';
 import { mapWithConcurrency } from '../utils/mapWithConcurrency.js';
 import { FIRESTORE_IN_FILTER_MAX } from '../utils/firestoreLimits.js';
@@ -108,11 +110,38 @@ export function interactionDocRef(userId, paperId) {
   return doc(interactionsRef(userId), encodeInteractionDocId(paperId));
 }
 
+/**
+ * A page of the subcollection that came from the cache instead of the server.
+ *
+ * Only a rebuild reads pages, and a rebuild WRITES what it reads: an empty
+ * page the SDK served locally — the network disabled for a stream kick, or
+ * the client latched offline — would end the scan early and put an aggregate
+ * with nothing in it over the real one. `unavailable` is what a rebuild
+ * already treats as "could not be determined", so the profile stays as it was.
+ */
+function unconfirmedPage() {
+  return Object.assign(
+    new Error('The interaction page came from the cache, not the server.'),
+    { code: 'unavailable' },
+  );
+}
+
 export function createInteractionProfileClient(userId) {
   return {
     userId,
     async readAggregate() {
-      const snapshot = await getDoc(interactionProfileRef(userId));
+      // The feed's whole personalisation waits on this one read, and it used
+      // to be a bare getDoc: against a listen stream that had died under the
+      // client it never answered, the feed's budget expired, and the account
+      // scrolled an unpersonalised feed with none of its likes until a
+      // reload. `patientRead` kicks the stream at DEFAULT_STALL_MS and asks
+      // again; `isAnswer` refuses the cache-served absence the kick flushes
+      // — an absence the server has not confirmed would start a rebuild.
+      const snapshot = await patientRead(() => getDoc(interactionProfileRef(userId)), {
+        attempts: 3,
+        label: 'interaction profile',
+        isAnswer: documentIsAuthoritative,
+      });
       countReads('aggregate', 1);
       return { exists: snapshot.exists(), data: snapshot.exists() ? snapshot.data() : null };
     },
@@ -123,6 +152,7 @@ export function createInteractionProfileClient(userId) {
       const constraints = [orderBy(documentId()), limit(pageSize)];
       if (startAfterId) constraints.splice(1, 0, startAfter(encodeInteractionDocId(startAfterId)));
       const snapshot = await getDocs(query(interactionsRef(userId), ...constraints));
+      if (!queryIsAuthoritative(snapshot)) throw unconfirmedPage();
       // Decoded: the rebuilt aggregate must carry paper ids, never document names.
       const documents = snapshot.docs.map(item => ({ id: decodeInteractionDocId(item.id), data: item.data() }));
       countReads('interactions', documents.length);

@@ -7,7 +7,9 @@ export const IS_DEMO = false;
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, GithubAuthProvider, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore } from 'firebase/firestore';
+import { disableNetwork, enableNetwork, getFirestore } from 'firebase/firestore';
+import { isOffline, registerStallRecovery } from '../utils/boundedRead.js';
+import { createStreamRecovery } from '../utils/streamRecovery.js';
 
 const firebaseConfig = {
   apiKey: "AIzaSyAQKtRz0-PJH7_xOBrFhGeQdbIAHkzV4Q0",
@@ -47,6 +49,18 @@ githubProvider.addScope('user:email');
 // fatal internal assertion. PaperTok already keeps its bounded feed snapshot
 // separately, so database persistence is unnecessary here.
 const db = getFirestore(app);
+
+// The one listen stream every SDK read rides can die under a live client and
+// the SDK will never notice (utils/streamRecovery.js: 96 s unanswered,
+// measured). This is the app's only way to rebuild it: a `patientRead` whose
+// attempt is still unanswered at DEFAULT_STALL_MS asks for it, the hostages
+// flush as the "not now" it already waits out, and the retry meets the new
+// stream. Registered once, here, so no screen has to know about streams.
+registerStallRecovery(createStreamRecovery({
+  disable: () => disableNetwork(db),
+  enable: () => enableNetwork(db),
+  isOffline,
+}));
 
 export { auth, googleProvider, githubProvider, db };
 export default app;
