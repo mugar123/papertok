@@ -217,8 +217,12 @@ export default function EntityExplorer({
   onSaveToList = () => {},
   publicMode = false,
   onAuthRequired = () => {},
+  // Under the app's own bar — App.jsx decides, the same way it decides to
+  // render the bar — the page starts below it instead of at the top edge.
+  appChrome = false,
 }) {
   const { type, id } = useParams();
+  const appChromeClass = appChrome ? ' explorer--app' : '';
   const navigate = useNavigate();
   const prefersReducedMotion = useReducedMotion();
   const { language, isEnglish, locale } = useLanguage();
@@ -1287,7 +1291,7 @@ export default function EntityExplorer({
     const shape = explorerSkeletonShape(type, { hasOrcid: Boolean(extractOrcid(id)) });
     return (
       <div
-        className={`explorer-container explorer-skeleton explorer-skeleton--${type || 'entity'}`}
+        className={`explorer-container explorer-skeleton explorer-skeleton--${type || 'entity'}${appChromeClass}`}
         role="status"
         aria-busy="true"
         aria-label={isEnglish ? 'Loading' : 'Cargando'}
@@ -1437,7 +1441,7 @@ export default function EntityExplorer({
 
   if (!entity) {
     return (
-      <div className="explorer-error">
+      <div className={`explorer-error${appChromeClass}`}>
         <Button variant="outline" size="icon" onClick={handleBack} aria-label={isEnglish ? 'Back' : 'Volver'} title={isEnglish ? 'Back' : 'Volver'}>
           <ArrowLeft size={24} />
         </Button>
@@ -1474,7 +1478,7 @@ export default function EntityExplorer({
   const topConcepts = entity.x_concepts ? entity.x_concepts.slice(0, 4) : [];
 
   return (
-    <div className="explorer-container" style={{ '--area-accent': entityAccent }}>
+    <div className={`explorer-container${appChromeClass}`} style={{ '--area-accent': entityAccent }}>
       {/* Immersive Hero */}
       <div className="explorer-hero">
         <AnimatePresence>

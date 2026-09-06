@@ -17,6 +17,24 @@
   position: relative;
 }
 
+/* Under the app's own bar (App.jsx passes `appChrome` for a signed-in
+   reader, the same condition that renders the bar): the page starts below
+   it, the sticky toolbar docks under it, and the hero stops reserving the
+   notch, which the bar already covers. Border-box, so `min-height: 100dvh`
+   and the error's `height: 100dvh` keep meaning the whole screen with the
+   padding inside them. Without the bar nothing here applies. */
+.explorer--app {
+  padding-top: var(--nav-total);
+}
+
+.explorer--app .explorer-hero {
+  padding-top: var(--space-5);
+}
+
+.explorer--app .explorer-toolbar-wrapper {
+  top: var(--nav-total);
+}
+
 .explorer-error {
   height: 100vh;
   height: 100dvh;
@@ -2275,6 +2293,10 @@
   .explorer-hero {
     padding: var(--space-4) var(--space-4) var(--space-5);
     padding-top: max(var(--space-4), env(safe-area-inset-top));
+  }
+
+  .explorer--app .explorer-hero {
+    padding-top: var(--space-4);
   }
 
   .ehc-title-row {
