@@ -356,7 +356,13 @@
 /* ─── Bandas de estado ─── */
 
 /* Vacío y error dejan de ser un icono centrado en un pozo de 440px: son una
-   banda corta, del alto que el cuerpo ya reserva para ellas. */
+   banda corta, del alto que el cuerpo ya reserva para ellas.
+
+   It arrives the way the rows do. The rows stagger in with a 180 ms fade
+   and a 6 px rise; the band used to pop into the same place, so an empty
+   "Following" had no arrival where a "Followers" with rows had one. Same
+   house arrival curve, opacity and transform only, and a mount animation
+   rather than a transition: the band is never re-triggered. */
 .follow-sheet-state {
   display: flex;
   flex-direction: column;
@@ -369,6 +375,23 @@
   color: var(--text-tertiary);
   font-size: var(--fs-sm);
   text-align: center;
+  animation: follow-sheet-state-in 200ms var(--ease-out-expo) both;
+}
+
+@keyframes follow-sheet-state-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes follow-sheet-state-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .follow-sheet-state p {
@@ -482,10 +505,15 @@
     transform: translateY(-10px) scale(0.98);
   }
 
+  /* The leave is meant to be seen. On the arrival's expo curve at 180 ms the
+     sheet was at 27 % opacity by 46 ms (measured): a cut with a transition's
+     name. The house quad spends the whole 200 ms fading, and the drawer's
+     veil (360 ms, heavily front-loaded) is already near zero when the sheet
+     finishes, so the two read as one surface. */
   .follow-sheet[data-ending-style] {
     opacity: 0;
     transform: translateY(-6px) scale(0.985);
-    transition-duration: 180ms;
+    transition: transform 200ms var(--ease-out-quad), opacity 200ms var(--ease-out-quad);
   }
 
   .follow-sheet-body {
@@ -510,5 +538,11 @@
   .follow-sheet[data-ending-style] {
     opacity: 0;
     transform: none;
+    transition: opacity 120ms linear;
+  }
+
+  /* The band still appears rather than popping — by opacity only. */
+  .follow-sheet-state {
+    animation: follow-sheet-state-fade 120ms linear both;
   }
 }

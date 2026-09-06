@@ -2,21 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { motion, useReducedMotion } from 'framer-motion';
 import { UsersRound, X } from 'lucide-react';
-import {
-  FOLLOW_PAGE_SIZE,
-  readFollowedUsersPage,
-  readFollowersPage,
-} from '../../services/followUserService.js';
-import { readUserProfile } from '../../services/userProfileService.js';
 import { getPublicProfilePath } from '../../utils/publicNavigation.js';
 import { isReadTimeout, patientRead } from '../../utils/boundedRead.js';
-import {
-  followRowProfileCache,
-  readFollowList,
-  rememberFollowList,
-} from '../../utils/profileSessionCaches.js';
+import { readFollowList, rememberFollowList } from '../../utils/profileSessionCaches.js';
 import { Drawer, DrawerContent } from '../ui/drawer.jsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.jsx';
+import {
+  FOLLOW_MODES,
+  hydrate,
+  nextWaitingStatus,
+  readFollowPage,
+  resolveRowProfiles,
+} from './followListLoad.js';
 import './FollowSheet.css';
 
 /**
@@ -44,14 +41,16 @@ import './FollowSheet.css';
  * rows keeps them** — in state while the sheet is open, in the session cache
  * once it closes — so going followers ⇄ following ⇄ followers repaints instead
  * of starting over. Both are the pattern the rest of the profile already uses.
+ *
+ * The reads themselves live in followListLoad.js, shared with the counter
+ * that warms the list on hover, and they go over REST rather than the SDK's
+ * listen stream. This sheet is where that stream was measured lying: against
+ * a channel that had died under a live client it answered the edge query
+ * with an *empty* page from the cache after ten seconds, and "No followers
+ * yet" — remembered by the session cache — outlived the stall until a reload.
+ * The loader also owns the one rule about rows: a profile read that fails is
+ * not an answer, so a dropped request never becomes "Account unavailable".
  */
-
-const MODES = Object.freeze({
-  followers: { read: readFollowersPage },
-  following: { read: readFollowedUsersPage },
-});
-
-const MODE_NAMES = Object.freeze(['followers', 'following']);
 
 /** How many rows a counter promises. `'1000+'` parses as 1000; `'—'` as nothing. */
 function numericCount(value) {
@@ -139,16 +138,10 @@ const EMPTY_PAGE = Object.freeze({
   rows: [], cursor: null, hasMore: false, status: 'loading',
 });
 
-/** Rows carry uids; the names come from whatever the profile cache already holds. */
-function hydrate(rows) {
-  return (Array.isArray(rows) ? rows : [])
-    .map(row => ({ uid: row.uid, profile: followRowProfileCache.get(row.uid) }));
-}
-
 /** Whatever this tab session already knows about either tab of this profile. */
 function seedPages(uid) {
   const seeded = {};
-  MODE_NAMES.forEach(name => {
+  FOLLOW_MODES.forEach(name => {
     const cached = readFollowList(uid, name);
     if (cached) seeded[name] = { ...cached, rows: hydrate(cached.rows), status: 'ready' };
   });
@@ -197,8 +190,28 @@ export default function FollowSheet({
   // dismisses it on a phone. The profile mounts it as `{followSheet && …}`,
   // so the open state lives here: closing flips `open`, the drawer plays its
   // leave, and only `onOpenChangeComplete(false)` tells the parent — once.
-  const [open, setOpen] = useState(true);
+  //
+  // Mounted closed and opened on the next frame, on purpose. Base UI plays
+  // `data-starting-style` only when `open` flips on a root that is already
+  // mounted; a Drawer that mounts open skips the arrival entirely — measured
+  // at opacity 1 on its first frame, on desktop and on phones — and there is
+  // no prop for it (`animateInitialOpen` is internal to menus). One frame is
+  // the price of the sheet arriving instead of appearing.
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => setOpen(true));
+    return () => cancelAnimationFrame(frame);
+  }, []);
   const requestClose = useCallback(() => setOpen(false), []);
+  // Reads the sheet starts outside the per-tab effect — paging — end with the
+  // sheet, not with the tab. Created in an effect so a dev-mode double mount
+  // gets a fresh controller rather than one its first cleanup already aborted.
+  const lifetime = useRef(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    lifetime.current = controller;
+    return () => controller.abort();
+  }, []);
   // Where focus lands on open. The tabs come first in the DOM, but a sheet
   // that opens on its own close button is the one the reader can leave the
   // way they came.
@@ -277,28 +290,24 @@ export default function FollowSheet({
    * carrying whatever the profile cache already has for them, which after the
    * first tab is usually everything.
    */
-  const readEdges = useCallback(async (cursor) => {
-    const read = MODES[mode]?.read;
-    if (!read || !uid) return { rows: [], cursor: null, hasMore: false };
-    const result = await read(uid, { cursor, pageSize: FOLLOW_PAGE_SIZE });
-    return { rows: hydrate(result.edges), cursor: result.cursor, hasMore: result.hasMore };
-  }, [mode, uid]);
+  const readEdges = useCallback(
+    (cursor, signal) => readFollowPage(uid, mode, { cursor, signal }),
+    [mode, uid],
+  );
 
   /**
    * Wave two: the account behind each row that has none yet, each one landing
-   * on its own. Not a `Promise.all` — one slow profile used to hold up every
-   * other name on screen, and there is nothing the reader gains by waiting for
-   * the row they were not looking at.
+   * on its own — with patience, so a row whose read was dropped is asked
+   * again instead of being declared unavailable. Only a settled answer
+   * reaches the state; the loader keeps everything else pending.
    */
-  const resolveRows = useCallback((rows, isActive) => {
-    rows.filter(row => row.profile === undefined).forEach(row => {
-      readUserProfile(row.uid)
-        .catch(() => null)
-        .then(profile => {
-          const settled = profile ?? null;
-          followRowProfileCache.set(row.uid, settled);
-          if (isActive()) setPages(previous => withProfile(previous, row.uid, settled));
-        });
+  const resolveRows = useCallback((rows, isActive, signal) => {
+    resolveRowProfiles(rows, {
+      signal,
+      patience: { attempts: 2 },
+      onProfile: (rowUid, profile) => {
+        if (isActive()) setPages(previous => withProfile(previous, rowUid, profile));
+      },
     });
   }, []);
 
@@ -313,27 +322,30 @@ export default function FollowSheet({
       const page = { ...result, status: 'ready' };
       rememberFollowList(uid, mode, page);
       setPages(previous => ({ ...previous, [mode]: page }));
-      resolveRows(result.rows, isActive);
+      resolveRows(result.rows, isActive, controller.signal);
     };
 
-    // One attempt is now just the edge query: bounded, and the only part of
-    // this that can stall with nothing to show. Unbounded, a stalled read left
-    // this sheet on "Loading..." for as long as it stayed open, with no way out
-    // — the same shape as the comment sheet, which is why it takes the same
-    // helper. The error state below already has a Try again, so a timeout lands
-    // somewhere the reader can act on.
-    patientRead(() => readEdges(null), {
+    // One attempt is just the edge query: bounded, and the only part of this
+    // that can stall with nothing to show. Unbounded, a stalled read left this
+    // sheet on "Loading..." for as long as it stayed open, with no way out —
+    // the same shape as the comment sheet, which is why it takes the same
+    // helper. The error state below already has a Try again, so a timeout
+    // lands somewhere the reader can act on. The signal ends the request
+    // itself, not only the interest in it: a closed sheet stops asking.
+    const startedAt = Date.now();
+    patientRead(() => readEdges(null, controller.signal), {
       attempts: 3,
       label: 'follow list',
       signal: controller.signal,
       onSlow: (attemptNumber, info) => {
-        // A tab already showing rows keeps them: a slow revalidation is not a
-        // reason to take the list back off the screen.
+        // A tab already showing rows keeps them, a verdict is never taken
+        // back, and a rejection that arrived in milliseconds is not yet a
+        // wait — the loader decides (nextWaitingStatus).
         if (!active) return;
-        setPages(previous => (previous[mode]?.status === 'ready' ? previous : {
-          ...previous,
-          [mode]: { ...EMPTY_PAGE, status: info?.offline ? 'offline' : 'slow' },
-        }));
+        setPages((previous) => {
+          const next = nextWaitingStatus(previous[mode]?.status, Date.now() - startedAt, info);
+          return next ? { ...previous, [mode]: { ...EMPTY_PAGE, status: next } } : previous;
+        });
       },
       onLateResult: apply,
     })
@@ -362,8 +374,9 @@ export default function FollowSheet({
   const loadMore = async () => {
     if (paging || !current.cursor) return;
     setPaging(true);
+    const signal = lifetime.current?.signal;
     try {
-      const result = await readEdges(current.cursor);
+      const result = await readEdges(current.cursor, signal);
       const page = {
         rows: [...current.rows, ...result.rows],
         cursor: result.cursor,
@@ -372,7 +385,7 @@ export default function FollowSheet({
       };
       rememberFollowList(uid, mode, page);
       setPages(previous => ({ ...previous, [mode]: page }));
-      resolveRows(result.rows, () => true);
+      resolveRows(result.rows, () => !signal?.aborted, signal);
     } catch (error) {
       console.error('Error paging the follow list:', error);
     } finally {
@@ -409,7 +422,7 @@ export default function FollowSheet({
         >
         <header className="follow-sheet-header">
           <TabsList variant="line" className="follow-sheet-tabs">
-            {MODE_NAMES.map(name => (
+            {FOLLOW_MODES.map(name => (
               <TabsTrigger key={name} value={name} className="follow-sheet-tab">
                 {copy[name]}
                 {counts?.[name] != null && (

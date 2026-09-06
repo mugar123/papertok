@@ -1,5 +1,53 @@
 # Estado / pendientes
 
+## La hoja de seguidores lee por REST, llega de verdad y no miente (2026-09-06)
+
+**«A veces followers tarda muchísimo y hay que recargar la página.»** Medido
+con `scripts/diagnostics/follow-sheet-probe.mjs` (Chrome headless por CDP):
+el servidor contesta la consulta de aristas en 70–213 ms y un perfil en
+116 ms, y en caliente la hoja pintaba filas a 120 ms. La lentitud era del
+cliente: `getDocs` y `getDoc` viajan por el único stream WebChannel del SDK, y
+contra un canal muerto bajo un cliente vivo la consulta callaba diez segundos
+y resolvía **vacía desde la cache** — «No followers yet» para una cuenta con
+un seguidor — y la cache de sesión repetía la mentira en cada reapertura
+hasta recargar. Los contadores de al lado no lo sufrían: `getCountFromServer`
+es un XHR unario con su plazo. Ahora las dos lecturas de la hoja (la página de
+aristas y el perfil de cada fila) van por la API REST de Firestore
+(`src/utils/firestoreRest.js`, `src/services/firestoreRestClient.js`): una
+petición por lectura, un `signal` que la corta de verdad, ninguna cache que
+conteste, y el fallo de red como `unavailable`, que es lo que `patientRead`
+reintenta. Anónimas a propósito — todo lo que leen está abierto a
+`request.auth == null` — y el `runQuery` viaja como `text/plain`, que
+Firestore acepta: sin token ni JSON no hay preflight CORS y cada lectura es
+un solo viaje. El perfil propio privado, lo único que el anónimo no ve, sale
+de `ownProfileCache`. `batchGet` no sirve para una lista: es todo-o-nada y un
+documento ausente o privado tumba el lote entero con 403 (medido). La carga
+de una pestaña vive en `src/components/Public/followListLoad.js`, compartida
+con los contadores del perfil, que precalientan su lista al pasar el puntero
+o al enfocar: tras 600 ms de hover la hoja abre con filas y nombres en su
+primer fotograma. Segunda regla del cargador: un fallo de perfil no es una
+respuesta — antes `.catch(() => null)` cacheaba «Cuenta no disponible» para
+toda la sesión por una petición caída; ahora sólo un 404 o un 403 asientan
+la fila y lo transitorio se reintenta con paciencia. Y `nextWaitingStatus`
+decide qué puede hacer un aviso de lentitud: por REST una red muerta rechaza
+en milisegundos, la hoja decía «está tardando» a los 44 ms y los reintentos
+posteriores devolvían al esqueleto una pestaña ya en «stalled» con su
+Reintentar; ahora el aviso espera 1,2 s (salvo offline) y nunca retira un
+veredicto ni unas filas. Medido tras el cambio: caliente 109/193 ms
+(filas/nombres); en frío tras 65 s de inactividad 107/172 ms (antes
+181/303); canal muerto → «tardando» a los 2,5 s, «stalled» + Reintentar a
+los 24 s, y cura sola al volver la red. Animación: la hoja no tenía llegada —
+Base UI sólo aplica `data-starting-style` cuando `open` pasa de false a true
+en una raíz ya montada, y un Drawer que monta abierto la salta
+(`animateInitialOpen` no está expuesto en Dialog ni Drawer); ahora monta
+cerrada y abre en el fotograma siguiente, en escritorio y en móvil. La salida
+pasa de la expo a 180 ms (27 % de opacidad a los 46 ms: un corte) a la quad
+de la casa en 200 ms, y el velo del drawer ya está a 0,01 cuando desmonta.
+La banda vacía («Not following anyone yet») entra con la misma curva que las
+filas (200 ms, 6 px; sólo opacidad bajo reduced motion). **Pendiente:**
+CommentsSheet y las demás hojas montadas como `{x && <X/>}` con
+`useState(true)` tienen la misma llegada ausente.
+
 ## La interfaz pasa a shadcn/ui sobre Base UI, con el mismo estilo (2026-09-05)
 
 **Había cinco componentes copiados de shadcn sobre Radix en `src/components/ui/`

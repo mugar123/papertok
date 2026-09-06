@@ -30,6 +30,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { auth, db, IS_DEMO } from './firebase.js';
+import { firestoreRest } from './firestoreRestClient.js';
 import { PUBLIC_LIST_LIMITS } from './publicListPayload.js';
 import { userSearchEntry, userSearchReference } from './userSearchService.js';
 import { documentIsAuthoritative } from '../utils/cacheAuthority.js';
@@ -397,6 +398,7 @@ function operations(overrides = {}) {
     document: overrides.document || doc,
     getDocument: overrides.getDocument || getDoc,
     now: overrides.now || serverTimestamp,
+    rest: overrides.rest || firestoreRest,
   };
 }
 
@@ -843,6 +845,23 @@ export async function readUserProfile(uid, overrides) {
   if (!normalized) return null;
   const snapshot = await api.getDocument(profileReference(api, normalized));
   return readProfileSnapshot(snapshot);
+}
+
+/**
+ * The same profile, over REST: the read the follow sheet makes for each of
+ * its rows. One request with a signal that ends it, no listen stream behind
+ * it and no cache to answer from — see src/utils/firestoreRest.js for what
+ * the stream did to that sheet. A denial is thrown as itself: the sheet, not
+ * this function, decides what an account it may not read looks like.
+ */
+export async function readUserProfileOverRest(uid, { signal } = {}, overrides) {
+  const api = operations(overrides);
+  requireSupported(api);
+  const normalized = cleanString(uid, 128);
+  if (!normalized) return null;
+  const document = await api.rest.getDocument(`userProfiles/${encodeURIComponent(normalized)}`, { signal });
+  if (!document?.exists) return null;
+  return readProfileSnapshot({ id: document.id, exists: () => true, data: () => document.data });
 }
 
 /** Two reads: the handle reservation, then the profile it points at. */

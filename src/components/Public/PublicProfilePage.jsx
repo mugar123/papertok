@@ -61,6 +61,7 @@ import ScientificText from '../ScientificText.js';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs.jsx';
 import { Toggle } from '../ui/toggle.jsx';
 import FollowSheet from './FollowSheet.jsx';
+import { prefetchFollowList } from './followListLoad.js';
 import { loadProfileFonts } from '../../utils/loadDisplayFonts.js';
 import './PublicProfilePage.css';
 
@@ -1306,12 +1307,18 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
               Explorer's entity header uses rather than in a row of pills. The
               grid takes its column count from its children: three for the
               owner, two for a visitor, who has no Likes counter at all. */}
+          {/* Hovering or focusing a counter warms its list (followListLoad.js):
+              the page arrives in the ~200 ms a pointer takes to reach the
+              button, so the sheet opens on rows more often than on a
+              skeleton. A prefetch that fails writes nothing. */}
           <ul className="profile-stats">
             <li>
               <button
                 type="button"
                 className="profile-stat"
                 onClick={() => setFollowSheet('following')}
+                onPointerEnter={() => prefetchFollowList(statsUid, 'following')}
+                onFocus={() => prefetchFollowList(statsUid, 'following')}
                 disabled={!statsUid}
                 title={copy.openFollowing}
               >
@@ -1326,6 +1333,8 @@ export default function PublicProfilePage({ handle: handleProp, selfMode = false
                 type="button"
                 className="profile-stat"
                 onClick={() => setFollowSheet('followers')}
+                onPointerEnter={() => prefetchFollowList(statsUid, 'followers')}
+                onFocus={() => prefetchFollowList(statsUid, 'followers')}
                 disabled={!statsUid}
                 title={copy.openFollowers}
               >

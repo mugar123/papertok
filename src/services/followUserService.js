@@ -17,6 +17,17 @@
  * showing that subcollection; this file never touches it.
  *
  * Nothing here is imported by the feed. A feed load still costs one read.
+ *
+ * The pages travel over REST, not over the SDK. A `getDocs` is a one-shot
+ * listen on the client's single stream, and the follow sheet measured what
+ * that costs when the stream has died under a live client: ten seconds of
+ * silence, then an *empty* page served from the in-memory cache — "No
+ * followers yet" for an account with followers, repeated in under a
+ * millisecond on every retry until the page was reloaded. The counters right
+ * next to it never had that problem, because `getCountFromServer` is a plain
+ * request with its own timeout. `defaultReadEdgePage` gives the pages the same
+ * footing (src/utils/firestoreRest.js); the writes and the edge lookups keep
+ * the SDK, whose idempotency they lean on.
  */
 
 import {
@@ -25,16 +36,14 @@ import {
   doc,
   getCountFromServer,
   getDoc,
-  getDocs,
   limit,
-  orderBy,
   query,
   serverTimestamp,
   setDoc,
-  startAfter,
   where,
 } from 'firebase/firestore';
 import { auth, db, IS_DEMO } from './firebase.js';
+import { firestoreRest } from './firestoreRestClient.js';
 
 /** One page of a follower or following list. Matches the plan's `limit(30)`. */
 export const FOLLOW_PAGE_SIZE = 30;
@@ -101,7 +110,8 @@ function operations(overrides = {}) {
     setDocument: overrides.setDocument || setDoc,
     deleteDocument: overrides.deleteDocument || deleteDoc,
     now: overrides.now || serverTimestamp,
-    // The three query shapes are injected as a unit so the unit tests can run
+    rest: overrides.rest || firestoreRest,
+    // The query shapes are injected as a unit so the unit tests can run
     // without a Firestore, exactly like `publishedLists` in userProfileService.
     countEdges: overrides.countEdges || defaultCountEdges,
     readEdgePage: overrides.readEdgePage || defaultReadEdgePage,
@@ -136,21 +146,41 @@ async function defaultCountEdges(database, field, uid) {
 }
 
 /**
- * One bounded page, newest first. `startAfter` takes the raw document snapshot
- * of the last row, which is why the cursor travels back out of here opaque.
+ * The page query in REST form: the side of the edge, newest first, under the
+ * ceiling the rules demand. `__name__` is ordered explicitly because the
+ * cursor carries it: two edges written in the same instant would otherwise
+ * be a page boundary that skips one of them or repeats it.
  */
-async function defaultReadEdgePage(database, field, uid, pageSize, cursor) {
-  const constraints = [
-    where(field, '==', uid),
-    orderBy('createdAt', 'desc'),
-    ...(cursor ? [startAfter(cursor)] : []),
-    limit(pageSize),
-  ];
-  const snapshot = await getDocs(query(collection(database, 'follows'), ...constraints));
-  return snapshot.docs.map(document => ({
-    id: document.id,
-    data: document.data(),
-    cursor: document,
+function edgePageQuery(field, uid, pageSize, cursor) {
+  const structuredQuery = {
+    from: [{ collectionId: 'follows' }],
+    where: { fieldFilter: { field: { fieldPath: field }, op: 'EQUAL', value: { stringValue: uid } } },
+    orderBy: [
+      { field: { fieldPath: 'createdAt' }, direction: 'DESCENDING' },
+      { field: { fieldPath: '__name__' }, direction: 'DESCENDING' },
+    ],
+    limit: pageSize,
+  };
+  if (cursor?.createdAt && cursor?.name) {
+    // `before: false` is "strictly after this row" — the row itself was the
+    // last one of the previous page.
+    structuredQuery.startAt = { values: [cursor.createdAt, { referenceValue: cursor.name }], before: false };
+  }
+  return structuredQuery;
+}
+
+/**
+ * One bounded page, newest first, as a single request. The cursor is the last
+ * row's own ordering values in the wire form the next request wants, which is
+ * why it travels back out of here opaque — a page reader over another
+ * transport would shape it differently, and no caller looks inside.
+ */
+async function defaultReadEdgePage(api, field, uid, pageSize, cursor, { signal } = {}) {
+  const rows = await api.rest.runQuery(edgePageQuery(field, uid, pageSize, cursor), { signal });
+  return rows.map(row => ({
+    id: row.id,
+    data: row.data,
+    cursor: { createdAt: row.fields?.createdAt, name: row.name },
   }));
 }
 
@@ -268,24 +298,27 @@ function toPage(rows, field, pageSize) {
   };
 }
 
-/** One bounded page of the accounts following `uid`, newest first. */
-export async function readFollowersPage(uid, { cursor = null, pageSize } = {}, overrides) {
+/**
+ * One bounded page of the accounts following `uid`, newest first. `signal`
+ * ends the request itself, not just the caller's interest in it.
+ */
+export async function readFollowersPage(uid, { cursor = null, pageSize, signal } = {}, overrides) {
   const api = operations(overrides);
   requireSupported(api);
   const target = cleanUid(uid);
   const size = boundedPageSize(pageSize);
   if (!target) return { edges: [], cursor: null, hasMore: false };
-  const rows = await api.readEdgePage(api.database, 'targetUid', target, size, cursor);
+  const rows = await api.readEdgePage(api, 'targetUid', target, size, cursor, { signal });
   return toPage(rows, 'followerUid', size);
 }
 
 /** One bounded page of the accounts `uid` follows, newest first. */
-export async function readFollowedUsersPage(uid, { cursor = null, pageSize } = {}, overrides) {
+export async function readFollowedUsersPage(uid, { cursor = null, pageSize, signal } = {}, overrides) {
   const api = operations(overrides);
   requireSupported(api);
   const follower = cleanUid(uid);
   const size = boundedPageSize(pageSize);
   if (!follower) return { edges: [], cursor: null, hasMore: false };
-  const rows = await api.readEdgePage(api.database, 'followerUid', follower, size, cursor);
+  const rows = await api.readEdgePage(api, 'followerUid', follower, size, cursor, { signal });
   return toPage(rows, 'targetUid', size);
 }
