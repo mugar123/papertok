@@ -50,6 +50,16 @@ export default function PageTransition({ children }) {
   // attribute, and with it the stacking context it needed while animating.
   const [settled, setSettled] = useState(false);
 
+  // A page re-entered while it was leaving — back, then forward, before its
+  // exit finished — is a new arrival: it animates in again instead of
+  // snapping to rest with the `settled` of its first visit. State adjusted
+  // during render, the documented way to reset state when a prop changes.
+  const [wasPresent, setWasPresent] = useState(present);
+  if (present !== wasPresent) {
+    setWasPresent(present);
+    if (present) setSettled(false);
+  }
+
   const motion = present && settled ? 'rest' : pageMotionFor({ direction, lateral, present });
 
   // A new page starts at the top. It used to by accident: with the pages in

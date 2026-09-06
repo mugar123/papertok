@@ -95,3 +95,10 @@ test('a cold chunk suspends inside the page arriving', async () => {
   // The outer boundary stays as the net for anything that suspends outside a page.
   assert.ok((app.match(/<Suspense fallback=\{<RouteFallback \/>\}>/g) || []).length >= 1);
 });
+
+test('a page re-entered while leaving arrives again instead of snapping to rest', async () => {
+  const jsx = await read('./PageTransition.jsx');
+  assert.match(jsx, /const \[wasPresent, setWasPresent\] = useState\(present\);\s*if \(present !== wasPresent\) \{\s*setWasPresent\(present\);\s*if \(present\) setSettled\(false\);\s*\}/);
+  // Before the reset: the motion formula still keys on `settled`.
+  assert.match(jsx, /const motion = present && settled \? 'rest' : pageMotionFor\(\{ direction, lateral, present \}\);/);
+});
