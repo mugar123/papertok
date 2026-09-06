@@ -41,8 +41,15 @@ export function hasAuthorsTab(type, entity = null) {
  * - `identity` — the strip under the name: an author's research topics, an
  *   institution's ROR credentials and its related-organisation chips.
  * - `aside` — the block between the stats and the tabs, which is where the two
- *   page shapes differ most: an author's ORCID card, an institution's
- *   Wikipedia paragraph, a project's summary box. The summary used to be
+ *   page shapes differ most: an author's ORCID card, an institution's or a
+ *   topic's Wikipedia paragraph, a project's summary box. A topic's was left
+ *   unreserved until 2026-09-06, when the live block started holding its grey
+ *   rows until Wikipedia answers: measured on T11090 from cold at 1280×900,
+ *   the body grew 109 → 234px the frame the entity came, all of it the block.
+ *   Only a fetched topic (an OpenAlex id) ever shows this skeleton — local
+ *   and free-text topics are born resolved — and a fetched topic always
+ *   mounts the block, so the reservation never stands in for one that does
+ *   not come. The summary used to be
  *   left unreserved on the grounds that a project "has no block it always
  *   carries" — measured on a phone (390px), the live project hero landed
  *   276px taller than its skeleton, and 122 of that was the summary box
@@ -65,10 +72,11 @@ export function explorerSkeletonShape(type, { hasOrcid = false } = {}) {
   const authorish = type === 'author';
   const institutionish = type === 'institution';
   const projectish = type === 'project';
+  const topicish = type === 'topic' || type === 'concept';
   return {
     tabs: hasAuthorsTab(type) ? 2 : 1,
     identity: authorish ? 'topics' : institutionish ? 'credentials' : 'none',
-    aside: authorish ? (hasOrcid ? 'orcid' : 'none') : institutionish ? 'wiki' : projectish ? 'summary' : 'none',
+    aside: authorish ? (hasOrcid ? 'orcid' : 'none') : (institutionish || topicish) ? 'wiki' : projectish ? 'summary' : 'none',
     stats: projectish ? 2 : 4,
     // Every type the Explorer serves can be followed — `followEntity` covers
     // author, institution, project, concept and topic — so the button is part

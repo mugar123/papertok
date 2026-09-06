@@ -45,6 +45,14 @@ test('each type reserves the block it actually carries', () => {
   assert.equal(explorerSkeletonShape('author').aside, 'none');
   assert.equal(explorerSkeletonShape('author', { hasOrcid: true }).aside, 'orcid');
   assert.equal(explorerSkeletonShape('institution').aside, 'wiki');
+  // A fetched topic mounts the Wikipedia block on its grey rows the frame the
+  // hero lands, and holds them until Wikipedia answers (2026-09-06). Left
+  // unreserved, the handover grew the hero by the block: measured on T11090
+  // from cold at 1280×900, the body went 109 → 234px the moment the entity
+  // came. Local and free-text topics are born resolved and never show this
+  // skeleton, so the reservation only ever stands in for a block that comes.
+  assert.equal(explorerSkeletonShape('topic').aside, 'wiki');
+  assert.equal(explorerSkeletonShape('concept').aside, 'wiki');
   // Measured at 390px: a project hero landed 276px taller than its skeleton,
   // 122 of it the summary box OpenAIRE returns for nearly every grant.
   assert.equal(explorerSkeletonShape('project').aside, 'summary');
