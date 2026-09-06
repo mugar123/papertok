@@ -1,11 +1,29 @@
 .public-paper-page {
+  /* The bar fixed over the top of this page. Signed out it is the page's own
+     .public-paper-nav below, which keeps --nav-height at every width; signed
+     in it is the shared app navbar, so the --app modifier retargets this to
+     --nav-total (which shrinks under 768px, as that bar does). */
+  --public-paper-bar: calc(var(--nav-height) + var(--inset-top));
   position: relative;
   width: 100%;
   height: 100dvh;
   min-height: 100svh;
+  /* The frame the card is set in begins where the bar ends — the same offset
+     .feed-wrapper takes from --nav-total. The page used to be laid out from
+     viewport 0 with the bar painted over it, and nothing subtracted the bar:
+     the sheet is anchored to the bottom of its frame, so a short abstract left
+     the gap at the top and hid it, and a long one filled the sheet upwards
+     until the accent rule, the kicker and the chips sat under the bar.
+     Measured at 1440×800: sheet from 24 with the bar ending at 56; from 80
+     with the bar padded off, the frame the feed gives the same card. */
+  padding-top: var(--public-paper-bar);
   overflow: hidden;
   color: var(--text-primary);
   background: var(--bg-primary);
+}
+
+.public-paper-page--app {
+  --public-paper-bar: var(--nav-total);
 }
 
 .public-paper-card {
@@ -24,17 +42,14 @@
 .public-paper-back-floating {
   position: absolute;
   z-index: 6;
-  /* Below the navbar, not behind it. The page is laid out from viewport 0 and
-     the navbar is fixed over the top of it, so an inset measured from the
+  /* Below the navbar, not behind it. The page is positioned from viewport 0
+     and the navbar is fixed over the top of it, so an inset measured from the
      page's own edge puts the button underneath the bar. This element only
-     renders when PublicPaperPage.jsx is in its signed-in branch, where the
-     REAL shared app navbar (Navbar.css's .navbar) is what's mounted above it
-     — not this file's own .public-paper-nav, which is the signed-out-only
-     bar below. --nav-total is that shared navbar's own height token (it
-     shrinks to --nav-height-mobile under 768px, unlike .public-paper-nav),
-     so this has to track --nav-total to stay under the real bar at every
-     width, not the plain --nav-height used below. */
-  top: calc(var(--nav-total) + var(--space-3));
+     renders when PublicPaperPage.jsx is in its signed-in branch, where
+     --public-paper-bar is --nav-total, the shared app navbar's own height
+     token (it shrinks to --nav-height-mobile under 768px, unlike the
+     signed-out .public-paper-nav below). */
+  top: calc(var(--public-paper-bar) + var(--space-3));
   left: var(--space-5);
 }
 
@@ -46,7 +61,13 @@
    "it sits on top and lifts only once the card has animated in". */
 .public-paper-skeleton {
   position: absolute;
-  inset: 0;
+  /* From the bar down, not `inset: 0`: absolute offsets are measured from the
+     padding box, so a skeleton stretched over the whole page would centre
+     itself half a bar higher than the card it stands in for. */
+  top: var(--public-paper-bar);
+  right: 0;
+  bottom: 0;
+  left: 0;
   z-index: 3;
   display: grid;
   overflow: hidden;
@@ -128,7 +149,9 @@
   justify-content: center;
   flex-direction: column;
   gap: 14px;
-  padding: 88px 0 32px;
+  /* 32px, not the 88px that used to stand in for the bar: the page now pads
+     the bar off above this box, and the centre stays where it was. */
+  padding: 32px 0;
   text-align: center;
 }
 

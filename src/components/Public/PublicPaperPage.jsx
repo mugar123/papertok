@@ -303,7 +303,7 @@ export default function PublicPaperPage({
   }, [isAuthenticated, onOpenPdf, trackPdfOpened]);
 
   return (
-    <main className="public-paper-page">
+    <main className={`public-paper-page${isAuthenticated ? ' public-paper-page--app' : ''}`}>
       {isAuthenticated ? (
         // Signed in, the app navbar owns the top of the screen (App.jsx keeps
         // it mounted on this route), so the page adds only a way back. The
