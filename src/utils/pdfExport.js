@@ -7,7 +7,7 @@ import {
   sectionMarkText,
   summarizeExport,
 } from './exportDocument.js';
-import { displayProse } from './latex.js';
+import { displayProse, katexSource } from './latex.js';
 import { isNumberedFormula } from './latexExport.js';
 import { buildHighlightPlan } from './textHighlights.js';
 import { loadKatex } from './katexLoader.js';
@@ -229,7 +229,7 @@ function element(tag, className, text) {
 function renderMath(katex, item) {
   if (!katex) return null;
   try {
-    return katex.renderToString(item.value, {
+    return katex.renderToString(katexSource(item), {
       displayMode: item.display,
       throwOnError: true,
       strict: 'ignore',
@@ -273,15 +273,17 @@ function renderMath(katex, item) {
  * numbers first — and the extra rows are folded into the running count so
  * whatever comes next still gets the number the .tex will also give it.
  *
- * `\begin{eqnarray}` — base LaTeX, needs no `amsmath` — takes a different
- * path entirely: KaTeX does not implement that environment at all ("No such
- * environment: eqnarray", confirmed live), so `renderMath` below catches the
- * error and falls back to the chunk's own raw source as plain text — visibly
- * broken on the page, not merely mis-numbered, while the .tex renders it
- * correctly. `rows` still falls back to 1 for it (no `.eqn-num` exists to
- * count on unrendered text), which does not fix that page — a pre-existing
- * gap this fix neither causes nor closes — but does mean this function's own
- * behaviour for it is unchanged, not made worse.
+ * `\begin{eqnarray}` — base LaTeX, needs no `amsmath` — used to take a
+ * different path entirely: KaTeX does not implement that environment at all
+ * ("No such environment: eqnarray", confirmed live), so `renderMath` caught
+ * the error and fell back to the chunk's own raw source as plain text —
+ * visibly broken on the page, not merely mis-numbered, while the .tex
+ * rendered it correctly — and `rows` fell back to 1 for it, there being no
+ * `.eqn-num` to count on unrendered text. `katexSource` (latex.js) now hands
+ * the renderer an `align` in its place, so the rows are painted AND counted
+ * here like any other multi-row environment, while the .tex still compiles
+ * the eqnarray the paper wrote. The count is what keeps the two in step: base
+ * LaTeX numbers an eqnarray by the row exactly as amsmath numbers an align.
  */
 function numberedEquation(piece, counter) {
   const rows = piece.querySelectorAll('.katex .eqn-num').length || 1;

@@ -273,3 +273,102 @@ export function splitLatexText(text) {
 
   return chunks;
 }
+
+const EQNARRAY = /^\\begin\{eqnarray\}([\s\S]*)\\end\{eqnarray\}$/;
+const MATH_ENV = /^\\begin\{math\}([\s\S]*)\\end\{math\}$/;
+
+/**
+ * Rewrites an eqnarray body's `{rcl}` rows as the `{rl}` rows `align` sets.
+ *
+ * A row keeps its FIRST top-level tab — the alignment point both environments
+ * share — and every later one becomes a space, so the centred relation column
+ * and the right-hand side end up in one column together. Relabelling without
+ * this leaves three columns, and KaTeX opens every column after the first pair
+ * with a `\quad` (`alignedHandler`, katex/dist): the relation lands against the
+ * left side and the right side sits a quad away, which is neither what
+ * pdflatex does with the real eqnarray (it centres the relation) nor what the
+ * row means. eqnarray IS `{rcl}` — a fourth column is a LaTeX error — so
+ * "every tab after the first" is at most one.
+ *
+ * Top-level is counted, not assumed: a tab inside braces or inside a nested
+ * environment belongs to that, and `\&` is a printed ampersand, never a
+ * column. `\\` is only a row break at the top level too, which is what lets a
+ * nested `array` keep its own rows. The pass rewrites single characters in
+ * place rather than splitting and rejoining, so an optional row-spacing
+ * argument (`\\[2pt]`) and every space the source chose survive it.
+ */
+function alignRows(body) {
+  let out = '';
+  let braces = 0;
+  let environments = 0;
+  let aligned = false;
+
+  for (let index = 0; index < body.length; index += 1) {
+    const character = body[index];
+
+    if (character === '\\') {
+      const command = /^\\([a-zA-Z]+)/.exec(body.slice(index));
+      if (command) {
+        if (command[1] === 'begin') environments += 1;
+        else if (command[1] === 'end') environments -= 1;
+        out += command[0];
+        index += command[0].length - 1;
+        continue;
+      }
+      // `\\` opens a row; anything else is an escape (`\&`, `\{`) that must
+      // travel with the character it escapes so neither is read on its own.
+      if (body[index + 1] === '\\' && braces === 0 && environments === 0) aligned = false;
+      out += character + (body[index + 1] ?? '');
+      index += 1;
+      continue;
+    }
+
+    if (character === '{') braces += 1;
+    else if (character === '}') braces -= 1;
+
+    if (character === '&' && braces === 0 && environments === 0) {
+      out += aligned ? ' ' : '&';
+      aligned = true;
+      continue;
+    }
+
+    out += character;
+  }
+
+  return out;
+}
+
+/**
+ * The source to hand KaTeX for a maths chunk — `value` for everything the
+ * renderer already implements, a translation for the two environments it does
+ * not.
+ *
+ * `LATEX_DELIMITERS` recognizes `\begin{eqnarray}` and `\begin{math}` because
+ * older papers write them (f43ac59, "Fix legacy LaTeX rendering in paper
+ * abstracts"); KaTeX implements neither and answers "No such environment" for
+ * both. Every render path catches that throw and falls back to the chunk's raw
+ * source as plain text, so the formula was PRINTED AS LATEX — on the card, in
+ * the reader and in the exported PDF — with nothing logged. `math` is inline
+ * maths and needs only its wrapper removed; `eqnarray` becomes the `align`
+ * that KaTeX numbers row by row, which is also what keeps pdfExport's badge
+ * counting in step with the .tex.
+ *
+ * Deliberately not written into the chunk: `emitMath` (latexExport.js) reads
+ * `value !== raw` to decide whether a chunk still needs wrapping in
+ * `\begin{equation}`, and `buildHighlightPlan` measures its offsets in
+ * `value.length`. A translation stored there would wrap the align in an
+ * equation and slide every highlight behind it. The .tex keeps compiling the
+ * environment the paper actually wrote — base LaTeX renders eqnarray, numbers
+ * included, with no amsmath needed — and only the renderer sees this.
+ */
+export function katexSource(chunk) {
+  const value = String(chunk?.value ?? '');
+
+  const inline = MATH_ENV.exec(value);
+  if (inline) return inline[1];
+
+  const rows = EQNARRAY.exec(value);
+  if (rows) return `\\begin{align}${alignRows(rows[1])}\\end{align}`;
+
+  return value;
+}

@@ -1020,3 +1020,17 @@ test('isNumberedFormula da la misma respuesta en cada forma de fórmula, tabla p
     assert.equal(isNumberedFormula({ ...bare, kind }), false, `marcada (${kind})`);
   }
 });
+
+test('el .tex sigue compilando el eqnarray que escribió el paper, no la traducción del lector', () => {
+  // `katexSource` (latex.js) traduce un `eqnarray` a `align` para KaTeX, que
+  // no implementa ese entorno. Esa traducción NO puede llegar aquí: LaTeX de
+  // base compone `eqnarray` tal cual — con sus números, sin amsmath — y
+  // `emitMath` decide si aún hay que envolver el trozo en `\begin{equation}`
+  // preguntando `value !== raw`. Escrita en el trozo, la traducción habría
+  // vuelto cierta esa pregunta y el .tex habría salido con un `align` dentro
+  // de un `equation`, anidado y fatal.
+  const out = renderParagraph('Se sigue que \\begin{eqnarray}E & = & mc^2 \\\\ p & = & mv\\end{eqnarray} siempre.', [], LABELS);
+  assert.match(out, /\\begin\{eqnarray\}E & = & mc\^2 \\\\ p & = & mv\\end\{eqnarray\}/);
+  assert.doesNotMatch(out, /align/);
+  assert.doesNotMatch(out, /\\begin\{equation\}/);
+});

@@ -1,6 +1,6 @@
 import { useEffect, useReducer } from 'react';
 import { getKatex, loadKatex } from '../../utils/katexLoader.js';
-import { displayProse } from '../../utils/latex.js';
+import { displayProse, katexSource } from '../../utils/latex.js';
 import { buildHighlightPlan } from '../../utils/textHighlights.js';
 
 /**
@@ -73,7 +73,7 @@ export default function HighlightedScientificText({ children, highlights = [] })
           let html = null;
           if (katex) {
             try {
-              html = katex.renderToString(item.value, {
+              html = katex.renderToString(katexSource(item), {
                 displayMode: item.display,
                 throwOnError: true,
                 strict: 'ignore',

@@ -5,7 +5,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import ScientificText from '../components/ScientificText.js';
 import { loadKatex } from './katexLoader.js';
-import { displayProse, normalizeLatexText, normalizeScientificMarkup, proseSourceOffset, splitLatexText } from './latex.js';
+import { displayProse, katexSource, normalizeLatexText, normalizeScientificMarkup, proseSourceOffset, splitLatexText } from './latex.js';
 
 const PHOTINO_ABSTRACT = 'A lower bound for the photino mass ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}}$ as a function of the spin-0 fermion superpartner mass ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}$ is derived as an extension of the calculation of Lee and Weinberg. The Majorana nature of the photino induces a $p$-wave threshold for annihilation $\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}\\ensuremath{\\rightarrow}f\\overline{f}$ into light fermions, and leads to a rather unexpected form for the bound: for $25 \\mathrm{GeV}\\ensuremath{\\lesssim}{m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}\\ensuremath{\\lesssim}45 \\mathrm{GeV}$, ${({m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}})}_{min}\\ensuremath{\\simeq}{m}_{\\ensuremath{\\tau}}=1.8$ GeV; for ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}&gt;45$ GeV, ${({m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{\\ensuremath{\\gamma}}})}_{min}$ increases approximately linearly with ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}$ to a value of 20 GeV when ${m}_{\\stackrel{\\ifmmode \\tilde{}\\else \\~{}\\fi{}}{f}}=100$ GeV.';
 
@@ -161,4 +161,109 @@ test('a text-mode \\stackrel tilde becomes one formula, not a stackrel around tw
 test('an \\ifmmode without an \\else branch still yields its maths spelling', () => {
   assert.equal(normalizeLatexText('4\\ifmmode\\times\\fi{}4 sites'), '4\\(\\times\\)4 sites');
   assert.equal(normalizeLatexText('$L=4\\ifmmode\\times\\fi{}4$'), '$L=4\\times4$');
+});
+
+/* --- Environments the delimiter list knows and KaTeX does not ------------- */
+
+// `\begin{eqnarray}` and `\begin{math}` joined LATEX_DELIMITERS in f43ac59,
+// "Fix legacy LaTeX rendering in paper abstracts": they are what older papers
+// carry, so the splitter has to recognize them. KaTeX implements NEITHER — it
+// answers "No such environment" for both — and every render path (this file's
+// ScientificText, the reader's HighlightedScientificText, pdfExport's
+// renderMath) catches that throw and prints the chunk's raw source as prose.
+// So a recognized formula was painted as literal LaTeX, on screen and in the
+// exported PDF, with no error anywhere. `katexSource` is the single place that
+// translates such a chunk into an environment the renderer does implement.
+
+function renders(source, display) {
+  try {
+    katex.renderToString(source, {
+      displayMode: display, throwOnError: true, strict: 'ignore', trust: false,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const mathChunk = text => splitLatexText(text).find(chunk => chunk.type === 'math');
+
+test('KaTeX renders every delimiter the splitter recognizes, one row per row', () => {
+  // One line per LATEX_DELIMITERS entry, bodies as each is idiomatically
+  // written. Before `katexSource` the last two threw and were painted as
+  // source; if a delimiter is ever added without a renderer that knows it,
+  // this table fails instead of the page quietly printing LaTeX at a reader.
+  const cases = [
+    ['$…$ inline', 'vale $E = mc^2$ hoy'],
+    ['$$…$$ de bloque', 'vale $$E = mc^2$$ hoy'],
+    ['\\(…\\) inline', 'vale \\(E = mc^2\\) hoy'],
+    ['\\[…\\] de bloque', 'vale \\[E = mc^2\\] hoy'],
+    ['\\begin{equation}', 'vale \\begin{equation}E = mc^2\\end{equation} hoy'],
+    ['\\begin{align}', 'vale \\begin{align}E &= mc^2 \\\\ p &= mv\\end{align} hoy'],
+    ['\\begin{eqnarray}', 'vale \\begin{eqnarray}E & = & mc^2 \\\\ p & = & mv\\end{eqnarray} hoy'],
+    ['\\begin{math}', 'vale \\begin{math}E = mc^2\\end{math} hoy'],
+  ];
+  for (const [label, text] of cases) {
+    const chunk = mathChunk(text);
+    assert.ok(renders(katexSource(chunk), chunk.display), label);
+  }
+});
+
+test('an eqnarray is numbered by the row, the way the .tex numbers it', () => {
+  // pdfExport's `numberedEquation` counts KaTeX's own `.eqn-num` elements to
+  // keep the badge in step with the .tex. Unrendered, an eqnarray produced
+  // none and every formula after it drifted one number short per extra row.
+  const chunk = mathChunk('\\begin{eqnarray}E & = & mc^2 \\\\ p & = & mv \\\\ F & = & ma\\end{eqnarray}');
+  const html = katex.renderToString(katexSource(chunk), {
+    displayMode: chunk.display, throwOnError: true, strict: 'ignore', trust: false,
+  });
+  assert.equal((html.match(/class="eqn-num"/g) || []).length, 3);
+
+  // `\nonumber` still takes a row out of the count, exactly as LaTeX does.
+  const skipped = mathChunk('\\begin{eqnarray}E & = & mc^2 \\nonumber \\\\ p & = & mv\\end{eqnarray}');
+  const skippedHtml = katex.renderToString(katexSource(skipped), {
+    displayMode: skipped.display, throwOnError: true, strict: 'ignore', trust: false,
+  });
+  assert.equal((skippedHtml.match(/class="eqn-num"/g) || []).length, 1);
+});
+
+test('eqnarray keeps one alignment point per row, not its three columns', () => {
+  // eqnarray is {rcl}: left, the relation centred, right. `align` is pairs of
+  // {rl}, and KaTeX puts a \quad before every column it starts after the
+  // first pair — so relabelling and keeping all three tabs sets the relation
+  // against the left side and throws the right side a quad away (measured
+  // against pdflatex's own eqnarray, which centres it). Dropping the second
+  // tab puts relation and right side in one column, which is what the row
+  // reads as.
+  const source = katexSource(mathChunk('\\begin{eqnarray}E & = & mc^2 \\\\ p & = & mv\\end{eqnarray}'));
+  assert.match(source, /^\\begin\{align\}/);
+  assert.match(source, /\\end\{align\}$/);
+  assert.equal((source.match(/&/g) || []).length, 2);
+});
+
+test('a tab that is not the row\'s own is left where it is', () => {
+  // Only a tab at the top level of the eqnarray is a column of the eqnarray.
+  // A nested environment brings its own, and `\&` is a printed ampersand.
+  const nested = katexSource(mathChunk(
+    '\\begin{eqnarray}M & = & \\begin{array}{cc} a & b \\\\ c & d \\end{array}\\end{eqnarray}',
+  ));
+  assert.match(nested, /\{cc\} a & b \\\\ c & d /);
+  assert.ok(renders(nested, true), 'the nested array still renders');
+
+  const escaped = katexSource(mathChunk('\\begin{eqnarray}A \\& B & = & C\\end{eqnarray}'));
+  assert.match(escaped, /A \\& B &/);
+});
+
+test('translating for the renderer leaves the chunk the .tex reads untouched', () => {
+  // `emitMath` (latexExport.js) asks `item.value !== item.raw` to decide
+  // whether a chunk still needs wrapping in `\begin{equation}`, and
+  // `buildHighlightPlan` measures its offsets in `value.length`. A translation
+  // written into `value` would have wrapped the align in an equation and slid
+  // every highlight after it, so this one stays outside the chunk.
+  const chunk = mathChunk('\\begin{eqnarray}E & = & mc^2\\end{eqnarray}');
+  const before = { ...chunk };
+  katexSource(chunk);
+  assert.deepEqual(chunk, before);
+  assert.equal(chunk.value, chunk.raw);
+  assert.match(chunk.raw, /^\\begin\{eqnarray\}/);
 });
