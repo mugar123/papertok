@@ -1117,7 +1117,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 // the entity back to the feed, a tab to the next — for the before/after of
 // docs/superpowers/specs/2026-09-06-transicion-tarjeta-entidad-design.md.
 //
-//   node scripts/diagnostics/page-transition-frames.mjs '<css selector>' <label> [demo] [mobile] [back] [idx=N]
+//   node scripts/diagnostics/page-transition-frames.mjs '<css selector>' <label> [demo] [mobile] [back] [idx=N] [scroll=N]
 //
 // Loads ORIGIN (default http://localhost:5174) at `#/`, waits for the selector
 // and the 4.5 s the explorer chunk prefetch needs, then records around ONE
@@ -1140,7 +1140,9 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 // `demo` seeds a signed-in demo session in localStorage before the first
 // script: build with IS_DEMO = true in src/services/firebase.js for it, and
 // put it back to false before committing anything. `mobile` is 390×844 at 2x
-// with touch emulation. `idx=N` clicks the Nth match. PORT=9232 picks another
+// with touch emulation. `idx=N` clicks the Nth match; `scroll=N` (with `back`)
+// scrolls the page it opened N px down before the way back, so the leaving
+// page's lift by its own scroll (`top` in the samples) is on record. PORT=9232 picks another
 // debugging port; OUT=<dir> another output directory. No dependencies; Node
 // ≥ 22 for the global WebSocket.
 import { spawn } from 'node:child_process';
@@ -1157,7 +1159,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const [, , sel, label = 'run', ...rest] = process.argv;
 if (!sel) {
-  console.error("usage: page-transition-frames.mjs '<css selector>' <label> [demo] [mobile] [back] [idx=N]");
+  console.error("usage: page-transition-frames.mjs '<css selector>' <label> [demo] [mobile] [back] [idx=N] [scroll=N]");
   process.exit(2);
 }
 const flags = new Set(rest);
@@ -1165,6 +1167,7 @@ const idx = Number(([...flags].find((f) => f.startsWith('idx=')) || 'idx=0').sli
 const mobile = flags.has('mobile');
 const demo = flags.has('demo');
 const back = flags.has('back');
+const scrollPx = Number(([...flags].find((f) => f.startsWith('scroll=')) || 'scroll=0').slice(7));
 
 const DEMO_SEED = `(() => { try {
   localStorage.setItem('papertok_user', JSON.stringify({ uid: 'demo-user-123', displayName: 'Demo User', email: 'demo@papertok.app', photoURL: '', providerData: [{ providerId: 'google.com' }] }));
@@ -1180,7 +1183,7 @@ const SAMPLER = `(() => {
   const tick = () => {
     const pages = [...document.querySelectorAll('#main-content > *')].map((el) => {
       const cs = getComputedStyle(el);
-      return { motion: el.dataset.pageMotion || null, opacity: Number(cs.opacity), transform: cs.transform, position: cs.position };
+      return { motion: el.dataset.pageMotion || null, opacity: Number(cs.opacity), transform: cs.transform, position: cs.position, top: el.style.top || null };
     });
     samples.push({ t: Math.round(performance.now() - start), navbar: Boolean(document.querySelector('.navbar')), pages });
     if (performance.now() - start < 1400) requestAnimationFrame(tick);
@@ -1268,6 +1271,13 @@ try {
   if (back) {
     console.log('opened:', await cdp.eval(clickExpr));
     await sleep(1800); // the page it opened is still by now; the record is the way back
+    if (scrollPx) {
+      // A scroll event only reaches the page's listener on a rendered frame:
+      // give it a few before the way back.
+      await cdp.eval(`window.scrollTo({ top: ${scrollPx}, behavior: 'instant' })`);
+      await sleep(300);
+      console.log('scrolled to:', await cdp.eval('window.scrollY'));
+    }
   }
   const frames = [];
   cdp.on('Page.screencastFrame', (p) => {
@@ -1339,6 +1349,7 @@ node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' author-des
 node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' author-mobile demo mobile
 node scripts/diagnostics/page-transition-frames.mjs '.pc-topic-link' topic-desktop demo
 node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' back-desktop demo back
+node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' back-scrolled-desktop demo back scroll=600
 node scripts/diagnostics/page-transition-frames.mjs 'a[href="#/research"]' tab-desktop demo
 ```
 
@@ -1347,7 +1358,9 @@ settled at 236 ms`: frames the page produced with the bar mounted, frames with
 no page at ≥ 0.98 opacity (the old `mode="wait"` handover had two), frames with
 two route pages on screen, and the first frame after which one page stands
 alone at rest. `back` clicks the selector first, waits 1.8 s, and records
-`history.back()`. `demo` needs `IS_DEMO = true` flipped locally (never
+`history.back()`; `scroll=<px>` with it scrolls the page it opened first, so the
+leaving page's lift by its own scroll (`top` in the samples) is on record. `demo`
+needs `IS_DEMO = true` flipped locally (never
 committed) and a server on a Worker-allowed origin (5173/5174/5175;
 `ORIGIN=http://localhost:5175` to pick another). `OUT=<dir>` keeps the frames,
 samples and sheets out of the tree.
@@ -1377,7 +1390,7 @@ Co-Authored-By: Claude Fable 5.1 <noreply@anthropic.com>"
 
 **Interfaces:**
 - Consumes: el guion de la Tarea 5 y el código de las tareas 1–4 ya construido.
-- Produces: las cifras del «Después» y seis hojas de contactos para la revisión final.
+- Produces: las cifras del «Después» y siete hojas de contactos para la revisión final.
 
 Puerto: el guion espera `http://localhost:5174`. 5173 y 5175 pertenecen a otras sesiones en esta máquina: si 5174 está ocupado (`lsof -nP -iTCP:5174 -sTCP:LISTEN`), no mates nada; para y dilo en el informe.
 
@@ -1409,7 +1422,7 @@ curl -s -o /dev/null -w "%{http_code}\n" http://localhost:5174/
 
 Expected: `200`.
 
-- [ ] **Step 3: Las seis capturas**
+- [ ] **Step 3: Las siete capturas**
 
 ```bash
 mkdir -p .superpowers/measure-transicion
@@ -1419,13 +1432,14 @@ OUT=.superpowers/measure-transicion node scripts/diagnostics/page-transition-fra
 OUT=.superpowers/measure-transicion node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' after-back-desktop demo back
 OUT=.superpowers/measure-transicion node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' after-back-mobile demo mobile back
 OUT=.superpowers/measure-transicion node scripts/diagnostics/page-transition-frames.mjs 'a[href="#/research"]' after-tab-desktop demo
+OUT=.superpowers/measure-transicion node scripts/diagnostics/page-transition-frames.mjs '.pc-author-link' after-back-scrolled-desktop demo back scroll=600
 ```
 
-Expected por cada una: `target ready: true`, la línea `frame times`, la línea `sampler: …` y la ruta de la hoja. Copia las seis líneas `sampler:` al informe tal cual. Si `.pc-author-link` no existe en la primera tarjeta del feed de demo (una tarjeta sin autores enlazables), usa `idx=1` o `idx=2` y anótalo.
+Expected por cada una: `target ready: true`, la línea `frame times`, la línea `sampler: …` y la ruta de la hoja (la séptima imprime además `scrolled to: 600`). Copia las siete líneas `sampler:` al informe tal cual. Si `.pc-author-link` no existe en la primera tarjeta del feed de demo (una tarjeta sin autores enlazables), usa `idx=1` o `idx=2` y anótalo.
 
 - [ ] **Step 4: Mira las hojas**
 
-Abre con la herramienta Read cada `.superpowers/measure-transicion/after-*-sheet.png` y anota, por escenario: si la barra está en todos los fotogramas, si hay algún fotograma sin página, si el feed se mueve durante la ida (no debe), si al volver las tarjetas están en reposo, y cualquier cosa que las cifras no cuenten (un escalón del héroe, un salto de la página saliente al volver, un aviso de analítica). Guarda esas notas para el informe y para la sección de abajo.
+Abre con la herramienta Read cada `.superpowers/measure-transicion/after-*-sheet.png` y anota, por escenario: si la barra está en todos los fotogramas, si hay algún fotograma sin página, si el feed se mueve durante la ida (no debe), si al volver las tarjetas están en reposo, si en la vuelta con scroll la página saliente sigue mostrando la zona que veía (en `after-back-scrolled-desktop-samples.json` sus muestras llevan `top: "-600px"`) o salta a su cabecera, y cualquier cosa que las cifras no cuenten (un escalón del héroe, un salto de la página saliente al volver, un aviso de analítica). Guarda esas notas para el informe y para la sección de abajo.
 
 - [ ] **Step 5: Escribe el «Después» en el spec**
 
@@ -1443,6 +1457,7 @@ Con `scripts/diagnostics/page-transition-frames.mjs`, build de demo local, chunk
 | Tarjeta → tema, escritorio | n/n | n | n | n ms |
 | Autor → volver, escritorio | n/n | n | n | n ms |
 | Autor → volver, móvil | n/n | n | n | n ms |
+| Autor a 600 px → volver, escritorio | n/n | n | n | n ms |
 | For you → Research, escritorio | n/n | n | n | n ms |
 
 Frente a los criterios de §9: barra en todos los fotogramas (cumplido o no, con la cifra); cero fotogramas vacíos (cumplido o no); entidad quieta antes de 260 ms (cifra por escenario); feed retenido sin moverse durante la ida (lo que se ve en la hoja); tarjetas en reposo al volver (lo que se ve en la hoja); pestaña sin hueco (cifra).
