@@ -36,7 +36,7 @@ test('a page is a plain element the stylesheet moves, not a motion component', a
   for (const gone of [/\bmotion\./, /useReducedMotion/, /variants/, /\bx:/, /ease/, /TRAVEL_PX/, /duration/]) {
     assert.doesNotMatch(jsx, gone, `${gone} left with the old transition`);
   }
-  assert.match(jsx, /<div\s+ref=\{rootRef\}\s+className="page-transition"\s+data-nav-direction=\{direction\}\s+data-page-motion=\{motion\}\s+onAnimationEnd=\{handleAnimationEnd\}\s*>/);
+  assert.match(jsx, /<div\s+ref=\{rootRef\}\s+className="page-transition"\s+data-nav-direction=\{present \? direction : arrivedWith\}\s+data-page-motion=\{motion\}\s+inert=\{!present \|\| undefined\}\s+onAnimationEnd=\{handleAnimationEnd\}\s*>/);
   assert.match(jsx, /const motion = present && settled \? 'rest' : pageMotionFor\(\{ direction, lateral, present \}\);/);
 });
 
@@ -66,10 +66,12 @@ test('the leaving page hands itself back when its own animation ends, or when th
   assert.match(handler[1], /if \(event\.target !== rootRef\.current\) return;/, 'the cards\' and the hero\'s animationend bubble here too');
   assert.match(handler[1], /if \(present\) setSettled\(true\);/);
   assert.match(handler[1], /else if \(safeToRemove\) safeToRemove\(\);/);
-  const clock = jsx.match(/useEffect\(\(\) => \{\s*if \(present \|\| !safeToRemove\) return undefined;([\s\S]*?)\}, \[present, safeToRemove\]\);/);
-  assert.ok(clock, 'the safety clock is keyed on presence');
-  assert.match(clock[1], /const timer = window\.setTimeout\(safeToRemove, EXIT_SAFETY_MS\);/);
+  const clock = jsx.match(/useEffect\(\(\) => \{\s*if \(present\) return undefined;([\s\S]*?)\}, \[present\]\);/);
+  assert.ok(clock, 'the safety clock is keyed on presence alone');
+  assert.match(clock[1], /const timer = window\.setTimeout\(\(\) => \{\s*if \(root\) root\.style\.visibility = 'hidden';\s*if \(safeToRemoveRef\.current\) safeToRemoveRef\.current\(\);\s*\}, EXIT_SAFETY_MS\);/, 'a page nobody removes is at least hidden');
   assert.match(clock[1], /return \(\) => window\.clearTimeout\(timer\);/);
+  assert.match(jsx, /const safeToRemoveRef = useRef\(safeToRemove\);/);
+  assert.match(jsx, /if \(present\) root\.style\.visibility = '';/, 'a page present again is visible again');
 });
 
 test('the leaving page is lifted by the scroll it had, tracked only while present', async () => {
@@ -98,7 +100,17 @@ test('a cold chunk suspends inside the page arriving', async () => {
 
 test('a page re-entered while leaving arrives again instead of snapping to rest', async () => {
   const jsx = await read('./PageTransition.jsx');
-  assert.match(jsx, /const \[wasPresent, setWasPresent\] = useState\(present\);\s*if \(present !== wasPresent\) \{\s*setWasPresent\(present\);\s*if \(present\) setSettled\(false\);\s*\}/);
+  assert.match(jsx, /const \[wasPresent, setWasPresent\] = useState\(present\);\s*if \(present !== wasPresent\) \{\s*setWasPresent\(present\);\s*if \(present\) \{\s*setSettled\(false\);\s*setArrivedWith\(direction\);\s*\}\s*\}/);
+  assert.match(jsx, /const \[arrivedWith, setArrivedWith\] = useState\(direction\);/);
   // Before the reset: the motion formula still keys on `settled`.
   assert.match(jsx, /const motion = present && settled \? 'rest' : pageMotionFor\(\{ direction, lateral, present \}\);/);
+});
+
+test('the leaving page keeps the direction it arrived with, so the held feed\'s cards stay at rest', async () => {
+  const jsx = await read('./PageTransition.jsx');
+  assert.match(jsx, /data-nav-direction=\{present \? direction : arrivedWith\}/);
+  assert.doesNotMatch(jsx, /data-nav-direction=\{direction\}/);
+  const css = await read('../Feed/PaperCard.css');
+  // The rule this protects: cards at rest under a page reached by the back arrow.
+  assert.match(css, /\[data-nav-direction="-1"\] \.pc-title,/);
 });

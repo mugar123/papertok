@@ -50,6 +50,15 @@ export default function PageTransition({ children }) {
   // attribute, and with it the stacking context it needed while animating.
   const [settled, setSettled] = useState(false);
 
+  // The direction this page ARRIVED with, frozen for the attribute below. On
+  // the way out `direction` is the navigation that ejects the page, and the
+  // held feed's cards took that flip as a new arrival: `PaperCard.css` keeps
+  // them at rest under `[data-nav-direction="-1"]`, the attribute became "1"
+  // in the commit that made the page `hold`, and `pcArrive` replayed from
+  // opacity 0 under an entity page still near-transparent. State, so a page
+  // re-entered while leaving takes the new arrival's direction.
+  const [arrivedWith, setArrivedWith] = useState(direction);
+
   // A page re-entered while it was leaving — back, then forward, before its
   // exit finished — is a new arrival: it animates in again instead of
   // snapping to rest with the `settled` of its first visit. State adjusted
@@ -57,7 +66,10 @@ export default function PageTransition({ children }) {
   const [wasPresent, setWasPresent] = useState(present);
   if (present !== wasPresent) {
     setWasPresent(present);
-    if (present) setSettled(false);
+    if (present) {
+      setSettled(false);
+      setArrivedWith(direction);
+    }
   }
 
   const motion = present && settled ? 'rest' : pageMotionFor({ direction, lateral, present });
@@ -89,16 +101,34 @@ export default function PageTransition({ children }) {
     const root = rootRef.current;
     if (!root) return;
     root.style.top = present ? '' : `${-scrollYRef.current}px`;
+    if (present) root.style.visibility = '';
   }, [present]);
+
+  // `safeToRemove` is a new function on every AnimatePresence render, so an
+  // effect keyed on it would restart the clock on any app state change during
+  // the exit; the ref keeps the latest one and the clock keys on presence.
+  const safeToRemoveRef = useRef(safeToRemove);
+  useLayoutEffect(() => {
+    safeToRemoveRef.current = safeToRemove;
+  });
 
   // The safety clock: a background tab or a cancelled animation never fires
   // `animationend`, and a page that never hands itself back is a page
-  // AnimatePresence keeps forever. Cleared if the page becomes present again.
+  // AnimatePresence keeps forever. Handing back is not always enough either:
+  // AnimatePresence waits for EVERY registrant of the page's presence context,
+  // and a motion element inside the page whose exit never settles would leave
+  // this root mounted — fixed, opaque, and painting over the live page. Hidden,
+  // the worst case is a page that vanishes 700ms early. Cleared if the page
+  // becomes present again.
   useEffect(() => {
-    if (present || !safeToRemove) return undefined;
-    const timer = window.setTimeout(safeToRemove, EXIT_SAFETY_MS);
+    if (present) return undefined;
+    const root = rootRef.current;
+    const timer = window.setTimeout(() => {
+      if (root) root.style.visibility = 'hidden';
+      if (safeToRemoveRef.current) safeToRemoveRef.current();
+    }, EXIT_SAFETY_MS);
     return () => window.clearTimeout(timer);
-  }, [present, safeToRemove]);
+  }, [present]);
 
   // The cards and the hero animate too, and their `animationend` bubbles up
   // here; only the root's own counts.
@@ -110,13 +140,21 @@ export default function PageTransition({ children }) {
 
   // `data-nav-direction` is for the page's own content: coming back (-1) is a
   // return to something that was there, so the feed's cards resume at rest
-  // instead of arriving again (PaperCard.css reads this).
+  // instead of arriving again (PaperCard.css reads this). The leaving page
+  // keeps the direction it ARRIVED with, not the one that ejects it — `arrivedWith`,
+  // frozen above — or its own cards would read the eject as a fresh arrival
+  // and replay `pcArrive` under the page covering them. `inert` takes the
+  // leaving page — two `<main>` landmarks and a duplicate heading for up to
+  // 220ms otherwise — out of the accessibility tree and the tab order, the
+  // way `pointer-events: none` (PageTransition.css) already takes it out of
+  // the pointer's.
   return (
     <div
       ref={rootRef}
       className="page-transition"
-      data-nav-direction={direction}
+      data-nav-direction={present ? direction : arrivedWith}
       data-page-motion={motion}
+      inert={!present || undefined}
       onAnimationEnd={handleAnimationEnd}
     >
       {/* A chunk that is not cached suspends HERE, inside the page arriving,

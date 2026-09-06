@@ -28,7 +28,7 @@ test('the explorer chunk is preloaded with the other screens a session reaches',
 
 test('coming back to the feed resumes it at rest instead of replaying the arrival', async () => {
   const transition = await read('../Layout/PageTransition.jsx');
-  assert.match(transition, /data-nav-direction=\{direction\}/);
+  assert.match(transition, /data-nav-direction=\{present \? direction : arrivedWith\}/);
   const css = await read('../Feed/PaperCard.css');
   assert.match(css, /\[data-nav-direction="-1"\] \.pc-sheet,[\s\S]*?\[data-nav-direction="-1"\] \.pc-side-actions \{\s*animation: none;\s*\}/);
 });
